@@ -13,24 +13,37 @@ import {
   nativeImage,
   nativeTheme,
   protocol,
+  safeStorage,
   shell,
 } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
-import * as Effect from "effect/Effect";
 import type {
+  ClientSettings,
+  DesktopEnvironmentBootstrap,
   DesktopScreenshotCapture,
+  DesktopServerExposureState,
   DesktopSystemTheme,
   DesktopTheme,
   DesktopUpdateActionResult,
   DesktopUpdateCheckResult,
   DesktopUpdateState,
+  PersistedSavedEnvironmentRecord,
 } from "@t3tools/contracts";
 import { autoUpdater } from "electron-updater";
 
 import type { ContextMenuItem } from "@t3tools/contracts";
-import { NetService } from "@t3tools/shared/Net";
 import { RotatingFileSink } from "@t3tools/shared/logging";
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
+import { DEFAULT_DESKTOP_BACKEND_PORT, resolveDesktopBackendPort } from "./backendPort";
+import {
+  readClientSettings,
+  readSavedEnvironmentRegistry,
+  readSavedEnvironmentSecret,
+  removeSavedEnvironmentSecret,
+  writeClientSettings,
+  writeSavedEnvironmentRegistry,
+  writeSavedEnvironmentSecret,
+} from "./clientPersistence";
 import { showDesktopConfirmDialog } from "./confirmDialog";
 import { syncShellEnvironment } from "./syncShellEnvironment";
 import { getAutoUpdateDisabledReason, shouldBroadcastDownloadProgress } from "./updateState";
@@ -67,9 +80,22 @@ const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";
 const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
 const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
 const UPDATE_CHECK_CHANNEL = "desktop:update-check";
+const GET_LOCAL_ENVIRONMENT_BOOTSTRAP_CHANNEL = "desktop:get-local-environment-bootstrap";
+const GET_CLIENT_SETTINGS_CHANNEL = "desktop:get-client-settings";
+const SET_CLIENT_SETTINGS_CHANNEL = "desktop:set-client-settings";
+const GET_SAVED_ENVIRONMENT_REGISTRY_CHANNEL = "desktop:get-saved-environment-registry";
+const SET_SAVED_ENVIRONMENT_REGISTRY_CHANNEL = "desktop:set-saved-environment-registry";
+const GET_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:get-saved-environment-secret";
+const SET_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:set-saved-environment-secret";
+const REMOVE_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:remove-saved-environment-secret";
+const GET_SERVER_EXPOSURE_STATE_CHANNEL = "desktop:get-server-exposure-state";
+const SET_SERVER_EXPOSURE_MODE_CHANNEL = "desktop:set-server-exposure-mode";
 const GET_WS_URL_CHANNEL = "desktop:get-ws-url";
+const DESKTOP_LOOPBACK_HOST = "127.0.0.1";
 const BASE_DIR = process.env.T3CODE_HOME?.trim() || Path.join(OS.homedir(), ".t3");
 const STATE_DIR = Path.join(BASE_DIR, "userdata");
+const CLIENT_SETTINGS_PATH = Path.join(STATE_DIR, "client-settings.json");
+const SAVED_ENVIRONMENT_REGISTRY_PATH = Path.join(STATE_DIR, "saved-environments.json");
 const DESKTOP_SCHEME = "t3";
 const ROOT_DIR = Path.resolve(__dirname, "../../..");
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -100,6 +126,8 @@ let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess.ChildProcess | null = null;
 let backendPort = 0;
 let backendAuthToken = "";
+let backendBootstrapToken = "";
+let backendHttpUrl = "";
 let backendWsUrl = "";
 let restartAttempt = 0;
 let restartTimer: ReturnType<typeof setTimeout> | null = null;
@@ -204,6 +232,22 @@ function getSafeTheme(rawTheme: unknown): DesktopTheme | null {
   }
 
   return null;
+}
+
+function getDesktopSecretStorage() {
+  return {
+    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+    encryptString: (value: string) => safeStorage.encryptString(value),
+    decryptString: (value: Buffer) => safeStorage.decryptString(value),
+  };
+}
+
+function getDesktopServerExposureState(): DesktopServerExposureState {
+  return {
+    mode: "local-only",
+    endpointUrl: backendHttpUrl || null,
+    advertisedHost: backendPort > 0 ? DESKTOP_LOOPBACK_HOST : null,
+  };
 }
 
 function writeDesktopStreamChunk(
@@ -599,12 +643,15 @@ function dispatchMenuAction(action: string): void {
 }
 
 function handleCheckForUpdatesMenuClick(): void {
+  const hasUpdateFeedConfig =
+    readAppUpdateYml() !== null || Boolean(process.env.T3CODE_DESKTOP_MOCK_UPDATES);
   const disabledReason = getAutoUpdateDisabledReason({
     isDevelopment,
     isPackaged: app.isPackaged,
     platform: process.platform,
     appImage: process.env.APPIMAGE,
     disabledByEnv: process.env.T3CODE_DISABLE_AUTO_UPDATE === "1",
+    hasUpdateFeedConfig,
   });
   if (disabledReason) {
     console.info("[desktop-updater] Manual update check requested, but updates are disabled.");
@@ -845,6 +892,8 @@ function setDesktopSystemTheme(nextTheme: DesktopSystemTheme | null): void {
 }
 
 function shouldEnableAutoUpdates(): boolean {
+  const hasUpdateFeedConfig =
+    readAppUpdateYml() !== null || Boolean(process.env.T3CODE_DESKTOP_MOCK_UPDATES);
   return (
     getAutoUpdateDisabledReason({
       isDevelopment,
@@ -852,6 +901,7 @@ function shouldEnableAutoUpdates(): boolean {
       platform: process.platform,
       appImage: process.env.APPIMAGE,
       disabledByEnv: process.env.T3CODE_DISABLE_AUTO_UPDATE === "1",
+      hasUpdateFeedConfig,
     }) === null
   );
 }
@@ -1104,6 +1154,7 @@ function startBackend(): void {
           port: backendPort,
           t3Home: BASE_DIR,
           authToken: backendAuthToken,
+          desktopBootstrapToken: backendBootstrapToken,
           ...(backendObservabilitySettings.otlpTracesUrl
             ? { otlpTracesUrl: backendObservabilitySettings.otlpTracesUrl }
             : {}),
@@ -1240,9 +1291,116 @@ async function stopBackendAndWaitForExit(timeoutMs = 5_000): Promise<void> {
 }
 
 function registerIpcHandlers(): void {
+  ipcMain.removeAllListeners(GET_LOCAL_ENVIRONMENT_BOOTSTRAP_CHANNEL);
+  ipcMain.on(GET_LOCAL_ENVIRONMENT_BOOTSTRAP_CHANNEL, (event) => {
+    const bootstrap: DesktopEnvironmentBootstrap = {
+      label: APP_DISPLAY_NAME,
+      httpBaseUrl: backendHttpUrl || null,
+      wsBaseUrl: backendPort > 0 ? `ws://${DESKTOP_LOOPBACK_HOST}:${backendPort}` : null,
+      ...(backendBootstrapToken ? { bootstrapToken: backendBootstrapToken } : {}),
+    };
+    event.returnValue = bootstrap;
+  });
+
   ipcMain.removeAllListeners(GET_WS_URL_CHANNEL);
   ipcMain.on(GET_WS_URL_CHANNEL, (event) => {
     event.returnValue = backendWsUrl;
+  });
+
+  ipcMain.removeHandler(GET_CLIENT_SETTINGS_CHANNEL);
+  ipcMain.handle(GET_CLIENT_SETTINGS_CHANNEL, async () => readClientSettings(CLIENT_SETTINGS_PATH));
+
+  ipcMain.removeHandler(SET_CLIENT_SETTINGS_CHANNEL);
+  ipcMain.handle(SET_CLIENT_SETTINGS_CHANNEL, async (_event, rawSettings: unknown) => {
+    if (typeof rawSettings !== "object" || rawSettings === null) {
+      throw new Error("Invalid client settings payload.");
+    }
+
+    writeClientSettings(CLIENT_SETTINGS_PATH, rawSettings as ClientSettings);
+  });
+
+  ipcMain.removeHandler(GET_SAVED_ENVIRONMENT_REGISTRY_CHANNEL);
+  ipcMain.handle(GET_SAVED_ENVIRONMENT_REGISTRY_CHANNEL, async () =>
+    readSavedEnvironmentRegistry(SAVED_ENVIRONMENT_REGISTRY_PATH),
+  );
+
+  ipcMain.removeHandler(SET_SAVED_ENVIRONMENT_REGISTRY_CHANNEL);
+  ipcMain.handle(SET_SAVED_ENVIRONMENT_REGISTRY_CHANNEL, async (_event, rawRecords: unknown) => {
+    if (!Array.isArray(rawRecords)) {
+      throw new Error("Invalid saved environment registry payload.");
+    }
+
+    writeSavedEnvironmentRegistry(
+      SAVED_ENVIRONMENT_REGISTRY_PATH,
+      rawRecords as readonly PersistedSavedEnvironmentRecord[],
+    );
+  });
+
+  ipcMain.removeHandler(GET_SAVED_ENVIRONMENT_SECRET_CHANNEL);
+  ipcMain.handle(
+    GET_SAVED_ENVIRONMENT_SECRET_CHANNEL,
+    async (_event, rawEnvironmentId: unknown) => {
+      if (typeof rawEnvironmentId !== "string" || rawEnvironmentId.trim().length === 0) {
+        return null;
+      }
+
+      return readSavedEnvironmentSecret({
+        registryPath: SAVED_ENVIRONMENT_REGISTRY_PATH,
+        environmentId: rawEnvironmentId,
+        secretStorage: getDesktopSecretStorage(),
+      });
+    },
+  );
+
+  ipcMain.removeHandler(SET_SAVED_ENVIRONMENT_SECRET_CHANNEL);
+  ipcMain.handle(
+    SET_SAVED_ENVIRONMENT_SECRET_CHANNEL,
+    async (_event, rawEnvironmentId: unknown, rawSecret: unknown) => {
+      if (typeof rawEnvironmentId !== "string" || rawEnvironmentId.trim().length === 0) {
+        throw new Error("Invalid saved environment id.");
+      }
+      if (typeof rawSecret !== "string" || rawSecret.trim().length === 0) {
+        throw new Error("Invalid saved environment secret.");
+      }
+
+      return writeSavedEnvironmentSecret({
+        registryPath: SAVED_ENVIRONMENT_REGISTRY_PATH,
+        environmentId: rawEnvironmentId,
+        secret: rawSecret,
+        secretStorage: getDesktopSecretStorage(),
+      });
+    },
+  );
+
+  ipcMain.removeHandler(REMOVE_SAVED_ENVIRONMENT_SECRET_CHANNEL);
+  ipcMain.handle(
+    REMOVE_SAVED_ENVIRONMENT_SECRET_CHANNEL,
+    async (_event, rawEnvironmentId: unknown) => {
+      if (typeof rawEnvironmentId !== "string" || rawEnvironmentId.trim().length === 0) {
+        return;
+      }
+
+      removeSavedEnvironmentSecret({
+        registryPath: SAVED_ENVIRONMENT_REGISTRY_PATH,
+        environmentId: rawEnvironmentId,
+      });
+    },
+  );
+
+  ipcMain.removeHandler(GET_SERVER_EXPOSURE_STATE_CHANNEL);
+  ipcMain.handle(GET_SERVER_EXPOSURE_STATE_CHANNEL, async () => getDesktopServerExposureState());
+
+  ipcMain.removeHandler(SET_SERVER_EXPOSURE_MODE_CHANNEL);
+  ipcMain.handle(SET_SERVER_EXPOSURE_MODE_CHANNEL, async (_event, rawMode: unknown) => {
+    if (rawMode !== "local-only" && rawMode !== "network-accessible") {
+      throw new Error("Invalid desktop server exposure input.");
+    }
+
+    if (rawMode === "network-accessible") {
+      throw new Error("Network-accessible desktop server exposure is not available yet.");
+    }
+
+    return getDesktopServerExposureState();
   });
 
   ipcMain.removeHandler(PICK_FOLDER_CHANNEL);
@@ -1513,15 +1671,18 @@ configureAppIdentity();
 
 async function bootstrap(): Promise<void> {
   writeDesktopLogHeader("bootstrap start");
-  backendPort = await Effect.service(NetService).pipe(
-    Effect.flatMap((net) => net.reserveLoopbackPort()),
-    Effect.provide(NetService.layer),
-    Effect.runPromise,
+  backendPort = await resolveDesktopBackendPort({
+    host: DESKTOP_LOOPBACK_HOST,
+    startPort: DEFAULT_DESKTOP_BACKEND_PORT,
+  });
+  writeDesktopLogHeader(
+    `selected backend port via sequential scan startPort=${DEFAULT_DESKTOP_BACKEND_PORT} port=${backendPort}`,
   );
-  writeDesktopLogHeader(`reserved backend port via NetService port=${backendPort}`);
   backendAuthToken = Crypto.randomBytes(24).toString("hex");
-  const baseUrl = `ws://127.0.0.1:${backendPort}`;
-  backendWsUrl = `${baseUrl}/?token=${encodeURIComponent(backendAuthToken)}`;
+  backendBootstrapToken = Crypto.randomBytes(24).toString("hex");
+  backendHttpUrl = `http://${DESKTOP_LOOPBACK_HOST}:${backendPort}`;
+  const baseUrl = `ws://${DESKTOP_LOOPBACK_HOST}:${backendPort}`;
+  backendWsUrl = `${baseUrl}/`;
   writeDesktopLogHeader(`bootstrap resolved websocket endpoint baseUrl=${baseUrl}`);
 
   registerIpcHandlers();

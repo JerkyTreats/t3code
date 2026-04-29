@@ -1,5 +1,6 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
   ProjectId,
   ThreadId,
   type ServerConfig,
@@ -50,7 +51,27 @@ const defaultProviders: ReadonlyArray<ServerProvider> = [
   },
 ];
 
+const testEnvironment = {
+  environmentId: EnvironmentId.makeUnsafe("environment-test"),
+  label: "Test environment",
+  platform: {
+    os: "linux" as const,
+    arch: "x64" as const,
+  },
+  serverVersion: "0.0.16",
+  capabilities: {
+    repositoryIdentity: true,
+  },
+};
+
 const baseServerConfig: ServerConfig = {
+  environment: testEnvironment,
+  auth: {
+    policy: "loopback-browser",
+    bootstrapMethods: ["one-time-token"],
+    sessionMethods: ["browser-session-cookie", "bearer-session-token"],
+    sessionCookieName: "t3_session",
+  },
   cwd: "/tmp/workspace",
   keybindingsConfigPath: "/tmp/workspace/.config/keybindings.json",
   keybindings: [],
@@ -193,6 +214,7 @@ describe("serverState", () => {
       sequence: 1,
       type: "welcome",
       payload: {
+        environment: testEnvironment,
         cwd: "/tmp/workspace",
         projectName: "t3-code",
         bootstrapProjectId: ProjectId.makeUnsafe("project-1"),
@@ -201,6 +223,7 @@ describe("serverState", () => {
     });
 
     expect(listener).toHaveBeenCalledWith({
+      environment: testEnvironment,
       cwd: "/tmp/workspace",
       projectName: "t3-code",
       bootstrapProjectId: ProjectId.makeUnsafe("project-1"),
@@ -210,6 +233,7 @@ describe("serverState", () => {
     const lateListener = vi.fn();
     const unsubscribeLate = onWelcome(lateListener);
     expect(lateListener).toHaveBeenCalledWith({
+      environment: testEnvironment,
       cwd: "/tmp/workspace",
       projectName: "t3-code",
       bootstrapProjectId: ProjectId.makeUnsafe("project-1"),

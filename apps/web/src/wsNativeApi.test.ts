@@ -2,6 +2,7 @@ import {
   CommandId,
   DEFAULT_SERVER_SETTINGS,
   type DesktopBridge,
+  EnvironmentId,
   EventId,
   type GitStatusResult,
   ProjectId,
@@ -132,6 +133,24 @@ function getWindowForTest(): Window & typeof globalThis & { desktopBridge?: unkn
 
 function makeDesktopBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridge {
   return {
+    getLocalEnvironmentBootstrap: () => null,
+    getClientSettings: async () => null,
+    setClientSettings: async () => undefined,
+    getSavedEnvironmentRegistry: async () => [],
+    setSavedEnvironmentRegistry: async () => undefined,
+    getSavedEnvironmentSecret: async () => null,
+    setSavedEnvironmentSecret: async () => false,
+    removeSavedEnvironmentSecret: async () => undefined,
+    getServerExposureState: async () => ({
+      mode: "local-only",
+      endpointUrl: null,
+      advertisedHost: null,
+    }),
+    setServerExposureMode: async () => ({
+      mode: "local-only",
+      endpointUrl: null,
+      advertisedHost: null,
+    }),
     getWsUrl: () => null,
     pickFolder: async () => null,
     confirm: async () => true,
@@ -172,7 +191,27 @@ const defaultProviders: ReadonlyArray<ServerProvider> = [
   },
 ];
 
+const testEnvironment = {
+  environmentId: EnvironmentId.makeUnsafe("environment-test"),
+  label: "Test environment",
+  platform: {
+    os: "linux" as const,
+    arch: "x64" as const,
+  },
+  serverVersion: "0.0.16",
+  capabilities: {
+    repositoryIdentity: true,
+  },
+};
+
 const baseServerConfig: ServerConfig = {
+  environment: testEnvironment,
+  auth: {
+    policy: "loopback-browser",
+    bootstrapMethods: ["one-time-token"],
+    sessionMethods: ["browser-session-cookie", "bearer-session-token"],
+    sessionCookieName: "t3_session",
+  },
   cwd: "/tmp/workspace",
   keybindingsConfigPath: "/tmp/workspace/.config/keybindings.json",
   keybindings: [],

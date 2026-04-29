@@ -143,13 +143,13 @@ afterEach(async () => {
 
 describe("WsTransport", () => {
   it("normalizes root websocket urls to /ws and preserves query params", async () => {
-    const transport = new WsTransport("ws://localhost:3020/?token=secret-token");
+    const transport = new WsTransport("ws://localhost:3020/?wsToken=secret-token");
 
     await waitFor(() => {
       expect(sockets).toHaveLength(1);
     });
 
-    expect(getSocket().url).toBe("ws://localhost:3020/ws?token=secret-token");
+    expect(getSocket().url).toBe("ws://localhost:3020/ws?wsToken=secret-token");
     await transport.dispose();
   });
 

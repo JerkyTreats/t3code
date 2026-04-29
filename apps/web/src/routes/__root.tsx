@@ -16,6 +16,7 @@ import { Throttler } from "@tanstack/react-pacer";
 
 import { APP_DISPLAY_NAME } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
+import { PairingPendingSurface } from "../components/auth/PairingRouteSurface";
 import {
   SlowRpcAckToastCoordinator,
   WebSocketConnectionCoordinator,
@@ -48,6 +49,7 @@ import { collectActiveTerminalThreadIds } from "../lib/terminalStateCleanup";
 import { deriveOrchestrationBatchEffects } from "../orchestrationEventEffects";
 import { createOrchestrationRecoveryCoordinator } from "../orchestrationRecovery";
 import { deriveReplayRetryDecision } from "../orchestrationRecovery";
+import { startServerAuthGateBootstrap, useServerAuthGateState } from "../serverAuthBootstrap";
 import { getWsRpcClient } from "~/wsRpcClient";
 
 export const Route = createRootRouteWithContext<{
@@ -61,6 +63,44 @@ export const Route = createRootRouteWithContext<{
 });
 
 function RootRouteView() {
+  const navigate = useNavigate();
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const authGateState = useServerAuthGateState();
+
+  useEffect(() => {
+    void startServerAuthGateBootstrap();
+  }, []);
+
+  useEffect(() => {
+    if (authGateState.status === "requires-auth" && pathname !== "/pair") {
+      void navigate({ to: "/pair", replace: true });
+    }
+  }, [authGateState.status, navigate, pathname]);
+
+  useEffect(() => {
+    if (authGateState.status === "authenticated" && pathname === "/pair") {
+      void navigate({ to: "/", replace: true });
+    }
+  }, [authGateState.status, navigate, pathname]);
+
+  if (authGateState.status === "booting") {
+    return <PairingPendingSurface />;
+  }
+
+  if (authGateState.status === "requires-auth") {
+    if (pathname !== "/pair") {
+      return <PairingPendingSurface />;
+    }
+
+    return (
+      <ToastProvider>
+        <AnchoredToastProvider>
+          <Outlet />
+        </AnchoredToastProvider>
+      </ToastProvider>
+    );
+  }
+
   if (!readNativeApi()) {
     return (
       <div className="flex h-screen flex-col bg-background text-foreground">

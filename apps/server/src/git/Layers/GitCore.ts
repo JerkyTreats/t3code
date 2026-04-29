@@ -47,6 +47,12 @@ const RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
 const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const GIT_CHECK_IGNORE_MAX_STDIN_BYTES = 256 * 1024;
+const WORKSPACE_GIT_HARDENED_CONFIG_ARGS = [
+  "-c",
+  "core.fsmonitor=false",
+  "-c",
+  "core.untrackedCache=false",
+] as const;
 const STATUS_UPSTREAM_REFRESH_INTERVAL = Duration.seconds(15);
 const STATUS_UPSTREAM_REFRESH_TIMEOUT = Duration.seconds(5);
 const STATUS_UPSTREAM_REFRESH_FAILURE_COOLDOWN = Duration.seconds(5);
@@ -1738,7 +1744,14 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     executeGit(
       "GitCore.listWorkspaceFiles",
       cwd,
-      ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+      [
+        ...WORKSPACE_GIT_HARDENED_CONFIG_ARGS,
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "-z",
+      ],
       {
         allowNonZeroExit: true,
         timeoutMs: 20_000,
@@ -1756,7 +1769,14 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
               createGitCommandError(
                 "GitCore.listWorkspaceFiles",
                 cwd,
-                ["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+                [
+                  ...WORKSPACE_GIT_HARDENED_CONFIG_ARGS,
+                  "ls-files",
+                  "--cached",
+                  "--others",
+                  "--exclude-standard",
+                  "-z",
+                ],
                 result.stderr.trim().length > 0 ? result.stderr.trim() : "git ls-files failed",
               ),
             ),
@@ -1776,7 +1796,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
         const result = yield* executeGit(
           "GitCore.filterIgnoredPaths",
           cwd,
-          ["check-ignore", "--no-index", "-z", "--stdin"],
+          [...WORKSPACE_GIT_HARDENED_CONFIG_ARGS, "check-ignore", "--no-index", "-z", "--stdin"],
           {
             stdin: `${chunk.join("\0")}\0`,
             allowNonZeroExit: true,
@@ -1790,7 +1810,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
           return yield* createGitCommandError(
             "GitCore.filterIgnoredPaths",
             cwd,
-            ["check-ignore", "--no-index", "-z", "--stdin"],
+            [...WORKSPACE_GIT_HARDENED_CONFIG_ARGS, "check-ignore", "--no-index", "-z", "--stdin"],
             result.stderr.trim().length > 0 ? result.stderr.trim() : "git check-ignore failed",
           );
         }

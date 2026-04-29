@@ -2,6 +2,7 @@ import "../index.css";
 
 import {
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
   ORCHESTRATION_WS_METHODS,
   type MessageId,
   type OrchestrationReadModel,
@@ -45,10 +46,30 @@ interface TestFixture {
 let fixture: TestFixture;
 const rpcHarness = new BrowserWsRpcHarness();
 
+const testEnvironment = {
+  environmentId: EnvironmentId.makeUnsafe("environment-test"),
+  label: "Test environment",
+  platform: {
+    os: "linux" as const,
+    arch: "x64" as const,
+  },
+  serverVersion: "0.0.16",
+  capabilities: {
+    repositoryIdentity: true,
+  },
+};
+
 const wsLink = ws.link(/ws(s)?:\/\/.*/);
 
 function createBaseServerConfig(): ServerConfig {
   return {
+    environment: testEnvironment,
+    auth: {
+      policy: "loopback-browser",
+      bootstrapMethods: ["one-time-token"],
+      sessionMethods: ["browser-session-cookie", "bearer-session-token"],
+      sessionCookieName: "t3_session",
+    },
     cwd: "/repo/project",
     keybindingsConfigPath: "/repo/project/.t3code-keybindings.json",
     keybindings: [],
@@ -156,6 +177,7 @@ function buildFixture(): TestFixture {
     snapshot: createMinimalSnapshot(),
     serverConfig: createBaseServerConfig(),
     welcome: {
+      environment: testEnvironment,
       cwd: "/repo/project",
       projectName: "Project",
       bootstrapProjectId: PROJECT_ID,

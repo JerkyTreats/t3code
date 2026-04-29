@@ -4,8 +4,10 @@ import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http";
 import { ServerConfig } from "./config";
 import {
   attachmentsRouteLayer,
+  browserApiCorsLayer,
   otlpTracesProxyRouteLayer,
   projectFaviconRouteLayer,
+  serverEnvironmentRouteLayer,
   staticAndDevRouteLayer,
 } from "./http";
 import { fixPath } from "./os-jank";
@@ -51,6 +53,21 @@ import { WorkspaceFileSystemLive } from "./workspace/Layers/WorkspaceFileSystem"
 import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths";
 import { ProjectSetupScriptRunnerLive } from "./project/Layers/ProjectSetupScriptRunner";
 import { ObservabilityLive } from "./observability/Layers/Observability";
+import {
+  authBearerBootstrapRouteLayer,
+  authBootstrapRouteLayer,
+  authClientsRevokeOthersRouteLayer,
+  authClientsRevokeRouteLayer,
+  authClientsRouteLayer,
+  authPairingLinksRevokeRouteLayer,
+  authPairingLinksRouteLayer,
+  authPairingCredentialRouteLayer,
+  authSessionRouteLayer,
+  authWebSocketTokenRouteLayer,
+} from "./auth/http";
+import { ServerSecretStoreLive } from "./auth/Layers/ServerSecretStore";
+import { ServerAuthLive } from "./auth/Layers/ServerAuth";
+import { ServerEnvironmentLive } from "./environment/Layers/ServerEnvironment";
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -165,6 +182,11 @@ const ProviderLayerLive = Layer.unwrap(
 
 const PersistenceLayerLive = Layer.empty.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
+const AuthLayerLive = ServerAuthLive.pipe(
+  Layer.provideMerge(PersistenceLayerLive),
+  Layer.provide(ServerSecretStoreLive),
+);
+
 const GitManagerLayerLive = GitManagerLive.pipe(
   Layer.provideMerge(ProjectSetupScriptRunnerLive),
   Layer.provideMerge(GitCoreLive),
@@ -203,6 +225,8 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(ServerSettingsLive),
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectFaviconResolverLive),
+  Layer.provideMerge(AuthLayerLive),
+  Layer.provideMerge(ServerEnvironmentLive),
 
   // Misc.
   Layer.provideMerge(AnalyticsServiceLayerLive),
@@ -215,12 +239,23 @@ const RuntimeServicesLive = ServerRuntimeStartupLive.pipe(
 );
 
 export const makeRoutesLayer = Layer.mergeAll(
+  authBearerBootstrapRouteLayer,
+  authBootstrapRouteLayer,
+  authClientsRevokeOthersRouteLayer,
+  authClientsRevokeRouteLayer,
+  authClientsRouteLayer,
+  authPairingLinksRevokeRouteLayer,
+  authPairingLinksRouteLayer,
+  authPairingCredentialRouteLayer,
+  authSessionRouteLayer,
+  authWebSocketTokenRouteLayer,
   attachmentsRouteLayer,
   otlpTracesProxyRouteLayer,
   projectFaviconRouteLayer,
+  serverEnvironmentRouteLayer,
   staticAndDevRouteLayer,
   websocketRpcRouteLayer,
-);
+).pipe(Layer.provide(browserApiCorsLayer));
 
 export const makeServerLayer = Layer.unwrap(
   Effect.gen(function* () {

@@ -20,6 +20,7 @@ import {
 } from "effect";
 
 import { ServerConfig } from "./config";
+import { ServerEnvironment } from "./environment/Services/ServerEnvironment";
 import { Keybindings } from "./keybindings";
 import { Open } from "./open";
 import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine";
@@ -150,6 +151,7 @@ export const launchStartupHeartbeat = recordStartupHeartbeat.pipe(
 
 const autoBootstrapWelcome = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig;
+  const serverEnvironment = yield* ServerEnvironment;
   const projectionReadModelQuery = yield* ProjectionSnapshotQuery;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const path = yield* Path.Path;
@@ -221,6 +223,7 @@ const autoBootstrapWelcome = Effect.gen(function* () {
   const projectName = segments[segments.length - 1] ?? "project";
 
   return {
+    environment: yield* serverEnvironment.getDescriptor,
     cwd: serverConfig.cwd,
     projectName,
     ...(bootstrapProjectId ? { bootstrapProjectId } : {}),
@@ -258,6 +261,7 @@ const runStartupPhase = <A, E, R>(phase: string, effect: Effect.Effect<A, E, R>)
 
 const makeServerRuntimeStartup = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig;
+  const serverEnvironment = yield* ServerEnvironment;
   const keybindings = yield* Keybindings;
   const orchestrationReactor = yield* OrchestrationReactor;
   const lifecycleEvents = yield* ServerLifecycleEvents;
@@ -354,7 +358,10 @@ const makeServerRuntimeStartup = Effect.gen(function* () {
         lifecycleEvents.publish({
           version: 1,
           type: "ready",
-          payload: { at: new Date().toISOString() },
+          payload: {
+            at: new Date().toISOString(),
+            environment: yield* serverEnvironment.getDescriptor,
+          },
         }),
       );
 

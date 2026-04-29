@@ -52,8 +52,11 @@ export const resolveServerUrl = (options?: {
   pathname?: string | undefined;
   searchParams?: Record<string, string> | undefined;
 }): string => {
+  const desktopEnvironmentWsUrl =
+    window.desktopBridge?.getLocalEnvironmentBootstrap?.()?.wsBaseUrl ?? undefined;
   const rawUrl = firstNonEmptyString(
     options?.url,
+    desktopEnvironmentWsUrl,
     window.desktopBridge?.getWsUrl(),
     import.meta.env.VITE_WS_URL,
     window.location.origin,

@@ -47,6 +47,7 @@ Treat these as protected fork features during every upstream sync:
 - composer chrome layout including access control placement, screenshot control placement, and rich draft affordances
 - Git panel isolation from active draft ownership and prompt state
 - plan sidebar progress affordances and other fork specific status cues, including showing plan progress such as `1/4` when a plan exists instead of a generic working label
+- plan markdown preview flows and markdown rendering behavior, including fullscreen in memory plan preview, plan specific markdown navigation, and horizontal overflow handling for wide markdown content
 - local branch, worktree, and promotion workflow behavior
 - Omarchy specific desktop and screenshot integration behavior
 - Omarchy system theme behavior derived from local desktop theme state
@@ -60,6 +61,7 @@ Use this list as a concrete review aid during upstream sync and merge work.
 
 - composer chrome and layout in `apps/web/src/components/ChatView.tsx`, including floating access control placement, screenshot placement, and rich draft controls
 - sidebar status cues for plan aware progress in the thread and activity surfaces, including fractional progress such as `1/4` when plan data exists
+- plan markdown preview and markdown document rendering in `apps/web/src/components/ChatMarkdown.tsx`, `apps/web/src/components/DocumentMarkdownRenderer.tsx`, `apps/web/src/components/PlanConversationDocument.tsx`, and `apps/web/src/routes/_chat.$threadId.tsx`
 - Omarchy system theme behavior and any browser or desktop adapters that project desktop theme state into the app
 - screenshot capability detection, screenshot capture, and screenshot attach flows across desktop, web, and composer state
 - fork first GitHub repo identity resolution in `apps/server/src/git/Layers/GitHubCli.ts` so fork operations resolve to the fork remote instead of upstream

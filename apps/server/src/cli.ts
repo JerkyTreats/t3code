@@ -26,6 +26,7 @@ const BootstrapEnvelopeSchema = Schema.Struct({
   devUrl: Schema.optional(Schema.URLFromString),
   noBrowser: Schema.optional(Schema.Boolean),
   authToken: Schema.optional(Schema.String),
+  desktopBootstrapToken: Schema.optional(Schema.String),
   autoBootstrapProjectFromCwd: Schema.optional(Schema.Boolean),
   logWebSocketEvents: Schema.optional(Schema.Boolean),
   otlpTracesUrl: Schema.optional(Schema.String),
@@ -328,6 +329,11 @@ export const resolveServerConfig = (
       devUrl,
       noBrowser,
       authToken,
+      desktopBootstrapToken: Option.getOrUndefined(
+        Option.flatMap(bootstrapEnvelope, (bootstrap) =>
+          Option.fromUndefinedOr(bootstrap.desktopBootstrapToken),
+        ),
+      ),
       autoBootstrapProjectFromCwd,
       logWebSocketEvents,
     };

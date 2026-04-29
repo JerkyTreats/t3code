@@ -2,6 +2,8 @@
 import "../index.css";
 
 import {
+  DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
   EventId,
   ORCHESTRATION_WS_METHODS,
   type MessageId,
@@ -15,7 +17,6 @@ import {
   type UserInputQuestion,
   WS_METHODS,
   OrchestrationSessionStatus,
-  DEFAULT_SERVER_SETTINGS,
 } from "@t3tools/contracts";
 import { RouterProvider, createMemoryHistory } from "@tanstack/react-router";
 import { HttpResponse, http, ws } from "msw";
@@ -127,8 +128,28 @@ function isoAt(offsetSeconds: number): string {
   return new Date(BASE_TIME_MS + offsetSeconds * 1_000).toISOString();
 }
 
+const testEnvironment = {
+  environmentId: EnvironmentId.makeUnsafe("environment-test"),
+  label: "Test environment",
+  platform: {
+    os: "linux" as const,
+    arch: "x64" as const,
+  },
+  serverVersion: "0.0.16",
+  capabilities: {
+    repositoryIdentity: true,
+  },
+};
+
 function createBaseServerConfig(): ServerConfig {
   return {
+    environment: testEnvironment,
+    auth: {
+      policy: "loopback-browser",
+      bootstrapMethods: ["one-time-token"],
+      sessionMethods: ["browser-session-cookie", "bearer-session-token"],
+      sessionCookieName: "t3_session",
+    },
     cwd: "/repo/project",
     keybindingsConfigPath: "/repo/project/.t3code-keybindings.json",
     keybindings: [],
@@ -314,6 +335,7 @@ function buildFixture(snapshot: OrchestrationReadModel): TestFixture {
     snapshot,
     serverConfig: createBaseServerConfig(),
     welcome: {
+      environment: testEnvironment,
       cwd: "/repo/project",
       projectName: "Project",
       bootstrapProjectId: PROJECT_ID,

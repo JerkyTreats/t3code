@@ -75,8 +75,9 @@ import type {
   OrchestrationEvent,
   OrchestrationReadModel,
 } from "./orchestration";
+import type { EnvironmentId } from "./baseSchemas";
 import { EditorId } from "./editor";
-import { ServerSettings, ServerSettingsPatch } from "./settings";
+import { ClientSettings, ServerSettings, ServerSettingsPatch } from "./settings";
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -131,6 +132,30 @@ export interface DesktopUpdateCheckResult {
   state: DesktopUpdateState;
 }
 
+export interface DesktopEnvironmentBootstrap {
+  label: string;
+  httpBaseUrl: string | null;
+  wsBaseUrl: string | null;
+  bootstrapToken?: string;
+}
+
+export interface PersistedSavedEnvironmentRecord {
+  environmentId: EnvironmentId;
+  label: string;
+  wsBaseUrl: string;
+  httpBaseUrl: string;
+  createdAt: string;
+  lastConnectedAt: string | null;
+}
+
+export type DesktopServerExposureMode = "local-only" | "network-accessible";
+
+export interface DesktopServerExposureState {
+  mode: DesktopServerExposureMode;
+  endpointUrl: string | null;
+  advertisedHost: string | null;
+}
+
 export interface DesktopScreenshotCapture {
   name: string;
   mimeType: string;
@@ -146,6 +171,18 @@ export interface DesktopSystemTheme {
 }
 
 export interface DesktopBridge {
+  getLocalEnvironmentBootstrap: () => DesktopEnvironmentBootstrap | null;
+  getClientSettings: () => Promise<ClientSettings | null>;
+  setClientSettings: (settings: ClientSettings) => Promise<void>;
+  getSavedEnvironmentRegistry: () => Promise<readonly PersistedSavedEnvironmentRecord[]>;
+  setSavedEnvironmentRegistry: (
+    records: readonly PersistedSavedEnvironmentRecord[],
+  ) => Promise<void>;
+  getSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<string | null>;
+  setSavedEnvironmentSecret: (environmentId: EnvironmentId, secret: string) => Promise<boolean>;
+  removeSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<void>;
+  getServerExposureState: () => Promise<DesktopServerExposureState>;
+  setServerExposureMode: (mode: DesktopServerExposureMode) => Promise<DesktopServerExposureState>;
   getWsUrl: () => string | null;
   pickFolder: () => Promise<string | null>;
   confirm: (message: string) => Promise<boolean>;
@@ -164,6 +201,111 @@ export interface DesktopBridge {
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
+}
+
+export interface LocalApi {
+  dialogs: {
+    pickFolder: () => Promise<string | null>;
+    confirm: (message: string) => Promise<boolean>;
+  };
+  shell: {
+    openInEditor: (cwd: string, editor: EditorId) => Promise<void>;
+    openExternal: (url: string) => Promise<void>;
+  };
+  contextMenu: {
+    show: <T extends string>(
+      items: readonly ContextMenuItem<T>[],
+      position?: { x: number; y: number },
+    ) => Promise<T | null>;
+  };
+  persistence: {
+    getClientSettings: () => Promise<ClientSettings | null>;
+    setClientSettings: (settings: ClientSettings) => Promise<void>;
+    getSavedEnvironmentRegistry: () => Promise<readonly PersistedSavedEnvironmentRecord[]>;
+    setSavedEnvironmentRegistry: (
+      records: readonly PersistedSavedEnvironmentRecord[],
+    ) => Promise<void>;
+    getSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<string | null>;
+    setSavedEnvironmentSecret: (environmentId: EnvironmentId, secret: string) => Promise<boolean>;
+    removeSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<void>;
+  };
+  server: {
+    getConfig: () => Promise<ServerConfig>;
+    refreshProviders: () => Promise<ServerProviderUpdatedPayload>;
+    upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
+    getSettings: () => Promise<ServerSettings>;
+    updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+  };
+}
+
+export interface EnvironmentApi {
+  terminal: {
+    open: (input: typeof TerminalOpenInput.Encoded) => Promise<TerminalSessionSnapshot>;
+    write: (input: typeof TerminalWriteInput.Encoded) => Promise<void>;
+    resize: (input: typeof TerminalResizeInput.Encoded) => Promise<void>;
+    clear: (input: typeof TerminalClearInput.Encoded) => Promise<void>;
+    restart: (input: typeof TerminalRestartInput.Encoded) => Promise<TerminalSessionSnapshot>;
+    close: (input: typeof TerminalCloseInput.Encoded) => Promise<void>;
+    onEvent: (callback: (event: TerminalEvent) => void) => () => void;
+  };
+  projects: {
+    listDirectory: (input: ProjectListDirectoryInput) => Promise<ProjectListDirectoryResult>;
+    readFile: (input: ProjectReadFileInput) => Promise<ProjectReadFileResult>;
+    searchEntries: (input: ProjectSearchEntriesInput) => Promise<ProjectSearchEntriesResult>;
+    writeFile: (input: ProjectWriteFileInput) => Promise<ProjectWriteFileResult>;
+  };
+  git: {
+    listBranches: (input: GitListBranchesInput) => Promise<GitListBranchesResult>;
+    createWorktree: (input: GitCreateWorktreeInput) => Promise<GitCreateWorktreeResult>;
+    removeWorktree: (input: GitRemoveWorktreeInput) => Promise<void>;
+    createBranch: (input: GitCreateBranchInput) => Promise<GitCreateBranchResult>;
+    mergeBranches: (input: GitMergeBranchesInput) => Promise<GitMergeBranchesResult>;
+    abortMerge: (input: GitAbortMergeInput) => Promise<GitAbortMergeResult>;
+    checkout: (input: GitCheckoutInput) => Promise<GitCheckoutResult>;
+    init: (input: GitInitInput) => Promise<void>;
+    resolvePullRequest: (input: GitPullRequestRefInput) => Promise<GitResolvePullRequestResult>;
+    preparePullRequestThread: (
+      input: GitPreparePullRequestThreadInput,
+    ) => Promise<GitPreparePullRequestThreadResult>;
+    repositoryContext: (input: GitRepositoryContextInput) => Promise<GitRepositoryContextResult>;
+    pull: (input: GitPullInput) => Promise<GitPullResult>;
+    status: (input: GitStatusInput) => Promise<GitStatusResult>;
+    refreshStatus: (input: GitStatusInput) => Promise<GitStatusResult>;
+    onStatus: (
+      input: GitStatusInput,
+      callback: (status: GitStatusResult) => void,
+      options?: {
+        onResubscribe?: () => void;
+      },
+    ) => () => void;
+    runStackedAction: (input: GitRunStackedActionInput) => Promise<GitRunStackedActionResult>;
+    onActionProgress: (callback: (event: GitActionProgressEvent) => void) => () => void;
+  };
+  orchestration: {
+    getSnapshot: () => Promise<OrchestrationReadModel>;
+    dispatchCommand: (command: ClientOrchestrationCommand) => Promise<{ sequence: number }>;
+    getTurnDiff: (input: OrchestrationGetTurnDiffInput) => Promise<OrchestrationGetTurnDiffResult>;
+    getFullThreadDiff: (
+      input: OrchestrationGetFullThreadDiffInput,
+    ) => Promise<OrchestrationGetFullThreadDiffResult>;
+    getCheckpointFile: (
+      input: OrchestrationGetCheckpointFileInput,
+    ) => Promise<OrchestrationGetCheckpointFileResult>;
+    replayEvents: (fromSequenceExclusive: number) => Promise<OrchestrationEvent[]>;
+    onDomainEvent: (
+      callback: (event: OrchestrationEvent) => void,
+      options?: {
+        onResubscribe?: () => void;
+      },
+    ) => () => void;
+  };
+  server: {
+    getConfig: () => Promise<ServerConfig>;
+    refreshProviders: () => Promise<ServerProviderUpdatedPayload>;
+    upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
+    getSettings: () => Promise<ServerSettings>;
+    updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+  };
 }
 
 export interface NativeApi {

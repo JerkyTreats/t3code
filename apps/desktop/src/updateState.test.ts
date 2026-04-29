@@ -71,6 +71,7 @@ describe("getAutoUpdateDisabledReason", () => {
         platform: "darwin",
         appImage: undefined,
         disabledByEnv: false,
+        hasUpdateFeedConfig: true,
       }),
     ).toContain("packaged production builds");
   });
@@ -83,6 +84,7 @@ describe("getAutoUpdateDisabledReason", () => {
         platform: "darwin",
         appImage: undefined,
         disabledByEnv: true,
+        hasUpdateFeedConfig: true,
       }),
     ).toContain("T3CODE_DISABLE_AUTO_UPDATE");
   });
@@ -95,6 +97,7 @@ describe("getAutoUpdateDisabledReason", () => {
         platform: "linux",
         appImage: undefined,
         disabledByEnv: false,
+        hasUpdateFeedConfig: true,
       }),
     ).toContain("AppImage");
   });

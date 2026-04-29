@@ -5,6 +5,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
   GitCommandError,
   KeybindingRule,
   MessageId,
@@ -23,6 +24,7 @@ import {
 import { assert, it } from "@effect/vitest";
 import { assertFailure, assertInclude, assertTrue } from "@effect/vitest/utils";
 import {
+  DateTime,
   Deferred,
   Duration,
   Effect,
@@ -92,6 +94,10 @@ import { WorkspaceEntriesLive } from "./workspace/Layers/WorkspaceEntries.ts";
 import { WorkspaceFileQueryLive } from "./workspace/Layers/WorkspaceFileQuery.ts";
 import { WorkspaceFileSystemLive } from "./workspace/Layers/WorkspaceFileSystem.ts";
 import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths.ts";
+import { BootstrapCredentialService } from "./auth/Services/BootstrapCredentialService.ts";
+import { ServerAuth } from "./auth/Services/ServerAuth.ts";
+import { SessionCredentialService } from "./auth/Services/SessionCredentialService.ts";
+import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
 
 const defaultProjectId = ProjectId.makeUnsafe("project-default");
 const defaultThreadId = ThreadId.makeUnsafe("thread-default");
@@ -157,6 +163,145 @@ const browserOtlpTracingLayer = Layer.mergeAll(
   FetchHttpClient.layer,
   OtlpSerialization.layerJson,
   Layer.succeed(HttpClient.TracerDisabledWhen, () => true),
+);
+
+const authDescriptor = {
+  policy: "loopback-browser" as const,
+  bootstrapMethods: ["one-time-token"] as const,
+  sessionMethods: ["browser-session-cookie", "bearer-session-token"] as const,
+  sessionCookieName: "t3_session",
+};
+
+const testEnvironment = {
+  environmentId: EnvironmentId.makeUnsafe("environment-test"),
+  label: "Test environment",
+  platform: {
+    os: "linux" as const,
+    arch: "x64" as const,
+  },
+  serverVersion: "0.0.16",
+  capabilities: {
+    repositoryIdentity: true,
+  },
+};
+
+const authTestLayer = Layer.mergeAll(
+  Layer.mock(BootstrapCredentialService)({
+    issueOneTimeToken: () =>
+      Effect.succeed({
+        id: "pairing-link-test",
+        credential: "pairing-token-test",
+        expiresAt: DateTime.makeUnsafe(0),
+      }),
+    listActive: () => Effect.succeed([]),
+    streamChanges: Stream.empty,
+    revoke: () => Effect.succeed(false),
+    consume: () =>
+      Effect.succeed({
+        method: "one-time-token" as const,
+        role: "owner" as const,
+        subject: "one-time-token",
+        expiresAt: DateTime.makeUnsafe(0),
+      }),
+  }),
+  Layer.mock(SessionCredentialService)({
+    cookieName: "t3_session",
+    issue: () =>
+      Effect.succeed({
+        sessionId: "auth-session-test" as any,
+        token: "session-token-test",
+        method: "browser-session-cookie" as const,
+        client: { deviceType: "desktop" as const },
+        expiresAt: DateTime.makeUnsafe(0),
+        role: "owner" as const,
+      }),
+    verify: () =>
+      Effect.succeed({
+        sessionId: "auth-session-test" as any,
+        token: "session-token-test",
+        method: "browser-session-cookie" as const,
+        client: { deviceType: "desktop" as const },
+        expiresAt: DateTime.makeUnsafe(0),
+        subject: "browser",
+        role: "owner" as const,
+      }),
+    issueWebSocketToken: () =>
+      Effect.succeed({
+        token: "ws-token-test",
+        expiresAt: DateTime.makeUnsafe(0),
+      }),
+    verifyWebSocketToken: () =>
+      Effect.succeed({
+        sessionId: "auth-session-test" as any,
+        token: "ws-token-test",
+        method: "browser-session-cookie" as const,
+        client: { deviceType: "desktop" as const },
+        expiresAt: DateTime.makeUnsafe(0),
+        subject: "browser",
+        role: "owner" as const,
+      }),
+    listActive: () => Effect.succeed([]),
+    streamChanges: Stream.empty,
+    revoke: () => Effect.succeed(false),
+    revokeAllExcept: () => Effect.succeed(0),
+    markConnected: () => Effect.void,
+    markDisconnected: () => Effect.void,
+  }),
+  Layer.mock(ServerAuth)({
+    getDescriptor: () => Effect.succeed(authDescriptor),
+    getSessionState: () => Effect.succeed({ authenticated: false, auth: authDescriptor }),
+    exchangeBootstrapCredential: () =>
+      Effect.succeed({
+        response: {
+          authenticated: true as const,
+          role: "owner" as const,
+          sessionMethod: "browser-session-cookie" as const,
+          expiresAt: DateTime.makeUnsafe(0),
+        },
+        sessionToken: "session-token-test",
+      }),
+    exchangeBootstrapCredentialForBearerSession: () =>
+      Effect.succeed({
+        authenticated: true as const,
+        role: "owner" as const,
+        sessionMethod: "bearer-session-token" as const,
+        expiresAt: DateTime.makeUnsafe(0),
+        sessionToken: "session-token-test",
+      }),
+    issuePairingCredential: () =>
+      Effect.succeed({
+        id: "pairing-link-test",
+        credential: "pairing-token-test",
+        expiresAt: DateTime.makeUnsafe(0),
+      }),
+    listPairingLinks: () => Effect.succeed([]),
+    revokePairingLink: () => Effect.succeed(false),
+    listClientSessions: () => Effect.succeed([]),
+    revokeClientSession: () => Effect.succeed(false),
+    revokeOtherClientSessions: () => Effect.succeed(0),
+    authenticateHttpRequest: () =>
+      Effect.succeed({
+        sessionId: "auth-session-test" as any,
+        subject: "browser",
+        method: "browser-session-cookie" as const,
+        role: "owner" as const,
+        expiresAt: DateTime.makeUnsafe(0),
+      }),
+    authenticateWebSocketUpgrade: () =>
+      Effect.succeed({
+        sessionId: "auth-session-test" as any,
+        subject: "browser",
+        method: "browser-session-cookie" as const,
+        role: "owner" as const,
+        expiresAt: DateTime.makeUnsafe(0),
+      }),
+    issueWebSocketToken: () =>
+      Effect.succeed({
+        token: "ws-token-test",
+        expiresAt: DateTime.makeUnsafe(0),
+      }),
+    issueStartupPairingUrl: () => Effect.succeed("http://localhost/pair#token=pairing-token-test"),
+  }),
 );
 
 const makeBrowserOtlpPayload = (spanName: string) =>
@@ -308,6 +453,7 @@ const buildAppUnderTest = (options?: {
       devUrl,
       noBrowser: true,
       authToken: undefined,
+      desktopBootstrapToken: undefined,
       autoBootstrapProjectFromCwd: false,
       logWebSocketEvents: false,
       ...options?.config,
@@ -318,7 +464,7 @@ const buildAppUnderTest = (options?: {
     });
     const gitStatusBroadcasterLayer = GitStatusBroadcasterLive.pipe(Layer.provide(gitManagerLayer));
 
-    const appLayer = HttpRouter.serve(makeRoutesLayer, {
+    const baseAppLayer = HttpRouter.serve(makeRoutesLayer, {
       disableListenLog: true,
       disableLogger: true,
     }).pipe(
@@ -441,7 +587,17 @@ const buildAppUnderTest = (options?: {
           ...options?.layers?.serverRuntimeStartup,
         }),
       ),
+      Layer.provide(
+        Layer.mock(ServerEnvironment)({
+          getEnvironmentId: Effect.succeed(testEnvironment.environmentId),
+          getDescriptor: Effect.succeed(testEnvironment),
+        }),
+      ),
       Layer.provide(workspaceAndProjectServicesLayer),
+    );
+
+    const appLayer = baseAppLayer.pipe(
+      Layer.provideMerge(authTestLayer),
       Layer.provideMerge(FetchHttpClient.layer),
       Layer.provide(layerConfig),
     );
@@ -463,7 +619,19 @@ type WsRpcClient =
 const withWsRpcClient = <A, E, R>(
   wsUrl: string,
   f: (client: WsRpcClient) => Effect.Effect<A, E, R>,
-) => makeWsRpcClient.pipe(Effect.flatMap(f), Effect.provide(wsRpcProtocolLayer(wsUrl)));
+  options?: {
+    readonly authenticated?: boolean;
+  },
+) => {
+  const targetUrl = new URL(wsUrl);
+  if ((options?.authenticated ?? true) && !targetUrl.searchParams.has("wsToken")) {
+    targetUrl.searchParams.set("wsToken", "ws-token-test");
+  }
+  return makeWsRpcClient.pipe(
+    Effect.flatMap(f),
+    Effect.provide(wsRpcProtocolLayer(targetUrl.toString())),
+  );
+};
 
 const getHttpServerUrl = (pathname = "") =>
   Effect.gen(function* () {
@@ -944,12 +1112,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       const wsUrl = yield* getWsServerUrl("/ws");
       const result = yield* Effect.scoped(
-        withWsRpcClient(wsUrl, (client) =>
-          client[WS_METHODS.projectsSearchEntries]({
-            cwd: workspaceDir,
-            query: "needle",
-            limit: 10,
-          }),
+        withWsRpcClient(
+          wsUrl,
+          (client) =>
+            client[WS_METHODS.projectsSearchEntries]({
+              cwd: workspaceDir,
+              query: "needle",
+              limit: 10,
+            }),
+          { authenticated: false },
         ).pipe(Effect.result),
       );
 
@@ -958,7 +1129,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("accepts websocket rpc handshake when auth token is provided", () =>
+  it.effect("accepts websocket rpc handshake when websocket session token is provided", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -974,7 +1145,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         },
       });
 
-      const wsUrl = yield* getWsServerUrl("/ws?token=secret-token");
+      const wsUrl = yield* getWsServerUrl("/ws");
       const response = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[WS_METHODS.projectsSearchEntries]({
@@ -1094,6 +1265,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             sequence: 1,
             type: "welcome" as const,
             payload: {
+              environment: testEnvironment,
               cwd: "/tmp/project",
               projectName: "project",
             },
@@ -1103,7 +1275,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           version: 1 as const,
           sequence: 2,
           type: "ready" as const,
-          payload: { at: new Date().toISOString() },
+          payload: {
+            at: new Date().toISOString(),
+            environment: testEnvironment,
+          },
         });
 
         yield* buildAppUnderTest({

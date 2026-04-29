@@ -37,6 +37,7 @@ Use it together with [Upstream Merge Policy](governance/upstream_merge_policy.md
 - `F6` fork first GitHub identity resolution
 - `F7` local branch, worktree, and promotion workflow
 - `F8` plan aware sidebar and activity status cues
+- `F9` plan markdown preview and markdown rendering behavior
 
 ## F1 Branding And Release Identity
 
@@ -282,6 +283,44 @@ Thread and sidebar status cues reflect plan state directly instead of collapsing
 - Threads with active plan steps show fractional progress when the data exists.
 - Plan ready and in progress cues render in sidebar and thread activity surfaces.
 - Plan sidebar remains reachable from the thread view.
+
+## F9 Plan Markdown Preview And Markdown Rendering Behavior
+
+### Intent
+
+Plan review and markdown presentation preserve fork specific preview flows and readability behavior instead of falling back to a narrower generic upstream markdown surface.
+
+### Required Behavior
+
+- Proposed plans can open into a fullscreen in memory markdown preview without requiring a workspace file write first.
+- Plan preview keeps plan specific actions such as copy, download, and explicit save to workspace.
+- Plan preview keeps route driven return behavior so the user can move back to chat cleanly.
+- Markdown rendering preserves horizontal overflow handling for wide tables and code blocks in chat and document surfaces.
+- Plan and markdown document links keep fork specific navigation behavior for workspace paths, local anchors, and external links.
+- The document renderer can hide the source footer when the preview is virtual rather than backed by a real workspace file.
+
+### Owner Modules
+
+- `apps/web/src/components/ChatMarkdown.tsx`
+- `apps/web/src/components/DocumentMarkdownRenderer.tsx`
+- `apps/web/src/components/PlanConversationDocument.tsx`
+- `apps/web/src/components/chat/ProposedPlanCard.tsx`
+- `apps/web/src/components/PlanSidebar.tsx`
+- `apps/web/src/components/ChatView.tsx`
+- `apps/web/src/routes/_chat.$threadId.tsx`
+- `apps/web/src/index.css`
+
+### Upstream Intake Rule
+
+- Adapt upstream markdown and document preview changes under the fork plan preview contract.
+- Reject upstream changes that remove fullscreen in memory plan preview, regress plan specific navigation, or reintroduce clipped markdown content in the protected surfaces.
+
+### Verification
+
+- A proposed plan can open in fullscreen markdown preview from the timeline card and the plan sidebar.
+- Returning from fullscreen plan preview restores the chat route without forcing a workspace write.
+- Wide markdown tables and code blocks remain horizontally scrollable instead of stretching or clipping the layout.
+- Workspace path links, local heading links, and external links keep the expected fork navigation behavior in plan preview and markdown document surfaces.
 
 ## Change Procedure
 

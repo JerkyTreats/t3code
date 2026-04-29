@@ -1,6 +1,11 @@
 import "../../index.css";
 
-import { DEFAULT_SERVER_SETTINGS, type NativeApi, type ServerConfig } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
+  type NativeApi,
+  type ServerConfig,
+} from "@t3tools/contracts";
 import { page } from "vitest/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
@@ -12,6 +17,24 @@ import { GeneralSettingsPanel } from "./SettingsPanels";
 
 function createBaseServerConfig(): ServerConfig {
   return {
+    environment: {
+      environmentId: EnvironmentId.makeUnsafe("environment-test"),
+      label: "Test environment",
+      platform: {
+        os: "linux",
+        arch: "x64",
+      },
+      serverVersion: "0.0.16",
+      capabilities: {
+        repositoryIdentity: true,
+      },
+    },
+    auth: {
+      policy: "loopback-browser",
+      bootstrapMethods: ["one-time-token"],
+      sessionMethods: ["browser-session-cookie", "bearer-session-token"],
+      sessionCookieName: "t3_session",
+    },
     cwd: "/repo/project",
     keybindingsConfigPath: "/repo/project/.t3code-keybindings.json",
     keybindings: [],
