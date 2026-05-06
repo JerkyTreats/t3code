@@ -4,6 +4,7 @@ import { type CxOptions, cx } from "class-variance-authority";
 import { twMerge } from "tailwind-merge";
 import * as Random from "effect/Random";
 import * as Effect from "effect/Effect";
+import { getDesktopWebSocketToken } from "../serverAuthBootstrap";
 
 export function cn(...inputs: CxOptions) {
   return twMerge(cx(inputs));
@@ -73,6 +74,15 @@ export const resolveServerUrl = (options?: {
   }
   if (options?.searchParams) {
     parsedUrl.search = new URLSearchParams(options.searchParams).toString();
+  }
+  const desktopWebSocketToken = getDesktopWebSocketToken();
+  if (
+    desktopWebSocketToken &&
+    (parsedUrl.protocol === "ws:" || parsedUrl.protocol === "wss:") &&
+    parsedUrl.pathname === "/ws" &&
+    !parsedUrl.searchParams.has("wsToken")
+  ) {
+    parsedUrl.searchParams.set("wsToken", desktopWebSocketToken);
   }
   return parsedUrl.toString();
 };

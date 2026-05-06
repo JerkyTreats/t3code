@@ -1,6 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { PairingPendingSurface, PairingRouteSurface } from "../components/auth/PairingRouteSurface";
+import {
+  PairingPendingSurface,
+  PairingRouteSurface,
+  PairingUnavailableSurface,
+} from "../components/auth/PairingRouteSurface";
 import { refreshServerAuthGateState, useServerAuthGateState } from "../serverAuthBootstrap";
 
 export const Route = createFileRoute("/pair")({
@@ -16,6 +20,10 @@ function PairRouteView() {
 
   if (authGateState.status === "authenticated") {
     return <PairingPendingSurface />;
+  }
+
+  if (authGateState.status === "unavailable") {
+    return <PairingUnavailableSurface errorMessage={authGateState.errorMessage} />;
   }
 
   return (

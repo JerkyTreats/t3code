@@ -13,6 +13,22 @@ import { deriveAuthClientMetadata } from "./utils";
 import { AuthError, ServerAuth } from "./Services/ServerAuth";
 import { SessionCredentialService } from "./Services/SessionCredentialService";
 
+function redactHeader(value: string | undefined): string {
+  if (!value) return "missing";
+  return "present";
+}
+
+function authRouteRequestLogFields(request: HttpServerRequest.HttpServerRequest) {
+  return {
+    accept: request.headers.accept ?? "missing",
+    authorization: redactHeader(request.headers.authorization),
+    cookie: redactHeader(request.headers.cookie),
+    host: request.headers.host ?? "missing",
+    origin: request.headers.origin ?? "missing",
+    userAgent: request.headers["user-agent"] ?? "missing",
+  };
+}
+
 export const respondToAuthError = (error: AuthError) =>
   Effect.gen(function* () {
     if ((error.status ?? 500) >= 500) {
@@ -35,7 +51,13 @@ export const authSessionRouteLayer = HttpRouter.add(
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const serverAuth = yield* ServerAuth;
+    yield* Effect.logInfo("auth session request received", authRouteRequestLogFields(request));
     const session = yield* serverAuth.getSessionState(request);
+    yield* Effect.logInfo("auth session request completed", {
+      authenticated: session.authenticated,
+      policy: session.auth.policy,
+      ...(session.authenticated ? { sessionMethod: session.sessionMethod } : {}),
+    });
     return HttpServerResponse.jsonUnsafe(session, { status: 200 });
   }),
 );
@@ -64,6 +86,7 @@ export const authBootstrapRouteLayer = HttpRouter.add(
     const request = yield* HttpServerRequest.HttpServerRequest;
     const serverAuth = yield* ServerAuth;
     const sessions = yield* SessionCredentialService;
+    yield* Effect.logInfo("auth bootstrap request received", authRouteRequestLogFields(request));
     const payload = yield* HttpServerRequest.schemaBodyJson(AuthBootstrapInput).pipe(
       Effect.mapError(
         (cause) =>
@@ -78,6 +101,11 @@ export const authBootstrapRouteLayer = HttpRouter.add(
       payload.credential,
       deriveAuthClientMetadata({ request }),
     );
+    yield* Effect.logInfo("auth bootstrap request completed", {
+      expiresAt: result.response.expiresAt.toString(),
+      role: result.response.role,
+      sessionMethod: result.response.sessionMethod,
+    });
 
     return yield* HttpServerResponse.jsonUnsafe(result.response, { status: 200 }).pipe(
       HttpServerResponse.setCookie(sessions.cookieName, result.sessionToken, {
@@ -96,6 +124,10 @@ export const authBearerBootstrapRouteLayer = HttpRouter.add(
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const serverAuth = yield* ServerAuth;
+    yield* Effect.logInfo(
+      "auth bearer bootstrap request received",
+      authRouteRequestLogFields(request),
+    );
     const payload = yield* HttpServerRequest.schemaBodyJson(AuthBootstrapInput).pipe(
       Effect.mapError(
         (cause) =>
@@ -110,6 +142,12 @@ export const authBearerBootstrapRouteLayer = HttpRouter.add(
       payload.credential,
       deriveAuthClientMetadata({ request }),
     );
+    yield* Effect.logInfo("auth bearer bootstrap request completed", {
+      expiresAt: result.expiresAt.toString(),
+      role: result.role,
+      sessionMethod: result.sessionMethod,
+      sessionToken: "present",
+    });
     return HttpServerResponse.jsonUnsafe(result satisfies AuthBearerBootstrapResult, {
       status: 200,
     });

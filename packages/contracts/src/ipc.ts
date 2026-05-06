@@ -137,6 +137,7 @@ export interface DesktopEnvironmentBootstrap {
   httpBaseUrl: string | null;
   wsBaseUrl: string | null;
   bootstrapToken?: string;
+  sessionToken?: string;
 }
 
 export interface PersistedSavedEnvironmentRecord {

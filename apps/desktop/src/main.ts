@@ -14,10 +14,11 @@ import {
   nativeTheme,
   protocol,
   safeStorage,
+  session,
   shell,
 } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
-import type {
+import {
   ClientSettings,
   DesktopEnvironmentBootstrap,
   DesktopScreenshotCapture,
@@ -118,6 +119,14 @@ const AUTO_UPDATE_STARTUP_DELAY_MS = 15_000;
 const AUTO_UPDATE_POLL_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const DESKTOP_UPDATE_CHANNEL = "latest";
 const DESKTOP_UPDATE_ALLOW_PRERELEASE = false;
+const DESKTOP_SESSION_COOKIE_NAME = "t3_session";
+
+type BrowserSessionBootstrapJson = {
+  readonly authenticated?: unknown;
+  readonly expiresAt?: unknown;
+  readonly sessionMethod?: unknown;
+  readonly sessionToken?: unknown;
+};
 
 type DesktopUpdateErrorContext = DesktopUpdateState["errorContext"];
 type LinuxDesktopNamedApp = Electron.App & {
@@ -129,6 +138,7 @@ let backendProcess: ChildProcess.ChildProcess | null = null;
 let backendPort = 0;
 let backendAuthToken = "";
 let backendBootstrapToken = "";
+let backendBrowserSessionToken = "";
 let backendHttpUrl = "";
 let backendWsUrl = "";
 let backendReadinessAbortController: AbortController | null = null;
@@ -193,8 +203,12 @@ function backendChildEnv(): NodeJS.ProcessEnv {
 }
 
 function writeDesktopLogHeader(message: string): void {
-  if (!desktopLogSink) return;
-  desktopLogSink.write(`[${logTimestamp()}] [${logScope("desktop")}] ${message}\n`);
+  const line = `[${logTimestamp()}] [${logScope("desktop")}] ${message}`;
+  if (!desktopLogSink) {
+    console.info(line);
+    return;
+  }
+  desktopLogSink.write(`${line}\n`);
 }
 
 function writeBackendSessionBoundary(phase: "START" | "END", details: string): void {
@@ -281,6 +295,7 @@ function cancelBackendReadinessWait(): void {
 }
 
 async function waitForBackendWindowReady(baseUrl: string): Promise<"listening" | "http"> {
+  writeDesktopLogHeader(`backend window readiness wait start baseUrl=${baseUrl}`);
   const httpReadyPromise = waitForBackendHttpReady(baseUrl, {
     timeoutMs: 60_000,
   });
@@ -331,13 +346,24 @@ async function waitForBackendWindowReady(baseUrl: string): Promise<"listening" |
 
 function ensureInitialBackendWindowOpen(): void {
   const existingWindow = mainWindow ?? BrowserWindow.getAllWindows()[0] ?? null;
-  if (isDevelopment || existingWindow !== null || backendInitialWindowOpenInFlight !== null) {
+  if (existingWindow !== null || backendInitialWindowOpenInFlight !== null) {
+    writeDesktopLogHeader(
+      `bootstrap initial window open skipped existingWindow=${String(existingWindow !== null)} inFlight=${String(backendInitialWindowOpenInFlight !== null)}`,
+    );
     return;
   }
 
   const nextOpen = waitForBackendWindowReady(backendHttpUrl)
-    .then((source) => {
+    .then(async (source) => {
       writeDesktopLogHeader(`bootstrap backend ready source=${source}`);
+      try {
+        await bootstrapDesktopBrowserSession();
+      } catch (error) {
+        writeDesktopLogHeader(
+          `desktop browser session bootstrap warning message=${formatErrorMessage(error)}`,
+        );
+      }
+      await clearDesktopRendererCache();
       if (mainWindow ?? BrowserWindow.getAllWindows()[0]) {
         return;
       }
@@ -360,6 +386,73 @@ function ensureInitialBackendWindowOpen(): void {
     });
 
   backendInitialWindowOpenInFlight = nextOpen;
+}
+
+async function bootstrapDesktopBrowserSession(): Promise<void> {
+  if (!backendHttpUrl || !backendBootstrapToken) {
+    writeDesktopLogHeader("desktop browser session bootstrap skipped reason=missing-backend-auth");
+    return;
+  }
+
+  writeDesktopLogHeader(
+    `desktop browser session bootstrap start url=${backendHttpUrl}/api/auth/bootstrap/bearer token=present`,
+  );
+  const response = await fetch(`${backendHttpUrl}/api/auth/bootstrap/bearer`, {
+    body: JSON.stringify({ credential: backendBootstrapToken }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
+  writeDesktopLogHeader(`desktop browser session bootstrap response status=${response.status}`);
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `Failed to bootstrap desktop browser session status=${response.status} body=${body}`,
+    );
+  }
+
+  const result = (await response.json()) as BrowserSessionBootstrapJson;
+  if (
+    result.authenticated !== true ||
+    result.sessionMethod !== "bearer-session-token" ||
+    typeof result.sessionToken !== "string" ||
+    result.sessionToken.length === 0 ||
+    typeof result.expiresAt !== "string"
+  ) {
+    throw new Error("Desktop browser session bootstrap returned an invalid response");
+  }
+
+  const expiresAt = new Date(result.expiresAt);
+  if (!Number.isFinite(expiresAt.getTime())) {
+    throw new Error(
+      `Desktop browser session bootstrap returned invalid expiresAt=${result.expiresAt}`,
+    );
+  }
+
+  backendBrowserSessionToken = result.sessionToken;
+  await session.defaultSession.cookies.set({
+    expirationDate: expiresAt.getTime() / 1000,
+    httpOnly: true,
+    name: DESKTOP_SESSION_COOKIE_NAME,
+    path: "/",
+    sameSite: "lax",
+    url: backendHttpUrl,
+    value: result.sessionToken,
+  });
+  writeDesktopLogHeader(
+    `desktop browser session bootstrapped expiresAt=${expiresAt.toISOString()} token=present`,
+  );
+}
+
+async function clearDesktopRendererCache(): Promise<void> {
+  try {
+    await session.defaultSession.clearCache();
+    writeDesktopLogHeader("desktop renderer cache cleared");
+  } catch (error) {
+    writeDesktopLogHeader(
+      `desktop renderer cache clear warning message=${formatErrorMessage(error)}`,
+    );
+  }
 }
 
 function writeDesktopStreamChunk(
@@ -1243,6 +1336,9 @@ function startBackend(): void {
 
   backendObservabilitySettings = readPersistedBackendObservabilitySettings();
   const backendEntry = resolveBackendEntry();
+  writeDesktopLogHeader(
+    `backend start requested entry=${backendEntry} exists=${String(FS.existsSync(backendEntry))} cwd=${resolveBackendCwd()} port=${backendPort} authToken=${backendAuthToken ? "present" : "missing"} desktopBootstrapToken=${backendBootstrapToken ? "present" : "missing"}`,
+  );
   if (!FS.existsSync(backendEntry)) {
     scheduleBackendRestart(`missing server entry at ${backendEntry}`);
     return;
@@ -1265,6 +1361,7 @@ function startBackend(): void {
   if (bootstrapStream && "write" in bootstrapStream) {
     attachBackendStreamErrorHandler("bootstrap", bootstrapStream);
     try {
+      writeDesktopLogHeader("backend bootstrap payload write start");
       bootstrapStream.write(
         `${JSON.stringify({
           mode: "desktop",
@@ -1282,6 +1379,7 @@ function startBackend(): void {
         })}\n`,
       );
       bootstrapStream.end();
+      writeDesktopLogHeader("backend bootstrap payload write complete");
     } catch (error) {
       child.kill("SIGTERM");
       scheduleBackendRestart(`failed to send bootstrap payload: ${formatErrorMessage(error)}`);
@@ -1308,6 +1406,7 @@ function startBackend(): void {
   captureBackendOutput(child);
 
   child.once("spawn", () => {
+    writeDesktopLogHeader(`backend child spawned pid=${child.pid ?? "unknown"}`);
     restartAttempt = 0;
   });
 
@@ -1436,12 +1535,17 @@ function registerIpcHandlers(): void {
       httpBaseUrl: backendHttpUrl || null,
       wsBaseUrl: backendPort > 0 ? `ws://${DESKTOP_LOOPBACK_HOST}:${backendPort}` : null,
       ...(backendBootstrapToken ? { bootstrapToken: backendBootstrapToken } : {}),
+      ...(backendBrowserSessionToken ? { sessionToken: backendBrowserSessionToken } : {}),
     };
+    writeDesktopLogHeader(
+      `ipc local environment bootstrap requested http=${bootstrap.httpBaseUrl ?? "none"} ws=${bootstrap.wsBaseUrl ?? "none"} token=${bootstrap.bootstrapToken ? "present" : "missing"} sessionToken=${bootstrap.sessionToken ? "present" : "missing"}`,
+    );
     event.returnValue = bootstrap;
   });
 
   ipcMain.removeAllListeners(GET_WS_URL_CHANNEL);
   ipcMain.on(GET_WS_URL_CHANNEL, (event) => {
+    writeDesktopLogHeader(`ipc websocket url requested ws=${backendWsUrl || "none"}`);
     event.returnValue = backendWsUrl;
   });
 
@@ -1732,6 +1836,12 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Production loads from `t3://` with `secure: true`, so the document is a "secure" origin.
+      // Renderer `fetch("http://127.0.0.1:…")` is then blocked as mixed active content.
+      // `allowRunningInsecureContent` does not reliably cover `fetch` / XHR (Electron #37551);
+      // disabling web security for this window is limited to packaged builds that only load
+      // our bundled `t3://` shell plus the loopback API.
+      ...(!isDevelopment ? { webSecurity: false } : {}),
     },
   });
 
@@ -1788,7 +1898,9 @@ function createWindow(): BrowserWindow {
     void window.loadURL(process.env.VITE_DEV_SERVER_URL as string);
     window.webContents.openDevTools({ mode: "detach" });
   } else {
-    void window.loadURL(`${DESKTOP_SCHEME}://app/index.html`);
+    const indexUrl = new URL(`${DESKTOP_SCHEME}://app/index.html`);
+    indexUrl.searchParams.set("run", APP_RUN_ID);
+    void window.loadURL(indexUrl.toString());
   }
 
   window.on("closed", () => {
@@ -1832,12 +1944,6 @@ async function bootstrap(): Promise<void> {
   writeDesktopLogHeader("bootstrap desktop theme watcher registered");
   startBackend();
   writeDesktopLogHeader("bootstrap backend start requested");
-  if (isDevelopment) {
-    mainWindow = createWindow();
-    writeDesktopLogHeader("bootstrap main window created");
-  } else {
-    ensureInitialBackendWindowOpen();
-  }
 }
 
 app.on("before-quit", () => {

@@ -16,7 +16,11 @@ import { Throttler } from "@tanstack/react-pacer";
 
 import { APP_DISPLAY_NAME } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
-import { PairingPendingSurface } from "../components/auth/PairingRouteSurface";
+import {
+  PairingPendingSurface,
+  PairingRouteSurface,
+  PairingUnavailableSurface,
+} from "../components/auth/PairingRouteSurface";
 import {
   SlowRpcAckToastCoordinator,
   WebSocketConnectionCoordinator,
@@ -49,7 +53,11 @@ import { collectActiveTerminalThreadIds } from "../lib/terminalStateCleanup";
 import { deriveOrchestrationBatchEffects } from "../orchestrationEventEffects";
 import { createOrchestrationRecoveryCoordinator } from "../orchestrationRecovery";
 import { deriveReplayRetryDecision } from "../orchestrationRecovery";
-import { startServerAuthGateBootstrap, useServerAuthGateState } from "../serverAuthBootstrap";
+import {
+  refreshServerAuthGateState,
+  startServerAuthGateBootstrap,
+  useServerAuthGateState,
+} from "../serverAuthBootstrap";
 import { getWsRpcClient } from "~/wsRpcClient";
 
 export const Route = createRootRouteWithContext<{
@@ -87,15 +95,27 @@ function RootRouteView() {
     return <PairingPendingSurface />;
   }
 
-  if (authGateState.status === "requires-auth") {
-    if (pathname !== "/pair") {
-      return <PairingPendingSurface />;
-    }
+  if (authGateState.status === "unavailable") {
+    return <PairingUnavailableSurface errorMessage={authGateState.errorMessage} />;
+  }
 
+  if (authGateState.status === "requires-auth") {
     return (
       <ToastProvider>
         <AnchoredToastProvider>
-          <Outlet />
+          {pathname === "/pair" ? (
+            <Outlet />
+          ) : (
+            <PairingRouteSurface
+              auth={authGateState.auth}
+              onAuthenticated={() => {
+                void refreshServerAuthGateState();
+              }}
+              {...(authGateState.errorMessage
+                ? { initialErrorMessage: authGateState.errorMessage }
+                : {})}
+            />
+          )}
         </AnchoredToastProvider>
       </ToastProvider>
     );

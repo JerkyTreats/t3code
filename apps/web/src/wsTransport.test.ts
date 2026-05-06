@@ -82,6 +82,18 @@ class MockWebSocket {
 
 const originalWebSocket = globalThis.WebSocket;
 const originalFetch = globalThis.fetch;
+const testEnvironment = {
+  environmentId: "env-local",
+  label: "Local",
+  platform: {
+    os: "linux",
+    arch: "x64",
+  },
+  serverVersion: "0.0.17",
+  capabilities: {
+    repositoryIdentity: false,
+  },
+} as const;
 
 function getSocket(): MockWebSocket {
   const socket = sockets.at(-1);
@@ -436,6 +448,7 @@ describe("WsTransport", () => {
       sequence: 1,
       type: "welcome",
       payload: {
+        environment: testEnvironment,
         cwd: "/tmp/workspace",
         projectName: "workspace",
       },
@@ -489,6 +502,7 @@ describe("WsTransport", () => {
             sequence: 1,
             type: "welcome",
             payload: {
+              environment: testEnvironment,
               cwd: "/tmp/one",
               projectName: "one",
             },
@@ -532,6 +546,7 @@ describe("WsTransport", () => {
       sequence: 2,
       type: "welcome",
       payload: {
+        environment: testEnvironment,
         cwd: "/tmp/two",
         projectName: "two",
       },

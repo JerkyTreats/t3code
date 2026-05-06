@@ -5,6 +5,7 @@ import {
   HttpBody,
   HttpClient,
   HttpClientResponse,
+  HttpMiddleware,
   HttpRouter,
   HttpServerResponse,
   HttpServerRequest,
@@ -28,11 +29,81 @@ import { ProjectFaviconResolver } from "./project/Services/ProjectFaviconResolve
 const PROJECT_FAVICON_CACHE_CONTROL = "public, max-age=3600";
 const FALLBACK_PROJECT_FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#6b728080" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-fallback="project-favicon"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"/></svg>`;
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
+const BROWSER_API_CORS_ALLOWED_METHODS = ["GET", "POST", "OPTIONS"] as const;
+const BROWSER_API_CORS_ALLOWED_HEADERS = [
+  "authorization",
+  "b3",
+  "traceparent",
+  "content-type",
+] as const;
+const BROWSER_API_CORS_MAX_AGE_SECONDS = 600;
 
-export const browserApiCorsLayer = HttpRouter.cors({
-  allowedMethods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["authorization", "b3", "traceparent", "content-type"],
-  maxAge: 600,
+function isBrowserApiCorsOriginAllowed(origin: string | undefined): origin is string {
+  if (!origin) {
+    return false;
+  }
+  if (origin === "t3://app") {
+    return true;
+  }
+
+  try {
+    const url = new URL(origin);
+    return (
+      url.protocol === "http:" &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function browserApiCorsHeaders(
+  request: HttpServerRequest.HttpServerRequest,
+  options: { includePreflightHeaders: boolean },
+): Record<string, string> {
+  const origin = request.headers.origin;
+  if (!isBrowserApiCorsOriginAllowed(origin)) {
+    return {};
+  }
+
+  const headers: Record<string, string> = {
+    "access-control-allow-credentials": "true",
+    "access-control-allow-origin": origin,
+    vary: "Origin",
+  };
+
+  if (options.includePreflightHeaders) {
+    headers["access-control-allow-headers"] = BROWSER_API_CORS_ALLOWED_HEADERS.join(",");
+    headers["access-control-allow-methods"] = BROWSER_API_CORS_ALLOWED_METHODS.join(", ");
+    headers["access-control-max-age"] = String(BROWSER_API_CORS_MAX_AGE_SECONDS);
+    if (request.headers["access-control-request-private-network"] === "true") {
+      headers["access-control-allow-private-network"] = "true";
+    }
+  }
+
+  return headers;
+}
+
+const browserApiCorsMiddleware = HttpMiddleware.make((httpApp) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    if (request.method === "OPTIONS") {
+      return HttpServerResponse.empty({
+        headers: browserApiCorsHeaders(request, { includePreflightHeaders: true }),
+        status: 204,
+      });
+    }
+
+    const response = yield* httpApp;
+    return HttpServerResponse.setHeaders(
+      response,
+      browserApiCorsHeaders(request, { includePreflightHeaders: false }),
+    );
+  }),
+);
+
+export const browserApiCorsLayer = HttpRouter.middleware(browserApiCorsMiddleware, {
+  global: true,
 });
 
 const requireAuthenticatedRequest = Effect.gen(function* () {
