@@ -125,6 +125,37 @@ describe("resolveSupportedCodexCliBinary", () => {
     });
   });
 
+  it("does not replace an explicit preferred path when it must be respected", () => {
+    process.env.CODEX_BINARY_PATH = "/opt/bin/codex";
+    spawnSyncMock.mockImplementation((binaryPath: string) => {
+      if (binaryPath === "/custom/codex") {
+        return {
+          error: undefined,
+          status: 0,
+          stdout: "codex 0.42.0\n",
+          stderr: "",
+        };
+      }
+      return {
+        error: undefined,
+        status: 0,
+        stdout: "codex 0.45.0\n",
+        stderr: "",
+      };
+    });
+
+    expect(
+      resolveSupportedCodexCliBinary({
+        preferredBinaryPath: "/custom/codex",
+        respectPreferredBinaryPath: true,
+        cwd: "/repo",
+      }),
+    ).toEqual({
+      binaryPath: "/custom/codex",
+      version: "0.42.0",
+    });
+  });
+
   it("falls back to a later candidate when the preferred path is too old", () => {
     process.env.CODEX_BINARY_PATH = "/opt/bin/codex";
     spawnSyncMock.mockImplementation((binaryPath: string) => {

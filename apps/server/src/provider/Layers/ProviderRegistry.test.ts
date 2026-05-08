@@ -221,6 +221,56 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
         ),
       );
 
+      it.effect("uses the codex app-server model catalog when available", () =>
+        Effect.gen(function* () {
+          yield* withTempCodexHome();
+          const status = yield* checkCodexProviderStatus(() =>
+            Effect.succeed({
+              account: {
+                type: "chatgpt" as const,
+                planType: "plus" as const,
+                sparkEnabled: false,
+              },
+              models: [
+                {
+                  slug: "gpt-5.5",
+                  name: "GPT-5.5",
+                  isCustom: false,
+                  capabilities: {
+                    reasoningEffortLevels: [
+                      { value: "high" as const, label: "High", isDefault: true },
+                    ],
+                    supportsFastMode: true,
+                    supportsThinkingToggle: false,
+                    contextWindowOptions: [],
+                    promptInjectedEffortLevels: [],
+                  },
+                },
+              ],
+            }),
+          );
+
+          assert.strictEqual(status.provider, "codex");
+          assert.strictEqual(
+            status.models.some((model) => model.slug === "gpt-5.5"),
+            true,
+          );
+          assert.strictEqual(
+            status.models.some((model) => model.slug === "gpt-5.4"),
+            false,
+          );
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "codex 1.0.0\n", stderr: "", code: 0 };
+              if (joined === "login status") return { stdout: "Logged in\n", stderr: "", code: 0 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
       it.effect("hides spark from codex models for unsupported chatgpt plans", () =>
         Effect.gen(function* () {
           yield* withTempCodexHome();

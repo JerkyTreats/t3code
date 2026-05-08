@@ -2,6 +2,7 @@ import type {
   ModelCapabilities,
   ServerProvider,
   ServerProviderAuth,
+  ServerProviderBinaryCandidate,
   ServerProviderModel,
   ServerProviderState,
 } from "@t3tools/contracts";
@@ -24,6 +25,7 @@ export interface ProviderProbeResult {
   readonly status: Exclude<ServerProviderState, "disabled">;
   readonly auth: ServerProviderAuth;
   readonly message?: string;
+  readonly binaryCandidates?: ReadonlyArray<ServerProviderBinaryCandidate>;
 }
 
 export function nonEmptyTrimmed(value: string | undefined): string | undefined {
@@ -147,6 +149,9 @@ export function buildServerProvider(input: {
     checkedAt: input.checkedAt,
     ...(input.probe.message ? { message: input.probe.message } : {}),
     models: input.models,
+    ...(input.probe.binaryCandidates
+      ? { binaryCandidates: [...input.probe.binaryCandidates] }
+      : {}),
   };
 }
 

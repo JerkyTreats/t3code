@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import * as Path from "node:path";
 
 import {
   compareCodexCliVersions,
@@ -16,13 +17,23 @@ export interface CodexCliBinaryCandidate {
 
 export interface CodexCliBinaryResolutionInput {
   readonly preferredBinaryPath?: string;
+  readonly respectPreferredBinaryPath?: boolean;
   readonly cwd: string;
   readonly homePath?: string;
 }
 
 function collectCodexCliBinaryCandidates(
-  input: Pick<CodexCliBinaryResolutionInput, "preferredBinaryPath">,
+  input: Pick<CodexCliBinaryResolutionInput, "preferredBinaryPath" | "respectPreferredBinaryPath">,
 ): ReadonlyArray<string> {
+  const preferred = input.preferredBinaryPath?.trim();
+  if (preferred && preferred !== "codex" && input.respectPreferredBinaryPath) {
+    const isExplicitPath =
+      Path.isAbsolute(preferred) || preferred.includes("/") || preferred.includes("\\");
+    if (isExplicitPath) {
+      return [preferred];
+    }
+  }
+
   return [input.preferredBinaryPath, process.env.CODEX_BINARY_PATH, "codex"].filter(
     (value, index, values): value is string => {
       if (!value || value.trim().length === 0) {

@@ -1,5 +1,7 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
+import type { ServerProviderModel } from "@t3tools/contracts";
+import type { ModelCapabilities } from "@t3tools/contracts";
 import { readCodexAccountSnapshot, type CodexAccountSnapshot } from "./codexAccount";
 
 interface JsonRpcProbeResponse {
@@ -10,16 +12,78 @@ interface JsonRpcProbeResponse {
   };
 }
 
+export interface CodexAppServerSnapshot {
+  readonly account: CodexAccountSnapshot;
+  readonly models: ReadonlyArray<ServerProviderModel>;
+}
+
+const DEFAULT_CODEX_MODEL_CAPABILITIES: ModelCapabilities = {
+  reasoningEffortLevels: [
+    { value: "xhigh", label: "Extra High" },
+    { value: "high", label: "High", isDefault: true },
+    { value: "medium", label: "Medium" },
+    { value: "low", label: "Low" },
+  ],
+  supportsFastMode: true,
+  supportsThinkingToggle: false,
+  contextWindowOptions: [],
+  promptInjectedEffortLevels: [],
+};
+
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
+function formatModelName(slug: string): string {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((part) =>
+      part.length <= 3 ? part.toUpperCase() : `${part.charAt(0).toUpperCase()}${part.slice(1)}`,
+    )
+    .join("-");
+}
+
+function parseCodexModelList(response: unknown): ReadonlyArray<ServerProviderModel> {
+  const data = asObject(response)?.data;
+  if (!Array.isArray(data)) {
+    return [];
+  }
+
+  const models: ServerProviderModel[] = [];
+  const seen = new Set<string>();
+  for (const entry of data) {
+    const record = asObject(entry);
+    const slug = asString(record?.id) ?? asString(record?.model);
+    if (!slug || seen.has(slug)) {
+      continue;
+    }
+    seen.add(slug);
+    models.push({
+      slug,
+      name: asString(record?.displayName) ?? formatModelName(slug),
+      isCustom: false,
+      capabilities: DEFAULT_CODEX_MODEL_CAPABILITIES,
+    });
+  }
+
+  return models;
+}
+
 function readErrorMessage(response: JsonRpcProbeResponse): string | undefined {
   return typeof response.error?.message === "string" ? response.error.message : undefined;
 }
 
-export function buildCodexInitializeParams() {
+export function buildCodexInitializeParams(input?: { readonly clientVersion?: string | null }) {
   return {
     clientInfo: {
       name: "t3code_desktop",
       title: "T3 Code Desktop",
-      version: "0.1.0",
+      version: input?.clientVersion ?? "0.1.0",
     },
     capabilities: {
       experimentalApi: true,
@@ -42,9 +106,19 @@ export function killCodexChildProcess(child: ChildProcessWithoutNullStreams): vo
 
 export async function probeCodexAccount(input: {
   readonly binaryPath: string;
+  readonly clientVersion?: string | null;
   readonly homePath?: string;
   readonly signal?: AbortSignal;
 }): Promise<CodexAccountSnapshot> {
+  return (await probeCodexAppServerSnapshot(input)).account;
+}
+
+export async function probeCodexAppServerSnapshot(input: {
+  readonly binaryPath: string;
+  readonly clientVersion?: string | null;
+  readonly homePath?: string;
+  readonly signal?: AbortSignal;
+}): Promise<CodexAppServerSnapshot> {
   return await new Promise((resolve, reject) => {
     const child = spawn(input.binaryPath, ["app-server"], {
       env: {
@@ -57,6 +131,7 @@ export async function probeCodexAccount(input: {
     const output = readline.createInterface({ input: child.stdout });
 
     let completed = false;
+    let accountSnapshot: CodexAccountSnapshot | undefined;
 
     const cleanup = () => {
       output.removeAllListeners();
@@ -112,6 +187,26 @@ export async function probeCodexAccount(input: {
       }
 
       const response = parsed as JsonRpcProbeResponse;
+      if (response.id === 3) {
+        const account = accountSnapshot;
+        if (!account) {
+          return;
+        }
+
+        if (readErrorMessage(response)) {
+          finish(() => resolve({ account, models: [] }));
+          return;
+        }
+
+        finish(() =>
+          resolve({
+            account,
+            models: parseCodexModelList(response.result),
+          }),
+        );
+        return;
+      }
+
       if (response.id === 1) {
         const errorMessage = readErrorMessage(response);
         if (errorMessage) {
@@ -131,7 +226,8 @@ export async function probeCodexAccount(input: {
           return;
         }
 
-        finish(() => resolve(readCodexAccountSnapshot(response.result)));
+        accountSnapshot = readCodexAccountSnapshot(response.result);
+        writeMessage({ id: 3, method: "model/list", params: {} });
       }
     });
 
@@ -148,7 +244,9 @@ export async function probeCodexAccount(input: {
     writeMessage({
       id: 1,
       method: "initialize",
-      params: buildCodexInitializeParams(),
+      params: buildCodexInitializeParams(
+        input.clientVersion !== undefined ? { clientVersion: input.clientVersion } : undefined,
+      ),
     });
   });
 }

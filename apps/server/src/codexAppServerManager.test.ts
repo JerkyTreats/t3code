@@ -382,6 +382,19 @@ describe("startSession", () => {
     });
   });
 
+  it("uses the resolved Codex CLI version when initializing app-server", () => {
+    expect(buildCodexInitializeParams({ clientVersion: "0.128.0" })).toEqual({
+      clientInfo: {
+        name: "t3code_desktop",
+        title: "T3 Code Desktop",
+        version: "0.128.0",
+      },
+      capabilities: {
+        experimentalApi: true,
+      },
+    });
+  });
+
   it("emits session/startFailed when resolving cwd throws before process launch", async () => {
     const manager = new CodexAppServerManager();
     const events: Array<{ method: string; kind: string; message?: string }> = [];

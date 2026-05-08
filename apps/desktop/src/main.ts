@@ -199,7 +199,40 @@ function backendChildEnv(): NodeJS.ProcessEnv {
   delete env.T3CODE_NO_BROWSER;
   delete env.T3CODE_HOST;
   delete env.T3CODE_DESKTOP_WS_URL;
+
+  const configuredCodexBinaryPath = readConfiguredCodexBinaryPath();
+  if (configuredCodexBinaryPath) {
+    env.CODEX_BINARY_PATH = configuredCodexBinaryPath;
+    env.T3CODE_CODEX_BINARY_PATH = configuredCodexBinaryPath;
+  }
+
   return env;
+}
+
+function readConfiguredCodexBinaryPath(): string | undefined {
+  try {
+    if (!FS.existsSync(SERVER_SETTINGS_PATH)) {
+      return undefined;
+    }
+
+    const parsed = JSON.parse(FS.readFileSync(SERVER_SETTINGS_PATH, "utf8")) as {
+      readonly providers?: {
+        readonly codex?: {
+          readonly binaryPath?: unknown;
+        };
+      };
+    };
+    const binaryPath = parsed.providers?.codex?.binaryPath;
+    if (typeof binaryPath !== "string") {
+      return undefined;
+    }
+
+    const trimmed = binaryPath.trim();
+    return trimmed.length > 0 && trimmed !== "codex" ? trimmed : undefined;
+  } catch (error) {
+    console.warn("[desktop] failed to read configured Codex binary path", error);
+    return undefined;
+  }
 }
 
 function writeDesktopLogHeader(message: string): void {

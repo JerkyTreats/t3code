@@ -29,6 +29,7 @@ import {
 } from "./provider/codexAccount";
 import {
   assertSupportedCodexCliVersion as assertSupportedCodexCliVersionHelper,
+  type CodexCliBinaryCandidate,
   resolveSupportedCodexCliBinaryPath as resolveSupportedCodexCliBinaryPathHelper,
 } from "./provider/codexCliBinary";
 import { buildCodexInitializeParams, killCodexChildProcess } from "./provider/codexAppServer";
@@ -466,9 +467,10 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
       const codexBinaryPath = this.resolveSupportedCodexCliBinaryPath({
         cwd: resolvedCwd,
         ...(codexOptions.binaryPath ? { preferredBinaryPath: codexOptions.binaryPath } : {}),
+        respectPreferredBinaryPath: codexOptions.binaryPath?.trim() !== "codex",
         ...(codexHomePath ? { homePath: codexHomePath } : {}),
       });
-      this.assertSupportedCodexCliVersion({
+      const codexCli = this.assertSupportedCodexCliVersion({
         binaryPath: codexBinaryPath,
         cwd: resolvedCwd,
         ...(codexHomePath ? { homePath: codexHomePath } : {}),
@@ -506,7 +508,11 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
 
       this.emitLifecycleEvent(context, "session/connecting", "Starting codex app-server");
 
-      await this.sendRequest(context, "initialize", buildCodexInitializeParams());
+      await this.sendRequest(
+        context,
+        "initialize",
+        buildCodexInitializeParams({ clientVersion: codexCli.version }),
+      );
 
       this.writeMessage(context, { method: "initialized" });
       try {
@@ -1303,12 +1309,13 @@ export class CodexAppServerManager extends EventEmitter<CodexAppServerManagerEve
     readonly binaryPath: string;
     readonly cwd: string;
     readonly homePath?: string;
-  }): void {
-    assertSupportedCodexCliVersion(input);
+  }): CodexCliBinaryCandidate {
+    return assertSupportedCodexCliVersion(input);
   }
 
   private resolveSupportedCodexCliBinaryPath(input: {
     readonly preferredBinaryPath?: string;
+    readonly respectPreferredBinaryPath?: boolean;
     readonly cwd: string;
     readonly homePath?: string;
   }): string {
@@ -1584,12 +1591,13 @@ function assertSupportedCodexCliVersion(input: {
   readonly binaryPath: string;
   readonly cwd: string;
   readonly homePath?: string;
-}): void {
-  assertSupportedCodexCliVersionHelper(input);
+}): CodexCliBinaryCandidate {
+  return assertSupportedCodexCliVersionHelper(input);
 }
 
 function resolveSupportedCodexCliBinaryPath(input: {
   readonly preferredBinaryPath?: string;
+  readonly respectPreferredBinaryPath?: boolean;
   readonly cwd: string;
   readonly homePath?: string;
 }): string {

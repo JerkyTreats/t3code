@@ -758,6 +758,7 @@ export function GeneralSettingsPanel() {
       homePathKey: providerSettings.homePathKey,
       homePlaceholder: providerSettings.homePlaceholder,
       homeDescription: providerSettings.homeDescription,
+      binaryCandidates: liveProvider?.binaryCandidates ?? [],
       binaryPathValue: providerConfig.binaryPath,
       isDirty: !Equal.equals(providerConfig, defaultProviderConfig),
       liveProvider,
@@ -1206,6 +1207,57 @@ export function GeneralSettingsPanel() {
                 <CollapsibleContent>
                   <div className="space-y-0">
                     <div className="border-t border-border/60 px-4 py-3 sm:px-5">
+                      {providerCard.binaryCandidates.length > 0 ? (
+                        <div className="mb-3">
+                          <span className="text-xs font-medium text-foreground">
+                            Detected {providerDisplayName} binaries
+                          </span>
+                          <Select
+                            value={
+                              providerCard.binaryCandidates.find((candidate) => candidate.selected)
+                                ?.binaryPath ?? providerCard.binaryCandidates[0]!.binaryPath
+                            }
+                            onValueChange={(binaryPath) =>
+                              updateSettings({
+                                providers: {
+                                  ...settings.providers,
+                                  [providerCard.provider]: {
+                                    ...settings.providers[providerCard.provider],
+                                    binaryPath,
+                                  },
+                                },
+                              })
+                            }
+                          >
+                            <SelectTrigger
+                              className="mt-1.5 w-full"
+                              aria-label={`Detected ${providerDisplayName} binary`}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectPopup align="start" alignItemWithTrigger={false}>
+                              {providerCard.binaryCandidates.map((candidate) => (
+                                <SelectItem
+                                  hideIndicator
+                                  key={candidate.binaryPath}
+                                  value={candidate.binaryPath}
+                                >
+                                  <span className="flex min-w-0 items-center gap-2">
+                                    <code className="min-w-0 truncate text-xs">
+                                      {candidate.binaryPath}
+                                    </code>
+                                    {candidate.version ? (
+                                      <span className="shrink-0 text-xs text-muted-foreground">
+                                        v{candidate.version}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectPopup>
+                          </Select>
+                        </div>
+                      ) : null}
                       <label
                         htmlFor={`provider-install-${providerCard.provider}-binary-path`}
                         className="block"

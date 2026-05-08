@@ -3,6 +3,7 @@ import type {
   ModelCapabilities,
   CodexSettings,
   ServerProvider,
+  ServerProviderBinaryCandidate,
   ServerProviderModel,
   ServerProviderAuth,
   ServerProviderState,
@@ -34,6 +35,7 @@ import {
 } from "../providerSnapshot";
 import { makeManagedServerProvider } from "../makeManagedServerProvider";
 import {
+  compareCodexCliVersions,
   formatCodexCliUpgradeMessage,
   isCodexCliVersionSupported,
   parseCodexCliVersion,
@@ -44,8 +46,11 @@ import {
   codexAuthSubType,
   type CodexAccountSnapshot,
 } from "../codexAccount";
-import { probeCodexAccount } from "../codexAppServer";
-import { resolveSupportedCodexCliBinaryPath } from "../codexCliBinary";
+import { probeCodexAppServerSnapshot, type CodexAppServerSnapshot } from "../codexAppServer";
+import {
+  resolveSupportedCodexCliBinaries,
+  resolveSupportedCodexCliBinaryPath,
+} from "../codexCliBinary";
 import { CodexProvider } from "../Services/CodexProvider";
 import { ServerSettingsService } from "../../serverSettings";
 import { ServerSettingsError } from "@t3tools/contracts";
@@ -307,11 +312,57 @@ export const hasCustomModelProvider = readCodexConfigModelProvider().pipe(
 
 const CAPABILITIES_PROBE_TIMEOUT_MS = 8_000;
 
+function resolveCodexBinaryCandidates(settings: CodexSettings): {
+  readonly selectedBinaryPath: string | null;
+  readonly binaryCandidates: ReadonlyArray<ServerProviderBinaryCandidate>;
+} {
+  const respectPreferredBinaryPath = settings.binaryPath.trim() !== "codex";
+  try {
+    const candidates = resolveSupportedCodexCliBinaries({
+      cwd: process.cwd(),
+      ...(settings.binaryPath ? { preferredBinaryPath: settings.binaryPath } : {}),
+      respectPreferredBinaryPath,
+      ...(settings.homePath ? { homePath: settings.homePath } : {}),
+    });
+    const selected = chooseCodexBinaryCandidate(candidates);
+    return {
+      selectedBinaryPath: selected.binaryPath,
+      binaryCandidates: candidates.map((candidate) => ({
+        binaryPath: candidate.binaryPath,
+        version: candidate.version,
+        selected: candidate.binaryPath === selected.binaryPath,
+      })),
+    };
+  } catch {
+    return { selectedBinaryPath: null, binaryCandidates: [] };
+  }
+}
+
+function chooseCodexBinaryCandidate(
+  candidates: ReadonlyArray<{ readonly binaryPath: string; readonly version: string | null }>,
+): { readonly binaryPath: string; readonly version: string | null } {
+  const [firstCandidate, ...rest] = candidates;
+  if (!firstCandidate) {
+    throw new Error("Codex CLI is not installed or not executable.");
+  }
+
+  return rest.reduce((best, candidate) => {
+    if (!candidate.version) {
+      return best;
+    }
+    if (!best.version || compareCodexCliVersions(candidate.version, best.version) > 0) {
+      return candidate;
+    }
+    return best;
+  }, firstCandidate);
+}
+
 const probeCodexCapabilities = (input: {
   readonly binaryPath: string;
+  readonly clientVersion?: string | null;
   readonly homePath?: string;
 }) =>
-  Effect.tryPromise((signal) => probeCodexAccount({ ...input, signal })).pipe(
+  Effect.tryPromise((signal) => probeCodexAppServerSnapshot({ ...input, signal })).pipe(
     Effect.timeoutOption(CAPABILITIES_PROBE_TIMEOUT_MS),
     Effect.result,
     Effect.map((result) => {
@@ -330,6 +381,7 @@ const runCodexCommand = Effect.fn("runCodexCommand")(function* (args: ReadonlyAr
       resolveSupportedCodexCliBinaryPath({
         cwd: process.cwd(),
         ...(codexSettings.binaryPath ? { preferredBinaryPath: codexSettings.binaryPath } : {}),
+        respectPreferredBinaryPath: codexSettings.binaryPath.trim() !== "codex",
         ...(codexSettings.homePath ? { homePath: codexSettings.homePath } : {}),
       }),
     catch: (cause) =>
@@ -348,8 +400,9 @@ const runCodexCommand = Effect.fn("runCodexCommand")(function* (args: ReadonlyAr
 export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(function* (
   resolveAccount?: (input: {
     readonly binaryPath: string;
+    readonly clientVersion?: string | null;
     readonly homePath?: string;
-  }) => Effect.Effect<CodexAccountSnapshot | undefined>,
+  }) => Effect.Effect<CodexAppServerSnapshot | CodexAccountSnapshot | undefined>,
 ): Effect.fn.Return<
   ServerProvider,
   ServerSettingsError,
@@ -369,6 +422,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     codexSettings.customModels,
     DEFAULT_CODEX_MODEL_CAPABILITIES,
   );
+  const binaryResolution = resolveCodexBinaryCandidates(codexSettings);
 
   if (!codexSettings.enabled) {
     return buildServerProvider({
@@ -382,6 +436,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         status: "warning",
         auth: { status: "unknown" },
         message: "Codex is disabled in T3 Code settings.",
+        binaryCandidates: binaryResolution.binaryCandidates,
       },
     });
   }
@@ -406,6 +461,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         message: isCommandMissingCause(error)
           ? "Codex CLI (`codex`) is not installed or not on PATH."
           : `Failed to execute Codex CLI health check: ${error instanceof Error ? error.message : String(error)}.`,
+        binaryCandidates: binaryResolution.binaryCandidates,
       },
     });
   }
@@ -422,6 +478,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         status: "error",
         auth: { status: "unknown" },
         message: "Codex CLI is installed but failed to run. Timed out while running command.",
+        binaryCandidates: binaryResolution.binaryCandidates,
       },
     });
   }
@@ -445,6 +502,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         message: detail
           ? `Codex CLI is installed but failed to run. ${detail}`
           : "Codex CLI is installed but failed to run.",
+        binaryCandidates: binaryResolution.binaryCandidates,
       },
     });
   }
@@ -461,6 +519,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         status: "error",
         auth: { status: "unknown" },
         message: formatCodexCliUpgradeMessage(parsedVersion),
+        binaryCandidates: binaryResolution.binaryCandidates,
       },
     });
   }
@@ -477,6 +536,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         status: "ready",
         auth: { status: "unknown" },
         message: "Using a custom Codex model provider; OpenAI login check skipped.",
+        binaryCandidates: binaryResolution.binaryCandidates,
       },
     });
   }
@@ -485,13 +545,29 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     Effect.timeoutOption(DEFAULT_TIMEOUT_MS),
     Effect.result,
   );
-  const account = resolveAccount
+  const appServerSnapshot = resolveAccount
     ? yield* resolveAccount({
         binaryPath: codexSettings.binaryPath,
+        clientVersion: parsedVersion,
         homePath: codexSettings.homePath,
       })
     : undefined;
-  const resolvedModels = adjustCodexModelsForAccount(models, account);
+  const account =
+    appServerSnapshot && "account" in appServerSnapshot
+      ? appServerSnapshot.account
+      : appServerSnapshot;
+  const appServerModels =
+    appServerSnapshot && "models" in appServerSnapshot ? appServerSnapshot.models : [];
+  const modelsWithAppServerSource =
+    appServerModels.length > 0
+      ? providerModelsFromSettings(
+          appServerModels,
+          PROVIDER,
+          codexSettings.customModels,
+          DEFAULT_CODEX_MODEL_CAPABILITIES,
+        )
+      : models;
+  const resolvedModels = adjustCodexModelsForAccount(modelsWithAppServerSource, account);
 
   if (Result.isFailure(authProbe)) {
     const error = authProbe.failure;
@@ -509,6 +585,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
           error instanceof Error
             ? `Could not verify Codex authentication status: ${error.message}.`
             : "Could not verify Codex authentication status.",
+        binaryCandidates: binaryResolution.binaryCandidates,
       },
     });
   }
@@ -525,6 +602,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         status: "warning",
         auth: { status: "unknown" },
         message: "Could not verify Codex authentication status. Timed out while running command.",
+        binaryCandidates: binaryResolution.binaryCandidates,
       },
     });
   }
@@ -546,6 +624,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         ...(authType ? { type: authType } : {}),
         ...(authLabel ? { label: authLabel } : {}),
       },
+      binaryCandidates: binaryResolution.binaryCandidates,
       ...(parsed.message ? { message: parsed.message } : {}),
     },
   });
@@ -562,16 +641,24 @@ export const CodexProviderLive = Layer.effect(
       capacity: 4,
       timeToLive: Duration.minutes(5),
       lookup: (key: string) => {
-        const [binaryPath, homePath] = JSON.parse(key) as [string, string | undefined];
+        const [binaryPath, clientVersion, homePath] = JSON.parse(key) as [
+          string,
+          string | null | undefined,
+          string | undefined,
+        ];
         return probeCodexCapabilities({
           binaryPath,
+          ...(clientVersion ? { clientVersion } : {}),
           ...(homePath ? { homePath } : {}),
         });
       },
     });
 
     const checkProvider = checkCodexProviderStatus((input) =>
-      Cache.get(accountProbeCache, JSON.stringify([input.binaryPath, input.homePath])),
+      Cache.get(
+        accountProbeCache,
+        JSON.stringify([input.binaryPath, input.clientVersion, input.homePath]),
+      ),
     ).pipe(
       Effect.provideService(ServerSettingsService, serverSettings),
       Effect.provideService(FileSystem.FileSystem, fileSystem),

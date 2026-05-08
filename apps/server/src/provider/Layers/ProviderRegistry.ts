@@ -73,7 +73,7 @@ export const ProviderRegistryLive = Layer.effect(
           Effect.provideService(FileSystem.FileSystem, fileSystem),
           Effect.map((cachedProvider) =>
             cachedProvider === undefined
-              ? undefined
+              ? fallbackProvider
               : hydrateCachedProvider({
                   cachedProvider,
                   fallbackProvider,
@@ -180,6 +180,7 @@ export const ProviderRegistryLive = Layer.effect(
     yield* Stream.runForEach(claudeProvider.streamChanges, (provider) =>
       syncProvider(provider),
     ).pipe(Effect.forkScoped);
+    yield* Effect.yieldNow;
 
     return {
       getProviders: Ref.get(providersRef),

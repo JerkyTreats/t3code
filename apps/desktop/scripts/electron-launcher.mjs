@@ -52,6 +52,8 @@ export function syncLaunchEnvironment(env) {
     return env;
   }
 
+  const pinnedCodexBinaryPath = env.T3CODE_CODEX_BINARY_PATH;
+
   try {
     const shell = env.SHELL ?? "/bin/zsh";
     const shellEnvironment = readEnvironmentFromLoginShell(shell, ["PATH", "SSH_AUTH_SOCK"]);
@@ -65,6 +67,10 @@ export function syncLaunchEnvironment(env) {
     }
   } catch {
     // Keep inherited environment if shell lookup fails.
+  }
+
+  if (pinnedCodexBinaryPath) {
+    env.CODEX_BINARY_PATH = pinnedCodexBinaryPath;
   }
 
   if (!env.CODEX_BINARY_PATH) {

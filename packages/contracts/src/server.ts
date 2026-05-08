@@ -58,6 +58,13 @@ export const ServerProviderModel = Schema.Struct({
 });
 export type ServerProviderModel = typeof ServerProviderModel.Type;
 
+export const ServerProviderBinaryCandidate = Schema.Struct({
+  binaryPath: TrimmedNonEmptyString,
+  version: Schema.NullOr(TrimmedNonEmptyString),
+  selected: Schema.Boolean,
+});
+export type ServerProviderBinaryCandidate = typeof ServerProviderBinaryCandidate.Type;
+
 export const ServerProvider = Schema.Struct({
   provider: ProviderKind,
   enabled: Schema.Boolean,
@@ -68,6 +75,7 @@ export const ServerProvider = Schema.Struct({
   checkedAt: IsoDateTime,
   message: Schema.optional(TrimmedNonEmptyString),
   models: Schema.Array(ServerProviderModel),
+  binaryCandidates: Schema.optional(Schema.Array(ServerProviderBinaryCandidate)),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 export type ServerProviderStatus = ServerProvider;
