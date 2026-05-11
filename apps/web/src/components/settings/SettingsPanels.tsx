@@ -98,6 +98,13 @@ type InstallProviderSettings = {
   homePathKey?: "codexHomePath";
   homePlaceholder?: string;
   homeDescription?: ReactNode;
+  extraFields?: ReadonlyArray<{
+    key: "launchArgs" | "apiEndpoint" | "serverUrl" | "serverPassword";
+    label: string;
+    placeholder: string;
+    description: ReactNode;
+    type?: "text" | "password";
+  }>;
 };
 
 const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
@@ -115,8 +122,134 @@ const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     title: "Claude",
     binaryPlaceholder: "Claude binary path",
     binaryDescription: "Path to the Claude binary",
+    extraFields: [
+      {
+        key: "launchArgs",
+        label: "Launch arguments",
+        placeholder: "--verbose",
+        description: "Optional additional arguments passed to the Claude CLI at launch.",
+      },
+    ],
+  },
+  {
+    provider: "cursor",
+    title: "Cursor",
+    binaryPlaceholder: "Cursor agent binary path",
+    binaryDescription: "Path to the cursor-agent binary",
+    extraFields: [
+      {
+        key: "apiEndpoint",
+        label: "API endpoint",
+        placeholder: "http://127.0.0.1:3000",
+        description: "Optional Cursor API endpoint override.",
+      },
+    ],
+  },
+  {
+    provider: "opencode",
+    title: "OpenCode",
+    binaryPlaceholder: "OpenCode binary path",
+    binaryDescription: "Path to the OpenCode binary",
+    extraFields: [
+      {
+        key: "serverUrl",
+        label: "Server URL",
+        placeholder: "https://opencode.example.com",
+        description: "Optional OpenCode server URL override.",
+      },
+      {
+        key: "serverPassword",
+        label: "Server password",
+        placeholder: "OpenCode server password",
+        description: "Optional OpenCode server password used for authenticated remote servers.",
+        type: "password",
+      },
+    ],
   },
 ] as const;
+
+function getProviderExtraFieldValue(
+  provider: ProviderKind,
+  config: (typeof DEFAULT_UNIFIED_SETTINGS.providers)[ProviderKind],
+  fieldKey: "launchArgs" | "apiEndpoint" | "serverUrl" | "serverPassword",
+): string {
+  switch (provider) {
+    case "claudeAgent": {
+      const claudeConfig = config as typeof DEFAULT_UNIFIED_SETTINGS.providers.claudeAgent;
+      return fieldKey === "launchArgs" ? claudeConfig.launchArgs : "";
+    }
+    case "cursor": {
+      const cursorConfig = config as typeof DEFAULT_UNIFIED_SETTINGS.providers.cursor;
+      return fieldKey === "apiEndpoint" ? cursorConfig.apiEndpoint : "";
+    }
+    case "opencode": {
+      const openCodeConfig = config as typeof DEFAULT_UNIFIED_SETTINGS.providers.opencode;
+      if (fieldKey === "serverUrl") return openCodeConfig.serverUrl;
+      if (fieldKey === "serverPassword") return openCodeConfig.serverPassword;
+      return "";
+    }
+    default:
+      return "";
+  }
+}
+
+function buildProviderExtraFieldPatch(
+  settings: typeof DEFAULT_UNIFIED_SETTINGS,
+  provider: ProviderKind,
+  fieldKey: "launchArgs" | "apiEndpoint" | "serverUrl" | "serverPassword",
+  value: string,
+) {
+  switch (provider) {
+    case "claudeAgent":
+      if (fieldKey !== "launchArgs") return null;
+      return {
+        providers: {
+          ...settings.providers,
+          claudeAgent: {
+            ...settings.providers.claudeAgent,
+            launchArgs: value,
+          },
+        },
+      };
+    case "cursor":
+      if (fieldKey !== "apiEndpoint") return null;
+      return {
+        providers: {
+          ...settings.providers,
+          cursor: {
+            ...settings.providers.cursor,
+            apiEndpoint: value,
+          },
+        },
+      };
+    case "opencode":
+      if (fieldKey === "serverUrl") {
+        return {
+          providers: {
+            ...settings.providers,
+            opencode: {
+              ...settings.providers.opencode,
+              serverUrl: value,
+            },
+          },
+        };
+      }
+      if (fieldKey === "serverPassword") {
+        return {
+          providers: {
+            ...settings.providers,
+            opencode: {
+              ...settings.providers.opencode,
+              serverPassword: value,
+            },
+          },
+        };
+      }
+      return null;
+    default:
+      return null;
+  }
+}
 
 const PROVIDER_STATUS_STYLES = {
   disabled: {
@@ -531,18 +664,16 @@ export function GeneralSettingsPanel() {
     Partial<Record<"keybindings" | "logsDirectory", string | null>>
   >({});
   const [openProviderDetails, setOpenProviderDetails] = useState<Record<ProviderKind, boolean>>({
-    codex: Boolean(
-      settings.providers.codex.binaryPath !== DEFAULT_UNIFIED_SETTINGS.providers.codex.binaryPath ||
-      settings.providers.codex.homePath !== DEFAULT_UNIFIED_SETTINGS.providers.codex.homePath ||
-      settings.providers.codex.customModels.length > 0,
+    codex: !Equal.equals(settings.providers.codex, DEFAULT_UNIFIED_SETTINGS.providers.codex),
+    claudeAgent: !Equal.equals(
+      settings.providers.claudeAgent,
+      DEFAULT_UNIFIED_SETTINGS.providers.claudeAgent,
     ),
-    claudeAgent: Boolean(
-      settings.providers.claudeAgent.binaryPath !==
-        DEFAULT_UNIFIED_SETTINGS.providers.claudeAgent.binaryPath ||
-      settings.providers.claudeAgent.customModels.length > 0,
+    cursor: !Equal.equals(settings.providers.cursor, DEFAULT_UNIFIED_SETTINGS.providers.cursor),
+    opencode: !Equal.equals(
+      settings.providers.opencode,
+      DEFAULT_UNIFIED_SETTINGS.providers.opencode,
     ),
-    cursor: false,
-    opencode: false,
   });
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
     Record<ProviderKind, string>
@@ -766,6 +897,7 @@ export function GeneralSettingsPanel() {
       homePathKey: providerSettings.homePathKey,
       homePlaceholder: providerSettings.homePlaceholder,
       homeDescription: providerSettings.homeDescription,
+      extraFields: providerSettings.extraFields ?? [],
       binaryCandidates: liveProvider?.binaryCandidates ?? [],
       binaryPathValue: providerConfig.binaryPath,
       isDirty: !Equal.equals(providerConfig, defaultProviderConfig),
@@ -1332,6 +1464,51 @@ export function GeneralSettingsPanel() {
                         </label>
                       </div>
                     ) : null}
+
+                    {providerCard.extraFields.map((field) => {
+                      const value = getProviderExtraFieldValue(
+                        providerCard.provider,
+                        providerCard.providerConfig,
+                        field.key,
+                      );
+                      return (
+                        <div
+                          key={`${providerCard.provider}:${field.key}`}
+                          className="border-t border-border/60 px-4 py-3 sm:px-5"
+                        >
+                          <label
+                            htmlFor={`provider-install-${providerCard.provider}-${field.key}`}
+                            className="block"
+                          >
+                            <span className="text-xs font-medium text-foreground">
+                              {field.label}
+                            </span>
+                            <Input
+                              id={`provider-install-${providerCard.provider}-${field.key}`}
+                              className="mt-1.5"
+                              type={field.type ?? "text"}
+                              value={value}
+                              onChange={(event) => {
+                                const patch = buildProviderExtraFieldPatch(
+                                  settings,
+                                  providerCard.provider,
+                                  field.key,
+                                  event.target.value,
+                                );
+                                if (patch) {
+                                  updateSettings(patch);
+                                }
+                              }}
+                              placeholder={field.placeholder}
+                              spellCheck={false}
+                            />
+                            <span className="mt-1 block text-xs text-muted-foreground">
+                              {field.description}
+                            </span>
+                          </label>
+                        </div>
+                      );
+                    })}
 
                     <div className="border-t border-border/60 px-4 py-3 sm:px-5">
                       <div className="text-xs font-medium text-foreground">Models</div>

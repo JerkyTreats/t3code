@@ -30,6 +30,7 @@ import {
   readCodexConfigModelProvider,
 } from "./CodexProvider.ts";
 import { checkClaudeProviderStatus, parseClaudeAuthStatusFromOutput } from "./ClaudeProvider.ts";
+import { checkOpenCodeProviderStatus } from "./OpenCodeProvider.ts";
 import { haveProvidersChanged, ProviderRegistryLive } from "./ProviderRegistry.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService, type ServerSettingsShape } from "../../serverSettings.ts";
@@ -1153,6 +1154,157 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
               if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
               if (joined === "auth status")
                 return { stdout: "", stderr: "error: unknown command 'auth'", code: 2 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+    });
+
+    describe("checkOpenCodeProviderStatus", () => {
+      it.effect("discovers OpenCode models for the picker", () =>
+        Effect.gen(function* () {
+          const status = yield* checkOpenCodeProviderStatus();
+          assert.strictEqual(status.provider, "opencode");
+          assert.strictEqual(status.status, "ready");
+          assert.deepStrictEqual(
+            status.models.map((model) => model.slug),
+            ["openai/gpt-5", "anthropic/claude-sonnet-4-6"],
+          );
+          assert.deepStrictEqual(
+            status.models.map((model) => model.shortName),
+            ["gpt-5", "claude-sonnet-4-6"],
+          );
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") {
+                return {
+                  stdout: "1.14.46\n",
+                  stderr: "",
+                  code: 0,
+                };
+              }
+              if (joined === "models") {
+                return {
+                  stdout: "openai/gpt-5\nanthropic/claude-sonnet-4-6\n",
+                  stderr: "",
+                  code: 0,
+                };
+              }
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("falls back to the default OpenCode model when discovery returns no models", () =>
+        Effect.gen(function* () {
+          const status = yield* checkOpenCodeProviderStatus();
+          assert.strictEqual(status.provider, "opencode");
+          assert.strictEqual(status.status, "ready");
+          assert.deepStrictEqual(
+            status.models.map((model) => model.slug),
+            ["openai/gpt-5"],
+          );
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") {
+                return {
+                  stdout: "1.14.46\n",
+                  stderr: "",
+                  code: 0,
+                };
+              }
+              if (joined === "models") {
+                return {
+                  stdout: "",
+                  stderr: "",
+                  code: 0,
+                };
+              }
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("suppresses mise shim advisory stderr on a successful version probe", () =>
+        Effect.gen(function* () {
+          const status = yield* checkOpenCodeProviderStatus();
+          assert.strictEqual(status.provider, "opencode");
+          assert.strictEqual(status.status, "ready");
+          assert.strictEqual(status.installed, true);
+          assert.strictEqual(status.version, "1.14.46");
+          assert.strictEqual(status.message, undefined);
+          assert.deepStrictEqual(
+            status.models.map((model) => model.slug),
+            ["openai/gpt-5"],
+          );
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") {
+                return {
+                  stdout: "1.14.46\n",
+                  stderr: [
+                    "mise ERROR error parsing config file: /repo/.mise.toml",
+                    "mise ERROR Config files in /repo/.mise.toml are not trusted.",
+                    "mise ERROR Run `mise trust` to trust them.",
+                  ].join("\n"),
+                  code: 0,
+                };
+              }
+              if (joined === "models") {
+                return {
+                  stdout: "",
+                  stderr: [
+                    "mise ERROR error parsing config file: /repo/.mise.toml",
+                    "mise ERROR Config files in /repo/.mise.toml are not trusted.",
+                  ].join("\n"),
+                  code: 0,
+                };
+              }
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("keeps non-mise stderr detail when the version probe succeeds", () =>
+        Effect.gen(function* () {
+          const status = yield* checkOpenCodeProviderStatus();
+          assert.strictEqual(status.provider, "opencode");
+          assert.strictEqual(status.status, "ready");
+          assert.strictEqual(status.installed, true);
+          assert.strictEqual(status.version, "1.14.46");
+          assert.strictEqual(status.message, "warning: using compatibility mode");
+          assert.deepStrictEqual(
+            status.models.map((model) => model.slug),
+            ["openai/gpt-5"],
+          );
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") {
+                return {
+                  stdout: "1.14.46\n",
+                  stderr: "warning: using compatibility mode\n",
+                  code: 0,
+                };
+              }
+              if (joined === "models") {
+                return {
+                  stdout: "",
+                  stderr: "",
+                  code: 0,
+                };
+              }
               throw new Error(`Unexpected args: ${joined}`);
             }),
           ),
