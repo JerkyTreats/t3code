@@ -3,6 +3,7 @@ import "../index.css";
 
 import {
   DEFAULT_SERVER_SETTINGS,
+  type DesktopBridge,
   EnvironmentId,
   EventId,
   ORCHESTRATION_WS_METHODS,
@@ -122,6 +123,77 @@ interface MountedChatView {
   setViewport: (viewport: ViewportSpec) => Promise<void>;
   setContainerSize: (viewport: Pick<ViewportSpec, "width" | "height">) => Promise<void>;
   router: ReturnType<typeof getRouter>;
+}
+
+function createDesktopBridgeStub(): DesktopBridge {
+  const updateState = {
+    enabled: false,
+    status: "disabled" as const,
+    currentVersion: "0.0.0",
+    hostArch: "other" as const,
+    appArch: "other" as const,
+    runningUnderArm64Translation: false,
+    availableVersion: null,
+    downloadedVersion: null,
+    downloadPercent: null,
+    checkedAt: null,
+    message: null,
+    errorContext: null,
+    canRetry: false,
+  };
+  return {
+    getLocalEnvironmentBootstrap: () => null,
+    getClientSettings: async () => DEFAULT_CLIENT_SETTINGS,
+    setClientSettings: async () => undefined,
+    getSavedEnvironmentRegistry: async () => [],
+    setSavedEnvironmentRegistry: async () => undefined,
+    getSavedEnvironmentSecret: async () => null,
+    setSavedEnvironmentSecret: async () => false,
+    removeSavedEnvironmentSecret: async () => undefined,
+    getServerExposureState: async () => ({
+      mode: "local-only",
+      endpointUrl: null,
+      advertisedHost: null,
+    }),
+    setServerExposureMode: async () => ({
+      mode: "local-only",
+      endpointUrl: null,
+      advertisedHost: null,
+    }),
+    getWsUrl: () => null,
+    pickFolder: async () => null,
+    confirm: async () => false,
+    setTheme: async () => undefined,
+    showContextMenu: async () => null,
+    openExternal: async () => false,
+    captureScreenshot: async () => null,
+    getSystemTheme: async () => null,
+    onMenuAction: () => () => undefined,
+    onSystemTheme: () => () => undefined,
+    getUpdateState: async () => updateState,
+    checkForUpdate: async () => ({
+      checked: false,
+      state: updateState,
+    }),
+    downloadUpdate: async () => ({
+      accepted: false,
+      completed: false,
+      state: updateState,
+    }),
+    installUpdate: async () => ({
+      accepted: false,
+      completed: false,
+      state: updateState,
+    }),
+    onUpdateState: () => () => undefined,
+  };
+}
+
+function setDesktopBridgeForTest(overrides: Partial<DesktopBridge>): void {
+  (window as Window & typeof globalThis & { desktopBridge?: DesktopBridge }).desktopBridge = {
+    ...createDesktopBridgeStub(),
+    ...overrides,
+  };
 }
 
 function isoAt(offsetSeconds: number): string {
@@ -1222,6 +1294,10 @@ describe("ChatView timeline estimator parity (full app)", () => {
 
   afterEach(() => {
     customWsRpcResolver = null;
+    Reflect.deleteProperty(
+      window as Window & typeof globalThis & { desktopBridge?: unknown },
+      "desktopBridge",
+    );
     document.body.innerHTML = "";
   });
 
@@ -2174,6 +2250,32 @@ describe("ChatView timeline estimator parity (full app)", () => {
       );
     } finally {
       resolveDispatch({ sequence: fixture.snapshot.snapshotSequence + 1 });
+      await mounted.cleanup();
+    }
+  });
+
+  it("attaches a captured desktop screenshot to the composer draft", async () => {
+    setDesktopBridgeForTest({
+      captureScreenshot: async () => ({
+        name: "screenshot.png",
+        mimeType: "image/png",
+        sizeBytes: 5,
+        dataUrl: "data:image/png;base64,aGVsbG8=",
+      }),
+    });
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-target-screenshot" as MessageId,
+        targetText: "screenshot target",
+      }),
+    });
+
+    try {
+      await page.getByLabelText("Capture screenshot and attach to draft").click();
+      await expect.element(page.getByLabelText("Preview screenshot.png")).toBeVisible();
+    } finally {
       await mounted.cleanup();
     }
   });

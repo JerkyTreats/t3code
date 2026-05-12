@@ -107,7 +107,7 @@ Screenshot capture and attach flows are tuned for Omarchy tooling and Linux desk
 
 ### Required Behavior
 
-- Desktop capture prefers `omarchy-cmd-screenshot` when available.
+- Desktop capture prefers `omarchy-capture-screenshot` when available and still recognizes legacy `omarchy-cmd-screenshot`.
 - Capture resolves the Omarchy screenshot output directory and handles Omarchy smart mode behavior.
 - Capture waits for a complete PNG artifact before attaching it.
 - Clipboard fallback remains available when Omarchy updates the clipboard instead of writing a file.

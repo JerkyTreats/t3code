@@ -188,6 +188,7 @@ import {
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  fileFromDataUrl,
   hasServerAcknowledgedLocalDispatch,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
@@ -2799,12 +2800,10 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
       if (!capturedScreenshot) {
         return;
       }
-      const screenshotMimeType = capturedScreenshot.mimeType || "image/png";
-      const screenshotBlob = await fetch(capturedScreenshot.dataUrl).then((response) =>
-        response.blob(),
-      );
-      const screenshotFile = new File([screenshotBlob], capturedScreenshot.name, {
-        type: screenshotMimeType,
+      const screenshotFile = fileFromDataUrl({
+        dataUrl: capturedScreenshot.dataUrl,
+        name: capturedScreenshot.name,
+        mimeType: capturedScreenshot.mimeType,
       });
       addComposerImages([screenshotFile]);
       setThreadError(activeThreadId, null);

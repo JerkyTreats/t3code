@@ -160,7 +160,7 @@ describe("captureDesktopScreenshot", () => {
       "share",
       "omarchy",
       "bin",
-      "omarchy-cmd-screenshot",
+      "omarchy-capture-screenshot",
     );
     await makeExecutable(commandPath);
 
@@ -210,7 +210,7 @@ describe("captureDesktopScreenshot", () => {
       "share",
       "omarchy",
       "bin",
-      "omarchy-cmd-screenshot",
+      "omarchy-capture-screenshot",
     );
     await makeExecutable(commandPath);
 
@@ -256,7 +256,7 @@ describe("captureDesktopScreenshot", () => {
       "share",
       "omarchy",
       "bin",
-      "omarchy-cmd-screenshot",
+      "omarchy-capture-screenshot",
     );
     await makeExecutable(commandPath);
 
@@ -294,7 +294,7 @@ describe("captureDesktopScreenshot", () => {
       "share",
       "omarchy",
       "bin",
-      "omarchy-cmd-screenshot",
+      "omarchy-capture-screenshot",
     );
     await makeExecutable(commandPath);
 
@@ -336,7 +336,7 @@ describe("captureDesktopScreenshot", () => {
       "share",
       "omarchy",
       "bin",
-      "omarchy-cmd-screenshot",
+      "omarchy-capture-screenshot",
     );
     await makeExecutable(commandPath);
 
@@ -391,7 +391,7 @@ describe("captureDesktopScreenshot", () => {
       "share",
       "omarchy",
       "bin",
-      "omarchy-cmd-screenshot",
+      "omarchy-capture-screenshot",
     );
     await makeExecutable(commandPath);
 

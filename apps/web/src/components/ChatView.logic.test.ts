@@ -7,6 +7,7 @@ import {
   buildExpiredTerminalContextToastCopy,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  fileFromDataUrl,
   hasServerAcknowledgedLocalDispatch,
   reconcileMountedTerminalThreadIds,
   waitForStartedServerThread,
@@ -58,6 +59,30 @@ describe("deriveComposerSendState", () => {
     expect(state.trimmedPrompt).toBe("yoo  waddup");
     expect(state.expiredTerminalContextCount).toBe(1);
     expect(state.hasSendableContent).toBe(true);
+  });
+});
+
+describe("fileFromDataUrl", () => {
+  it("builds a file from a base64 data url", async () => {
+    const file = fileFromDataUrl({
+      dataUrl: "data:image/png;base64,aGVsbG8=",
+      name: "screenshot.png",
+      mimeType: "image/png",
+    });
+
+    expect(file.name).toBe("screenshot.png");
+    expect(file.type).toBe("image/png");
+    await expect(file.text()).resolves.toBe("hello");
+  });
+
+  it("rejects malformed payloads", () => {
+    expect(() =>
+      fileFromDataUrl({
+        dataUrl: "not-a-data-url",
+        name: "broken.png",
+        mimeType: "image/png",
+      }),
+    ).toThrow("Captured screenshot payload is invalid.");
   });
 });
 

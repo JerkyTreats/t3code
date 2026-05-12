@@ -129,6 +129,47 @@ export function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+export function fileFromDataUrl(input: {
+  dataUrl: string;
+  name: string;
+  mimeType?: string | null;
+}): File {
+  const commaIndex = input.dataUrl.indexOf(",");
+  if (commaIndex <= 0) {
+    throw new Error("Captured screenshot payload is invalid.");
+  }
+
+  const header = input.dataUrl.slice(0, commaIndex);
+  const payload = input.dataUrl.slice(commaIndex + 1);
+  const mimeMatch = /^data:([^;,]+)?(?:;charset=[^;,]+)?(;base64)?$/i.exec(header);
+  if (!mimeMatch) {
+    throw new Error("Captured screenshot payload is invalid.");
+  }
+
+  const resolvedMimeType = mimeMatch[1] || input.mimeType || "application/octet-stream";
+  const isBase64 = mimeMatch[2] === ";base64";
+
+  let bytes: Uint8Array;
+  try {
+    if (isBase64) {
+      const binary = atob(payload);
+      bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+    } else {
+      const decoded = decodeURIComponent(payload);
+      bytes = new TextEncoder().encode(decoded);
+    }
+  } catch {
+    throw new Error("Captured screenshot payload is invalid.");
+  }
+
+  const normalizedBytes = new Uint8Array(bytes.byteLength);
+  normalizedBytes.set(bytes);
+  return new File([normalizedBytes.buffer], input.name, { type: resolvedMimeType });
+}
+
 export function buildTemporaryWorktreeBranchName(): string {
   // Keep the 8-hex suffix shape for backend temporary-branch detection.
   const token = randomUUID().slice(0, 8).toLowerCase();

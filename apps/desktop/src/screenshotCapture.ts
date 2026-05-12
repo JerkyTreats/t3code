@@ -14,14 +14,30 @@ const SCREENSHOT_FILE_BASENAME = "capture.png";
 const CANCELLATION_EXIT_CODE = 1;
 const TOOL_FAILURE_SEPARATOR = " | ";
 const OMARCHY_CAPTURE_RESULT_SETTLE_MS = 125;
-const OMARCHY_SCREENSHOT_COMMAND_PATH = Path.join(
-  OS.homedir(),
-  ".local",
-  "share",
-  "omarchy",
-  "bin",
-  "omarchy-cmd-screenshot",
-);
+const OMARCHY_SCREENSHOT_COMMAND_CANDIDATES = [
+  {
+    executableName: "omarchy-capture-screenshot",
+    executablePath: Path.join(
+      OS.homedir(),
+      ".local",
+      "share",
+      "omarchy",
+      "bin",
+      "omarchy-capture-screenshot",
+    ),
+  },
+  {
+    executableName: "omarchy-cmd-screenshot",
+    executablePath: Path.join(
+      OS.homedir(),
+      ".local",
+      "share",
+      "omarchy",
+      "bin",
+      "omarchy-cmd-screenshot",
+    ),
+  },
+] as const;
 
 type SpawnCaptureResult = {
   code: number | null;
@@ -255,10 +271,17 @@ async function fileIsExecutable(filePath: string): Promise<boolean> {
 }
 
 async function resolveOmarchyScreenshotCommand(): Promise<string | null> {
-  if (await fileIsExecutable(OMARCHY_SCREENSHOT_COMMAND_PATH)) {
-    return OMARCHY_SCREENSHOT_COMMAND_PATH;
+  for (const candidate of OMARCHY_SCREENSHOT_COMMAND_CANDIDATES) {
+    if (await fileIsExecutable(candidate.executablePath)) {
+      return candidate.executablePath;
+    }
   }
-  return (await commandExists("omarchy-cmd-screenshot")) ? "omarchy-cmd-screenshot" : null;
+  for (const candidate of OMARCHY_SCREENSHOT_COMMAND_CANDIDATES) {
+    if (await commandExists(candidate.executableName)) {
+      return candidate.executableName;
+    }
+  }
+  return null;
 }
 
 function tryBuildScreenshotCapture(
@@ -470,7 +493,7 @@ async function captureWithOmarchy(command: string): Promise<DesktopScreenshotCap
           settleResolve(null);
           return;
         }
-        settleReject(new Error(spawnFailure("omarchy-cmd-screenshot", result)));
+        settleReject(new Error(spawnFailure(Path.basename(command), result)));
         return;
       }
 
@@ -685,7 +708,7 @@ async function captureToPath(filePath: string): Promise<"captured" | "cancelled"
   }
 
   throw new Error(
-    `No supported screenshot tool found. Install omarchy-cmd-screenshot, grimblast, hyprshot, grim plus slurp, or import. ${captureEnvSummary()}`,
+    `No supported screenshot tool found. Install omarchy-capture-screenshot, grimblast, hyprshot, grim plus slurp, or import. ${captureEnvSummary()}`,
   );
 }
 
