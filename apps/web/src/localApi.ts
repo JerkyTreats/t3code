@@ -105,6 +105,7 @@ export function createLocalApi(): LocalApi {
       upsertKeybinding: rpcClient.server.upsertKeybinding,
       getSettings: rpcClient.server.getSettings,
       updateSettings: rpcClient.server.updateSettings,
+      discoverSourceControl: rpcClient.server.discoverSourceControl,
     },
   };
 }

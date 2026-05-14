@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyGitStatusStreamEvent,
   buildTemporaryWorktreeBranchName,
+  detectGitHostingProviderFromRemoteUrl,
   isTemporaryWorktreeBranch,
   normalizeGitRemoteUrl,
   parseGitHubRepositoryNameWithOwnerFromRemoteUrl,
@@ -50,6 +51,28 @@ describe("parseGitHubRepositoryNameWithOwnerFromRemoteUrl", () => {
     expect(
       parseGitHubRepositoryNameWithOwnerFromRemoteUrl("https://github.com/T3Tools/T3Code.git"),
     ).toBe("T3Tools/T3Code");
+  });
+});
+
+describe("detectGitHostingProviderFromRemoteUrl", () => {
+  it("detects Azure DevOps remotes", () => {
+    expect(
+      detectGitHostingProviderFromRemoteUrl("https://dev.azure.com/org/project/_git/repository"),
+    ).toEqual({
+      kind: "azure-devops",
+      name: "Azure DevOps",
+      baseUrl: "https://dev.azure.com",
+    });
+  });
+
+  it("detects Bitbucket remotes", () => {
+    expect(
+      detectGitHostingProviderFromRemoteUrl("git@bitbucket.org:workspace/repository.git"),
+    ).toEqual({
+      kind: "bitbucket",
+      name: "Bitbucket",
+      baseUrl: "https://bitbucket.org",
+    });
   });
 });
 

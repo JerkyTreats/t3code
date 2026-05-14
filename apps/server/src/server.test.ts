@@ -31,6 +31,7 @@ import {
   FileSystem,
   Layer,
   ManagedRuntime,
+  Option,
   Path,
   Stream,
 } from "effect";
@@ -98,6 +99,8 @@ import { BootstrapCredentialService } from "./auth/Services/BootstrapCredentialS
 import { ServerAuth } from "./auth/Services/ServerAuth.ts";
 import { SessionCredentialService } from "./auth/Services/SessionCredentialService.ts";
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
+import { SourceControlDiscovery } from "./sourceControl/SourceControlDiscovery.ts";
+import type { SourceControlDiscoveryShape } from "./sourceControl/SourceControlDiscovery.ts";
 
 const defaultProjectId = ProjectId.makeUnsafe("project-default");
 const defaultThreadId = ThreadId.makeUnsafe("thread-default");
@@ -424,6 +427,7 @@ const buildAppUnderTest = (options?: {
     browserTraceCollector?: Partial<BrowserTraceCollectorShape>;
     serverLifecycleEvents?: Partial<ServerLifecycleEventsShape>;
     serverRuntimeStartup?: Partial<ServerRuntimeStartupShape>;
+    sourceControlDiscovery?: Partial<SourceControlDiscoveryShape>;
   };
 }) =>
   Effect.gen(function* () {
@@ -585,6 +589,15 @@ const buildAppUnderTest = (options?: {
           markHttpListening: Effect.void,
           enqueueCommand: (effect) => effect,
           ...options?.layers?.serverRuntimeStartup,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(SourceControlDiscovery)({
+          discover: Effect.succeed({
+            versionControlSystems: [],
+            sourceControlProviders: [],
+          }),
+          ...options?.layers?.sourceControlDiscovery,
         }),
       ),
       Layer.provide(
@@ -1094,6 +1107,57 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.deepEqual(response.issues, []);
       assert.deepEqual(response.keybindings, [resolved]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes websocket rpc server.discoverSourceControl", () =>
+    Effect.gen(function* () {
+      const discovery = {
+        versionControlSystems: [
+          {
+            kind: "git" as const,
+            label: "Git",
+            executable: "git",
+            implemented: true,
+            status: "available" as const,
+            version: Option.some("git version 2.49.0"),
+            installHint: "Install Git",
+            detail: Option.none<string>(),
+          },
+        ],
+        sourceControlProviders: [
+          {
+            kind: "github" as const,
+            label: "GitHub CLI",
+            executable: "gh",
+            status: "available" as const,
+            version: Option.some("gh version 2.72.0"),
+            installHint: "Install GitHub CLI",
+            detail: Option.none<string>(),
+            auth: {
+              status: "authenticated" as const,
+              account: Option.some("octocat"),
+              host: Option.some("github.com"),
+              detail: Option.none<string>(),
+            },
+          },
+        ],
+      };
+
+      yield* buildAppUnderTest({
+        layers: {
+          sourceControlDiscovery: {
+            discover: Effect.succeed(discovery),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverDiscoverSourceControl]({})),
+      );
+
+      assert.deepEqual(response, discovery);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

@@ -125,6 +125,7 @@ import { readNativeApi } from "~/nativeApi";
 import {
   getProviderModelCapabilities,
   getProviderModels,
+  getProviderSnapshot,
   resolveSelectableProvider,
 } from "../providerModels";
 import { useSettings } from "../hooks/useSettings";
@@ -1459,11 +1460,10 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
   const availableEditors = useServerAvailableEditors();
   const modelOptionsByProvider = useMemo(
     () => ({
-      codex: providerStatuses.find((provider) => provider.provider === "codex")?.models ?? [],
-      claudeAgent:
-        providerStatuses.find((provider) => provider.provider === "claudeAgent")?.models ?? [],
-      cursor: providerStatuses.find((provider) => provider.provider === "cursor")?.models ?? [],
-      opencode: providerStatuses.find((provider) => provider.provider === "opencode")?.models ?? [],
+      codex: getProviderModels(providerStatuses, "codex"),
+      claudeAgent: getProviderModels(providerStatuses, "claudeAgent"),
+      cursor: getProviderModels(providerStatuses, "cursor"),
+      opencode: getProviderModels(providerStatuses, "opencode"),
     }),
     [providerStatuses],
   );
@@ -1578,7 +1578,7 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
     [nonPersistedComposerImageIds],
   );
   const activeProviderStatus = useMemo(
-    () => providerStatuses.find((status) => status.provider === selectedProvider) ?? null,
+    () => getProviderSnapshot(providerStatuses, selectedProvider) ?? null,
     [selectedProvider, providerStatuses],
   );
   const activeProjectCwd = activeProject?.cwd ?? null;

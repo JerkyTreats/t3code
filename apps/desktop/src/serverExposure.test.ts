@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveDesktopServerExposure, resolveLanAdvertisedHost } from "./serverExposure.ts";
+import {
+  resolveDesktopCoreAdvertisedEndpoints,
+  resolveDesktopServerExposure,
+  resolveLanAdvertisedHost,
+} from "./serverExposure.ts";
 
 describe("resolveLanAdvertisedHost", () => {
   it("prefers an explicit host override", () => {
@@ -135,5 +139,88 @@ describe("resolveDesktopServerExposure", () => {
       endpointUrl: null,
       advertisedHost: null,
     });
+  });
+});
+
+describe("resolveDesktopCoreAdvertisedEndpoints", () => {
+  it("always includes the loopback endpoint", () => {
+    expect(
+      resolveDesktopCoreAdvertisedEndpoints({
+        port: 3773,
+        exposure: resolveDesktopServerExposure({
+          mode: "local-only",
+          port: 3773,
+          networkInterfaces: {},
+        }),
+      }),
+    ).toEqual([
+      {
+        id: "desktop-loopback:3773",
+        label: "This machine",
+        httpBaseUrl: "http://127.0.0.1:3773",
+        provider: {
+          id: "desktop",
+          label: "Desktop",
+          kind: "local-network",
+        },
+        source: "desktop",
+        reachability: "local-network",
+        status: "available",
+        description: "Loopback endpoint for this desktop app.",
+      },
+    ]);
+  });
+
+  it("includes the LAN endpoint when desktop exposure is network-accessible", () => {
+    expect(
+      resolveDesktopCoreAdvertisedEndpoints({
+        port: 3773,
+        exposure: resolveDesktopServerExposure({
+          mode: "network-accessible",
+          port: 3773,
+          networkInterfaces: {
+            en0: [
+              {
+                address: "192.168.1.44",
+                family: "IPv4",
+                internal: false,
+                netmask: "255.255.255.0",
+                cidr: "192.168.1.44/24",
+                mac: "00:00:00:00:00:00",
+              },
+            ],
+          },
+        }),
+      }),
+    ).toEqual([
+      {
+        id: "desktop-loopback:3773",
+        label: "This machine",
+        httpBaseUrl: "http://127.0.0.1:3773",
+        provider: {
+          id: "desktop",
+          label: "Desktop",
+          kind: "local-network",
+        },
+        source: "desktop",
+        reachability: "local-network",
+        status: "available",
+        description: "Loopback endpoint for this desktop app.",
+      },
+      {
+        id: "desktop-lan:http://192.168.1.44:3773",
+        label: "Local network",
+        httpBaseUrl: "http://192.168.1.44:3773",
+        provider: {
+          id: "desktop",
+          label: "Desktop",
+          kind: "local-network",
+        },
+        source: "desktop",
+        reachability: "local-network",
+        status: "available",
+        description: "Reachable from devices on the same network.",
+      },
+    ]);
   });
 });

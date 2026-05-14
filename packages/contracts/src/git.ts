@@ -47,7 +47,13 @@ const GitStatusPrState = Schema.Literals(["open", "closed", "merged"]);
 const GitPullRequestReference = TrimmedNonEmptyStringSchema;
 const GitPullRequestState = Schema.Literals(["open", "closed", "merged"]);
 const GitPreparePullRequestThreadMode = Schema.Literals(["local", "worktree"]);
-export const GitHostingProviderKind = Schema.Literals(["github", "gitlab", "unknown"]);
+export const GitHostingProviderKind = Schema.Literals([
+  "github",
+  "gitlab",
+  "azure-devops",
+  "bitbucket",
+  "unknown",
+]);
 export type GitHostingProviderKind = typeof GitHostingProviderKind.Type;
 export const GitFileStatus = Schema.Literals([
   "modified",

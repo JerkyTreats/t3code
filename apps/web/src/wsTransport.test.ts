@@ -15,6 +15,7 @@ import {
   getWsConnectionUiState,
   resetWsConnectionStateForTests,
 } from "./rpc/wsConnectionState";
+import type { WsProtocolLifecycleHandlers } from "./rpc/protocol";
 import { WsTransport } from "./wsTransport";
 
 type WsEventType = "open" | "message" | "close" | "error";
@@ -101,6 +102,10 @@ function getSocket(): MockWebSocket {
     throw new Error("Expected a websocket instance");
   }
   return socket;
+}
+
+function createTransport(url?: string, lifecycleHandlers?: WsProtocolLifecycleHandlers) {
+  return new WsTransport(url, lifecycleHandlers);
 }
 
 async function waitFor(assertion: () => void, timeoutMs = 1_000): Promise<void> {

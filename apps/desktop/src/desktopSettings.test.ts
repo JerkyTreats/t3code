@@ -6,9 +6,12 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   DEFAULT_DESKTOP_SETTINGS,
+  DEFAULT_TAILSCALE_SERVE_PORT,
+  normalizeTailscaleServePort,
   readDesktopSettings,
   resolveDefaultDesktopSettings,
   setDesktopServerExposurePreference,
+  setDesktopTailscaleServePreference,
   setDesktopUpdateChannelPreference,
   writeDesktopSettings,
 } from "./desktopSettings.ts";
@@ -35,6 +38,8 @@ describe("desktopSettings", () => {
   it("defaults packaged nightly builds to the nightly update channel", () => {
     expect(resolveDefaultDesktopSettings("0.0.17-nightly.20260415.1")).toEqual({
       serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
     });
@@ -45,12 +50,16 @@ describe("desktopSettings", () => {
 
     writeDesktopSettings(settingsPath, {
       serverExposureMode: "network-accessible",
+      tailscaleServeEnabled: true,
+      tailscaleServePort: 8443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: true,
     });
 
     expect(readDesktopSettings(settingsPath, "0.0.17")).toEqual({
       serverExposureMode: "network-accessible",
+      tailscaleServeEnabled: true,
+      tailscaleServePort: 8443,
       updateChannel: "latest",
       updateChannelConfiguredByUser: true,
     });
@@ -61,6 +70,8 @@ describe("desktopSettings", () => {
       setDesktopServerExposurePreference(
         {
           serverExposureMode: "local-only",
+          tailscaleServeEnabled: false,
+          tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
           updateChannel: "latest",
           updateChannelConfiguredByUser: false,
         },
@@ -68,9 +79,38 @@ describe("desktopSettings", () => {
       ),
     ).toEqual({
       serverExposureMode: "network-accessible",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
       updateChannel: "latest",
       updateChannelConfiguredByUser: false,
     });
+  });
+
+  it("persists the requested Tailscale Serve preference", () => {
+    expect(
+      setDesktopTailscaleServePreference(
+        {
+          serverExposureMode: "local-only",
+          tailscaleServeEnabled: false,
+          tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
+          updateChannel: "latest",
+          updateChannelConfiguredByUser: false,
+        },
+        { enabled: true, port: 9443 },
+      ),
+    ).toEqual({
+      serverExposureMode: "local-only",
+      tailscaleServeEnabled: true,
+      tailscaleServePort: 9443,
+      updateChannel: "latest",
+      updateChannelConfiguredByUser: false,
+    });
+  });
+
+  it("normalizes invalid Tailscale Serve ports", () => {
+    expect(normalizeTailscaleServePort(0)).toBe(DEFAULT_TAILSCALE_SERVE_PORT);
+    expect(normalizeTailscaleServePort(65_536)).toBe(DEFAULT_TAILSCALE_SERVE_PORT);
+    expect(normalizeTailscaleServePort("443")).toBe(DEFAULT_TAILSCALE_SERVE_PORT);
   });
 
   it("persists the requested nightly update channel", () => {
@@ -78,6 +118,8 @@ describe("desktopSettings", () => {
       setDesktopUpdateChannelPreference(
         {
           serverExposureMode: "local-only",
+          tailscaleServeEnabled: false,
+          tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
           updateChannel: "latest",
           updateChannelConfiguredByUser: false,
         },
@@ -85,6 +127,8 @@ describe("desktopSettings", () => {
       ),
     ).toEqual({
       serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: true,
     });
@@ -103,6 +147,8 @@ describe("desktopSettings", () => {
 
     expect(readDesktopSettings(settingsPath, "0.0.17-nightly.20260415.1")).toEqual({
       serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
     });
@@ -121,6 +167,8 @@ describe("desktopSettings", () => {
 
     expect(readDesktopSettings(settingsPath, "0.0.17-nightly.20260415.1")).toEqual({
       serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
       updateChannel: "nightly",
       updateChannelConfiguredByUser: false,
     });
@@ -140,6 +188,8 @@ describe("desktopSettings", () => {
 
     expect(readDesktopSettings(settingsPath, "0.0.17-nightly.20260415.1")).toEqual({
       serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: DEFAULT_TAILSCALE_SERVE_PORT,
       updateChannel: "latest",
       updateChannelConfiguredByUser: true,
     });

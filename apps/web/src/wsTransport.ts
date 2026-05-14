@@ -124,6 +124,7 @@ export class WsTransport {
           return;
         }
 
+        const session = this.session;
         try {
           if (hasReceivedValue) {
             try {
@@ -133,7 +134,6 @@ export class WsTransport {
             }
           }
 
-          const session = this.session;
           const runningStream = this.runStreamOnSession(
             session,
             connect,

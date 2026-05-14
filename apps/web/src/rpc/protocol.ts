@@ -1,5 +1,5 @@
 import { WsRpcGroup } from "@t3tools/contracts";
-import { Duration, Effect, Layer, Schedule } from "effect";
+import { Data, Duration, Effect, Layer, Schedule } from "effect";
 import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
 import * as Socket from "effect/unstable/socket/Socket";
 
@@ -30,6 +30,11 @@ export const makeWsRpcProtocolClient = RpcClient.make(WsRpcGroup);
 type RpcClientFactory = typeof makeWsRpcProtocolClient;
 export type WsRpcProtocolClient =
   RpcClientFactory extends Effect.Effect<infer Client, any, any> ? Client : never;
+
+class WsProtocolUrlError extends Data.TaggedError("WsProtocolUrlError")<{
+  readonly detail: string;
+  readonly cause: unknown;
+}> {}
 
 function formatSocketErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
@@ -103,10 +108,7 @@ function composeLifecycleHandlers(
   };
 }
 
-export function createWsRpcProtocolLayer(
-  url?: string,
-  handlers?: WsProtocolLifecycleHandlers,
-) {
+export function createWsRpcProtocolLayer(url?: string, handlers?: WsProtocolLifecycleHandlers) {
   const lifecycle = composeLifecycleHandlers(handlers);
   const resolvedServerUrl = resolveServerUrl({
     url,
@@ -116,8 +118,9 @@ export function createWsRpcProtocolLayer(
   const resolvedUrl = Effect.try({
     try: () => resolveWsRpcSocketUrl(resolvedServerUrl),
     catch: (error) => {
-      lifecycle.onError(formatSocketErrorMessage(error));
-      return error;
+      const detail = formatSocketErrorMessage(error);
+      lifecycle.onError(detail);
+      return new WsProtocolUrlError({ detail, cause: error });
     },
   }).pipe(Effect.orDie);
   const trackingWebSocketConstructorLayer = Layer.succeed(

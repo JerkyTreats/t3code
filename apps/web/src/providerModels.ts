@@ -12,6 +12,7 @@ import {
   resolveContextWindow,
   trimOrNull,
 } from "@t3tools/shared/model";
+import { getProviderInstanceEntry, getProviderInstanceModels } from "./providerInstances";
 
 const EMPTY_CAPABILITIES: ModelCapabilities = {
   reasoningEffortLevels: [],
@@ -25,14 +26,14 @@ export function getProviderModels(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderKind,
 ): ReadonlyArray<ServerProviderModel> {
-  return providers.find((candidate) => candidate.provider === provider)?.models ?? [];
+  return getProviderInstanceModels(providers, provider);
 }
 
 export function getProviderSnapshot(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderKind,
 ): ServerProvider | undefined {
-  return providers.find((candidate) => candidate.provider === provider);
+  return getProviderInstanceEntry(providers, provider)?.snapshot;
 }
 
 export function isProviderEnabled(

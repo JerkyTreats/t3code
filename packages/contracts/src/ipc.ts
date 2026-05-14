@@ -38,6 +38,12 @@ import type {
   GitHubStatusInput,
   GitHubStatusResult,
 } from "./github.ts";
+import type { SourceControlDiscoveryResult } from "./sourceControl.ts";
+import type {
+  AuthBearerBootstrapResult,
+  AuthSessionState,
+  AuthWebSocketTokenResult,
+} from "./auth.ts";
 import type {
   ProjectListDirectoryInput,
   ProjectListDirectoryResult,
@@ -48,6 +54,7 @@ import type {
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "./project.ts";
+import type { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import type {
   ServerConfig,
   ServerProviderUpdatedPayload,
@@ -97,6 +104,8 @@ export type DesktopUpdateStatus =
   | "downloaded"
   | "error";
 
+export type DesktopUpdateChannel = "latest" | "nightly";
+
 export type DesktopRuntimeArch = "arm64" | "x64" | "other";
 export type DesktopTheme = "light" | "dark" | "system";
 
@@ -141,6 +150,55 @@ export interface DesktopEnvironmentBootstrap {
   sessionToken?: string;
 }
 
+export interface DesktopSshEnvironmentTarget {
+  alias: string;
+  hostname: string;
+  username: string | null;
+  port: number | null;
+}
+
+export type DesktopSshHostSource = "ssh-config" | "known-hosts";
+
+export interface DesktopDiscoveredSshHost extends DesktopSshEnvironmentTarget {
+  source: DesktopSshHostSource;
+}
+
+export interface DesktopSshEnvironmentBootstrap {
+  target: DesktopSshEnvironmentTarget;
+  httpBaseUrl: string;
+  wsBaseUrl: string;
+  pairingToken: string | null;
+  remotePort?: number;
+  remoteServerKind?: "external" | "managed";
+}
+
+export interface DesktopSshPasswordPromptRequest {
+  requestId: string;
+  destination: string;
+  username: string | null;
+  prompt: string;
+  expiresAt: string;
+}
+
+export interface AdvertisedEndpointProvider {
+  id: string;
+  label: string;
+  kind: "local-network" | "private-network" | "hosted";
+  isAddon?: boolean;
+}
+
+export interface AdvertisedEndpoint {
+  id: string;
+  label: string;
+  httpBaseUrl: string;
+  provider: AdvertisedEndpointProvider;
+  source: "desktop" | "desktop-addon" | "hosted";
+  reachability: "local-network" | "private-network" | "public-internet";
+  status: "available" | "unavailable";
+  description?: string;
+  hostedHttpsCompatibility?: "compatible" | "requires-configuration";
+}
+
 export interface PersistedSavedEnvironmentRecord {
   environmentId: EnvironmentId;
   label: string;
@@ -148,6 +206,7 @@ export interface PersistedSavedEnvironmentRecord {
   httpBaseUrl: string;
   createdAt: string;
   lastConnectedAt: string | null;
+  desktopSsh?: DesktopSshEnvironmentTarget;
 }
 
 export type DesktopServerExposureMode = "local-only" | "network-accessible";
@@ -156,6 +215,8 @@ export interface DesktopServerExposureState {
   mode: DesktopServerExposureMode;
   endpointUrl: string | null;
   advertisedHost: string | null;
+  tailscaleServeEnabled?: boolean;
+  tailscaleServePort?: number;
 }
 
 export interface DesktopScreenshotCapture {
@@ -183,8 +244,33 @@ export interface DesktopBridge {
   getSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<string | null>;
   setSavedEnvironmentSecret: (environmentId: EnvironmentId, secret: string) => Promise<boolean>;
   removeSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<void>;
+  discoverSshHosts?: () => Promise<readonly DesktopDiscoveredSshHost[]>;
+  ensureSshEnvironment?: (
+    target: DesktopSshEnvironmentTarget,
+    options?: { issuePairingToken?: boolean },
+  ) => Promise<DesktopSshEnvironmentBootstrap>;
+  disconnectSshEnvironment?: (target: DesktopSshEnvironmentTarget) => Promise<void>;
+  fetchSshEnvironmentDescriptor?: (httpBaseUrl: string) => Promise<ExecutionEnvironmentDescriptor>;
+  bootstrapSshBearerSession?: (
+    httpBaseUrl: string,
+    credential: string,
+  ) => Promise<AuthBearerBootstrapResult>;
+  fetchSshSessionState?: (httpBaseUrl: string, bearerToken: string) => Promise<AuthSessionState>;
+  issueSshWebSocketToken?: (
+    httpBaseUrl: string,
+    bearerToken: string,
+  ) => Promise<AuthWebSocketTokenResult>;
+  onSshPasswordPrompt?: (
+    listener: (request: DesktopSshPasswordPromptRequest) => void,
+  ) => () => void;
+  resolveSshPasswordPrompt?: (requestId: string, password: string | null) => Promise<void>;
   getServerExposureState: () => Promise<DesktopServerExposureState>;
   setServerExposureMode: (mode: DesktopServerExposureMode) => Promise<DesktopServerExposureState>;
+  setTailscaleServeEnabled?: (input: {
+    readonly enabled: boolean;
+    readonly port?: number;
+  }) => Promise<DesktopServerExposureState>;
+  getAdvertisedEndpoints?: () => Promise<readonly AdvertisedEndpoint[]>;
   getWsUrl: () => string | null;
   pickFolder: () => Promise<string | null>;
   confirm: (message: string) => Promise<boolean>;
@@ -237,6 +323,7 @@ export interface LocalApi {
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+    discoverSourceControl: () => Promise<SourceControlDiscoveryResult>;
   };
 }
 
@@ -307,6 +394,7 @@ export interface EnvironmentApi {
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+    discoverSourceControl: () => Promise<SourceControlDiscoveryResult>;
   };
 }
 
@@ -381,6 +469,7 @@ export interface NativeApi {
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+    discoverSourceControl: () => Promise<SourceControlDiscoveryResult>;
   };
   orchestration: {
     getSnapshot: () => Promise<OrchestrationReadModel>;

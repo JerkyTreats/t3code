@@ -1,13 +1,11 @@
-import type { DesktopServerExposureMode } from "@t3tools/contracts";
+import type { NetworkInterfaceInfo } from "node:os";
+import type {
+  AdvertisedEndpoint,
+  AdvertisedEndpointProvider,
+  DesktopServerExposureMode,
+} from "@t3tools/contracts";
 
-interface NetworkInterfaceInfoLike {
-  readonly address: string;
-  readonly family: string | number;
-  readonly internal: boolean;
-  readonly [key: string]: unknown;
-}
-
-type NetworkInterfacesLike = Record<string, ReadonlyArray<NetworkInterfaceInfoLike> | undefined>;
+type NetworkInterfacesLike = NodeJS.Dict<NetworkInterfaceInfo[]>;
 
 export interface DesktopServerExposure {
   readonly mode: DesktopServerExposureMode;
@@ -17,6 +15,17 @@ export interface DesktopServerExposure {
   readonly endpointUrl: string | null;
   readonly advertisedHost: string | null;
 }
+
+export interface DesktopAdvertisedEndpointInput {
+  readonly port: number;
+  readonly exposure: DesktopServerExposure;
+}
+
+const DESKTOP_ENDPOINT_PROVIDER: AdvertisedEndpointProvider = {
+  id: "desktop",
+  label: "Desktop",
+  kind: "local-network",
+};
 
 export function resolveLanAdvertisedHost(
   networkInterfaces: NetworkInterfacesLike,
@@ -32,8 +41,7 @@ export function resolveLanAdvertisedHost(
     }
 
     for (const address of addresses) {
-      const isIpv4 = address.family === "IPv4" || address.family === 4;
-      if (isIpv4 && !address.internal) {
+      if (address.family === "IPv4" && !address.internal) {
         return address.address;
       }
     }
@@ -75,4 +83,36 @@ export function resolveDesktopServerExposure(input: {
     endpointUrl: advertisedHost === null ? null : `http://${advertisedHost}:${input.port}`,
     advertisedHost,
   };
+}
+
+export function resolveDesktopCoreAdvertisedEndpoints(
+  input: DesktopAdvertisedEndpointInput,
+): readonly AdvertisedEndpoint[] {
+  const endpoints: AdvertisedEndpoint[] = [
+    {
+      id: `desktop-loopback:${input.port}`,
+      label: "This machine",
+      httpBaseUrl: input.exposure.localHttpUrl,
+      provider: DESKTOP_ENDPOINT_PROVIDER,
+      source: "desktop",
+      reachability: "local-network",
+      status: "available",
+      description: "Loopback endpoint for this desktop app.",
+    },
+  ];
+
+  if (input.exposure.endpointUrl) {
+    endpoints.push({
+      id: `desktop-lan:${input.exposure.endpointUrl}`,
+      label: "Local network",
+      httpBaseUrl: input.exposure.endpointUrl,
+      provider: DESKTOP_ENDPOINT_PROVIDER,
+      source: "desktop",
+      reachability: "local-network",
+      status: "available",
+      description: "Reachable from devices on the same network.",
+    });
+  }
+
+  return endpoints;
 }

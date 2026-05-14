@@ -19,8 +19,10 @@ import {
 } from "electron";
 import type { MenuItemConstructorOptions } from "electron";
 import type {
+  AdvertisedEndpoint,
   ClientSettings,
   DesktopEnvironmentBootstrap,
+  DesktopServerExposureMode,
   DesktopScreenshotCapture,
   DesktopServerExposureState,
   DesktopSystemTheme,
@@ -47,8 +49,20 @@ import {
   writeSavedEnvironmentSecret,
 } from "./clientPersistence.ts";
 import { showDesktopConfirmDialog } from "./confirmDialog.ts";
+import {
+  readDesktopSettings,
+  setDesktopServerExposurePreference,
+  setDesktopTailscaleServePreference,
+  writeDesktopSettings,
+} from "./desktopSettings.ts";
 import { ServerListeningDetector } from "./serverListeningDetector.ts";
+import {
+  resolveDesktopCoreAdvertisedEndpoints,
+  resolveDesktopServerExposure,
+} from "./serverExposure.ts";
+import { DesktopSshEnvironmentBridge, resolveRemoteT3CliPackageSpec } from "./sshEnvironment.ts";
 import { syncShellEnvironment } from "./syncShellEnvironment.ts";
+import { resolveTailscaleAdvertisedEndpoints } from "./tailscaleEndpointProvider.ts";
 import { getAutoUpdateDisabledReason, shouldBroadcastDownloadProgress } from "./updateState.ts";
 import {
   createInitialDesktopUpdateState,
@@ -93,11 +107,14 @@ const SET_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:set-saved-environment-secr
 const REMOVE_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:remove-saved-environment-secret";
 const GET_SERVER_EXPOSURE_STATE_CHANNEL = "desktop:get-server-exposure-state";
 const SET_SERVER_EXPOSURE_MODE_CHANNEL = "desktop:set-server-exposure-mode";
+const SET_TAILSCALE_SERVE_ENABLED_CHANNEL = "desktop:set-tailscale-serve-enabled";
+const GET_ADVERTISED_ENDPOINTS_CHANNEL = "desktop:get-advertised-endpoints";
 const GET_WS_URL_CHANNEL = "desktop:get-ws-url";
 const DESKTOP_LOOPBACK_HOST = "127.0.0.1";
 const BASE_DIR = process.env.T3CODE_HOME?.trim() || Path.join(OS.homedir(), ".t3");
 const STATE_DIR = Path.join(BASE_DIR, "userdata");
 const CLIENT_SETTINGS_PATH = Path.join(STATE_DIR, "client-settings.json");
+const DESKTOP_SETTINGS_PATH = Path.join(STATE_DIR, "desktop-settings.json");
 const SAVED_ENVIRONMENT_REGISTRY_PATH = Path.join(STATE_DIR, "saved-environments.json");
 const DESKTOP_SCHEME = "t3";
 const ROOT_DIR = Path.resolve(__dirname, "../../..");
@@ -294,12 +311,54 @@ function getDesktopSecretStorage() {
   };
 }
 
+function getDesktopExposure() {
+  return resolveDesktopServerExposure({
+    mode: desktopSettings.serverExposureMode,
+    port: backendPort,
+    networkInterfaces: OS.networkInterfaces(),
+  });
+}
+
 function getDesktopServerExposureState(): DesktopServerExposureState {
+  const exposure = getDesktopExposure();
   return {
-    mode: "local-only",
-    endpointUrl: backendHttpUrl || null,
-    advertisedHost: backendPort > 0 ? DESKTOP_LOOPBACK_HOST : null,
+    mode: exposure.mode,
+    endpointUrl: exposure.endpointUrl,
+    advertisedHost: exposure.advertisedHost,
+    tailscaleServeEnabled: desktopSettings.tailscaleServeEnabled,
+    tailscaleServePort: desktopSettings.tailscaleServePort,
   };
+}
+
+async function getDesktopAdvertisedEndpoints(): Promise<readonly AdvertisedEndpoint[]> {
+  if (backendPort <= 0) {
+    return [];
+  }
+
+  const coreEndpoints = resolveDesktopCoreAdvertisedEndpoints({
+    port: backendPort,
+    exposure: getDesktopExposure(),
+  });
+  const tailscaleEndpoints = await resolveTailscaleAdvertisedEndpoints({
+    port: backendPort,
+    serveEnabled: desktopSettings.tailscaleServeEnabled,
+    servePort: desktopSettings.tailscaleServePort,
+    networkInterfaces: OS.networkInterfaces(),
+  });
+  return [...coreEndpoints, ...tailscaleEndpoints];
+}
+
+async function resolveConfiguredBackendPort(
+  startPort = DEFAULT_DESKTOP_BACKEND_PORT,
+): Promise<number> {
+  const requiredHosts =
+    desktopSettings.serverExposureMode === "network-accessible" ? ["0.0.0.0"] : [];
+
+  return await resolveDesktopBackendPort({
+    host: DESKTOP_LOOPBACK_HOST,
+    requiredHosts,
+    startPort,
+  });
 }
 
 async function waitForBackendHttpReady(
@@ -650,6 +709,16 @@ let updaterConfigured = false;
 let updateState: DesktopUpdateState = initialUpdateState();
 let desktopSystemTheme: DesktopSystemTheme | null = readDesktopSystemTheme();
 let stopWatchingDesktopSystemTheme: (() => void) | null = null;
+let desktopSettings = readDesktopSettings(DESKTOP_SETTINGS_PATH, app.getVersion());
+const desktopSshEnvironmentBridge = new DesktopSshEnvironmentBridge({
+  getMainWindow: () => mainWindow,
+  resolveCliPackageSpec: () =>
+    resolveRemoteT3CliPackageSpec({
+      appVersion: app.getVersion(),
+      updateChannel: desktopSettings.updateChannel,
+      isDevelopment,
+    }),
+});
 
 function resolveUpdaterErrorContext(): DesktopUpdateErrorContext {
   if (updateInstallInFlight) return "install";
@@ -1368,9 +1437,10 @@ function startBackend(): void {
   if (isQuitting || backendProcess) return;
 
   backendObservabilitySettings = readPersistedBackendObservabilitySettings();
+  const exposure = getDesktopExposure();
   const backendEntry = resolveBackendEntry();
   writeDesktopLogHeader(
-    `backend start requested entry=${backendEntry} exists=${String(FS.existsSync(backendEntry))} cwd=${resolveBackendCwd()} port=${backendPort} authToken=${backendAuthToken ? "present" : "missing"} desktopBootstrapToken=${backendBootstrapToken ? "present" : "missing"}`,
+    `backend start requested entry=${backendEntry} exists=${String(FS.existsSync(backendEntry))} cwd=${resolveBackendCwd()} port=${backendPort} host=${exposure.bindHost} authToken=${backendAuthToken ? "present" : "missing"} desktopBootstrapToken=${backendBootstrapToken ? "present" : "missing"}`,
   );
   if (!FS.existsSync(backendEntry)) {
     scheduleBackendRestart(`missing server entry at ${backendEntry}`);
@@ -1400,6 +1470,7 @@ function startBackend(): void {
           mode: "desktop",
           noBrowser: true,
           port: backendPort,
+          host: exposure.bindHost,
           t3Home: BASE_DIR,
           authToken: backendAuthToken,
           desktopBootstrapToken: backendBootstrapToken,
@@ -1561,6 +1632,8 @@ async function stopBackendAndWaitForExit(timeoutMs = 5_000): Promise<void> {
 }
 
 function registerIpcHandlers(): void {
+  desktopSshEnvironmentBridge.registerIpcHandlers(ipcMain);
+
   ipcMain.removeAllListeners(GET_LOCAL_ENVIRONMENT_BOOTSTRAP_CHANNEL);
   ipcMain.on(GET_LOCAL_ENVIRONMENT_BOOTSTRAP_CHANNEL, (event) => {
     const bootstrap: DesktopEnvironmentBootstrap = {
@@ -1671,12 +1744,58 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid desktop server exposure input.");
     }
 
-    if (rawMode === "network-accessible") {
-      throw new Error("Network-accessible desktop server exposure is not available yet.");
+    const nextSettings = setDesktopServerExposurePreference(
+      desktopSettings,
+      rawMode as DesktopServerExposureMode,
+    );
+    if (nextSettings === desktopSettings) {
+      return getDesktopServerExposureState();
     }
+
+    desktopSettings = nextSettings;
+    writeDesktopSettings(DESKTOP_SETTINGS_PATH, desktopSettings);
+
+    const nextStartPort = backendPort > 0 ? backendPort : DEFAULT_DESKTOP_BACKEND_PORT;
+    backendPort = await resolveConfiguredBackendPort(nextStartPort);
+    const exposure = getDesktopExposure();
+    backendHttpUrl = exposure.localHttpUrl;
+    backendWsUrl = `${exposure.localWsUrl}/`;
+
+    await stopBackendAndWaitForExit();
+    startBackend();
 
     return getDesktopServerExposureState();
   });
+
+  ipcMain.removeHandler(SET_TAILSCALE_SERVE_ENABLED_CHANNEL);
+  ipcMain.handle(SET_TAILSCALE_SERVE_ENABLED_CHANNEL, async (_event, rawInput: unknown) => {
+    if (typeof rawInput !== "object" || rawInput === null) {
+      throw new Error("Invalid Tailscale Serve input.");
+    }
+
+    const input = rawInput as {
+      readonly enabled?: unknown;
+      readonly port?: unknown;
+    };
+    if (typeof input.enabled !== "boolean") {
+      throw new Error("Invalid Tailscale Serve input.");
+    }
+
+    const nextSettings = setDesktopTailscaleServePreference(desktopSettings, {
+      enabled: input.enabled,
+      ...(typeof input.port === "number" ? { port: input.port } : {}),
+    });
+    if (nextSettings === desktopSettings) {
+      return getDesktopServerExposureState();
+    }
+
+    desktopSettings = nextSettings;
+    writeDesktopSettings(DESKTOP_SETTINGS_PATH, desktopSettings);
+    return getDesktopServerExposureState();
+  });
+
+  ipcMain.removeHandler(GET_ADVERTISED_ENDPOINTS_CHANNEL);
+  ipcMain.handle(GET_ADVERTISED_ENDPOINTS_CHANNEL, async () => getDesktopAdvertisedEndpoints());
 
   ipcMain.removeHandler(PICK_FOLDER_CHANNEL);
   ipcMain.handle(PICK_FOLDER_CHANNEL, async () => {
@@ -1954,19 +2073,17 @@ configureAppIdentity();
 
 async function bootstrap(): Promise<void> {
   writeDesktopLogHeader("bootstrap start");
-  backendPort = await resolveDesktopBackendPort({
-    host: DESKTOP_LOOPBACK_HOST,
-    startPort: DEFAULT_DESKTOP_BACKEND_PORT,
-  });
+  desktopSettings = readDesktopSettings(DESKTOP_SETTINGS_PATH, app.getVersion());
+  backendPort = await resolveConfiguredBackendPort();
+  const exposure = getDesktopExposure();
   writeDesktopLogHeader(
-    `selected backend port via sequential scan startPort=${DEFAULT_DESKTOP_BACKEND_PORT} port=${backendPort}`,
+    `selected backend port via sequential scan startPort=${DEFAULT_DESKTOP_BACKEND_PORT} port=${backendPort} exposure=${exposure.mode} bindHost=${exposure.bindHost}`,
   );
   backendAuthToken = Crypto.randomBytes(24).toString("hex");
   backendBootstrapToken = Crypto.randomBytes(24).toString("hex");
-  backendHttpUrl = `http://${DESKTOP_LOOPBACK_HOST}:${backendPort}`;
-  const baseUrl = `ws://${DESKTOP_LOOPBACK_HOST}:${backendPort}`;
-  backendWsUrl = `${baseUrl}/`;
-  writeDesktopLogHeader(`bootstrap resolved websocket endpoint baseUrl=${baseUrl}`);
+  backendHttpUrl = exposure.localHttpUrl;
+  backendWsUrl = `${exposure.localWsUrl}/`;
+  writeDesktopLogHeader(`bootstrap resolved websocket endpoint baseUrl=${exposure.localWsUrl}`);
 
   registerIpcHandlers();
   writeDesktopLogHeader("bootstrap ipc handlers registered");
@@ -1987,6 +2104,8 @@ app.on("before-quit", () => {
   stopWatchingDesktopSystemTheme?.();
   stopWatchingDesktopSystemTheme = null;
   cancelBackendReadinessWait();
+  desktopSshEnvironmentBridge.cancelPendingPasswordPrompts("Desktop app is quitting.");
+  void desktopSshEnvironmentBridge.dispose();
   stopBackend();
   restoreStdIoCapture?.();
 });
@@ -2025,6 +2144,8 @@ if (process.platform !== "win32") {
     isQuitting = true;
     writeDesktopLogHeader("SIGINT received");
     clearUpdatePollTimer();
+    desktopSshEnvironmentBridge.cancelPendingPasswordPrompts("Desktop app is quitting.");
+    void desktopSshEnvironmentBridge.dispose();
     stopBackend();
     restoreStdIoCapture?.();
     app.quit();
@@ -2035,6 +2156,8 @@ if (process.platform !== "win32") {
     isQuitting = true;
     writeDesktopLogHeader("SIGTERM received");
     clearUpdatePollTimer();
+    desktopSshEnvironmentBridge.cancelPendingPasswordPrompts("Desktop app is quitting.");
+    void desktopSshEnvironmentBridge.dispose();
     stopBackend();
     restoreStdIoCapture?.();
     app.quit();

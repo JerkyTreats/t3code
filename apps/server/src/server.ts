@@ -69,6 +69,9 @@ import {
 import { ServerSecretStoreLive } from "./auth/Layers/ServerSecretStore.ts";
 import { ServerAuthLive } from "./auth/Layers/ServerAuth.ts";
 import { ServerEnvironmentLive } from "./environment/Layers/ServerEnvironment.ts";
+import { VcsProcessLive } from "./vcs/VcsProcess.ts";
+import { SourceControlProviderRegistryLive } from "./sourceControl/SourceControlProviderRegistry.ts";
+import { SourceControlDiscoveryLive } from "./sourceControl/SourceControlDiscovery.ts";
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -239,6 +242,14 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(ProjectFaviconResolverLive),
   Layer.provideMerge(AuthLayerLive),
   Layer.provideMerge(ServerEnvironmentLive),
+  Layer.provideMerge(VcsProcessLive),
+  Layer.provideMerge(SourceControlProviderRegistryLive.pipe(Layer.provide(VcsProcessLive))),
+  Layer.provideMerge(
+    SourceControlDiscoveryLive.pipe(
+      Layer.provide(SourceControlProviderRegistryLive.pipe(Layer.provide(VcsProcessLive))),
+      Layer.provide(VcsProcessLive),
+    ),
+  ),
 
   // Misc.
   Layer.provideMerge(AnalyticsServiceLayerLive),

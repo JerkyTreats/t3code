@@ -8,6 +8,7 @@ import type {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Random from "effect/Random";
+import { detectSourceControlProviderFromRemoteUrl } from "./sourceControl.ts";
 
 export const WORKTREE_BRANCH_PREFIX = "t3code";
 const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(`^${WORKTREE_BRANCH_PREFIX}\\/[0-9a-f]{8}$`);
@@ -191,69 +192,14 @@ export function dedupeRemoteBranchesWithLocalMatches(
   });
 }
 
-function parseGitRemoteHost(remoteUrl: string): string | null {
-  const trimmed = remoteUrl.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-
-  if (trimmed.startsWith("git@")) {
-    const hostWithPath = trimmed.slice("git@".length);
-    const separatorIndex = hostWithPath.search(/[:/]/);
-    if (separatorIndex <= 0) {
-      return null;
-    }
-    return hostWithPath.slice(0, separatorIndex).toLowerCase();
-  }
-
-  try {
-    return new URL(trimmed).hostname.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
-function toBaseUrl(host: string): string {
-  return `https://${host}`;
-}
-
-function isGitHubHost(host: string): boolean {
-  return host === "github.com" || host.includes("github");
-}
-
-function isGitLabHost(host: string): boolean {
-  return host === "gitlab.com" || host.includes("gitlab");
-}
-
 export function detectGitHostingProviderFromRemoteUrl(
   remoteUrl: string,
 ): GitHostingProvider | null {
-  const host = parseGitRemoteHost(remoteUrl);
-  if (!host) {
+  const provider = detectSourceControlProviderFromRemoteUrl(remoteUrl);
+  if (!provider) {
     return null;
   }
-
-  if (isGitHubHost(host)) {
-    return {
-      kind: "github",
-      name: host === "github.com" ? "GitHub" : "GitHub Self-Hosted",
-      baseUrl: toBaseUrl(host),
-    };
-  }
-
-  if (isGitLabHost(host)) {
-    return {
-      kind: "gitlab",
-      name: host === "gitlab.com" ? "GitLab" : "GitLab Self-Hosted",
-      baseUrl: toBaseUrl(host),
-    };
-  }
-
-  return {
-    kind: "unknown",
-    name: host,
-    baseUrl: toBaseUrl(host),
-  };
+  return provider;
 }
 
 const EMPTY_GIT_STATUS_REMOTE: GitStatusRemoteResult = {
