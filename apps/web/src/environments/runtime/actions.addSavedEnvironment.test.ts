@@ -27,6 +27,7 @@ const mockUpsert = vi.fn((record: Record<string, unknown>) => {
 });
 const mockListSavedEnvironmentRecords = vi.fn(() => mockSavedRecords);
 const mockEnsureSshEnvironment = vi.fn();
+const mockDisconnectSshEnvironment = vi.fn();
 const mockFetchSshEnvironmentDescriptor = vi.fn();
 const mockBootstrapSshBearerSession = vi.fn();
 const mockToPersistedSavedEnvironmentRecord = vi.fn((record) => record);
@@ -72,6 +73,7 @@ describe("saved environment actions", () => {
     vi.stubGlobal("window", {
       desktopBridge: {
         ensureSshEnvironment: mockEnsureSshEnvironment,
+        disconnectSshEnvironment: mockDisconnectSshEnvironment,
         fetchSshEnvironmentDescriptor: mockFetchSshEnvironmentDescriptor,
         bootstrapSshBearerSession: mockBootstrapSshBearerSession,
       },
@@ -104,6 +106,7 @@ describe("saved environment actions", () => {
     mockWriteSavedEnvironmentBearerToken.mockResolvedValue(false);
     mockSetSavedEnvironmentRegistry.mockResolvedValue(undefined);
     mockRemoveSavedEnvironmentBearerToken.mockResolvedValue(undefined);
+    mockDisconnectSshEnvironment.mockResolvedValue(undefined);
     mockFetchSshEnvironmentDescriptor.mockResolvedValue({
       environmentId: EnvironmentId.make("environment-ssh"),
       label: "SSH environment",
@@ -191,6 +194,40 @@ describe("saved environment actions", () => {
           port: 22,
         },
       }),
+    );
+  });
+
+  it("disconnects desktop SSH state before forgetting a saved environment", async () => {
+    mockSavedRecords = [
+      {
+        environmentId: EnvironmentId.make("environment-ssh"),
+        label: "Devbox",
+        httpBaseUrl: "http://127.0.0.1:3774/",
+        wsBaseUrl: "ws://127.0.0.1:3774/",
+        createdAt: "2026-05-15T00:00:00.000Z",
+        lastConnectedAt: "2026-05-15T00:01:00.000Z",
+        desktopSsh: {
+          alias: "devbox",
+          hostname: "devbox.example.com",
+          username: "julius",
+          port: 22,
+        },
+      },
+    ];
+
+    const { removeSavedEnvironment } = await import("./actions");
+
+    await removeSavedEnvironment(EnvironmentId.make("environment-ssh"));
+
+    expect(mockDisconnectSshEnvironment).toHaveBeenCalledWith({
+      alias: "devbox",
+      hostname: "devbox.example.com",
+      username: "julius",
+      port: 22,
+    });
+    expect(mockRemove).toHaveBeenCalledWith(EnvironmentId.make("environment-ssh"));
+    expect(mockRemoveSavedEnvironmentBearerToken).toHaveBeenCalledWith(
+      EnvironmentId.make("environment-ssh"),
     );
   });
 });

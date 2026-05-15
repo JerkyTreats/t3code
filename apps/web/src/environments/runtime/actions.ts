@@ -133,6 +133,19 @@ async function removeSavedEnvironmentRecord(environmentId: EnvironmentId): Promi
   await removeSavedEnvironmentBearerToken(environmentId);
 }
 
+export async function removeSavedEnvironment(environmentId: EnvironmentId): Promise<void> {
+  const record = getSavedEnvironmentRecord(environmentId);
+  if (!record) {
+    return;
+  }
+
+  if (record.desktopSsh && typeof window.desktopBridge?.disconnectSshEnvironment === "function") {
+    await window.desktopBridge.disconnectSshEnvironment(record.desktopSsh);
+  }
+
+  await removeSavedEnvironmentRecord(environmentId);
+}
+
 export async function addSavedEnvironment(input: {
   readonly label: string;
   readonly pairingUrl?: string;

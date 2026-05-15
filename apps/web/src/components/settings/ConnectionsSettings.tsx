@@ -10,7 +10,7 @@ import type {
 import { useCallback, useMemo, useState } from "react";
 
 import { ensureLocalApi } from "../../localApi";
-import { connectDesktopSshEnvironment } from "../../environments/runtime";
+import { connectDesktopSshEnvironment, removeSavedEnvironment } from "../../environments/runtime";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { cn } from "../../lib/utils";
@@ -85,6 +85,10 @@ export function ConnectionsSettings() {
   const [isUpdatingTailscale, setIsUpdatingTailscale] = useState(false);
   const [connectingSshHostKey, setConnectingSshHostKey] = useState<string | null>(null);
   const [sshErrorMessage, setSshErrorMessage] = useState<string | null>(null);
+  const [removingEnvironmentId, setRemovingEnvironmentId] = useState<string | null>(null);
+  const [savedEnvironmentErrorMessage, setSavedEnvironmentErrorMessage] = useState<string | null>(
+    null,
+  );
 
   const exposure = snapshotQuery.data?.exposure ?? createExposureStateFallback();
   const advertisedEndpoints = snapshotQuery.data?.advertisedEndpoints ?? [];
@@ -119,6 +123,24 @@ export function ConnectionsSettings() {
         setSshErrorMessage(error instanceof Error ? error.message : String(error));
       } finally {
         setConnectingSshHostKey(null);
+      }
+    },
+    [snapshotQuery],
+  );
+
+  const forgetSavedEnvironment = useCallback(
+    async (environmentId: string) => {
+      setSavedEnvironmentErrorMessage(null);
+      setRemovingEnvironmentId(environmentId);
+      try {
+        await removeSavedEnvironment(
+          environmentId as PersistedSavedEnvironmentRecord["environmentId"],
+        );
+        await snapshotQuery.refetch();
+      } catch (error) {
+        setSavedEnvironmentErrorMessage(error instanceof Error ? error.message : String(error));
+      } finally {
+        setRemovingEnvironmentId(null);
       }
     },
     [snapshotQuery],
@@ -180,9 +202,19 @@ export function ConnectionsSettings() {
               </span>
             </>
           }
+          control={
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={removingEnvironmentId !== null}
+              onClick={() => void forgetSavedEnvironment(record.environmentId)}
+            >
+              {removingEnvironmentId === record.environmentId ? "Forgetting..." : "Forget"}
+            </Button>
+          }
         />
       )),
-    [registry],
+    [forgetSavedEnvironment, registry, removingEnvironmentId],
   );
 
   const advertisedEndpointRows = useMemo(
@@ -209,7 +241,7 @@ export function ConnectionsSettings() {
 
   const sshHostRows = useMemo(
     () =>
-      sshHosts.map((host: DesktopDiscoveredSshHost) => (
+      sshHosts.map((host: DesktopDiscoveredSshHost) =>
         (() => {
           const hostKey = makeSshHostKey(host);
           const savedRecord = registry.find(
@@ -251,8 +283,8 @@ export function ConnectionsSettings() {
               }
             />
           );
-        })()
-      )),
+        })(),
+      ),
     [connectSshHost, connectingSshHostKey, registry, sshHosts],
   );
 
@@ -341,6 +373,12 @@ export function ConnectionsSettings() {
       </SettingsSection>
 
       <SettingsSection title="Saved Environments" icon={<LinkIcon className="size-3.5" />}>
+        {savedEnvironmentErrorMessage ? (
+          <SettingsRow
+            title="Saved environment update failed"
+            description={savedEnvironmentErrorMessage}
+          />
+        ) : null}
         {savedEnvironmentRows.length > 0 ? (
           savedEnvironmentRows
         ) : (
@@ -354,10 +392,7 @@ export function ConnectionsSettings() {
 
       <SettingsSection title="SSH Hosts" icon={<LinkIcon className="size-3.5" />}>
         {sshErrorMessage ? (
-          <SettingsRow
-            title="SSH connection failed"
-            description={sshErrorMessage}
-          />
+          <SettingsRow title="SSH connection failed" description={sshErrorMessage} />
         ) : null}
         {sshHostRows.length > 0 ? (
           sshHostRows

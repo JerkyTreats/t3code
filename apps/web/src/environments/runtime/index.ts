@@ -1,4 +1,8 @@
-export { addSavedEnvironment, connectDesktopSshEnvironment } from "./actions";
+export {
+  addSavedEnvironment,
+  connectDesktopSshEnvironment,
+  removeSavedEnvironment,
+} from "./actions";
 
 export {
   getEnvironmentHttpBaseUrl,
