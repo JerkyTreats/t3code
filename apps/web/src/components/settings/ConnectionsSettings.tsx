@@ -16,6 +16,10 @@ import { Switch } from "../ui/switch";
 import { cn } from "../../lib/utils";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
+const EMPTY_ADVERTISED_ENDPOINTS: readonly AdvertisedEndpoint[] = [];
+const EMPTY_SAVED_ENVIRONMENTS: readonly PersistedSavedEnvironmentRecord[] = [];
+const EMPTY_SSH_HOSTS: readonly DesktopDiscoveredSshHost[] = [];
+
 function createExposureStateFallback(): DesktopServerExposureState {
   return {
     mode: "local-only",
@@ -85,15 +89,17 @@ export function ConnectionsSettings() {
   const [isUpdatingTailscale, setIsUpdatingTailscale] = useState(false);
   const [connectingSshHostKey, setConnectingSshHostKey] = useState<string | null>(null);
   const [sshErrorMessage, setSshErrorMessage] = useState<string | null>(null);
+  const [reconnectingEnvironmentId, setReconnectingEnvironmentId] = useState<string | null>(null);
   const [removingEnvironmentId, setRemovingEnvironmentId] = useState<string | null>(null);
   const [savedEnvironmentErrorMessage, setSavedEnvironmentErrorMessage] = useState<string | null>(
     null,
   );
 
-  const exposure = snapshotQuery.data?.exposure ?? createExposureStateFallback();
-  const advertisedEndpoints = snapshotQuery.data?.advertisedEndpoints ?? [];
-  const registry = snapshotQuery.data?.registry ?? [];
-  const sshHosts = snapshotQuery.data?.sshHosts ?? [];
+  const snapshotData = snapshotQuery.data;
+  const exposure = snapshotData?.exposure ?? createExposureStateFallback();
+  const advertisedEndpoints = snapshotData?.advertisedEndpoints ?? EMPTY_ADVERTISED_ENDPOINTS;
+  const registry = snapshotData?.registry ?? EMPTY_SAVED_ENVIRONMENTS;
+  const sshHosts = snapshotData?.sshHosts ?? EMPTY_SSH_HOSTS;
   const networkAccessible = exposure.mode === "network-accessible";
   const exposureUnavailable = typeof window.desktopBridge?.getServerExposureState !== "function";
   const tailscaleToggleUnavailable =
@@ -141,6 +147,28 @@ export function ConnectionsSettings() {
         setSavedEnvironmentErrorMessage(error instanceof Error ? error.message : String(error));
       } finally {
         setRemovingEnvironmentId(null);
+      }
+    },
+    [snapshotQuery],
+  );
+
+  const reconnectSavedEnvironment = useCallback(
+    async (record: PersistedSavedEnvironmentRecord) => {
+      if (!record.desktopSsh) {
+        return;
+      }
+
+      setSavedEnvironmentErrorMessage(null);
+      setReconnectingEnvironmentId(record.environmentId);
+      try {
+        await connectDesktopSshEnvironment(record.desktopSsh, {
+          label: record.label,
+        });
+        await snapshotQuery.refetch();
+      } catch (error) {
+        setSavedEnvironmentErrorMessage(error instanceof Error ? error.message : String(error));
+      } finally {
+        setReconnectingEnvironmentId(null);
       }
     },
     [snapshotQuery],
@@ -203,18 +231,38 @@ export function ConnectionsSettings() {
             </>
           }
           control={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={removingEnvironmentId !== null}
-              onClick={() => void forgetSavedEnvironment(record.environmentId)}
-            >
-              {removingEnvironmentId === record.environmentId ? "Forgetting..." : "Forget"}
-            </Button>
+            <div className="flex items-center gap-2">
+              {record.desktopSsh ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={reconnectingEnvironmentId !== null || removingEnvironmentId !== null}
+                  onClick={() => void reconnectSavedEnvironment(record)}
+                >
+                  {reconnectingEnvironmentId === record.environmentId
+                    ? "Reconnecting..."
+                    : "Reconnect"}
+                </Button>
+              ) : null}
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={reconnectingEnvironmentId !== null || removingEnvironmentId !== null}
+                onClick={() => void forgetSavedEnvironment(record.environmentId)}
+              >
+                {removingEnvironmentId === record.environmentId ? "Forgetting..." : "Forget"}
+              </Button>
+            </div>
           }
         />
       )),
-    [forgetSavedEnvironment, registry, removingEnvironmentId],
+    [
+      forgetSavedEnvironment,
+      reconnectSavedEnvironment,
+      reconnectingEnvironmentId,
+      registry,
+      removingEnvironmentId,
+    ],
   );
 
   const advertisedEndpointRows = useMemo(
