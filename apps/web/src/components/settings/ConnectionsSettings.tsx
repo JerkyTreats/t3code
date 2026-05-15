@@ -10,6 +10,7 @@ import type {
 import { useCallback, useMemo, useState } from "react";
 
 import { ensureLocalApi } from "../../localApi";
+import { connectDesktopSshEnvironment } from "../../environments/runtime";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { cn } from "../../lib/utils";
@@ -45,6 +46,10 @@ function formatSshTarget(host: DesktopDiscoveredSshHost): string {
   return host.port ? `${authority}:${host.port}` : authority;
 }
 
+function makeSshHostKey(host: DesktopDiscoveredSshHost): string {
+  return `${host.source}:${host.alias}:${host.hostname}:${host.port ?? ""}`;
+}
+
 function useConnectionsSnapshot() {
   return useQuery({
     queryKey: ["connections", "snapshot"],
@@ -78,6 +83,8 @@ export function ConnectionsSettings() {
   const snapshotQuery = useConnectionsSnapshot();
   const [isUpdatingExposure, setIsUpdatingExposure] = useState(false);
   const [isUpdatingTailscale, setIsUpdatingTailscale] = useState(false);
+  const [connectingSshHostKey, setConnectingSshHostKey] = useState<string | null>(null);
+  const [sshErrorMessage, setSshErrorMessage] = useState<string | null>(null);
 
   const exposure = snapshotQuery.data?.exposure ?? createExposureStateFallback();
   const advertisedEndpoints = snapshotQuery.data?.advertisedEndpoints ?? [];
@@ -91,6 +98,31 @@ export function ConnectionsSettings() {
   const refresh = useCallback(() => {
     void snapshotQuery.refetch();
   }, [snapshotQuery]);
+
+  const connectSshHost = useCallback(
+    async (host: DesktopDiscoveredSshHost) => {
+      setSshErrorMessage(null);
+      const hostKey = makeSshHostKey(host);
+      setConnectingSshHostKey(hostKey);
+      try {
+        await connectDesktopSshEnvironment(
+          {
+            alias: host.alias,
+            hostname: host.hostname,
+            username: host.username,
+            port: host.port,
+          },
+          { label: host.alias },
+        );
+        await snapshotQuery.refetch();
+      } catch (error) {
+        setSshErrorMessage(error instanceof Error ? error.message : String(error));
+      } finally {
+        setConnectingSshHostKey(null);
+      }
+    },
+    [snapshotQuery],
+  );
 
   const setExposureMode = useCallback(
     async (checked: boolean) => {
@@ -178,14 +210,50 @@ export function ConnectionsSettings() {
   const sshHostRows = useMemo(
     () =>
       sshHosts.map((host: DesktopDiscoveredSshHost) => (
-        <SettingsRow
-          key={`${host.source}:${host.alias}:${host.hostname}:${host.port ?? ""}`}
-          title={host.alias}
-          description={formatSshTarget(host)}
-          status={<span className="block text-[11px] text-muted-foreground">{host.source}</span>}
-        />
+        (() => {
+          const hostKey = makeSshHostKey(host);
+          const savedRecord = registry.find(
+            (record) =>
+              record.desktopSsh?.alias === host.alias &&
+              record.desktopSsh?.hostname === host.hostname &&
+              record.desktopSsh?.username === host.username &&
+              record.desktopSsh?.port === host.port,
+          );
+
+          return (
+            <SettingsRow
+              key={hostKey}
+              title={host.alias}
+              description={formatSshTarget(host)}
+              status={
+                <>
+                  <span className="block text-[11px] text-muted-foreground">{host.source}</span>
+                  {savedRecord ? (
+                    <span className="mt-1 block text-[11px] text-muted-foreground">
+                      Saved as {savedRecord.label}
+                    </span>
+                  ) : null}
+                </>
+              }
+              control={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={connectingSshHostKey !== null}
+                  onClick={() => void connectSshHost(host)}
+                >
+                  {connectingSshHostKey === hostKey
+                    ? "Connecting..."
+                    : savedRecord
+                      ? "Reconnect"
+                      : "Connect"}
+                </Button>
+              }
+            />
+          );
+        })()
       )),
-    [sshHosts],
+    [connectSshHost, connectingSshHostKey, registry, sshHosts],
   );
 
   return (
@@ -285,6 +353,12 @@ export function ConnectionsSettings() {
       </SettingsSection>
 
       <SettingsSection title="SSH Hosts" icon={<LinkIcon className="size-3.5" />}>
+        {sshErrorMessage ? (
+          <SettingsRow
+            title="SSH connection failed"
+            description={sshErrorMessage}
+          />
+        ) : null}
         {sshHostRows.length > 0 ? (
           sshHostRows
         ) : (
