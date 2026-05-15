@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import {
+  HostedPairingRouteSurface,
   PairingPendingSurface,
   PairingRouteSurface,
   PairingUnavailableSurface,
 } from "../components/auth/PairingRouteSurface";
+import { readHostedPairingRequest } from "../hostedPairing";
 import { refreshServerAuthGateState, useServerAuthGateState } from "../serverAuthBootstrap";
 
 export const Route = createFileRoute("/pair")({
@@ -12,6 +14,10 @@ export const Route = createFileRoute("/pair")({
 });
 
 function PairRouteView() {
+  if (readHostedPairingRequest()) {
+    return <HostedPairingRouteSurface />;
+  }
+
   const authGateState = useServerAuthGateState();
 
   if (authGateState.status === "booting") {

@@ -58,6 +58,7 @@ import {
   startServerAuthGateBootstrap,
   useServerAuthGateState,
 } from "../serverAuthBootstrap";
+import { hasHostedPairingRequest } from "../hostedPairing";
 import { getWsRpcClient } from "~/wsRpcClient";
 
 export const Route = createRootRouteWithContext<{
@@ -74,22 +75,43 @@ function RootRouteView() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const authGateState = useServerAuthGateState();
+  const hostedPairingRoute =
+    pathname === "/pair" && hasHostedPairingRequest(new URL(window.location.href));
 
   useEffect(() => {
+    if (hostedPairingRoute) {
+      return;
+    }
     void startServerAuthGateBootstrap();
-  }, []);
+  }, [hostedPairingRoute]);
 
   useEffect(() => {
+    if (hostedPairingRoute) {
+      return;
+    }
     if (authGateState.status === "requires-auth" && pathname !== "/pair") {
       void navigate({ to: "/pair", replace: true });
     }
-  }, [authGateState.status, navigate, pathname]);
+  }, [authGateState.status, hostedPairingRoute, navigate, pathname]);
 
   useEffect(() => {
+    if (hostedPairingRoute) {
+      return;
+    }
     if (authGateState.status === "authenticated" && pathname === "/pair") {
       void navigate({ to: "/", replace: true });
     }
-  }, [authGateState.status, navigate, pathname]);
+  }, [authGateState.status, hostedPairingRoute, navigate, pathname]);
+
+  if (hostedPairingRoute) {
+    return (
+      <ToastProvider>
+        <AnchoredToastProvider>
+          <Outlet />
+        </AnchoredToastProvider>
+      </ToastProvider>
+    );
+  }
 
   if (authGateState.status === "booting") {
     return <PairingPendingSurface />;
