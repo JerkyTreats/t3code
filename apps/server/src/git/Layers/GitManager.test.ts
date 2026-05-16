@@ -26,6 +26,7 @@ import { GitCore } from "../Services/GitCore.ts";
 import { makeGitManager } from "./GitManager.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { SourceControlProviderRegistry } from "../../sourceControl/SourceControlProviderRegistry.ts";
 import {
   ProjectSetupScriptRunner,
   type ProjectSetupScriptRunnerInput,
@@ -51,6 +52,36 @@ interface FakeGhScenario {
   };
   repositoryCloneUrls?: Record<string, { url: string; sshUrl: string }>;
   failWith?: GitHubCliError;
+}
+
+interface FakeSourceControlScenario {
+  defaultBranch?: string | null;
+}
+
+function createFakeSourceControlProviderRegistry(
+  scenario?: FakeSourceControlScenario,
+): SourceControlProviderRegistry["Service"] {
+  const provider = {
+    kind: "github" as const,
+    listChangeRequests: () => Effect.succeed([]),
+    getChangeRequest: () => Effect.die("not implemented in test"),
+    createChangeRequest: () => Effect.void,
+    getRepositoryCloneUrls: () => Effect.die("not implemented in test"),
+    createRepository: () => Effect.die("not implemented in test"),
+    getDefaultBranch: () => Effect.succeed(scenario?.defaultBranch ?? null),
+    checkoutChangeRequest: () => Effect.void,
+  };
+
+  return {
+    get: () => Effect.succeed(provider),
+    resolveHandle: () =>
+      Effect.succeed({
+        provider,
+        context: null,
+      }),
+    resolve: () => Effect.succeed(provider),
+    discover: Effect.succeed([]),
+  };
 }
 
 interface FakeGitTextGeneration {
@@ -655,6 +686,7 @@ function preparePullRequestThread(
 
 function makeManager(input?: {
   ghScenario?: FakeGhScenario;
+  sourceControlScenario?: FakeSourceControlScenario;
   textGeneration?: Partial<FakeGitTextGeneration>;
   setupScriptRunner?: ProjectSetupScriptRunnerShape;
 }) {
@@ -665,6 +697,10 @@ function makeManager(input?: {
   });
 
   const serverSettingsLayer = ServerSettingsService.layerTest();
+  const sourceControlProviderRegistryLayer = Layer.succeed(
+    SourceControlProviderRegistry,
+    createFakeSourceControlProviderRegistry(input?.sourceControlScenario),
+  );
 
   const gitCoreLayer = GitCoreLive.pipe(
     Layer.provideMerge(NodeServices.layer),
@@ -682,6 +718,7 @@ function makeManager(input?: {
     ),
     gitCoreLayer,
     serverSettingsLayer,
+    sourceControlProviderRegistryLayer,
   ).pipe(Layer.provideMerge(NodeServices.layer));
 
   return makeGitManager().pipe(
@@ -1535,6 +1572,53 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       expect(
         ghCalls.some((call) =>
           call.includes("pr create --base main --head feature/create-pr-only"),
+        ),
+      ).toBe(true);
+    }),
+  );
+
+  it.effect("create_pr prefers the source control registry for default branch resolution", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["branch", "trunk", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/create-pr-registry-base"]);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      fs.writeFileSync(path.join(repoDir, "create-pr-registry-base.txt"), "registry base\n");
+      yield* runGit(repoDir, ["add", "create-pr-registry-base.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Create PR registry base branch"]);
+
+      const { manager, ghCalls } = yield* makeManager({
+        ghScenario: {
+          defaultBranch: "main",
+          prListSequence: [
+            "[]",
+            JSON.stringify([
+              {
+                number: 304,
+                title: "Create PR registry base branch",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/304",
+                baseRefName: "trunk",
+                headRefName: "feature/create-pr-registry-base",
+              },
+            ]),
+          ],
+        },
+        sourceControlScenario: {
+          defaultBranch: "trunk",
+        },
+      });
+
+      const result = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "create_pr",
+      });
+
+      expect(result.pr.status).toBe("created");
+      expect(
+        ghCalls.some((call) =>
+          call.includes("pr create --base trunk --head feature/create-pr-registry-base"),
         ),
       ).toBe(true);
     }),

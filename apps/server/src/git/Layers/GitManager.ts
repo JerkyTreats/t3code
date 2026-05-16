@@ -35,6 +35,7 @@ import { ProjectSetupScriptRunner } from "../../project/Services/ProjectSetupScr
 import { extractBranchNameFromRemoteRef } from "../remoteRefs.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
+import { SourceControlProviderRegistry } from "../../sourceControl/SourceControlProviderRegistry.ts";
 
 const COMMIT_TIMEOUT_MS = 10 * 60_000;
 const MAX_PROGRESS_TEXT_LENGTH = 500;
@@ -615,6 +616,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   const textGeneration = yield* TextGeneration;
   const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
   const serverSettingsService = yield* ServerSettingsService;
+  const sourceControlProviderRegistry = yield* SourceControlProviderRegistry;
 
   const createProgressEmitter = (
     input: { cwd: string; action: GitStackedAction },
@@ -1140,6 +1142,14 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
       if (upstreamBranch.length > 0 && upstreamBranch !== branch) {
         return upstreamBranch;
       }
+    }
+
+    const defaultFromSourceControl = yield* sourceControlProviderRegistry.resolve({ cwd }).pipe(
+      Effect.flatMap((provider) => provider.getDefaultBranch({ cwd })),
+      Effect.catch(() => Effect.succeed(null)),
+    );
+    if (defaultFromSourceControl) {
+      return defaultFromSourceControl;
     }
 
     const defaultFromGh = yield* gitHubCli
