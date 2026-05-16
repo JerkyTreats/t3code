@@ -322,6 +322,28 @@ function parsePullRequestList(raw: unknown): PullRequestInfo[] {
   return parsed;
 }
 
+function toPullRequestSummaryFromChangeRequest(
+  changeRequest: import("@t3tools/contracts").ChangeRequest,
+): GitHubPullRequestSummary {
+  return {
+    number: changeRequest.number,
+    title: changeRequest.title,
+    url: changeRequest.url,
+    baseRefName: changeRequest.baseRefName,
+    headRefName: changeRequest.headRefName,
+    state: changeRequest.state,
+    ...(changeRequest.isCrossRepository === undefined
+      ? {}
+      : { isCrossRepository: changeRequest.isCrossRepository }),
+    ...(changeRequest.headRepositoryNameWithOwner === undefined
+      ? {}
+      : { headRepositoryNameWithOwner: changeRequest.headRepositoryNameWithOwner }),
+    ...(changeRequest.headRepositoryOwnerLogin === undefined
+      ? {}
+      : { headRepositoryOwnerLogin: changeRequest.headRepositoryOwnerLogin }),
+  };
+}
+
 function toPullRequestInfo(summary: GitHubPullRequestSummary): PullRequestInfo {
   return {
     number: summary.number,
@@ -645,11 +667,13 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     cwd: string,
     repository: string,
   ) {
-    const provider = yield* sourceControlProviderRegistry.get("github");
     const cloneUrlsExit = yield* Effect.exit(
-      provider.getRepositoryCloneUrls({
-        cwd,
-        repository,
+      Effect.gen(function* () {
+        const provider = yield* sourceControlProviderRegistry.get("github");
+        return yield* provider.getRepositoryCloneUrls({
+          cwd,
+          repository,
+        });
       }),
     );
     if (Exit.isSuccess(cloneUrlsExit)) {
@@ -658,6 +682,53 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     return yield* gitHubCli.getRepositoryCloneUrls({
       cwd,
       repository,
+    });
+  });
+
+  const getGitHubPullRequest = Effect.fn("getGitHubPullRequest")(function* (
+    cwd: string,
+    reference: string,
+  ) {
+    const pullRequestExit = yield* Effect.exit(
+      Effect.gen(function* () {
+        const provider = yield* sourceControlProviderRegistry.get("github");
+        return yield* provider.getChangeRequest({
+          cwd,
+          reference,
+        });
+      }),
+    );
+    if (Exit.isSuccess(pullRequestExit)) {
+      return toPullRequestSummaryFromChangeRequest(pullRequestExit.value);
+    }
+    return yield* gitHubCli.getPullRequest({
+      cwd,
+      reference,
+    });
+  });
+
+  const checkoutGitHubPullRequest = Effect.fn("checkoutGitHubPullRequest")(function* (
+    cwd: string,
+    reference: string,
+    force: boolean,
+  ) {
+    const checkoutExit = yield* Effect.exit(
+      Effect.gen(function* () {
+        const provider = yield* sourceControlProviderRegistry.get("github");
+        return yield* provider.checkoutChangeRequest({
+          cwd,
+          reference,
+          force,
+        });
+      }),
+    );
+    if (Exit.isSuccess(checkoutExit)) {
+      return;
+    }
+    yield* gitHubCli.checkoutPullRequest({
+      cwd,
+      reference,
+      force,
     });
   });
 
@@ -1466,12 +1537,10 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
 
   const resolvePullRequest: GitManagerShape["resolvePullRequest"] = Effect.fn("resolvePullRequest")(
     function* (input) {
-      const pullRequest = yield* gitHubCli
-        .getPullRequest({
-          cwd: input.cwd,
-          reference: normalizePullRequestReference(input.reference),
-        })
-        .pipe(Effect.map((resolved) => toResolvedPullRequest(resolved)));
+      const pullRequest = yield* getGitHubPullRequest(
+        input.cwd,
+        normalizePullRequestReference(input.reference),
+      ).pipe(Effect.map((resolved) => toResolvedPullRequest(resolved)));
 
       return { pullRequest };
     },
@@ -1501,18 +1570,11 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     return yield* Effect.gen(function* () {
       const normalizedReference = normalizePullRequestReference(input.reference);
       const rootWorktreePath = canonicalizeExistingPath(input.cwd);
-      const pullRequestSummary = yield* gitHubCli.getPullRequest({
-        cwd: input.cwd,
-        reference: normalizedReference,
-      });
+      const pullRequestSummary = yield* getGitHubPullRequest(input.cwd, normalizedReference);
       const pullRequest = toResolvedPullRequest(pullRequestSummary);
 
       if (input.mode === "local") {
-        yield* gitHubCli.checkoutPullRequest({
-          cwd: input.cwd,
-          reference: normalizedReference,
-          force: true,
-        });
+        yield* checkoutGitHubPullRequest(input.cwd, normalizedReference, true);
         const details = yield* gitCore.statusDetails(input.cwd);
         yield* configurePullRequestHeadUpstream(
           input.cwd,

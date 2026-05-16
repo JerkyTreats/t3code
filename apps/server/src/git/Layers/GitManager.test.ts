@@ -4,9 +4,10 @@ import { spawnSync } from "node:child_process";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { Effect, FileSystem, Layer, PlatformError, Scope } from "effect";
+import { Effect, FileSystem, Layer, Option, PlatformError, Scope } from "effect";
 import { expect } from "vitest";
 import type {
+  ChangeRequest,
   GitActionProgressEvent,
   GitPreparePullRequestThreadInput,
   ModelSelection,
@@ -57,6 +58,8 @@ interface FakeGhScenario {
 interface FakeSourceControlScenario {
   defaultBranch?: string | null;
   repositoryCloneUrls?: Record<string, { url: string; sshUrl: string }>;
+  pullRequest?: ChangeRequest;
+  checkoutReferences?: string[];
 }
 
 function createFakeSourceControlProviderRegistry(
@@ -65,7 +68,10 @@ function createFakeSourceControlProviderRegistry(
   const provider = {
     kind: "github" as const,
     listChangeRequests: () => Effect.succeed([]),
-    getChangeRequest: () => Effect.die("not implemented in test"),
+    getChangeRequest: () =>
+      scenario?.pullRequest
+        ? Effect.succeed(scenario.pullRequest)
+        : Effect.die("not implemented in test"),
     createChangeRequest: () => Effect.void,
     getRepositoryCloneUrls: (input: { repository: string }) => {
       const cloneUrls = scenario?.repositoryCloneUrls?.[input.repository];
@@ -79,7 +85,10 @@ function createFakeSourceControlProviderRegistry(
     },
     createRepository: () => Effect.die("not implemented in test"),
     getDefaultBranch: () => Effect.succeed(scenario?.defaultBranch ?? null),
-    checkoutChangeRequest: () => Effect.void,
+    checkoutChangeRequest: (input: { reference: string }) =>
+      Effect.sync(() => {
+        scenario?.checkoutReferences?.push(input.reference);
+      }),
   };
 
   return {
@@ -2227,13 +2236,21 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
 
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
+          failWith: new GitHubCliError({
+            operation: "execute",
+            detail: "GitHub CLI should not be used in this test.",
+          }),
+        },
+        sourceControlScenario: {
           pullRequest: {
+            provider: "github",
             number: 42,
             title: "Resolve PR",
             url: "https://github.com/pingdotgg/codething-mvp/pull/42",
             baseRefName: "main",
             headRefName: "feature/resolve-pr",
             state: "open",
+            updatedAt: Option.none(),
           },
         },
       });
@@ -2251,7 +2268,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         headBranch: "feature/resolve-pr",
         state: "open",
       });
-      expect(ghCalls.some((call) => call.startsWith("pr view 42 "))).toBe(true);
+      expect(ghCalls).toEqual([]);
     }),
   );
 
@@ -2264,16 +2281,26 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       yield* runGit(repoDir, ["add", "local.txt"]);
       yield* runGit(repoDir, ["commit", "-m", "Local PR branch"]);
 
+      const checkoutReferences: string[] = [];
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
+          failWith: new GitHubCliError({
+            operation: "execute",
+            detail: "GitHub CLI should not be used in this test.",
+          }),
+        },
+        sourceControlScenario: {
           pullRequest: {
+            provider: "github",
             number: 64,
             title: "Local PR",
             url: "https://github.com/pingdotgg/codething-mvp/pull/64",
             baseRefName: "main",
             headRefName: "feature/pr-local",
             state: "open",
+            updatedAt: Option.none(),
           },
+          checkoutReferences,
         },
       });
 
@@ -2287,7 +2314,8 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       expect(result.worktreePath).toBeNull();
       const branch = (yield* runGit(repoDir, ["branch", "--show-current"])).stdout.trim();
       expect(branch).toBe("feature/pr-local");
-      expect(ghCalls).toContain("pr checkout 64 --force");
+      expect(ghCalls).toEqual([]);
+      expect(checkoutReferences).toEqual(["64"]);
     }),
   );
 
