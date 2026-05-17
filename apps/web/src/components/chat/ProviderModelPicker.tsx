@@ -20,7 +20,10 @@ import {
 } from "../ui/menu";
 import { ClaudeAI, CursorIcon, Gemini, Icon, OpenAI, OpenCodeIcon } from "../Icons";
 import { cn } from "~/lib/utils";
-import { getProviderSnapshot } from "../../providerModels";
+import {
+  deriveProviderInstanceEntries,
+  type ProviderInstanceAvailability,
+} from "../../providerInstances";
 
 function isAvailableProviderOption(option: (typeof PROVIDER_OPTIONS)[number]): option is {
   value: ProviderKind;
@@ -40,6 +43,19 @@ const PROVIDER_ICON_BY_PROVIDER: Record<ProviderPickerKind, Icon> = {
 export const AVAILABLE_PROVIDER_OPTIONS = PROVIDER_OPTIONS.filter(isAvailableProviderOption);
 const UNAVAILABLE_PROVIDER_OPTIONS = PROVIDER_OPTIONS.filter((option) => !option.available);
 const COMING_SOON_PROVIDER_OPTIONS = [{ id: "gemini", label: "Gemini", icon: Gemini }] as const;
+
+function resolveUnavailableLabel(availability: ProviderInstanceAvailability | null): string | null {
+  switch (availability) {
+    case "disabled":
+      return "Disabled";
+    case "not-installed":
+      return "Not installed";
+    case "unavailable":
+      return "Unavailable";
+    default:
+      return null;
+  }
+}
 
 function providerIconClassName(
   provider: ProviderKind | ProviderPickerKind,
@@ -62,6 +78,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   onProviderModelChange: (provider: ProviderKind, model: string) => void;
 }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const providerInstanceEntries = props.providers
+    ? deriveProviderInstanceEntries(props.providers)
+    : [];
   const activeProvider = props.lockedProvider ?? props.provider;
   const selectedProviderOptions = props.modelOptionsByProvider[activeProvider];
   const selectedModelLabel =
@@ -146,15 +165,13 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           <>
             {AVAILABLE_PROVIDER_OPTIONS.map((option) => {
               const OptionIcon = PROVIDER_ICON_BY_PROVIDER[option.value];
-              const liveProvider = props.providers
-                ? getProviderSnapshot(props.providers, option.value)
-                : undefined;
-              if (liveProvider && liveProvider.status !== "ready") {
-                const unavailableLabel = !liveProvider.enabled
-                  ? "Disabled"
-                  : !liveProvider.installed
-                    ? "Not installed"
-                    : "Unavailable";
+              const providerInstance = providerInstanceEntries.find(
+                (entry) => entry.instanceId === option.value,
+              );
+              const unavailableLabel = resolveUnavailableLabel(
+                providerInstance?.availability ?? null,
+              );
+              if (unavailableLabel) {
                 return (
                   <MenuItem key={option.value} disabled>
                     <OptionIcon
@@ -164,7 +181,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                         providerIconClassName(option.value, "text-muted-foreground/85"),
                       )}
                     />
-                    <span>{option.label}</span>
+                    <span>{providerInstance?.displayName ?? option.label}</span>
                     <span className="ms-auto text-[11px] text-muted-foreground/80 uppercase tracking-[0.08em]">
                       {unavailableLabel}
                     </span>
@@ -181,7 +198,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                         providerIconClassName(option.value, "text-muted-foreground/85"),
                       )}
                     />
-                    {option.label}
+                    {providerInstance?.displayName ?? option.label}
                   </MenuSubTrigger>
                   <MenuSubPopup className="[--available-height:min(24rem,70vh)]" sideOffset={4}>
                     <MenuGroup>
