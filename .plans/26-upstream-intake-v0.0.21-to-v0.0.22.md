@@ -149,7 +149,7 @@ Current branch outcome:
 Status:
 
 - `adapt`
-- current branch status: `partial`
+- current branch status: `complete`
 
 Primary upstream work:
 
@@ -177,6 +177,13 @@ Required fork behavior to preserve:
 - composer autonomy remains intact
 - plan cues and preview access remain visible
 - provider UI does not flatten fork-specific workflow affordances
+
+Current branch outcome:
+
+- canonical provider-instance projection landed in `d9adce2b`
+- settings cards now consume provider-instance state in `d4617491`
+- composer picker gating and labels now consume provider-instance state in `7406295e`
+- sidebar shell audit found no further provider-state coupling to reconcile on this branch
 
 ### Remote Connectivity And Hosted Frontend
 
@@ -280,9 +287,12 @@ Completed upstream slices on this branch:
   - upstream coverage: `3772fa12`, `8f50ca8e`
   - local checkpoints: `168beb8f`, `74fdf3f7`, `ca39a036`, `adc59cc9`, `c673470f`, `a9120e15`, `e096f207`, `97824542`, `47bc4e94`, `00d29214`, `96131a7e`
 
+- multi-provider shell and settings completion
+  - upstream coverage: `08e6d4cf`, `460d9c3e`
+  - local checkpoints: `d9adce2b`, `d4617491`, `7406295e`
+
 Still open in `0.22`:
 
-- broader provider-instance shell completion for `08e6d4cf` and `460d9c3e`
 - broader shell, diff, markdown, and mobile intake for `f4c9418d`, `f7748a0d`, `623e471a`, `92e340d8`, and `f54f4385`
 - final release-line reconciliation after those UI slices land
 
@@ -291,8 +301,7 @@ Still open in `0.22`:
 1. complete startup and runtime efficiency work
 2. complete source control and VCS substrate
 3. complete remote connectivity and hosted flows
-4. finish multi-provider settings and shell state
-5. finish diff, mobile shell, and markdown presentation changes
+4. finish diff, mobile shell, and markdown presentation changes
 
 ## Verification Focus
 
@@ -306,6 +315,6 @@ Still open in `0.22`:
 
 `v0.0.21 -> v0.0.22` should be integrated in staged slices with explicit seam ownership.
 
-The source control and remote-hosted lanes are now complete on branch.
+The source control, remote-hosted, and multi-provider shell lanes are now complete on branch.
 
-The remaining high-risk seam is the protected shell and presentation lane, plus the remaining provider-instance UI completion work.
+The remaining high-risk seam is the protected shell and presentation lane.
