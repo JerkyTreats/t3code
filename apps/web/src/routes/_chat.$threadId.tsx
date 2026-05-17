@@ -32,10 +32,11 @@ import { PlanConversationDocument } from "../components/PlanConversationDocument
 import { findProposedPlanByReference } from "../session-logic";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
-const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 1180px)";
+const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 980px)";
 const DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_diff_sidebar_width";
-const DIFF_INLINE_DEFAULT_WIDTH = "clamp(28rem,48vw,44rem)";
-const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 26 * 16;
+const DIFF_INLINE_DEFAULT_WIDTH = "clamp(24rem,34vw,36rem)";
+const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 22 * 16;
+const DIFF_INLINE_SIDEBAR_MAX_WIDTH = 36 * 16;
 const COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX = 208;
 
 const DiffPanelSheet = (props: {
@@ -56,7 +57,7 @@ const DiffPanelSheet = (props: {
         side="right"
         showCloseButton={false}
         keepMounted
-        className="w-[min(88vw,820px)] max-w-[820px] p-0"
+        className="w-[min(42vw,28rem)] min-w-80 max-w-[28rem] p-0 max-[760px]:w-[min(88vw,24rem)] max-[760px]:min-w-0"
       >
         {props.children}
       </SheetPopup>
@@ -167,6 +168,7 @@ const DiffPanelInlineSidebar = (props: {
         collapsible="offcanvas"
         className="border-l border-border bg-card text-foreground"
         resizable={{
+          maxWidth: DIFF_INLINE_SIDEBAR_MAX_WIDTH,
           minWidth: DIFF_INLINE_SIDEBAR_MIN_WIDTH,
           shouldAcceptWidth: shouldAcceptInlineSidebarWidth,
           storageKey: DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY,

@@ -99,6 +99,7 @@ import { LRUCache } from "../lib/lruCache";
 
 import { basenameOfPath } from "../vscode-icons";
 import { useTheme } from "../hooks/useTheme";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import BranchToolbar from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
@@ -629,11 +630,11 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
   );
   const richDraftMode = composerDraft.richDraftMode;
   const { panelExpanded } = useDiffPanelExpanded();
+  const isMobileViewport = useMediaQuery("max-sm");
   const [composerUserExpanded, setComposerUserExpanded] = useState(false);
-  const isComposerMinimized = panelExpanded && !composerUserExpanded;
   useEffect(() => {
-    if (!panelExpanded) setComposerUserExpanded(false);
-  }, [panelExpanded]);
+    if (!panelExpanded && !isMobileViewport) setComposerUserExpanded(false);
+  }, [isMobileViewport, panelExpanded]);
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
@@ -1192,6 +1193,9 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
     isComposerApprovalState ||
     pendingUserInputs.length > 0 ||
     (showPlanFollowUpPrompt && activeProposedPlan !== null);
+  const isComposerMinimized =
+    (panelExpanded && !composerUserExpanded) ||
+    (isMobileViewport && !composerUserExpanded && !hasComposerHeader);
   const composerFooterHasWideActions = showPlanFollowUpPrompt || activePendingProgress !== null;
   const composerFooterActionLayoutKey = useMemo(() => {
     if (activePendingProgress) {
@@ -3196,8 +3200,19 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
     sendInFlightRef.current = false;
     if (!turnStartSucceeded) {
       resetLocalDispatch();
+      return;
+    }
+    if (isMobileViewport) {
+      setComposerUserExpanded(false);
     }
   };
+
+  const handleExpandComposer = useCallback(() => {
+    setComposerUserExpanded(true);
+    window.requestAnimationFrame(() => {
+      composerEditorRef.current?.focusAtEnd();
+    });
+  }, []);
 
   const onInterrupt = async () => {
     const api = readNativeApi();
@@ -4223,7 +4238,7 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
                   hasSendableContent={composerSendState.hasSendableContent}
                   isRunning={phase === "running"}
                   onInterrupt={() => void onInterrupt()}
-                  onExpand={() => setComposerUserExpanded(true)}
+                  onExpand={handleExpandComposer}
                 />
               ) : null}
               {isComposerMinimized ? null : (
