@@ -26,6 +26,12 @@ export interface SourceControlPresentation {
   readonly Icon: ElementType<{ className?: string }>;
 }
 
+export interface SourceControlCapabilityPresentation {
+  readonly label: string;
+  readonly description: string;
+  readonly actionable: boolean;
+}
+
 function iconForKind(kind: SourceControlProviderKind): ElementType<{ className?: string }> {
   switch (kind) {
     case "github":
@@ -69,4 +75,26 @@ export function getSourceControlDiscoveryItemPresentation(
     providerName: item.label || presentation.providerName,
     Icon: presentation.Icon,
   };
+}
+
+export function getSourceControlCapabilityPresentation(
+  kind: SourceControlProviderKind,
+): SourceControlCapabilityPresentation {
+  switch (kind) {
+    case "github":
+      return {
+        label: "workflow",
+        description: "Pull request workflows are wired through the new source control registry.",
+        actionable: true,
+      };
+    case "gitlab":
+    case "azure-devops":
+    case "bitbucket":
+    case "unknown":
+      return {
+        label: "discovery",
+        description: "Detection is available in this build. Workflow actions are not wired yet.",
+        actionable: false,
+      };
+  }
 }

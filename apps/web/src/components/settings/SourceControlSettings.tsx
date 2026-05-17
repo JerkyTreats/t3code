@@ -8,7 +8,10 @@ import type {
 
 import { sourceControlDiscoveryQueryOptions } from "../../lib/sourceControlReactQuery";
 import { cn } from "../../lib/utils";
-import { getSourceControlDiscoveryItemPresentation } from "../../sourceControlPresentation";
+import {
+  getSourceControlCapabilityPresentation,
+  getSourceControlDiscoveryItemPresentation,
+} from "../../sourceControlPresentation";
 import { Button } from "../ui/button";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
@@ -73,12 +76,14 @@ function renderProviderRowStatus(item: SourceControlProviderDiscoveryItem) {
   const account = getOptionValue(item.auth.account);
   const host = getOptionValue(item.auth.host);
   const authDetail = getOptionValue(item.auth.detail);
+  const capability = getSourceControlCapabilityPresentation(item.kind);
 
   return (
     <>
       <span className="block text-[11px] text-muted-foreground">
         {formatAuthStatusLabel(item.auth.status)}
       </span>
+      <span className="mt-1 block text-[11px] text-muted-foreground">{capability.description}</span>
       {account ? (
         <span className="mt-1 block font-mono text-[11px] text-foreground">{account}</span>
       ) : null}
@@ -171,19 +176,24 @@ function SourceControlProvidersSection() {
       {items.length > 0 ? (
         items.map((item) => {
           const presentation = getSourceControlDiscoveryItemPresentation(item);
+          const capability = getSourceControlCapabilityPresentation(item.kind);
           const Icon = presentation.Icon;
           const tone =
             item.status !== "available"
               ? "muted"
-              : item.auth.status === "authenticated"
+              : capability.actionable && item.auth.status === "authenticated"
                 ? "success"
-                : "warning";
+                : capability.actionable
+                  ? "warning"
+                  : "muted";
           const label =
             item.status !== "available"
               ? "missing"
-              : item.auth.status === "authenticated"
+              : capability.actionable && item.auth.status === "authenticated"
                 ? "ready"
-                : "setup";
+                : capability.actionable
+                  ? "setup"
+                  : capability.label;
 
           return (
             <SettingsRow
