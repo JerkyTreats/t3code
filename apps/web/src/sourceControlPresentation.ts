@@ -88,8 +88,18 @@ export function getSourceControlCapabilityPresentation(
         actionable: true,
       };
     case "gitlab":
+      return {
+        label: "workflow",
+        description: "Merge request workflows are wired through the source control registry.",
+        actionable: true,
+      };
     case "azure-devops":
     case "bitbucket":
+      return {
+        label: "workflow",
+        description: "Pull request workflows are wired through the source control registry.",
+        actionable: true,
+      };
     case "unknown":
       return {
         label: "discovery",

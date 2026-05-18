@@ -77,6 +77,11 @@ export function createWsNativeApi(): NativeApi {
     },
     git: createRpcGitApi({ rpcClient, gitActionProgressListeners }),
     github: createRpcGitHubApi(rpcClient),
+    sourceControl: {
+      lookupRepository: rpcClient.sourceControl.lookupRepository,
+      cloneRepository: rpcClient.sourceControl.cloneRepository,
+      publishRepository: rpcClient.sourceControl.publishRepository,
+    },
     contextMenu: {
       show: async <T extends string>(
         items: readonly ContextMenuItem<T>[],

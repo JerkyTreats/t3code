@@ -369,6 +369,16 @@ function deriveLocalBranchNameFromRemoteRef(branchName: string): string | null {
   return localBranch.length > 0 ? localBranch : null;
 }
 
+function resolvePublishBranchName(branchName: string, remoteName: string | undefined): string {
+  const trimmed = branchName.trim();
+  if (remoteName && trimmed.startsWith(`${remoteName}/`)) {
+    const branch = trimmed.slice(remoteName.length + 1).trim();
+    return branch.length > 0 ? branch : trimmed;
+  }
+  const derived = deriveLocalBranchNameFromRemoteRef(trimmed);
+  return derived ?? trimmed;
+}
+
 function commandLabel(args: readonly string[]): string {
   return `git ${args.join(" ")}`;
 }
@@ -1537,7 +1547,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
   });
 
   const pushCurrentBranch: GitCoreShape["pushCurrentBranch"] = Effect.fn("pushCurrentBranch")(
-    function* (cwd, fallbackBranch) {
+    function* (cwd, fallbackBranch, options) {
       const details = yield* statusDetails(cwd);
       const branch = details.branch ?? fallbackBranch;
       if (!branch) {
@@ -1547,6 +1557,22 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
           ["push"],
           "Cannot push from detached HEAD.",
         );
+      }
+      const requestedRemoteName = options?.remoteName?.trim();
+      if (requestedRemoteName) {
+        const publishBranch = resolvePublishBranchName(branch, requestedRemoteName);
+        yield* runGit("GitCore.pushCurrentBranch.pushSelectedRemote", cwd, [
+          "push",
+          "-u",
+          requestedRemoteName,
+          `HEAD:refs/heads/${publishBranch}`,
+        ]);
+        return {
+          status: "pushed" as const,
+          branch: publishBranch,
+          upstreamBranch: `${requestedRemoteName}/${publishBranch}`,
+          setUpstream: true,
+        };
       }
 
       const hasNoLocalDelta = details.aheadCount === 0 && details.behindCount === 0;
@@ -2389,6 +2415,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     prepareCommitContext,
     commit,
     pushCurrentBranch,
+    resolvePrimaryRemoteName,
     pullCurrentBranch,
     readRangeContext,
     readConfigValue,

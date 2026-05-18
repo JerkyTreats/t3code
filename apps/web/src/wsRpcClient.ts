@@ -101,6 +101,11 @@ export interface WsRpcClient {
     readonly closeIssue: RpcUnaryMethod<typeof WS_METHODS.githubCloseIssue>;
     readonly reopenIssue: RpcUnaryMethod<typeof WS_METHODS.githubReopenIssue>;
   };
+  readonly sourceControl: {
+    readonly lookupRepository: RpcUnaryMethod<typeof WS_METHODS.sourceControlLookupRepository>;
+    readonly cloneRepository: RpcUnaryMethod<typeof WS_METHODS.sourceControlCloneRepository>;
+    readonly publishRepository: RpcUnaryMethod<typeof WS_METHODS.sourceControlPublishRepository>;
+  };
   readonly server: {
     readonly getConfig: RpcUnaryNoArgMethod<typeof WS_METHODS.serverGetConfig>;
     readonly refreshProviders: RpcUnaryNoArgMethod<typeof WS_METHODS.serverRefreshProviders>;
@@ -241,6 +246,14 @@ export function createWsRpcClient(transport = new WsTransport()): WsRpcClient {
         transport.request((client) => client[WS_METHODS.githubCloseIssue](input)),
       reopenIssue: (input) =>
         transport.request((client) => client[WS_METHODS.githubReopenIssue](input)),
+    },
+    sourceControl: {
+      lookupRepository: (input) =>
+        transport.request((client) => client[WS_METHODS.sourceControlLookupRepository](input)),
+      cloneRepository: (input) =>
+        transport.request((client) => client[WS_METHODS.sourceControlCloneRepository](input)),
+      publishRepository: (input) =>
+        transport.request((client) => client[WS_METHODS.sourceControlPublishRepository](input)),
     },
     server: {
       getConfig: () => transport.request((client) => client[WS_METHODS.serverGetConfig]({})),

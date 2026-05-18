@@ -87,6 +87,7 @@ const RawGitHubPullRequestSchema = Schema.Struct({
   headRefName: TrimmedNonEmptyString,
   state: Schema.optional(Schema.NullOr(Schema.String)),
   mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  updatedAt: Schema.optional(Schema.NullOr(Schema.String)),
   isCrossRepository: Schema.optional(Schema.Boolean),
   headRepository: Schema.optional(
     Schema.NullOr(
@@ -179,6 +180,7 @@ function normalizePullRequestSummary(
     baseRefName: raw.baseRefName,
     headRefName: raw.headRefName,
     state: normalizePullRequestState(raw),
+    ...(raw.updatedAt !== undefined ? { updatedAt: raw.updatedAt } : {}),
     ...(typeof raw.isCrossRepository === "boolean"
       ? { isCrossRepository: raw.isCrossRepository }
       : {}),
@@ -195,6 +197,38 @@ function normalizeRepositoryCloneUrls(
     url: raw.url,
     sshUrl: raw.sshUrl,
   };
+}
+
+function deriveRepositoryCloneUrlsFromCreateOutput(
+  stdout: string,
+  repository: string,
+): GitHubRepositoryCloneUrls | null {
+  const match = stdout.match(/https?:\/\/[^\s]+/);
+  if (!match) {
+    return null;
+  }
+
+  const cleaned = match[0].replace(/\.git$/, "");
+  try {
+    const parsed = new URL(cleaned);
+    const pathname = parsed.pathname.replace(/^\/+|\/+$/g, "");
+    const segments = pathname.split("/").filter(Boolean);
+    if (segments.length !== 2) {
+      return null;
+    }
+    const nameWithOwner = `${segments[0]}/${segments[1]}`;
+    return {
+      nameWithOwner,
+      url: `${parsed.origin}/${nameWithOwner}`,
+      sshUrl: `git@${parsed.host}:${nameWithOwner}.git`,
+    };
+  } catch {
+    return {
+      nameWithOwner: repository,
+      url: `https://github.com/${repository}`,
+      sshUrl: `git@github.com:${repository}.git`,
+    };
+  }
 }
 
 function normalizeRepository(raw: Schema.Schema.Type<typeof RawGitHubRepositorySchema>) {
@@ -309,6 +343,7 @@ function decodeGitHubJson<S extends Schema.Top>(
     | "listOpenPullRequests"
     | "getPullRequest"
     | "getRepositoryCloneUrls"
+    | "createRepository"
     | "getStatus"
     | "listIssues"
     | "readRepository"
@@ -563,7 +598,7 @@ const makeGitHubCli = Effect.sync(() => {
           "--limit",
           String(input.limit ?? 1),
           "--json",
-          "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+          "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
@@ -616,6 +651,34 @@ const makeGitHubCli = Effect.sync(() => {
           ),
         ),
         Effect.map(normalizeRepositoryCloneUrls),
+      ),
+    createRepository: (input) =>
+      execute({
+        cwd: input.cwd,
+        args: ["repo", "create", input.repository, `--${input.visibility}`],
+      }).pipe(
+        Effect.map((result) =>
+          deriveRepositoryCloneUrlsFromCreateOutput(result.stdout, input.repository),
+        ),
+        Effect.flatMap((derived) =>
+          derived
+            ? Effect.succeed(derived)
+            : execute({
+                cwd: input.cwd,
+                args: ["repo", "view", input.repository, "--json", "nameWithOwner,url,sshUrl"],
+              }).pipe(
+                Effect.map((result) => result.stdout.trim()),
+                Effect.flatMap((raw) =>
+                  decodeGitHubJson(
+                    raw,
+                    RawGitHubRepositoryCloneUrlsSchema,
+                    "createRepository",
+                    "GitHub CLI returned invalid repository JSON.",
+                  ),
+                ),
+                Effect.map(normalizeRepositoryCloneUrls),
+              ),
+        ),
       ),
     createPullRequest: (input) =>
       execute({

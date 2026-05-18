@@ -6,6 +6,7 @@ import {
   resolveNativeApiCapabilities,
   supportsNativeApiGitHub,
   supportsNativeApiGitMerge,
+  supportsNativeApiSourceControl,
   type NativeApiCapabilities,
   type NativeApiFeature,
 } from "./forkNativeApiAdapter";
@@ -55,6 +56,10 @@ export function supportsCurrentNativeApiGitMerge(): boolean {
 
 export function supportsCurrentNativeApiGitHub(): boolean {
   return supportsNativeApiGitHub(readNativeApiCapabilities());
+}
+
+export function supportsCurrentNativeApiSourceControl(): boolean {
+  return supportsNativeApiSourceControl(readNativeApiCapabilities());
 }
 
 export async function __resetNativeApiForTests() {

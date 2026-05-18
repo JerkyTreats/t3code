@@ -98,7 +98,7 @@ Why:
 Status:
 
 - `adapt`
-- current branch status: `complete`
+- current branch status: `reopened`
 
 Primary upstream work:
 
@@ -143,6 +143,34 @@ Current branch outcome:
 - PR resolve and local checkout moved to the registry in `19647490`
 - open PR lookup, duplicate detection, and PR creation moved to the registry in `c6667bcc`
 - provider capability presentation landed in `6f7e8c77`
+
+Upstream comparison:
+
+- upstream `v0.0.22` includes product RPCs for source control repository lookup, clone, and publish
+- upstream `v0.0.22` wires those RPCs through Command Palette and Git actions
+- upstream `v0.0.22` includes real GitLab, Azure DevOps, and Bitbucket source control providers
+- this branch currently keeps GitLab, Azure DevOps, and Bitbucket at discovery-only status
+- this branch currently exposes source control discovery but not repository lookup, clone, or publish as product actions
+
+Completion target:
+
+- restore source control repository lookup, clone, and publish RPCs
+- restore Command Palette clone flow
+- restore Git actions publish flow
+- restore GitLab provider workflow support
+- restore Azure DevOps provider workflow support
+- restore Bitbucket provider workflow support
+- keep GitHub fork identity, protected promotion, and worktree guardrails authoritative
+
+Implementation order for this reopened lane:
+
+1. Import upstream source control repository service and RPC contracts.
+2. Wire server handlers for lookup, clone, and publish.
+3. Reconcile GitHub provider behavior with fork-first repository identity.
+4. Add GitLab, Azure DevOps, and Bitbucket providers behind the source control registry.
+5. Restore web source control APIs and React Query hooks.
+6. Restore product entry points in Command Palette and Git actions.
+7. Verify provider-specific behavior without weakening fork Git workflow semantics.
 
 ### Multi-Provider Shell And Settings
 
@@ -326,6 +354,7 @@ Completed upstream slices on this branch:
 - source control and VCS completion
   - upstream coverage: `6d7fe2ee`, `0ce7e56e`, `91a03e07`, `d7969264`
   - local checkpoints: `168beb8f`, `be08033f`, `fe8f2145`, `e0c35a8f`, `19647490`, `c6667bcc`, `6f7e8c77`
+  - status revision: reopened after upstream comparison found missing repository lookup, clone, publish, GitLab, Azure DevOps, and Bitbucket product workflows
 
 - remote and hosted completion
   - upstream coverage: `3772fa12`, `8f50ca8e`
@@ -341,15 +370,16 @@ Completed upstream slices on this branch:
 
 Current `0.22` state:
 
-- all planned lanes are complete on branch
+- runtime, remote, multi-provider shell, diff, markdown, and mobile presentation lanes are complete on branch
+- source control and VCS foundation is partial and reopened for provider workflow parity
 - the release-line reconciliation is recorded in this note
 
 ## Implementation Order
 
-1. complete startup and runtime efficiency work
-2. complete source control and VCS substrate
-3. complete remote connectivity and hosted flows
-4. finish diff, mobile shell, and markdown presentation changes
+1. complete source control provider product workflows
+2. complete startup and runtime efficiency verification
+3. complete remote connectivity and hosted verification
+4. finish diff, mobile shell, and markdown verification
 5. record final parity outcome in this intake note
 
 ## Verification Focus
@@ -364,6 +394,8 @@ Current `0.22` state:
 
 `v0.0.21 -> v0.0.22` should be integrated in staged slices with explicit seam ownership.
 
-The source control, remote-hosted, multi-provider shell, and protected shell-presentation lanes are now complete on branch.
+The remote-hosted, multi-provider shell, and protected shell-presentation lanes are now complete on branch.
 
-`v0.0.21 -> v0.0.22` is complete on this branch.
+The source control lane is reopened. Finish Git provider parity first, starting with repository lookup, clone, publish, GitLab, Azure DevOps, and Bitbucket workflow wiring.
+
+`v0.0.21 -> v0.0.22` is not complete on this branch until that source control provider lane is closed.

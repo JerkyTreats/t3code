@@ -38,7 +38,15 @@ import type {
   GitHubStatusInput,
   GitHubStatusResult,
 } from "./github.ts";
-import type { SourceControlDiscoveryResult } from "./sourceControl.ts";
+import type {
+  SourceControlCloneRepositoryInput,
+  SourceControlCloneRepositoryResult,
+  SourceControlDiscoveryResult,
+  SourceControlPublishRepositoryInput,
+  SourceControlPublishRepositoryResult,
+  SourceControlRepositoryInfo,
+  SourceControlRepositoryLookupInput,
+} from "./sourceControl.ts";
 import type {
   AuthBearerBootstrapResult,
   AuthSessionState,
@@ -370,6 +378,17 @@ export interface EnvironmentApi {
     runStackedAction: (input: GitRunStackedActionInput) => Promise<GitRunStackedActionResult>;
     onActionProgress: (callback: (event: GitActionProgressEvent) => void) => () => void;
   };
+  sourceControl: {
+    lookupRepository: (
+      input: SourceControlRepositoryLookupInput,
+    ) => Promise<SourceControlRepositoryInfo>;
+    cloneRepository: (
+      input: SourceControlCloneRepositoryInput,
+    ) => Promise<SourceControlCloneRepositoryResult>;
+    publishRepository: (
+      input: SourceControlPublishRepositoryInput,
+    ) => Promise<SourceControlPublishRepositoryResult>;
+  };
   orchestration: {
     getSnapshot: () => Promise<OrchestrationReadModel>;
     dispatchCommand: (command: ClientOrchestrationCommand) => Promise<{ sequence: number }>;
@@ -456,6 +475,17 @@ export interface NativeApi {
     createIssue: (input: GitHubCreateIssueInput) => Promise<GitHubCreateIssueResult>;
     closeIssue: (input: GitHubIssueMutationInput) => Promise<GitHubIssueMutationResult>;
     reopenIssue: (input: GitHubIssueMutationInput) => Promise<GitHubIssueMutationResult>;
+  };
+  sourceControl: {
+    lookupRepository: (
+      input: SourceControlRepositoryLookupInput,
+    ) => Promise<SourceControlRepositoryInfo>;
+    cloneRepository: (
+      input: SourceControlCloneRepositoryInput,
+    ) => Promise<SourceControlCloneRepositoryResult>;
+    publishRepository: (
+      input: SourceControlPublishRepositoryInput,
+    ) => Promise<SourceControlPublishRepositoryResult>;
   };
   contextMenu: {
     show: <T extends string>(

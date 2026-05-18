@@ -39,6 +39,7 @@ Use it together with [Upstream Merge Policy](governance/upstream_merge_policy.md
 - `F8` plan aware sidebar and activity status cues
 - `F9` plan markdown preview and markdown rendering behavior
 - `F10` Codex model and binary selection
+- `F11` source control provider lane and publish workflow
 - `F12` provider instance identity seam
 
 ## F1 Branding And Release Identity
@@ -365,6 +366,56 @@ Codex provider setup follows the installed Codex app-server capability surface i
 - Settings show detected supported Codex binaries and selecting one persists its absolute path.
 - Restarting the desktop app keeps the configured Codex binary path for the backend process.
 - Explicit binary path pinning does not fall through to a newer PATH or environment binary unless the user selected bare `codex`.
+
+## F11 Source Control Provider Lane And Publish Workflow
+
+### Intent
+
+Source control support exposes GitHub, GitLab, Azure DevOps, and Bitbucket through one provider lane while preserving fork Git workflow guardrails.
+
+### Required Behavior
+
+- Source control discovery reports real provider readiness for GitHub, GitLab, Azure DevOps, and Bitbucket.
+- Repository lookup, clone, and publish are exposed through additive source control RPC and native API capabilities.
+- Sidebar add project supports local path and clone remote modes, with provider clone lookup using SSH by default and raw Git URL clone bypassing provider lookup.
+- Git panel publish is the publish surface for repositories without an origin remote.
+- Publish creates the remote repository, ensures the requested remote, and pushes to the actual remote returned by remote wiring.
+- Empty local repositories create and wire the remote but return `remote_added` without pushing.
+- GitHub issue UI remains GitHub only.
+- Pull request and merge request workflows resolve through the repository provider when available, while GitHub CLI fallback remains available for GitHub and unknown provider cases.
+- Fork promotion, worktree, cross repository, and protected default branch behavior from `F6` and `F7` remains authoritative.
+
+### Owner Modules
+
+- `packages/contracts/src/rpc.ts`
+- `packages/contracts/src/ipc.ts`
+- `apps/server/src/sourceControl`
+- `apps/server/src/git/Layers/GitCore.ts`
+- `apps/server/src/git/Layers/GitHubCli.ts`
+- `apps/server/src/git/Layers/GitManager.ts`
+- `apps/server/src/server.ts`
+- `apps/server/src/ws.ts`
+- `apps/web/src/lib/sourceControlReactQuery.ts`
+- `apps/web/src/wsRpcClient.ts`
+- `apps/web/src/wsNativeApi.ts`
+- `apps/web/src/forkNativeApiAdapter.ts`
+- `apps/web/src/components/Sidebar.tsx`
+- `apps/web/src/components/git-panel`
+- `apps/web/src/sourceControlPresentation.ts`
+
+### Upstream Intake Rule
+
+- Adapt upstream source control changes through the provider registry and repository service instead of adding provider specific UI paths.
+- Preserve fork Git workflow semantics when upstream behavior conflicts with promotion, worktree, protected branch, or fork identity behavior.
+- Reject upstream changes that make GitHub issues appear provider neutral before non GitHub issue parity exists.
+
+### Verification
+
+- Source control provider registry, repository service, provider CLI/API, GitCore, GitManager, server, and web native/RPC tests pass.
+- Publishing with commits pushes to the remote returned by `ensureRemote`.
+- Publishing an empty repository returns `remote_added`.
+- Sidebar clone by provider and raw Git URL both create projects at the cloned cwd.
+- Git panel publish remains hidden or disabled when source control capability is unavailable.
 
 ## F12 Provider Instance Identity Seam
 

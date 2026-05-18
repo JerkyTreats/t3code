@@ -1,21 +1,16 @@
-import { Cache, Context, Duration, Effect, Exit, Layer, Option } from "effect";
+import { Cache, Context, Duration, Effect, Exit, Layer } from "effect";
 import type {
-  ChangeRequest,
-  SourceControlProviderAuth,
   SourceControlProviderDiscoveryItem,
   SourceControlProviderError,
   SourceControlProviderKind,
-  SourceControlRepositoryCloneUrls,
 } from "@t3tools/contracts";
 import { SourceControlProviderError as SourceControlProviderErrorClass } from "@t3tools/contracts";
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 import { ServerConfig } from "../config.ts";
-import {
-  GitHubCli,
-  type GitHubCliShape,
-  type GitHubPullRequestSummary,
-  type GitHubRepositoryCloneUrls,
-} from "../git/Services/GitHubCli.ts";
+import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
+import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
+import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
+import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 import * as SourceControlProviderDiscovery from "./SourceControlProviderDiscovery.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -75,242 +70,6 @@ function unsupportedProvider(
     checkoutChangeRequest: () => unsupported("checkoutChangeRequest"),
   });
 }
-
-function providerAuth(input: {
-  readonly status: SourceControlProviderAuth["status"];
-  readonly account?: string | undefined;
-  readonly host?: string | undefined;
-  readonly detail?: string | undefined;
-}): SourceControlProviderAuth {
-  return SourceControlProviderDiscovery.providerAuth({
-    status: input.status,
-    ...(input.account ? { account: input.account } : {}),
-    ...(input.host ? { host: input.host } : {}),
-    ...(input.detail ? { detail: input.detail } : {}),
-  });
-}
-
-function mapProviderError(
-  provider: SourceControlProviderKind,
-  operation:
-    | "listChangeRequests"
-    | "getChangeRequest"
-    | "createChangeRequest"
-    | "getRepositoryCloneUrls"
-    | "createRepository"
-    | "getDefaultBranch"
-    | "checkoutChangeRequest",
-  cause: unknown,
-): SourceControlProviderError {
-  const detail =
-    cause instanceof Error && "detail" in cause && typeof cause.detail === "string"
-      ? cause.detail
-      : cause instanceof Error
-        ? cause.message
-        : `Source control provider ${provider} failed.`;
-
-  return new SourceControlProviderErrorClass({
-    provider,
-    operation,
-    detail,
-    cause,
-  });
-}
-
-function toChangeRequest(input: GitHubPullRequestSummary): ChangeRequest {
-  return {
-    provider: "github",
-    number: input.number,
-    title: input.title,
-    url: input.url,
-    baseRefName: input.baseRefName,
-    headRefName: input.headRefName,
-    state: input.state ?? "open",
-    updatedAt: Option.none(),
-    ...(input.isCrossRepository === undefined
-      ? {}
-      : { isCrossRepository: input.isCrossRepository }),
-    ...(input.headRepositoryNameWithOwner === undefined
-      ? {}
-      : { headRepositoryNameWithOwner: input.headRepositoryNameWithOwner }),
-    ...(input.headRepositoryOwnerLogin === undefined
-      ? {}
-      : { headRepositoryOwnerLogin: input.headRepositoryOwnerLogin }),
-  };
-}
-
-function toRepositoryCloneUrls(input: GitHubRepositoryCloneUrls): SourceControlRepositoryCloneUrls {
-  return {
-    nameWithOwner: input.nameWithOwner,
-    url: input.url,
-    sshUrl: input.sshUrl,
-  };
-}
-
-function makeGitHubProvider(
-  gitHubCli: GitHubCliShape,
-): SourceControlProvider.SourceControlProviderShape {
-  return SourceControlProvider.SourceControlProvider.of({
-    kind: "github",
-    listChangeRequests: (input) =>
-      gitHubCli
-        .listOpenPullRequests({
-          cwd: input.cwd,
-          headSelector: input.headSelector,
-          ...(input.state === "all" ? { state: "all" as const } : {}),
-          ...(input.limit === undefined ? {} : { limit: input.limit }),
-        })
-        .pipe(
-          Effect.map((pullRequests) => pullRequests.map(toChangeRequest)),
-          Effect.mapError((cause) => mapProviderError("github", "listChangeRequests", cause)),
-        ),
-    getChangeRequest: (input) =>
-      gitHubCli
-        .getPullRequest({
-          cwd: input.cwd,
-          reference: input.reference,
-        })
-        .pipe(
-          Effect.map(toChangeRequest),
-          Effect.mapError((cause) => mapProviderError("github", "getChangeRequest", cause)),
-        ),
-    createChangeRequest: (input) =>
-      gitHubCli
-        .createPullRequest({
-          cwd: input.cwd,
-          baseBranch: input.baseRefName,
-          headSelector: input.headSelector,
-          title: input.title,
-          bodyFile: input.bodyFile,
-        })
-        .pipe(Effect.mapError((cause) => mapProviderError("github", "createChangeRequest", cause))),
-    getRepositoryCloneUrls: (input) =>
-      gitHubCli
-        .getRepositoryCloneUrls({
-          cwd: input.cwd,
-          repository: input.repository,
-        })
-        .pipe(
-          Effect.map(toRepositoryCloneUrls),
-          Effect.mapError((cause) => mapProviderError("github", "getRepositoryCloneUrls", cause)),
-        ),
-    createRepository: () =>
-      Effect.fail(
-        new SourceControlProviderErrorClass({
-          provider: "github",
-          operation: "createRepository",
-          detail:
-            "GitHub repository creation is not wired through the source control registry yet.",
-        }),
-      ),
-    getDefaultBranch: (input) =>
-      gitHubCli
-        .getDefaultBranch({
-          cwd: input.cwd,
-        })
-        .pipe(Effect.mapError((cause) => mapProviderError("github", "getDefaultBranch", cause))),
-    checkoutChangeRequest: (input) =>
-      gitHubCli
-        .checkoutPullRequest({
-          cwd: input.cwd,
-          reference: input.reference,
-          ...(input.force === undefined ? {} : { force: input.force }),
-        })
-        .pipe(
-          Effect.mapError((cause) => mapProviderError("github", "checkoutChangeRequest", cause)),
-        ),
-  });
-}
-
-const GITHUB_DISCOVERY: SourceControlProviderDiscovery.SourceControlProviderDiscoverySpec = {
-  type: "cli",
-  kind: "github",
-  label: "GitHub CLI",
-  executable: "gh",
-  versionArgs: ["--version"],
-  authArgs: ["auth", "status"],
-  installHint: "Install GitHub CLI from https://cli.github.com or with your package manager.",
-  parseAuth: (input) => {
-    const output = SourceControlProviderDiscovery.combinedAuthOutput(input);
-    const account = SourceControlProviderDiscovery.matchFirst(output, [
-      /Logged in to [^\s]+ as ([^\s]+)\b/iu,
-      /account\s+([^\s]+)\b/iu,
-    ]);
-    const host = SourceControlProviderDiscovery.parseCliHost(output);
-    const detail = SourceControlProviderDiscovery.firstSafeAuthLine(output);
-    return providerAuth({
-      status: /Logged in to/iu.test(output) ? "authenticated" : "unauthenticated",
-      account,
-      host,
-      detail,
-    });
-  },
-};
-
-const GITLAB_DISCOVERY: SourceControlProviderDiscovery.SourceControlProviderDiscoverySpec = {
-  type: "cli",
-  kind: "gitlab",
-  label: "GitLab CLI",
-  executable: "glab",
-  versionArgs: ["--version"],
-  authArgs: ["auth", "status"],
-  installHint:
-    "Install GitLab CLI from https://gitlab.com/gitlab-org/cli or with your package manager.",
-  parseAuth: (input) => {
-    const output = SourceControlProviderDiscovery.combinedAuthOutput(input);
-    const account = SourceControlProviderDiscovery.matchFirst(output, [
-      /Logged in to [^\s]+ as ([^\s]+)\b/iu,
-      /account:\s*([^\s]+)\b/iu,
-      /user:\s*([^\s]+)\b/iu,
-    ]);
-    const host = SourceControlProviderDiscovery.parseCliHost(output);
-    const detail = SourceControlProviderDiscovery.firstSafeAuthLine(output);
-    return providerAuth({
-      status: /Logged in|authenticated|valid/iu.test(output) ? "authenticated" : "unauthenticated",
-      account,
-      host,
-      detail,
-    });
-  },
-};
-
-const AZURE_DEVOPS_DISCOVERY: SourceControlProviderDiscovery.SourceControlProviderDiscoverySpec = {
-  type: "cli",
-  kind: "azure-devops",
-  label: "Azure CLI",
-  executable: "az",
-  versionArgs: ["version"],
-  authArgs: ["account", "show"],
-  installHint: "Install Azure CLI from https://learn.microsoft.com/cli/azure/install-azure-cli.",
-  parseAuth: (input) => {
-    const output = SourceControlProviderDiscovery.combinedAuthOutput(input);
-    const account = SourceControlProviderDiscovery.matchFirst(output, [
-      /"user"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"/isu,
-      /"name"\s*:\s*"([^"]+)"/iu,
-    ]);
-    const detail = SourceControlProviderDiscovery.firstSafeAuthLine(output);
-    return providerAuth({
-      status: input.exitCode === 0 ? "authenticated" : "unauthenticated",
-      account,
-      host: "dev.azure.com",
-      detail,
-    });
-  },
-};
-
-const BITBUCKET_DISCOVERY: SourceControlProviderDiscovery.SourceControlProviderDiscoverySpec = {
-  type: "api",
-  kind: "bitbucket",
-  label: "Bitbucket",
-  installHint: "Configure Bitbucket access through repository remotes and app passwords.",
-  probeAuth: Effect.succeed(
-    providerAuth({
-      status: "unknown",
-      host: "bitbucket.org",
-      detail: "Bitbucket auth discovery is not wired yet.",
-    }),
-  ),
-};
 
 function providerDetectionError(operation: string, cwd: string, cause: unknown) {
   return new SourceControlProviderErrorClass({
@@ -489,28 +248,32 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
 );
 
 export const make = Effect.fn("makeSourceControlProviderRegistry")(function* () {
-  const gitHubCli = yield* GitHubCli;
+  const gitHubProvider = yield* GitHubSourceControlProvider.make();
+  const gitLabProvider = yield* GitLabSourceControlProvider.make();
+  const azureDevOpsProvider = yield* AzureDevOpsSourceControlProvider.make();
+  const bitbucketProvider = yield* BitbucketSourceControlProvider.make();
+  const bitbucketDiscovery = yield* BitbucketSourceControlProvider.makeDiscovery();
 
   return yield* makeWithProviders([
     {
       kind: "github",
-      provider: makeGitHubProvider(gitHubCli),
-      discovery: GITHUB_DISCOVERY,
+      provider: gitHubProvider,
+      discovery: GitHubSourceControlProvider.discovery,
     },
     {
       kind: "gitlab",
-      provider: makeStubProvider("gitlab"),
-      discovery: GITLAB_DISCOVERY,
+      provider: gitLabProvider,
+      discovery: GitLabSourceControlProvider.discovery,
     },
     {
       kind: "azure-devops",
-      provider: makeStubProvider("azure-devops"),
-      discovery: AZURE_DEVOPS_DISCOVERY,
+      provider: azureDevOpsProvider,
+      discovery: AzureDevOpsSourceControlProvider.discovery,
     },
     {
       kind: "bitbucket",
-      provider: makeStubProvider("bitbucket"),
-      discovery: BITBUCKET_DISCOVERY,
+      provider: bitbucketProvider,
+      discovery: bitbucketDiscovery,
     },
   ]);
 });

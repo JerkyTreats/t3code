@@ -70,8 +70,12 @@ import { ServerSecretStoreLive } from "./auth/Layers/ServerSecretStore.ts";
 import { ServerAuthLive } from "./auth/Layers/ServerAuth.ts";
 import { ServerEnvironmentLive } from "./environment/Layers/ServerEnvironment.ts";
 import { VcsProcessLive } from "./vcs/VcsProcess.ts";
+import { AzureDevOpsCliLive } from "./sourceControl/AzureDevOpsCli.ts";
+import { BitbucketApiLive } from "./sourceControl/BitbucketApi.ts";
+import { GitLabCliLive } from "./sourceControl/GitLabCli.ts";
 import { SourceControlProviderRegistryLive } from "./sourceControl/SourceControlProviderRegistry.ts";
 import { SourceControlDiscoveryLive } from "./sourceControl/SourceControlDiscovery.ts";
+import { SourceControlRepositoryServiceLive } from "./sourceControl/SourceControlRepositoryService.ts";
 
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
@@ -215,6 +219,31 @@ const GitLayerLive = Layer.empty.pipe(
   Layer.provideMerge(GitCoreLive),
 );
 
+const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistryLive.pipe(
+  Layer.provide(GitHubCliLive),
+  Layer.provide(GitLabCliLive.pipe(Layer.provide(VcsProcessLive))),
+  Layer.provide(AzureDevOpsCliLive.pipe(Layer.provide(VcsProcessLive))),
+  Layer.provide(BitbucketApiLive.pipe(Layer.provide(GitCoreLive))),
+  Layer.provide(VcsProcessLive),
+  Layer.provide(GitCoreLive),
+);
+
+const SourceControlLayerLive = Layer.empty.pipe(
+  Layer.provideMerge(SourceControlProviderRegistryLayerLive),
+  Layer.provideMerge(
+    SourceControlDiscoveryLive.pipe(
+      Layer.provide(SourceControlProviderRegistryLayerLive),
+      Layer.provide(VcsProcessLive),
+    ),
+  ),
+  Layer.provideMerge(
+    SourceControlRepositoryServiceLive.pipe(
+      Layer.provide(SourceControlProviderRegistryLayerLive),
+      Layer.provide(GitCoreLive),
+    ),
+  ),
+);
+
 const TerminalLayerLive = TerminalManagerLive.pipe(Layer.provide(PtyAdapterLive));
 
 const WorkspaceLayerLive = Layer.mergeAll(
@@ -243,23 +272,7 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(AuthLayerLive),
   Layer.provideMerge(ServerEnvironmentLive),
   Layer.provideMerge(VcsProcessLive),
-  Layer.provideMerge(
-    SourceControlProviderRegistryLive.pipe(
-      Layer.provide(GitHubCliLive),
-      Layer.provide(VcsProcessLive),
-    ),
-  ),
-  Layer.provideMerge(
-    SourceControlDiscoveryLive.pipe(
-      Layer.provide(
-        SourceControlProviderRegistryLive.pipe(
-          Layer.provide(GitHubCliLive),
-          Layer.provide(VcsProcessLive),
-        ),
-      ),
-      Layer.provide(VcsProcessLive),
-    ),
-  ),
+  Layer.provideMerge(SourceControlLayerLive),
 
   // Misc.
   Layer.provideMerge(AnalyticsServiceLayerLive),

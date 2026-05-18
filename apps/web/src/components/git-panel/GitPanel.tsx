@@ -5,6 +5,8 @@ import {
   type GitHubIssue,
   type GitMergeBranchesResult,
   type ProjectId,
+  type SourceControlProviderKind,
+  type SourceControlPublishRepositoryResult,
   ThreadId,
 } from "@t3tools/contracts";
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,6 +18,7 @@ import {
   GitMergeIcon,
   GitPullRequestIcon,
   RefreshCcwIcon,
+  UploadCloudIcon,
 } from "lucide-react";
 import { GitHubIcon } from "../Icons";
 import {
@@ -63,6 +66,7 @@ import {
   readNativeApi,
   supportsCurrentNativeApiGitHub,
   supportsCurrentNativeApiGitMerge,
+  supportsCurrentNativeApiSourceControl,
 } from "~/nativeApi";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { useStore } from "~/store";
@@ -87,6 +91,11 @@ import {
 } from "./useGitPanelStackedActions";
 import { useGitPanelThreadRouting } from "./useGitPanelThreadRouting";
 import { useGitPanelWorkspaceActions } from "./useGitPanelWorkspaceActions";
+import {
+  sourceControlDiscoveryQueryOptions,
+  sourceControlPublishRepositoryMutationOptions,
+} from "~/lib/sourceControlReactQuery";
+import { PublishRepositoryDialog } from "./PublishRepositoryDialog";
 
 interface GitPanelProps {
   activeProjectId?: ProjectId | null;
@@ -123,6 +132,7 @@ export default function GitPanel({
 }: GitPanelProps) {
   const supportsGitMerge = supportsCurrentNativeApiGitMerge();
   const supportsGitHub = supportsCurrentNativeApiGitHub();
+  const supportsSourceControl = supportsCurrentNativeApiSourceControl();
   const { settings } = useAppSettings();
   const navigate = useNavigate();
   const projects = useStore((store) => store.projects);
@@ -176,6 +186,10 @@ export default function GitPanel({
   const [mergeExpanded] = useState(false);
   const [promotionTargetBranch] = useState<string | null>(null);
   const [isPromoteDialogOpen, setIsPromoteDialogOpen] = useState(false);
+  const [isPublishDialogOpen, setIsPublishDialogOpen] = useState(false);
+  const [publishResult, setPublishResult] = useState<SourceControlPublishRepositoryResult | null>(
+    null,
+  );
   const [resolvingIssueNumber, setResolvingIssueNumber] = useState<number | null>(null);
   const primaryWorkspaceStatusCwd =
     workspaceCwd !== null && repoRoot !== null && workspaceCwd !== repoRoot ? repoRoot : null;
@@ -193,6 +207,10 @@ export default function GitPanel({
 
   const { data: branchList = null } = useQuery(gitBranchesQueryOptions(workspaceCwd));
   const githubStatusQuery = useQuery(githubStatusQueryOptions(repoCwd));
+  const sourceControlDiscoveryQuery = useQuery({
+    ...sourceControlDiscoveryQueryOptions(),
+    enabled: supportsSourceControl,
+  });
   const isRepo = branchList?.isRepo ?? true;
   const currentBranch = branchList?.branches.find((branch) => branch.current)?.name ?? null;
   const isGitStatusOutOfSync =
@@ -245,6 +263,9 @@ export default function GitPanel({
   );
   const abortMergeMutation = useMutation(
     gitAbortMergeMutationOptions({ cwd: workspaceCwd, queryClient }),
+  );
+  const publishRepositoryMutation = useMutation(
+    sourceControlPublishRepositoryMutationOptions({ cwd: workspaceCwd, queryClient }),
   );
 
   const isRunStackedActionRunning =
@@ -916,6 +937,46 @@ export default function GitPanel({
     void promise.catch(() => undefined);
   }, [pullMutation, threadToastData]);
 
+  const publishRepository = useCallback(
+    (input: {
+      provider: Exclude<SourceControlProviderKind, "unknown">;
+      repository: string;
+      visibility: "private" | "public";
+      remoteName: string;
+      protocol: "ssh" | "https";
+    }) => {
+      if (!workspaceCwd) return;
+      const promise = publishRepositoryMutation
+        .mutateAsync({
+          cwd: workspaceCwd,
+          provider: input.provider,
+          repository: input.repository,
+          visibility: input.visibility,
+          remoteName: input.remoteName,
+          protocol: input.protocol,
+        })
+        .then((result) => {
+          setPublishResult(result);
+          return result;
+        });
+      toastManager.promise(promise, {
+        loading: { title: "Publishing repository...", data: threadToastData },
+        success: (result) => ({
+          title: result.status === "pushed" ? "Repository published" : "Remote added",
+          description: result.repository.nameWithOwner,
+          data: threadToastData,
+        }),
+        error: (error) => ({
+          title: "Publish failed",
+          description: error instanceof Error ? error.message : "An error occurred.",
+          data: threadToastData,
+        }),
+      });
+      void promise.catch(() => undefined);
+    },
+    [publishRepositoryMutation, threadToastData, workspaceCwd],
+  );
+
   const commitItem = gitActionMenuItems.find((item) => item.id === "commit") ?? null;
   const prItem = gitActionMenuItems.find((item) => item.id === "pr") ?? null;
   const githubRepoUrl = githubStatusQuery.data?.repo?.url ?? null;
@@ -944,6 +1005,13 @@ export default function GitPanel({
     gitStatusForActions.branch !== null &&
     !isGitActionRunning &&
     (gitStatusForActions.hasWorkingTreeChanges || gitStatusForActions.aheadCount > 0);
+  const publishAvailable =
+    supportsSourceControl &&
+    isRepo &&
+    !!gitStatusForActions &&
+    gitStatusForActions.branch !== null &&
+    gitStatusForActions.hasOriginRemote === false &&
+    !isGitActionRunning;
   const commitPushDisabledReason = !gitStatusForActions
     ? "Status unavailable"
     : gitStatusForActions.branch === null
@@ -1021,6 +1089,22 @@ export default function GitPanel({
           </Button>
         ) : isPrimaryWorkspace ? (
           <div className="space-y-2">
+            {publishAvailable && (
+              <Button
+                variant="default"
+                size="default"
+                onClick={() => {
+                  setPublishResult(null);
+                  setIsPublishDialogOpen(true);
+                }}
+                className="w-full justify-between"
+              >
+                <span className="flex items-center gap-2">
+                  <UploadCloudIcon className="size-4" />
+                  Publish repository
+                </span>
+              </Button>
+            )}
             <Button
               variant="default"
               size="default"
@@ -1096,6 +1180,21 @@ export default function GitPanel({
                 {prItem?.kind === "open_pr" ? "View PR" : "PR"}
               </Button>
             </div>
+            {supportsSourceControl && gitStatusForActions?.hasOriginRemote === false && (
+              <Button
+                variant="outline"
+                size="xs"
+                disabled={!publishAvailable}
+                onClick={() => {
+                  setPublishResult(null);
+                  setIsPublishDialogOpen(true);
+                }}
+                className="w-full justify-center"
+              >
+                <UploadCloudIcon className="size-3.5" />
+                Publish
+              </Button>
+            )}
 
             {/* Status hints */}
             {gitStatusForActions?.branch === null && (
@@ -1320,6 +1419,19 @@ export default function GitPanel({
         hasWorkingTreeChanges={gitStatusForActions?.hasWorkingTreeChanges ?? false}
         onOpenChange={setIsPromoteDialogOpen}
         onPromote={runPromoteAction}
+      />
+
+      <PublishRepositoryDialog
+        open={isPublishDialogOpen}
+        discovery={sourceControlDiscoveryQuery.data ?? null}
+        isSubmitting={publishRepositoryMutation.isPending}
+        errorMessage={publishRepositoryMutation.error?.message ?? null}
+        result={publishResult}
+        onOpenChange={setIsPublishDialogOpen}
+        onSubmit={publishRepository}
+        onOpenRepository={(url) => {
+          void openExternalUrl(url);
+        }}
       />
     </>
   );

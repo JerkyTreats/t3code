@@ -18,6 +18,11 @@ export interface NativeApiCapabilities {
     readonly closeIssue: boolean;
     readonly reopenIssue: boolean;
   };
+  readonly sourceControl: {
+    readonly lookupRepository: boolean;
+    readonly cloneRepository: boolean;
+    readonly publishRepository: boolean;
+  };
 }
 
 export type NativeApiFeature =
@@ -31,7 +36,10 @@ export type NativeApiFeature =
   | "github.listIssues"
   | "github.createIssue"
   | "github.closeIssue"
-  | "github.reopenIssue";
+  | "github.reopenIssue"
+  | "sourceControl.lookupRepository"
+  | "sourceControl.cloneRepository"
+  | "sourceControl.publishRepository";
 
 export const FULL_NATIVE_API_CAPABILITIES: NativeApiCapabilities = {
   git: {
@@ -48,6 +56,11 @@ export const FULL_NATIVE_API_CAPABILITIES: NativeApiCapabilities = {
     createIssue: true,
     closeIssue: true,
     reopenIssue: true,
+  },
+  sourceControl: {
+    lookupRepository: true,
+    cloneRepository: true,
+    publishRepository: true,
   },
 };
 
@@ -67,10 +80,27 @@ export const RPC_NATIVE_API_CAPABILITIES: NativeApiCapabilities = {
     closeIssue: true,
     reopenIssue: true,
   },
+  sourceControl: {
+    lookupRepository: true,
+    cloneRepository: true,
+    publishRepository: true,
+  },
 };
 
 export function resolveNativeApiCapabilities(hasEmbeddedNativeApi: boolean): NativeApiCapabilities {
-  return hasEmbeddedNativeApi ? FULL_NATIVE_API_CAPABILITIES : RPC_NATIVE_API_CAPABILITIES;
+  if (!hasEmbeddedNativeApi) {
+    return RPC_NATIVE_API_CAPABILITIES;
+  }
+  const embeddedSourceControl =
+    typeof window === "undefined" ? undefined : window.nativeApi?.sourceControl;
+  return {
+    ...FULL_NATIVE_API_CAPABILITIES,
+    sourceControl: {
+      lookupRepository: Boolean(embeddedSourceControl?.lookupRepository),
+      cloneRepository: Boolean(embeddedSourceControl?.cloneRepository),
+      publishRepository: Boolean(embeddedSourceControl?.publishRepository),
+    },
+  };
 }
 
 const nativeApiFeatureSelectors: Record<
@@ -88,6 +118,9 @@ const nativeApiFeatureSelectors: Record<
   "github.createIssue": (capabilities) => capabilities.github.createIssue,
   "github.closeIssue": (capabilities) => capabilities.github.closeIssue,
   "github.reopenIssue": (capabilities) => capabilities.github.reopenIssue,
+  "sourceControl.lookupRepository": (capabilities) => capabilities.sourceControl.lookupRepository,
+  "sourceControl.cloneRepository": (capabilities) => capabilities.sourceControl.cloneRepository,
+  "sourceControl.publishRepository": (capabilities) => capabilities.sourceControl.publishRepository,
 };
 
 const nativeApiFeatureUnavailableMessages: Record<NativeApiFeature, string> = {
@@ -102,6 +135,12 @@ const nativeApiFeatureUnavailableMessages: Record<NativeApiFeature, string> = {
   "github.createIssue": "Creating GitHub issues is unavailable on the current transport.",
   "github.closeIssue": "Closing GitHub issues is unavailable on the current transport.",
   "github.reopenIssue": "Reopening GitHub issues is unavailable on the current transport.",
+  "sourceControl.lookupRepository":
+    "Source control repository lookup is unavailable on the current transport.",
+  "sourceControl.cloneRepository":
+    "Source control repository clone is unavailable on the current transport.",
+  "sourceControl.publishRepository":
+    "Source control repository publish is unavailable on the current transport.",
 };
 
 export function hasNativeApiFeature(
@@ -130,6 +169,14 @@ export function supportsNativeApiGitHub(capabilities: NativeApiCapabilities): bo
     hasNativeApiFeature(capabilities, "github.createIssue") &&
     hasNativeApiFeature(capabilities, "github.closeIssue") &&
     hasNativeApiFeature(capabilities, "github.reopenIssue")
+  );
+}
+
+export function supportsNativeApiSourceControl(capabilities: NativeApiCapabilities): boolean {
+  return (
+    hasNativeApiFeature(capabilities, "sourceControl.lookupRepository") &&
+    hasNativeApiFeature(capabilities, "sourceControl.cloneRepository") &&
+    hasNativeApiFeature(capabilities, "sourceControl.publishRepository")
   );
 }
 

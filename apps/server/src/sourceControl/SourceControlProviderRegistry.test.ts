@@ -3,6 +3,9 @@ import { Effect, Option } from "effect";
 import { expect, vi } from "vitest";
 
 import { GitHubCli, type GitHubCliShape } from "../git/Services/GitHubCli.ts";
+import { AzureDevOpsCli, type AzureDevOpsCliShape } from "./AzureDevOpsCli.ts";
+import { BitbucketApi, type BitbucketApiShape } from "./BitbucketApi.ts";
+import { GitLabCli, type GitLabCliShape } from "./GitLabCli.ts";
 import { ServerConfig, type ServerConfigShape } from "../config.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { make } from "./SourceControlProviderRegistry.ts";
@@ -86,6 +89,7 @@ function makeGitHubCli(overrides?: Partial<GitHubCliShape>): GitHubCliShape {
     listOpenPullRequests: () => Effect.succeed([]),
     getPullRequest: () => Effect.die("not implemented in test"),
     getRepositoryCloneUrls: () => Effect.die("not implemented in test"),
+    createRepository: () => Effect.die("not implemented in test"),
     createPullRequest: () => Effect.void,
     getDefaultBranch: () => Effect.succeed("main"),
     checkoutPullRequest: () => Effect.void,
@@ -99,6 +103,50 @@ function makeGitHubCli(overrides?: Partial<GitHubCliShape>): GitHubCliShape {
   };
 }
 
+function makeGitLabCli(): GitLabCliShape {
+  return {
+    execute: () => Effect.die("not implemented in test"),
+    listMergeRequests: () => Effect.succeed([]),
+    getMergeRequest: () => Effect.die("not implemented in test"),
+    getRepositoryCloneUrls: () => Effect.die("not implemented in test"),
+    createRepository: () => Effect.die("not implemented in test"),
+    createMergeRequest: () => Effect.void,
+    getDefaultBranch: () => Effect.succeed("main"),
+    checkoutMergeRequest: () => Effect.void,
+  };
+}
+
+function makeAzureDevOpsCli(): AzureDevOpsCliShape {
+  return {
+    execute: () => Effect.die("not implemented in test"),
+    listPullRequests: () => Effect.succeed([]),
+    getPullRequest: () => Effect.die("not implemented in test"),
+    getRepositoryCloneUrls: () => Effect.die("not implemented in test"),
+    createRepository: () => Effect.die("not implemented in test"),
+    createPullRequest: () => Effect.void,
+    getDefaultBranch: () => Effect.succeed("main"),
+    checkoutPullRequest: () => Effect.void,
+  };
+}
+
+function makeBitbucketApi(): BitbucketApiShape {
+  return {
+    probeAuth: Effect.succeed({
+      status: "unknown",
+      account: Option.none(),
+      host: Option.some("bitbucket.org"),
+      detail: Option.none(),
+    }),
+    listPullRequests: () => Effect.succeed([]),
+    getPullRequest: () => Effect.die("not implemented in test"),
+    getRepositoryCloneUrls: () => Effect.die("not implemented in test"),
+    createRepository: () => Effect.die("not implemented in test"),
+    createPullRequest: () => Effect.void,
+    getDefaultBranch: () => Effect.succeed("main"),
+    checkoutPullRequest: () => Effect.void,
+  };
+}
+
 function makeRegistry(input?: {
   vcsProcess?: Partial<VcsProcess.VcsProcessShape>;
   gitHubCli?: Partial<GitHubCliShape>;
@@ -107,6 +155,9 @@ function makeRegistry(input?: {
     Effect.provideService(ServerConfig, makeServerConfig()),
     Effect.provideService(VcsProcess.VcsProcess, makeVcsProcess(input?.vcsProcess)),
     Effect.provideService(GitHubCli, makeGitHubCli(input?.gitHubCli)),
+    Effect.provideService(GitLabCli, makeGitLabCli()),
+    Effect.provideService(AzureDevOpsCli, makeAzureDevOpsCli()),
+    Effect.provideService(BitbucketApi, makeBitbucketApi()),
   );
 }
 
@@ -182,18 +233,13 @@ it.effect("delegates github default-branch lookups through the registry", () =>
   }),
 );
 
-it.effect("keeps non-github providers discovery-only for now", () =>
+it.effect("registers non-github providers for workflows", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry();
     const provider = yield* registry.get("gitlab");
 
-    const error = yield* Effect.flip(
-      provider.getDefaultBranch({
-        cwd: "/repo",
-      }),
-    );
+    const branch = yield* provider.getDefaultBranch({ cwd: "/repo" });
 
-    assert.equal(error.provider, "gitlab");
-    assert.include(error.detail, "No gitlab source control provider is registered.");
+    assert.equal(branch, "main");
   }),
 );

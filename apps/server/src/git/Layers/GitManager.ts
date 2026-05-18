@@ -1,11 +1,24 @@
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 
-import { Cache, Duration, Effect, Exit, FileSystem, Layer, Option, Path, Ref } from "effect";
+import {
+  Cache,
+  Cause,
+  Duration,
+  Effect,
+  Exit,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Ref,
+  Schema,
+} from "effect";
 import {
   GitActionProgressEvent,
   GitActionProgressPhase,
   GitCommandError,
+  GitHubCliError,
   GitRunStackedActionResult,
   GitStackedAction,
   type GitStatusLocalResult,
@@ -273,7 +286,7 @@ function toPullRequestInfo(summary: GitHubPullRequestSummary): PullRequestInfo {
     baseRefName: summary.baseRefName,
     headRefName: summary.headRefName,
     state: summary.state ?? "open",
-    updatedAt: null,
+    updatedAt: summary.updatedAt ?? null,
     ...(summary.isCrossRepository !== undefined
       ? { isCrossRepository: summary.isCrossRepository }
       : {}),
@@ -610,6 +623,21 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     };
   };
 
+  const resolveSourceControlHandle = (cwd: string) =>
+    sourceControlProviderRegistry.resolveHandle({ cwd });
+
+  const toGitHubCliError = (operation: string, cause: unknown) =>
+    Schema.is(GitHubCliError)(cause)
+      ? cause
+      : new GitHubCliError({
+          operation,
+          detail:
+            cause instanceof Error && cause.message.trim().length > 0
+              ? cause.message
+              : "Source control provider operation failed.",
+          cause,
+        });
+
   const getGitHubRepositoryCloneUrls = Effect.fn("getGitHubRepositoryCloneUrls")(function* (
     cwd: string,
     repository: string,
@@ -636,22 +664,26 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     cwd: string,
     reference: string,
   ) {
+    const handleExit = yield* Effect.exit(resolveSourceControlHandle(cwd));
+    if (Exit.isFailure(handleExit)) {
+      return yield* gitHubCli.getPullRequest({ cwd, reference });
+    }
+
+    const { provider } = handleExit.value;
     const pullRequestExit = yield* Effect.exit(
-      Effect.gen(function* () {
-        const provider = yield* sourceControlProviderRegistry.get("github");
-        return yield* provider.getChangeRequest({
-          cwd,
-          reference,
-        });
+      provider.getChangeRequest({
+        cwd,
+        reference,
       }),
     );
-    if (Exit.isSuccess(pullRequestExit)) {
-      return toPullRequestSummaryFromChangeRequest(pullRequestExit.value);
+    if (Exit.isFailure(pullRequestExit)) {
+      if (provider.kind === "github") {
+        return yield* gitHubCli.getPullRequest({ cwd, reference });
+      }
+      return yield* toGitHubCliError("getPullRequest", Cause.squash(pullRequestExit.cause));
     }
-    return yield* gitHubCli.getPullRequest({
-      cwd,
-      reference,
-    });
+    const pullRequest = pullRequestExit.value;
+    return toPullRequestSummaryFromChangeRequest(pullRequest);
   });
 
   const listGitHubPullRequests = Effect.fn("listGitHubPullRequests")(function* (input: {
@@ -660,20 +692,28 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     state: "open" | "all";
     limit: number;
   }) {
-    const pullRequestsExit = yield* Effect.exit(
-      Effect.gen(function* () {
-        const provider = yield* sourceControlProviderRegistry.get("github");
-        return yield* provider.listChangeRequests({
+    const handleExit = yield* Effect.exit(resolveSourceControlHandle(input.cwd));
+    if (Exit.isSuccess(handleExit)) {
+      const { provider } = handleExit.value;
+      const pullRequestsExit = yield* Effect.exit(
+        provider.listChangeRequests({
           cwd: input.cwd,
           headSelector: input.headSelector,
           state: input.state,
           limit: input.limit,
-        });
-      }),
-    );
-    if (Exit.isSuccess(pullRequestsExit)) {
-      return pullRequestsExit.value.map(toPullRequestInfoFromChangeRequest);
+        }),
+      );
+      if (Exit.isSuccess(pullRequestsExit)) {
+        return pullRequestsExit.value.map(toPullRequestInfoFromChangeRequest);
+      }
+      if (provider.kind !== "github") {
+        return yield* toGitHubCliError(
+          "listOpenPullRequests",
+          Cause.squash(pullRequestsExit.cause),
+        );
+      }
     }
+
     const fallback = yield* gitHubCli.listOpenPullRequests({
       cwd: input.cwd,
       headSelector: input.headSelector,
@@ -690,21 +730,26 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     title: string;
     bodyFile: string;
   }) {
-    const createExit = yield* Effect.exit(
-      Effect.gen(function* () {
-        const provider = yield* sourceControlProviderRegistry.get("github");
-        return yield* provider.createChangeRequest({
+    const handleExit = yield* Effect.exit(resolveSourceControlHandle(input.cwd));
+    if (Exit.isSuccess(handleExit)) {
+      const { provider } = handleExit.value;
+      const createExit = yield* Effect.exit(
+        provider.createChangeRequest({
           cwd: input.cwd,
           baseRefName: input.baseBranch,
           headSelector: input.headSelector,
           title: input.title,
           bodyFile: input.bodyFile,
-        });
-      }),
-    );
-    if (Exit.isSuccess(createExit)) {
-      return;
+        }),
+      );
+      if (Exit.isSuccess(createExit)) {
+        return;
+      }
+      if (provider.kind !== "github") {
+        return yield* toGitHubCliError("createPullRequest", Cause.squash(createExit.cause));
+      }
     }
+
     yield* gitHubCli.createPullRequest({
       cwd: input.cwd,
       baseBranch: input.baseBranch,
@@ -719,19 +764,24 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     reference: string,
     force: boolean,
   ) {
-    const checkoutExit = yield* Effect.exit(
-      Effect.gen(function* () {
-        const provider = yield* sourceControlProviderRegistry.get("github");
-        return yield* provider.checkoutChangeRequest({
+    const handleExit = yield* Effect.exit(resolveSourceControlHandle(cwd));
+    if (Exit.isSuccess(handleExit)) {
+      const { provider } = handleExit.value;
+      const checkoutExit = yield* Effect.exit(
+        provider.checkoutChangeRequest({
           cwd,
           reference,
           force,
-        });
-      }),
-    );
-    if (Exit.isSuccess(checkoutExit)) {
-      return;
+        }),
+      );
+      if (Exit.isSuccess(checkoutExit)) {
+        return;
+      }
+      if (provider.kind !== "github") {
+        return yield* toGitHubCliError("checkoutPullRequest", Cause.squash(checkoutExit.cause));
+      }
     }
+
     yield* gitHubCli.checkoutPullRequest({
       cwd,
       reference,

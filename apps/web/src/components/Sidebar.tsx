@@ -48,7 +48,9 @@ import {
   ProjectId,
   ThreadId,
   type GitStatusResult,
+  type SourceControlProviderKind,
 } from "@t3tools/contracts";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import {
   type SidebarProjectSortOrder,
@@ -108,6 +110,7 @@ import {
 } from "./ui/sidebar";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
+import * as Option from "effect/Option";
 import {
   getVisibleSidebarThreadIds,
   getVisibleThreadsForProject,
@@ -130,6 +133,12 @@ import { useSettings, useUpdateSettings } from "~/hooks/useSettings";
 import { useServerKeybindings } from "../rpc/serverState";
 import { useSidebarThreadSummaryById } from "../storeSelectors";
 import type { Project } from "../types";
+import {
+  sourceControlCloneRepositoryMutationOptions,
+  sourceControlDiscoveryQueryOptions,
+  sourceControlLookupRepositoryMutationOptions,
+} from "~/lib/sourceControlReactQuery";
+import { supportsCurrentNativeApiSourceControl } from "~/nativeApi";
 const THREAD_PREVIEW_LIMIT = 6;
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
@@ -144,6 +153,19 @@ const SIDEBAR_LIST_ANIMATION_OPTIONS = {
   duration: 180,
   easing: "ease-out",
 } as const;
+type AddProjectMode = "local" | "clone";
+type CloneProviderMode = "git-url" | Exclude<SourceControlProviderKind, "unknown">;
+const CLONE_PROVIDER_OPTIONS: ReadonlyArray<{
+  id: CloneProviderMode;
+  label: string;
+  placeholder: string;
+}> = [
+  { id: "git-url", label: "Git URL", placeholder: "git@github.com:owner/repo.git" },
+  { id: "github", label: "GitHub", placeholder: "owner/repo" },
+  { id: "gitlab", label: "GitLab", placeholder: "group/project" },
+  { id: "bitbucket", label: "Bitbucket", placeholder: "workspace/repository" },
+  { id: "azure-devops", label: "Azure DevOps", placeholder: "project/repository" },
+];
 
 type SidebarProjectSnapshot = Project & {
   expanded: boolean;
@@ -714,6 +736,10 @@ export default function Sidebar() {
   const keybindings = useServerKeybindings();
   const [addingProject, setAddingProject] = useState(false);
   const [newCwd, setNewCwd] = useState("");
+  const [addProjectMode, setAddProjectMode] = useState<AddProjectMode>("local");
+  const [cloneProvider, setCloneProvider] = useState<CloneProviderMode>("git-url");
+  const [cloneRepository, setCloneRepository] = useState("");
+  const [cloneDestinationPath, setCloneDestinationPath] = useState("");
   const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [addProjectError, setAddProjectError] = useState<string | null>(null);
@@ -746,6 +772,13 @@ export default function Sidebar() {
   const platform = navigator.platform;
   const shouldBrowseForProjectImmediately = isElectron && !isLinuxDesktop;
   const shouldShowProjectPathEntry = addingProject && !shouldBrowseForProjectImmediately;
+  const supportsSourceControl = supportsCurrentNativeApiSourceControl();
+  const sourceControlDiscoveryQuery = useQuery({
+    ...sourceControlDiscoveryQueryOptions(),
+    enabled: supportsSourceControl,
+  });
+  const lookupRepositoryMutation = useMutation(sourceControlLookupRepositoryMutationOptions());
+  const cloneRepositoryMutation = useMutation(sourceControlCloneRepositoryMutationOptions());
   const orderedProjects = useMemo(() => {
     return orderItemsByPreferredIds({
       items: projects,
@@ -846,6 +879,8 @@ export default function Sidebar() {
       const finishAddingProject = () => {
         setIsAddingProject(false);
         setNewCwd("");
+        setCloneRepository("");
+        setCloneDestinationPath("");
         setAddProjectError(null);
         setAddingProject(false);
       };
@@ -904,10 +939,89 @@ export default function Sidebar() {
   );
 
   const handleAddProject = () => {
+    if (addProjectMode === "clone") {
+      handleCloneProject();
+      return;
+    }
     void addProjectFromPath(newCwd);
   };
 
-  const canAddProject = newCwd.trim().length > 0 && !isAddingProject;
+  const providerDiscoveryByKind = useMemo(
+    () =>
+      new Map(
+        (sourceControlDiscoveryQuery.data?.sourceControlProviders ?? []).map((provider) => [
+          provider.kind,
+          provider,
+        ]),
+      ),
+    [sourceControlDiscoveryQuery.data?.sourceControlProviders],
+  );
+  const getCloneProviderDisabledReason = useCallback(
+    (provider: CloneProviderMode): string | null => {
+      if (provider === "git-url") return null;
+      if (!supportsSourceControl) return "Source control unavailable";
+      const discovery = providerDiscoveryByKind.get(provider);
+      if (!discovery) return "Discovery unavailable";
+      if (discovery.status !== "available") {
+        return discovery.installHint;
+      }
+      if (discovery.auth.status === "unauthenticated") {
+        return Option.getOrElse(discovery.auth.detail, () => "Auth needed");
+      }
+      return null;
+    },
+    [providerDiscoveryByKind, supportsSourceControl],
+  );
+  const selectedCloneProviderDisabledReason = getCloneProviderDisabledReason(cloneProvider);
+
+  const handleCloneProject = () => {
+    if (cloneRepository.trim().length === 0 || cloneDestinationPath.trim().length === 0) {
+      setAddProjectError("Repository and destination path are required.");
+      return;
+    }
+    if (selectedCloneProviderDisabledReason) {
+      setAddProjectError(selectedCloneProviderDisabledReason);
+      return;
+    }
+    const run = async () => {
+      let remoteUrl = cloneRepository.trim();
+      if (cloneProvider !== "git-url") {
+        const lookedUp = await lookupRepositoryMutation.mutateAsync({
+          provider: cloneProvider,
+          repository: cloneRepository.trim(),
+        });
+        remoteUrl = lookedUp.sshUrl;
+      }
+      const result = await cloneRepositoryMutation.mutateAsync({
+        ...(cloneProvider === "git-url"
+          ? { remoteUrl }
+          : { provider: cloneProvider, repository: cloneRepository.trim() }),
+        destinationPath: cloneDestinationPath.trim(),
+        protocol: "ssh",
+      });
+      await addProjectFromPath(result.cwd);
+      setCloneRepository("");
+      setCloneDestinationPath("");
+    };
+    toastManager.promise(run(), {
+      loading: { title: "Cloning repository..." },
+      success: { title: "Repository cloned" },
+      error: (error) => ({
+        title: "Clone failed",
+        description: error instanceof Error ? error.message : "An error occurred.",
+      }),
+    });
+  };
+
+  const isCloningProject = lookupRepositoryMutation.isPending || cloneRepositoryMutation.isPending;
+  const canAddProject =
+    addProjectMode === "local"
+      ? newCwd.trim().length > 0 && !isAddingProject
+      : cloneRepository.trim().length > 0 &&
+        cloneDestinationPath.trim().length > 0 &&
+        !isAddingProject &&
+        !isCloningProject &&
+        selectedCloneProviderDisabledReason === null;
 
   const handlePickFolder = async () => {
     const api = readNativeApi();
@@ -2193,16 +2307,74 @@ export default function Sidebar() {
               </div>
               {shouldShowProjectPathEntry && (
                 <div className="mb-2 px-1">
+                  <div className="mb-1.5 grid grid-cols-2 gap-1 rounded-md bg-muted/40 p-1">
+                    <button
+                      type="button"
+                      className={`rounded px-2 py-1 text-xs transition-colors ${
+                        addProjectMode === "local"
+                          ? "bg-background text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      onClick={() => {
+                        setAddProjectMode("local");
+                        setAddProjectError(null);
+                      }}
+                    >
+                      Local path
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded px-2 py-1 text-xs transition-colors ${
+                        addProjectMode === "clone"
+                          ? "bg-background text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                      onClick={() => {
+                        setAddProjectMode("clone");
+                        setAddProjectError(null);
+                      }}
+                    >
+                      Clone remote
+                    </button>
+                  </div>
                   {isElectron && (
                     <button
                       type="button"
-                      className="mb-1.5 flex w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary py-1.5 text-xs text-foreground/80 transition-colors duration-150 hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                      className={`mb-1.5 w-full items-center justify-center gap-2 rounded-md border border-border bg-secondary py-1.5 text-xs text-foreground/80 transition-colors duration-150 hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60 ${
+                        addProjectMode === "local" ? "flex" : "hidden"
+                      }`}
                       onClick={() => void handlePickFolder()}
                       disabled={isPickingFolder || isAddingProject}
                     >
                       <FolderIcon className="size-3.5" />
                       {isPickingFolder ? "Picking folder..." : "Browse for folder"}
                     </button>
+                  )}
+                  {addProjectMode === "clone" && (
+                    <div className="mb-1.5 grid grid-cols-2 gap-1">
+                      {CLONE_PROVIDER_OPTIONS.map((option) => {
+                        const disabledReason = getCloneProviderDisabledReason(option.id);
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            title={disabledReason ?? option.label}
+                            disabled={option.id !== "git-url" && disabledReason !== null}
+                            className={`rounded-md border px-2 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                              cloneProvider === option.id
+                                ? "border-ring bg-background text-foreground"
+                                : "border-border bg-secondary text-muted-foreground hover:text-foreground"
+                            }`}
+                            onClick={() => {
+                              setCloneProvider(option.id);
+                              setAddProjectError(null);
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                   <div className="flex gap-1.5">
                     <input
@@ -2212,10 +2384,19 @@ export default function Sidebar() {
                           ? "border-red-500/70 focus:border-red-500"
                           : "border-border focus:border-ring"
                       }`}
-                      placeholder="/path/to/project"
-                      value={newCwd}
+                      placeholder={
+                        addProjectMode === "local"
+                          ? "/path/to/project"
+                          : (CLONE_PROVIDER_OPTIONS.find((option) => option.id === cloneProvider)
+                              ?.placeholder ?? "owner/repo")
+                      }
+                      value={addProjectMode === "local" ? newCwd : cloneRepository}
                       onChange={(event) => {
-                        setNewCwd(event.target.value);
+                        if (addProjectMode === "local") {
+                          setNewCwd(event.target.value);
+                        } else {
+                          setCloneRepository(event.target.value);
+                        }
                         setAddProjectError(null);
                       }}
                       onKeyDown={(event) => {
@@ -2227,15 +2408,48 @@ export default function Sidebar() {
                       }}
                       autoFocus
                     />
+                    {addProjectMode === "clone" && (
+                      <input
+                        className={`min-w-0 flex-1 rounded-md border bg-secondary px-2 py-1 font-mono text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none ${
+                          addProjectError
+                            ? "border-red-500/70 focus:border-red-500"
+                            : "border-border focus:border-ring"
+                        }`}
+                        placeholder="~/code/repo"
+                        value={cloneDestinationPath}
+                        onChange={(event) => {
+                          setCloneDestinationPath(event.target.value);
+                          setAddProjectError(null);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") handleAddProject();
+                          if (event.key === "Escape") {
+                            setAddingProject(false);
+                            setAddProjectError(null);
+                          }
+                        }}
+                      />
+                    )}
                     <button
                       type="button"
                       className="shrink-0 rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground transition-colors duration-150 hover:bg-primary/90 disabled:opacity-60"
                       onClick={handleAddProject}
                       disabled={!canAddProject}
                     >
-                      {isAddingProject ? "Adding..." : "Add"}
+                      {isAddingProject || isCloningProject
+                        ? addProjectMode === "clone"
+                          ? "Cloning..."
+                          : "Adding..."
+                        : addProjectMode === "clone"
+                          ? "Clone"
+                          : "Add"}
                     </button>
                   </div>
+                  {addProjectMode === "clone" && selectedCloneProviderDisabledReason && (
+                    <p className="mt-1 px-0.5 text-[11px] leading-tight text-muted-foreground">
+                      {selectedCloneProviderDisabledReason}
+                    </p>
+                  )}
                   {addProjectError && (
                     <p className="mt-1 px-0.5 text-[11px] leading-tight text-red-400">
                       {addProjectError}

@@ -98,6 +98,10 @@ export interface GitPushResult {
   setUpstream?: boolean | undefined;
 }
 
+export interface GitPushCurrentBranchOptions {
+  readonly remoteName?: string;
+}
+
 export interface GitRangeContext {
   commitSummary: string;
   diffSummary: string;
@@ -193,6 +197,7 @@ export interface GitCoreShape {
   readonly pushCurrentBranch: (
     cwd: string,
     fallbackBranch: string | null,
+    options?: GitPushCurrentBranchOptions,
   ) => Effect.Effect<GitPushResult, GitCommandError>;
 
   /**
@@ -261,6 +266,11 @@ export interface GitCoreShape {
    * Ensure a named remote exists for the provided URL, returning the reused or created remote name.
    */
   readonly ensureRemote: (input: GitEnsureRemoteInput) => Effect.Effect<string, GitCommandError>;
+
+  /**
+   * Resolve the primary remote for a repository.
+   */
+  readonly resolvePrimaryRemoteName: (cwd: string) => Effect.Effect<string, GitCommandError>;
 
   /**
    * Fetch a remote branch into a local branch without checkout.

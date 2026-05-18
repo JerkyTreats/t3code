@@ -82,6 +82,11 @@ const rpcClientMock = {
     closeIssue: vi.fn(),
     reopenIssue: vi.fn(),
   },
+  sourceControl: {
+    lookupRepository: vi.fn(),
+    cloneRepository: vi.fn(),
+    publishRepository: vi.fn(),
+  },
   server: {
     getConfig: vi.fn(),
     refreshProviders: vi.fn(),

@@ -16,6 +16,7 @@ import {
   ORCHESTRATION_WS_METHODS,
   ProjectId,
   ResolvedKeybindingRule,
+  SourceControlRepositoryError,
   ThreadId,
   WS_METHODS,
   WsRpcGroup,
@@ -101,6 +102,10 @@ import { SessionCredentialService } from "./auth/Services/SessionCredentialServi
 import { ServerEnvironment } from "./environment/Services/ServerEnvironment.ts";
 import { SourceControlDiscovery } from "./sourceControl/SourceControlDiscovery.ts";
 import type { SourceControlDiscoveryShape } from "./sourceControl/SourceControlDiscovery.ts";
+import {
+  SourceControlRepositoryService,
+  type SourceControlRepositoryServiceShape,
+} from "./sourceControl/SourceControlRepositoryService.ts";
 
 const defaultProjectId = ProjectId.makeUnsafe("project-default");
 const defaultThreadId = ThreadId.makeUnsafe("thread-default");
@@ -428,6 +433,7 @@ const buildAppUnderTest = (options?: {
     serverLifecycleEvents?: Partial<ServerLifecycleEventsShape>;
     serverRuntimeStartup?: Partial<ServerRuntimeStartupShape>;
     sourceControlDiscovery?: Partial<SourceControlDiscoveryShape>;
+    sourceControlRepositoryService?: Partial<SourceControlRepositoryServiceShape>;
   };
 }) =>
   Effect.gen(function* () {
@@ -592,13 +598,42 @@ const buildAppUnderTest = (options?: {
         }),
       ),
       Layer.provide(
-        Layer.mock(SourceControlDiscovery)({
-          discover: Effect.succeed({
-            versionControlSystems: [],
-            sourceControlProviders: [],
+        Layer.mergeAll(
+          Layer.mock(SourceControlDiscovery)({
+            discover: Effect.succeed({
+              versionControlSystems: [],
+              sourceControlProviders: [],
+            }),
+            ...options?.layers?.sourceControlDiscovery,
           }),
-          ...options?.layers?.sourceControlDiscovery,
-        }),
+          Layer.mock(SourceControlRepositoryService)({
+            lookupRepository: () =>
+              Effect.fail(
+                new SourceControlRepositoryError({
+                  provider: "github",
+                  operation: "lookupRepository",
+                  detail: "Source control repository lookup is not configured in this test.",
+                }),
+              ),
+            cloneRepository: () =>
+              Effect.fail(
+                new SourceControlRepositoryError({
+                  provider: "unknown",
+                  operation: "cloneRepository",
+                  detail: "Source control repository clone is not configured in this test.",
+                }),
+              ),
+            publishRepository: () =>
+              Effect.fail(
+                new SourceControlRepositoryError({
+                  provider: "github",
+                  operation: "publishRepository",
+                  detail: "Source control repository publish is not configured in this test.",
+                }),
+              ),
+            ...options?.layers?.sourceControlRepositoryService,
+          }),
+        ),
       ),
       Layer.provide(
         Layer.mock(ServerEnvironment)({

@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { Effect, FileSystem, Layer, Option, PlatformError, Scope } from "effect";
+import { Effect, FileSystem, Layer, Option, PlatformError, Schema, Scope } from "effect";
 import { expect } from "vitest";
 import type {
   ChangeRequest,
@@ -88,7 +88,10 @@ function createFakeSourceControlProviderRegistry(
       headSelector: string;
       state: "open" | "closed" | "merged" | "all";
       limit?: number;
-    }) => Effect.succeed(scenario?.listChangeRequests?.(input) ?? []),
+    }) =>
+      scenario?.listChangeRequests
+        ? Effect.succeed(scenario.listChangeRequests(input))
+        : Effect.die("listChangeRequests not implemented in test"),
     getChangeRequest: () =>
       scenario?.pullRequest
         ? Effect.succeed(scenario.pullRequest)
@@ -98,11 +101,15 @@ function createFakeSourceControlProviderRegistry(
       headSelector: string;
       title: string;
       bodyFile: string;
-    }) =>
-      Effect.sync(() => {
-        scenario?.createChangeRequestCalls?.push(input);
-        scenario?.onCreateChangeRequest?.(input);
-      }),
+    }) => {
+      if (!scenario?.createChangeRequestCalls && !scenario?.onCreateChangeRequest) {
+        return Effect.die("createChangeRequest not implemented in test");
+      }
+      return Effect.sync(() => {
+        scenario.createChangeRequestCalls?.push(input);
+        scenario.onCreateChangeRequest?.(input);
+      });
+    },
     getRepositoryCloneUrls: (input: { repository: string }) => {
       const cloneUrls = scenario?.repositoryCloneUrls?.[input.repository];
       return cloneUrls
@@ -115,10 +122,15 @@ function createFakeSourceControlProviderRegistry(
     },
     createRepository: () => Effect.die("not implemented in test"),
     getDefaultBranch: () => Effect.succeed(scenario?.defaultBranch ?? null),
-    checkoutChangeRequest: (input: { reference: string }) =>
-      Effect.sync(() => {
-        scenario?.checkoutReferences?.push(input.reference);
-      }),
+    checkoutChangeRequest: (input: { reference: string }) => {
+      const checkoutReferences = scenario?.checkoutReferences;
+      if (!checkoutReferences) {
+        return Effect.die("checkoutChangeRequest not implemented in test");
+      }
+      return Effect.sync(() => {
+        checkoutReferences.push(input.reference);
+      });
+    },
   };
 
   return {
@@ -208,6 +220,7 @@ function normalizeFakePullRequestSummary(raw: unknown): GitHubPullRequestSummary
       : undefined;
   const isCrossRepository =
     typeof record.isCrossRepository === "boolean" ? record.isCrossRepository : undefined;
+  const updatedAt = typeof record.updatedAt === "string" ? record.updatedAt : undefined;
   const headRepositoryNameWithOwner =
     typeof record.headRepositoryNameWithOwner === "string"
       ? record.headRepositoryNameWithOwner
@@ -228,6 +241,7 @@ function normalizeFakePullRequestSummary(raw: unknown): GitHubPullRequestSummary
     baseRefName,
     headRefName,
     ...(state ? { state } : {}),
+    ...(updatedAt ? { updatedAt } : {}),
     ...(isCrossRepository !== undefined ? { isCrossRepository } : {}),
     ...(headRepositoryNameWithOwner ? { headRepositoryNameWithOwner } : {}),
     ...(headRepositoryOwnerLogin ? { headRepositoryOwnerLogin } : {}),
@@ -249,12 +263,7 @@ function runGitSyncForFakeGh(cwd: string, args: readonly string[]): void {
 }
 
 function isGitHubCliError(error: unknown): error is GitHubCliError {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "_tag" in error &&
-    (error as { _tag?: unknown })._tag === "GitHubCliError"
-  );
+  return Schema.is(GitHubCliError)(error);
 }
 
 function makeTempDir(
@@ -590,11 +599,11 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "--head",
             input.headSelector,
             "--state",
-            "open",
+            input.state ?? "open",
             "--limit",
             String(input.limit ?? 1),
             "--json",
-            "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+            "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
         }).pipe(
           Effect.map((result) => JSON.parse(result.stdout) as unknown[]),
@@ -638,7 +647,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
             "view",
             input.reference,
             "--json",
-            "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
+            "number,title,url,baseRefName,headRefName,state,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
           ],
         }).pipe(Effect.map((result) => JSON.parse(result.stdout) as GitHubPullRequestSummary)),
       getRepositoryCloneUrls: (input) =>
@@ -646,6 +655,13 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
           cwd: input.cwd,
           args: ["repo", "view", input.repository, "--json", "nameWithOwner,url,sshUrl"],
         }).pipe(Effect.map((result) => JSON.parse(result.stdout))),
+      createRepository: () =>
+        Effect.fail(
+          new GitHubCliError({
+            operation: "createRepository",
+            detail: "Repository creation is not used in this test harness.",
+          }),
+        ),
       checkoutPullRequest: (input) =>
         execute({
           cwd: input.cwd,
