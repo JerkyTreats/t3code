@@ -36,6 +36,15 @@ export function resolveProviderInstanceRoute(input: {
   if (instanceConfig !== undefined) {
     const provider = providerKindFromDriverKind(instanceConfig.driver);
     if (provider === undefined) return undefined;
+    if (input.provider !== undefined && provider !== input.provider) {
+      return {
+        instanceId: fallbackInstanceId,
+        provider: fallbackProvider,
+        config: undefined,
+        isDefault: true,
+        enabled: input.settings.providers[fallbackProvider].enabled,
+      };
+    }
     return {
       instanceId,
       provider,

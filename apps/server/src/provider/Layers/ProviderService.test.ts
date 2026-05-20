@@ -661,6 +661,59 @@ routing.layer("ProviderServiceLive routing", (it) => {
     }),
   );
 
+  it.effect("recovers claude sessions with stale codex provider instance ids", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService;
+      const directory = yield* ProviderSessionDirectory;
+      const threadId = asThreadId("thread-claude-stale-instance");
+
+      yield* directory.upsert({
+        threadId,
+        provider: "claudeAgent",
+        providerInstanceId: "codex" as never,
+        runtimeMode: "full-access",
+        status: "running",
+        resumeCursor: { opaque: "resume-claude-stale-instance" },
+        runtimePayload: {
+          cwd: "/tmp/project-claude-stale-instance",
+          modelSelection: {
+            provider: "claudeAgent",
+            model: "claude-opus-4-6",
+            instanceId: "codex",
+          },
+        },
+      });
+
+      routing.codex.startSession.mockClear();
+      routing.claude.startSession.mockClear();
+      routing.claude.sendTurn.mockClear();
+
+      yield* provider.sendTurn({
+        threadId,
+        input: "continue",
+        attachments: [],
+      });
+
+      assert.equal(routing.codex.startSession.mock.calls.length, 0);
+      assert.equal(routing.claude.startSession.mock.calls.length, 1);
+      assert.equal(routing.claude.sendTurn.mock.calls.length, 1);
+      const resumedStartInput = routing.claude.startSession.mock.calls[0]?.[0];
+      assert.equal(typeof resumedStartInput === "object" && resumedStartInput !== null, true);
+      if (resumedStartInput && typeof resumedStartInput === "object") {
+        const startPayload = resumedStartInput as {
+          provider?: string;
+          providerInstanceId?: string;
+          cwd?: string;
+          resumeCursor?: unknown;
+        };
+        assert.equal(startPayload.provider, "claudeAgent");
+        assert.equal(startPayload.providerInstanceId, "claudeAgent");
+        assert.equal(startPayload.cwd, "/tmp/project-claude-stale-instance");
+        assert.deepEqual(startPayload.resumeCursor, { opaque: "resume-claude-stale-instance" });
+      }
+    }),
+  );
+
   it.effect("recovers stale sessions for sendTurn using persisted cwd", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService;

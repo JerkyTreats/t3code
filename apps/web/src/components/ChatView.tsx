@@ -1058,8 +1058,12 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
   const selectedProvider: ProviderKind = lockedProvider ?? unlockedSelectedProvider;
   const selectedProviderInstanceId =
     composerDraft.modelSelectionByProvider[selectedProvider]?.instanceId ??
-    activeThread?.modelSelection.instanceId ??
-    activeProject?.defaultModelSelection?.instanceId ??
+    (activeThread?.modelSelection.provider === selectedProvider
+      ? activeThread.modelSelection.instanceId
+      : undefined) ??
+    (activeProject?.defaultModelSelection?.provider === selectedProvider
+      ? activeProject.defaultModelSelection.instanceId
+      : undefined) ??
     providerInstanceIdFromProviderKind(selectedProvider);
   const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
     threadId,

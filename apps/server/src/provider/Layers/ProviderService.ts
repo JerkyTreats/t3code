@@ -238,9 +238,27 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       "provider.thread_id": input.binding.threadId,
     });
     return yield* Effect.gen(function* () {
-      const instanceId =
-        input.binding.providerInstanceId ??
-        providerInstanceIdFromProviderKind(input.binding.provider);
+      const settings = yield* serverSettings.getSettings.pipe(
+        Effect.mapError((error) =>
+          toValidationError(
+            input.operation,
+            `Failed to load provider settings: ${error.message}`,
+            error,
+          ),
+        ),
+      );
+      const route = resolveProviderInstanceRoute({
+        settings,
+        provider: input.binding.provider,
+        instanceId: input.binding.providerInstanceId,
+      });
+      if (!route) {
+        return yield* toValidationError(
+          input.operation,
+          `Provider instance '${input.binding.providerInstanceId ?? input.binding.provider}' is not supported by this build.`,
+        );
+      }
+      const instanceId = route.instanceId;
       const adapter = yield* getAdapterByInstance(instanceId);
       const hasResumeCursor =
         input.binding.resumeCursor !== null && input.binding.resumeCursor !== undefined;
@@ -273,7 +291,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
       const resumed = yield* adapter.startSession({
         threadId: input.binding.threadId,
-        provider: input.binding.provider,
+        provider: route.provider,
         providerInstanceId: instanceId,
         ...(persistedCwd ? { cwd: persistedCwd } : {}),
         ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
