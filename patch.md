@@ -432,6 +432,7 @@ Provider status and settings can carry provider instance identity without collap
 - Provider adapter routing, provider sessions, runtime events, recovery, and stop flows carry `providerInstanceId` while preserving legacy provider kind fallback.
 - Custom provider instances materialize as provider registry snapshots without duplicating singleton adapter event streams.
 - Provider settings expose custom instance add, enable, disable, and delete controls in the fork settings layout.
+- Provider snapshots may carry provider slash commands, and the composer slash command menu must read commands from the active provider instance snapshot.
 - Full custom adapter materialization and turn routing remain owned by the provider runtime seam and must preserve fork composer draft ownership plus Codex model and binary selection behavior.
 
 ### Owner Modules
@@ -450,6 +451,7 @@ Provider status and settings can carry provider instance identity without collap
 - `apps/server/src/provider/Layers/ProviderAdapterRegistry.ts`
 - `apps/server/src/provider/Layers/ProviderService.ts`
 - `apps/server/src/provider/Layers/ProviderSessionDirectory.ts`
+- `apps/server/src/provider/Layers/ClaudeProvider.ts`
 - `apps/server/src/provider/Layers/CodexAdapter.ts`
 - `apps/server/src/provider/Layers/ClaudeAdapter.ts`
 - `apps/server/src/provider/Layers/CursorAdapter.ts`
@@ -459,6 +461,8 @@ Provider status and settings can carry provider instance identity without collap
 - `apps/web/src/providerModels.ts`
 - `apps/web/src/modelSelection.ts`
 - `apps/web/src/components/ChatView.tsx`
+- `apps/web/src/components/chat/ComposerCommandMenu.tsx`
+- `apps/web/src/components/chat/composerSlashCommandSearch.ts`
 - `apps/web/src/components/chat/ProviderModelPicker.tsx`
 - `apps/web/src/components/settings/SettingsPanels.tsx`
 
@@ -477,6 +481,8 @@ Provider status and settings can carry provider instance identity without collap
 - Provider service routes start, send, recover, and stop flows through `providerInstanceId`.
 - Composer model selection preserves custom instance ids across draft and persisted selections.
 - Settings can create, enable, disable, and delete custom provider instances.
+- Claude slash commands discovered from provider capabilities appear in the composer slash command menu for the active provider instance.
+- Selecting a provider slash command inserts the command into the draft without changing active draft ownership.
 
 ## Change Procedure
 

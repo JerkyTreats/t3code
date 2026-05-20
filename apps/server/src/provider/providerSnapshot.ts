@@ -6,6 +6,8 @@ import type {
   ServerProviderAuth,
   ServerProviderBinaryCandidate,
   ServerProviderModel,
+  ServerProviderSkill,
+  ServerProviderSlashCommand,
   ServerProviderState,
 } from "@t3tools/contracts";
 import {
@@ -147,6 +149,8 @@ export function buildServerProvider(input: {
   enabled: boolean;
   checkedAt: string;
   models: ReadonlyArray<ServerProviderModel>;
+  slashCommands?: ReadonlyArray<ServerProviderSlashCommand>;
+  skills?: ReadonlyArray<ServerProviderSkill>;
   probe: ProviderProbeResult;
 }): ServerProvider {
   const driver = input.driver ?? providerDriverKindFromProviderKind(input.provider);
@@ -165,8 +169,8 @@ export function buildServerProvider(input: {
     checkedAt: input.checkedAt,
     ...(input.probe.message ? { message: input.probe.message } : {}),
     models: input.models,
-    slashCommands: [],
-    skills: [],
+    slashCommands: [...(input.slashCommands ?? [])],
+    skills: [...(input.skills ?? [])],
     ...(input.probe.binaryCandidates
       ? { binaryCandidates: [...input.probe.binaryCandidates] }
       : {}),

@@ -1,4 +1,9 @@
-import { type ProjectEntry, type ProviderKind } from "@t3tools/contracts";
+import {
+  type ProjectEntry,
+  type ProviderKind,
+  type ProviderInstanceId,
+  type ServerProviderSlashCommand,
+} from "@t3tools/contracts";
 import { memo, useLayoutEffect, useRef } from "react";
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
 import { BotIcon } from "lucide-react";
@@ -20,6 +25,15 @@ export type ComposerCommandItem =
       id: string;
       type: "slash-command";
       command: ComposerSlashCommand;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      type: "provider-slash-command";
+      provider: ProviderKind;
+      providerInstanceId: ProviderInstanceId;
+      command: ServerProviderSlashCommand;
       label: string;
       description: string;
     }
@@ -124,6 +138,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
         />
       ) : null}
       {props.item.type === "slash-command" ? (
+        <BotIcon className="size-4 text-muted-foreground/80" />
+      ) : null}
+      {props.item.type === "provider-slash-command" ? (
         <BotIcon className="size-4 text-muted-foreground/80" />
       ) : null}
       {props.item.type === "model" ? (

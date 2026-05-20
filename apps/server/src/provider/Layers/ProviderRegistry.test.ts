@@ -1031,6 +1031,55 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
         ),
       );
 
+      it.effect("includes provider slash commands from claude capability discovery", () =>
+        Effect.gen(function* () {
+          const status = yield* checkClaudeProviderStatus(() =>
+            Effect.succeed({
+              subscriptionType: "pro",
+              slashCommands: [
+                {
+                  name: "review",
+                  description: "Review the current work",
+                  input: { hint: "scope" },
+                },
+                {
+                  name: "Review",
+                  description: "Duplicate name",
+                },
+                {
+                  name: "test",
+                },
+              ],
+            }),
+          );
+
+          assert.deepStrictEqual(status.slashCommands, [
+            {
+              name: "review",
+              description: "Review the current work",
+              input: { hint: "scope" },
+            },
+            {
+              name: "test",
+            },
+          ]);
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              if (joined === "auth status")
+                return {
+                  stdout: '{"loggedIn":true,"authMethod":"claude.ai"}\n',
+                  stderr: "",
+                  code: 0,
+                };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
       it.effect("returns an api key label for claude api key auth", () =>
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus();

@@ -127,9 +127,9 @@ import { readNativeApi } from "~/nativeApi";
 import {
   getProviderModelCapabilities,
   getProviderModels,
-  getProviderSnapshot,
   resolveSelectableProvider,
 } from "../providerModels";
+import { getProviderInstanceSnapshot } from "../providerInstances";
 import { useSettings } from "../hooks/useSettings";
 import { resolveAppModelSelection } from "../modelSelection";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -168,6 +168,7 @@ import { ComposerFooterControls } from "./chat/ComposerFooterControls";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { AVAILABLE_PROVIDER_OPTIONS, ProviderModelPicker } from "./chat/ProviderModelPicker";
 import { ComposerCommandItem, ComposerCommandMenu } from "./chat/ComposerCommandMenu";
+import { searchSlashCommandItems } from "./chat/composerSlashCommandSearch";
 import { ComposerPendingApprovalActions } from "./chat/ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./chat/CompactComposerControlsMenu";
 import { ComposerPendingApprovalPanel } from "./chat/ComposerPendingApprovalPanel";
@@ -1514,6 +1515,10 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
     }),
   );
   const workspaceEntries = workspaceEntriesQuery.data?.entries ?? EMPTY_PROJECT_ENTRIES;
+  const activeProviderStatus = useMemo(
+    () => getProviderInstanceSnapshot(providerStatuses, selectedProviderInstanceId) ?? null,
+    [providerStatuses, selectedProviderInstanceId],
+  );
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -1528,7 +1533,7 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
     }
 
     if (composerTrigger.kind === "slash-command") {
-      const slashCommandItems = [
+      const builtInSlashCommandItems = [
         {
           id: "slash:model",
           type: "slash-command",
@@ -1551,13 +1556,23 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
           description: "Switch this thread back to normal build mode",
         },
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
+      const providerSlashCommandItems = (activeProviderStatus?.slashCommands ?? []).map(
+        (command) => ({
+          id: `provider-slash-command:${selectedProviderInstanceId}:${command.name}`,
+          type: "provider-slash-command" as const,
+          provider: selectedProvider,
+          providerInstanceId: selectedProviderInstanceId,
+          command,
+          label: `/${command.name}`,
+          description: command.description ?? command.input?.hint ?? "Run provider command",
+        }),
+      );
+      const slashCommandItems = [...builtInSlashCommandItems, ...providerSlashCommandItems];
       const query = composerTrigger.query.trim().toLowerCase();
       if (!query) {
         return [...slashCommandItems];
       }
-      return slashCommandItems.filter(
-        (item) => item.command.includes(query) || item.label.slice(1).includes(query),
-      );
+      return searchSlashCommandItems(slashCommandItems, query);
     }
 
     return searchableModelOptions
@@ -1576,7 +1591,14 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
         label: name,
         description: `${providerLabel} · ${slug}`,
       }));
-  }, [composerTrigger, searchableModelOptions, workspaceEntries]);
+  }, [
+    activeProviderStatus?.slashCommands,
+    composerTrigger,
+    searchableModelOptions,
+    selectedProvider,
+    selectedProviderInstanceId,
+    workspaceEntries,
+  ]);
   const composerMenuOpen = Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -1591,10 +1613,6 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
   const nonPersistedComposerImageIdSet = useMemo(
     () => new Set(nonPersistedComposerImageIds),
     [nonPersistedComposerImageIds],
-  );
-  const activeProviderStatus = useMemo(
-    () => getProviderSnapshot(providerStatuses, selectedProvider) ?? null,
-    [selectedProvider, providerStatuses],
   );
   const activeProjectCwd = activeProject?.cwd ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
@@ -3876,6 +3894,24 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
           expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
         });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+        }
+        return;
+      }
+      if (item.type === "provider-slash-command") {
+        const replacement = `/${item.command.name} `;
+        const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+          snapshot.value,
+          trigger.rangeEnd,
+          replacement,
+        );
+        const applied = applyPromptReplacement(
+          trigger.rangeStart,
+          replacementRangeEnd,
+          replacement,
+          { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+        );
         if (applied) {
           setComposerHighlightedItemId(null);
         }

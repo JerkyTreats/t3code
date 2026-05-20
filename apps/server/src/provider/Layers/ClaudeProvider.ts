@@ -5,13 +5,17 @@ import type {
   ServerProvider,
   ServerProviderModel,
   ServerProviderAuth,
+  ServerProviderSlashCommand,
   ServerProviderState,
 } from "@t3tools/contracts";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { Cache, Duration, Effect, Equal, Layer, Option, Result, Schema, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
-import { query as claudeQuery } from "@anthropic-ai/claude-agent-sdk";
+import {
+  query as claudeQuery,
+  type SlashCommand as ClaudeSlashCommand,
+} from "@anthropic-ai/claude-agent-sdk";
 
 import {
   buildServerProvider,
@@ -397,6 +401,78 @@ export function adjustModelsForSubscription(
 
 const CAPABILITIES_PROBE_TIMEOUT_MS = 8_000;
 
+function nonEmptyProbeString(value: string | undefined): string | undefined {
+  const candidate = value?.trim();
+  return candidate ? candidate : undefined;
+}
+
+type ClaudeCapabilitiesProbe = {
+  readonly subscriptionType: string | undefined;
+  readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
+};
+
+type ClaudeCapabilitiesResolverResult = string | ClaudeCapabilitiesProbe | undefined;
+
+function parseClaudeInitializationCommands(
+  commands: ReadonlyArray<ClaudeSlashCommand> | undefined,
+): ReadonlyArray<ServerProviderSlashCommand> {
+  return dedupeSlashCommands(
+    (commands ?? []).flatMap((command) => {
+      const name = nonEmptyProbeString(command.name);
+      if (!name) {
+        return [];
+      }
+
+      const description = nonEmptyProbeString(command.description);
+      const argumentHint = nonEmptyProbeString(command.argumentHint);
+
+      return [
+        {
+          name,
+          ...(description ? { description } : {}),
+          ...(argumentHint ? { input: { hint: argumentHint } } : {}),
+        },
+      ];
+    }),
+  );
+}
+
+function dedupeSlashCommands(
+  commands: ReadonlyArray<ServerProviderSlashCommand>,
+): ReadonlyArray<ServerProviderSlashCommand> {
+  const commandsByName = new Map<string, ServerProviderSlashCommand>();
+
+  for (const command of commands) {
+    const name = nonEmptyProbeString(command.name);
+    if (!name) {
+      continue;
+    }
+
+    const key = name.toLowerCase();
+    const existing = commandsByName.get(key);
+    if (!existing) {
+      commandsByName.set(key, { ...command, name });
+      continue;
+    }
+
+    commandsByName.set(key, {
+      ...existing,
+      ...(existing.description
+        ? {}
+        : command.description
+          ? { description: command.description }
+          : {}),
+      ...(existing.input?.hint
+        ? {}
+        : command.input?.hint
+          ? { input: { hint: command.input.hint } }
+          : {}),
+    });
+  }
+
+  return [...commandsByName.values()];
+}
+
 /**
  * Probe account information by spawning a lightweight Claude Agent SDK
  * session and reading the initialization result.
@@ -424,7 +500,10 @@ const probeClaudeCapabilities = (binaryPath: string) => {
       },
     });
     const init = await q.initializationResult();
-    return { subscriptionType: init.account?.subscriptionType };
+    return {
+      subscriptionType: init.account?.subscriptionType,
+      slashCommands: parseClaudeInitializationCommands(init.commands),
+    };
   }).pipe(
     Effect.ensuring(
       Effect.sync(() => {
@@ -452,7 +531,7 @@ const runClaudeCommand = Effect.fn("runClaudeCommand")(function* (args: Readonly
 });
 
 export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(function* (
-  resolveSubscriptionType?: (binaryPath: string) => Effect.Effect<string | undefined>,
+  resolveCapabilities?: (binaryPath: string) => Effect.Effect<ClaudeCapabilitiesResolverResult>,
 ): Effect.fn.Return<
   ServerProvider,
   ServerSettingsError,
@@ -563,14 +642,21 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
 
   let subscriptionType: string | undefined;
   let authMethod: string | undefined;
+  let slashCommands: ReadonlyArray<ServerProviderSlashCommand> = [];
 
   if (Result.isSuccess(authProbe) && Option.isSome(authProbe.success)) {
     subscriptionType = extractSubscriptionTypeFromOutput(authProbe.success.value);
     authMethod = extractClaudeAuthMethodFromOutput(authProbe.success.value);
   }
 
-  if (!subscriptionType && resolveSubscriptionType) {
-    subscriptionType = yield* resolveSubscriptionType(claudeSettings.binaryPath);
+  if (resolveCapabilities) {
+    const capabilities = yield* resolveCapabilities(claudeSettings.binaryPath);
+    if (typeof capabilities === "string") {
+      subscriptionType ??= capabilities;
+    } else if (capabilities) {
+      subscriptionType ??= capabilities.subscriptionType;
+      slashCommands = dedupeSlashCommands(capabilities.slashCommands);
+    }
   }
 
   const resolvedModels = adjustModelsForSubscription(models, subscriptionType);
@@ -584,6 +670,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       enabled: claudeSettings.enabled,
       checkedAt,
       models: resolvedModels,
+      slashCommands,
       probe: {
         installed: true,
         version: parsedVersion,
@@ -603,6 +690,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       enabled: claudeSettings.enabled,
       checkedAt,
       models: resolvedModels,
+      slashCommands,
       probe: {
         installed: true,
         version: parsedVersion,
@@ -620,6 +708,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     enabled: claudeSettings.enabled,
     checkedAt,
     models: resolvedModels,
+    slashCommands,
     probe: {
       installed: true,
       version: parsedVersion,
@@ -642,8 +731,7 @@ export const ClaudeProviderLive = Layer.effect(
     const subscriptionProbeCache = yield* Cache.make({
       capacity: 1,
       timeToLive: Duration.minutes(5),
-      lookup: (binaryPath: string) =>
-        probeClaudeCapabilities(binaryPath).pipe(Effect.map((r) => r?.subscriptionType)),
+      lookup: (binaryPath: string) => probeClaudeCapabilities(binaryPath),
     });
 
     const checkProvider = checkClaudeProviderStatus((binaryPath) =>
