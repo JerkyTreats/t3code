@@ -171,12 +171,6 @@ function parseGitRemoteLines(stdout: string): ReadonlyArray<{ name: string; url:
   return [...remotes.values()];
 }
 
-function makeStubProvider(
-  kind: SourceControlProviderKind,
-): SourceControlProvider.SourceControlProviderShape {
-  return unsupportedProvider(kind);
-}
-
 export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWithProviders")(
   function* (registrations: ReadonlyArray<SourceControlProviderRegistration>) {
     const config = yield* ServerConfig;
