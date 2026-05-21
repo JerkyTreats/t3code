@@ -36,14 +36,28 @@ export function GitDefaultBranchDialog({
           <DialogTitle>{copy?.title ?? "Continue on default branch?"}</DialogTitle>
           <DialogDescription>{copy?.description}</DialogDescription>
         </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="sm:flex-wrap sm:items-center">
+          <Button
+            className="w-full sm:mr-auto sm:w-auto"
+            variant="outline"
+            size="sm"
+            onClick={() => onOpenChange(false)}
+          >
             Cancel
           </Button>
-          <Button variant="outline" size="sm" onClick={onContinue}>
+          <Button
+            className="min-h-8 w-full max-w-full whitespace-normal py-1.5 leading-snug sm:min-h-7 sm:w-auto"
+            variant="outline"
+            size="sm"
+            onClick={onContinue}
+          >
             {copy?.continueLabel ?? "Continue"}
           </Button>
-          <Button size="sm" onClick={onCreateBranch}>
+          <Button
+            className="min-h-8 w-full max-w-full whitespace-normal py-1.5 leading-snug sm:min-h-7 sm:w-auto"
+            size="sm"
+            onClick={onCreateBranch}
+          >
             Feature branch
           </Button>
         </DialogFooter>

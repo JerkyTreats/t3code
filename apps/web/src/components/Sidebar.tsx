@@ -2,9 +2,9 @@ import {
   ArchiveIcon,
   ArrowUpDownIcon,
   ChevronRightIcon,
+  FolderPlusIcon,
   FolderIcon,
   GitPullRequestIcon,
-  PlusIcon,
   SettingsIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -107,6 +107,7 @@ import {
   SidebarMenuSubItem,
   SidebarSeparator,
   SidebarTrigger,
+  useSidebar,
 } from "./ui/sidebar";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
@@ -345,7 +346,7 @@ function SidebarThreadRow(props: SidebarThreadRowProps) {
   const threadMetaClassName = isConfirmingArchive
     ? "pointer-events-none opacity-0"
     : !isThreadRunning
-      ? "pointer-events-none transition-opacity duration-150 group-hover/menu-sub-item:opacity-0 group-focus-within/menu-sub-item:opacity-0"
+      ? "pointer-events-none transition-opacity duration-150 max-sm:pr-6 group-hover/menu-sub-item:opacity-0 group-focus-within/menu-sub-item:opacity-0"
       : "pointer-events-none";
 
   return (
@@ -424,7 +425,7 @@ function SidebarThreadRow(props: SidebarThreadRowProps) {
           {props.renamingThreadId === thread.id ? (
             <input
               ref={props.onRenamingInputMount}
-              className="min-w-0 flex-1 truncate text-xs bg-transparent outline-none border border-ring rounded px-0.5"
+              className="min-w-0 flex-1 truncate text-base sm:text-xs bg-transparent outline-none border border-ring rounded px-0.5"
               value={props.renamingTitle}
               onChange={(event) => props.setRenamingTitle(event.target.value)}
               onKeyDown={(event) => {
@@ -461,7 +462,7 @@ function SidebarThreadRow(props: SidebarThreadRowProps) {
               <TerminalIcon className={`size-3 ${terminalStatus.pulse ? "animate-pulse" : ""}`} />
             </span>
           )}
-          <div className="flex min-w-12 justify-end">
+          <div className="flex min-w-12 justify-end max-sm:min-w-20">
             {isConfirmingArchive ? (
               <button
                 ref={(element) => {
@@ -492,13 +493,13 @@ function SidebarThreadRow(props: SidebarThreadRowProps) {
               </button>
             ) : !isThreadRunning ? (
               props.appSettingsConfirmThreadArchive ? (
-                <div className="pointer-events-none absolute top-1/2 right-1 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100">
+                <div className="pointer-events-none absolute top-1/2 right-1 -translate-y-1/2 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100">
                   <button
                     type="button"
                     data-thread-selection-safe
                     data-testid={`thread-archive-${thread.id}`}
                     aria-label={`Archive ${thread.title}`}
-                    className="inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                    className="inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                     onPointerDown={(event) => {
                       event.stopPropagation();
                     }}
@@ -518,13 +519,13 @@ function SidebarThreadRow(props: SidebarThreadRowProps) {
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <div className="pointer-events-none absolute top-1/2 right-1 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100">
+                      <div className="pointer-events-none absolute top-1/2 right-1 -translate-y-1/2 opacity-0 transition-opacity duration-150 max-sm:pointer-events-auto max-sm:opacity-100 group-hover/menu-sub-item:pointer-events-auto group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:pointer-events-auto group-focus-within/menu-sub-item:opacity-100">
                         <button
                           type="button"
                           data-thread-selection-safe
                           data-testid={`thread-archive-${thread.id}`}
                           aria-label={`Archive ${thread.title}`}
-                          className="inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
+                          className="inline-flex size-5 cursor-pointer items-center justify-center text-muted-foreground/60 transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring"
                           onPointerDown={(event) => {
                             event.stopPropagation();
                           }}
@@ -725,6 +726,7 @@ export default function Sidebar() {
   const { updateSettings } = useUpdateSettings();
   const { activeDraftThread, activeThread, handleNewThread } = useHandleNewThread();
   const { archiveThread, deleteThread } = useThreadActions();
+  const { isMobile, setOpenMobile } = useSidebar();
   const routeThreadId = useParams({
     strict: false,
     select: (params) => (params.threadId ? ThreadId.makeUnsafe(params.threadId) : null),
@@ -1357,6 +1359,9 @@ export default function Sidebar() {
         clearSelection();
       }
       setSelectionAnchor(threadId);
+      if (isMobile) {
+        setOpenMobile(false);
+      }
       void navigate({
         to: "/$threadId",
         params: { threadId },
@@ -1364,9 +1369,11 @@ export default function Sidebar() {
     },
     [
       clearSelection,
+      isMobile,
       navigate,
       rangeSelectTo,
       selectedThreadIds.size,
+      setOpenMobile,
       setSelectionAnchor,
       toggleThreadSelection,
     ],
@@ -1378,12 +1385,15 @@ export default function Sidebar() {
         clearSelection();
       }
       setSelectionAnchor(threadId);
+      if (isMobile) {
+        setOpenMobile(false);
+      }
       void navigate({
         to: "/$threadId",
         params: { threadId },
       });
     },
-    [clearSelection, navigate, selectedThreadIds.size, setSelectionAnchor],
+    [clearSelection, isMobile, navigate, selectedThreadIds.size, setOpenMobile, setSelectionAnchor],
   );
 
   const handleProjectContextMenu = useCallback(
@@ -1545,13 +1555,16 @@ export default function Sidebar() {
   const openProjectOverview = useCallback(
     (projectId: ProjectId) => {
       setProjectExpanded(projectId, true);
+      if (isMobile) {
+        setOpenMobile(false);
+      }
       void navigate({
         to: "/projects/$projectId",
         params: { projectId },
         search: { view: "management" },
       });
     },
-    [navigate, setProjectExpanded],
+    [isMobile, navigate, setOpenMobile, setProjectExpanded],
   );
 
   const visibleThreads = useMemo(
@@ -1773,7 +1786,7 @@ export default function Sidebar() {
           <SidebarMenuButton
             ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
             size="sm"
-            className={`gap-2 px-2 py-1.5 text-left hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-sidebar-accent-foreground ${
+            className={`gap-2 px-2 py-1.5 pr-8 text-left hover:bg-accent group-hover/project-header:bg-accent group-hover/project-header:text-sidebar-accent-foreground max-sm:pr-14 ${
               isActiveProjectRoute ? "bg-accent text-sidebar-accent-foreground" : ""
             } ${isManualProjectSorting ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
             {...(isManualProjectSorting && dragHandleProps ? dragHandleProps.attributes : {})}
@@ -1873,10 +1886,13 @@ export default function Sidebar() {
                     />
                   }
                   showOnHover
-                  className="top-1 right-1.5 size-5 rounded-md p-0 text-muted-foreground/70 hover:bg-secondary hover:text-foreground"
+                  className="top-1 right-1.5 size-5 rounded-md p-0 text-muted-foreground/60 hover:bg-secondary hover:text-foreground"
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
+                    if (isMobile) {
+                      setOpenMobile(false);
+                    }
                     const seedContext = resolveSidebarNewThreadSeedContext({
                       projectId: project.id,
                       defaultEnvMode: resolveSidebarNewThreadEnvMode({
@@ -2293,11 +2309,7 @@ export default function Sidebar() {
                         />
                       }
                     >
-                      <PlusIcon
-                        className={`size-3.5 transition-transform duration-150 ${
-                          shouldShowProjectPathEntry ? "rotate-45" : "rotate-0"
-                        }`}
-                      />
+                      <FolderPlusIcon className="size-3.5" />
                     </TooltipTrigger>
                     <TooltipPopup side="right">
                       {shouldShowProjectPathEntry ? "Cancel add project" : "Add project"}
@@ -2509,7 +2521,12 @@ export default function Sidebar() {
                 <SidebarMenuButton
                   size="sm"
                   className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
-                  onClick={() => void navigate({ to: "/settings" })}
+                  onClick={() => {
+                    if (isMobile) {
+                      setOpenMobile(false);
+                    }
+                    void navigate({ to: "/settings" });
+                  }}
                 >
                   <SettingsIcon className="size-3.5" />
                   <span className="text-xs">Settings</span>

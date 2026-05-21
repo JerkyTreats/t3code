@@ -4,21 +4,29 @@ import { useEffect, useState } from "react";
 
 import { useSettingsRestore } from "../components/settings/SettingsPanels";
 import { Button } from "../components/ui/button";
-import { SidebarInset, SidebarTrigger } from "../components/ui/sidebar";
+import { SidebarInset, SidebarTrigger, useSidebar } from "../components/ui/sidebar";
 import { isElectron } from "../env";
 
 function SettingsContentLayout() {
   const [restoreSignal, setRestoreSignal] = useState(0);
+  const { isMobile, setOpenMobile } = useSidebar();
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(() =>
     setRestoreSignal((value) => value + 1),
   );
 
   useEffect(() => {
+    const closeSettings = () => {
+      if (isMobile) {
+        setOpenMobile(false);
+      }
+      window.history.back();
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (event.key === "Escape") {
         event.preventDefault();
-        window.history.back();
+        closeSettings();
       }
     };
 
@@ -26,7 +34,7 @@ function SettingsContentLayout() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, []);
+  }, [isMobile, setOpenMobile]);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">

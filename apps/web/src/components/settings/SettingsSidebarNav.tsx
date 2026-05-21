@@ -16,6 +16,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarSeparator,
+  useSidebar,
 } from "../ui/sidebar";
 
 export type SettingsSectionPath =
@@ -37,6 +38,13 @@ export const SETTINGS_NAV_ITEMS: ReadonlyArray<{
 
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navigate = useNavigate();
+  const { isMobile, setOpenMobile } = useSidebar();
+
+  const closeMobileSidebar = () => {
+    if (isMobile) {
+      setOpenMobile(false);
+    }
+  };
 
   return (
     <>
@@ -56,7 +64,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                         ? "gap-2 px-2 py-2 text-left text-xs text-foreground"
                         : "gap-2 px-2 py-2 text-left text-xs text-muted-foreground hover:text-foreground/80"
                     }
-                    onClick={() => void navigate({ to: item.to, replace: true })}
+                    onClick={() => {
+                      closeMobileSidebar();
+                      void navigate({ to: item.to, replace: true });
+                    }}
                   >
                     <Icon
                       className={
@@ -81,7 +92,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
             <SidebarMenuButton
               size="sm"
               className="gap-2 px-2 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-              onClick={() => window.history.back()}
+              onClick={() => {
+                closeMobileSidebar();
+                window.history.back();
+              }}
             >
               <ArrowLeftIcon className="size-4" />
               <span>Back</span>

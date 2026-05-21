@@ -1,6 +1,6 @@
 # t3code-omarchy
 
-t3code-omarchy is an Omarchy tuned fork of T3 Code for coding agents.
+t3code-omarchy is an Omarchy tuned fork of T3 Code for Codex, Claude, and OpenCode.
 
 [Omarchy](https://omarchy.org/) is opinionated about desktop tooling and workflow. This fork aligns T3 Code with those decisions instead of treating them as generic Linux defaults.
 
@@ -23,7 +23,11 @@ It surfaces local Git actions such as commit and push, verifies `gh` authenticat
 ## How to use
 
 > [!WARNING]
-> You need to have [Codex CLI](https://github.com/openai/codex) installed and authorized for t3code-omarchy to work.
+> Install and authorize at least one provider before using t3code-omarchy.
+>
+> - Codex: install [Codex CLI](https://github.com/openai/codex) and run `codex login`
+> - Claude: install [Claude Code](https://docs.anthropic.com/en/docs/claude-code/setup) and run `claude auth login`
+> - OpenCode: install [OpenCode](https://opencode.ai/docs/) and run `opencode auth login`
 
 ```bash
 npx t3
