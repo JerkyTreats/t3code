@@ -19,7 +19,6 @@
     "build": "node scripts/cli.ts build",
     "build:bundle": "tsdown",
     "start": "node dist/bin.mjs",
-    "prepare": "effect-language-service patch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -28,7 +27,7 @@
     "@effect/platform-bun": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/sql-sqlite-bun": "catalog:",
-    "@pierre/diffs": "^1.1.0-beta.16",
+    "@pierre/diffs": "catalog:",
     "effect": "catalog:",
     "node-pty": "^1.1.0",
     "open": "^10.1.0"
