@@ -48,6 +48,9 @@ export function useAppSettings() {
       if ("confirmThreadDelete" in patch) {
         nextPatch.confirmThreadDelete = patch.confirmThreadDelete;
       }
+      if ("autoOpenPlanSidebar" in patch) {
+        nextPatch.autoOpenPlanSidebar = patch.autoOpenPlanSidebar;
+      }
       if ("diffWordWrap" in patch) {
         nextPatch.diffWordWrap = patch.diffWordWrap;
       }

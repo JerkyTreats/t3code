@@ -275,6 +275,10 @@ export function buildLegacyClientSettingsMigrationPatch(
     patch.confirmThreadDelete = legacySettings.confirmThreadDelete;
   }
 
+  if (Predicate.isBoolean(legacySettings.autoOpenPlanSidebar)) {
+    patch.autoOpenPlanSidebar = legacySettings.autoOpenPlanSidebar;
+  }
+
   if (Predicate.isBoolean(legacySettings.diffWordWrap)) {
     patch.diffWordWrap = legacySettings.diffWordWrap;
   }

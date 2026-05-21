@@ -9,10 +9,12 @@ describe("buildLegacyClientSettingsMigrationPatch", () => {
   it("migrates archive confirmation from legacy local settings", () => {
     expect(
       buildLegacyClientSettingsMigrationPatch({
+        autoOpenPlanSidebar: false,
         confirmThreadArchive: true,
         confirmThreadDelete: false,
       }),
     ).toEqual({
+      autoOpenPlanSidebar: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
     });

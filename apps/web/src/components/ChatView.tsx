@@ -615,6 +615,7 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
     (store) => store.setStickyModelSelection,
   );
   const timestampFormat = settings.timestampFormat;
+  const autoOpenPlanSidebar = settings.autoOpenPlanSidebar;
   const navigate = useNavigate();
   const rawSearch = useSearch({
     strict: false,
@@ -3528,10 +3529,10 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
             : {}),
           createdAt: messageCreatedAt,
         });
-        // Optimistically open the plan sidebar when implementing (not refining).
+        // Optimistically open the plan sidebar when implementing, if enabled.
         // "default" mode here means the agent is executing the plan, which produces
         // step-tracking activities that the sidebar will display.
-        if (nextInteractionMode === "default") {
+        if (nextInteractionMode === "default" && autoOpenPlanSidebar) {
           planSidebarDismissedForTurnRef.current = null;
           setPlanSidebarOpen(true);
         }
@@ -3551,6 +3552,7 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
     [
       activeThread,
       activeProposedPlan,
+      autoOpenPlanSidebar,
       beginLocalDispatch,
       forceStickToBottom,
       isConnecting,
@@ -3645,8 +3647,8 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
         return waitForStartedServerThread(nextThreadId);
       })
       .then(() => {
-        // Signal that the plan sidebar should open on the new thread.
-        planSidebarOpenOnNextThreadRef.current = true;
+        // Signal whether the plan sidebar should open on the new thread.
+        planSidebarOpenOnNextThreadRef.current = autoOpenPlanSidebar;
         return navigate({
           to: "/$threadId",
           params: { threadId: nextThreadId },
@@ -3672,6 +3674,7 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
     activeProject,
     activeProposedPlan,
     activeThread,
+    autoOpenPlanSidebar,
     beginLocalDispatch,
     isConnecting,
     isSendBusy,
