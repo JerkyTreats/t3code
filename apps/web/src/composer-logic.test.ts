@@ -36,6 +36,15 @@ describe("detectComposerTrigger", () => {
     });
   });
 
+  it("detects skill tokens while typing skill names", () => {
+    expect(detectComposerTrigger("use $gh-fix", "use $gh-fix".length)).toEqual({
+      kind: "skill",
+      query: "gh-fix",
+      rangeStart: "use ".length,
+      rangeEnd: "use $gh-fix".length,
+    });
+  });
+
   it("detects slash model query after /model", () => {
     const text = "/model spark";
     const trigger = detectComposerTrigger(text, text.length);

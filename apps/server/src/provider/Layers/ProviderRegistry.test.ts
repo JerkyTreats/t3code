@@ -250,6 +250,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
                   },
                 },
               ],
+              skills: [],
             }),
           );
 
@@ -532,6 +533,56 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
               if (joined === "--version") return { stdout: "codex 1.0.0\n", stderr: "", code: 0 };
               if (joined === "login status") {
                 return { stdout: "", stderr: "error: unknown command 'login'", code: 2 };
+              }
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("includes Codex skills from app-server capability discovery", () =>
+        Effect.gen(function* () {
+          yield* withTempCodexHome();
+          const status = yield* checkCodexProviderStatus(() =>
+            Effect.succeed({
+              account: {
+                type: "chatgpt",
+                planType: "plus",
+                sparkEnabled: false,
+              },
+              models: [],
+              skills: [
+                {
+                  name: "gh-fix-ci",
+                  displayName: "Fix CI",
+                  description: "Debug failing GitHub Actions checks",
+                  shortDescription: "Debug CI failures",
+                  path: "/Users/test/.codex/skills/gh-fix-ci/SKILL.md",
+                  scope: "user",
+                  enabled: true,
+                },
+              ],
+            }),
+          );
+
+          assert.deepStrictEqual(status.skills, [
+            {
+              name: "gh-fix-ci",
+              displayName: "Fix CI",
+              description: "Debug failing GitHub Actions checks",
+              shortDescription: "Debug CI failures",
+              path: "/Users/test/.codex/skills/gh-fix-ci/SKILL.md",
+              scope: "user",
+              enabled: true,
+            },
+          ]);
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "codex 1.0.0\n", stderr: "", code: 0 };
+              if (joined === "login status") {
+                return { stdout: "Logged in\n", stderr: "", code: 0 };
               }
               throw new Error(`Unexpected args: ${joined}`);
             }),

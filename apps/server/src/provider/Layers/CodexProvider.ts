@@ -7,6 +7,7 @@ import type {
   ServerProviderModel,
   ServerProviderAuth,
   ServerProviderState,
+  ServerProviderSkill,
 } from "@t3tools/contracts";
 import {
   Cache,
@@ -361,6 +362,7 @@ const probeCodexCapabilities = (input: {
   readonly binaryPath: string;
   readonly clientVersion?: string | null;
   readonly homePath?: string;
+  readonly cwd?: string;
 }) =>
   Effect.tryPromise((signal) => probeCodexAppServerSnapshot({ ...input, signal })).pipe(
     Effect.timeoutOption(CAPABILITIES_PROBE_TIMEOUT_MS),
@@ -402,6 +404,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     readonly binaryPath: string;
     readonly clientVersion?: string | null;
     readonly homePath?: string;
+    readonly cwd: string;
   }) => Effect.Effect<CodexAppServerSnapshot | CodexAccountSnapshot | undefined>,
 ): Effect.fn.Return<
   ServerProvider,
@@ -416,6 +419,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     Effect.map((settings) => settings.providers.codex),
   );
   const checkedAt = new Date().toISOString();
+  const cwd = process.cwd();
   const models = providerModelsFromSettings(
     BUILT_IN_MODELS,
     PROVIDER,
@@ -550,6 +554,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         binaryPath: codexSettings.binaryPath,
         clientVersion: parsedVersion,
         homePath: codexSettings.homePath,
+        cwd,
       })
     : undefined;
   const account =
@@ -558,6 +563,8 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       : appServerSnapshot;
   const appServerModels =
     appServerSnapshot && "models" in appServerSnapshot ? appServerSnapshot.models : [];
+  const appServerSkills: ReadonlyArray<ServerProviderSkill> =
+    appServerSnapshot && "skills" in appServerSnapshot ? appServerSnapshot.skills : [];
   const modelsWithAppServerSource =
     appServerModels.length > 0
       ? providerModelsFromSettings(
@@ -576,6 +583,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       enabled: codexSettings.enabled,
       checkedAt,
       models: resolvedModels,
+      skills: appServerSkills,
       probe: {
         installed: true,
         version: parsedVersion,
@@ -596,6 +604,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       enabled: codexSettings.enabled,
       checkedAt,
       models: resolvedModels,
+      skills: appServerSkills,
       probe: {
         installed: true,
         version: parsedVersion,
@@ -615,6 +624,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     enabled: codexSettings.enabled,
     checkedAt,
     models: resolvedModels,
+    skills: appServerSkills,
     probe: {
       installed: true,
       version: parsedVersion,
@@ -650,6 +660,7 @@ export const CodexProviderLive = Layer.effect(
           binaryPath,
           ...(clientVersion ? { clientVersion } : {}),
           ...(homePath ? { homePath } : {}),
+          cwd: process.cwd(),
         });
       },
     });

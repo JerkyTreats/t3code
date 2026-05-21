@@ -134,6 +134,10 @@ import { useSettings } from "../hooks/useSettings";
 import { resolveAppModelSelection } from "../modelSelection";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
+  formatProviderSkillDisplayName,
+  resolveProviderSkillDescription,
+} from "../providerSkillPresentation";
+import {
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
   type PersistedComposerImageAttachment,
@@ -1532,6 +1536,32 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
       }));
     }
 
+    if (composerTrigger.kind === "skill") {
+      const query = composerTrigger.query.trim().toLowerCase();
+      return (activeProviderStatus?.skills ?? [])
+        .filter((skill) => skill.enabled)
+        .map((skill) => {
+          const label = formatProviderSkillDisplayName(skill);
+          return {
+            id: `skill:${selectedProviderInstanceId}:${skill.name}`,
+            type: "skill" as const,
+            provider: selectedProvider,
+            providerInstanceId: selectedProviderInstanceId,
+            skill,
+            label: `$${label}`,
+            description: resolveProviderSkillDescription(skill) ?? skill.name,
+          };
+        })
+        .filter((item) => {
+          if (!query) return true;
+          return (
+            item.skill.name.toLowerCase().includes(query) ||
+            item.label.toLowerCase().includes(query) ||
+            item.description.toLowerCase().includes(query)
+          );
+        });
+    }
+
     if (composerTrigger.kind === "slash-command") {
       const builtInSlashCommandItems = [
         {
@@ -1593,6 +1623,7 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
       }));
   }, [
     activeProviderStatus?.slashCommands,
+    activeProviderStatus?.skills,
     composerTrigger,
     searchableModelOptions,
     selectedProvider,
@@ -3917,6 +3948,24 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
         }
         return;
       }
+      if (item.type === "skill") {
+        const replacement = `$${item.skill.name} `;
+        const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+          snapshot.value,
+          trigger.rangeEnd,
+          replacement,
+        );
+        const applied = applyPromptReplacement(
+          trigger.rangeStart,
+          replacementRangeEnd,
+          replacement,
+          { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+        );
+        if (applied) {
+          setComposerHighlightedItemId(null);
+        }
+        return;
+      }
       onProviderModelSelect(item.provider, item.model);
       const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
         expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
@@ -4471,6 +4520,7 @@ export default function ChatView({ threadId, conversationPanel = null }: ChatVie
                               ? composerTerminalContexts
                               : []
                           }
+                          skills={activeProviderStatus?.skills ?? []}
                           onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                           onChange={onPromptChange}
                           onCommandKeyDown={onComposerCommandKey}

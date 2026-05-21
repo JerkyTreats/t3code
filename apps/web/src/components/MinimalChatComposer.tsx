@@ -57,6 +57,7 @@ export function MinimalChatComposer(props: MinimalChatComposerProps) {
               value={props.prompt}
               cursor={0}
               terminalContexts={[]}
+              skills={[]}
               onRemoveTerminalContext={() => {}}
               onChange={props.onChange}
               onCommandKeyDown={props.onCommandKeyDown}

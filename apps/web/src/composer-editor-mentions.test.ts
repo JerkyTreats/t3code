@@ -18,6 +18,14 @@ describe("splitPromptIntoComposerSegments", () => {
     ]);
   });
 
+  it("splits skill tokens followed by whitespace into skill segments", () => {
+    expect(splitPromptIntoComposerSegments("Use $gh-fix-ci now")).toEqual([
+      { type: "text", text: "Use " },
+      { type: "skill", name: "gh-fix-ci" },
+      { type: "text", text: " now" },
+    ]);
+  });
+
   it("keeps newlines around mention tokens", () => {
     expect(splitPromptIntoComposerSegments("one\n@src/index.ts \ntwo")).toEqual([
       { type: "text", text: "one\n" },

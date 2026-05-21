@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import readline from "node:readline";
-import type { ServerProviderModel } from "@t3tools/contracts";
+import type { ServerProviderModel, ServerProviderSkill } from "@t3tools/contracts";
 import type { ModelCapabilities } from "@t3tools/contracts";
 import { readCodexAccountSnapshot, type CodexAccountSnapshot } from "./codexAccount.ts";
 
@@ -15,6 +15,7 @@ interface JsonRpcProbeResponse {
 export interface CodexAppServerSnapshot {
   readonly account: CodexAccountSnapshot;
   readonly models: ReadonlyArray<ServerProviderModel>;
+  readonly skills: ReadonlyArray<ServerProviderSkill>;
 }
 
 const DEFAULT_CODEX_MODEL_CAPABILITIES: ModelCapabilities = {
@@ -74,6 +75,56 @@ function parseCodexModelList(response: unknown): ReadonlyArray<ServerProviderMod
   return models;
 }
 
+function parseCodexSkillList(response: unknown, cwd: string): ReadonlyArray<ServerProviderSkill> {
+  const data = asObject(response)?.data;
+  if (!Array.isArray(data)) {
+    return [];
+  }
+
+  const skillEntries = data
+    .map((entry) => asObject(entry))
+    .filter((entry): entry is Record<string, unknown> => entry !== undefined);
+  const matchingEntry = skillEntries.find((entry) => asString(entry.cwd) === cwd);
+  const rawSkills =
+    matchingEntry && Array.isArray(matchingEntry.skills)
+      ? matchingEntry.skills
+      : skillEntries.flatMap((entry) => (Array.isArray(entry.skills) ? entry.skills : []));
+
+  const skills: ServerProviderSkill[] = [];
+  const seen = new Set<string>();
+  for (const rawSkill of rawSkills) {
+    const skill = asObject(rawSkill);
+    if (!skill) {
+      continue;
+    }
+    const name = asString(skill?.name);
+    const path = asString(skill?.path);
+    if (!name || !path || seen.has(name)) {
+      continue;
+    }
+    seen.add(name);
+
+    const interfaceMetadata = asObject(skill.interface);
+    const description = asString(skill.description);
+    const scope = asString(skill.scope);
+    const displayName = asString(interfaceMetadata?.displayName);
+    const shortDescription =
+      asString(skill.shortDescription) ?? asString(interfaceMetadata?.shortDescription);
+
+    skills.push({
+      name,
+      path,
+      enabled: typeof skill.enabled === "boolean" ? skill.enabled : true,
+      ...(description ? { description } : {}),
+      ...(scope ? { scope } : {}),
+      ...(displayName ? { displayName } : {}),
+      ...(shortDescription ? { shortDescription } : {}),
+    });
+  }
+
+  return skills;
+}
+
 function readErrorMessage(response: JsonRpcProbeResponse): string | undefined {
   return typeof response.error?.message === "string" ? response.error.message : undefined;
 }
@@ -117,6 +168,7 @@ export async function probeCodexAppServerSnapshot(input: {
   readonly binaryPath: string;
   readonly clientVersion?: string | null;
   readonly homePath?: string;
+  readonly cwd?: string;
   readonly signal?: AbortSignal;
 }): Promise<CodexAppServerSnapshot> {
   return await new Promise((resolve, reject) => {
@@ -132,6 +184,8 @@ export async function probeCodexAppServerSnapshot(input: {
 
     let completed = false;
     let accountSnapshot: CodexAccountSnapshot | undefined;
+    let skills: ReadonlyArray<ServerProviderSkill> = [];
+    const cwd = input.cwd ?? process.cwd();
 
     const cleanup = () => {
       output.removeAllListeners();
@@ -188,13 +242,23 @@ export async function probeCodexAppServerSnapshot(input: {
 
       const response = parsed as JsonRpcProbeResponse;
       if (response.id === 3) {
+        if (readErrorMessage(response)) {
+          skills = [];
+        } else {
+          skills = parseCodexSkillList(response.result, cwd);
+        }
+        writeMessage({ id: 4, method: "model/list", params: {} });
+        return;
+      }
+
+      if (response.id === 4) {
         const account = accountSnapshot;
         if (!account) {
           return;
         }
 
         if (readErrorMessage(response)) {
-          finish(() => resolve({ account, models: [] }));
+          finish(() => resolve({ account, models: [], skills }));
           return;
         }
 
@@ -202,6 +266,7 @@ export async function probeCodexAppServerSnapshot(input: {
           resolve({
             account,
             models: parseCodexModelList(response.result),
+            skills,
           }),
         );
         return;
@@ -227,7 +292,7 @@ export async function probeCodexAppServerSnapshot(input: {
         }
 
         accountSnapshot = readCodexAccountSnapshot(response.result);
-        writeMessage({ id: 3, method: "model/list", params: {} });
+        writeMessage({ id: 3, method: "skills/list", params: { cwds: [cwd] } });
       }
     });
 
