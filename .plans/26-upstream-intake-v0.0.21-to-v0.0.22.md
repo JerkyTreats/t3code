@@ -98,7 +98,7 @@ Why:
 Status:
 
 - `adapt`
-- current branch status: `reopened`
+- current branch status: `complete`
 
 Primary upstream work:
 
@@ -149,28 +149,28 @@ Upstream comparison:
 - upstream `v0.0.22` includes product RPCs for source control repository lookup, clone, and publish
 - upstream `v0.0.22` wires those RPCs through Command Palette and Git actions
 - upstream `v0.0.22` includes real GitLab, Azure DevOps, and Bitbucket source control providers
-- this branch currently keeps GitLab, Azure DevOps, and Bitbucket at discovery-only status
-- this branch currently exposes source control discovery but not repository lookup, clone, or publish as product actions
+- this branch now carries source control discovery, repository lookup, clone, and publish as product actions
+- this branch now carries GitLab, Azure DevOps, and Bitbucket provider workflow support
 
 Completion target:
 
-- restore source control repository lookup, clone, and publish RPCs
-- restore Command Palette clone flow
-- restore Git actions publish flow
-- restore GitLab provider workflow support
-- restore Azure DevOps provider workflow support
-- restore Bitbucket provider workflow support
-- keep GitHub fork identity, protected promotion, and worktree guardrails authoritative
+- restore source control repository lookup, clone, and publish RPCs. Done.
+- restore Command Palette clone flow. Done.
+- restore Git actions publish flow. Done.
+- restore GitLab provider workflow support. Done.
+- restore Azure DevOps provider workflow support. Done.
+- restore Bitbucket provider workflow support. Done.
+- keep GitHub fork identity, protected promotion, and worktree guardrails authoritative. Done.
 
-Implementation order for this reopened lane:
+Implementation order for this completed lane:
 
-1. Import upstream source control repository service and RPC contracts.
-2. Wire server handlers for lookup, clone, and publish.
-3. Reconcile GitHub provider behavior with fork-first repository identity.
-4. Add GitLab, Azure DevOps, and Bitbucket providers behind the source control registry.
-5. Restore web source control APIs and React Query hooks.
-6. Restore product entry points in Command Palette and Git actions.
-7. Verify provider-specific behavior without weakening fork Git workflow semantics.
+1. Import upstream source control repository service and RPC contracts. Done.
+2. Wire server handlers for lookup, clone, and publish. Done.
+3. Reconcile GitHub provider behavior with fork-first repository identity. Done.
+4. Add GitLab, Azure DevOps, and Bitbucket providers behind the source control registry. Done.
+5. Restore web source control APIs and React Query hooks. Done.
+6. Restore product entry points in Command Palette and Git actions. Done.
+7. Verify provider-specific behavior without weakening fork Git workflow semantics. Done.
 
 ### Multi-Provider Shell And Settings
 
@@ -240,7 +240,7 @@ Completion target:
 - completed with fork-shaped instance-aware routing, settings, runtime events, session persistence, model selection, and registry materialization
 - preserved `F4`, `F10`, and existing provider runtime stability while replacing the compatibility shim
 
-Implementation order for this reopened lane:
+Implementation order for this completed lane:
 
 1. Complete upstream `08e6d4cf` contract and persistence compatibility. Done.
 2. Port provider session and runtime event instance ids. Done.
@@ -374,17 +374,17 @@ Current `0.22` state:
 - source control and VCS provider workflow parity is complete on branch
 - provider skills and slash commands are complete on branch
 - auth access management UI and transport are complete on branch
-- final parity closeout is still in progress for the remaining required gaps below
+- final parity closeout is complete on branch
 
 ## Parity Gap Checklist
 
-Required before this release line can be marked complete:
+Completion checklist:
 
-- plan sidebar auto-open setting parity with upstream `00b5c3e1`
-- Claude `claude_code` system prompt preset parity with upstream `cb8015a3`
-- terminal dimension validation parity with upstream `02903f2d`
-- install and desktop package parity with upstream `02dd47ea`, `c07ac592`, and `f4c9418d`
-- small-fix sweep for remaining upstream `v0.0.22` commits not covered by a local equivalent
+- plan sidebar auto-open setting parity with upstream `00b5c3e1`. Done in `4be64aed`.
+- Claude `claude_code` system prompt preset parity with upstream `cb8015a3`. Done in `dfad440c`.
+- terminal dimension validation parity with upstream `02903f2d`. Done in `11387864`.
+- install and desktop package parity with upstream `02dd47ea`, `c07ac592`, and `f4c9418d`. Done in `a32894ff`.
+- small-fix sweep for remaining upstream `v0.0.22` commits not covered by a local equivalent. Done in `89047571`.
 
 Adapted equivalents already present:
 
@@ -394,6 +394,9 @@ Adapted equivalents already present:
 - Codex skill discovery, Claude slash command discovery, and composer command integration
 - auth access snapshot, pairing link, and client session management
 - reconnect and runtime lifecycle hardening with fork-specific canonical turn handling
+- mobile sidebar dismissal, iOS safe areas, touch scrolling, and iOS input zoom fixes
+- stale default-branch PR filtering, AskUserQuestion answer keying, and server timestamp visit marking
+- README provider parity for Codex, Claude, and OpenCode
 
 Intentionally preserved fork behavior:
 
@@ -401,6 +404,13 @@ Intentionally preserved fork behavior:
 - Omarchy desktop and shell identity
 - rich draft composer ownership and screenshot attach behavior
 - fullscreen plan preview access
+
+Audited upstream release and repository-maintenance items:
+
+- release workflow and Discord announcement updates are not product runtime features for this fork line
+- `VOUCHED.td` updates are upstream repository administration data and do not affect fork runtime parity
+- upstream `AnimatedHeight` focus-ring clipping has no local target file after fork shell adaptation
+- Bitbucket default branch and invalid pairing token fixes are already present on branch
 
 ## Remaining Fork Concerns
 
@@ -477,10 +487,10 @@ Acceptance:
 
 1. complete provider skills and slash commands. Done.
 2. complete auth access management UI and transport. Done.
-3. add remaining `.22` product parity settings and provider behavior.
-4. align install, desktop package, and terminal validation metadata.
-5. complete final small-fix sweep and verification.
-6. record final parity outcome in this intake note.
+3. add remaining `.22` product parity settings and provider behavior. Done.
+4. align install, desktop package, and terminal validation metadata. Done.
+5. complete final small-fix sweep and verification. Done.
+6. record final parity outcome in this intake note. Done.
 
 ## Verification Focus
 
@@ -496,6 +506,6 @@ Acceptance:
 
 `v0.0.21 -> v0.0.22` should be integrated in staged slices with explicit seam ownership.
 
-The remote-hosted, multi-provider shell, source control, provider metadata, and auth access lanes are complete on branch.
+The remote-hosted, multi-provider shell, source control, provider metadata, auth access, settings, install metadata, terminal validation, provider behavior, and small UX parity lanes are complete on branch.
 
-`v0.0.21 -> v0.0.22` product parity remains open until the parity gap checklist is closed.
+`v0.0.21 -> v0.0.22` product parity is complete on branch.
