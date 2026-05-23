@@ -60,6 +60,12 @@ export function useAppSettings() {
       if ("sidebarProjectSortOrder" in patch) {
         nextPatch.sidebarProjectSortOrder = patch.sidebarProjectSortOrder;
       }
+      if ("sidebarProjectGrouping" in patch) {
+        nextPatch.sidebarProjectGrouping = patch.sidebarProjectGrouping;
+      }
+      if ("environmentGrouping" in patch) {
+        nextPatch.environmentGrouping = patch.environmentGrouping;
+      }
       if ("sidebarThreadSortOrder" in patch) {
         nextPatch.sidebarThreadSortOrder = patch.sidebarThreadSortOrder;
       }

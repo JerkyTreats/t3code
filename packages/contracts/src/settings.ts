@@ -17,6 +17,14 @@ export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_a
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
 export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "updated_at";
 
+export const SidebarProjectGrouping = Schema.Literals(["none", "directory"]);
+export type SidebarProjectGrouping = typeof SidebarProjectGrouping.Type;
+export const DEFAULT_SIDEBAR_PROJECT_GROUPING: SidebarProjectGrouping = "none";
+
+export const EnvironmentGrouping = Schema.Literals(["none", "provider"]);
+export type EnvironmentGrouping = typeof EnvironmentGrouping.Type;
+export const DEFAULT_ENVIRONMENT_GROUPING: EnvironmentGrouping = "none";
+
 export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at"]);
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
@@ -35,6 +43,12 @@ export const ClientSettingsSchema = Schema.Struct({
   ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   sidebarProjectSortOrder: SidebarProjectSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_SORT_ORDER)),
+  ),
+  sidebarProjectGrouping: SidebarProjectGrouping.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING)),
+  ),
+  environmentGrouping: EnvironmentGrouping.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ENVIRONMENT_GROUPING)),
   ),
   sidebarThreadSortOrder: SidebarThreadSortOrder.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_THREAD_SORT_ORDER)),
@@ -246,6 +260,8 @@ export const ClientSettingsPatch = Schema.Struct({
     ),
   ),
   sidebarProjectSortOrder: Schema.optionalKey(SidebarProjectSortOrder),
+  sidebarProjectGrouping: Schema.optionalKey(SidebarProjectGrouping),
+  environmentGrouping: Schema.optionalKey(EnvironmentGrouping),
   sidebarThreadSortOrder: Schema.optionalKey(SidebarThreadSortOrder),
   timestampFormat: Schema.optionalKey(TimestampFormat),
 });

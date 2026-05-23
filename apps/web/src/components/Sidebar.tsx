@@ -54,6 +54,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import {
   type SidebarProjectSortOrder,
+  type SidebarProjectGrouping,
   type SidebarThreadSortOrder,
 } from "@t3tools/contracts/settings";
 import { isElectron } from "../env";
@@ -132,8 +133,10 @@ import { SidebarUpdatePill } from "./sidebar/SidebarUpdatePill";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useSettings, useUpdateSettings } from "~/hooks/useSettings";
 import { useServerKeybindings } from "../rpc/serverState";
+import { useProjectCreationIntentStore } from "../projectCreationIntentStore";
 import { useSidebarThreadSummaryById } from "../storeSelectors";
 import type { Project } from "../types";
+import { deriveLogicalProjectGroups } from "../logicalProject";
 import {
   sourceControlCloneRepositoryMutationOptions,
   sourceControlDiscoveryQueryOptions,
@@ -145,6 +148,10 @@ const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
   created_at: "Created at",
   manual: "Manual",
+};
+const SIDEBAR_GROUPING_LABELS: Record<SidebarProjectGrouping, string> = {
+  none: "None",
+  directory: "By logical root",
 };
 const SIDEBAR_THREAD_SORT_LABELS: Record<SidebarThreadSortOrder, string> = {
   updated_at: "Last user message",
@@ -593,13 +600,17 @@ type SortableProjectHandleProps = Pick<
 >;
 
 function ProjectSortMenu({
+  projectGrouping,
   projectSortOrder,
   threadSortOrder,
+  onProjectGroupingChange,
   onProjectSortOrderChange,
   onThreadSortOrderChange,
 }: {
+  projectGrouping: SidebarProjectGrouping;
   projectSortOrder: SidebarProjectSortOrder;
   threadSortOrder: SidebarThreadSortOrder;
+  onProjectGroupingChange: (grouping: SidebarProjectGrouping) => void;
   onProjectSortOrderChange: (sortOrder: SidebarProjectSortOrder) => void;
   onThreadSortOrderChange: (sortOrder: SidebarThreadSortOrder) => void;
 }) {
@@ -616,6 +627,23 @@ function ProjectSortMenu({
         <TooltipPopup side="right">Sort projects</TooltipPopup>
       </Tooltip>
       <MenuPopup align="end" side="bottom" className="min-w-44">
+        <MenuGroup>
+          <div className="px-2 py-1 sm:text-xs font-medium text-muted-foreground">Group</div>
+          <MenuRadioGroup
+            value={projectGrouping}
+            onValueChange={(value) => {
+              onProjectGroupingChange(value as SidebarProjectGrouping);
+            }}
+          >
+            {(
+              Object.entries(SIDEBAR_GROUPING_LABELS) as Array<[SidebarProjectGrouping, string]>
+            ).map(([value, label]) => (
+              <MenuRadioItem key={value} value={value} className="min-h-7 py-1 sm:text-xs">
+                {label}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
         <MenuGroup>
           <div className="px-2 py-1 sm:text-xs font-medium text-muted-foreground">
             Sort projects
@@ -773,7 +801,15 @@ export default function Sidebar() {
   const isLinuxDesktop = isElectron && isLinuxPlatform(navigator.platform);
   const platform = navigator.platform;
   const shouldBrowseForProjectImmediately = isElectron && !isLinuxDesktop;
-  const shouldShowProjectPathEntry = addingProject && !shouldBrowseForProjectImmediately;
+  const shouldShowProjectPathEntry =
+    addingProject && (!shouldBrowseForProjectImmediately || addProjectMode === "clone");
+  const projectCreationIntent = useProjectCreationIntentStore(
+    useShallow((store) => ({
+      intent: store.intent,
+      intentId: store.intentId,
+      clearIntent: store.clearIntent,
+    })),
+  );
   const supportsSourceControl = supportsCurrentNativeApiSourceControl();
   const sourceControlDiscoveryQuery = useQuery({
     ...sourceControlDiscoveryQueryOptions(),
@@ -1051,6 +1087,45 @@ export default function Sidebar() {
     }
     setAddingProject((prev) => !prev);
   };
+
+  useEffect(() => {
+    if (!projectCreationIntent.intent) {
+      return;
+    }
+
+    const { intent, intentId } = projectCreationIntent;
+    projectCreationIntent.clearIntent(intentId);
+    setAddProjectError(null);
+    if (isMobile) {
+      setOpenMobile(true);
+    }
+
+    if (intent === "pickFolder") {
+      void handlePickFolder();
+      return;
+    }
+
+    if (intent === "addLocalProject") {
+      setAddProjectMode("local");
+      if (shouldBrowseForProjectImmediately) {
+        void handlePickFolder();
+        return;
+      }
+      setAddingProject(true);
+      window.setTimeout(() => addProjectInputRef.current?.focus(), 0);
+      return;
+    }
+
+    setAddProjectMode("clone");
+    setAddingProject(true);
+    window.setTimeout(() => addProjectInputRef.current?.focus(), 0);
+  }, [
+    handlePickFolder,
+    isMobile,
+    projectCreationIntent,
+    setOpenMobile,
+    shouldBrowseForProjectImmediately,
+  ]);
 
   const cancelRename = useCallback(() => {
     setRenamingThreadId(null);
@@ -1576,7 +1651,9 @@ export default function Sidebar() {
       sortProjectsForSidebar(sidebarProjects, visibleThreads, appSettings.sidebarProjectSortOrder),
     [appSettings.sidebarProjectSortOrder, sidebarProjects, visibleThreads],
   );
-  const isManualProjectSorting = appSettings.sidebarProjectSortOrder === "manual";
+  const isManualProjectSorting =
+    appSettings.sidebarProjectSortOrder === "manual" &&
+    appSettings.sidebarProjectGrouping === "none";
   const renderedProjects = useMemo(
     () =>
       sortedProjects.map((project) => {
@@ -1644,6 +1721,17 @@ export default function Sidebar() {
       threadIdsByProjectId,
       threadLastVisitedAtById,
     ],
+  );
+  const renderedProjectGroups = useMemo(
+    () =>
+      deriveLogicalProjectGroups({
+        projects: renderedProjects,
+        grouping: appSettings.sidebarProjectGrouping,
+        getCwd: (renderedProject) => renderedProject.project.cwd,
+        getId: (renderedProject) => renderedProject.project.id,
+        getName: (renderedProject) => renderedProject.project.name,
+      }),
+    [appSettings.sidebarProjectGrouping, renderedProjects],
   );
   const visibleSidebarThreadIds = useMemo(
     () => getVisibleSidebarThreadIds(renderedProjects),
@@ -2286,8 +2374,12 @@ export default function Sidebar() {
                 </span>
                 <div className="flex items-center gap-1">
                   <ProjectSortMenu
+                    projectGrouping={appSettings.sidebarProjectGrouping}
                     projectSortOrder={appSettings.sidebarProjectSortOrder}
                     threadSortOrder={appSettings.sidebarThreadSortOrder}
+                    onProjectGroupingChange={(grouping) => {
+                      updateSettings({ sidebarProjectGrouping: grouping });
+                    }}
                     onProjectSortOrderChange={(sortOrder) => {
                       updateSettings({ sidebarProjectSortOrder: sortOrder });
                     }}
@@ -2497,10 +2589,22 @@ export default function Sidebar() {
                 </DndContext>
               ) : (
                 <SidebarMenu ref={attachProjectListAutoAnimateRef}>
-                  {renderedProjects.map((renderedProject) => (
-                    <SidebarMenuItem key={renderedProject.project.id} className="rounded-md">
-                      {renderProjectItem(renderedProject, null)}
-                    </SidebarMenuItem>
+                  {renderedProjectGroups.map((group) => (
+                    <div key={group.id} className="contents">
+                      {group.grouped ? (
+                        <div className="px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+                          <div className="truncate">{group.label}</div>
+                          <div className="truncate normal-case tracking-normal text-muted-foreground/40">
+                            {group.rootPath}
+                          </div>
+                        </div>
+                      ) : null}
+                      {group.projects.map((renderedProject) => (
+                        <SidebarMenuItem key={renderedProject.project.id} className="rounded-md">
+                          {renderProjectItem(renderedProject, null)}
+                        </SidebarMenuItem>
+                      ))}
+                    </div>
                   ))}
                 </SidebarMenu>
               )}

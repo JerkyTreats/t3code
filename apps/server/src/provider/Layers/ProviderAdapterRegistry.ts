@@ -23,6 +23,7 @@ import {
 import { ClaudeAdapter } from "../Services/ClaudeAdapter.ts";
 import { CodexAdapter } from "../Services/CodexAdapter.ts";
 import { CursorAdapter } from "../Services/CursorAdapter.ts";
+import { OpenCodeAdapter } from "../Services/OpenCodeAdapter.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import {
   configuredProviderInstanceRoutes,
@@ -38,6 +39,7 @@ const makeProviderAdapterRegistry = Effect.fn("makeProviderAdapterRegistry")(fun
   options?: ProviderAdapterRegistryLiveOptions,
 ) {
   const cursorAdapterOption = yield* Effect.serviceOption(CursorAdapter);
+  const openCodeAdapterOption = yield* Effect.serviceOption(OpenCodeAdapter);
   const adapters =
     options?.adapters !== undefined
       ? options.adapters
@@ -45,6 +47,7 @@ const makeProviderAdapterRegistry = Effect.fn("makeProviderAdapterRegistry")(fun
           yield* CodexAdapter,
           yield* ClaudeAdapter,
           ...(cursorAdapterOption._tag === "Some" ? [cursorAdapterOption.value] : []),
+          ...(openCodeAdapterOption._tag === "Some" ? [openCodeAdapterOption.value] : []),
         ];
   const byProvider = new Map(adapters.map((adapter) => [adapter.provider, adapter]));
   const serverSettingsOption = yield* Effect.serviceOption(ServerSettingsService);

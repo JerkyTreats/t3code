@@ -28,8 +28,8 @@ import {
 } from "../components/WebSocketConnectionSurface";
 import { Button } from "../components/ui/button";
 import { AnchoredToastProvider, ToastProvider, toastManager } from "../components/ui/toast";
-import { resolveAndPersistPreferredEditor } from "../editorPreferences";
 import { readNativeApi } from "../nativeApi";
+import { openPathInPreferredEditor } from "../openPreferredEditor";
 import {
   getServerConfigUpdatedNotification,
   ServerConfigUpdatedNotification,
@@ -378,11 +378,11 @@ function EventRouter() {
 
             void Promise.resolve(serverConfig ?? api.server.getConfig())
               .then((config) => {
-                const editor = resolveAndPersistPreferredEditor(config.availableEditors);
-                if (!editor) {
-                  throw new Error("No available editors found.");
-                }
-                return api.shell.openInEditor(config.keybindingsConfigPath, editor);
+                return openPathInPreferredEditor({
+                  path: config.keybindingsConfigPath,
+                  availableEditors: config.availableEditors,
+                  failureTitle: "Unable to open keybindings file",
+                });
               })
               .catch((error) => {
                 toastManager.add({

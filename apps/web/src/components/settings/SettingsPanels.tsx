@@ -36,7 +36,6 @@ import {
 } from "../../components/desktopUpdate.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
-import { resolveAndPersistPreferredEditor } from "../../editorPreferences";
 import { isElectron } from "../../env";
 import { useTheme } from "../../hooks/useTheme";
 import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
@@ -51,6 +50,7 @@ import {
   resolveAppModelSelectionState,
 } from "../../modelSelection";
 import { ensureNativeApi, readNativeApi } from "../../nativeApi";
+import { openPathInPreferredEditor } from "../../openPreferredEditor";
 import { useStore } from "../../store";
 import { formatRelativeTime, formatRelativeTimeLabel } from "../../timestampFormat";
 import { cn } from "../../lib/utils";
@@ -96,6 +96,11 @@ const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
   "12-hour": "12-hour",
   "24-hour": "24-hour",
+} as const;
+
+const SIDEBAR_PROJECT_GROUPING_LABELS = {
+  none: "None",
+  directory: "Logical root",
 } as const;
 
 type InstallProviderSettings = {
@@ -707,18 +712,11 @@ export function GeneralSettingsPanel() {
       setOpenPathErrorByTarget((existing) => ({ ...existing, [target]: null }));
       setOpeningPathByTarget((existing) => ({ ...existing, [target]: true }));
 
-      const editor = resolveAndPersistPreferredEditor(availableEditors ?? []);
-      if (!editor) {
-        setOpenPathErrorByTarget((existing) => ({
-          ...existing,
-          [target]: "No available editors found.",
-        }));
-        setOpeningPathByTarget((existing) => ({ ...existing, [target]: false }));
-        return;
-      }
-
-      void ensureNativeApi()
-        .shell.openInEditor(path, editor)
+      void openPathInPreferredEditor({
+        path,
+        availableEditors: availableEditors ?? [],
+        failureTitle: failureMessage,
+      })
         .catch((error) => {
           setOpenPathErrorByTarget((existing) => ({
             ...existing,
@@ -1133,6 +1131,47 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Open plan sidebar automatically"
             />
+          }
+        />
+
+        <SettingsRow
+          title="Project grouping"
+          description="Group project rows that belong to the same logical root."
+          resetAction={
+            settings.sidebarProjectGrouping !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectGrouping ? (
+              <SettingResetButton
+                label="project grouping"
+                onClick={() =>
+                  updateSettings({
+                    sidebarProjectGrouping: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGrouping,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.sidebarProjectGrouping}
+              onValueChange={(value) => {
+                if (value === "none" || value === "directory") {
+                  updateSettings({ sidebarProjectGrouping: value });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-44" aria-label="Project grouping">
+                <SelectValue>
+                  {SIDEBAR_PROJECT_GROUPING_LABELS[settings.sidebarProjectGrouping]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="none">
+                  {SIDEBAR_PROJECT_GROUPING_LABELS.none}
+                </SelectItem>
+                <SelectItem hideIndicator value="directory">
+                  {SIDEBAR_PROJECT_GROUPING_LABELS.directory}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 

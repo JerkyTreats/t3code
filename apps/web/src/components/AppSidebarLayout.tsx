@@ -1,6 +1,13 @@
 import { useEffect, type ReactNode } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { ThreadId } from "@t3tools/contracts";
+import { useNavigate, useParams } from "@tanstack/react-router";
 
+import { isTerminalFocused } from "../lib/terminalFocus";
+import { resolveShortcutCommand } from "../keybindings";
+import { useCommandPaletteStore } from "../commandPaletteStore";
+import { selectThreadTerminalState, useTerminalStateStore } from "../terminalStateStore";
+import { useServerKeybindings } from "../rpc/serverState";
+import { CommandPalette } from "./CommandPalette";
 import ThreadSidebar from "./Sidebar";
 import { Sidebar, SidebarProvider, SidebarRail } from "./ui/sidebar";
 
@@ -10,6 +17,17 @@ const THREAD_MAIN_CONTENT_MIN_WIDTH = 40 * 16;
 
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const keybindings = useServerKeybindings();
+  const togglePalette = useCommandPaletteStore((state) => state.togglePalette);
+  const routeThreadId = useParams({
+    strict: false,
+    select: (params) => (params.threadId ? ThreadId.makeUnsafe(params.threadId) : null),
+  });
+  const terminalOpen = useTerminalStateStore((state) =>
+    routeThreadId
+      ? selectThreadTerminalState(state.terminalStateByThreadId, routeThreadId).terminalOpen
+      : false,
+  );
 
   useEffect(() => {
     const onMenuAction = window.desktopBridge?.onMenuAction;
@@ -27,6 +45,28 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     };
   }, [navigate]);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: {
+          terminalFocus: isTerminalFocused(),
+          terminalOpen,
+        },
+      });
+      if (command !== "commandPalette.toggle") return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      togglePalette();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [keybindings, terminalOpen, togglePalette]);
+
   return (
     <SidebarProvider className="h-dvh! min-h-0!" defaultOpen>
       <Sidebar
@@ -43,6 +83,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         <ThreadSidebar />
         <SidebarRail />
       </Sidebar>
+      <CommandPalette />
       {children}
     </SidebarProvider>
   );

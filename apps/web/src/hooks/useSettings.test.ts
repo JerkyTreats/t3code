@@ -12,11 +12,15 @@ describe("buildLegacyClientSettingsMigrationPatch", () => {
         autoOpenPlanSidebar: false,
         confirmThreadArchive: true,
         confirmThreadDelete: false,
+        environmentGrouping: "provider",
+        sidebarProjectGrouping: "directory",
       }),
     ).toEqual({
       autoOpenPlanSidebar: false,
       confirmThreadArchive: true,
       confirmThreadDelete: false,
+      environmentGrouping: "provider",
+      sidebarProjectGrouping: "directory",
     });
   });
 });

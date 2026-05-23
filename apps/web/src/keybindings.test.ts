@@ -10,6 +10,7 @@ import {
   formatShortcutLabel,
   isChatNewShortcut,
   isChatNewLocalShortcut,
+  isCommandPaletteToggleShortcut,
   isDiffToggleShortcut,
   isOpenFavoriteEditorShortcut,
   isTerminalClearShortcut,
@@ -101,6 +102,7 @@ const DEFAULT_BINDINGS = compile([
     command: "diff.toggle",
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
+  { shortcut: modShortcut("p", { shiftKey: true }), command: "commandPalette.toggle" },
   { shortcut: modShortcut("o", { shiftKey: true }), command: "chat.new" },
   { shortcut: modShortcut("n", { shiftKey: true }), command: "chat.newLocal" },
   { shortcut: modShortcut("o"), command: "editor.openFavorite" },
@@ -248,6 +250,10 @@ describe("shortcutLabelForCommand", () => {
 
   it("returns effective labels for non-terminal commands", () => {
     assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "chat.new", "MacIntel"), "⇧⌘O");
+    assert.strictEqual(
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "commandPalette.toggle", "Linux"),
+      "Ctrl+Shift+P",
+    );
     assert.strictEqual(shortcutLabelForCommand(DEFAULT_BINDINGS, "diff.toggle", "Linux"), "Ctrl+D");
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "editor.openFavorite", "Linux"),
@@ -343,6 +349,16 @@ describe("thread navigation helpers", () => {
 });
 
 describe("chat/editor shortcuts", () => {
+  it("matches commandPalette.toggle shortcut", () => {
+    assert.isTrue(
+      isCommandPaletteToggleShortcut(
+        event({ key: "p", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel" },
+      ),
+    );
+  });
+
   it("matches chat.new shortcut", () => {
     assert.isTrue(
       isChatNewShortcut(event({ key: "o", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {

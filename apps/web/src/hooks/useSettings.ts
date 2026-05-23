@@ -21,6 +21,8 @@ import {
   ClientSettingsSchema,
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_UNIFIED_SETTINGS,
+  EnvironmentGrouping,
+  SidebarProjectGrouping,
   SidebarProjectSortOrder,
   SidebarThreadSortOrder,
   TimestampFormat,
@@ -289,6 +291,14 @@ export function buildLegacyClientSettingsMigrationPatch(
 
   if (Schema.is(SidebarProjectSortOrder)(legacySettings.sidebarProjectSortOrder)) {
     patch.sidebarProjectSortOrder = legacySettings.sidebarProjectSortOrder;
+  }
+
+  if (Schema.is(SidebarProjectGrouping)(legacySettings.sidebarProjectGrouping)) {
+    patch.sidebarProjectGrouping = legacySettings.sidebarProjectGrouping;
+  }
+
+  if (Schema.is(EnvironmentGrouping)(legacySettings.environmentGrouping)) {
+    patch.environmentGrouping = legacySettings.environmentGrouping;
   }
 
   if (Schema.is(SidebarThreadSortOrder)(legacySettings.sidebarThreadSortOrder)) {
