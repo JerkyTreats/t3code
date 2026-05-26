@@ -11,6 +11,25 @@ T3 Code is a minimal web GUI for using coding agents like Codex and Claude.
 
 This repository is a VERY EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged.
 
+## Governance Index
+
+- [Commit Policy](governance/commit_policy.md)
+- [Compatibility Policy](governance/compatibility_policy.md)
+- [Docs Style Policy](governance/docs_style_policy.md)
+- [Patch Guide](patch.md)
+- [Policy Proposal Flow](governance/policy_proposal_flow.md)
+- [Complex Change Workflow Governance](governance/complex_change_workflow.md)
+- [Upstream Merge Policy](governance/upstream_merge_policy.md)
+
+## Governance Rules
+
+- For any request that asks for a commit or amend, review [Commit Policy](governance/commit_policy.md) before running `git commit` or `git commit --amend`.
+- For any request to edit `AGENTS.md`, `patch.md`, or files under `governance/`, review [Policy Proposal Flow](governance/policy_proposal_flow.md) before editing.
+- For upstream sync, merge, or divergence decisions, review [Upstream Merge Policy](governance/upstream_merge_policy.md) first.
+- For upstream sync or merge implementation work, complete the required fork preservation gate in [Upstream Merge Policy](governance/upstream_merge_policy.md) before considering the work ready for review or merge.
+- For upstream sync or any change that modifies fork owned behavior, review [Patch Guide](patch.md) first and update it in the same change.
+- Complex workflow mode is opt in and not enforced by CI.
+
 ## Core Priorities
 
 1. Performance first.

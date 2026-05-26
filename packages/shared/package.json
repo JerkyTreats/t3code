@@ -71,6 +71,10 @@
       "types": "./src/projectScripts.ts",
       "import": "./src/projectScripts.ts"
     },
+    "./forkVerification": {
+      "types": "./src/forkVerification.ts",
+      "import": "./src/forkVerification.ts"
+    },
     "./searchRanking": {
       "types": "./src/searchRanking.ts",
       "import": "./src/searchRanking.ts"
