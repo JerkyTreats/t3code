@@ -30,7 +30,11 @@ import { deepMerge } from "@t3tools/shared/Struct";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
-import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
+import {
+  buildCodexInitializeParams,
+  checkCodexProviderStatus,
+  type CodexAppServerProviderSnapshot,
+} from "./CodexProvider.ts";
 import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
 import { OpenCodeRuntimeLive } from "../opencodeRuntime.ts";
 import { NoOpProviderEventLoggers, ProviderEventLoggers } from "./ProviderEventLoggers.ts";
@@ -302,6 +306,19 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
   "ProviderRegistry",
   (it) => {
     describe("checkCodexProviderStatus", () => {
+      it("builds initialize params with the detected Codex CLI version", () => {
+        assert.deepStrictEqual(buildCodexInitializeParams({ clientVersion: "0.45.0" }), {
+          clientInfo: {
+            name: "t3code_desktop",
+            title: "T3 Code Desktop",
+            version: "0.45.0",
+          },
+          capabilities: {
+            experimentalApi: true,
+          },
+        });
+      });
+
       it.effect("uses the app-server account and model list for provider status", () =>
         Effect.gen(function* () {
           const status = yield* checkCodexProviderStatus(defaultCodexSettings, () =>
@@ -1130,6 +1147,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest(), T
             assert.strictEqual(initialCodex?.installed, false);
             const initialCheckedAt = initialCodex?.checkedAt;
             assert.notStrictEqual(initialCheckedAt, undefined);
+
+            yield* TestClock.adjust("50 millis");
+            yield* Effect.yieldNow;
 
             // Drive a settings change. The Hydration layer's
             // `SettingsWatcherLive` consumes this via `streamChanges`,

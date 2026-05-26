@@ -28,14 +28,27 @@ import {
   buildServerProvider,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import { resolveSupportedCodexCliBinaryResult } from "../codexCliBinary.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
+const CODEX_CLI_MISSING_MESSAGE = "Codex CLI (`codex`) is not installed or not on PATH.";
 
 const CODEX_PRESENTATION = {
   displayName: "Codex",
   showInteractionModeToggle: true,
 } as const;
+
+function isMissingCodexCliError(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("enoent") ||
+    message.includes("command not found") ||
+    message.includes("not found") ||
+    message.includes("not installed") ||
+    message.includes("not executable")
+  );
+}
 
 export interface CodexAppServerProviderSnapshot {
   readonly account: CodexSchema.V2GetAccountResponse;
@@ -235,12 +248,14 @@ const requestAllCodexModels = Effect.fn("requestAllCodexModels")(function* (
   return models;
 });
 
-export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
+export function buildCodexInitializeParams(input?: {
+  readonly clientVersion?: string | null;
+}): CodexSchema.V1InitializeParams {
   return {
     clientInfo: {
       name: "t3code_desktop",
       title: "T3 Code Desktop",
-      version: packageJson.version,
+      version: input?.clientVersion ?? packageJson.version,
     },
     capabilities: {
       experimentalApi: true,
@@ -250,6 +265,7 @@ export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
 
 const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (input: {
   readonly binaryPath: string;
+  readonly clientVersion?: string | null;
   readonly homePath?: string;
   readonly cwd: string;
   readonly customModels?: ReadonlyArray<string>;
@@ -275,16 +291,12 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     Effect.provide(clientContext),
   );
 
-  const initialize = yield* client.request("initialize", {
-    clientInfo: {
-      name: "t3code_desktop",
-      title: "T3 Code Desktop",
-      version: "0.1.0",
-    },
-    capabilities: {
-      experimentalApi: true,
-    },
-  });
+  const initialize = yield* client.request(
+    "initialize",
+    buildCodexInitializeParams(
+      input.clientVersion === undefined ? {} : { clientVersion: input.clientVersion },
+    ),
+  );
   yield* client.notify("initialized", undefined);
 
   // Extract the version string after the first '/' in userAgent, up to the next space or the end
@@ -401,17 +413,20 @@ function accountProbeStatus(account: CodexAppServerProviderSnapshot["account"]):
 
 export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(function* (
   codexSettings: CodexSettings,
-  probe: (input: {
-    readonly binaryPath: string;
-    readonly homePath?: string;
-    readonly cwd: string;
-    readonly customModels: ReadonlyArray<string>;
-    readonly environment?: NodeJS.ProcessEnv;
-  }) => Effect.Effect<
-    CodexAppServerProviderSnapshot,
-    CodexErrors.CodexAppServerError,
-    ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
-  > = probeCodexAppServerProvider,
+  probe:
+    | ((input: {
+        readonly binaryPath: string;
+        readonly clientVersion?: string | null;
+        readonly homePath?: string;
+        readonly cwd: string;
+        readonly customModels: ReadonlyArray<string>;
+        readonly environment?: NodeJS.ProcessEnv;
+      }) => Effect.Effect<
+        CodexAppServerProviderSnapshot,
+        CodexErrors.CodexAppServerError,
+        ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
+      >)
+    | undefined = undefined,
   environment: NodeJS.ProcessEnv = process.env,
 ): Effect.fn.Return<
   ServerProviderDraft,
@@ -420,6 +435,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
 > {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const emptyModels = emptyCodexModelsFromSettings(codexSettings);
+  const activeProbe = probe ?? probeCodexAppServerProvider;
 
   if (!codexSettings.enabled) {
     return buildServerProvider({
@@ -438,8 +454,42 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     });
   }
 
-  const probeResult = yield* probe({
-    binaryPath: codexSettings.binaryPath,
+  const binaryCandidate =
+    probe !== undefined
+      ? {
+          _tag: "success" as const,
+          candidate: { binaryPath: codexSettings.binaryPath, version: null },
+        }
+      : resolveSupportedCodexCliBinaryResult({
+          preferredBinaryPath: codexSettings.binaryPath,
+          respectPreferredBinaryPath: codexSettings.binaryPath.trim() !== "codex",
+          homePath: codexSettings.homePath,
+          cwd: process.cwd(),
+          environment,
+        });
+
+  if (binaryCandidate._tag === "error") {
+    return buildServerProvider({
+      presentation: CODEX_PRESENTATION,
+      enabled: codexSettings.enabled,
+      checkedAt,
+      models: emptyModels,
+      skills: [],
+      probe: {
+        installed: false,
+        version: null,
+        status: "error",
+        auth: { status: "unknown" },
+        message: isMissingCodexCliError(binaryCandidate.error)
+          ? CODEX_CLI_MISSING_MESSAGE
+          : binaryCandidate.error.message,
+      },
+    });
+  }
+
+  const probeResult = yield* activeProbe({
+    binaryPath: binaryCandidate.candidate.binaryPath,
+    clientVersion: binaryCandidate.candidate.version,
     homePath: codexSettings.homePath,
     cwd: process.cwd(),
     customModels: codexSettings.customModels,
@@ -466,7 +516,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         auth: { status: "unknown" },
         message: installed
           ? `Codex app-server provider probe failed: ${error.message}.`
-          : "Codex CLI (`codex`) is not installed or not on PATH.",
+          : CODEX_CLI_MISSING_MESSAGE,
       },
     });
   }
