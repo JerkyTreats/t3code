@@ -12,6 +12,7 @@ import { invalidateGitQueries } from "../lib/gitReactQuery";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
 import { newCommandId } from "../lib/utils";
 import { readLocalApi } from "../localApi";
+import { runThreadDeletionLifecycle } from "../lib/threadDeletionWorkflow";
 import {
   selectProjectByRef,
   selectThreadByRef,
@@ -156,22 +157,27 @@ export function useThreadActions() {
           ].join("\n"),
         ));
 
-      if (thread.session && thread.session.status !== "closed") {
-        await api.orchestration
-          .dispatchCommand({
-            type: "thread.session.stop",
-            commandId: newCommandId(),
-            threadId: threadRef.threadId,
-            createdAt: new Date().toISOString(),
-          })
-          .catch(() => undefined);
-      }
+      const stopSession =
+        thread.session && thread.session.status !== "closed"
+          ? async () => {
+              await api.orchestration
+                .dispatchCommand({
+                  type: "thread.session.stop",
+                  commandId: newCommandId(),
+                  threadId: threadRef.threadId,
+                  createdAt: new Date().toISOString(),
+                })
+                .catch(() => undefined);
+            }
+          : undefined;
 
-      try {
-        await api.terminal.close({ threadId: threadRef.threadId, deleteHistory: true });
-      } catch {
-        // Terminal may already be closed.
-      }
+      const closeTerminalState = async () => {
+        try {
+          await api.terminal.close({ threadId: threadRef.threadId, deleteHistory: true });
+        } catch {
+          // Terminal may already be closed.
+        }
+      };
 
       const deletedThreadIds = deletedIds ?? new Set<ThreadId>();
       const currentRouteThreadRef = getCurrentRouteThreadRef();
@@ -184,70 +190,88 @@ export function useThreadActions() {
         deletedThreadIds,
         sortOrder: sidebarThreadSortOrder,
       });
-      await api.orchestration.dispatchCommand({
-        type: "thread.delete",
-        commandId: newCommandId(),
-        threadId: threadRef.threadId,
-      });
-      refreshArchivedThreadsForEnvironment(threadRef.environmentId);
-      clearComposerDraftForThread(threadRef);
-      clearProjectDraftThreadById(
-        scopeProjectRef(threadRef.environmentId, thread.projectId),
-        threadRef,
-      );
-      clearTerminalState(threadRef);
-
-      if (shouldNavigateToFallback) {
-        if (fallbackThreadId) {
-          const fallbackThread = selectThreadByRef(
-            useStore.getState(),
-            scopeThreadRef(threadRef.environmentId, fallbackThreadId),
-          );
-          if (fallbackThread) {
-            await router.navigate({
-              to: "/$environmentId/$threadId",
-              params: buildThreadRouteParams(
-                scopeThreadRef(fallbackThread.environmentId, fallbackThread.id),
-              ),
-              replace: true,
-            });
-          } else {
-            await router.navigate({ to: "/", replace: true });
-          }
-        } else {
-          await router.navigate({ to: "/", replace: true });
-        }
-      }
-
-      if (!shouldDeleteWorktree || !orphanedWorktreePath || !threadProject) {
-        return;
-      }
-
-      try {
-        await ensureEnvironmentApi(threadRef.environmentId).vcs.removeWorktree({
-          cwd: threadProject.cwd,
-          path: orphanedWorktreePath,
-          force: true,
-        });
-        await invalidateGitQueries(queryClient, {
-          environmentId: threadRef.environmentId,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error removing worktree.";
-        console.error("Failed to remove orphaned worktree after thread deletion", {
+      const deleteThreadRecord = async () => {
+        await api.orchestration.dispatchCommand({
+          type: "thread.delete",
+          commandId: newCommandId(),
           threadId: threadRef.threadId,
-          projectCwd: threadProject.cwd,
-          worktreePath: orphanedWorktreePath,
-          error,
         });
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Thread deleted, but worktree removal failed",
-            description: `Could not remove ${displayWorktreePath ?? orphanedWorktreePath}. ${message}`,
-          }),
+        refreshArchivedThreadsForEnvironment(threadRef.environmentId);
+      };
+      const clearLocalThreadState = () => {
+        clearComposerDraftForThread(threadRef);
+        clearProjectDraftThreadById(
+          scopeProjectRef(threadRef.environmentId, thread.projectId),
+          threadRef,
         );
-      }
+        clearTerminalState(threadRef);
+      };
+      const navigateToFallback = shouldNavigateToFallback
+        ? async () => {
+            if (fallbackThreadId) {
+              const fallbackThread = selectThreadByRef(
+                useStore.getState(),
+                scopeThreadRef(threadRef.environmentId, fallbackThreadId),
+              );
+              if (fallbackThread) {
+                await router.navigate({
+                  to: "/$environmentId/$threadId",
+                  params: buildThreadRouteParams(
+                    scopeThreadRef(fallbackThread.environmentId, fallbackThread.id),
+                  ),
+                  replace: true,
+                });
+              } else {
+                await router.navigate({ to: "/", replace: true });
+              }
+            } else {
+              await router.navigate({ to: "/", replace: true });
+            }
+          }
+        : undefined;
+      const removeOrphanedWorktree =
+        shouldDeleteWorktree && orphanedWorktreePath && threadProject
+          ? async () => {
+              await ensureEnvironmentApi(threadRef.environmentId).vcs.removeWorktree({
+                cwd: threadProject.cwd,
+                path: orphanedWorktreePath,
+                force: true,
+              });
+              await invalidateGitQueries(queryClient, {
+                environmentId: threadRef.environmentId,
+              });
+            }
+          : undefined;
+      const onWorktreeRemovalError =
+        shouldDeleteWorktree && orphanedWorktreePath
+          ? (error: unknown) => {
+              const message =
+                error instanceof Error ? error.message : "Unknown error removing worktree.";
+              console.error("Failed to remove orphaned worktree after thread deletion", {
+                threadId: threadRef.threadId,
+                projectCwd: threadProject?.cwd,
+                worktreePath: orphanedWorktreePath,
+                error,
+              });
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Thread deleted, but worktree removal failed",
+                  description: `Could not remove ${displayWorktreePath ?? orphanedWorktreePath}. ${message}`,
+                }),
+              );
+            }
+          : undefined;
+
+      await runThreadDeletionLifecycle({
+        ...(stopSession ? { stopSession } : {}),
+        closeTerminalState,
+        deleteThreadRecord,
+        clearLocalThreadState,
+        ...(removeOrphanedWorktree ? { removeOrphanedWorktree } : {}),
+        ...(navigateToFallback ? { navigateToFallback } : {}),
+        ...(onWorktreeRemovalError ? { onWorktreeRemovalError } : {}),
+      });
     },
     [
       clearComposerDraftForThread,
@@ -265,11 +289,11 @@ export function useThreadActions() {
     async (target: ScopedThreadRef) => {
       const api = readEnvironmentApi(target.environmentId);
       if (!api) return;
-      const localApi = readLocalApi();
       const resolved = resolveThreadTarget(target);
+      const title = resolved?.thread.title ?? "this thread";
+      const localApi = readLocalApi();
 
       if (confirmThreadDelete && localApi) {
-        const title = resolved?.thread.title ?? "this thread";
         const confirmed = await localApi.dialogs.confirm(
           [
             `Delete thread "${title}"?`,

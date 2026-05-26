@@ -246,6 +246,7 @@ Required tests:
 - rich draft mode and toolbar survive the rebuild draft store. Done in `61686eec`.
 - screenshot attach writes to the active draft and preview state
 - Git branch picker actions do not clear prompt text, images, terminal chips, or rich draft mode. Done in current working change.
+- Worktree discard removes orphaned worktrees before routing to fallback content. Done in current working change.
 - provider switches keep draft ownership and selected provider instance
 - slash commands and skills come from the active custom provider instance
 

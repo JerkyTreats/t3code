@@ -161,6 +161,7 @@ export const FORK_FEATURE_CONTRACTS = [
       "apps/web/src/components/GitActionsControl.logic.ts",
       "apps/web/src/composerDraftStore.ts",
       "apps/web/src/components/ChatView.browser.tsx",
+      "apps/web/src/lib/threadDeletionWorkflow.ts",
     ],
     scenarios: [
       {

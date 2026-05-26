@@ -198,6 +198,7 @@ Git panel flows must not take ownership of the active composer draft or silently
 - `apps/web/src/components/GitActionsControl.logic.ts`
 - `apps/web/src/composerDraftStore.ts`
 - `apps/web/src/components/ChatView.browser.tsx`
+- `apps/web/src/lib/threadDeletionWorkflow.ts`
 
 ### Upstream Intake Rule
 
@@ -209,6 +210,7 @@ Git panel flows must not take ownership of the active composer draft or silently
 - Opening and using Git panel flows does not clear the active draft.
 - Branch and worktree routing preserves the expected draft thread state.
 - Changing the Git base branch preserves prompt text, images, terminal context chips, and rich draft mode on the active draft.
+- Worktree removal completes before fallback navigation when deleting the only thread linked to a dedicated worktree.
 - Discarding a dedicated worktree returns the user to a stable primary workspace draft without losing unrelated draft content.
 
 ## F6 Fork First GitHub Identity Resolution
