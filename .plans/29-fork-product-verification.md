@@ -61,11 +61,12 @@ Avoid copying whole upstream components into fork folders unless the entire comp
 - Commit `72c723df` ports `F1` product identity through shared identity helpers, desktop environment wiring, web fallback branding, and release script naming.
 - Commit `b2ce22b7` ports the `F10` Codex binary resolver and app server initialize version path.
 - Commit `5780a8a3` ports the desktop side of `F2` and `F3` through Omarchy theme and screenshot fork services, IPC bridge wiring, and web theme projection.
+- This lane ports `F3` screenshot attach through a web fork seam and the active composer draft store.
 
 Remaining work in those areas:
 
 - `F2` still needs browser level assertions for projected CSS variables.
-- `F3` still needs composer screenshot attach wiring and visible composer chrome coverage.
+- `F3` still needs visible composer chrome browser coverage.
 - `F10` still needs settings UI coverage for detected binaries and active instance capability routing.
 
 ### Covered With Meaningful Existing Tests
@@ -219,7 +220,7 @@ First port steps:
 2. Add IPC schemas and bridge methods for theme and screenshot. Done in `5780a8a3`.
 3. Wire desktop services into Effect layers and desktop bootstrap. Done in `5780a8a3`.
 4. Port theme projection into the rebuild web hook. Done in `5780a8a3`.
-5. Wire screenshot capture through `ChatComposer` draft ownership.
+5. Wire screenshot capture through `ChatComposer` draft ownership. Done in this lane.
 
 ### Web Composer And Draft Autonomy
 
@@ -250,7 +251,7 @@ Required tests:
 First port steps:
 
 1. Add composer fork policy modules.
-2. Port screenshot data URL conversion and draft attach logic.
+2. Port screenshot data URL conversion and draft attach logic. Done in this lane.
 3. Add rich draft mode to the rebuild draft store.
 4. Wire top action chrome and toolbar into `ChatComposer`.
 5. Add browser tests before porting broader UI behavior.

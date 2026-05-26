@@ -131,8 +131,8 @@ Screenshot capture and attach flows are tuned for Omarchy tooling and Linux desk
 - `apps/desktop/src/preload.ts`
 - `apps/desktop/src/ipc/channels.ts`
 - `apps/desktop/src/ipc/methods/window.ts`
-- `apps/web/src/components/chat/ComposerTopActions.tsx`
-- `apps/web/src/components/ChatView.tsx`
+- `apps/web/src/fork/composerScreenshot.ts`
+- `apps/web/src/components/chat/ChatComposer.tsx`
 
 ### Upstream Intake Rule
 
@@ -161,8 +161,8 @@ The composer owns its local draft state and preserves rich draft behavior under 
 ### Owner Modules
 
 - `apps/web/src/components/ChatView.tsx`
-- `apps/web/src/components/chat/ComposerTopActions.tsx`
-- `apps/web/src/components/chat/ComposerRichDraftToolbar.tsx`
+- `apps/web/src/fork/composerScreenshot.ts`
+- `apps/web/src/components/chat/ChatComposer.tsx`
 - `apps/web/src/composerDraftStore.ts`
 
 ### Upstream Intake Rule

@@ -78,6 +78,7 @@ import {
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../vscode-icons";
+import { attachDesktopScreenshotToComposerDraft } from "../../fork/composerScreenshot";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
 import { Button } from "../ui/button";
@@ -86,6 +87,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import {
   BotIcon,
+  CameraIcon,
   CircleAlertIcon,
   ListTodoIcon,
   type LucideIcon,
@@ -566,6 +568,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerImages = composerDraft.images;
   const composerTerminalContexts = composerDraft.terminalContexts;
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
+  const [isCapturingDesktopScreenshot, setIsCapturingDesktopScreenshot] = useState(false);
+  const canCaptureDesktopScreenshot =
+    typeof window !== "undefined" && typeof window.desktopBridge?.captureScreenshot === "function";
 
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
@@ -1737,6 +1742,61 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setThreadError(activeThreadId, error);
   };
 
+  const onAttachDesktopScreenshot = async () => {
+    if (!activeThreadId || isCapturingDesktopScreenshot) return;
+    if (pendingUserInputs.length > 0) {
+      toastManager.add({
+        type: "error",
+        title: "Attach images after answering plan questions.",
+      });
+      return;
+    }
+
+    setIsCapturingDesktopScreenshot(true);
+    try {
+      const result = await attachDesktopScreenshotToComposerDraft({
+        addImage: addComposerImage,
+        bridge: typeof window !== "undefined" ? window.desktopBridge : undefined,
+        createImageId: randomUUID,
+        currentImageCount: composerImagesRef.current.length,
+        maxAttachments: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+        maxImageBytes: PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+      });
+
+      switch (result.status) {
+        case "attached":
+        case "cancelled":
+          setThreadError(activeThreadId, null);
+          return;
+        case "too-large":
+          setThreadError(
+            activeThreadId,
+            `'${result.name}' exceeds the ${IMAGE_SIZE_LIMIT_LABEL} attachment limit.`,
+          );
+          return;
+        case "too-many":
+          setThreadError(
+            activeThreadId,
+            `You can attach up to ${result.maxAttachments} images per message.`,
+          );
+          return;
+        case "unavailable":
+          toastManager.add({
+            type: "error",
+            title: "Screenshot capture is available in the desktop app.",
+          });
+          return;
+      }
+    } catch (error) {
+      toastManager.add({
+        type: "error",
+        title: error instanceof Error ? error.message : "Screenshot capture failed.",
+      });
+    } finally {
+      setIsCapturingDesktopScreenshot(false);
+    }
+  };
+
   const removeComposerImage = (imageId: string) => {
     removeComposerImageFromDraft(imageId);
   };
@@ -2390,6 +2450,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }
                 className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
               >
+                {canCaptureDesktopScreenshot ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    className="rounded-full text-muted-foreground/80 hover:text-foreground"
+                    disabled={
+                      isCapturingDesktopScreenshot ||
+                      isSendBusy ||
+                      isConnecting ||
+                      environmentUnavailable !== null ||
+                      activePendingApproval !== null
+                    }
+                    aria-label="Attach screenshot"
+                    title="Attach screenshot"
+                    onClick={() => void onAttachDesktopScreenshot()}
+                  >
+                    <CameraIcon
+                      className={cn("size-4", isCapturingDesktopScreenshot && "animate-pulse")}
+                    />
+                  </Button>
+                ) : null}
                 <ComposerFooterPrimaryActions
                   compact={isComposerPrimaryActionsCompact}
                   activeContextWindow={activeContextWindow}
