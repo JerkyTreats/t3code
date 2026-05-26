@@ -162,7 +162,9 @@ The composer owns its local draft state and preserves rich draft behavior under 
 
 - `apps/web/src/components/ChatView.tsx`
 - `apps/web/src/fork/composerScreenshot.ts`
+- `apps/web/src/fork/composerRichDraft.ts`
 - `apps/web/src/components/chat/ChatComposer.tsx`
+- `apps/web/src/components/chat/ComposerRichDraftToolbar.tsx`
 - `apps/web/src/composerDraftStore.ts`
 
 ### Upstream Intake Rule
@@ -174,7 +176,7 @@ The composer owns its local draft state and preserves rich draft behavior under 
 
 - Draft text and attachments survive nearby UI interactions.
 - Runtime access and screenshot controls remain in the fork chrome position.
-- Rich draft controls remain present when enabled.
+- Rich draft controls remain present when enabled and formatting actions update the active draft.
 
 ## F5 Git Panel Isolation From Draft Ownership
 

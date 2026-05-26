@@ -50,6 +50,10 @@ import {
   useEffectiveComposerModelState,
 } from "../../composerDraftStore";
 import {
+  buildComposerRichDraftEdit,
+  type ComposerRichDraftFormat,
+} from "../../fork/composerRichDraft";
+import {
   type TerminalContextDraft,
   type TerminalContextSelection,
   insertInlineTerminalContextPlaceholder,
@@ -65,6 +69,7 @@ import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommand
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
+import { ComposerRichDraftToolbar } from "./ComposerRichDraftToolbar";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -84,11 +89,13 @@ import { Separator } from "../ui/separator";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Toggle } from "../ui/toggle";
 import { toastManager } from "../ui/toast";
 import {
   BotIcon,
   CameraIcon,
   CircleAlertIcon,
+  LetterTextIcon,
   ListTodoIcon,
   type LucideIcon,
   LockIcon,
@@ -568,11 +575,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerImages = composerDraft.images;
   const composerTerminalContexts = composerDraft.terminalContexts;
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
+  const richDraftMode = composerDraft.richDraftMode;
   const [isCapturingDesktopScreenshot, setIsCapturingDesktopScreenshot] = useState(false);
   const canCaptureDesktopScreenshot =
     typeof window !== "undefined" && typeof window.desktopBridge?.captureScreenshot === "function";
 
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
+  const setComposerDraftRichDraftMode = useComposerDraftStore((store) => store.setRichDraftMode);
   const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
   const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
@@ -1100,6 +1109,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [composerDraftTarget, removeComposerDraftImage],
   );
 
+  const setRichDraftMode = useCallback(
+    (enabled: boolean) => {
+      setComposerDraftRichDraftMode(composerDraftTarget, enabled);
+      scheduleComposerFocus();
+    },
+    [composerDraftTarget, scheduleComposerFocus, setComposerDraftRichDraftMode],
+  );
+
   const removeComposerTerminalContextFromDraft = useCallback(
     (contextId: string) => {
       const contextIndex = composerTerminalContexts.findIndex(
@@ -1408,7 +1425,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       rangeStart: number,
       rangeEnd: number,
       replacement: string,
-      options?: { expectedText?: string; focusEditorAfterReplace?: boolean },
+      options?: {
+        expectedText?: string;
+        focusEditorAfterReplace?: boolean;
+        nextExpandedCursor?: number;
+      },
     ): boolean => {
       const currentText = promptRef.current;
       const safeStart = Math.max(0, Math.min(currentText.length, rangeStart));
@@ -1420,8 +1441,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return false;
       }
       const next = replaceTextRange(promptRef.current, rangeStart, rangeEnd, replacement);
-      const nextCursor = collapseExpandedComposerCursor(next.text, next.cursor);
-      const nextExpandedCursor = expandCollapsedComposerCursor(next.text, nextCursor);
+      const nextExpandedCursor = options?.nextExpandedCursor ?? next.cursor;
+      const nextCursor = collapseExpandedComposerCursor(next.text, nextExpandedCursor);
       promptRef.current = next.text;
       const activePendingQuestion = activePendingProgress?.activeQuestion;
       if (activePendingQuestion && activePendingUserInput) {
@@ -1457,6 +1478,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     value: string;
     cursor: number;
     expandedCursor: number;
+    selectionStart: number;
+    selectionEnd: number;
     terminalContextIds: string[];
   } => {
     const editorSnapshot = composerEditorRef.current?.readSnapshot();
@@ -1467,9 +1490,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       value: promptRef.current,
       cursor: composerCursor,
       expandedCursor: expandCollapsedComposerCursor(promptRef.current, composerCursor),
+      selectionStart: expandCollapsedComposerCursor(promptRef.current, composerCursor),
+      selectionEnd: expandCollapsedComposerCursor(promptRef.current, composerCursor),
       terminalContextIds: composerTerminalContexts.map((context) => context.id),
     };
   }, [composerCursor, composerTerminalContexts, promptRef]);
+
+  const onApplyRichDraftFormat = useCallback(
+    (format: ComposerRichDraftFormat) => {
+      const snapshot = readComposerSnapshot();
+      const edit = buildComposerRichDraftEdit({
+        text: snapshot.value,
+        selectionStart: snapshot.selectionStart,
+        selectionEnd: snapshot.selectionEnd,
+        format,
+      });
+      applyPromptReplacement(edit.rangeStart, edit.rangeEnd, edit.replacement, {
+        nextExpandedCursor: edit.nextExpandedCursor,
+      });
+    },
+    [applyPromptReplacement, readComposerSnapshot],
+  );
 
   const resolveActiveComposerTrigger = useCallback((): {
     snapshot: { value: string; cursor: number; expandedCursor: number };
@@ -1687,7 +1728,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return true;
       }
     }
-    if (key === "Enter" && !event.shiftKey) {
+    if (key === "Enter" && !event.shiftKey && !richDraftMode) {
       submitComposer();
       return true;
     }
@@ -2293,6 +2334,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 </div>
               )}
 
+            {richDraftMode &&
+            !isComposerCollapsedMobile &&
+            !isComposerApprovalState &&
+            activePendingApproval === null ? (
+              <div className="mb-2">
+                <ComposerRichDraftToolbar
+                  disabled={isConnecting || environmentUnavailable !== null}
+                  onApplyFormat={onApplyRichDraftFormat}
+                />
+              </div>
+            ) : null}
+
             <div className="relative">
               <ComposerPromptEditor
                 editorRef={composerEditorRef}
@@ -2450,6 +2503,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }
                 className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
               >
+                {!activePendingApproval ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Toggle
+                          pressed={richDraftMode}
+                          onPressedChange={setRichDraftMode}
+                          aria-label={
+                            richDraftMode ? "Disable rich draft mode" : "Enable rich draft mode"
+                          }
+                          variant="outline"
+                          size="xs"
+                          className="rounded-full border-border/60 bg-background/80 text-muted-foreground/80 shadow-xs/5 hover:bg-background hover:text-foreground data-pressed:border-primary/35 data-pressed:bg-primary/10 data-pressed:text-foreground"
+                        >
+                          <LetterTextIcon className="size-3.5" />
+                        </Toggle>
+                      }
+                    />
+                    <TooltipPopup side="top">
+                      {richDraftMode
+                        ? "Rich draft on, Enter adds a new line"
+                        : "Rich draft off, Enter sends"}
+                    </TooltipPopup>
+                  </Tooltip>
+                ) : null}
                 {canCaptureDesktopScreenshot ? (
                   <Button
                     type="button"

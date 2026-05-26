@@ -98,11 +98,13 @@ export const FORK_FEATURE_CONTRACTS = [
     id: "F3",
     title: "Omarchy screenshot capture and attach flow",
     ownerModules: [
-      "apps/desktop/src/screenshotCapture.ts",
+      "apps/desktop/src/fork/OmarchyScreenshotCapture.ts",
       "apps/desktop/src/main.ts",
       "apps/desktop/src/preload.ts",
-      "apps/web/src/components/chat/ComposerTopActions.tsx",
-      "apps/web/src/components/ChatView.tsx",
+      "apps/desktop/src/ipc/channels.ts",
+      "apps/desktop/src/ipc/methods/window.ts",
+      "apps/web/src/fork/composerScreenshot.ts",
+      "apps/web/src/components/chat/ChatComposer.tsx",
     ],
     scenarios: [
       {
@@ -124,7 +126,9 @@ export const FORK_FEATURE_CONTRACTS = [
     title: "Composer draft autonomy and chrome",
     ownerModules: [
       "apps/web/src/components/ChatView.tsx",
-      "apps/web/src/components/chat/ComposerTopActions.tsx",
+      "apps/web/src/fork/composerScreenshot.ts",
+      "apps/web/src/fork/composerRichDraft.ts",
+      "apps/web/src/components/chat/ChatComposer.tsx",
       "apps/web/src/components/chat/ComposerRichDraftToolbar.tsx",
       "apps/web/src/composerDraftStore.ts",
     ],
@@ -140,6 +144,12 @@ export const FORK_FEATURE_CONTRACTS = [
         outcome:
           "Runtime access and screenshot controls remain available in the fork composer chrome.",
         levels: ["browser"],
+      },
+      {
+        id: "f4-rich-draft-controls-format-active-draft",
+        outcome:
+          "Rich draft mode keeps Enter from sending and formatting controls update the active draft.",
+        levels: ["unit", "browser"],
       },
     ],
   },

@@ -3610,6 +3610,43 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("keeps rich draft mode and toolbar formatting in the active draft", async () => {
+    setDraftThreadWithoutWorktree();
+    useComposerDraftStore.getState().setPrompt(THREAD_REF, "Explain the visible error");
+
+    const mounted = await mountChatView({
+      viewport: WIDE_FOOTER_VIEWPORT,
+      snapshot: createDraftOnlySnapshot(),
+    });
+
+    try {
+      await page.getByLabelText("Enable rich draft mode").click();
+
+      await vi.waitFor(
+        () => {
+          expect(composerDraftFor(THREAD_ID)?.richDraftMode).toBe(true);
+          expect(
+            document.querySelector('[data-chat-composer-rich-draft-toolbar="true"]'),
+          ).toBeTruthy();
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+
+      await page.getByLabelText("Apply bold formatting").click();
+
+      await vi.waitFor(
+        () => {
+          const draft = composerDraftFor(THREAD_ID);
+          expect(draft?.richDraftMode).toBe(true);
+          expect(draft?.prompt).toBe("Explain the visible error****");
+        },
+        { timeout: 8_000, interval: 16 },
+      );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("keeps removed terminal context pills removed when a new one is added", async () => {
     const removedLabel = "Terminal 1 lines 1-2";
     const addedLabel = "Terminal 2 lines 9-10";

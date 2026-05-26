@@ -256,6 +256,45 @@ describe("composerDraftStore addImages", () => {
   });
 });
 
+describe("composerDraftStore richDraftMode", () => {
+  const threadId = ThreadId.make("thread-rich-draft");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("persists rich draft mode as active draft state", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setRichDraftMode(threadRef, true);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.richDraftMode).toBe(true);
+  });
+
+  it("removes an otherwise empty draft when rich draft mode is disabled", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setRichDraftMode(threadRef, true);
+    store.setRichDraftMode(threadRef, false);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
+  it("preserves prompt text when rich draft mode is disabled", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setPrompt(threadRef, "Keep this draft");
+    store.setRichDraftMode(threadRef, true);
+    store.setRichDraftMode(threadRef, false);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      prompt: "Keep this draft",
+      richDraftMode: false,
+    });
+  });
+});
+
 describe("composerDraftStore clearComposerContent", () => {
   const threadId = ThreadId.make("thread-clear");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
