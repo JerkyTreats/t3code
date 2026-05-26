@@ -56,6 +56,18 @@ Avoid copying whole upstream components into fork folders unless the entire comp
 
 ## Current Audit
 
+## Completed Rebuild Lanes
+
+- Commit `72c723df` ports `F1` product identity through shared identity helpers, desktop environment wiring, web fallback branding, and release script naming.
+- Commit `b2ce22b7` ports the `F10` Codex binary resolver and app server initialize version path.
+- Commit `5780a8a3` ports the desktop side of `F2` and `F3` through Omarchy theme and screenshot fork services, IPC bridge wiring, and web theme projection.
+
+Remaining work in those areas:
+
+- `F2` still needs browser level assertions for projected CSS variables.
+- `F3` still needs composer screenshot attach wiring and visible composer chrome coverage.
+- `F10` still needs settings UI coverage for detected binaries and active instance capability routing.
+
 ### Covered With Meaningful Existing Tests
 
 - Plan activity ingestion and proposed plan projection
@@ -180,7 +192,7 @@ Features: `F1`, `F2`, `F3`
 
 Difficulty: 7 of 10
 
-Finding: the rebuild has a cleaner Effect desktop split, but Omarchy theme projection and screenshot capture are absent. The new composer owns image draft state, so old screenshot plumbing cannot be pasted into `ChatView`.
+Finding: the rebuild has a cleaner Effect desktop split. Omarchy theme projection and screenshot capture are now restored behind desktop fork services and IPC bridge methods. The new composer owns image draft state, so the remaining screenshot attach work belongs in `ChatComposer` instead of main process code.
 
 Required seams:
 
@@ -203,10 +215,10 @@ Required tests:
 
 First port steps:
 
-1. Restore desktop identity through the fork identity seam.
-2. Add IPC schemas and bridge methods for theme and screenshot.
-3. Wire desktop services into Effect layers and desktop bootstrap.
-4. Port theme projection into the rebuild web hook.
+1. Restore desktop identity through the fork identity seam. Done in `72c723df`.
+2. Add IPC schemas and bridge methods for theme and screenshot. Done in `5780a8a3`.
+3. Wire desktop services into Effect layers and desktop bootstrap. Done in `5780a8a3`.
+4. Port theme projection into the rebuild web hook. Done in `5780a8a3`.
 5. Wire screenshot capture through `ChatComposer` draft ownership.
 
 ### Web Composer And Draft Autonomy
@@ -348,7 +360,7 @@ Features: `F10`, `F12`
 
 Difficulty: 7 of 10
 
-Finding: the rebuild has a stronger provider driver and instance registry substrate, but fork Codex binary pinning and explicit version discovery are missing. The app server probe also hard codes `clientInfo.version`.
+Finding: the rebuild has a stronger provider driver and instance registry substrate. Fork Codex binary pinning and explicit version discovery are now restored for provider status probing, and the app server probe uses the resolved Codex CLI version for `clientInfo.version`.
 
 Required seams:
 
@@ -367,9 +379,9 @@ Required tests:
 
 First port steps:
 
-1. Port binary resolver into the Codex discovery seam.
-2. Replace hard coded app server probe version.
-3. Preserve rebuild provider registry and status cache shape.
+1. Port binary resolver into the Codex discovery seam. Done in `b2ce22b7`.
+2. Replace hard coded app server probe version. Done in `b2ce22b7`.
+3. Preserve rebuild provider registry and status cache shape. Done in `b2ce22b7`.
 4. Route composer skills and slash commands through active instance capability policy.
 
 ### Auth Access And Remote Pairing
@@ -456,10 +468,11 @@ Before switching to an upstream base rewrite branch:
 
 ### Slice D: Desktop Omarchy
 
-- Theme reader emits `omarchy` source and projected palette values
-- Missing Omarchy state degrades without claiming generic system authority
-- Screenshot capture prefers `omarchy-capture-screenshot`
-- Clipboard fallback attaches an image when Omarchy writes only to clipboard
+- Theme reader emits `omarchy` source and projected palette values. Covered by `apps/desktop/src/fork/OmarchyThemeSource.test.ts`.
+- Missing Omarchy state degrades without claiming generic system authority. Covered by `apps/desktop/src/fork/OmarchyThemeSource.test.ts`.
+- Screenshot capture prefers `omarchy-capture-screenshot`. Covered by `apps/desktop/src/fork/OmarchyScreenshotCapture.test.ts`.
+- Clipboard fallback captures an image when Omarchy writes only to clipboard. Covered by `apps/desktop/src/fork/OmarchyScreenshotCapture.test.ts`.
+- Composer attach flow still needs web coverage.
 
 ## Completion Criteria
 
