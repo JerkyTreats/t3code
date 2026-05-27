@@ -2514,7 +2514,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             richDraftMode ? "Disable rich draft mode" : "Enable rich draft mode"
                           }
                           variant="outline"
-                          size="xs"
+                          size={pendingPrimaryAction ? "sm" : "default"}
                           className="rounded-full border-border/60 bg-background/80 text-muted-foreground/80 shadow-xs/5 hover:bg-background hover:text-foreground data-pressed:border-primary/35 data-pressed:bg-primary/10 data-pressed:text-foreground"
                         >
                           <LetterTextIcon className="size-3.5" />
@@ -2531,7 +2531,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 {canCaptureDesktopScreenshot ? (
                   <Button
                     type="button"
-                    size="icon-sm"
+                    size={pendingPrimaryAction ? "icon-sm" : "icon"}
                     variant="ghost"
                     className="rounded-full text-muted-foreground/80 hover:text-foreground"
                     disabled={
