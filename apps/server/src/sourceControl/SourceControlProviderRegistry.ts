@@ -9,7 +9,6 @@ import {
   type SourceControlProviderDiscoveryItem,
 } from "@t3tools/contracts";
 import type { SourceControlProviderKind } from "@t3tools/contracts";
-import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
 import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
 import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
@@ -18,6 +17,7 @@ import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 import * as SourceControlProviderDiscovery from "./SourceControlProviderDiscovery.ts";
 import { ServerConfig } from "../config.ts";
+import { pickForkSourceControlContext } from "../fork/sourceControlContextPolicy.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 
@@ -92,25 +92,7 @@ function selectProviderContext(
     readonly url: string;
   }>,
 ): SourceControlProvider.SourceControlProviderContext | null {
-  const candidates = remotes
-    .map((remote) => {
-      const provider = detectSourceControlProviderFromRemoteUrl(remote.url);
-      return provider
-        ? {
-            provider,
-            remoteName: remote.name,
-            remoteUrl: remote.url,
-          }
-        : null;
-    })
-    .filter((value): value is SourceControlProvider.SourceControlProviderContext => value !== null);
-
-  return (
-    candidates.find((candidate) => candidate.remoteName === "origin") ??
-    candidates.find((candidate) => candidate.provider.kind !== "unknown") ??
-    candidates[0] ??
-    null
-  );
+  return pickForkSourceControlContext(remotes);
 }
 
 function bindProviderContext(

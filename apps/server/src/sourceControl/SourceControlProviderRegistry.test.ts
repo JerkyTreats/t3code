@@ -146,3 +146,20 @@ it.effect("falls back to a non-origin remote when origin is not configured", () 
     assert.strictEqual(provider.kind, "azure-devops");
   }),
 );
+
+it.effect("prefers an explicit fork remote for provider context", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [
+        { name: "origin", url: "git@gitlab.com:T3Tools/t3code.git" },
+        { name: "fork", url: "git@gitlab.com:julius/t3code.git" },
+      ],
+    });
+
+    const handle = yield* registry.resolveHandle({ cwd: "/repo" });
+
+    assert.strictEqual(handle.provider.kind, "gitlab");
+    assert.strictEqual(handle.context?.remoteName, "fork");
+    assert.strictEqual(handle.context?.remoteUrl, "git@gitlab.com:julius/t3code.git");
+  }),
+);

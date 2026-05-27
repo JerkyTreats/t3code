@@ -279,7 +279,7 @@ function getMenuActionDisabledReason({
       return "Branch is behind upstream. Pull/rebase before pushing.";
     }
     if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
-      return 'Add an "origin" remote before pushing.';
+      return "Add a primary remote before pushing.";
     }
     if (!isAhead) {
       return "No local commits to push.";
@@ -292,7 +292,7 @@ function getMenuActionDisabledReason({
       return "Detached HEAD: checkout a refName before promoting.";
     }
     if (!hasPrimaryRemote) {
-      return 'Add an "origin" remote before promoting.';
+      return "Add a primary remote before promoting.";
     }
     if (isBehind) {
       return "Branch is behind upstream. Pull/rebase before promoting.";
@@ -316,7 +316,7 @@ function getMenuActionDisabledReason({
     return `Commit local changes before creating a ${terminology.singular}.`;
   }
   if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
-    return `Add an "origin" remote before creating a ${terminology.singular}.`;
+    return `Add a primary remote before creating a ${terminology.singular}.`;
   }
   if (!isAhead) {
     return `No local commits to include in a ${terminology.singular}.`;
@@ -1268,7 +1268,7 @@ export default function GitActionsControl({
     if (!prUrl) {
       toastManager.add({
         type: "error",
-        title: "No open pull request found.",
+        title: `No open ${changeRequestTerminology.singular} found.`,
         data: threadToastData,
       });
       return;
@@ -1277,13 +1277,13 @@ export default function GitActionsControl({
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Unable to open pull request link",
+          title: `Unable to open ${changeRequestTerminology.singular} link`,
           description: err instanceof Error ? err.message : "An error occurred.",
           ...(threadToastData !== undefined ? { data: threadToastData } : {}),
         }),
       );
     });
-  }, [gitStatusForActions, threadToastData]);
+  }, [changeRequestTerminology.singular, gitStatusForActions, threadToastData]);
 
   runGitActionWithToast = useEffectEvent(
     async ({
@@ -1818,7 +1818,7 @@ export default function GitActionsControl({
               ) : null}
               {gitStatusForActions?.refName === null && (
                 <p className="px-2 py-1.5 text-xs text-warning">
-                  Detached HEAD: create and checkout a refName to enable push and pull request
+                  Detached HEAD: create and checkout a refName to enable push and change request
                   actions.
                 </p>
               )}
@@ -2028,7 +2028,7 @@ export default function GitActionsControl({
               <code className="rounded bg-muted px-1 font-mono text-xs">
                 {promoteTargetBranch ?? "target"}
               </code>
-              , push, and delete the source branch. This bypasses pull request review.
+              , push, and delete the source branch. This bypasses change request review.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel className="space-y-3">
