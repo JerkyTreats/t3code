@@ -61,9 +61,11 @@ Avoid copying whole upstream components into fork folders unless the entire comp
 - Commit `72c723df` ports `F1` product identity through shared identity helpers, desktop environment wiring, web fallback branding, and release script naming.
 - Commit `b2ce22b7` ports the `F10` Codex binary resolver and app server initialize version path.
 - Commit `5780a8a3` ports the desktop side of `F2` and `F3` through Omarchy theme and screenshot fork services, IPC bridge wiring, and web theme projection.
-- This lane ports `F3` screenshot attach through a web fork seam, the active composer draft store, and browser coverage for the visible screenshot control.
+- Commit `6389ff36` ports `F3` screenshot attach through a web fork seam, the active composer draft store, and browser coverage for the visible screenshot control.
+- Commit `82eb15ad` adds browser coverage for the desktop screenshot composer chrome.
 - Commit `61686eec` ports `F4` rich draft mode through fork formatting helpers, active draft state, and browser coverage for the visible toolbar.
-- Current working change expands `F5` Git action draft isolation coverage for branch picker changes on active drafts.
+- Commit `142552e6` expands `F5` Git action draft isolation coverage for branch picker changes on active drafts.
+- Commit `3c08b596` fixes `F5` deletion sequencing so orphaned worktree removal runs before fallback routing.
 
 Remaining work in those areas:
 
@@ -245,8 +247,8 @@ Required tests:
 - visible composer chrome includes screenshot and runtime access controls
 - rich draft mode and toolbar survive the rebuild draft store. Done in `61686eec`.
 - screenshot attach writes to the active draft and preview state
-- Git branch picker actions do not clear prompt text, images, terminal chips, or rich draft mode. Done in current working change.
-- Worktree discard removes orphaned worktrees before routing to fallback content. Done in current working change.
+- Git branch picker actions do not clear prompt text, images, terminal chips, or rich draft mode. Done in `142552e6`.
+- Worktree discard removes orphaned worktrees before routing to fallback content. Done in `3c08b596`.
 - provider switches keep draft ownership and selected provider instance
 - slash commands and skills come from the active custom provider instance
 
