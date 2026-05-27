@@ -14,6 +14,7 @@ import {
   RepositoryIdentityResolver,
   type RepositoryIdentityResolverShape,
 } from "../Services/RepositoryIdentityResolver.ts";
+import { pickForkFirstRemote } from "../../fork/gitIdentityPolicy.ts";
 
 function parseRemoteFetchUrls(stdout: string): Map<string, string> {
   const remotes = new Map<string, string>();
@@ -34,16 +35,13 @@ function parseRemoteFetchUrls(stdout: string): Map<string, string> {
 function pickPrimaryRemote(
   remotes: ReadonlyMap<string, string>,
 ): { readonly remoteName: string; readonly remoteUrl: string } | null {
-  for (const preferredRemoteName of ["upstream", "origin"] as const) {
-    const remoteUrl = remotes.get(preferredRemoteName);
-    if (remoteUrl) {
-      return { remoteName: preferredRemoteName, remoteUrl };
-    }
-  }
-
-  const [remoteName, remoteUrl] =
-    [...remotes.entries()].toSorted(([left], [right]) => left.localeCompare(right))[0] ?? [];
-  return remoteName && remoteUrl ? { remoteName, remoteUrl } : null;
+  const remote = pickForkFirstRemote(
+    [...remotes.entries()].map(([name, url]) => ({
+      name,
+      url,
+    })),
+  );
+  return remote ? { remoteName: remote.name, remoteUrl: remote.url } : null;
 }
 
 function buildRepositoryIdentity(input: {
