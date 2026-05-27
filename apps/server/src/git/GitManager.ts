@@ -96,6 +96,7 @@ const SHORT_SHA_LENGTH = 7;
 const TOAST_DESCRIPTION_MAX = 72;
 const STATUS_RESULT_CACHE_TTL = Duration.seconds(1);
 const STATUS_RESULT_CACHE_CAPACITY = 2_048;
+const PROMOTE_BACKUP_BRANCH_PREFIX = "t3code/promote-backup";
 type StripProgressContext<T> = T extends any ? Omit<T, "actionId" | "cwd" | "action"> : never;
 type GitActionProgressPayload = StripProgressContext<GitActionProgressEvent>;
 type GitActionProgressEmitter = (event: GitActionProgressPayload) => Effect.Effect<void, never>;
@@ -353,13 +354,67 @@ function withDescription(title: string, description: string | undefined) {
   return description ? { title, description } : { title };
 }
 
+function parseRemoteNames(stdout: string): string[] {
+  return stdout
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function parseRemoteRefWithRemoteNames(
+  remoteRef: string | null | undefined,
+  remoteNames: ReadonlyArray<string>,
+): { remoteName: string; remoteBranch: string } | null {
+  const trimmed = remoteRef?.trim() ?? "";
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const sortedRemoteNames = [...remoteNames].toSorted((left, right) => right.length - left.length);
+  for (const remoteName of sortedRemoteNames) {
+    if (!trimmed.startsWith(`${remoteName}/`)) {
+      continue;
+    }
+
+    const remoteBranch = trimmed.slice(remoteName.length + 1).trim();
+    if (remoteBranch.length > 0) {
+      return {
+        remoteName,
+        remoteBranch,
+      };
+    }
+  }
+
+  return null;
+}
+
+function createPromoteBackupBranchName(sourceBranch: string): string {
+  const branchFragment = sanitizeBranchFragment(sourceBranch).trim() || "branch";
+  return `${PROMOTE_BACKUP_BRANCH_PREFIX}/${branchFragment}/${randomUUID().slice(0, 8)}`;
+}
+
 function summarizeGitActionResult(
-  result: Pick<GitRunStackedActionResult, "commit" | "push" | "pr">,
+  result: Pick<GitRunStackedActionResult, "commit" | "push" | "pr" | "promote">,
   terms: ChangeRequestTerminology,
 ): {
   title: string;
   description?: string;
 } {
+  if (result.promote?.status === "promoted") {
+    const description = result.promote.branchDeleted
+      ? `${result.promote.sourceBranch ?? "Feature branch"} deleted`
+      : undefined;
+    return withDescription(`Promoted to ${result.promote.targetBranch ?? "target"}`, description);
+  }
+
+  if (result.promote?.status === "conflicts") {
+    const conflictedFileCount = result.promote.conflictedFiles?.length ?? 0;
+    return {
+      title: "Merge conflicts",
+      description: `${conflictedFileCount} file${conflictedFileCount === 1 ? "" : "s"} need resolution`,
+    };
+  }
+
   if (result.pr.status === "created" || result.pr.status === "opened_existing") {
     const prNumber = result.pr.number ? ` #${result.pr.number}` : "";
     const title = `${result.pr.status === "created" ? "Created" : "Opened"} ${terms.shortLabel}${prNumber}`;
@@ -962,7 +1017,10 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
 
   const buildCompletionToast = Effect.fn("buildCompletionToast")(function* (
     cwd: string,
-    result: Pick<GitRunStackedActionResult, "action" | "branch" | "commit" | "push" | "pr">,
+    result: Pick<
+      GitRunStackedActionResult,
+      "action" | "branch" | "commit" | "push" | "pr" | "promote"
+    >,
   ) {
     const terms = yield* sourceControlProvider(cwd).pipe(
       Effect.map((provider) => getChangeRequestTerminologyForKind(provider.kind)),
@@ -1133,7 +1191,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
   const runCommitStep = Effect.fn("runCommitStep")(function* (
     modelSelection: ModelSelection,
     cwd: string,
-    action: "commit" | "commit_push" | "commit_push_pr",
+    action: "commit" | "commit_push" | "commit_push_pr" | "promote",
     branch: string | null,
     commitMessage?: string,
     preResolvedSuggestion?: CommitAndBranchSuggestion,
@@ -1589,6 +1647,189 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
     };
   });
 
+  const listRemoteNames = Effect.fn("listRemoteNames")(function* (cwd: string) {
+    const result = yield* gitCore.execute({
+      operation: "GitManager.listRemoteNames",
+      cwd,
+      args: ["remote"],
+      allowNonZeroExit: true,
+    });
+    return result.exitCode === 0 ? parseRemoteNames(result.stdout) : [];
+  });
+
+  const resolvePromotePushRemoteName = Effect.fn("resolvePromotePushRemoteName")(function* (
+    cwd: string,
+    branch: string,
+    upstreamRef: string | null,
+  ) {
+    const remoteNames = yield* listRemoteNames(cwd);
+    const upstreamRemote = parseRemoteRefWithRemoteNames(upstreamRef, remoteNames)?.remoteName;
+    if (upstreamRemote) {
+      return upstreamRemote;
+    }
+
+    const branchPushRemote = normalizeOptionalString(
+      yield* gitCore.readConfigValue(cwd, `branch.${branch}.pushRemote`),
+    );
+    if (branchPushRemote) {
+      return branchPushRemote;
+    }
+
+    const pushDefaultRemote = normalizeOptionalString(
+      yield* gitCore.readConfigValue(cwd, "remote.pushDefault"),
+    );
+    if (pushDefaultRemote) {
+      return pushDefaultRemote;
+    }
+
+    if (remoteNames.includes("origin")) {
+      return "origin";
+    }
+
+    const [firstRemote] = remoteNames;
+    if (firstRemote) {
+      return firstRemote;
+    }
+
+    return yield* gitManagerError(
+      "runStackedAction",
+      "Cannot promote because no git remote is configured for this repository.",
+    );
+  });
+
+  const deleteLocalBranch = Effect.fn("deleteLocalBranch")(function* (cwd: string, branch: string) {
+    const result = yield* gitCore
+      .execute({
+        operation: "GitManager.deleteLocalBranch",
+        cwd,
+        args: ["branch", "-d", "--", branch],
+        allowNonZeroExit: true,
+      })
+      .pipe(
+        Effect.catch(() =>
+          Effect.succeed({
+            exitCode: 1,
+            stdout: "",
+            stderr: "",
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          }),
+        ),
+      );
+    return result.exitCode === 0;
+  });
+
+  const readConflictedFiles = Effect.fn("readConflictedFiles")(function* (cwd: string) {
+    const result = yield* gitCore.execute({
+      operation: "GitManager.readConflictedFiles",
+      cwd,
+      args: ["diff", "--name-only", "--diff-filter=U"],
+      allowNonZeroExit: true,
+    });
+    if (result.exitCode !== 0) {
+      return [];
+    }
+    return result.stdout
+      .split(/\r?\n/g)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  });
+
+  const mergeSourceIntoTarget = Effect.fn("mergeSourceIntoTarget")(function* (
+    cwd: string,
+    sourceBranch: string,
+    targetBranch: string,
+  ) {
+    yield* Effect.scoped(gitCore.switchRef({ cwd, refName: targetBranch }));
+    const result = yield* gitCore.execute({
+      operation: "GitManager.mergeSourceIntoTarget",
+      cwd,
+      args: ["merge", "--no-ff", "--no-edit", "--", sourceBranch],
+      allowNonZeroExit: true,
+    });
+    if (result.exitCode === 0) {
+      return { status: "merged" as const, conflictedFiles: [] };
+    }
+
+    const conflictedFiles = yield* readConflictedFiles(cwd);
+    if (conflictedFiles.length > 0) {
+      return { status: "conflicted" as const, conflictedFiles };
+    }
+
+    return yield* gitManagerError(
+      "runStackedAction",
+      result.stderr.trim() || result.stdout.trim() || "Merge failed.",
+    );
+  });
+
+  const runPromoteStep = Effect.fn("runPromoteStep")(function* (input: {
+    cwd: string;
+    sourceBranch: string;
+    targetBranch: string;
+    upstreamRef: string | null;
+    emit: GitActionProgressEmitter;
+  }) {
+    const backupRemoteName = yield* resolvePromotePushRemoteName(
+      input.cwd,
+      input.sourceBranch,
+      input.upstreamRef,
+    );
+    const backupBranch = createPromoteBackupBranchName(input.sourceBranch);
+
+    yield* input.emit({
+      kind: "phase_started",
+      phase: "push",
+      label: "Pushing backup...",
+    });
+    yield* gitCore.execute({
+      operation: "GitManager.runPromoteStep.pushBackup",
+      cwd: input.cwd,
+      args: ["push", backupRemoteName, `HEAD:refs/heads/${backupBranch}`],
+    });
+
+    yield* input.emit({
+      kind: "phase_started",
+      phase: "push",
+      label: `Merging into ${input.targetBranch}...`,
+    });
+    const merge = yield* mergeSourceIntoTarget(input.cwd, input.sourceBranch, input.targetBranch);
+    if (merge.status === "conflicted") {
+      return {
+        push: { status: "skipped_not_requested" as const },
+        promote: {
+          status: "conflicts" as const,
+          sourceBranch: input.sourceBranch,
+          targetBranch: input.targetBranch,
+          conflictedFiles: merge.conflictedFiles,
+        },
+      };
+    }
+
+    yield* input.emit({
+      kind: "phase_started",
+      phase: "push",
+      label: `Pushing ${input.targetBranch}...`,
+    });
+    const push = yield* gitCore.pushCurrentBranch(input.cwd, input.targetBranch);
+
+    yield* input.emit({
+      kind: "phase_started",
+      phase: "push",
+      label: "Cleaning up...",
+    });
+    const branchDeleted = yield* deleteLocalBranch(input.cwd, input.sourceBranch);
+
+    return {
+      push,
+      promote: {
+        status: "promoted" as const,
+        sourceBranch: input.sourceBranch,
+        targetBranch: input.targetBranch,
+        branchDeleted,
+      },
+    };
+  });
+
   const runStackedAction: GitManagerShape["runStackedAction"] = Effect.fn("runStackedAction")(
     function* (input, options) {
       const progress = createProgressEmitter(input, options);
@@ -1599,8 +1840,12 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
         GitManagerServiceError
       > {
         const initialStatus = yield* gitCore.statusDetails(input.cwd);
-        const wantsCommit = isCommitAction(input.action);
+        const wantsCommit =
+          input.action === "promote"
+            ? initialStatus.hasWorkingTreeChanges
+            : isCommitAction(input.action);
         const wantsPush =
+          input.action === "promote" ||
           input.action === "push" ||
           input.action === "commit_push" ||
           input.action === "commit_push_pr" ||
@@ -1608,6 +1853,12 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
             (!initialStatus.hasUpstream || initialStatus.aheadCount > 0));
         const wantsPr = input.action === "create_pr" || input.action === "commit_push_pr";
 
+        if (input.action === "promote" && input.featureBranch) {
+          return yield* gitManagerError(
+            "runStackedAction",
+            "Feature-branch checkout is not supported for promote actions.",
+          );
+        }
         if (input.featureBranch && !wantsCommit) {
           return yield* gitManagerError(
             "runStackedAction",
@@ -1620,13 +1871,28 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
             "Commit local changes before creating a PR.",
           );
         }
+        if (input.action === "promote" && !input.targetBranch) {
+          return yield* gitManagerError(
+            "runStackedAction",
+            "Select a target branch before promoting.",
+          );
+        }
+        if (input.action === "promote" && !initialStatus.branch) {
+          return yield* gitManagerError("runStackedAction", "Cannot promote from detached HEAD.");
+        }
+        if (input.action === "promote" && initialStatus.branch === input.targetBranch) {
+          return yield* gitManagerError("runStackedAction", `Already on ${input.targetBranch}.`);
+        }
 
-        const phases: GitActionProgressPhase[] = [
-          ...(input.featureBranch ? (["branch"] as const) : []),
-          ...(wantsCommit ? (["commit"] as const) : []),
-          ...(wantsPush ? (["push"] as const) : []),
-          ...(wantsPr ? (["pr"] as const) : []),
-        ];
+        const phases: GitActionProgressPhase[] =
+          input.action === "promote"
+            ? [...(wantsCommit ? (["commit"] as const) : []), "push"]
+            : [
+                ...(input.featureBranch ? (["branch"] as const) : []),
+                ...(wantsCommit ? (["commit"] as const) : []),
+                ...(wantsPush ? (["push"] as const) : []),
+                ...(wantsPr ? (["pr"] as const) : []),
+              ];
 
         yield* progress.emit({
           kind: "action_started",
@@ -1676,7 +1942,14 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
         }
 
         const currentBranch = branchStep.name ?? initialStatus.branch;
-        const commitAction = isCommitAction(input.action) ? input.action : null;
+        const commitAction =
+          input.action === "promote"
+            ? initialStatus.hasWorkingTreeChanges
+              ? "promote"
+              : null
+            : isCommitAction(input.action)
+              ? input.action
+              : null;
         const changeRequestTerms = wantsPr
           ? yield* sourceControlProvider(input.cwd).pipe(
               Effect.map((provider) => getChangeRequestTerminologyForKind(provider.kind)),
@@ -1701,6 +1974,40 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
               ),
             )
           : { status: "skipped_not_requested" as const };
+
+        if (input.action === "promote") {
+          if (!currentBranch) {
+            return yield* gitManagerError("runStackedAction", "Cannot promote from detached HEAD.");
+          }
+          const pr = { status: "skipped_not_requested" as const };
+          yield* Ref.set(currentPhase, Option.some("push"));
+          const promoteOutcome = yield* runPromoteStep({
+            cwd: input.cwd,
+            sourceBranch: currentBranch,
+            targetBranch: input.targetBranch!,
+            upstreamRef: initialStatus.upstreamRef,
+            emit: progress.emit,
+          });
+
+          const result = {
+            action: input.action,
+            branch: branchStep,
+            commit,
+            push: promoteOutcome.push,
+            pr,
+            promote: promoteOutcome.promote,
+          };
+          const toast = yield* buildCompletionToast(input.cwd, result);
+          const finishedResult = {
+            ...result,
+            toast,
+          };
+          yield* progress.emit({
+            kind: "action_finished",
+            result: finishedResult,
+          });
+          return finishedResult;
+        }
 
         const push = wantsPush
           ? yield* progress
@@ -1736,6 +2043,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
           commit,
           push,
           pr,
+          promote: undefined,
         });
 
         const result = {
@@ -1744,6 +2052,7 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
           commit,
           push,
           pr,
+          promote: undefined,
           toast,
         };
         yield* progress.emit({

@@ -619,10 +619,11 @@ function runStackedAction(
   manager: GitManagerShape,
   input: {
     cwd: string;
-    action: "commit" | "push" | "create_pr" | "commit_push" | "commit_push_pr";
+    action: "commit" | "push" | "create_pr" | "commit_push" | "commit_push_pr" | "promote";
     actionId?: string;
     commitMessage?: string;
     featureBranch?: boolean;
+    targetBranch?: string;
     filePaths?: readonly string[];
   },
   options?: Parameters<GitManagerShape["runStackedAction"]>[1],
@@ -1754,6 +1755,65 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           Effect.map((output) => output.stdout.trim()),
         ),
       ).toBe("Push dirty branch");
+    }),
+  );
+
+  it.effect("promotes a feature branch into the target branch after backing it up", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/promote-me"]);
+      fs.writeFileSync(path.join(repoDir, "promote.txt"), "promote me\n");
+      yield* runGit(repoDir, ["add", "promote.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Promote feature branch"]);
+
+      const { manager } = yield* makeManager();
+      const result = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "promote",
+        targetBranch: "main",
+      });
+
+      expect(result.commit.status).toBe("skipped_not_requested");
+      expect(result.push.status).toBe("pushed");
+      expect(result.promote).toMatchObject({
+        status: "promoted",
+        sourceBranch: "feature/promote-me",
+        targetBranch: "main",
+        branchDeleted: true,
+      });
+      expect(result.toast).toMatchObject({
+        title: "Promoted to main",
+        description: "feature/promote-me deleted",
+        cta: {
+          kind: "none",
+        },
+      });
+      expect(
+        yield* runGit(repoDir, ["rev-parse", "--abbrev-ref", "HEAD"]).pipe(
+          Effect.map((output) => output.stdout.trim()),
+        ),
+      ).toBe("main");
+      expect(
+        yield* runGit(repoDir, ["branch", "--list", "feature/promote-me"]).pipe(
+          Effect.map((output) => output.stdout.trim()),
+        ),
+      ).toBe("");
+      expect(
+        yield* runGit(remoteDir, ["show", "main:promote.txt"]).pipe(
+          Effect.map((output) => output.stdout.trim()),
+        ),
+      ).toBe("promote me");
+
+      const backupRefs = yield* runGit(remoteDir, [
+        "for-each-ref",
+        "--format=%(refname:short)",
+        "refs/heads/t3code/promote-backup/feature/promote-me",
+      ]).pipe(Effect.map((output) => output.stdout.trim()));
+      expect(backupRefs).toMatch(/^t3code\/promote-backup\/feature\/promote-me\/[0-9a-f]{8}$/);
     }),
   );
 
