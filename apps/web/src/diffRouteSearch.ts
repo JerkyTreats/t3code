@@ -1,9 +1,12 @@
-import { TurnId } from "@t3tools/contracts";
+import { ThreadId, TurnId, type OrchestrationProposedPlanId } from "@t3tools/contracts";
 
 export interface DiffRouteSearch {
   diff?: "1" | undefined;
   diffTurnId?: TurnId | undefined;
   diffFilePath?: string | undefined;
+  planPreview?: "1" | undefined;
+  planThreadId?: ThreadId | undefined;
+  planId?: OrchestrationProposedPlanId | undefined;
 }
 
 function isDiffOpenValue(value: unknown): boolean {
@@ -20,12 +23,33 @@ function normalizeSearchString(value: unknown): string | undefined {
 
 export function stripDiffSearchParams<T extends Record<string, unknown>>(
   params: T,
-): Omit<T, "diff" | "diffTurnId" | "diffFilePath"> {
-  const { diff: _diff, diffTurnId: _diffTurnId, diffFilePath: _diffFilePath, ...rest } = params;
-  return rest as Omit<T, "diff" | "diffTurnId" | "diffFilePath">;
+): Omit<T, "diff" | "diffTurnId" | "diffFilePath" | "planPreview" | "planThreadId" | "planId"> {
+  const {
+    diff: _diff,
+    diffTurnId: _diffTurnId,
+    diffFilePath: _diffFilePath,
+    planPreview: _planPreview,
+    planThreadId: _planThreadId,
+    planId: _planId,
+    ...rest
+  } = params;
+  return rest as Omit<
+    T,
+    "diff" | "diffTurnId" | "diffFilePath" | "planPreview" | "planThreadId" | "planId"
+  >;
 }
 
 export function parseDiffRouteSearch(search: Record<string, unknown>): DiffRouteSearch {
+  const planThreadIdRaw = normalizeSearchString(search.planThreadId);
+  const planIdRaw = normalizeSearchString(search.planId);
+  if (isDiffOpenValue(search.planPreview) && planThreadIdRaw && planIdRaw) {
+    return {
+      planPreview: "1",
+      planThreadId: ThreadId.make(planThreadIdRaw),
+      planId: planIdRaw as OrchestrationProposedPlanId,
+    };
+  }
+
   const diff = isDiffOpenValue(search.diff) ? "1" : undefined;
   const diffTurnIdRaw = diff ? normalizeSearchString(search.diffTurnId) : undefined;
   const diffTurnId = diffTurnIdRaw ? TurnId.make(diffTurnIdRaw) : undefined;

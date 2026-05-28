@@ -478,11 +478,31 @@ label:has(> select#reasoning-effort) select {
   border-collapse: collapse;
 }
 
+.chat-markdown .chat-markdown-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.chat-markdown .chat-markdown-table-scroll table {
+  min-width: max-content;
+}
+
 .chat-markdown th,
 .chat-markdown td {
   border: 1px solid var(--border);
   padding: 0.35rem 0.45rem;
   text-align: left;
+}
+
+.document-preview-shell {
+  min-width: 0;
+}
+
+.document-markdown-shell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 @keyframes provider-update-pill-countdown {

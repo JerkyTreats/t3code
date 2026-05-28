@@ -1,7 +1,9 @@
 import { createFileRoute, retainSearchParams, useNavigate } from "@tanstack/react-router";
+import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 
 import ChatView from "../components/ChatView";
+import { PlanConversationDocument } from "../components/PlanConversationDocument";
 import { threadHasStarted } from "../components/ChatView.logic";
 import { DiffWorkerPoolProvider } from "../components/DiffWorkerPoolProvider";
 import {
@@ -20,6 +22,7 @@ import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
+import { getThreadFromEnvironmentState } from "../threadDerivation";
 import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
 import { RightPanelSheet } from "../components/RightPanelSheet";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
@@ -168,7 +171,44 @@ function ChatThreadRouteView() {
   const serverThreadStarted = threadHasStarted(serverThread);
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
   const diffOpen = search.diff === "1";
+  const planPreviewOpen = search.planPreview === "1" && !!search.planThreadId && !!search.planId;
   const shouldUseDiffSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const planPreviewThread = useStore(
+    useMemo(
+      () => (store) =>
+        search.planThreadId
+          ? getThreadFromEnvironmentState(
+              selectEnvironmentState(store, threadRef?.environmentId ?? null),
+              search.planThreadId,
+            )
+          : undefined,
+      [search.planThreadId, threadRef?.environmentId],
+    ),
+  );
+  const planPreviewProject = useStore((store) =>
+    planPreviewThread
+      ? selectEnvironmentState(store, planPreviewThread.environmentId).projectById[
+          planPreviewThread.projectId
+        ]
+      : undefined,
+  );
+  const planPreviewPlan = useMemo(
+    () =>
+      planPreviewOpen
+        ? (planPreviewThread?.proposedPlans.find((plan) => plan.id === search.planId) ?? null)
+        : null,
+    [planPreviewOpen, planPreviewThread?.proposedPlans, search.planId],
+  );
+  const planPreviewWorkspaceCwd = useMemo(
+    () =>
+      planPreviewProject
+        ? projectScriptCwd({
+            project: { cwd: planPreviewProject.cwd },
+            worktreePath: planPreviewThread?.worktreePath ?? null,
+          })
+        : undefined,
+    [planPreviewProject, planPreviewThread?.worktreePath],
+  );
   const currentThreadKey = threadRef ? `${threadRef.environmentId}:${threadRef.threadId}` : null;
   const [diffPanelMountState, setDiffPanelMountState] = useState(() => ({
     threadKey: currentThreadKey,
@@ -213,6 +253,40 @@ function ChatThreadRouteView() {
       },
     });
   }, [markDiffOpened, navigate, threadRef]);
+  const openPlanPreview = useCallback(
+    (input: {
+      planThreadId: NonNullable<DiffRouteSearch["planThreadId"]>;
+      planId: NonNullable<DiffRouteSearch["planId"]>;
+    }) => {
+      if (!threadRef) {
+        return;
+      }
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(threadRef),
+        search: (previous) => {
+          const rest = stripDiffSearchParams(previous);
+          return {
+            ...rest,
+            planPreview: "1" as const,
+            planThreadId: input.planThreadId,
+            planId: input.planId,
+          };
+        },
+      });
+    },
+    [navigate, threadRef],
+  );
+  const closePlanPreview = useCallback(() => {
+    if (!threadRef) {
+      return;
+    }
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: buildThreadRouteParams(threadRef),
+      search: (previous) => stripDiffSearchParams(previous),
+    });
+  }, [navigate, threadRef]);
 
   useEffect(() => {
     if (!threadRef || !bootstrapComplete) {
@@ -236,18 +310,31 @@ function ChatThreadRouteView() {
   }
 
   const shouldRenderDiffContent = diffOpen || hasOpenedDiff;
+  const chatContent =
+    planPreviewOpen && search.planThreadId ? (
+      <PlanConversationDocument
+        environmentId={threadRef.environmentId}
+        proposedPlan={planPreviewPlan}
+        planThreadId={search.planThreadId}
+        workspaceCwd={planPreviewWorkspaceCwd}
+        onCollapse={closePlanPreview}
+      />
+    ) : (
+      <ChatView
+        environmentId={threadRef.environmentId}
+        threadId={threadRef.threadId}
+        onDiffPanelOpen={markDiffOpened}
+        onOpenProposedPlanPreview={openPlanPreview}
+        reserveTitleBarControlInset={!diffOpen}
+        routeKind="server"
+      />
+    );
 
   if (!shouldUseDiffSheet) {
     return (
       <>
         <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
-          <ChatView
-            environmentId={threadRef.environmentId}
-            threadId={threadRef.threadId}
-            onDiffPanelOpen={markDiffOpened}
-            reserveTitleBarControlInset={!diffOpen}
-            routeKind="server"
-          />
+          {chatContent}
         </SidebarInset>
         <DiffPanelInlineSidebar
           diffOpen={diffOpen}
@@ -262,12 +349,7 @@ function ChatThreadRouteView() {
   return (
     <>
       <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
-        <ChatView
-          environmentId={threadRef.environmentId}
-          threadId={threadRef.threadId}
-          onDiffPanelOpen={markDiffOpened}
-          routeKind="server"
-        />
+        {chatContent}
       </SidebarInset>
       <RightPanelSheet open={diffOpen} onClose={closeDiff}>
         {shouldRenderDiffContent ? <LazyDiffPanel mode="sheet" /> : null}
@@ -279,7 +361,9 @@ function ChatThreadRouteView() {
 export const Route = createFileRoute("/_chat/$environmentId/$threadId")({
   validateSearch: (search) => parseDiffRouteSearch(search),
   search: {
-    middlewares: [retainSearchParams<DiffRouteSearch>(["diff"])],
+    middlewares: [
+      retainSearchParams<DiffRouteSearch>(["diff", "planPreview", "planThreadId", "planId"]),
+    ],
   },
   component: ChatThreadRouteView,
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseDiffRouteSearch } from "./diffRouteSearch";
+import { parseDiffRouteSearch, stripDiffSearchParams } from "./diffRouteSearch";
 
 describe("parseDiffRouteSearch", () => {
   it("parses valid diff search values", () => {
@@ -70,5 +70,39 @@ describe("parseDiffRouteSearch", () => {
     expect(parsed).toEqual({
       diff: "1",
     });
+  });
+
+  it("parses fullscreen plan preview mode", () => {
+    expect(
+      parseDiffRouteSearch({
+        planPreview: "1",
+        planThreadId: "thread-1",
+        planId: "plan-1",
+      }),
+    ).toEqual({
+      planPreview: "1",
+      planThreadId: "thread-1",
+      planId: "plan-1",
+    });
+  });
+
+  it("drops incomplete fullscreen plan preview mode", () => {
+    expect(
+      parseDiffRouteSearch({
+        planPreview: "1",
+        planThreadId: "thread-1",
+      }),
+    ).toEqual({});
+  });
+
+  it("strips plan preview search params", () => {
+    expect(
+      stripDiffSearchParams({
+        planPreview: "1",
+        planThreadId: "thread-1",
+        planId: "plan-1",
+        keep: "value",
+      }),
+    ).toEqual({ keep: "value" });
   });
 });

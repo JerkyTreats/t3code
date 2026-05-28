@@ -601,6 +601,13 @@ function ChatMarkdown({
           </MarkdownCodeBlock>
         );
       },
+      table({ node: _node, ...props }) {
+        return (
+          <div className="chat-markdown-table-scroll">
+            <table {...props} />
+          </div>
+        );
+      },
     }),
     [
       diffThemeName,

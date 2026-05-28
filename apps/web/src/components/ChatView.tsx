@@ -90,6 +90,7 @@ import {
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
+  type ProposedPlan,
   type SessionPhase,
   type Thread,
   type TurnDiffSummary,
@@ -340,6 +341,10 @@ type ChatViewProps =
       environmentId: EnvironmentId;
       threadId: ThreadId;
       onDiffPanelOpen?: () => void;
+      onOpenProposedPlanPreview?: (input: {
+        planThreadId: ThreadId;
+        planId: ProposedPlan["id"];
+      }) => void;
       reserveTitleBarControlInset?: boolean;
       routeKind: "server";
       draftId?: never;
@@ -348,6 +353,10 @@ type ChatViewProps =
       environmentId: EnvironmentId;
       threadId: ThreadId;
       onDiffPanelOpen?: () => void;
+      onOpenProposedPlanPreview?: (input: {
+        planThreadId: ThreadId;
+        planId: ProposedPlan["id"];
+      }) => void;
       reserveTitleBarControlInset?: boolean;
       routeKind: "draft";
       draftId: DraftId;
@@ -610,6 +619,7 @@ export default function ChatView(props: ChatViewProps) {
     threadId,
     routeKind,
     onDiffPanelOpen,
+    onOpenProposedPlanPreview,
     reserveTitleBarControlInset = true,
   } = props;
   const draftId = routeKind === "draft" ? props.draftId : null;
@@ -2147,6 +2157,22 @@ export default function ChatView(props: ChatViewProps) {
     planSidebarDismissedForTurnRef.current =
       activePlan?.turnId ?? sidebarProposedPlan?.turnId ?? "__dismissed__";
   }, [activePlan?.turnId, sidebarProposedPlan?.turnId]);
+  const onOpenSidebarProposedPlanPreview = useCallback(() => {
+    if (!activeThread || !sidebarProposedPlan || !onOpenProposedPlanPreview) {
+      return;
+    }
+    const sourceProposedPlan = activeLatestTurn?.sourceProposedPlan;
+    const planThreadId =
+      sourceProposedPlan && sourceProposedPlan.planId === sidebarProposedPlan.id
+        ? sourceProposedPlan.threadId
+        : activeThread.id;
+    onOpenProposedPlanPreview({ planThreadId, planId: sidebarProposedPlan.id });
+  }, [
+    activeLatestTurn?.sourceProposedPlan,
+    activeThread,
+    onOpenProposedPlanPreview,
+    sidebarProposedPlan,
+  ]);
 
   const persistThreadSettingsForNextTurn = useCallback(
     async (input: {
@@ -3733,6 +3759,7 @@ export default function ChatView(props: ChatViewProps) {
             workspaceRoot={activeWorkspaceRoot}
             timestampFormat={timestampFormat}
             mode="sidebar"
+            onOpenMarkdownPreview={onOpenSidebarProposedPlanPreview}
             onClose={closePlanSidebar}
           />
         ) : null}
@@ -3767,6 +3794,7 @@ export default function ChatView(props: ChatViewProps) {
             workspaceRoot={activeWorkspaceRoot}
             timestampFormat={timestampFormat}
             mode="sheet"
+            onOpenMarkdownPreview={onOpenSidebarProposedPlanPreview}
             onClose={closePlanSidebar}
           />
         </RightPanelSheet>

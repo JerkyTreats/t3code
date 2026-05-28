@@ -138,4 +138,17 @@ describe("ChatMarkdown", () => {
       await screen.unmount();
     }
   });
+
+  it("wraps wide tables in a horizontal scroll container", async () => {
+    const screen = await render(
+      <ChatMarkdown text={"| Long column |\n| --- |\n| value |"} cwd="/repo/project" />,
+    );
+
+    try {
+      const table = document.querySelector("table");
+      expect(table?.parentElement?.classList.contains("chat-markdown-table-scroll")).toBe(true);
+    } finally {
+      await screen.unmount();
+    }
+  });
 });
