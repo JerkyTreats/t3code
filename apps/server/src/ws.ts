@@ -24,6 +24,8 @@ import {
   OrchestrationGetSnapshotError,
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_WS_METHODS,
+  ProjectListDirectoryError,
+  ProjectReadFileError,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
   SourceControlRepositoryError,
@@ -57,6 +59,7 @@ import { ServerRuntimeStartup } from "./serverRuntimeStartup.ts";
 import { redactServerSettingsForClient, ServerSettingsService } from "./serverSettings.ts";
 import { TerminalManager } from "./terminal/Services/Manager.ts";
 import { WorkspaceEntries } from "./workspace/Services/WorkspaceEntries.ts";
+import { WorkspaceFileQuery } from "./workspace/Services/WorkspaceFileQuery.ts";
 import { WorkspaceFileSystem } from "./workspace/Services/WorkspaceFileSystem.ts";
 import { WorkspacePathOutsideRootError } from "./workspace/Services/WorkspacePaths.ts";
 import { VcsStatusBroadcaster } from "./vcs/VcsStatusBroadcaster.ts";
@@ -177,6 +180,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const serverSettings = yield* ServerSettingsService;
       const startup = yield* ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries;
+      const workspaceFileQueryOption = yield* Effect.serviceOption(WorkspaceFileQuery);
       const workspaceFileSystem = yield* WorkspaceFileSystem;
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner;
       const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
@@ -973,6 +977,45 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
                   }),
               ),
             ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsListDirectory]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsListDirectory,
+            workspaceEntries.listDirectory(input).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new ProjectListDirectoryError({
+                    message: `Failed to list workspace directory: ${cause.detail}`,
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.projectsReadFile]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsReadFile,
+            Option.match(workspaceFileQueryOption, {
+              onNone: () =>
+                Effect.fail(
+                  new ProjectReadFileError({
+                    message: "Workspace file preview is unavailable.",
+                  }),
+                ),
+              onSome: (workspaceFileQuery) =>
+                workspaceFileQuery.readFile(input).pipe(
+                  Effect.mapError((cause) => {
+                    const message = isWorkspacePathOutsideRootError(cause)
+                      ? "Workspace file path must stay within the project root."
+                      : "Failed to read workspace file";
+                    return new ProjectReadFileError({
+                      message,
+                      cause,
+                    });
+                  }),
+                ),
+            }),
             { "rpc.aggregate": "workspace" },
           ),
         [WS_METHODS.projectsWriteFile]: (input) =>

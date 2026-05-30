@@ -11,7 +11,11 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
-import { type FilesystemBrowseInput, type ProjectEntry } from "@t3tools/contracts";
+import {
+  type FilesystemBrowseInput,
+  type ProjectEntry,
+  type ProjectTreeEntry,
+} from "@t3tools/contracts";
 import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
 import {
   insertRankedSearchResult,
@@ -58,6 +62,11 @@ interface SearchableWorkspaceEntry extends ProjectEntry {
 
 type RankedWorkspaceEntry = RankedSearchResult<SearchableWorkspaceEntry>;
 
+const NATURAL_SORT_COLLATOR = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
 function toPosixPath(input: string): string {
   return input.replaceAll("\\", "/");
 }
@@ -86,6 +95,25 @@ function basenameOf(input: string): string {
     return input;
   }
   return input.slice(separatorIndex + 1);
+}
+
+function compareWorkspaceEntries(
+  left: Pick<SearchableWorkspaceEntry, "kind" | "path">,
+  right: Pick<SearchableWorkspaceEntry, "kind" | "path">,
+): number {
+  if (left.kind !== right.kind) {
+    return left.kind === "directory" ? -1 : 1;
+  }
+  return NATURAL_SORT_COLLATOR.compare(left.path, right.path);
+}
+
+function toProjectTreeEntry(entry: SearchableWorkspaceEntry): ProjectTreeEntry {
+  return {
+    path: entry.path,
+    name: basenameOf(entry.path),
+    kind: entry.kind,
+    parentPath: entry.parentPath ?? null,
+  };
 }
 
 function toSearchableWorkspaceEntry(entry: ProjectEntry): SearchableWorkspaceEntry {
@@ -510,9 +538,32 @@ export const makeWorkspaceEntries = Effect.gen(function* () {
     },
   );
 
+  const listDirectory: WorkspaceEntriesShape["listDirectory"] = Effect.fn(
+    "WorkspaceEntries.listDirectory",
+  )(function* (input) {
+    const normalizedCwd = yield* normalizeWorkspaceRoot(input.cwd);
+    return yield* Cache.get(workspaceIndexCache, normalizedCwd).pipe(
+      Effect.map((index) => {
+        const limit = Math.max(1, Math.floor(input.limit ?? 200));
+        const directoryPath = input.directoryPath ?? null;
+        const matchingEntries = index.entries.filter(
+          (entry) => (entry.parentPath ?? null) === directoryPath,
+        );
+        return {
+          entries: matchingEntries
+            .toSorted(compareWorkspaceEntries)
+            .slice(0, limit)
+            .map(toProjectTreeEntry),
+          truncated: index.truncated || matchingEntries.length > limit,
+        };
+      }),
+    );
+  });
+
   return {
     browse,
     invalidate,
+    listDirectory,
     search,
   } satisfies WorkspaceEntriesShape;
 });

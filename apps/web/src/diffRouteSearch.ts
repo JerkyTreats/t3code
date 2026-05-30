@@ -3,8 +3,11 @@ import { ThreadId, TurnId, type OrchestrationProposedPlanId } from "@t3tools/con
 export interface DiffRouteSearch {
   diff?: "1" | undefined;
   git?: "1" | undefined;
+  files?: "1" | undefined;
   diffTurnId?: TurnId | undefined;
   diffFilePath?: string | undefined;
+  docPath?: string | undefined;
+  docExpanded?: "1" | undefined;
   planPreview?: "1" | undefined;
   planThreadId?: ThreadId | undefined;
   planId?: OrchestrationProposedPlanId | undefined;
@@ -26,13 +29,25 @@ export function stripDiffSearchParams<T extends Record<string, unknown>>(
   params: T,
 ): Omit<
   T,
-  "diff" | "git" | "diffTurnId" | "diffFilePath" | "planPreview" | "planThreadId" | "planId"
+  | "diff"
+  | "git"
+  | "files"
+  | "diffTurnId"
+  | "diffFilePath"
+  | "docPath"
+  | "docExpanded"
+  | "planPreview"
+  | "planThreadId"
+  | "planId"
 > {
   const {
     diff: _diff,
     git: _git,
+    files: _files,
     diffTurnId: _diffTurnId,
     diffFilePath: _diffFilePath,
+    docPath: _docPath,
+    docExpanded: _docExpanded,
     planPreview: _planPreview,
     planThreadId: _planThreadId,
     planId: _planId,
@@ -40,7 +55,16 @@ export function stripDiffSearchParams<T extends Record<string, unknown>>(
   } = params;
   return rest as Omit<
     T,
-    "diff" | "git" | "diffTurnId" | "diffFilePath" | "planPreview" | "planThreadId" | "planId"
+    | "diff"
+    | "git"
+    | "files"
+    | "diffTurnId"
+    | "diffFilePath"
+    | "docPath"
+    | "docExpanded"
+    | "planPreview"
+    | "planThreadId"
+    | "planId"
   >;
 }
 
@@ -58,6 +82,17 @@ export function parseDiffRouteSearch(search: Record<string, unknown>): DiffRoute
   const git = isDiffOpenValue(search.git) ? "1" : undefined;
   if (git) {
     return { git };
+  }
+
+  const files = isDiffOpenValue(search.files) ? "1" : undefined;
+  if (files) {
+    const docPath = normalizeSearchString(search.docPath);
+    const docExpanded = docPath && isDiffOpenValue(search.docExpanded) ? "1" : undefined;
+    return {
+      files,
+      ...(docPath ? { docPath } : {}),
+      ...(docExpanded ? { docExpanded } : {}),
+    };
   }
 
   const diff = isDiffOpenValue(search.diff) ? "1" : undefined;
