@@ -77,14 +77,36 @@ export function formatContextWindowTokens(value: number | null): string {
   if (value === null || !Number.isFinite(value)) {
     return "0";
   }
-  if (value < 1_000) {
+
+  const absoluteValue = Math.abs(value);
+  if (absoluteValue < 1_000) {
     return `${Math.round(value)}`;
   }
-  if (value < 10_000) {
-    return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+
+  const units = [
+    { suffix: "T", value: 1_000_000_000_000 },
+    { suffix: "B", value: 1_000_000_000 },
+    { suffix: "M", value: 1_000_000 },
+    { suffix: "k", value: 1_000 },
+  ] as const;
+
+  for (const unit of units) {
+    if (absoluteValue < unit.value) {
+      continue;
+    }
+
+    const scaledValue = value / unit.value;
+    const roundedValue =
+      Math.abs(scaledValue) >= 100 ? Math.round(scaledValue) : Number(scaledValue.toFixed(1));
+    if (Math.abs(roundedValue) >= 1000) {
+      continue;
+    }
+
+    const formattedValue = `${roundedValue}`.replace(/\.0$/, "");
+    return unit.suffix === "k"
+      ? `${formattedValue}${unit.suffix}`
+      : `${formattedValue} ${unit.suffix}`;
   }
-  if (value < 1_000_000) {
-    return `${Math.round(value / 1_000)}k`;
-  }
-  return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+
+  return `${Math.round(value)}`;
 }
