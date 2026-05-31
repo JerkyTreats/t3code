@@ -2252,14 +2252,16 @@ export default function ChatView(props: ChatViewProps) {
     new Debouncer(() => setShowScrollToBottom(true), { wait: 150 }),
   );
   const onIsAtEndChange = useCallback((isAtEnd: boolean) => {
-    if (isAtEndRef.current === isAtEnd) return;
-    isAtEndRef.current = isAtEnd;
     if (isAtEnd) {
+      isAtEndRef.current = true;
       showScrollDebouncer.current.cancel();
       setShowScrollToBottom(false);
-    } else {
-      showScrollDebouncer.current.maybeExecute();
+      return;
     }
+
+    if (!isAtEndRef.current) return;
+    isAtEndRef.current = false;
+    showScrollDebouncer.current.maybeExecute();
   }, []);
 
   useEffect(() => {
