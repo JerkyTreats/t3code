@@ -403,6 +403,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
         ? ["Diff whitespace changes"]
         : []),
+      ...(settings.diffRenderMarkdown !== DEFAULT_UNIFIED_SETTINGS.diffRenderMarkdown
+        ? ["Diff Markdown rendering"]
+        : []),
       ...(settings.autoOpenPlanSidebar !== DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar
         ? ["Auto-open task panel"]
         : []),
@@ -435,6 +438,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.diffIgnoreWhitespace,
+      settings.diffRenderMarkdown,
       settings.diffWordWrap,
       settings.automaticGitFetchInterval,
       settings.enableAssistantStreaming,
@@ -459,6 +463,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       diffWordWrap: DEFAULT_UNIFIED_SETTINGS.diffWordWrap,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
+      diffRenderMarkdown: DEFAULT_UNIFIED_SETTINGS.diffRenderMarkdown,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       autoOpenPlanSidebar: DEFAULT_UNIFIED_SETTINGS.autoOpenPlanSidebar,
       enableAssistantStreaming: DEFAULT_UNIFIED_SETTINGS.enableAssistantStreaming,
@@ -639,6 +644,32 @@ export function GeneralSettingsPanel() {
                 updateSettings({ diffIgnoreWhitespace: Boolean(checked) })
               }
               aria-label="Hide whitespace changes by default"
+            />
+          }
+        />
+
+        <SettingsRow
+          title="Render Markdown diffs"
+          description="Set whether Markdown files open as rendered before and after previews by default."
+          resetAction={
+            settings.diffRenderMarkdown !== DEFAULT_UNIFIED_SETTINGS.diffRenderMarkdown ? (
+              <SettingResetButton
+                label="diff Markdown rendering"
+                onClick={() =>
+                  updateSettings({
+                    diffRenderMarkdown: DEFAULT_UNIFIED_SETTINGS.diffRenderMarkdown,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.diffRenderMarkdown}
+              onCheckedChange={(checked) =>
+                updateSettings({ diffRenderMarkdown: Boolean(checked) })
+              }
+              aria-label="Render Markdown diffs by default"
             />
           }
         />

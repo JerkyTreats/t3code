@@ -62,6 +62,7 @@ interface ChatMarkdownProps {
   cwd: string | undefined;
   isStreaming?: boolean;
   skills?: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
+  onOpenMarkdownFilePreview?: (relativePath: string) => void;
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
@@ -281,9 +282,11 @@ interface MarkdownFileLinkProps {
   targetPath: string;
   displayPath: string;
   filePath: string;
+  previewPath?: string | undefined;
   label: string;
   theme: "light" | "dark";
   className?: string | undefined;
+  onOpenMarkdownFilePreview?: ((relativePath: string) => void) | undefined;
 }
 
 const MARKDOWN_LINK_HREF_PATTERN = /\[[^\]]*]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
@@ -372,11 +375,21 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
   targetPath,
   displayPath,
   filePath,
+  previewPath,
   label,
   theme,
   className,
+  onOpenMarkdownFilePreview,
 }: MarkdownFileLinkProps) {
-  const handleOpen = useCallback(() => {
+  const canOpenPreview =
+    typeof previewPath === "string" && typeof onOpenMarkdownFilePreview === "function";
+
+  const handleOpenPreview = useCallback(() => {
+    if (!previewPath) return;
+    onOpenMarkdownFilePreview?.(previewPath);
+  }, [onOpenMarkdownFilePreview, previewPath]);
+
+  const handleOpenInEditor = useCallback(() => {
     const api = readLocalApi();
     if (!api) {
       toastManager.add({
@@ -396,6 +409,15 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
       );
     });
   }, [targetPath]);
+
+  const handleOpen = useCallback(() => {
+    if (canOpenPreview) {
+      handleOpenPreview();
+      return;
+    }
+
+    handleOpenInEditor();
+  }, [canOpenPreview, handleOpenInEditor, handleOpenPreview]);
 
   const handleCopy = useCallback((value: string, title: string) => {
     if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
@@ -438,16 +460,27 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
       if (!api) return;
 
       const clicked = await api.contextMenu.show(
-        [
-          { id: "open", label: "Open in editor" },
-          { id: "copy-relative", label: "Copy relative path" },
-          { id: "copy-full", label: "Copy full path" },
-        ] as const,
+        canOpenPreview
+          ? ([
+              { id: "preview", label: "Open rendered preview" },
+              { id: "open", label: "Open in editor" },
+              { id: "copy-relative", label: "Copy relative path" },
+              { id: "copy-full", label: "Copy full path" },
+            ] as const)
+          : ([
+              { id: "open", label: "Open in editor" },
+              { id: "copy-relative", label: "Copy relative path" },
+              { id: "copy-full", label: "Copy full path" },
+            ] as const),
         { x: event.clientX, y: event.clientY },
       );
 
+      if (clicked === "preview") {
+        handleOpenPreview();
+        return;
+      }
       if (clicked === "open") {
-        handleOpen();
+        handleOpenInEditor();
         return;
       }
       if (clicked === "copy-relative") {
@@ -458,7 +491,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
         handleCopy(targetPath, "Full path");
       }
     },
-    [displayPath, handleCopy, handleOpen, targetPath],
+    [canOpenPreview, displayPath, handleCopy, handleOpenInEditor, handleOpenPreview, targetPath],
   );
 
   return (
@@ -506,9 +539,11 @@ function areMarkdownFileLinkPropsEqual(
     previous.targetPath === next.targetPath &&
     previous.displayPath === next.displayPath &&
     previous.filePath === next.filePath &&
+    previous.previewPath === next.previewPath &&
     previous.label === next.label &&
     previous.theme === next.theme &&
-    previous.className === next.className
+    previous.className === next.className &&
+    previous.onOpenMarkdownFilePreview === next.onOpenMarkdownFilePreview
   );
 }
 
@@ -517,6 +552,7 @@ function ChatMarkdown({
   cwd,
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
+  onOpenMarkdownFilePreview,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
@@ -574,9 +610,15 @@ function ChatMarkdown({
             targetPath={fileLinkMeta.targetPath}
             displayPath={fileLinkMeta.displayPath}
             filePath={fileLinkMeta.filePath}
+            previewPath={
+              fileLinkMeta.isMarkdown && fileLinkMeta.workspaceRelativePath
+                ? fileLinkMeta.workspaceRelativePath
+                : undefined
+            }
             label={labelParts.join(" · ")}
             theme={resolvedTheme}
             className={props.className}
+            onOpenMarkdownFilePreview={onOpenMarkdownFilePreview}
           />
         );
       },
@@ -614,6 +656,7 @@ function ChatMarkdown({
       fileLinkParentSuffixByPath,
       isStreaming,
       markdownFileLinkMetaByHref,
+      onOpenMarkdownFilePreview,
       resolvedTheme,
       skills,
     ],

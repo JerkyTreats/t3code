@@ -441,7 +441,7 @@ function ChatThreadRouteView() {
     void navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(threadRef),
-      search: {},
+      search: { planPreview: undefined, planThreadId: undefined, planId: undefined },
     });
   }, [navigate, threadRef]);
 
@@ -484,6 +484,7 @@ function ChatThreadRouteView() {
         threadId={threadRef.threadId}
         onDiffPanelOpen={markDiffOpened}
         onOpenProposedPlanPreview={openPlanPreview}
+        onOpenMarkdownFilePreview={selectDocumentPath}
         reserveTitleBarControlInset={!diffOpen && !filesOpen}
         routeKind="server"
         conversationPanel={
@@ -501,6 +502,7 @@ function ChatThreadRouteView() {
         threadId={threadRef.threadId}
         onDiffPanelOpen={markDiffOpened}
         onOpenProposedPlanPreview={openPlanPreview}
+        onOpenMarkdownFilePreview={selectDocumentPath}
         reserveTitleBarControlInset={!diffOpen && !filesOpen}
         routeKind="server"
       />

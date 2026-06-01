@@ -792,14 +792,191 @@ label:has(> select#reasoning-effort) select {
   text-align: left;
 }
 
-.document-preview-shell {
+.document-markdown {
   min-width: 0;
-}
-
-.document-markdown-shell {
-  min-width: 0;
+  color: color-mix(in srgb, var(--foreground) 88%, transparent);
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.document-markdown .chat-markdown {
+  color: inherit;
+  font-size: 0.95rem;
+  line-height: 1.72;
+}
+
+.document-markdown .chat-markdown > :first-child {
+  margin-top: 0;
+}
+
+.document-markdown .chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.document-markdown h1,
+.document-markdown h2,
+.document-markdown h3,
+.document-markdown h4,
+.document-markdown h5,
+.document-markdown h6 {
+  margin: 1.35rem 0 0.7rem;
+  color: var(--foreground);
+  font-weight: 650;
+  letter-spacing: 0;
+  scroll-margin-top: 1rem;
+}
+
+.document-markdown h1 {
+  font-size: 2rem;
+  line-height: 1.05;
+}
+
+.document-markdown h2 {
+  font-size: 1.5rem;
+  line-height: 1.12;
+}
+
+.document-markdown h3 {
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+
+.document-markdown h4,
+.document-markdown h5,
+.document-markdown h6 {
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+.document-markdown p,
+.document-markdown ul,
+.document-markdown ol,
+.document-markdown blockquote,
+.document-markdown pre,
+.document-markdown table,
+.document-markdown details {
+  margin: 0.85rem 0;
+}
+
+.document-markdown ul,
+.document-markdown ol {
+  padding-left: 1.35rem;
+}
+
+.document-markdown ul {
+  list-style-type: disc;
+}
+
+.document-markdown ol {
+  list-style-type: decimal;
+}
+
+.document-markdown ul ul {
+  list-style-type: circle;
+}
+
+.document-markdown ul ul ul {
+  list-style-type: square;
+}
+
+.document-markdown ol ol {
+  list-style-type: lower-alpha;
+}
+
+.document-markdown ol ol ol {
+  list-style-type: lower-roman;
+}
+
+.document-markdown li + li {
+  margin-top: 0.3rem;
+}
+
+.document-markdown a {
+  color: color-mix(in srgb, var(--foreground) 70%, var(--primary));
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 38%, transparent);
+  text-underline-offset: 0.18em;
+}
+
+.document-markdown blockquote {
+  border-left: 2px solid color-mix(in srgb, var(--border) 55%, var(--foreground));
+  padding-left: 0.95rem;
+  color: var(--muted-foreground);
+}
+
+.document-markdown :not(pre) > code {
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  background: color-mix(in srgb, var(--muted) 82%, var(--background));
+  padding: 0.14rem 0.4rem;
+  font-size: 0.78rem;
+  color: var(--foreground);
+}
+
+.document-markdown .chat-markdown-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.85rem 0;
+}
+
+.document-markdown .chat-markdown-table-scroll table {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.document-markdown thead th {
+  position: sticky;
+  top: 0;
+  background: color-mix(in srgb, var(--card) 88%, var(--background));
+}
+
+.document-markdown th,
+.document-markdown td {
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.document-markdown tr:last-child td {
+  border-bottom: none;
+}
+
+.document-markdown .chat-markdown-codeblock {
+  max-width: 100%;
+  min-width: 0;
+  margin: 0.85rem 0;
+}
+
+.document-markdown .chat-markdown-codeblock pre {
+  border-color: color-mix(in srgb, var(--border) 75%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--muted) 74%, var(--background));
+}
+
+.document-markdown .chat-markdown-shiki .shiki {
+  margin: 0 !important;
+  padding: 1rem 1rem 1rem 1.05rem !important;
+  background: color-mix(in srgb, var(--muted) 74%, var(--background)) !important;
+}
+
+.document-markdown .chat-markdown-copy-button {
+  height: 1.75rem;
+  width: 1.75rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--background) 85%, transparent);
+}
+
+.document-preview-shell {
+  min-width: 0;
 }
 
 @keyframes provider-update-pill-countdown {

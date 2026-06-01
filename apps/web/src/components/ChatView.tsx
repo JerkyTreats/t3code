@@ -345,6 +345,7 @@ type ChatViewProps =
         planThreadId: ThreadId;
         planId: ProposedPlan["id"];
       }) => void;
+      onOpenMarkdownFilePreview?: (relativePath: string) => void;
       conversationPanel?: ReactNode;
       reserveTitleBarControlInset?: boolean;
       routeKind: "server";
@@ -358,6 +359,7 @@ type ChatViewProps =
         planThreadId: ThreadId;
         planId: ProposedPlan["id"];
       }) => void;
+      onOpenMarkdownFilePreview?: (relativePath: string) => void;
       conversationPanel?: ReactNode;
       reserveTitleBarControlInset?: boolean;
       routeKind: "draft";
@@ -3634,6 +3636,9 @@ export default function ChatView(props: ChatViewProps) {
                 activeThreadEnvironmentId={activeThread.environmentId}
                 routeThreadKey={routeThreadKey}
                 onOpenTurnDiff={onOpenTurnDiff}
+                {...(props.onOpenMarkdownFilePreview
+                  ? { onOpenMarkdownFilePreview: props.onOpenMarkdownFilePreview }
+                  : {})}
                 revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
                 onRevertUserMessage={onRevertUserMessage}
                 isRevertingCheckpoint={isRevertingCheckpoint}

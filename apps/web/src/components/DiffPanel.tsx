@@ -9,6 +9,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   Columns2Icon,
+  FileTextIcon,
   PilcrowIcon,
   Rows3Icon,
   TextWrapIcon,
@@ -38,10 +39,13 @@ import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { useSettings } from "../hooks/useSettings";
 import { formatShortTimestamp } from "../timestampFormat";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
+import ChatMarkdown from "./ChatMarkdown";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
 
 type DiffRenderMode = "stacked" | "split";
 type DiffThemeType = "light" | "dark";
+
+const MARKDOWN_DIFF_EXTENSIONS = [".md", ".markdown", ".mdown", ".mkd"] as const;
 
 const DIFF_PANEL_UNSAFE_CSS = `
 [data-diffs-header],
@@ -158,6 +162,16 @@ function resolveFileDiffPath(fileDiff: FileDiffMetadata): string {
   return raw;
 }
 
+function isMarkdownDiffFilePath(filePath: string): boolean {
+  const lowerFilePath = filePath.toLowerCase();
+  return MARKDOWN_DIFF_EXTENSIONS.some((extension) => lowerFilePath.endsWith(extension));
+}
+
+function getMarkdownDiffText(fileDiff: FileDiffMetadata, side: "before" | "after"): string {
+  const lines = side === "before" ? fileDiff.deletionLines : fileDiff.additionLines;
+  return lines.join("\n");
+}
+
 function buildFileDiffRenderKey(fileDiff: FileDiffMetadata): string {
   return fileDiff.cacheKey ?? `${fileDiff.prevName ?? "none"}:${fileDiff.name}`;
 }
@@ -177,6 +191,101 @@ function getDiffCollapseIconClassName(fileDiff: FileDiffMetadata): string {
   }
 }
 
+function MarkdownDiffPreviewPane(props: {
+  label: string;
+  text: string;
+  workspaceCwd: string | undefined;
+}) {
+  const trimmedText = props.text.trim();
+
+  return (
+    <section className="min-w-0 border-t border-border/50 first:border-t-0 md:border-t-0 md:border-l md:first:border-l-0">
+      <div className="border-b border-border/50 px-3 py-1.5 text-[10px] font-medium tracking-[0.14em] text-muted-foreground/80 uppercase">
+        {props.label}
+      </div>
+      <div className="max-h-[65vh] min-h-28 overflow-auto px-3 py-3">
+        {trimmedText.length > 0 ? (
+          <ChatMarkdown text={props.text} cwd={props.workspaceCwd} isStreaming={false} />
+        ) : (
+          <p className="text-xs text-muted-foreground/70">No Markdown content.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MarkdownDiffPreview(props: {
+  collapsed: boolean;
+  fileDiff: FileDiffMetadata;
+  filePath: string;
+  onOpenFile: (filePath: string) => void;
+  onToggleCollapsed: () => void;
+  workspaceCwd: string | undefined;
+}) {
+  const beforeText = getMarkdownDiffText(props.fileDiff, "before");
+  const afterText = getMarkdownDiffText(props.fileDiff, "after");
+  const showBefore = props.fileDiff.type !== "new";
+  const showAfter = props.fileDiff.type !== "deleted";
+
+  return (
+    <div className="overflow-hidden rounded-md border border-border/60 bg-card/35">
+      <div className="flex min-w-0 items-center gap-2 border-b border-border/60 bg-card/70 px-2 py-1.5">
+        <button
+          type="button"
+          className={cn(
+            "inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-0 transition-colors hover:bg-foreground/10 focus-visible:outline-hidden",
+            getDiffCollapseIconClassName(props.fileDiff),
+          )}
+          aria-label={props.collapsed ? `Expand ${props.filePath}` : `Collapse ${props.filePath}`}
+          aria-expanded={!props.collapsed}
+          title={props.collapsed ? "Expand diff" : "Collapse diff"}
+          onClick={props.onToggleCollapsed}
+        >
+          {props.collapsed ? (
+            <ChevronRightIcon className="size-4" />
+          ) : (
+            <ChevronDownIcon className="size-4" />
+          )}
+        </button>
+        <button
+          type="button"
+          className="min-w-0 flex-1 truncate text-left font-mono text-[11px] text-foreground/90 underline decoration-transparent underline-offset-2 transition-colors hover:text-foreground hover:decoration-current"
+          onClick={() => props.onOpenFile(props.filePath)}
+          title={props.filePath}
+        >
+          {props.filePath}
+        </button>
+        <span className="shrink-0 rounded-sm border border-border/55 bg-background/60 px-1.5 py-0.5 text-[9px] font-medium tracking-[0.12em] text-muted-foreground/75 uppercase">
+          Markdown
+        </span>
+      </div>
+      {!props.collapsed ? (
+        <div
+          className={cn(
+            "grid min-w-0 bg-background/55",
+            showBefore && showAfter ? "grid-cols-1 md:grid-cols-2" : "grid-cols-1",
+          )}
+        >
+          {showBefore ? (
+            <MarkdownDiffPreviewPane
+              label="Before"
+              text={beforeText}
+              workspaceCwd={props.workspaceCwd}
+            />
+          ) : null}
+          {showAfter ? (
+            <MarkdownDiffPreviewPane
+              label="After"
+              text={afterText}
+              workspaceCwd={props.workspaceCwd}
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 interface DiffPanelProps {
   mode?: DiffPanelMode;
 }
@@ -190,6 +299,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
   const [diffRenderMode, setDiffRenderMode] = useState<DiffRenderMode>("stacked");
   const [diffWordWrap, setDiffWordWrap] = useState(settings.diffWordWrap);
   const [diffIgnoreWhitespace, setDiffIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
+  const [diffRenderMarkdown, setDiffRenderMarkdown] = useState(settings.diffRenderMarkdown);
   const [collapsedDiffFileKeys, setCollapsedDiffFileKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -353,9 +463,10 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
     if (diffOpen && !previousDiffOpenRef.current) {
       setDiffWordWrap(settings.diffWordWrap);
       setDiffIgnoreWhitespace(settings.diffIgnoreWhitespace);
+      setDiffRenderMarkdown(settings.diffRenderMarkdown);
     }
     previousDiffOpenRef.current = diffOpen;
-  }, [diffOpen, settings.diffIgnoreWhitespace, settings.diffWordWrap]);
+  }, [diffOpen, settings.diffIgnoreWhitespace, settings.diffRenderMarkdown, settings.diffWordWrap]);
 
   useEffect(() => {
     if (!selectedFilePath || !patchViewportRef.current) {
@@ -610,6 +721,18 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
         >
           <PilcrowIcon className="size-3" />
         </Toggle>
+        <Toggle
+          aria-label={diffRenderMarkdown ? "Show Markdown source diffs" : "Render Markdown diffs"}
+          title={diffRenderMarkdown ? "Show Markdown source" : "Render Markdown"}
+          variant="outline"
+          size="xs"
+          pressed={diffRenderMarkdown}
+          onPressedChange={(pressed) => {
+            setDiffRenderMarkdown(Boolean(pressed));
+          }}
+        >
+          <FileTextIcon className="size-3" />
+        </Toggle>
       </div>
     </>
   );
@@ -664,6 +787,8 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
                   const fileKey = buildFileDiffRenderKey(fileDiff);
                   const themedFileKey = `${fileKey}:${resolvedTheme}`;
                   const collapsed = collapsedDiffFileKeys.has(fileKey);
+                  const shouldRenderMarkdownPreview =
+                    diffRenderMarkdown && isMarkdownDiffFilePath(filePath);
                   return (
                     <div
                       key={themedFileKey}
@@ -680,40 +805,51 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
                         openDiffFileInEditor(filePath);
                       }}
                     >
-                      <FileDiff
-                        fileDiff={fileDiff}
-                        renderHeaderPrefix={() => (
-                          <button
-                            type="button"
-                            className={cn(
-                              "inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-0 transition-colors hover:bg-foreground/10 focus-visible:outline-hidden",
-                              getDiffCollapseIconClassName(fileDiff),
-                            )}
-                            aria-label={collapsed ? `Expand ${filePath}` : `Collapse ${filePath}`}
-                            aria-expanded={!collapsed}
-                            title={collapsed ? "Expand diff" : "Collapse diff"}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toggleDiffFileCollapsed(fileKey);
-                            }}
-                          >
-                            {collapsed ? (
-                              <ChevronRightIcon className="size-4" />
-                            ) : (
-                              <ChevronDownIcon className="size-4" />
-                            )}
-                          </button>
-                        )}
-                        options={{
-                          collapsed,
-                          diffStyle: diffRenderMode === "split" ? "split" : "unified",
-                          lineDiffType: "none",
-                          overflow: diffWordWrap ? "wrap" : "scroll",
-                          theme: resolveDiffThemeName(resolvedTheme),
-                          themeType: resolvedTheme as DiffThemeType,
-                          unsafeCSS: DIFF_PANEL_UNSAFE_CSS,
-                        }}
-                      />
+                      {shouldRenderMarkdownPreview ? (
+                        <MarkdownDiffPreview
+                          collapsed={collapsed}
+                          fileDiff={fileDiff}
+                          filePath={filePath}
+                          onOpenFile={openDiffFileInEditor}
+                          onToggleCollapsed={() => toggleDiffFileCollapsed(fileKey)}
+                          workspaceCwd={activeCwd}
+                        />
+                      ) : (
+                        <FileDiff
+                          fileDiff={fileDiff}
+                          renderHeaderPrefix={() => (
+                            <button
+                              type="button"
+                              className={cn(
+                                "inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-0 transition-colors hover:bg-foreground/10 focus-visible:outline-hidden",
+                                getDiffCollapseIconClassName(fileDiff),
+                              )}
+                              aria-label={collapsed ? `Expand ${filePath}` : `Collapse ${filePath}`}
+                              aria-expanded={!collapsed}
+                              title={collapsed ? "Expand diff" : "Collapse diff"}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleDiffFileCollapsed(fileKey);
+                              }}
+                            >
+                              {collapsed ? (
+                                <ChevronRightIcon className="size-4" />
+                              ) : (
+                                <ChevronDownIcon className="size-4" />
+                              )}
+                            </button>
+                          )}
+                          options={{
+                            collapsed,
+                            diffStyle: diffRenderMode === "split" ? "split" : "unified",
+                            lineDiffType: "none",
+                            overflow: diffWordWrap ? "wrap" : "scroll",
+                            theme: resolveDiffThemeName(resolvedTheme),
+                            themeType: resolvedTheme as DiffThemeType,
+                            unsafeCSS: DIFF_PANEL_UNSAFE_CSS,
+                          }}
+                        />
+                      )}
                     </div>
                   );
                 })}

@@ -9,6 +9,7 @@ const RELATIVE_FILE_PATH_PATTERN = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+(?::\d
 const RELATIVE_FILE_NAME_PATTERN = /^[A-Za-z0-9._-]+\.[A-Za-z0-9_-]+(?::\d+){0,2}$/;
 const POSITION_SUFFIX_PATTERN = /:\d+(?::\d+)?$/;
 const POSITION_ONLY_PATTERN = /^\d+(?::\d+)?$/;
+const MARKDOWN_FILE_EXTENSIONS = new Set([".md", ".markdown", ".mdown", ".mkd"]);
 const POSIX_FILE_ROOT_PREFIXES = [
   "/Users/",
   "/home/",
@@ -27,6 +28,8 @@ export interface MarkdownFileLinkMeta {
   targetPath: string;
   displayPath: string;
   basename: string;
+  workspaceRelativePath?: string;
+  isMarkdown: boolean;
   line?: number;
   column?: number;
 }
@@ -58,6 +61,14 @@ function stripSearchAndHash(value: string): { path: string; hash: string } {
 
 function normalizeWindowsDrivePath(path: string): string {
   return /^\/[A-Za-z]:[\\/]/.test(path) ? path.slice(1) : path;
+}
+
+function normalizePathSeparators(path: string): string {
+  return path.replaceAll("\\", "/");
+}
+
+function trimTrailingPathSeparators(path: string): string {
+  return path.replace(/[\\/]+$/, "");
 }
 
 function parseFileUrlHref(
@@ -174,6 +185,40 @@ function basenameOfPath(path: string): string {
   return separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
 }
 
+function extensionOfPath(path: string): string {
+  const basename = basenameOfPath(splitPathAndPosition(path).path);
+  const extensionIndex = basename.lastIndexOf(".");
+  return extensionIndex > 0 ? basename.slice(extensionIndex).toLowerCase() : "";
+}
+
+export function isMarkdownFilePath(path: string): boolean {
+  return MARKDOWN_FILE_EXTENSIONS.has(extensionOfPath(path));
+}
+
+export function resolveWorkspaceRelativePath(
+  targetPath: string,
+  workspaceRoot: string | undefined,
+): string | null {
+  if (!workspaceRoot) return null;
+
+  const normalizedTargetPath = normalizeWindowsDrivePath(
+    normalizePathSeparators(splitPathAndPosition(targetPath).path),
+  );
+  const normalizedWorkspaceRoot = trimTrailingPathSeparators(
+    normalizeWindowsDrivePath(normalizePathSeparators(workspaceRoot.trim())),
+  );
+  if (normalizedWorkspaceRoot.length === 0) return null;
+
+  const targetForCompare = normalizedTargetPath.toLowerCase();
+  const workspaceForCompare = normalizedWorkspaceRoot.toLowerCase();
+  const workspacePrefix = `${workspaceForCompare}/`;
+
+  if (!targetForCompare.startsWith(workspacePrefix)) return null;
+
+  const relativePath = normalizedTargetPath.slice(normalizedWorkspaceRoot.length + 1);
+  return relativePath.length > 0 ? relativePath : null;
+}
+
 export function resolveMarkdownFileLinkMeta(
   href: string | undefined,
   cwd?: string,
@@ -186,12 +231,15 @@ export function resolveMarkdownFileLinkMeta(
   const parsedColumn = column ? Number.parseInt(column, 10) : Number.NaN;
   const lineNumber = Number.isFinite(parsedLine) ? parsedLine : undefined;
   const columnNumber = Number.isFinite(parsedColumn) ? parsedColumn : undefined;
+  const workspaceRelativePath = resolveWorkspaceRelativePath(path, cwd);
 
   return {
     filePath: path,
     targetPath,
     displayPath: formatWorkspaceRelativePath(targetPath, cwd),
     basename: basenameOfPath(path),
+    ...(workspaceRelativePath ? { workspaceRelativePath } : {}),
+    isMarkdown: isMarkdownFilePath(path),
     ...(lineNumber !== undefined ? { line: lineNumber } : {}),
     ...(columnNumber !== undefined ? { column: columnNumber } : {}),
   };

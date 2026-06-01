@@ -1,5 +1,5 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { CopyIcon, EllipsisIcon, FileWarningIcon, PanelLeftIcon } from "lucide-react";
+import { CopyIcon, EllipsisIcon, FileWarningIcon, PanelLeftIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -177,6 +177,16 @@ export function PlanConversationDocument(props: {
                 </MenuItem>
               </MenuPopup>
             </Menu>
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="outline"
+              onClick={props.onCollapse}
+              aria-label="Close preview"
+              title="Close preview"
+            >
+              <XIcon className="size-3.5" />
+            </Button>
           </div>
         </>
       }

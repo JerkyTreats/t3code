@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isMarkdownFilePath,
   resolveMarkdownFileLinkMeta,
   resolveMarkdownFileLinkTarget,
+  resolveWorkspaceRelativePath,
   rewriteMarkdownFileUriHref,
 } from "./markdown-links";
 
@@ -116,5 +118,42 @@ describe("resolveMarkdownFileLinkTarget", () => {
 
   it("does not treat app routes as file links", () => {
     expect(resolveMarkdownFileLinkTarget("/chat/settings")).toBeNull();
+  });
+
+  it("marks markdown links and stores a workspace relative preview path", () => {
+    expect(
+      resolveMarkdownFileLinkMeta(
+        "/Users/julius/project/design/plan/execution/task_network/PLAN.md",
+        "/Users/julius/project",
+      ),
+    ).toMatchObject({
+      isMarkdown: true,
+      workspaceRelativePath: "design/plan/execution/task_network/PLAN.md",
+    });
+  });
+});
+
+describe("isMarkdownFilePath", () => {
+  it("detects markdown file extensions", () => {
+    expect(isMarkdownFilePath("docs/PLAN.md")).toBe(true);
+    expect(isMarkdownFilePath("docs/PLAN.mdown:12")).toBe(true);
+    expect(isMarkdownFilePath("src/plan.ts")).toBe(false);
+  });
+});
+
+describe("resolveWorkspaceRelativePath", () => {
+  it("returns a relative path for files inside the workspace", () => {
+    expect(
+      resolveWorkspaceRelativePath(
+        "/Users/julius/project/design/plan/execution/task_network/PLAN.md:12",
+        "/Users/julius/project",
+      ),
+    ).toBe("design/plan/execution/task_network/PLAN.md");
+  });
+
+  it("returns null for files outside the workspace", () => {
+    expect(
+      resolveWorkspaceRelativePath("/Users/julius/other/PLAN.md", "/Users/julius/project"),
+    ).toBeNull();
   });
 });

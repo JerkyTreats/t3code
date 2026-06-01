@@ -86,6 +86,7 @@ interface TimelineRowSharedState {
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onOpenMarkdownFilePreview?: (relativePath: string) => void;
 }
 
 interface TimelineRowActivityState {
@@ -121,6 +122,7 @@ interface MessagesTimelineProps {
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
   routeThreadKey: string;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onOpenMarkdownFilePreview?: (relativePath: string) => void;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
   isRevertingCheckpoint: boolean;
@@ -150,6 +152,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   turnDiffSummaryByAssistantMessageId,
   routeThreadKey,
   onOpenTurnDiff,
+  onOpenMarkdownFilePreview,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
   isRevertingCheckpoint,
@@ -256,6 +259,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
+      ...(onOpenMarkdownFilePreview ? { onOpenMarkdownFilePreview } : {}),
     }),
     [
       timestampFormat,
@@ -268,6 +272,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
+      onOpenMarkdownFilePreview,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -487,6 +492,9 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           cwd={ctx.markdownCwd}
           isStreaming={Boolean(row.message.streaming)}
           skills={ctx.skills}
+          {...(ctx.onOpenMarkdownFilePreview
+            ? { onOpenMarkdownFilePreview: ctx.onOpenMarkdownFilePreview }
+            : {})}
         />
         <AssistantChangedFilesSection
           turnSummary={row.assistantTurnDiffSummary}
@@ -566,6 +574,9 @@ function ProposedPlanTimelineRow({
         environmentId={ctx.activeThreadEnvironmentId}
         cwd={ctx.markdownCwd}
         workspaceRoot={ctx.workspaceRoot}
+        {...(ctx.onOpenMarkdownFilePreview
+          ? { onOpenMarkdownFilePreview: ctx.onOpenMarkdownFilePreview }
+          : {})}
       />
     </div>
   );

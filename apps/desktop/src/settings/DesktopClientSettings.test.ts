@@ -17,6 +17,7 @@ const clientSettings: ClientSettings = {
   confirmThreadDelete: false,
   dismissedProviderUpdateNotificationKeys: [],
   diffIgnoreWhitespace: true,
+  diffRenderMarkdown: true,
   diffWordWrap: true,
   favorites: [],
   providerModelPreferences: {},

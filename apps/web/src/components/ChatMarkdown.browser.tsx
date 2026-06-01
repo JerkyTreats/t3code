@@ -102,6 +102,31 @@ describe("ChatMarkdown", () => {
     }
   });
 
+  it("opens workspace markdown links through the rendered preview callback", async () => {
+    const onOpenMarkdownFilePreview = vi.fn();
+    const screen = await render(
+      <ChatMarkdown
+        text="[PLAN.md](design/plan/execution/task_network/PLAN.md)"
+        cwd="/Users/yashsingh/p/t3code"
+        onOpenMarkdownFilePreview={onOpenMarkdownFilePreview}
+      />,
+    );
+
+    try {
+      const link = page.getByRole("link", { name: "PLAN.md" });
+      await expect.element(link).toBeInTheDocument();
+
+      await link.click();
+
+      expect(onOpenMarkdownFilePreview).toHaveBeenCalledWith(
+        "design/plan/execution/task_network/PLAN.md",
+      );
+      expect(openInPreferredEditorMock).not.toHaveBeenCalled();
+    } finally {
+      await screen.unmount();
+    }
+  });
+
   it("disambiguates duplicate file basenames inline", async () => {
     const firstPath = "/Users/yashsingh/p/t3code/apps/web/src/components/chat/MessagesTimeline.tsx";
     const secondPath = "/Users/yashsingh/p/t3code/apps/web/src/components/MessagesTimeline.tsx";
