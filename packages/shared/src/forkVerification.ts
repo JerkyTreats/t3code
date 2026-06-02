@@ -11,7 +11,8 @@ export type ForkFeatureId =
   | "F10"
   | "F11"
   | "F12"
-  | "F13";
+  | "F13"
+  | "F14";
 
 export type ForkVerificationLevel = "unit" | "integration" | "browser" | "manual";
 
@@ -42,6 +43,7 @@ export const FORK_FEATURE_IDS = [
   "F11",
   "F12",
   "F13",
+  "F14",
 ] as const satisfies readonly ForkFeatureId[];
 
 export const FORK_FEATURE_CONTRACTS = [
@@ -393,6 +395,43 @@ export const FORK_FEATURE_CONTRACTS = [
         id: "f13-current-session-is-not-revocable",
         outcome:
           "Client session management can revoke other sessions while keeping current session revocation disabled.",
+        levels: ["unit", "browser"],
+      },
+    ],
+  },
+  {
+    id: "F14",
+    title: "Project management and inference dashboard",
+    ownerModules: [
+      "apps/web/src/routes/_chat.projects.$environmentId.$projectId.tsx",
+      "apps/web/src/components/project-management/ProjectManagementRoute.tsx",
+      "apps/web/src/components/project-management/ProjectManagementPage.tsx",
+      "apps/web/src/components/project-management/ProjectInferenceDashboardPage.tsx",
+      "apps/web/src/project-management/projectManagementRoute.ts",
+      "apps/web/src/project-management/projectManagementOverview.ts",
+      "apps/web/src/project-management/projectManagementInference.ts",
+      "apps/web/src/project-management/adapters/projectManagementStoreAdapter.ts",
+      "apps/web/src/components/project-management/ProjectScopedGitPanel.tsx",
+      "apps/web/src/components/Sidebar.tsx",
+      "apps/web/src/components/CommandPalette.tsx",
+    ],
+    scenarios: [
+      {
+        id: "f14-project-management-targets-concrete-project",
+        outcome:
+          "Sidebar and command palette project management actions target concrete environment scoped projects.",
+        levels: ["unit", "browser"],
+      },
+      {
+        id: "f14-inference-dashboard-uses-latest-usage",
+        outcome:
+          "Project inference dashboard totals use the latest usage snapshot per turn and preserve provider processed token totals.",
+        levels: ["unit", "browser"],
+      },
+      {
+        id: "f14-project-git-does-not-claim-draft",
+        outcome:
+          "Project scoped Git management renders repository state without clearing unrelated active composer drafts.",
         levels: ["unit", "browser"],
       },
     ],
