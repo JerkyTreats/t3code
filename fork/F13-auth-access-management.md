@@ -45,11 +45,11 @@ Auth access management is exposed through the fork native API and Connections se
 - Verify saved environment flows after adding access management actions.
 - Keep local-first desktop fallback intact.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream auth and hosted connectivity changes through the fork NativeApi and Connections settings surface.
+- Replay upstream auth and hosted connectivity changes through the fork NativeApi and Connections settings surface.
 - Preserve local-first desktop behavior and saved environment workflows when upstream changes pairing or access management flows.
-- Reject changes that expose destructive session revocation without current-session protection or transport capability gating.
+- Override changes that expose destructive session revocation without current-session protection or transport capability gating.
 
 ## Verification
 

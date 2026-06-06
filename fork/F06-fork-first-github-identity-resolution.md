@@ -31,10 +31,10 @@ GitHub context resolves to the fork remote first so repo, issue, and panel actio
 - Keep fallback behavior explicit when a fork remote cannot be found.
 - Do not let provider neutral source control wiring replace the GitHub fork default.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream GitHub integration changes at the fork identity seam.
-- Reject upstream behavior that silently redirects user facing GitHub actions to upstream by default.
+- Replay upstream GitHub integration changes at the fork identity seam.
+- Override upstream behavior that silently redirects user facing GitHub actions to upstream by default.
 
 ## Verification
 

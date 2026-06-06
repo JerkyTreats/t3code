@@ -37,10 +37,10 @@ Thread and sidebar status cues reflect plan state directly instead of collapsing
 - Treat project group labels as display only.
 - Verify plan sidebar entry points after route and layout changes.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream activity and thread status changes so plan aware cues remain explicit.
-- Reject upstream regressions that replace explicit plan progress with generic running labels.
+- Replay upstream activity and thread status changes so plan aware cues remain explicit.
+- Override upstream regressions that replace explicit plan progress with generic running labels.
 
 ## Verification
 

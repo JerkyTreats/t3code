@@ -64,12 +64,12 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Verify file preview links from chat messages, files panel, and project document previews.
 - Keep code file preview behavior distinct from rendered markdown document behavior.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream markdown and document preview changes under the fork plan preview contract.
+- Replay upstream markdown and document preview changes under the fork plan preview contract.
 - Preserve the richer document markdown renderer when upstream changes chat markdown internals.
 - Preserve route based document preview navigation when upstream changes diff, files, plan, or chat route search state.
-- Reject upstream changes that remove fullscreen in memory plan preview, remove in app project document preview, regress plan or document navigation, remove document outline behavior, disable Mermaid or image preview support, or reintroduce clipped markdown content in protected surfaces.
+- Override upstream changes that remove fullscreen in memory plan preview, remove in app project document preview, regress plan or document navigation, remove document outline behavior, disable Mermaid or image preview support, or reintroduce clipped markdown content in protected surfaces.
 
 ## Verification
 

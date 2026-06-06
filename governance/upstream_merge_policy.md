@@ -1,158 +1,193 @@
-# Upstream Merge Policy
+# Upstream Product Replay Policy
 
-Date: 2026-03-13
+Date: 2026-06-05
 Status: active
 
 ## Intent
 
-Keep this fork current with upstream where that improves reliability, performance, security, or maintainability.
+Keep this fork current by using upstream code as the default base.
 
-Preserve Omarchy specific product and design decisions as the governing source for this repository.
+Fork product behavior is durable.
 
-Treat upstream as a strong implementation reference, not the final authority for fork owned behavior.
+Fork implementation shape is disposable by default.
 
-## Fork Identity
+Replay fork product features on top of upstream primitives instead of preserving old fork internals.
 
-This repository is an Omarchy tuned fork of T3 Code.
+Avoid long lived code divergence unless it protects a documented product outcome and has a planned convergence path.
 
-It intentionally carries product, desktop, and workflow opinions that may differ from upstream.
+## Core Principle
 
-Those local decisions are part of the product contract for this fork and should not be removed only because upstream chose a different direction.
+Upstream code is the substrate.
+
+Fork specs are the product contract.
+
+The fork should preserve outcomes from `patch.md` and `fork/`, not old file shapes, component structure, store design, adapter APIs, or local helper implementations.
+
+Omarchy alignment is a protected Electron desktop product lane. It is not a global product scope limiter.
+
+Upstream product surfaces such as web, hosted, mobile, relay, and shared runtime should be accepted by default unless they directly conflict with a documented fork product outcome.
+
+The fork product scope is the full set of features documented in `patch.md`, `fork/`, and active user decisions. Do not use Omarchy policy as a reason to narrow unrelated product lanes.
+
+When upstream replaces architecture, start from the upstream architecture and rebuild fork behavior on top of it.
+
+Before reusing old fork code, verify that upstream does not now provide a primitive that can carry the same product behavior.
+
+Prefer deleting old fork implementation over sheltering it when upstream has replaced the surrounding system.
 
 ## Authority Order
 
 - User request wins over repository policy.
 - Repository governance wins over routine upstream defaults.
-- Fork product and design decisions win over conflicting upstream product and design decisions.
-- Upstream wins by default only when a change does not conflict with fork owned behavior or repository governance.
+- Fork product outcomes win over conflicting upstream product outcomes.
+- Upstream implementation wins by default unless a fork feature spec requires product behavior that upstream does not provide.
 
-## Fork Owned Surfaces
+## Default Workflow
 
-The fork has final authority for these areas:
+Use one of these workflows for non-trivial upstream work.
 
-- branding, naming, and release identity
-- Linux desktop behavior tied to Omarchy
-- screenshot capture and attach flows tied to Omarchy tooling
-- system theme behavior derived from Omarchy theme state
+### Merge And Repair
+
+Use this when a normal upstream merge is reviewable.
+
+1. Merge the target upstream tag or commit.
+2. Resolve conflicts by preferring upstream structure where practical.
+3. Repair protected fork product outcomes through scoped commits.
+4. Verify the Required Fork Preservation Gate.
+
+### Base Rebuild And Replay
+
+Use this when upstream has moved enough that normal conflict resolution would preserve more history than clarity.
+
+1. Start from the target upstream tag or commit.
+2. Reapply fork product features from `patch.md` and `fork/`.
+3. Use upstream primitives first.
+4. Add fork seams only for product policy or adapter translation.
+5. Verify the Required Fork Preservation Gate before replacing fork `main`.
+
+This workflow is preferred over selective porting when the fork is far behind upstream.
+
+### Selective Port Exception
+
+Selective cherry-pick or manual porting is an exception.
+
+It is allowed only when merge and repair or base rebuild and replay is impractical for a named slice, or when a named upstream product lane has an explicit fork policy decision not to accept it yet.
+
+Every selective port exception must record:
+
+- the upstream target the fork will later converge to
+- why ancestry based intake is not being used now
+- which fork product outcomes are protected
+- which upstream primitives were considered before keeping old fork code
+- the planned follow-up or convergence trigger
+
+## Replay Decisions
+
+Use these terms for upstream behavior decisions.
+
+- `accept`: upstream behavior becomes fork behavior.
+- `replay`: fork behavior remains, but is rebuilt on upstream primitives.
+- `override`: upstream product behavior conflicts with fork product behavior and is changed through the smallest fork policy layer.
+
+These labels are behavior decisions. They are not ancestry decisions.
+
+They do not justify avoiding upstream code by themselves.
+
+Older notes may use `adopt`, `adapt`, and `reject`. Map them as follows when reading historical intake records:
+
+- `adopt` maps to `accept`
+- `adapt` maps to `replay`
+- `reject` maps to `override`
+
+## Product Replay Rules
+
+- Start each replay slice from upstream code, not old fork code.
+- Preserve user visible behavior, workflow semantics, desktop integration outcomes, and compatibility guarantees from the fork specs.
+- Do not preserve old implementation only because it is fork owned.
+- Do not use broad reverts to restore fork behavior.
+- Do not copy whole upstream components into fork folders unless the entire component is product owned.
+- Do not create compatibility layers that freeze old architecture unless they are temporary and have a documented removal condition.
+- Prefer upstream contracts, stores, process models, and runtime state names when they can carry the fork feature.
+- Rebuild churn-heavy adapters around stable product seams.
+- Keep fork product logic small, explicit, and easy to replay on the next upstream base.
+
+## Fork Owned Product Outcomes
+
+The fork has final product authority for these areas:
+
+- Electron desktop branding, naming, and release identity
+- Electron desktop Linux behavior tied to Omarchy
+- Electron desktop screenshot capture and attach flows tied to Omarchy tooling
+- Electron desktop system theme behavior derived from Omarchy theme state
 - GitHub panel behavior and local Git workflow guidance
 - workspace promotion behavior and merge guidance
 - governance files and repository process rules
 
+The fork does not have a standing policy to remove upstream product lanes only because they are not Omarchy specific.
+
+New upstream product lanes should usually be accepted as upstream owned surfaces. Add fork product policy only where the fork has an explicit outcome to protect.
+
 ## Protected Fork Features
 
-Treat these as protected fork features during every upstream sync:
+Treat these as protected product outcomes during every upstream sync:
 
 - fork first GitHub identity resolution for repo, issue, and panel context
 - draft autonomy for composer text, screenshots, attachments, and local thread state
-- composer chrome layout including access control placement, screenshot control placement, and rich draft affordances
+- Electron desktop composer chrome layout including access control placement, screenshot control placement, and rich draft affordances
 - Git panel isolation from active draft ownership and prompt state
-- plan sidebar progress affordances and other fork specific status cues, including showing plan progress such as `1/4` when a plan exists instead of a generic working label
+- plan sidebar progress affordances and fork specific status cues, including plan progress such as `1/4` when a plan exists
 - plan markdown preview flows and markdown rendering behavior, including fullscreen in memory plan preview, plan specific markdown navigation, and horizontal overflow handling for wide markdown content
 - local branch, worktree, and promotion workflow behavior
-- Omarchy specific desktop and screenshot integration behavior
-- Omarchy system theme behavior derived from local desktop theme state
-- screenshot capture and attach flows tied to Omarchy tooling and desktop capability checks
+- Omarchy specific Electron desktop and screenshot integration behavior
+- Omarchy system theme behavior derived from local Electron desktop theme state
+- Electron desktop screenshot capture and attach flows tied to Omarchy tooling and desktop capability checks
 
-Do not remove, replace, silently degrade, or route around these features without an intentional fork decision that is recorded in the merge notes.
+Do not remove, silently degrade, or route around these outcomes without an intentional fork decision recorded in the replay notes.
 
-## Fork Protected Areas
+## Protected Review Areas
 
-Use this list as a concrete review aid during upstream sync and merge work.
+Use this list as a concrete audit aid during upstream work.
 
 - composer chrome and layout in `apps/web/src/components/ChatView.tsx`, including floating access control placement, screenshot placement, and rich draft controls
-- sidebar status cues for plan aware progress in the thread and activity surfaces, including fractional progress such as `1/4` when plan data exists
+- sidebar status cues for plan aware progress in thread and activity surfaces, including fractional progress such as `1/4` when plan data exists
 - plan markdown preview and markdown document rendering in `apps/web/src/components/ChatMarkdown.tsx`, `apps/web/src/components/DocumentMarkdownRenderer.tsx`, `apps/web/src/components/PlanConversationDocument.tsx`, and `apps/web/src/routes/_chat.$threadId.tsx`
-- Omarchy system theme behavior and any browser or desktop adapters that project desktop theme state into the app
-- screenshot capability detection, screenshot capture, and screenshot attach flows across desktop, web, and composer state
+- Omarchy system theme behavior and Electron desktop adapters that project desktop theme state into the app
+- screenshot capability detection, screenshot capture, and screenshot attach flows across Electron desktop, web, and composer state
 - fork first GitHub repo identity resolution in `apps/server/src/git/Layers/GitHubCli.ts` so fork operations resolve to the fork remote instead of upstream
 - Git panel promote semantics in `apps/server/src/git/Layers/GitManager.ts` and related web UI, including backup branch creation, merge to target branch, push of target branch, and source branch cleanup
 
-## Patch Guide
+## Replay Plan Requirements
 
-`patch.md` is the authoritative current state guide for fork owned features.
+Every non-trivial upstream take must have one controlling note under `.plans/` before broad implementation starts.
 
-It must stay complete and current for the fork owned behavior described there.
+The note must include:
 
-When upstream differs from `patch.md`, preserve `patch.md` unless the fork intentionally changes direction.
+- target upstream tag or commit
+- selected workflow
+- upstream commit inventory
+- upstream product lanes being accepted
+- protected fork features touched
+- replay order by feature or product surface
+- upstream primitives that should carry each feature
+- fork seams or owner modules used only where product policy or adapter translation is required
+- any selective port exceptions
+- verification evidence required before review
 
-When code changes intentionally modify a fork owned feature, update `patch.md` in the same change.
+The plan must describe feature replay from product outcomes to implementation, not from old fork files to new fork files.
 
-## Upstream Intake Classes
+## Seam Rules
 
-Classify each meaningful upstream change into one of these outcomes:
+A fork seam is valid when it expresses product policy or translates between upstream mechanics and fork behavior.
 
-- `adopt` when the upstream change improves shared behavior and does not conflict with fork owned surfaces
-- `adapt` when the upstream change is valuable but must be reshaped to preserve fork behavior
-- `reject` when the upstream change weakens Omarchy alignment or replaces a fork owned product decision
+A fork seam is not valid when it only shelters old implementation from upstream churn.
 
-## Default Intake Rules
+Good seams are:
 
-- Adopt upstream bug fixes, security fixes, performance improvements, and low risk maintainability work by default when they do not conflict with fork owned behavior.
-- Adapt upstream changes that improve internals but touch fork owned UX, desktop integration, or workflow semantics.
-- Reject upstream changes that make the product more generic at the expense of Omarchy specific behavior.
-- Reject upstream changes that remove, obscure, or regress fork owned workflow guidance unless the fork intentionally changes that guidance.
-
-## Merge Decision Rules
-
-- When upstream and fork both touch the same file, preserve fork intent first, then port upstream improvements into the fork shape.
-- Never discard Omarchy specific UX or desktop behavior only to reduce merge effort.
-- Prefer small integration commits or pull requests that clearly describe what was adopted, adapted, and rejected.
-- When a divergence becomes long lived, isolate the fork seam so future upstream sync work stays cheaper and safer.
-
-## Structured Upstream Take Workflow
-
-Use this workflow for any non-trivial upstream release take or commit range.
-
-- Create or update one controlling intake note under `.plans/` before implementation starts.
-- Inventory the upstream commits in the target range before broad code changes begin.
-- Group the upstream commits into ordered slices with a declared `adopt`, `adapt`, or `reject` outcome for each slice.
-- Record the fork seam or owner module for each slice before landing code.
-- Prefer one local commit per slice by default.
-- Cite the upstream commit refs covered by the slice in the local commit body.
-- If a take has already drifted into local adaptation without clear upstream mapping, create one explicit checkpoint commit first, then resume the remaining work as commit-mapped slices.
-- Do not continue a large upstream take as freeform implementation after the checkpoint unless the user explicitly requests that deviation.
-- When a slice mixes low-overlap substrate import with higher-risk fork seam adaptation, split the substrate checkpoint from the seam adaptation when practical.
-- Keep commit order aligned to the execution order in the active intake note so later review can compare branch history to the plan directly.
-
-## Upstream Base Rebuild Workflow
-
-Use this workflow when the current fork has diverged enough that a normal merge or commit-by-commit replay would preserve more historical conflict than useful structure.
-
-This workflow rebuilds the fork on latest `upstream/main`, then re-ports fork owned behavior as an explicit product layer.
-
-### When To Use
-
-Use an upstream base rebuild when one or more of these are true:
-
-- direct merge conflicts are broad across desktop, server, web, contracts, and persistence
-- upstream has replaced major architecture that the fork still carries in older shape
-- many upstream commits have already been locally ported in fork-shaped commits, making Git history a poor guide
-- preserving future upstream velocity matters more than preserving current mixed implementation shape
-- fork owned behavior can be verified through outcome tests and `patch.md`
-
-Do not use this workflow to silently drop fork product decisions, reduce testing burden, or bypass the Required Fork Preservation Gate.
-
-### Branch Shape
-
-- Create a new rebuild branch from latest `upstream/main`.
-- Do not merge current fork `main` wholesale into the rebuild branch.
-- Treat current fork `main` as the source for product behavior, tests, policy decisions, and implementation references.
-- Cherry-pick existing fork commits only when the commit is clean, structurally relevant to the upstream base, and preserves the intended fork seam.
-- Keep the old fork branch available until the rebuild branch passes the fork preservation gate.
-
-### Required First Commits
-
-Before re-porting broad product behavior:
-
-- add or restore the fork verification registry
-- add or restore the active upstream rebuild plan under `.plans/`
-- add minimal fork seam module roots where protected behavior will live
-- record the exact upstream base commit in the plan
-- record the protected fork features that must be re-ported
-
-### Fork Seam Rules
-
-Fork owned product behavior should live behind local fork seams in the relevant package.
+- small
+- product aware
+- replayable
+- close to the boundary where upstream behavior becomes fork behavior
+- covered by focused tests or replay evidence
 
 Expected seam roots include:
 
@@ -162,127 +197,58 @@ Expected seam roots include:
 - `packages/contracts/src/fork`
 - `packages/shared/src/fork`
 
-Fork seams should encode product decisions from `patch.md`, not generic pass through wrappers.
+Do not create a seam only to rename upstream APIs.
 
-Preferred seam modules include:
+Do not keep duplicate fork and upstream implementations alive unless the old path has a removal condition.
 
-- composer policy for draft autonomy, screenshot action availability, runtime access controls, and rich draft affordances
-- plan presentation policy for fractional progress, plan ready labels, fullscreen in memory preview, and markdown navigation behavior
-- Git workflow policy for fork first identity, promotion backups, source branch cleanup, worktree close, and worktree discard semantics
-- provider instance policy for routing identity, legacy fallback, and active instance capability selection
-- Omarchy desktop adapters for theme source, palette projection, screenshot command selection, artifact handling, and clipboard fallback
-- source control policy for provider lane semantics, publish behavior, GitHub only issue boundaries, and change request terminology
+## Patch Guide
 
-Do not copy whole upstream components into fork folders unless the entire component is fork owned.
+`patch.md` and the linked specs under `fork/` define current fork product behavior.
 
-Prefer small policy or adapter modules that upstream shaped code calls at explicit integration points.
+Use them as outcome contracts during replay.
 
-### Re-Port Order
+When code changes intentionally modify a fork product outcome, update `patch.md` or the matching feature spec in the same change.
 
-Port fork behavior in ordered slices, with each slice mapped to `patch.md` feature ids.
+When upstream differs from `patch.md`, rebuild the documented fork outcome on upstream primitives unless the fork intentionally changes direction.
 
-Recommended order:
+## Required Fork Preservation Gate
 
-- fork verification registry and plan
-- branding and release identity
-- Omarchy desktop theme adapter
-- Omarchy screenshot capture and attach adapter
-- composer draft autonomy and composer chrome policy
-- plan presentation and markdown preview policy
-- fork first GitHub identity and Git workflow policy
-- source control provider lane and publish workflow policy
-- Codex model and binary selection behavior
-- provider instance identity seam
-- auth access management
+Before an upstream sync, merge, rebuild, or selective port exception is ready for review or merge, complete this gate:
 
-When a lower order slice depends on later infrastructure, add the minimal seam first and finish behavior after the dependency lands.
+- review the relevant `patch.md` entries and `fork/` specs
+- identify protected fork features touched by the upstream change
+- classify each product behavior as `accept`, `replay`, or `override`
+- state the upstream primitive that carries each accepted or replayed behavior
+- state the fork seam or owner module for each replayed or overridden behavior
+- verify that old fork implementation was not preserved only due to ownership
+- verify that no protected fork behavior silently falls back to generic upstream behavior
+- verify that active drafts, screenshots, attachments, and local Git context remain intact across affected flows
+- verify that fork specific sidebar, panel, and workflow affordances still render and behave as expected
+- update `patch.md` or feature specs when product behavior, owner modules, or verification expectations changed
+- record the protected fork features reviewed in the pull request, replay notes, or commit body
 
-### Evidence Requirements
+If this gate is not complete, the upstream work is not ready.
 
-Every protected feature re-ported during an upstream base rebuild must have evidence in the active intake or rebuild note.
+## Base Rebuild Readiness Gate
 
-Evidence must state:
-
-- protected feature id from `patch.md`
-- fork seam or owner module
-- outcome scenarios from the fork verification registry
-- automated tests that cover the scenario, or a manual smoke reason when automation is not practical
-- compatibility impact for desktop IPC, WebSocket contracts, persisted browser state, server state, and user visible workflow
-
-Manual-only evidence is acceptable only for OS mediated desktop behavior that cannot be automated reliably yet.
-
-### Commit Discipline
-
-- Prefer one local commit per protected feature slice.
-- Keep upstream substrate imports separate from fork policy wiring when practical.
-- Include the upstream base commit and relevant upstream refs in rebuild commit bodies when useful.
-- Update `patch.md` in the same slice when owner modules, fork seams, or verification expectations change.
-- Do not proceed with large freeform rewrites after a failed or incomplete preservation gate.
-
-### Rebuild Readiness Gate
-
-An upstream base rebuild is not ready to replace fork `main` until:
+A base rebuild is not ready to replace fork `main` until:
 
 - the Required Fork Preservation Gate is complete
-- every protected fork feature in `patch.md` has been adopted, adapted, or intentionally rejected with notes
+- every protected fork feature in `patch.md` has `accept`, `replay`, or `override` notes
 - every fork verification scenario has evidence in the active rebuild note
-- no protected behavior silently falls back to generic upstream behavior
+- every replayed feature identifies the upstream primitive it is built on
+- no protected behavior is implemented by wholesale preservation of stale fork internals
 - `patch.md` reflects the new fork seam owner modules
 - active drafts, screenshots, attachments, local Git context, sidebar cues, panel workflows, and Omarchy desktop flows have been verified
 - `bun fmt`, `bun lint`, and `bun typecheck` pass
 - focused automated tests for affected web, server, desktop, contracts, and shared packages pass
 
-## Required Fork Preservation Gate
+## Commit Discipline
 
-Before an upstream sync, merge, or divergence update is ready for review or merge, complete this gate:
-
-- review the relevant `patch.md` entries for the affected fork features
-- identify the protected fork features touched by the incoming upstream change
-- classify each meaningful change as `adopt`, `adapt`, or `reject`
-- state the fork seam or owner module where reconciliation happens
-- verify that no protected fork feature silently falls back to generic upstream behavior
-- verify that active drafts, screenshots, attachments, and local Git context remain intact across the affected flows
-- verify that fork specific sidebar, panel, and workflow affordances still render and behave as expected
-- update `patch.md` when the current fork behavior, owner modules, or verification expectations changed
-- record the protected fork features reviewed in the pull request, merge notes, or commit body
-
-If this gate is not completed, the upstream merge is not ready.
-
-## Seam Strategy
-
-- Prefer a narrow upstream facing capability layer plus a fork owned adapter or policy layer when the same domain changes frequently in both codebases.
-- Keep upstream shaped contracts, process details, and transport mechanics on the upstream facing side of the seam.
-- Keep fork owned product semantics, workflow policy, UX state shaping, and progress translation on the fork side of the seam.
-- Treat the adapter or policy layer as the definitive place where upstream changes are reconciled into fork behavior.
-- If an upstream merge repeatedly forces edits across web, server, and desktop for the same concern, extract or strengthen the seam before the next sync.
-- Browser facing or desktop facing services should depend on fork domain contracts when practical, not directly on upstream shaped runtime details.
-- Avoid pass through abstractions that only rename methods without encoding ownership or behavior boundaries.
-
-## Conflict Resolution Rules
-
-- Correctness and reliability win over convenience.
-- On pure product or design conflict, fork decisions win.
-- On pure bug fix, performance, or security conflict, upstream behavior should usually be integrated unless it breaks fork owned behavior.
-- When both sides change the same workflow, keep the fork UX contract and reapply upstream internals under that contract when practical.
-- When a conflict changes contracts, persisted state, or user visible workflow, call out the impact before merge.
-
-## Operational Process
-
-- Review upstream releases regularly.
-- Use the external watch workflow to surface new upstream releases.
-- Review `patch.md` before each upstream sync and keep it current as fork behavior evolves.
-- For each non-trivial upstream take, prepare the upstream commit inventory and slice map in the active intake note before broad implementation starts.
-- For each upstream sync, record the adopted, adapted, and rejected changes in the pull request or commit body.
-- For each upstream sync, record which upstream commits or commit groups each local checkpoint or slice commit covers.
-- For each upstream sync, explicitly record which protected fork features were checked and whether any were intentionally changed.
-- For each change that modifies a fork owned feature, update `patch.md` in the same change.
-- Call out compatibility impact for desktop IPC, WebSocket contracts, persisted browser state, server side state, and user visible workflow.
-- When adapting a shared domain, note where the authoritative fork seam lives so later merges have one clear reconciliation point.
-- Before considering an upstream sync complete, ensure `bun fmt`, `bun lint`, and `bun typecheck` all pass.
-
-## Non Goals
-
-- blindly mirroring upstream product, UX, or workflow choices
-- forcing zero divergence from upstream at all times
-- replacing reviewer judgment with an automated merge rule
-- defining one merge model for all repositories
+- Establish the upstream ancestry point before broad fork repair work.
+- Prefer one local repair commit per protected product surface.
+- Keep product replay commits separate from unrelated cleanup.
+- Cite relevant upstream refs and protected feature ids in repair commit bodies.
+- Explain why old fork code was reused when it was reused.
+- Explain every selective port exception.
+- Do not continue a large upstream take as freeform implementation after an incomplete preservation gate.

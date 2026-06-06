@@ -37,10 +37,10 @@ Local Git workflow semantics favor fork safety and explicit promotion behavior o
 - Rebuild close and discard flows as separate actions because they intentionally differ on thread deletion.
 - Preserve local workflow text and labels that explain promotion behavior.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream Git workflow improvements under the fork promotion contract.
-- Reject upstream simplifications that remove backup branch creation, safe cleanup, or fork specific worktree guarantees.
+- Replay upstream Git workflow improvements under the fork promotion contract.
+- Override upstream simplifications that remove backup branch creation, safe cleanup, or fork specific worktree guarantees.
 
 ## Verification
 

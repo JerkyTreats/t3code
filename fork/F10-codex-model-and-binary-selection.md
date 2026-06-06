@@ -46,11 +46,11 @@ Codex provider setup follows the installed Codex app-server capability surface i
 - Keep explicit absolute binary paths pinned across desktop restart.
 - Recheck settings UI after upstream provider settings changes.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream provider model changes so Codex app-server model discovery remains authoritative when available.
-- Reject upstream changes that reintroduce a hardcoded Codex only model catalog as the primary source.
-- Reject upstream binary resolution changes that silently replace an explicit user selected Codex binary path.
+- Replay upstream provider model changes so Codex app-server model discovery remains authoritative when available.
+- Override upstream changes that reintroduce a hardcoded Codex only model catalog as the primary source.
+- Override upstream binary resolution changes that silently replace an explicit user selected Codex binary path.
 
 ## Verification
 

@@ -40,10 +40,10 @@ System theme behavior on desktop Linux follows Omarchy theme state instead of ge
 - Preserve missing state fallback as safe degradation, not as generic authority.
 - Add web projection after desktop IPC contracts are restored.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream theme infrastructure changes under the Omarchy source model.
-- Reject upstream behavior that replaces Omarchy as the authoritative desktop theme source on Linux.
+- Replay upstream theme infrastructure changes under the Omarchy source model.
+- Override upstream behavior that replaces Omarchy as the authoritative desktop theme source on Linux.
 
 ## Verification
 

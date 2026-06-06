@@ -68,13 +68,13 @@ Project level management gives each concrete project a first class workspace pag
 - Rebuild inference rollups from latest usage snapshot per turn before rendering dashboard metrics.
 - Recheck markdown and file preview behavior from `F9` because project management links into those surfaces.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream project page, dashboard, and route changes so concrete project identity and environment aware routing remain explicit.
+- Replay upstream project page, dashboard, and route changes so concrete project identity and environment aware routing remain explicit.
 - Preserve fork sidebar grouping rules so grouped labels never replace concrete project identity for management actions.
 - Preserve fork Git panel draft isolation and source control guardrails when project scoped Git actions are added or changed.
-- Reject upstream changes that make inference totals depend only on prompt and response tokens when provider processed token totals are available.
-- Reject upstream changes that remove project level access to scripts, editor actions, latest thread navigation, or dashboard navigation.
+- Override upstream changes that make inference totals depend only on prompt and response tokens when provider processed token totals are available.
+- Override upstream changes that remove project level access to scripts, editor actions, latest thread navigation, or dashboard navigation.
 
 ## Verification
 

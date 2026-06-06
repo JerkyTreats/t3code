@@ -37,10 +37,10 @@ Git panel flows must not take ownership of the active composer draft or silently
 - Run worktree discard teardown before fallback navigation.
 - Treat project scoped Git actions as repository operations unless a thread scoped action is explicit.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream Git UX or routing changes so composer draft ownership remains isolated.
-- Reject upstream coupling that makes Git panel interactions mutate unrelated draft state.
+- Replay upstream Git UX or routing changes so composer draft ownership remains isolated.
+- Override upstream coupling that makes Git panel interactions mutate unrelated draft state.
 
 ## Verification
 

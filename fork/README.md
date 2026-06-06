@@ -5,7 +5,11 @@ Status: active
 
 ## Intent
 
-This directory defines fork owned feature contracts for `T3 Code Omarchy`.
+This directory defines fork owned feature contracts for the T3 Code fork.
+
+Some specs protect the Omarchy Electron desktop lane.
+
+Other specs protect broader fork product behavior that is not limited to Omarchy.
 
 `patch.md` is the authoritative index. Each file here defines one feature in enough detail for an upstream rebuild to replay the behavior without depending on old branch shape.
 
@@ -26,7 +30,7 @@ Each feature spec uses this shape:
 - owner modules
 - fork seams
 - one shot rebuild notes
-- upstream intake rule
+- upstream replay rule
 - verification
 - compatibility checks where needed
 

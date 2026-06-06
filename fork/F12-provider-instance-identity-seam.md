@@ -73,11 +73,11 @@ Provider status and settings can carry provider instance identity without collap
 - Rebuild composer command and skill menus from active instance snapshots.
 - Keep provider instance routing compatible with Codex model discovery and composer draft ownership.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream provider instance work through the provider runtime seam so fork composer draft ownership, screenshot controls, and Codex model discovery remain intact.
+- Replay upstream provider instance work through the provider runtime seam so fork composer draft ownership, screenshot controls, and Codex model discovery remain intact.
 - Preserve legacy provider kind compatibility until all persisted thread, model selection, and session routing paths are instance aware.
-- Reject changes that drop unknown or unavailable instance data during settings decode or provider status projection.
+- Override changes that drop unknown or unavailable instance data during settings decode or provider status projection.
 
 ## Verification
 

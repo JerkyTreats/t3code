@@ -53,11 +53,11 @@ Source control support exposes GitHub, GitLab, Azure DevOps, and Bitbucket throu
 - Preserve fork Git workflow rules from `F6` and `F7` during publish and pull request work.
 - Verify empty repository publish separately from publish with commits.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream source control changes through the provider registry and repository service instead of adding provider specific UI paths.
+- Replay upstream source control changes through the provider registry and repository service instead of adding provider specific UI paths.
 - Preserve fork Git workflow semantics when upstream behavior conflicts with promotion, worktree, protected branch, or fork identity behavior.
-- Reject upstream changes that make GitHub issues appear provider neutral before non GitHub issue parity exists.
+- Override upstream changes that make GitHub issues appear provider neutral before non GitHub issue parity exists.
 
 ## Verification
 

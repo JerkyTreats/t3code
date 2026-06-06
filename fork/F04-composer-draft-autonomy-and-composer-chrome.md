@@ -37,10 +37,10 @@ The composer owns its local draft state and preserves rich draft behavior under 
 - Keep screenshot, runtime access, and rich draft controls attached to the active composer, not a parent route draft shadow.
 - Preserve local persistence warnings and attachment previews during layout changes.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream composer improvements into the fork layout and ownership model.
-- Reject upstream composer simplifications that remove fork specific draft affordances or move ownership away from the active draft.
+- Replay upstream composer improvements into the fork layout and ownership model.
+- Override upstream composer simplifications that remove fork specific draft affordances or move ownership away from the active draft.
 
 ## Verification
 

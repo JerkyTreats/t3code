@@ -9,6 +9,12 @@ Status: active
 
 It defines the current expected behavior of fork owned features and the reconciliation rules to use when reviewing upstream changes.
 
+It does not limit the fork to Omarchy specific behavior.
+
+Omarchy policy protects the Electron desktop look, feel, release identity, Linux desktop integration, theme projection, and screenshot capture flows.
+
+Other upstream product lanes should enter the fork by default unless they conflict with a documented fork owned product outcome.
+
 Use it together with [Upstream Merge Policy](governance/upstream_merge_policy.md).
 
 ## Required Use
@@ -17,7 +23,7 @@ Use it together with [Upstream Merge Policy](governance/upstream_merge_policy.md
 - Review the linked feature specs under `fork/` for every affected feature.
 - Update this file in the same change whenever fork owned behavior changes.
 - Keep each feature spec current for intent, owner modules, fork seams, required behavior, replay notes, and verification.
-- Classify upstream changes against the relevant feature spec as `adopt`, `adapt`, or `reject`.
+- Classify upstream behavior against the relevant feature spec as `accept`, `replay`, or `override`.
 - If code and this file drift, fix the drift before merge.
 - Treat this file as a current state guide, not a release log.
 
@@ -26,7 +32,8 @@ Use it together with [Upstream Merge Policy](governance/upstream_merge_policy.md
 - User request wins over this file.
 - Repository governance wins over routine upstream defaults.
 - This file defines authoritative expected behavior for fork owned features.
-- When upstream differs from this file, preserve this file until the fork intentionally changes direction.
+- When upstream differs from this file, replay the documented product outcome on upstream primitives until the fork intentionally changes direction.
+- This file does not authorize removing upstream product lanes only because they are not Omarchy specific.
 
 ## Architectural Preference
 
@@ -67,7 +74,7 @@ The rebuild packet must include:
 - target fork branch
 - affected feature ids
 - feature replay order
-- per feature upstream outcome of `adopt`, `adapt`, or `reject`
+- per feature upstream outcome of `accept`, `replay`, or `override`
 - fork seam or owner module used for each feature
 - automated or manual verification evidence for each restored behavior
 - compatibility notes for desktop IPC, WebSocket contracts, persisted browser state, server state, routes, and visible workflow
@@ -83,7 +90,7 @@ Every spec under `fork/` must include:
 - owner modules
 - fork seams
 - one shot rebuild notes
-- upstream intake rule
+- upstream replay rule
 - verification
 - compatibility checks when the feature affects contracts, routes, persistence, desktop, or runtime state
 

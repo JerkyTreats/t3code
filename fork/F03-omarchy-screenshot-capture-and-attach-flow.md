@@ -40,10 +40,10 @@ Screenshot capture and attach flows are tuned for Omarchy tooling and Linux desk
 - Attach through the active draft store or current upstream equivalent, not through route level prompt ownership.
 - Preserve clipboard fallback for smart capture behavior.
 
-## Upstream Intake Rule
+## Upstream Replay Rule
 
-- Adapt upstream screenshot or attachment changes under the Omarchy capture contract.
-- Reject upstream flows that remove Omarchy specific capture probing or attach behavior.
+- Replay upstream screenshot or attachment changes under the Omarchy capture contract.
+- Override upstream flows that remove Omarchy specific capture probing or attach behavior.
 
 ## Verification
 
