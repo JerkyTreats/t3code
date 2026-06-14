@@ -8,6 +8,7 @@ import React, {
   isValidElement,
   use,
   useCallback,
+  useId,
   memo,
   useEffect,
   useMemo,
@@ -15,6 +16,7 @@ import React, {
   useState,
   type ReactNode,
 } from "react";
+import type { MermaidConfig, RenderResult } from "mermaid";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import { defaultUrlTransform } from "react-markdown";
@@ -68,6 +70,7 @@ interface ChatMarkdownProps {
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
 
 const CODE_FENCE_LANGUAGE_REGEX = /(?:^|\s)language-([^\s]+)/;
+const MERMAID_FENCE_LANGUAGES = new Set(["mermaid", "mmd"]);
 const MAX_HIGHLIGHT_CACHE_ENTRIES = 500;
 const MAX_HIGHLIGHT_CACHE_MEMORY_BYTES = 50 * 1024 * 1024;
 const highlightedCodeCache = new LRUCache<string>(
@@ -75,12 +78,17 @@ const highlightedCodeCache = new LRUCache<string>(
   MAX_HIGHLIGHT_CACHE_MEMORY_BYTES,
 );
 const highlighterPromiseCache = new Map<string, Promise<DiffsHighlighter>>();
+let mermaidImportPromise: Promise<typeof import("mermaid").default> | null = null;
 
 function extractFenceLanguage(className: string | undefined): string {
   const match = className?.match(CODE_FENCE_LANGUAGE_REGEX);
   const raw = match?.[1] ?? "text";
   // Shiki doesn't bundle a gitignore grammar; ini is a close match (#685)
   return raw === "gitignore" ? "ini" : raw;
+}
+
+function isMermaidFence(className: string | undefined): boolean {
+  return MERMAID_FENCE_LANGUAGES.has(extractFenceLanguage(className).toLowerCase());
 }
 
 function nodeToPlainText(node: ReactNode): string {
@@ -124,6 +132,88 @@ function createHighlightCacheKey(code: string, language: string, themeName: Diff
 
 function estimateHighlightedSize(html: string, code: string): number {
   return Math.max(html.length * 2, code.length * 3);
+}
+
+function loadMermaid() {
+  mermaidImportPromise ??= import("mermaid").then((module) => module.default);
+  return mermaidImportPromise;
+}
+
+function createMermaidConfig(theme: "light" | "dark"): MermaidConfig {
+  const dark = theme === "dark";
+
+  return {
+    startOnLoad: false,
+    securityLevel: "strict",
+    secure: ["securityLevel", "startOnLoad", "maxTextSize", "suppressErrorRendering"],
+    suppressErrorRendering: true,
+    theme: "base",
+    look: "neo",
+    htmlLabels: false,
+    fontFamily: "var(--font-sans, ui-sans-serif, system-ui, sans-serif)",
+    themeVariables: {
+      background: dark ? "#111318" : "#ffffff",
+      mainBkg: dark ? "#1a1f2a" : "#f8fafc",
+      primaryColor: dark ? "#1f2937" : "#f8fafc",
+      primaryBorderColor: dark ? "#475569" : "#cbd5e1",
+      primaryTextColor: dark ? "#f8fafc" : "#1f2937",
+      secondaryColor: dark ? "#12333c" : "#ecfeff",
+      secondaryBorderColor: dark ? "#0891b2" : "#67e8f9",
+      secondaryTextColor: dark ? "#e0f2fe" : "#164e63",
+      tertiaryColor: dark ? "#252047" : "#eef2ff",
+      tertiaryBorderColor: dark ? "#6366f1" : "#a5b4fc",
+      tertiaryTextColor: dark ? "#e0e7ff" : "#312e81",
+      lineColor: dark ? "#94a3b8" : "#64748b",
+      textColor: dark ? "#e5e7eb" : "#1f2937",
+      titleColor: dark ? "#f8fafc" : "#111827",
+      nodeTextColor: dark ? "#f8fafc" : "#1f2937",
+      edgeLabelBackground: dark ? "#151922" : "#ffffff",
+      clusterBkg: dark ? "#151922" : "#f8fafc",
+      clusterBorder: dark ? "#334155" : "#cbd5e1",
+      noteBkgColor: dark ? "#2a2414" : "#fffbeb",
+      noteTextColor: dark ? "#fef3c7" : "#78350f",
+      noteBorderColor: dark ? "#a16207" : "#f59e0b",
+    },
+    flowchart: {
+      htmlLabels: false,
+      useMaxWidth: true,
+    },
+    sequence: {
+      useMaxWidth: true,
+    },
+    gantt: {
+      useMaxWidth: true,
+    },
+    journey: {
+      useMaxWidth: true,
+    },
+    timeline: {
+      useMaxWidth: true,
+    },
+    mindmap: {
+      useMaxWidth: true,
+    },
+  };
+}
+
+async function renderMermaidDiagram(input: {
+  id: string;
+  code: string;
+  theme: "light" | "dark";
+}): Promise<RenderResult> {
+  const mermaid = await loadMermaid();
+  mermaid.initialize(createMermaidConfig(input.theme));
+  return mermaid.render(input.id, input.code);
+}
+
+function formatRenderErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error;
+  }
+  return "The diagram could not be rendered.";
 }
 
 function getHighlighterPromise(language: string): Promise<DiffsHighlighter> {
@@ -195,10 +285,100 @@ function MarkdownCodeBlock({ code, children }: { code: string; children: ReactNo
   );
 }
 
+type MermaidRenderState =
+  | { status: "loading" }
+  | { status: "rendered"; svg: string; bindFunctions: RenderResult["bindFunctions"] }
+  | { status: "error"; message: string };
+
+function MermaidDiagramBlock({
+  code,
+  fallback,
+  theme,
+}: {
+  code: string;
+  fallback: ReactNode;
+  theme: "light" | "dark";
+}) {
+  const reactId = useId();
+  const renderSequenceRef = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mermaidIdPrefix = useMemo(
+    () => `chat-mermaid-${reactId.replaceAll(/[^a-zA-Z0-9_-]/g, "")}`,
+    [reactId],
+  );
+  const [renderState, setRenderState] = useState<MermaidRenderState>({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    const renderId = `${mermaidIdPrefix}-${renderSequenceRef.current}`;
+    renderSequenceRef.current += 1;
+    setRenderState({ status: "loading" });
+
+    void renderMermaidDiagram({ id: renderId, code, theme }).then(
+      (result) => {
+        if (cancelled) return;
+        setRenderState({
+          status: "rendered",
+          svg: result.svg,
+          bindFunctions: result.bindFunctions,
+        });
+      },
+      (error) => {
+        if (cancelled) return;
+        setRenderState({
+          status: "error",
+          message: formatRenderErrorMessage(error),
+        });
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code, mermaidIdPrefix, theme]);
+
+  useEffect(() => {
+    if (renderState.status !== "rendered") return;
+    const container = containerRef.current;
+    if (!container) return;
+    renderState.bindFunctions?.(container);
+  }, [renderState]);
+
+  if (renderState.status === "error") {
+    return (
+      <div className="chat-markdown-mermaid-error">
+        <div className="chat-markdown-mermaid-error-copy">
+          <strong>Diagram render failed</strong>
+          <span>{renderState.message}</span>
+        </div>
+        {fallback}
+      </div>
+    );
+  }
+
+  return (
+    <figure className="chat-markdown-mermaid" aria-label="Rendered Mermaid diagram">
+      <div
+        ref={containerRef}
+        className="chat-markdown-mermaid-viewport"
+        dangerouslySetInnerHTML={
+          renderState.status === "rendered" ? { __html: renderState.svg } : undefined
+        }
+      />
+      {renderState.status === "loading" ? (
+        <div className="chat-markdown-mermaid-loading" role="status">
+          Rendering diagram...
+        </div>
+      ) : null}
+    </figure>
+  );
+}
+
 function HighlightedCodeBlockWithThemeName(props: {
   className: string | undefined;
   code: string;
   isStreaming: boolean;
+  resolvedTheme: "light" | "dark";
   themeName: DiffThemeName;
   fallback?: ReactNode;
 }) {
@@ -207,6 +387,12 @@ function HighlightedCodeBlockWithThemeName(props: {
       <code>{props.code}</code>
     </pre>
   );
+
+  if (isMermaidFence(props.className) && !props.isStreaming) {
+    return (
+      <MermaidDiagramBlock code={props.code} fallback={fallback} theme={props.resolvedTheme} />
+    );
+  }
 
   return (
     <MarkdownCodeBlock code={props.code}>
@@ -237,6 +423,7 @@ export function HighlightedCodeBlock(props: {
       className={props.className}
       code={props.code}
       themeName={resolveDiffThemeName(resolvedTheme)}
+      resolvedTheme={resolvedTheme}
       isStreaming={props.isStreaming ?? false}
       fallback={props.fallback}
     />
@@ -677,6 +864,7 @@ function ChatMarkdown({
             className={codeBlock.className}
             code={codeBlock.code}
             themeName={diffThemeName}
+            resolvedTheme={resolvedTheme}
             isStreaming={isStreaming}
             fallback={<pre {...props}>{children}</pre>}
           />

@@ -201,4 +201,39 @@ describe("ChatMarkdown", () => {
       await screen.unmount();
     }
   });
+
+  it("renders mermaid code fences as diagrams", async () => {
+    const screen = await render(
+      <ChatMarkdown
+        text={"```mermaid\ngraph TD\n  A[Start] --> B[End]\n```"}
+        cwd="/repo/project"
+      />,
+    );
+
+    try {
+      await vi.waitFor(() => {
+        expect(document.querySelector(".chat-markdown-mermaid svg")).toBeTruthy();
+      });
+      expect(document.querySelector(".chat-markdown-codeblock")).toBeNull();
+    } finally {
+      await screen.unmount();
+    }
+  });
+
+  it("keeps mermaid fences as code while streaming", async () => {
+    const screen = await render(
+      <ChatMarkdown
+        text={"```mermaid\ngraph TD\n  A[Start] --> B"}
+        cwd="/repo/project"
+        isStreaming
+      />,
+    );
+
+    try {
+      expect(document.querySelector(".chat-markdown-mermaid")).toBeNull();
+      expect(document.querySelector(".chat-markdown-codeblock")).toBeTruthy();
+    } finally {
+      await screen.unmount();
+    }
+  });
 });
