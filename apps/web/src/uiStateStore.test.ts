@@ -15,6 +15,8 @@ import {
   setProjectExpanded,
   setThreadChangedFilesExpanded,
   setThreadProjectExplorerExpandedDirectories,
+  setThreadProjectExplorerScrollTop,
+  setThreadProjectExplorerSelectedPath,
   syncProjects,
   syncThreads,
   toggleThreadProjectExplorerDirectory,
@@ -28,6 +30,8 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
     threadProjectExplorerExpandedDirectoriesById: {},
+    threadProjectExplorerSelectedPathById: {},
+    threadProjectExplorerScrollTopById: {},
     defaultAdvertisedEndpointKey: null,
     ...overrides,
   };
@@ -521,6 +525,32 @@ describe("uiStateStore pure functions", () => {
       "src/components/files-panel",
     ]);
   });
+
+  it("setThreadProjectExplorerSelectedPath stores one selected file per thread", () => {
+    const thread1 = ThreadId.make("thread-1");
+    const initialState = makeUiState();
+
+    const selected = setThreadProjectExplorerSelectedPath(initialState, thread1, "src/app.ts");
+    const cleared = setThreadProjectExplorerSelectedPath(selected, thread1, null);
+
+    expect(selected.threadProjectExplorerSelectedPathById).toEqual({
+      [thread1]: "src/app.ts",
+    });
+    expect(cleared.threadProjectExplorerSelectedPathById).toEqual({});
+  });
+
+  it("setThreadProjectExplorerScrollTop stores positive rounded scroll offsets per thread", () => {
+    const thread1 = ThreadId.make("thread-1");
+    const initialState = makeUiState();
+
+    const scrolled = setThreadProjectExplorerScrollTop(initialState, thread1, 42.7);
+    const reset = setThreadProjectExplorerScrollTop(scrolled, thread1, 0);
+
+    expect(scrolled.threadProjectExplorerScrollTopById).toEqual({
+      [thread1]: 43,
+    });
+    expect(reset.threadProjectExplorerScrollTopById).toEqual({});
+  });
 });
 
 function createLocalStorageStub(): Storage {
@@ -672,6 +702,25 @@ describe("uiStateStore persistence round-trip", () => {
 
     expect(persisted.threadProjectExplorerExpandedDirectoriesById).toEqual({
       [thread1]: ["src", "src/components"],
+    });
+  });
+
+  it("persists thread project explorer selection and scroll position", () => {
+    const thread1 = ThreadId.make("thread-1");
+    let state = setThreadProjectExplorerSelectedPath(makeUiState(), thread1, "src/app.ts");
+    state = setThreadProjectExplorerScrollTop(state, thread1, 140);
+
+    persistState(state);
+
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+
+    expect(persisted.threadProjectExplorerSelectedPathById).toEqual({
+      [thread1]: "src/app.ts",
+    });
+    expect(persisted.threadProjectExplorerScrollTopById).toEqual({
+      [thread1]: 140,
     });
   });
 

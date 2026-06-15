@@ -13,6 +13,31 @@ export interface DiffRouteSearch {
   planId?: OrchestrationProposedPlanId | undefined;
 }
 
+type DiffRouteSearchParamKey =
+  | "diff"
+  | "git"
+  | "files"
+  | "diffTurnId"
+  | "diffFilePath"
+  | "docPath"
+  | "docExpanded"
+  | "planPreview"
+  | "planThreadId"
+  | "planId";
+
+const clearedDiffSearchParams: Record<DiffRouteSearchParamKey, undefined> = {
+  diff: undefined,
+  git: undefined,
+  files: undefined,
+  diffTurnId: undefined,
+  diffFilePath: undefined,
+  docPath: undefined,
+  docExpanded: undefined,
+  planPreview: undefined,
+  planThreadId: undefined,
+  planId: undefined,
+};
+
 function isDiffOpenValue(value: unknown): boolean {
   return value === "1" || value === 1 || value === true;
 }
@@ -27,19 +52,7 @@ function normalizeSearchString(value: unknown): string | undefined {
 
 export function stripDiffSearchParams<T extends Record<string, unknown>>(
   params: T,
-): Omit<
-  T,
-  | "diff"
-  | "git"
-  | "files"
-  | "diffTurnId"
-  | "diffFilePath"
-  | "docPath"
-  | "docExpanded"
-  | "planPreview"
-  | "planThreadId"
-  | "planId"
-> {
+): Omit<T, DiffRouteSearchParamKey> {
   const {
     diff: _diff,
     git: _git,
@@ -53,19 +66,16 @@ export function stripDiffSearchParams<T extends Record<string, unknown>>(
     planId: _planId,
     ...rest
   } = params;
-  return rest as Omit<
-    T,
-    | "diff"
-    | "git"
-    | "files"
-    | "diffTurnId"
-    | "diffFilePath"
-    | "docPath"
-    | "docExpanded"
-    | "planPreview"
-    | "planThreadId"
-    | "planId"
-  >;
+  return rest as Omit<T, DiffRouteSearchParamKey>;
+}
+
+export function clearDiffSearchParams<T extends Record<string, unknown>>(
+  params: T,
+): Omit<T, DiffRouteSearchParamKey> & Record<DiffRouteSearchParamKey, undefined> {
+  return {
+    ...stripDiffSearchParams(params),
+    ...clearedDiffSearchParams,
+  };
 }
 
 export function parseDiffRouteSearch(search: Record<string, unknown>): DiffRouteSearch {

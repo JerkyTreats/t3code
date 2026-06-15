@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseDiffRouteSearch, stripDiffSearchParams } from "./diffRouteSearch";
+import {
+  clearDiffSearchParams,
+  parseDiffRouteSearch,
+  stripDiffSearchParams,
+} from "./diffRouteSearch";
 
 describe("parseDiffRouteSearch", () => {
   it("parses valid diff search values", () => {
@@ -109,5 +113,35 @@ describe("parseDiffRouteSearch", () => {
         keep: "value",
       }),
     ).toEqual({ keep: "value" });
+  });
+
+  it("clears panel params explicitly for retained route search", () => {
+    expect(
+      clearDiffSearchParams({
+        diff: "1",
+        git: "1",
+        files: "1",
+        diffTurnId: "turn-1",
+        diffFilePath: "src/app.ts",
+        docPath: "README.md",
+        docExpanded: "1",
+        planPreview: "1",
+        planThreadId: "thread-1",
+        planId: "plan-1",
+        keep: "value",
+      }),
+    ).toEqual({
+      diff: undefined,
+      git: undefined,
+      files: undefined,
+      diffTurnId: undefined,
+      diffFilePath: undefined,
+      docPath: undefined,
+      docExpanded: undefined,
+      planPreview: undefined,
+      planThreadId: undefined,
+      planId: undefined,
+      keep: "value",
+    });
   });
 });

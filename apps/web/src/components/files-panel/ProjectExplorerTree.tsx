@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { EnvironmentId, ProjectTreeEntry } from "@t3tools/contracts";
 import { ChevronRightIcon, FolderClosedIcon, FolderIcon } from "lucide-react";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useTheme } from "~/hooks/useTheme";
 import { projectListDirectoryQueryOptions } from "~/lib/projectReactQuery";
@@ -14,6 +14,8 @@ interface ProjectExplorerTreeProps {
   entries: ReadonlyArray<ProjectTreeEntry>;
   expandedDirectories: ReadonlySet<string>;
   selectedPath: string | null;
+  revealPath: string | null;
+  revealKey: number;
   onSelectFile: (pathValue: string) => void;
   onToggleDirectory: (pathValue: string) => void;
 }
@@ -36,6 +38,8 @@ function DirectoryNode(props: {
   depth: number;
   expandedDirectories: ReadonlySet<string>;
   selectedPath: string | null;
+  revealPath: string | null;
+  revealKey: number;
   onSelectFile: (pathValue: string) => void;
   onToggleDirectory: (pathValue: string) => void;
 }) {
@@ -116,6 +120,8 @@ function DirectoryNode(props: {
               entries={childrenQuery.data.entries}
               expandedDirectories={props.expandedDirectories}
               selectedPath={props.selectedPath}
+              revealPath={props.revealPath}
+              revealKey={props.revealKey}
               onSelectFile={props.onSelectFile}
               onToggleDirectory={props.onToggleDirectory}
               depth={props.depth + 1}
@@ -135,6 +141,7 @@ export function ProjectExplorerTree(
   const depth = props.depth ?? 0;
   const { resolvedTheme } = useTheme();
   const rowsRef = useRef<HTMLDivElement | null>(null);
+  const revealRowRef = useRef<HTMLButtonElement | null>(null);
   const entries = useMemo(
     () => props.entries.filter((entry) => entry.kind === "directory" || entry.kind === "file"),
     [props.entries],
@@ -145,6 +152,14 @@ export function ProjectExplorerTree(
     },
     [props],
   );
+
+  useEffect(() => {
+    const row = revealRowRef.current;
+    if (!row || !props.revealPath) {
+      return;
+    }
+    row.scrollIntoView({ block: "nearest" });
+  }, [entries, props.expandedDirectories, props.revealKey, props.revealPath]);
 
   return (
     <div
@@ -164,6 +179,8 @@ export function ProjectExplorerTree(
               depth={depth}
               expandedDirectories={props.expandedDirectories}
               selectedPath={props.selectedPath}
+              revealPath={props.revealPath}
+              revealKey={props.revealKey}
               onSelectFile={props.onSelectFile}
               onToggleDirectory={props.onToggleDirectory}
             />
@@ -175,6 +192,7 @@ export function ProjectExplorerTree(
           <button
             key={`file:${entry.path}`}
             type="button"
+            ref={props.revealPath === entry.path ? revealRowRef : undefined}
             data-explorer-row="true"
             className={cn(
               "group flex w-full items-center gap-1.5 rounded-md py-1 pr-2 text-left hover:bg-background/80",

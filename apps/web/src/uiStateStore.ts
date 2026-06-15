@@ -22,6 +22,8 @@ export interface PersistedUiState {
   defaultAdvertisedEndpointKey?: string | null;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   threadProjectExplorerExpandedDirectoriesById?: Record<string, string[]>;
+  threadProjectExplorerSelectedPathById?: Record<string, string>;
+  threadProjectExplorerScrollTopById?: Record<string, number>;
 }
 
 export interface UiProjectState {
@@ -33,6 +35,8 @@ export interface UiThreadState {
   threadLastVisitedAtById: Record<string, string>;
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
   threadProjectExplorerExpandedDirectoriesById: Record<string, string[]>;
+  threadProjectExplorerSelectedPathById: Record<string, string>;
+  threadProjectExplorerScrollTopById: Record<string, number>;
 }
 
 export interface UiEndpointState {
@@ -60,6 +64,8 @@ const initialState: UiState = {
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   threadProjectExplorerExpandedDirectoriesById: {},
+  threadProjectExplorerSelectedPathById: {},
+  threadProjectExplorerScrollTopById: {},
   defaultAdvertisedEndpointKey: null,
 };
 
@@ -110,6 +116,12 @@ function readPersistedState(): UiState {
         sanitizePersistedThreadProjectExplorerExpandedDirectories(
           parsed.threadProjectExplorerExpandedDirectoriesById,
         ),
+      threadProjectExplorerSelectedPathById: sanitizePersistedStringRecord(
+        parsed.threadProjectExplorerSelectedPathById,
+      ),
+      threadProjectExplorerScrollTopById: sanitizePersistedThreadProjectExplorerScrollTop(
+        parsed.threadProjectExplorerScrollTopById,
+      ),
     };
   } catch {
     return initialState;
@@ -141,6 +153,37 @@ function sanitizePersistedThreadChangedFilesExpanded(
     }
   }
 
+  return nextState;
+}
+
+function sanitizePersistedStringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  const nextState: Record<string, string> = {};
+  for (const [key, pathValue] of Object.entries(value)) {
+    if (key && typeof pathValue === "string" && pathValue.length > 0) {
+      nextState[key] = pathValue;
+    }
+  }
+  return nextState;
+}
+
+function sanitizePersistedThreadProjectExplorerScrollTop(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+
+  const nextState: Record<string, number> = {};
+  for (const [threadId, scrollTop] of Object.entries(value)) {
+    if (!threadId || typeof scrollTop !== "number") {
+      continue;
+    }
+    if (Number.isFinite(scrollTop) && scrollTop > 0) {
+      nextState[threadId] = Math.round(scrollTop);
+    }
+  }
   return nextState;
 }
 
@@ -227,6 +270,16 @@ export function persistState(state: UiState): void {
         ([, directoryPaths]) => directoryPaths.length > 0,
       ),
     );
+    const threadProjectExplorerSelectedPathById = Object.fromEntries(
+      Object.entries(state.threadProjectExplorerSelectedPathById).filter(
+        ([, pathValue]) => pathValue.length > 0,
+      ),
+    );
+    const threadProjectExplorerScrollTopById = Object.fromEntries(
+      Object.entries(state.threadProjectExplorerScrollTopById).filter(
+        ([, scrollTop]) => Number.isFinite(scrollTop) && scrollTop > 0,
+      ),
+    );
     window.localStorage.setItem(
       PERSISTED_STATE_KEY,
       JSON.stringify({
@@ -236,6 +289,8 @@ export function persistState(state: UiState): void {
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpandedById,
         threadProjectExplorerExpandedDirectoriesById,
+        threadProjectExplorerSelectedPathById,
+        threadProjectExplorerScrollTopById,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -494,6 +549,16 @@ export function syncThreads(state: UiState, threads: readonly SyncThreadInput[])
       retainedThreadIds.has(threadId),
     ),
   );
+  const nextThreadProjectExplorerSelectedPathById = Object.fromEntries(
+    Object.entries(state.threadProjectExplorerSelectedPathById).filter(([threadId]) =>
+      retainedThreadIds.has(threadId),
+    ),
+  );
+  const nextThreadProjectExplorerScrollTopById = Object.fromEntries(
+    Object.entries(state.threadProjectExplorerScrollTopById).filter(([threadId]) =>
+      retainedThreadIds.has(threadId),
+    ),
+  );
   if (
     recordsEqual(state.threadLastVisitedAtById, nextThreadLastVisitedAtById) &&
     nestedBooleanRecordsEqual(
@@ -503,7 +568,12 @@ export function syncThreads(state: UiState, threads: readonly SyncThreadInput[])
     stringArrayRecordsEqual(
       state.threadProjectExplorerExpandedDirectoriesById,
       nextThreadProjectExplorerExpandedDirectoriesById,
-    )
+    ) &&
+    recordsEqual(
+      state.threadProjectExplorerSelectedPathById,
+      nextThreadProjectExplorerSelectedPathById,
+    ) &&
+    recordsEqual(state.threadProjectExplorerScrollTopById, nextThreadProjectExplorerScrollTopById)
   ) {
     return state;
   }
@@ -512,6 +582,8 @@ export function syncThreads(state: UiState, threads: readonly SyncThreadInput[])
     threadLastVisitedAtById: nextThreadLastVisitedAtById,
     threadChangedFilesExpandedById: nextThreadChangedFilesExpandedById,
     threadProjectExplorerExpandedDirectoriesById: nextThreadProjectExplorerExpandedDirectoriesById,
+    threadProjectExplorerSelectedPathById: nextThreadProjectExplorerSelectedPathById,
+    threadProjectExplorerScrollTopById: nextThreadProjectExplorerScrollTopById,
   };
 }
 
@@ -565,7 +637,15 @@ export function clearThreadUi(state: UiState, threadId: string): UiState {
   const hasVisitedState = threadId in state.threadLastVisitedAtById;
   const hasChangedFilesState = threadId in state.threadChangedFilesExpandedById;
   const hasProjectExplorerState = threadId in state.threadProjectExplorerExpandedDirectoriesById;
-  if (!hasVisitedState && !hasChangedFilesState && !hasProjectExplorerState) {
+  const hasProjectExplorerSelectedPath = threadId in state.threadProjectExplorerSelectedPathById;
+  const hasProjectExplorerScrollTop = threadId in state.threadProjectExplorerScrollTopById;
+  if (
+    !hasVisitedState &&
+    !hasChangedFilesState &&
+    !hasProjectExplorerState &&
+    !hasProjectExplorerSelectedPath &&
+    !hasProjectExplorerScrollTop
+  ) {
     return state;
   }
   const nextThreadLastVisitedAtById = { ...state.threadLastVisitedAtById };
@@ -573,14 +653,24 @@ export function clearThreadUi(state: UiState, threadId: string): UiState {
   const nextThreadProjectExplorerExpandedDirectoriesById = {
     ...state.threadProjectExplorerExpandedDirectoriesById,
   };
+  const nextThreadProjectExplorerSelectedPathById = {
+    ...state.threadProjectExplorerSelectedPathById,
+  };
+  const nextThreadProjectExplorerScrollTopById = {
+    ...state.threadProjectExplorerScrollTopById,
+  };
   delete nextThreadLastVisitedAtById[threadId];
   delete nextThreadChangedFilesExpandedById[threadId];
   delete nextThreadProjectExplorerExpandedDirectoriesById[threadId];
+  delete nextThreadProjectExplorerSelectedPathById[threadId];
+  delete nextThreadProjectExplorerScrollTopById[threadId];
   return {
     ...state,
     threadLastVisitedAtById: nextThreadLastVisitedAtById,
     threadChangedFilesExpandedById: nextThreadChangedFilesExpandedById,
     threadProjectExplorerExpandedDirectoriesById: nextThreadProjectExplorerExpandedDirectoriesById,
+    threadProjectExplorerSelectedPathById: nextThreadProjectExplorerSelectedPathById,
+    threadProjectExplorerScrollTopById: nextThreadProjectExplorerScrollTopById,
   };
 }
 
@@ -686,6 +776,52 @@ export function expandThreadProjectExplorerDirectories(
   ]);
 }
 
+export function setThreadProjectExplorerSelectedPath(
+  state: UiState,
+  threadId: string,
+  selectedPath: string | null,
+): UiState {
+  const nextSelectedPath = selectedPath && selectedPath.length > 0 ? selectedPath : null;
+  if ((state.threadProjectExplorerSelectedPathById[threadId] ?? null) === nextSelectedPath) {
+    return state;
+  }
+
+  const nextState = { ...state.threadProjectExplorerSelectedPathById };
+  if (nextSelectedPath) {
+    nextState[threadId] = nextSelectedPath;
+  } else {
+    delete nextState[threadId];
+  }
+
+  return {
+    ...state,
+    threadProjectExplorerSelectedPathById: nextState,
+  };
+}
+
+export function setThreadProjectExplorerScrollTop(
+  state: UiState,
+  threadId: string,
+  scrollTop: number,
+): UiState {
+  const nextScrollTop = Number.isFinite(scrollTop) ? Math.max(0, Math.round(scrollTop)) : 0;
+  if ((state.threadProjectExplorerScrollTopById[threadId] ?? 0) === nextScrollTop) {
+    return state;
+  }
+
+  const nextState = { ...state.threadProjectExplorerScrollTopById };
+  if (nextScrollTop > 0) {
+    nextState[threadId] = nextScrollTop;
+  } else {
+    delete nextState[threadId];
+  }
+
+  return {
+    ...state,
+    threadProjectExplorerScrollTopById: nextState,
+  };
+}
+
 export function setDefaultAdvertisedEndpointKey(state: UiState, key: string | null): UiState {
   const nextKey = key && key.length > 0 ? key : null;
   if (state.defaultAdvertisedEndpointKey === nextKey) {
@@ -780,6 +916,8 @@ interface UiStateStore extends UiState {
     threadId: string,
     directoryPaths: readonly string[],
   ) => void;
+  setThreadProjectExplorerSelectedPath: (threadId: string, selectedPath: string | null) => void;
+  setThreadProjectExplorerScrollTop: (threadId: string, scrollTop: number) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   toggleProject: (projectId: string) => void;
   setProjectExpanded: (projectId: string, expanded: boolean) => void;
@@ -806,6 +944,10 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => toggleThreadProjectExplorerDirectory(state, threadId, directoryPath)),
   expandThreadProjectExplorerDirectories: (threadId, directoryPaths) =>
     set((state) => expandThreadProjectExplorerDirectories(state, threadId, directoryPaths)),
+  setThreadProjectExplorerSelectedPath: (threadId, selectedPath) =>
+    set((state) => setThreadProjectExplorerSelectedPath(state, threadId, selectedPath)),
+  setThreadProjectExplorerScrollTop: (threadId, scrollTop) =>
+    set((state) => setThreadProjectExplorerScrollTop(state, threadId, scrollTop)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   toggleProject: (projectId) => set((state) => toggleProject(state, projectId)),

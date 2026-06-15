@@ -26,7 +26,7 @@ import { useVcsStatus } from "~/lib/vcsStatusState";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "../localApi";
 import { resolvePathLinkTarget } from "../terminal-links";
-import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
+import { clearDiffSearchParams, parseDiffRouteSearch } from "../diffRouteSearch";
 import { useTheme } from "../hooks/useTheme";
 import {
   buildFileDiffRenderKey,
@@ -432,7 +432,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(scopeThreadRef(activeThread.environmentId, activeThread.id)),
       search: (previous) => {
-        const rest = stripDiffSearchParams(previous);
+        const rest = clearDiffSearchParams(previous);
         return { ...rest, diff: "1", diffTurnId: turnId };
       },
     });
@@ -443,7 +443,7 @@ export default function DiffPanel({ mode = "inline" }: DiffPanelProps) {
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(scopeThreadRef(activeThread.environmentId, activeThread.id)),
       search: (previous) => {
-        const rest = stripDiffSearchParams(previous);
+        const rest = clearDiffSearchParams(previous);
         return { ...rest, diff: "1" };
       },
     });

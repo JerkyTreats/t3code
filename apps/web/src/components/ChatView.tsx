@@ -44,7 +44,7 @@ import { usePrimaryEnvironmentId } from "../environments/primary";
 import { readEnvironmentApi } from "../environmentApi";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
-import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
+import { clearDiffSearchParams, parseDiffRouteSearch } from "../diffRouteSearch";
 import {
   collapseExpandedComposerCursor,
   parseStandaloneComposerSlashCommand,
@@ -1908,8 +1908,8 @@ export default function ChatView(props: ChatViewProps) {
       },
       replace: true,
       search: (previous) => {
-        const rest = stripDiffSearchParams(previous);
-        return diffOpen ? { ...rest, diff: undefined } : { ...rest, diff: "1" };
+        const rest = clearDiffSearchParams(previous);
+        return diffOpen ? rest : { ...rest, diff: "1" };
       },
     });
   }, [diffOpen, environmentId, isServerThread, navigate, onDiffPanelOpen, threadId]);
@@ -1925,8 +1925,8 @@ export default function ChatView(props: ChatViewProps) {
       },
       replace: true,
       search: (previous) => {
-        const rest = stripDiffSearchParams(previous);
-        return gitOpen ? { ...rest, git: undefined } : { ...rest, git: "1" };
+        const rest = clearDiffSearchParams(previous);
+        return gitOpen ? rest : { ...rest, git: "1" };
       },
     });
   }, [environmentId, gitOpen, isServerThread, navigate, threadId]);
@@ -1942,8 +1942,8 @@ export default function ChatView(props: ChatViewProps) {
       },
       replace: true,
       search: (previous) => {
-        const rest = stripDiffSearchParams(previous);
-        return filesOpen ? { ...rest, files: undefined } : { ...rest, files: "1" };
+        const rest = clearDiffSearchParams(previous);
+        return filesOpen ? rest : { ...rest, files: "1" };
       },
     });
   }, [environmentId, filesOpen, isServerThread, navigate, threadId]);
@@ -3780,7 +3780,7 @@ export default function ChatView(props: ChatViewProps) {
           threadId,
         },
         search: (previous) => {
-          const rest = stripDiffSearchParams(previous);
+          const rest = clearDiffSearchParams(previous);
           return filePath
             ? { ...rest, diff: "1", diffTurnId: turnId, diffFilePath: filePath }
             : { ...rest, diff: "1", diffTurnId: turnId };

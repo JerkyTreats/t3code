@@ -29,6 +29,9 @@ function FilesPanelContent(props: {
   cwd: string | null;
   threadKey: string | null;
   docPath: string | null;
+  selectedPath: string | null;
+  revealPath: string | null;
+  revealKey: number;
   expandedDocument: boolean;
   onSelectFile: (pathValue: string) => void;
   onClearDocument: () => void;
@@ -111,7 +114,9 @@ function FilesPanelContent(props: {
             environmentId={props.environmentId}
             cwd={props.cwd}
             threadKey={props.threadKey}
-            selectedPath={props.docPath}
+            selectedPath={props.selectedPath}
+            revealPath={props.revealPath}
+            revealKey={props.revealKey}
             onSelectFile={props.onSelectFile}
           />
         </Suspense>
@@ -129,6 +134,9 @@ interface FilesPanelRouteAdapterProps {
   onOpenFiles: () => void;
   renderContent: boolean;
   docPath: string | null;
+  selectedPath: string | null;
+  revealPath: string | null;
+  revealKey: number;
   expandedDocument: boolean;
   onSelectFile: (pathValue: string) => void;
   onClearDocument: () => void;
@@ -154,6 +162,9 @@ export function FilesPanelRouteAdapter(props: FilesPanelRouteAdapterProps) {
       cwd={props.cwd}
       threadKey={props.threadKey}
       docPath={shouldUseSheet && props.expandedDocument ? null : props.docPath}
+      selectedPath={props.selectedPath}
+      revealPath={props.revealPath}
+      revealKey={props.revealKey}
       expandedDocument={props.expandedDocument}
       onSelectFile={props.onSelectFile}
       onClearDocument={props.onClearDocument}

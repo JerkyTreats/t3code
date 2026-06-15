@@ -512,6 +512,9 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           routeThreadKey={ctx.routeThreadKey}
           resolvedTheme={ctx.resolvedTheme}
           onOpenTurnDiff={ctx.onOpenTurnDiff}
+          {...(ctx.onOpenMarkdownFilePreview
+            ? { onOpenMarkdownFilePreview: ctx.onOpenMarkdownFilePreview }
+            : {})}
         />
         <div className="mt-1.5 flex items-center gap-2">
           <p className="text-[10px] text-muted-foreground/30">
@@ -736,11 +739,13 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
   routeThreadKey,
   resolvedTheme,
   onOpenTurnDiff,
+  onOpenMarkdownFilePreview,
 }: {
   turnSummary: TurnDiffSummary | undefined;
   routeThreadKey: string;
   resolvedTheme: "light" | "dark";
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onOpenMarkdownFilePreview?: (relativePath: string) => void;
 }) {
   if (!turnSummary) return null;
   const checkpointFiles = turnSummary.files;
@@ -753,6 +758,7 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
       routeThreadKey={routeThreadKey}
       resolvedTheme={resolvedTheme}
       onOpenTurnDiff={onOpenTurnDiff}
+      {...(onOpenMarkdownFilePreview ? { onOpenMarkdownFilePreview } : {})}
     />
   );
 });
@@ -765,12 +771,14 @@ function AssistantChangedFilesSectionInner({
   routeThreadKey,
   resolvedTheme,
   onOpenTurnDiff,
+  onOpenMarkdownFilePreview,
 }: {
   turnSummary: TurnDiffSummary;
   checkpointFiles: TurnDiffSummary["files"];
   routeThreadKey: string;
   resolvedTheme: "light" | "dark";
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onOpenMarkdownFilePreview?: (relativePath: string) => void;
 }) {
   const allDirectoriesExpanded = useUiStateStore(
     (store) => store.threadChangedFilesExpandedById[routeThreadKey]?.[turnSummary.turnId] ?? true,
@@ -818,6 +826,7 @@ function AssistantChangedFilesSectionInner({
         allDirectoriesExpanded={allDirectoriesExpanded}
         resolvedTheme={resolvedTheme}
         onOpenTurnDiff={onOpenTurnDiff}
+        {...(onOpenMarkdownFilePreview ? { onOpenFilePreview: onOpenMarkdownFilePreview } : {})}
       />
     </div>
   );

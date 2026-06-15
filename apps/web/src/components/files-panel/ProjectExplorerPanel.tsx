@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { RefreshCcwIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 
 import { useUiStateStore } from "~/uiStateStore";
 import { projectListDirectoryQueryOptions } from "~/lib/projectReactQuery";
@@ -15,9 +15,12 @@ export function ProjectExplorerPanel(props: {
   cwd: string | null;
   threadKey: string | null;
   selectedPath: string | null;
+  revealPath: string | null;
+  revealKey: number;
   onSelectFile: (pathValue: string) => void;
 }) {
   const threadKey = props.threadKey;
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [fallbackExpandedDirectories, setFallbackExpandedDirectories] = useState<Set<string>>(
     () => new Set(),
   );
@@ -32,6 +35,9 @@ export function ProjectExplorerPanel(props: {
   );
   const expandThreadProjectExplorerDirectories = useUiStateStore(
     (store) => store.expandThreadProjectExplorerDirectories,
+  );
+  const setThreadProjectExplorerScrollTop = useUiStateStore(
+    (store) => store.setThreadProjectExplorerScrollTop,
   );
   const expandedDirectories = useMemo(
     () => (threadKey ? new Set(persistedExpandedDirectories) : fallbackExpandedDirectories),
@@ -63,6 +69,15 @@ export function ProjectExplorerPanel(props: {
       enabled: props.environmentId !== null && props.cwd !== null,
     }),
   );
+  const handleScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (!threadKey) {
+        return;
+      }
+      setThreadProjectExplorerScrollTop(threadKey, event.currentTarget.scrollTop);
+    },
+    [setThreadProjectExplorerScrollTop, threadKey],
+  );
 
   useEffect(() => {
     if (!props.selectedPath) {
@@ -86,6 +101,29 @@ export function ProjectExplorerPanel(props: {
       return next;
     });
   }, [expandThreadProjectExplorerDirectories, props.selectedPath, threadKey]);
+
+  useEffect(() => {
+    if (!threadKey || props.revealPath || !rootQuery.data) {
+      return;
+    }
+
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    const scrollTop = useUiStateStore.getState().threadProjectExplorerScrollTopById[threadKey] ?? 0;
+    if (scrollTop <= 0) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      scrollContainer.scrollTop = scrollTop;
+    });
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [props.revealPath, rootQuery.data, threadKey]);
 
   if (!props.cwd || !props.environmentId) {
     return (
@@ -132,13 +170,19 @@ export function ProjectExplorerPanel(props: {
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
+    <div
+      ref={scrollContainerRef}
+      className="min-h-0 flex-1 overflow-auto px-2 py-2"
+      onScroll={handleScroll}
+    >
       <ProjectExplorerTree
         environmentId={props.environmentId}
         cwd={props.cwd}
         entries={rootQuery.data.entries}
         expandedDirectories={expandedDirectories}
         selectedPath={props.selectedPath}
+        revealPath={props.revealPath}
+        revealKey={props.revealKey}
         onSelectFile={props.onSelectFile}
         onToggleDirectory={toggleDirectory}
       />
