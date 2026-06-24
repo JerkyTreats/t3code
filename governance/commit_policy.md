@@ -70,3 +70,9 @@ Examples:
 ## Push Guard
 
 Verify with the user before push unless the user explicitly asked for the push in the current request.
+
+## Upstream Write Guard
+
+- Never commit, push, or open pull requests against the `upstream` remote.
+- Treat `upstream` as read only reference material for fetch, sync, merge, and compare operations.
+- Before any push or pull request action, verify the target remote is not `upstream`.
