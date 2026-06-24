@@ -2,7 +2,8 @@
 
 ## Task Completion Requirements
 
-- `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test` must pass before considering tasks completed.
+- For source code changes and runtime build input changes, `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test` must pass before considering tasks completed.
+- For documentation-only, governance-only, or workflow-only changes, full gates are optional unless the user asks for them.
 - If changing native mobile code, `pnpm lint:mobile` must also pass.
 - Never run `bun test`. Use `pnpm test` for the repository test gate.
 
