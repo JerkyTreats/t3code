@@ -62,6 +62,9 @@ RUN curl -fsSL \
   && echo "${GCM_SHA256}  /tmp/gcm.deb" | sha256sum -c - \
   && dpkg -i /tmp/gcm.deb \
   && rm /tmp/gcm.deb \
+  && if [ ! -x /usr/bin/git-credential-manager ]; then \
+    ln -s "$(command -v git-credential-manager)" /usr/bin/git-credential-manager; \
+  fi \
   && git-credential-manager configure --system
 
 RUN curl -fsSLo /usr/local/bin/kubectl \
