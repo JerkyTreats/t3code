@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/ci.yml"
+      - "apps/mobile/**"
+      - "apps/web/**"
+      - "package.json"
+      - "packages/client-runtime/**"
+      - "packages/contracts/**"
+      - "packages/shared/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "vite.config.ts"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/ci.yml"
+      - "apps/mobile/**"
+      - "apps/web/**"
+      - "package.json"
+      - "packages/client-runtime/**"
+      - "packages/contracts/**"
+      - "packages/shared/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "tsconfig.base.json"
+      - "vite.config.ts"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-client-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  client-packages:
+    name: Client packages
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.13.1
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting
+        run: |
+          pnpm exec vp fmt --check \
+            .github/workflows/ci.yml \
+            apps/mobile \
+            apps/web \
+            package.json \
+            packages/client-runtime \
+            packages/contracts \
+            packages/shared \
+            pnpm-workspace.yaml \
+            tsconfig.base.json \
+            vite.config.ts
+
+      - name: Lint client packages
+        run: |
+          pnpm exec vp lint --report-unused-disable-directives \
+            apps/mobile \
+            apps/web \
+            packages/client-runtime \
+            packages/contracts \
+            packages/shared
+
+      - name: Typecheck client packages
+        run: |
+          pnpm exec vp run \
+            --filter "@t3tools/web..." \
+            --filter "@t3tools/mobile..." \
+            --filter "@t3tools/client-runtime..." \
+            --concurrency-limit 2 \
+            typecheck
+
+      - name: Test client packages
+        run: |
+          pnpm exec vp run \
+            --filter "@t3tools/web..." \
+            --filter "@t3tools/mobile..." \
+            --filter "@t3tools/client-runtime..." \
+            test

@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           short_sha="${GITHUB_SHA::8}"
           date_tag="$(date -u +%Y%m%d)"
-          image_tag="homelab-${date_tag}-${short_sha}"
+          image_tag="build-${date_tag}-${short_sha}"
 
           {
             echo "short_sha=${short_sha}"
