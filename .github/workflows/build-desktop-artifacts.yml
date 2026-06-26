@@ -173,6 +173,7 @@ jobs:
 
           copy_artifact_dir() {
             local artifact_dir="$1"
+            local artifact_arch="$2"
 
             if [[ ! -d "$artifact_dir" ]]; then
               echo "Expected artifact directory $artifact_dir to exist." >&2
@@ -188,6 +189,10 @@ jobs:
               local artifact_name
               artifact_name="$(basename "$artifact_path")"
               local target_path="release-assets/$artifact_name"
+
+              if [[ "$artifact_name" == builder-debug.yml ]]; then
+                target_path="release-assets/builder-debug-${artifact_arch}.yml"
+              fi
 
               if [[ -e "$target_path" ]]; then
                 case "$artifact_name" in
@@ -211,9 +216,9 @@ jobs:
             fi
           }
 
-          copy_artifact_dir downloaded-artifacts/t3code-macos-arm64
-          copy_artifact_dir downloaded-artifacts/t3code-macos-x64
-          copy_artifact_dir downloaded-artifacts/t3code-linux-x64
+          copy_artifact_dir downloaded-artifacts/t3code-macos-arm64 mac-arm64
+          copy_artifact_dir downloaded-artifacts/t3code-macos-x64 mac-x64
+          copy_artifact_dir downloaded-artifacts/t3code-linux-x64 linux-x64
 
           found_mac_manifest=false
           for channel in latest nightly; do
