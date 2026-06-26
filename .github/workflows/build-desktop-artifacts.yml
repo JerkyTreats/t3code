@@ -22,7 +22,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: desktop-artifacts-${{ github.ref }}
@@ -127,3 +127,155 @@ jobs:
           name: t3code-linux-x64
           path: release/linux-x64/**
           if-no-files-found: error
+
+  publish-release:
+    name: Publish desktop release assets
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs:
+      - macos-dmg
+      - linux-appimage
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24.13.1
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: t3code-*
+          path: downloaded-artifacts
+          merge-multiple: false
+
+      - name: Assemble release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          mkdir -p release-assets
+
+          copy_artifact_dir() {
+            local artifact_dir="$1"
+
+            if [[ ! -d "$artifact_dir" ]]; then
+              echo "Expected artifact directory $artifact_dir to exist." >&2
+              exit 1
+            fi
+
+            local copied_any=false
+            for artifact_path in "$artifact_dir"/*; do
+              if [[ ! -f "$artifact_path" ]]; then
+                continue
+              fi
+
+              local artifact_name
+              artifact_name="$(basename "$artifact_path")"
+              local target_path="release-assets/$artifact_name"
+
+              if [[ -e "$target_path" ]]; then
+                case "$artifact_name" in
+                  latest-mac.yml | nightly-mac.yml)
+                    target_path="release-assets/${artifact_name%.yml}-x64.yml"
+                    ;;
+                  *)
+                    echo "Release asset collision for $artifact_name." >&2
+                    exit 1
+                    ;;
+                esac
+              fi
+
+              cp "$artifact_path" "$target_path"
+              copied_any=true
+            done
+
+            if [[ "$copied_any" != true ]]; then
+              echo "Artifact directory $artifact_dir did not contain files." >&2
+              exit 1
+            fi
+          }
+
+          copy_artifact_dir downloaded-artifacts/t3code-macos-arm64
+          copy_artifact_dir downloaded-artifacts/t3code-macos-x64
+          copy_artifact_dir downloaded-artifacts/t3code-linux-x64
+
+          found_mac_manifest=false
+          for channel in latest nightly; do
+            primary_manifest="release-assets/${channel}-mac.yml"
+            secondary_manifest="release-assets/${channel}-mac-x64.yml"
+
+            if [[ ! -f "$primary_manifest" && ! -f "$secondary_manifest" ]]; then
+              continue
+            fi
+
+            if [[ ! -f "$primary_manifest" || ! -f "$secondary_manifest" ]]; then
+              echo "Expected both macOS update manifests for $channel." >&2
+              exit 1
+            fi
+
+            node scripts/merge-update-manifests.ts --platform mac \
+              "$primary_manifest" \
+              "$secondary_manifest"
+            rm "$secondary_manifest"
+            found_mac_manifest=true
+          done
+
+          if [[ "$found_mac_manifest" != true ]]; then
+            echo "No macOS update manifests were found." >&2
+            exit 1
+          fi
+
+          asset_count="$(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ')"
+          if [[ "$asset_count" -eq 0 ]]; then
+            echo "No release assets were assembled." >&2
+            exit 1
+          fi
+
+          find release-assets -maxdepth 1 -type f -print | sort
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag_name="${GITHUB_REF_NAME}"
+          release_title="T3 Code Omarchy ${tag_name}"
+          notes_file="$(mktemp)"
+          printf "Desktop artifacts for %s.\n" "$tag_name" > "$notes_file"
+
+          release_flags=()
+          if [[ "$tag_name" == *"-nightly."* ]]; then
+            release_flags+=(--prerelease)
+          else
+            release_flags+=(--latest)
+          fi
+
+          if gh release view "$tag_name" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag_name" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$tag_name" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$release_title" \
+              --notes-file "$notes_file" \
+              "${release_flags[@]}"
+          fi
