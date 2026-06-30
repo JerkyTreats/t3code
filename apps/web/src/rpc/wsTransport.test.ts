@@ -7,6 +7,10 @@ import {
   configureClientTracing,
 } from "../observability/clientTracing";
 import {
+  getConnectionDiagnosticsSnapshot,
+  resetConnectionDiagnosticsForTests,
+} from "../connectionDiagnostics";
+import {
   getSlowRpcAckRequests,
   resetRequestLatencyStateForTests,
   setSlowRpcAckThresholdMsForTests,
@@ -122,6 +126,7 @@ beforeEach(() => {
   transports.length = 0;
   resetRequestLatencyStateForTests();
   resetWsConnectionStateForTests();
+  resetConnectionDiagnosticsForTests();
 
   Object.defineProperty(globalThis, "window", {
     configurable: true,
@@ -150,6 +155,7 @@ afterEach(async () => {
   globalThis.fetch = originalFetch;
   resetRequestLatencyStateForTests();
   resetWsConnectionStateForTests();
+  resetConnectionDiagnosticsForTests();
   await __resetClientTracingForTests();
   vi.restoreAllMocks();
 });
@@ -182,6 +188,17 @@ describe("WsTransport (web instrumentation)", () => {
       });
     });
     expect(getWsConnectionUiState(getWsConnectionStatus())).toBe("error");
+    expect(getConnectionDiagnosticsSnapshot()[0]).toMatchObject({
+      key: "primary",
+      phase: "error",
+      lastCloseCode: 1006,
+      lastCloseReason: "server unavailable",
+      counters: {
+        socketAttemptCount: 1,
+        unexpectedDisconnectCount: 0,
+        errorCount: 1,
+      },
+    });
 
     await transport.dispose();
   });
@@ -212,6 +229,64 @@ describe("WsTransport (web instrumentation)", () => {
       });
     });
     expect(getWsConnectionUiState(getWsConnectionStatus())).toBe("reconnecting");
+
+    await transport.dispose();
+  });
+
+  it("can avoid global connection state tracking for saved environment transports", async () => {
+    const onAttempt = vi.fn();
+    const onOpen = vi.fn();
+    const onClose = vi.fn();
+    const transport = createTransport(
+      "ws://remote.example.test",
+      {
+        onAttempt,
+        onOpen,
+        onClose,
+      },
+      { trackGlobalConnectionState: false },
+    );
+
+    await waitFor(() => {
+      expect(sockets).toHaveLength(1);
+      expect(onAttempt).toHaveBeenCalledWith("ws://remote.example.test/ws");
+    });
+    expect(getWsConnectionStatus()).toMatchObject({
+      attemptCount: 0,
+      hasConnected: false,
+      phase: "idle",
+    });
+
+    const socket = getSocket();
+    socket.open();
+
+    await waitFor(() => {
+      expect(onOpen).toHaveBeenCalledOnce();
+    });
+    expect(getWsConnectionStatus()).toMatchObject({
+      attemptCount: 0,
+      hasConnected: false,
+      phase: "idle",
+    });
+
+    socket.close(1013, "try again later");
+
+    await waitFor(() => {
+      expect(onClose).toHaveBeenCalledWith(
+        {
+          code: 1013,
+          reason: "try again later",
+        },
+        {
+          intentional: false,
+        },
+      );
+    });
+    expect(getWsConnectionStatus()).toMatchObject({
+      attemptCount: 0,
+      hasConnected: false,
+      phase: "idle",
+    });
 
     await transport.dispose();
   });

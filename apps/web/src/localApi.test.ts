@@ -122,6 +122,9 @@ const rpcClientMock = {
       registerListener(shellStreamListeners, listener),
     ),
     subscribeThread: vi.fn(() => () => undefined),
+    subscribeThreadV2: vi.fn(() => () => undefined),
+    getThreadActivityPage: vi.fn(),
+    hydrateThreadActivityPayloads: vi.fn(),
   },
 };
 

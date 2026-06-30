@@ -14,6 +14,7 @@ import {
   IsoDateTime,
   MessageId,
   NonNegativeInt,
+  PositiveInt,
   ProjectId,
   ProviderItemId,
   ThreadId,
@@ -31,7 +32,11 @@ export const ORCHESTRATION_WS_METHODS = {
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
+  subscribeThreadV2: "orchestration.subscribeThreadV2",
+  getThreadActivityPage: "orchestration.getThreadActivityPage",
+  hydrateThreadActivityPayloads: "orchestration.hydrateThreadActivityPayloads",
 } as const;
+export const ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS = 50;
 
 export const ProviderApprovalPolicy = Schema.Literals([
   "untrusted",
@@ -453,6 +458,114 @@ export const OrchestrationThreadDetailSnapshot = Schema.Struct({
   thread: OrchestrationThread,
 });
 export type OrchestrationThreadDetailSnapshot = typeof OrchestrationThreadDetailSnapshot.Type;
+
+export const OrchestrationThreadSyncV2Limits = Schema.Struct({
+  messages: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
+  proposedPlans: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(100))),
+  activities: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(300))),
+  checkpoints: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
+});
+export type OrchestrationThreadSyncV2Limits = typeof OrchestrationThreadSyncV2Limits.Type;
+
+export const OrchestrationSubscribeThreadV2Input = Schema.Struct({
+  threadId: ThreadId,
+  limits: Schema.optional(OrchestrationThreadSyncV2Limits),
+});
+export type OrchestrationSubscribeThreadV2Input = typeof OrchestrationSubscribeThreadV2Input.Type;
+
+export const OrchestrationThreadSyncV2Window = Schema.Struct({
+  returned: NonNegativeInt,
+  limit: PositiveInt,
+  hasMoreBefore: Schema.Boolean,
+  hasMoreAfter: Schema.Boolean,
+});
+export type OrchestrationThreadSyncV2Window = typeof OrchestrationThreadSyncV2Window.Type;
+
+export const OrchestrationThreadSyncV2Windows = Schema.Struct({
+  messages: OrchestrationThreadSyncV2Window,
+  proposedPlans: OrchestrationThreadSyncV2Window,
+  activities: OrchestrationThreadSyncV2Window,
+  checkpoints: OrchestrationThreadSyncV2Window,
+});
+export type OrchestrationThreadSyncV2Windows = typeof OrchestrationThreadSyncV2Windows.Type;
+
+export const OrchestrationDeferredActivityPayload = Schema.Struct({
+  __t3Deferred: Schema.Literal("thread-activity-payload"),
+  byteLength: NonNegativeInt,
+});
+export type OrchestrationDeferredActivityPayload = typeof OrchestrationDeferredActivityPayload.Type;
+
+export const OrchestrationActivityCursor = Schema.Struct({
+  activityId: EventId,
+  createdAt: IsoDateTime,
+  sequence: Schema.NullOr(NonNegativeInt),
+});
+export type OrchestrationActivityCursor = typeof OrchestrationActivityCursor.Type;
+
+export const OrchestrationThreadDetailV2Snapshot = Schema.Struct({
+  snapshotSequence: NonNegativeInt,
+  thread: OrchestrationThread,
+  windows: OrchestrationThreadSyncV2Windows,
+  deferredActivityPayloads: NonNegativeInt,
+  estimatedSerializedBytes: NonNegativeInt,
+});
+export type OrchestrationThreadDetailV2Snapshot = typeof OrchestrationThreadDetailV2Snapshot.Type;
+
+export const OrchestrationThreadActivityPageInput = Schema.Struct({
+  threadId: ThreadId,
+  limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(300))),
+  cursor: Schema.optional(
+    Schema.Struct({
+      direction: Schema.Literals(["before", "after"]),
+      position: OrchestrationActivityCursor,
+    }),
+  ),
+});
+export type OrchestrationThreadActivityPageInput = typeof OrchestrationThreadActivityPageInput.Type;
+
+export const OrchestrationThreadActivityPageResult = Schema.Struct({
+  items: Schema.Array(OrchestrationThreadActivity),
+  startCursor: Schema.NullOr(OrchestrationActivityCursor),
+  endCursor: Schema.NullOr(OrchestrationActivityCursor),
+  hasMoreBefore: Schema.Boolean,
+  hasMoreAfter: Schema.Boolean,
+  deferredActivityPayloads: NonNegativeInt,
+  estimatedSerializedBytes: NonNegativeInt,
+});
+export type OrchestrationThreadActivityPageResult =
+  typeof OrchestrationThreadActivityPageResult.Type;
+
+export const OrchestrationHydrateThreadActivityPayloadsInput = Schema.Struct({
+  threadId: ThreadId,
+  activityIds: Schema.Array(EventId).check(
+    Schema.isMaxLength(ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS),
+  ),
+});
+export type OrchestrationHydrateThreadActivityPayloadsInput =
+  typeof OrchestrationHydrateThreadActivityPayloadsInput.Type;
+
+export const OrchestrationHydratedThreadActivityPayload = Schema.Struct({
+  activityId: EventId,
+  payload: Schema.Unknown,
+  byteLength: NonNegativeInt,
+});
+export type OrchestrationHydratedThreadActivityPayload =
+  typeof OrchestrationHydratedThreadActivityPayload.Type;
+
+export const OrchestrationOmittedThreadActivityPayload = Schema.Struct({
+  activityId: EventId,
+  reason: Schema.Literals(["missing", "too-large", "too-many"]),
+  byteLength: Schema.NullOr(NonNegativeInt),
+});
+export type OrchestrationOmittedThreadActivityPayload =
+  typeof OrchestrationOmittedThreadActivityPayload.Type;
+
+export const OrchestrationHydrateThreadActivityPayloadsResult = Schema.Struct({
+  payloads: Schema.Array(OrchestrationHydratedThreadActivityPayload),
+  omitted: Schema.Array(OrchestrationOmittedThreadActivityPayload),
+});
+export type OrchestrationHydrateThreadActivityPayloadsResult =
+  typeof OrchestrationHydrateThreadActivityPayloadsResult.Type;
 
 export const ProjectCreateCommand = Schema.Struct({
   type: Schema.Literal("project.create"),
@@ -1120,6 +1233,20 @@ export const OrchestrationThreadStreamItem = Schema.Union([
 ]);
 export type OrchestrationThreadStreamItem = typeof OrchestrationThreadStreamItem.Type;
 
+export const OrchestrationThreadStreamV2Item = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("snapshot"),
+    snapshot: OrchestrationThreadDetailV2Snapshot,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("event"),
+    event: OrchestrationEvent,
+    deferredActivityPayloads: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+    estimatedSerializedBytes: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+  }),
+]);
+export type OrchestrationThreadStreamV2Item = typeof OrchestrationThreadStreamV2Item.Type;
+
 export const OrchestrationCommandReceiptStatus = Schema.Literals(["accepted", "rejected"]);
 export type OrchestrationCommandReceiptStatus = typeof OrchestrationCommandReceiptStatus.Type;
 
@@ -1238,6 +1365,18 @@ export const OrchestrationRpcSchemas = {
   subscribeThread: {
     input: OrchestrationSubscribeThreadInput,
     output: OrchestrationThreadStreamItem,
+  },
+  subscribeThreadV2: {
+    input: OrchestrationSubscribeThreadV2Input,
+    output: OrchestrationThreadStreamV2Item,
+  },
+  getThreadActivityPage: {
+    input: OrchestrationThreadActivityPageInput,
+    output: OrchestrationThreadActivityPageResult,
+  },
+  hydrateThreadActivityPayloads: {
+    input: OrchestrationHydrateThreadActivityPayloadsInput,
+    output: OrchestrationHydrateThreadActivityPayloadsResult,
   },
   subscribeShell: {
     input: Schema.Struct({}),

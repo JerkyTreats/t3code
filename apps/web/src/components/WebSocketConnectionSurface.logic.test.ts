@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { WsConnectionStatus } from "../rpc/wsConnectionState";
-import { shouldAutoReconnect, shouldRestartStalledReconnect } from "./WebSocketConnectionSurface";
+import {
+  getConnectionIssueToastKind,
+  shouldAutoReconnect,
+  shouldRenderConnectionIssueToast,
+  shouldRenderRecoveredConnectionToast,
+  shouldRestartStalledReconnect,
+} from "./WebSocketConnectionSurface.logic";
 
 function makeStatus(overrides: Partial<WsConnectionStatus> = {}): WsConnectionStatus {
   return {
@@ -110,5 +116,39 @@ describe("WebSocketConnectionSurface.logic", () => {
         "2026-04-03T20:00:01.000Z",
       ),
     ).toBe(false);
+  });
+
+  it("suppresses transient reconnect toasts until the grace window elapses", () => {
+    const status = makeStatus({
+      disconnectedAt: "2026-04-03T20:00:00.000Z",
+      hasConnected: true,
+      phase: "disconnected",
+      reconnectAttemptCount: 1,
+      reconnectPhase: "waiting",
+    });
+
+    expect(getConnectionIssueToastKind(status)).toBe("reconnecting");
+    expect(shouldRenderConnectionIssueToast(status, false)).toBe(false);
+    expect(shouldRenderConnectionIssueToast(status, true)).toBe(true);
+  });
+
+  it("only shows recovered toasts after a disconnect toast was displayed", () => {
+    expect(
+      shouldRenderRecoveredConnectionToast({
+        disconnectToastWasDisplayed: false,
+        previousDisconnectedAt: "2026-04-03T20:00:00.000Z",
+        previousUiState: "reconnecting",
+        uiState: "connected",
+      }),
+    ).toBe(false);
+
+    expect(
+      shouldRenderRecoveredConnectionToast({
+        disconnectToastWasDisplayed: true,
+        previousDisconnectedAt: "2026-04-03T20:00:00.000Z",
+        previousUiState: "reconnecting",
+        uiState: "connected",
+      }),
+    ).toBe(true);
   });
 });

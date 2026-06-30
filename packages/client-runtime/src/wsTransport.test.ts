@@ -180,6 +180,39 @@ describe("WsTransport", () => {
     await transport.dispose();
   });
 
+  it("retries async websocket url provider failures before opening the socket", async () => {
+    const warnSpy = vi.fn();
+    const onError = vi.fn();
+    let resolveAttempts = 0;
+    const transport = createTransport(
+      async () => {
+        resolveAttempts += 1;
+        if (resolveAttempts === 1) {
+          throw new Error("ticket request timed out");
+        }
+        return "ws://remote.example.test";
+      },
+      { onError },
+      { logWarning: warnSpy },
+    );
+
+    const unsubscribe = transport.subscribe(() => Stream.never, vi.fn(), { retryDelay: 10 });
+
+    await waitFor(() => {
+      expect(resolveAttempts).toBeGreaterThanOrEqual(2);
+      expect(sockets).toHaveLength(1);
+    }, 2_500);
+
+    expect(getSocket().url).toBe("ws://remote.example.test/ws");
+    expect(onError).toHaveBeenCalledWith(
+      "Unable to resolve the T3 server WebSocket URL: ticket request timed out",
+    );
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    unsubscribe();
+    await transport.dispose();
+  });
+
   it("invokes optional lifecycle handlers when the socket opens and closes", async () => {
     const onOpen = vi.fn();
     const onClose = vi.fn();
@@ -453,7 +486,7 @@ describe("WsTransport", () => {
           label: "Local environment",
           platform: { os: "darwin", arch: "arm64" },
           serverVersion: "0.0.0-test",
-          capabilities: { repositoryIdentity: true },
+          capabilities: { repositoryIdentity: true, threadSyncV2: false },
         },
         cwd: "/tmp/workspace",
         projectName: "workspace",
@@ -513,7 +546,7 @@ describe("WsTransport", () => {
                 label: "Local environment",
                 platform: { os: "darwin", arch: "arm64" },
                 serverVersion: "0.0.0-test",
-                capabilities: { repositoryIdentity: true },
+                capabilities: { repositoryIdentity: true, threadSyncV2: false },
               },
               cwd: "/tmp/one",
               projectName: "one",
@@ -563,7 +596,7 @@ describe("WsTransport", () => {
           label: "Local environment",
           platform: { os: "darwin", arch: "arm64" },
           serverVersion: "0.0.0-test",
-          capabilities: { repositoryIdentity: true },
+          capabilities: { repositoryIdentity: true, threadSyncV2: false },
         },
         cwd: "/tmp/two",
         projectName: "two",
@@ -618,7 +651,7 @@ describe("WsTransport", () => {
           label: "Local environment",
           platform: { os: "darwin", arch: "arm64" },
           serverVersion: "0.0.0-test",
-          capabilities: { repositoryIdentity: true },
+          capabilities: { repositoryIdentity: true, threadSyncV2: false },
         },
         cwd: "/tmp/one",
         projectName: "one",
@@ -671,7 +704,7 @@ describe("WsTransport", () => {
           label: "Local environment",
           platform: { os: "darwin", arch: "arm64" },
           serverVersion: "0.0.0-test",
-          capabilities: { repositoryIdentity: true },
+          capabilities: { repositoryIdentity: true, threadSyncV2: false },
         },
         cwd: "/tmp/two",
         projectName: "two",

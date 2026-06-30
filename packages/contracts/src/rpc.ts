@@ -603,6 +603,34 @@ export const WsOrchestrationSubscribeThreadRpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationSubscribeThreadV2Rpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.subscribeThreadV2,
+  {
+    payload: OrchestrationRpcSchemas.subscribeThreadV2.input,
+    success: OrchestrationRpcSchemas.subscribeThreadV2.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+    stream: true,
+  },
+);
+
+export const WsOrchestrationGetThreadActivityPageRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadActivityPage,
+  {
+    payload: OrchestrationRpcSchemas.getThreadActivityPage.input,
+    success: OrchestrationRpcSchemas.getThreadActivityPage.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsOrchestrationHydrateThreadActivityPayloadsRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads,
+  {
+    payload: OrchestrationRpcSchemas.hydrateThreadActivityPayloads.input,
+    success: OrchestrationRpcSchemas.hydrateThreadActivityPayloads.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -702,4 +730,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsOrchestrationSubscribeThreadV2Rpc,
+  WsOrchestrationGetThreadActivityPageRpc,
+  WsOrchestrationHydrateThreadActivityPayloadsRpc,
 );

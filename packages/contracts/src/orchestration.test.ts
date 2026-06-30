@@ -10,6 +10,7 @@ import {
   OrchestrationEvent,
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetTurnDiffInput,
+  OrchestrationHydrateThreadActivityPayloadsInput,
   OrchestrationLatestTurn,
   ProjectCreatedPayload,
   ProjectMetaUpdatedPayload,
@@ -26,6 +27,9 @@ import { ProviderInstanceId } from "./providerInstance.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
+const decodeHydrateThreadActivityPayloadsInput = Schema.decodeUnknownEffect(
+  OrchestrationHydrateThreadActivityPayloadsInput,
+);
 const decodeThreadTurnDiff = Schema.decodeUnknownEffect(ThreadTurnDiff);
 const decodeProjectCreateCommand = Schema.decodeUnknownEffect(ProjectCreateCommand);
 const decodeProjectCreatedPayload = Schema.decodeUnknownEffect(ProjectCreatedPayload);
@@ -82,6 +86,24 @@ it.effect("parses full thread diff input with whitespace ignoring enabled", () =
       ignoreWhitespace: true,
     });
     assert.strictEqual(parsed.ignoreWhitespace, true);
+  }),
+);
+
+it.effect("caps thread activity payload hydration requests", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeHydrateThreadActivityPayloadsInput({
+      threadId: "thread-1",
+      activityIds: Array.from({ length: 50 }, (_, index) => `activity-${index + 1}`),
+    });
+    assert.strictEqual(parsed.activityIds.length, 50);
+
+    const oversized = yield* Effect.exit(
+      decodeHydrateThreadActivityPayloadsInput({
+        threadId: "thread-1",
+        activityIds: Array.from({ length: 51 }, (_, index) => `activity-${index + 1}`),
+      }),
+    );
+    assert.strictEqual(oversized._tag, "Failure");
   }),
 );
 

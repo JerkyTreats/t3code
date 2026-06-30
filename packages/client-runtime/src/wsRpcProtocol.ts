@@ -1,4 +1,5 @@
 import { WsRpcGroup } from "@t3tools/contracts";
+import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -69,12 +70,24 @@ export type WsRpcProtocolClient =
   RpcClientFactory extends Effect.Effect<infer Client, any, any> ? Client : never;
 export type WsRpcProtocolSocketUrlProvider = string | (() => Promise<string>);
 
+class WsRpcSocketUrlResolutionError extends Data.TaggedError("WsRpcSocketUrlResolutionError")<{
+  readonly message: string;
+  readonly cause: unknown;
+}> {}
+
 function formatSocketErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
   }
 
   return String(error);
+}
+
+function formatSocketUrlResolutionError(error: unknown): WsRpcSocketUrlResolutionError {
+  return new WsRpcSocketUrlResolutionError({
+    message: `Unable to resolve the T3 server WebSocket URL: ${formatSocketErrorMessage(error)}`,
+    cause: error,
+  });
 }
 
 function resolveWsRpcSocketUrl(rawUrl: string): string {
@@ -85,6 +98,22 @@ function resolveWsRpcSocketUrl(rawUrl: string): string {
 
   resolved.pathname = "/ws";
   return resolved.toString();
+}
+
+function resolveWsRpcSocketUrlFromProvider(
+  url: () => Promise<string>,
+): Effect.Effect<string, WsRpcSocketUrlResolutionError> {
+  return Effect.tryPromise({
+    try: () => url(),
+    catch: (error) => formatSocketUrlResolutionError(error),
+  }).pipe(
+    Effect.flatMap((rawUrl) =>
+      Effect.try({
+        try: () => resolveWsRpcSocketUrl(rawUrl),
+        catch: (error) => formatSocketUrlResolutionError(error),
+      }),
+    ),
+  );
 }
 
 type ResolvedLifecycleHandlers = Required<
@@ -200,15 +229,20 @@ export function createWsRpcProtocolLayer(
   const lifecycle = resolveLifecycleHandlers(handlers, options?.telemetryLifecycle);
   const backoff = options?.backoff ?? DEFAULT_RECONNECT_BACKOFF;
   const requestTelemetry = options?.requestTelemetry;
+  const baseSchedule =
+    backoff.maxRetries === null ? Schedule.forever : Schedule.recurs(backoff.maxRetries);
+  const retryPolicy = Schedule.addDelay(baseSchedule, (retryCount) =>
+    Effect.succeed(Duration.millis(getReconnectDelayMs(retryCount, backoff) ?? 0)),
+  );
   const resolvedUrl =
     typeof url === "function"
-      ? Effect.promise(() => url()).pipe(
-          Effect.map((rawUrl) => resolveWsRpcSocketUrl(rawUrl)),
+      ? resolveWsRpcSocketUrlFromProvider(url).pipe(
           Effect.tapError((error) =>
             Effect.sync(() => {
-              lifecycle.onError(formatSocketErrorMessage(error));
+              lifecycle.onError(error.message);
             }),
           ),
+          Effect.retry(retryPolicy),
           Effect.orDie,
         )
       : resolveWsRpcSocketUrl(url);
@@ -266,11 +300,6 @@ export function createWsRpcProtocolLayer(
     Layer.provide(trackingWebSocketConstructorLayer),
   );
 
-  const baseSchedule =
-    backoff.maxRetries === null ? Schedule.forever : Schedule.recurs(backoff.maxRetries);
-  const retryPolicy = Schedule.addDelay(baseSchedule, (retryCount) =>
-    Effect.succeed(Duration.millis(getReconnectDelayMs(retryCount, backoff) ?? 0)),
-  );
   const protocolLayer = Layer.effect(
     RpcClient.Protocol,
     Effect.map(

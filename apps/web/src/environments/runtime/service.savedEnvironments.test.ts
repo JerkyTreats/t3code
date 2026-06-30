@@ -180,6 +180,9 @@ function createClient() {
     orchestration: {
       subscribeShell: vi.fn(() => () => undefined),
       subscribeThread: vi.fn(() => () => undefined),
+      subscribeThreadV2: vi.fn(() => () => undefined),
+      getThreadActivityPage: vi.fn(),
+      hydrateThreadActivityPayloads: vi.fn(),
       dispatchCommand: vi.fn(async () => undefined),
       getTurnDiff: vi.fn(async () => undefined),
       getFullThreadDiff: vi.fn(async () => undefined),

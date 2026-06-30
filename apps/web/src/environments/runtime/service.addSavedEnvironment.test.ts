@@ -156,6 +156,9 @@ vi.mock("@t3tools/client-runtime", async (importOriginal) => {
       },
       orchestration: {
         subscribeThread: vi.fn(() => () => {}),
+        subscribeThreadV2: vi.fn(() => () => {}),
+        getThreadActivityPage: vi.fn(),
+        hydrateThreadActivityPayloads: vi.fn(),
       },
     })),
     fetchRemoteEnvironmentDescriptor: mockFetchRemoteEnvironmentDescriptor,

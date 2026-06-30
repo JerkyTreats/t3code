@@ -46,6 +46,7 @@ interface SubscribeOptions {
 
 const DEFAULT_SUBSCRIPTION_RETRY_DELAY = Duration.millis(250);
 const NOOP: () => void = () => undefined;
+const WS_URL_RESOLUTION_ERROR_RE = /Unable to resolve the T3 server WebSocket URL:/i;
 
 interface TransportSession {
   readonly clientPromise: Promise<WsRpcProtocolClient>;
@@ -206,6 +207,15 @@ export class WsTransport {
             });
           }
           this.hasReportedTransportDisconnect = true;
+          if (isWsUrlResolutionErrorMessage(formattedError) && session === this.session) {
+            try {
+              await this.reconnect();
+            } catch (reconnectError) {
+              this.logWarning("WebSocket RPC reconnect failed", {
+                error: formatErrorMessage(reconnectError),
+              });
+            }
+          }
           await sleep(retryDelayMs);
         }
       }
@@ -273,6 +283,7 @@ export class WsTransport {
     this.nextSessionId = sessionId;
     this.activeSessionId = sessionId;
     const lifecycleHandlers = this.lifecycleHandlers;
+    let sessionInitializationErrorMessage: string | null = null;
     const protocolLayer = protocolFactory(this.url, {
       ...lifecycleHandlers,
       isActive: () =>
@@ -283,6 +294,12 @@ export class WsTransport {
         this.disposed ||
         this.intentionalCloseDepth > 0 ||
         lifecycleHandlers?.isCloseIntentional?.() === true,
+      onError: (message) => {
+        if (isWsUrlResolutionErrorMessage(message)) {
+          sessionInitializationErrorMessage = message;
+        }
+        lifecycleHandlers?.onError?.(message);
+      },
       onHeartbeatPong: () => {
         this.lastHeartbeatPongAt = performance.now();
         lifecycleHandlers?.onHeartbeatPong?.();
@@ -305,7 +322,17 @@ export class WsTransport {
     return {
       runtime,
       clientScope,
-      clientPromise: runtime.runPromise(Scope.provide(clientScope)(makeWsRpcProtocolClient)),
+      clientPromise: runtime
+        .runPromise(Scope.provide(clientScope)(makeWsRpcProtocolClient))
+        .catch((error) => {
+          if (sessionInitializationErrorMessage !== null) {
+            throw new Error(
+              sessionInitializationErrorMessage,
+              error instanceof Error ? { cause: error } : undefined,
+            );
+          }
+          throw error;
+        }),
     };
   }
 
@@ -374,4 +401,8 @@ export class WsTransport {
 
 function sleep(ms: number): Promise<void> {
   return Effect.runPromise(Effect.sleep(Duration.millis(ms)));
+}
+
+function isWsUrlResolutionErrorMessage(message: string): boolean {
+  return WS_URL_RESOLUTION_ERROR_RE.test(message);
 }

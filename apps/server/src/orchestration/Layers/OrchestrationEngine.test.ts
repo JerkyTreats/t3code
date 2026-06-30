@@ -200,6 +200,9 @@ describe("OrchestrationEngine", () => {
           getFullThreadDiffContext: () => Effect.succeed(Option.none()),
           getThreadShellById: () => Effect.succeed(Option.none()),
           getThreadDetailById: () => Effect.succeed(Option.none()),
+          getThreadDetailV2ById: () => Effect.die("unused"),
+          getThreadActivityPage: () => Effect.die("unused"),
+          hydrateThreadActivityPayloads: () => Effect.die("unused"),
         }),
       ),
       Layer.provide(

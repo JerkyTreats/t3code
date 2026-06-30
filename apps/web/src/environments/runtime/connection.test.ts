@@ -65,6 +65,9 @@ function createTestClient(config?: { readonly emitInitialSnapshot?: boolean }) {
         },
       ),
       subscribeThread: vi.fn(() => () => undefined),
+      subscribeThreadV2: vi.fn(() => () => undefined),
+      getThreadActivityPage: vi.fn(),
+      hydrateThreadActivityPayloads: vi.fn(),
     },
     terminal: {
       open: vi.fn(async () => undefined),
@@ -236,6 +239,46 @@ describe("createEnvironmentConnection", () => {
     );
 
     await connection.dispose();
+  });
+
+  it("times out reconnects that do not receive a fresh shell snapshot", async () => {
+    vi.useFakeTimers();
+    try {
+      const environmentId = EnvironmentId.make("env-1");
+      const { client } = createTestClient();
+      const connection = createEnvironmentConnection({
+        kind: "saved",
+        knownEnvironment: {
+          id: "env-1",
+          label: "Remote env",
+          source: "manual",
+          target: {
+            httpBaseUrl: "http://example.test",
+            wsBaseUrl: "ws://example.test",
+          },
+          environmentId,
+        },
+        client,
+        applyShellEvent: vi.fn(),
+        syncShellSnapshot: vi.fn(),
+        reconnectBootstrapTimeoutMs: 100,
+      });
+
+      await connection.ensureBootstrapped();
+
+      const reconnectPromise = connection.reconnect();
+      const reconnectExpectation = expect(reconnectPromise).rejects.toThrow(
+        "Timed out after 100ms waiting for environment env-1 to send a shell snapshot after reconnect.",
+      );
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(100);
+
+      await reconnectExpectation;
+
+      await connection.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("skips primary lifecycle/config subscriptions when no handlers are registered", async () => {

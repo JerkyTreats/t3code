@@ -25,6 +25,14 @@ describe("isTransportConnectionErrorMessage", () => {
     );
   });
 
+  it("returns true for websocket URL resolution failures", () => {
+    expect(
+      isTransportConnectionErrorMessage(
+        "Unable to resolve the T3 server WebSocket URL: ticket request timed out",
+      ),
+    ).toBe(true);
+  });
+
   it("returns true for ping timeout", () => {
     expect(isTransportConnectionErrorMessage("ping timeout")).toBe(true);
   });

@@ -8,12 +8,18 @@
  */
 import type {
   CheckpointRef,
+  EventId,
+  OrchestrationHydrateThreadActivityPayloadsResult,
+  OrchestrationThreadActivityPageInput,
+  OrchestrationThreadActivityPageResult,
   OrchestrationCheckpointSummary,
   OrchestrationProject,
   OrchestrationProjectShell,
   OrchestrationReadModel,
   OrchestrationShellSnapshot,
   OrchestrationThread,
+  OrchestrationThreadDetailV2Snapshot,
+  OrchestrationThreadSyncV2Limits,
   OrchestrationThreadShell,
   ProjectId,
   ThreadId,
@@ -157,6 +163,33 @@ export interface ProjectionSnapshotQueryShape {
   readonly getThreadDetailById: (
     threadId: ThreadId,
   ) => Effect.Effect<Option.Option<OrchestrationThread>, ProjectionRepositoryError>;
+
+  /**
+   * Read a bounded active thread detail snapshot for remote WebSocket sync.
+   *
+   * Large historical activity payloads are represented by explicit deferred
+   * placeholders so reconnect never has to replay the entire thread body.
+   */
+  readonly getThreadDetailV2ById: (
+    threadId: ThreadId,
+    limits?: OrchestrationThreadSyncV2Limits,
+  ) => Effect.Effect<Option.Option<OrchestrationThreadDetailV2Snapshot>, ProjectionRepositoryError>;
+
+  /**
+   * Page projected thread activity around the stable activity cursor used by
+   * thread detail v2.
+   */
+  readonly getThreadActivityPage: (
+    input: OrchestrationThreadActivityPageInput,
+  ) => Effect.Effect<OrchestrationThreadActivityPageResult, ProjectionRepositoryError>;
+
+  /**
+   * Hydrate deferred v2 activity payloads on explicit demand.
+   */
+  readonly hydrateThreadActivityPayloads: (
+    threadId: ThreadId,
+    activityIds: ReadonlyArray<EventId>,
+  ) => Effect.Effect<OrchestrationHydrateThreadActivityPayloadsResult, ProjectionRepositoryError>;
 }
 
 /**

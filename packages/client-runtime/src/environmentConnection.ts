@@ -6,6 +6,8 @@ import type {
   ServerLifecycleWelcomePayload,
   TerminalEvent,
 } from "@t3tools/contracts";
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
 
 import type { KnownEnvironment } from "./knownEnvironment.ts";
 import type { WsRpcClient } from "./wsRpcClient.ts";
@@ -37,6 +39,7 @@ export interface EnvironmentConnectionInput extends OrchestrationHandlers {
   readonly knownEnvironment: KnownEnvironment;
   readonly client: WsRpcClient;
   readonly refreshMetadata?: () => Promise<void>;
+  readonly reconnectBootstrapTimeoutMs?: number | null;
   readonly onConfigSnapshot?: (config: ServerConfig) => void;
   readonly onWelcome?: (payload: ServerLifecycleWelcomePayload) => void;
   readonly onShellResubscribe?: (environmentId: EnvironmentId) => void;
@@ -82,6 +85,15 @@ export class EnvironmentConnectionDisposedError extends Error {
   }
 }
 
+export class EnvironmentConnectionBootstrapTimeoutError extends Error {
+  constructor(environmentId: EnvironmentId, timeoutMs: number) {
+    super(
+      `Timed out after ${timeoutMs}ms waiting for environment ${environmentId} to send a shell snapshot after reconnect.`,
+    );
+    this.name = "EnvironmentConnectionBootstrapTimeoutError";
+  }
+}
+
 function createBootstrapGate() {
   let resolve: (() => void) | null = null;
   let reject: ((error: unknown) => void) | null = null;
@@ -111,6 +123,26 @@ function createBootstrapGate() {
       promise = makePromise();
     },
   };
+}
+
+async function waitForReconnectBootstrap(
+  environmentId: EnvironmentId,
+  promise: Promise<void>,
+  timeoutMs: number | null | undefined,
+): Promise<void> {
+  if (timeoutMs === null || timeoutMs === undefined || timeoutMs <= 0) {
+    await promise;
+    return;
+  }
+
+  const result = await Promise.race([
+    promise.then(() => "bootstrapped" as const),
+    Effect.runPromise(Effect.sleep(Duration.millis(timeoutMs)).pipe(Effect.as("timeout" as const))),
+  ]);
+
+  if (result === "timeout") {
+    throw new EnvironmentConnectionBootstrapTimeoutError(environmentId, timeoutMs);
+  }
 }
 
 export function createEnvironmentConnection(
@@ -230,7 +262,11 @@ export function createEnvironmentConnection(
       try {
         await input.client.reconnect();
         await input.refreshMetadata?.();
-        await bootstrapGate.wait();
+        await waitForReconnectBootstrap(
+          environmentId,
+          bootstrapGate.wait(),
+          input.reconnectBootstrapTimeoutMs,
+        );
       } catch (error) {
         bootstrapGate.reject(error);
         throw error;

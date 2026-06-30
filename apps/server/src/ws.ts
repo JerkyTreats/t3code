@@ -44,6 +44,7 @@ import {
   FilesystemBrowseError,
   EnvironmentAuthorizationError,
   ThreadId,
+  type OrchestrationThreadStreamV2Item,
   type TerminalAttachStreamEvent,
   type TerminalError,
   type TerminalEvent,
@@ -132,6 +133,62 @@ function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
 }
 
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
+const THREAD_SYNC_V2_INLINE_ACTIVITY_PAYLOAD_BYTES = 4 * 1024;
+const threadSyncV2TextEncoder = new TextEncoder();
+
+function estimateThreadSyncV2Bytes(value: unknown): number {
+  return threadSyncV2TextEncoder.encode(JSON.stringify(value) ?? "null").byteLength;
+}
+
+function toThreadStreamV2EventItem(event: OrchestrationEvent): OrchestrationThreadStreamV2Item {
+  if (event.type !== "thread.activity-appended") {
+    const item = {
+      kind: "event" as const,
+      event,
+      deferredActivityPayloads: 0,
+    };
+    return {
+      ...item,
+      estimatedSerializedBytes: estimateThreadSyncV2Bytes(item),
+    };
+  }
+
+  const payloadBytes = estimateThreadSyncV2Bytes(event.payload.activity.payload);
+  if (payloadBytes <= THREAD_SYNC_V2_INLINE_ACTIVITY_PAYLOAD_BYTES) {
+    const item = {
+      kind: "event" as const,
+      event,
+      deferredActivityPayloads: 0,
+    };
+    return {
+      ...item,
+      estimatedSerializedBytes: estimateThreadSyncV2Bytes(item),
+    };
+  }
+
+  const boundedEvent = {
+    ...event,
+    payload: {
+      ...event.payload,
+      activity: {
+        ...event.payload.activity,
+        payload: {
+          __t3Deferred: "thread-activity-payload" as const,
+          byteLength: payloadBytes,
+        },
+      },
+    },
+  };
+  const item = {
+    kind: "event" as const,
+    event: boundedEvent,
+    deferredActivityPayloads: 1,
+  };
+  return {
+    ...item,
+    estimatedSerializedBytes: estimateThreadSyncV2Bytes(item),
+  };
+}
 
 const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [ORCHESTRATION_WS_METHODS.dispatchCommand, AuthOrchestrationOperateScope],
@@ -141,6 +198,9 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [ORCHESTRATION_WS_METHODS.subscribeShell, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.subscribeThread, AuthOrchestrationReadScope],
+  [ORCHESTRATION_WS_METHODS.subscribeThreadV2, AuthOrchestrationReadScope],
+  [ORCHESTRATION_WS_METHODS.getThreadActivityPage, AuthOrchestrationReadScope],
+  [ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads, AuthOrchestrationReadScope],
   [WS_METHODS.serverGetConfig, AuthOrchestrationReadScope],
   [WS_METHODS.serverRefreshProviders, AuthOrchestrationOperateScope],
   [WS_METHODS.serverUpdateProvider, AuthOrchestrationOperateScope],
@@ -963,6 +1023,79 @@ const makeWsRpcLayer = (currentSession: AuthenticatedSession) =>
                 liveStream,
               );
             }),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.subscribeThreadV2]: (input) =>
+          observeRpcStreamEffect(
+            ORCHESTRATION_WS_METHODS.subscribeThreadV2,
+            Effect.gen(function* () {
+              const threadDetail = yield* projectionSnapshotQuery
+                .getThreadDetailV2ById(input.threadId, input.limits)
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationGetSnapshotError({
+                        message: `Failed to load thread ${input.threadId}`,
+                        cause,
+                      }),
+                  ),
+                );
+
+              if (Option.isNone(threadDetail)) {
+                return yield* new OrchestrationGetSnapshotError({
+                  message: `Thread ${input.threadId} was not found`,
+                  cause: input.threadId,
+                });
+              }
+
+              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
+                Stream.filter(
+                  (event) =>
+                    event.aggregateKind === "thread" &&
+                    event.aggregateId === input.threadId &&
+                    isThreadDetailEvent(event),
+                ),
+                Stream.map(toThreadStreamV2EventItem),
+              );
+
+              return Stream.concat(
+                Stream.make({
+                  kind: "snapshot" as const,
+                  snapshot: threadDetail.value,
+                }),
+                liveStream,
+              );
+            }),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.getThreadActivityPage]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getThreadActivityPage,
+            projectionSnapshotQuery.getThreadActivityPage(input).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: `Failed to load thread activity page for ${input.threadId}`,
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads,
+            projectionSnapshotQuery
+              .hydrateThreadActivityPayloads(input.threadId, input.activityIds)
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationGetSnapshotError({
+                      message: `Failed to hydrate thread activity payloads for ${input.threadId}`,
+                      cause,
+                    }),
+                ),
+              ),
             { "rpc.aggregate": "orchestration" },
           ),
         [WS_METHODS.serverGetConfig]: (_input) =>

@@ -81,8 +81,14 @@ import type {
   OrchestrationGetTurnDiffResult,
   OrchestrationShellSnapshot,
   OrchestrationShellStreamItem,
+  OrchestrationHydrateThreadActivityPayloadsInput,
+  OrchestrationHydrateThreadActivityPayloadsResult,
   OrchestrationSubscribeThreadInput,
+  OrchestrationSubscribeThreadV2Input,
+  OrchestrationThreadActivityPageInput,
+  OrchestrationThreadActivityPageResult,
   OrchestrationThreadStreamItem,
+  OrchestrationThreadStreamV2Item,
 } from "./orchestration.ts";
 import { EnvironmentId } from "./baseSchemas.ts";
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
@@ -672,5 +678,18 @@ export interface EnvironmentApi {
         onResubscribe?: () => void;
       },
     ) => () => void;
+    subscribeThreadV2: (
+      input: OrchestrationSubscribeThreadV2Input,
+      callback: (event: OrchestrationThreadStreamV2Item) => void,
+      options?: {
+        onResubscribe?: () => void;
+      },
+    ) => () => void;
+    getThreadActivityPage: (
+      input: OrchestrationThreadActivityPageInput,
+    ) => Promise<OrchestrationThreadActivityPageResult>;
+    hydrateThreadActivityPayloads: (
+      input: OrchestrationHydrateThreadActivityPayloadsInput,
+    ) => Promise<OrchestrationHydrateThreadActivityPayloadsResult>;
   };
 }

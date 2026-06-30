@@ -120,6 +120,20 @@ import { useUiStateStore } from "~/uiStateStore";
 import { resolveServerConfigVersionMismatch } from "~/versionSkew";
 import { useServerConfig } from "~/rpc/serverState";
 import {
+  type ConnectionDiagnosticsEntry,
+  type ConnectionDiagnosticsEvent,
+  type ConnectionDiagnosticsPhase,
+  getConnectionDiagnosticsDurations,
+  PRIMARY_CONNECTION_DIAGNOSTICS_KEY,
+  savedEnvironmentConnectionDiagnosticsKey,
+  useConnectionDiagnosticsEntries,
+} from "../../connectionDiagnostics";
+import {
+  type ThreadSyncDiagnosticsEntry,
+  useThreadSyncDiagnosticsEntries,
+} from "../../threadSyncDiagnostics";
+import { useWsConnectionStatus } from "../../rpc/wsConnectionState";
+import {
   connectManagedCloudEnvironment,
   linkPrimaryEnvironmentToCloud,
   unlinkPrimaryEnvironmentFromCloud,
@@ -1564,6 +1578,455 @@ function SavedBackendListRow({
   );
 }
 
+type ConnectionDashboardRow = {
+  readonly key: string;
+  readonly label: string;
+  readonly detail: string | null;
+  readonly phase: ConnectionDiagnosticsPhase;
+  readonly entry: ConnectionDiagnosticsEntry | null;
+};
+
+type ConnectionDashboardRecentEvent = {
+  readonly key: string;
+  readonly label: string;
+  readonly event: ConnectionDiagnosticsEvent;
+};
+
+function mapPrimaryPhaseToDiagnosticsPhase(
+  phase: ReturnType<typeof useWsConnectionStatus>["phase"],
+  lastError: string | null,
+): ConnectionDiagnosticsPhase {
+  if (phase === "connected") return "connected";
+  if (phase === "connecting") return "connecting";
+  if (phase === "disconnected") return lastError ? "error" : "disconnected";
+  return "idle";
+}
+
+function mapSavedRuntimePhaseToDiagnosticsPhase(
+  runtime: SavedEnvironmentRuntimeState | null,
+): ConnectionDiagnosticsPhase {
+  switch (runtime?.connectionState) {
+    case "connected":
+      return "connected";
+    case "connecting":
+      return "connecting";
+    case "error":
+      return "error";
+    case "disconnected":
+    case undefined:
+      return "disconnected";
+  }
+}
+
+function getConnectionDashboardPhaseLabel(phase: ConnectionDiagnosticsPhase): string {
+  switch (phase) {
+    case "connected":
+      return "Connected";
+    case "connecting":
+      return "Connecting";
+    case "disconnected":
+      return "Disconnected";
+    case "error":
+      return "Error";
+    case "idle":
+      return "Idle";
+  }
+}
+
+function getConnectionDashboardDotClassName(phase: ConnectionDiagnosticsPhase): string {
+  switch (phase) {
+    case "connected":
+      return "bg-success";
+    case "connecting":
+      return "bg-warning";
+    case "error":
+      return "bg-destructive";
+    case "disconnected":
+    case "idle":
+      return "bg-muted-foreground/40";
+  }
+}
+
+function formatDurationMs(valueMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(valueMs / 1_000));
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (totalMinutes < 60) {
+    return seconds > 0 ? `${totalMinutes}m ${seconds}s` : `${totalMinutes}m`;
+  }
+  const totalHours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (totalHours < 24) {
+    return minutes > 0 ? `${totalHours}h ${minutes}m` : `${totalHours}h`;
+  }
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+}
+
+function formatConnectionEventAge(observedAt: string, nowMs: number): string {
+  return `${formatElapsedDurationLabel(observedAt, nowMs)} ago`;
+}
+
+function formatConnectionBytes(value: number | null): string {
+  if (value === null) {
+    return "-";
+  }
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  const kib = value / 1024;
+  if (kib < 1024) {
+    return `${kib.toFixed(kib >= 10 ? 0 : 1)} KiB`;
+  }
+  const mib = kib / 1024;
+  return `${mib.toFixed(mib >= 10 ? 0 : 1)} MiB`;
+}
+
+function formatThreadSyncActivityWindow(entry: ThreadSyncDiagnosticsEntry): string {
+  const window = entry.lastSnapshotWindows?.activities;
+  if (!window) {
+    return "-";
+  }
+  const overflow = window.hasMoreBefore || window.hasMoreAfter ? "+" : "";
+  return `${window.returned}/${window.limit}${overflow}`;
+}
+
+function describeConnectionEvent(event: ConnectionDiagnosticsEvent): string {
+  switch (event.type) {
+    case "connecting":
+      return event.message ?? "Connection cycle started";
+    case "attempt":
+      return event.socketUrl ? `Socket attempt to ${event.socketUrl}` : "Socket attempt";
+    case "connected":
+      return "Connected";
+    case "disconnected": {
+      const prefix = event.intentional ? "Intentional disconnect" : "Unexpected disconnect";
+      const code = event.closeCode === null ? null : `code ${event.closeCode}`;
+      const reason = event.closeReason?.trim() || event.message;
+      return [prefix, code, reason].filter(Boolean).join(" · ");
+    }
+    case "error":
+      return event.message ?? "Connection error";
+  }
+}
+
+function ConnectionDashboardStat({
+  label,
+  value,
+  tone = "default",
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly tone?: "danger" | "default" | "success" | "warning";
+}) {
+  const valueClassName =
+    tone === "danger"
+      ? "text-destructive"
+      : tone === "warning"
+        ? "text-warning"
+        : tone === "success"
+          ? "text-success"
+          : "text-foreground";
+  return (
+    <div className="min-w-0 border-r border-border/60 px-4 py-3 last:border-r-0 sm:px-5">
+      <p className="text-[11px] font-medium tracking-normal text-muted-foreground">{label}</p>
+      <p className={cn("mt-1 truncate font-mono text-lg tabular-nums", valueClassName)}>{value}</p>
+    </div>
+  );
+}
+
+function ConnectionDashboardEnvironmentRow({
+  row,
+  nowMs,
+}: {
+  readonly row: ConnectionDashboardRow;
+  readonly nowMs: number;
+}) {
+  const entry = row.entry;
+  const durations = entry ? getConnectionDiagnosticsDurations(entry, nowMs) : null;
+  const latestEvent = entry?.recentEvents[0] ?? null;
+  const phaseLabel = getConnectionDashboardPhaseLabel(row.phase);
+  const counters = entry?.counters;
+
+  return (
+    <div className={ITEM_ROW_CLASSNAME}>
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(28rem,auto)] lg:items-center">
+        <div className="min-w-0 space-y-1">
+          <div className="flex min-h-5 items-center gap-1.5">
+            <ConnectionStatusDot
+              tooltipText={phaseLabel}
+              dotClassName={getConnectionDashboardDotClassName(row.phase)}
+              pingClassName={row.phase === "connecting" ? "bg-warning/60 duration-2000" : null}
+            />
+            <h3 className="truncate text-sm font-medium text-foreground">{row.label}</h3>
+            <span className="rounded-md border border-border/60 px-1 py-0.5 text-[10px] text-muted-foreground">
+              {phaseLabel}
+            </span>
+          </div>
+          {row.detail ? (
+            <p className="truncate text-xs text-muted-foreground" title={row.detail}>
+              {row.detail}
+            </p>
+          ) : null}
+          {latestEvent ? (
+            <p className="truncate text-[11px] text-muted-foreground/70">
+              {formatConnectionEventAge(latestEvent.observedAt, nowMs)} ·{" "}
+              {describeConnectionEvent(latestEvent)}
+            </p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground/60">No connection events observed.</p>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs sm:grid-cols-4 lg:min-w-[28rem]">
+          <div>
+            <p className="text-muted-foreground/70">Attempts</p>
+            <p className="font-mono tabular-nums">{counters?.socketAttemptCount ?? 0}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground/70">Drops</p>
+            <p className="font-mono tabular-nums">{counters?.unexpectedDisconnectCount ?? 0}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground/70">Errors</p>
+            <p className="font-mono tabular-nums">{counters?.errorCount ?? 0}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground/70">Close</p>
+            <p className="truncate font-mono tabular-nums" title={entry?.lastCloseReason ?? ""}>
+              {entry?.lastCloseCode ?? "-"}
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground/70">Connected</p>
+            <p className="font-mono tabular-nums">
+              {durations ? formatDurationMs(durations.connectedMs) : "0s"}
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground/70">Disconnected</p>
+            <p className="font-mono tabular-nums">
+              {durations ? formatDurationMs(durations.disconnectedMs) : "0s"}
+            </p>
+          </div>
+          <div className="sm:col-span-2">
+            <p className="text-muted-foreground/70">Last error</p>
+            <p className="truncate text-muted-foreground" title={entry?.lastError ?? ""}>
+              {entry?.lastError ?? "-"}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ThreadSyncDiagnosticsRow({ entry }: { readonly entry: ThreadSyncDiagnosticsEntry }) {
+  return (
+    <div className="grid gap-2 border-t border-border/60 px-4 py-2.5 text-xs first:border-t-0 sm:grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_5rem_4rem] sm:items-center sm:px-5">
+      <div className="min-w-0">
+        <p className="truncate font-medium text-foreground" title={entry.threadId}>
+          {entry.threadId}
+        </p>
+        <p className="truncate text-muted-foreground/70" title={entry.environmentId}>
+          {entry.environmentId}
+        </p>
+      </div>
+      <div>
+        <p className="text-muted-foreground/70 sm:hidden">Mode</p>
+        <p className="font-mono uppercase tabular-nums">{entry.version ?? "-"}</p>
+      </div>
+      <div>
+        <p className="text-muted-foreground/70 sm:hidden">Snapshot</p>
+        <p className="font-mono tabular-nums">{formatConnectionBytes(entry.lastSnapshotBytes)}</p>
+      </div>
+      <div>
+        <p className="text-muted-foreground/70 sm:hidden">Event</p>
+        <p className="font-mono tabular-nums">{formatConnectionBytes(entry.lastEventBytes)}</p>
+      </div>
+      <div>
+        <p className="text-muted-foreground/70 sm:hidden">Activity</p>
+        <p className="font-mono tabular-nums">{formatThreadSyncActivityWindow(entry)}</p>
+      </div>
+      <div>
+        <p className="text-muted-foreground/70 sm:hidden">Deferred</p>
+        <p className="font-mono tabular-nums">{entry.deferredActivityPayloads}</p>
+      </div>
+    </div>
+  );
+}
+
+function ConnectionDiagnosticsDashboard({
+  primaryEnvironmentId,
+  savedEnvironmentIds,
+  savedEnvironmentsById,
+  savedEnvironmentRuntimesById,
+}: {
+  readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly savedEnvironmentIds: ReadonlyArray<EnvironmentId>;
+  readonly savedEnvironmentsById: Readonly<Record<EnvironmentId, SavedEnvironmentRecord>>;
+  readonly savedEnvironmentRuntimesById: Readonly<
+    Record<EnvironmentId, SavedEnvironmentRuntimeState>
+  >;
+}) {
+  const nowMs = useRelativeTimeTick(1_000);
+  const diagnosticsEntries = useConnectionDiagnosticsEntries();
+  const threadSyncEntries = useThreadSyncDiagnosticsEntries();
+  const primaryStatus = useWsConnectionStatus();
+  const diagnosticsByKey = useMemo(
+    () => new Map(diagnosticsEntries.map((entry) => [entry.key, entry] as const)),
+    [diagnosticsEntries],
+  );
+
+  const rows = useMemo<ReadonlyArray<ConnectionDashboardRow>>(() => {
+    const primaryEntry = diagnosticsByKey.get(PRIMARY_CONNECTION_DIAGNOSTICS_KEY) ?? null;
+    const nextRows: ConnectionDashboardRow[] = [
+      {
+        key: PRIMARY_CONNECTION_DIAGNOSTICS_KEY,
+        label: primaryEntry?.label ?? "This environment",
+        detail: primaryEntry?.lastSocketUrl ?? primaryStatus.socketUrl ?? primaryEnvironmentId,
+        phase:
+          primaryEntry?.phase ??
+          mapPrimaryPhaseToDiagnosticsPhase(primaryStatus.phase, primaryStatus.lastError),
+        entry: primaryEntry,
+      },
+    ];
+
+    for (const environmentId of savedEnvironmentIds) {
+      const record = savedEnvironmentsById[environmentId];
+      if (!record) {
+        continue;
+      }
+      const key = savedEnvironmentConnectionDiagnosticsKey(environmentId);
+      const entry = diagnosticsByKey.get(key) ?? null;
+      const runtime = savedEnvironmentRuntimesById[environmentId] ?? null;
+      nextRows.push({
+        key,
+        label: runtime?.descriptor?.label ?? entry?.label ?? record.label,
+        detail: entry?.origin ?? record.httpBaseUrl,
+        phase: entry?.phase ?? mapSavedRuntimePhaseToDiagnosticsPhase(runtime),
+        entry,
+      });
+    }
+
+    return nextRows;
+  }, [
+    diagnosticsByKey,
+    primaryEnvironmentId,
+    primaryStatus.lastError,
+    primaryStatus.phase,
+    primaryStatus.socketUrl,
+    savedEnvironmentIds,
+    savedEnvironmentRuntimesById,
+    savedEnvironmentsById,
+  ]);
+
+  const observedEntries = rows
+    .map((row) => row.entry)
+    .filter((entry): entry is ConnectionDiagnosticsEntry => entry !== null);
+  const liveCount = rows.filter((row) => row.phase === "connected").length;
+  const totals = observedEntries.reduce(
+    (accumulator, entry) => ({
+      attempts: accumulator.attempts + entry.counters.socketAttemptCount,
+      drops: accumulator.drops + entry.counters.unexpectedDisconnectCount,
+      errors: accumulator.errors + entry.counters.errorCount,
+    }),
+    { attempts: 0, drops: 0, errors: 0 },
+  );
+  const labelByKey = new Map(rows.map((row) => [row.key, row.label] as const));
+  const recentEvents = observedEntries
+    .flatMap((entry) =>
+      entry.recentEvents.map(
+        (event): ConnectionDashboardRecentEvent => ({
+          key: `${entry.key}:${event.id}`,
+          label: labelByKey.get(entry.key) ?? entry.label,
+          event,
+        }),
+      ),
+    )
+    .toSorted(
+      (left, right) => Date.parse(right.event.observedAt) - Date.parse(left.event.observedAt),
+    )
+    .slice(0, 8);
+  const recentThreadSyncEntries = threadSyncEntries.slice(0, 6);
+  const threadSyncV2Count = threadSyncEntries.filter((entry) => entry.version === "v2").length;
+
+  return (
+    <SettingsSection title="Connection dashboard">
+      <div className="grid grid-cols-2 border-b border-border/60 md:grid-cols-4">
+        <ConnectionDashboardStat
+          label="Live"
+          value={`${liveCount}/${rows.length}`}
+          tone={liveCount > 0 ? "success" : "default"}
+        />
+        <ConnectionDashboardStat label="Socket attempts" value={String(totals.attempts)} />
+        <ConnectionDashboardStat
+          label="Unexpected drops"
+          value={String(totals.drops)}
+          tone={totals.drops > 0 ? "warning" : "default"}
+        />
+        <ConnectionDashboardStat
+          label="Errors"
+          value={String(totals.errors)}
+          tone={totals.errors > 0 ? "danger" : "default"}
+        />
+      </div>
+      {rows.map((row) => (
+        <ConnectionDashboardEnvironmentRow key={row.key} row={row} nowMs={nowMs} />
+      ))}
+      {recentThreadSyncEntries.length > 0 ? (
+        <div className="border-t border-border/60">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
+            <div>
+              <h3 className="text-xs font-medium text-foreground">Thread sync</h3>
+              <p className="text-[11px] text-muted-foreground/70">
+                {threadSyncV2Count}/{threadSyncEntries.length} using v2
+              </p>
+            </div>
+            <span className="text-[11px] text-muted-foreground/60">Live in this client</span>
+          </div>
+          <div className="hidden grid-cols-[minmax(0,1fr)_5rem_5rem_5rem_5rem_4rem] border-t border-border/60 px-5 py-2 text-[11px] font-medium uppercase text-muted-foreground/60 sm:grid">
+            <span>Thread</span>
+            <span>Mode</span>
+            <span>Snapshot</span>
+            <span>Event</span>
+            <span>Activity</span>
+            <span>Deferred</span>
+          </div>
+          {recentThreadSyncEntries.map((entry) => (
+            <ThreadSyncDiagnosticsRow key={entry.key} entry={entry} />
+          ))}
+        </div>
+      ) : null}
+      {recentEvents.length > 0 ? (
+        <div className="border-t border-border/60 px-4 py-3 sm:px-5">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-medium text-foreground">Recent events</h3>
+            <span className="text-[11px] text-muted-foreground/60">Live in this client</span>
+          </div>
+          <div className="space-y-1.5">
+            {recentEvents.map(({ key, label, event }) => (
+              <div key={key} className="grid gap-1 text-xs sm:grid-cols-[9rem_minmax(0,1fr)]">
+                <p className="font-mono tabular-nums text-muted-foreground/70">
+                  {formatConnectionEventAge(event.observedAt, nowMs)}
+                </p>
+                <p className="min-w-0 truncate text-muted-foreground">
+                  <span className="font-medium text-foreground">{label}</span>
+                  <span aria-hidden> · </span>
+                  {describeConnectionEvent(event)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </SettingsSection>
+  );
+}
+
 interface DesktopSshHostRowProps {
   target: DesktopDiscoveredSshHost;
   connectingHostAlias: string | null;
@@ -1932,6 +2395,7 @@ export function ConnectionsSettings() {
       : null;
   const currentAuthPolicy = desktopBridge ? null : (primarySessionState.data?.auth.policy ?? null);
   const savedEnvironmentsById = useSavedEnvironmentRegistryStore((state) => state.byId);
+  const savedEnvironmentRuntimesById = useSavedEnvironmentRuntimeStore((state) => state.byId);
   const savedEnvironmentIds = useMemo(
     () =>
       Object.values(savedEnvironmentsById)
@@ -2946,6 +3410,13 @@ export function ConnectionsSettings() {
 
   return (
     <SettingsPageContainer>
+      <ConnectionDiagnosticsDashboard
+        primaryEnvironmentId={primaryEnvironmentId}
+        savedEnvironmentIds={savedEnvironmentIds}
+        savedEnvironmentsById={savedEnvironmentsById}
+        savedEnvironmentRuntimesById={savedEnvironmentRuntimesById}
+      />
+
       {canManageLocalBackend ? (
         <>
           <SettingsSection title="This environment">

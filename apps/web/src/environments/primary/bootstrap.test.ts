@@ -21,6 +21,7 @@ const BASE_ENVIRONMENT = {
   serverVersion: "0.0.0-test",
   capabilities: {
     repositoryIdentity: true,
+    threadSyncV2: false,
   },
 } satisfies ExecutionEnvironmentDescriptor;
 
