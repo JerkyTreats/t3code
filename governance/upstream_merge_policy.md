@@ -127,6 +127,20 @@ The fork does not have a standing policy to remove upstream product lanes only b
 
 New upstream product lanes should usually be accepted as upstream owned surfaces. Add fork product policy only where the fork has an explicit outcome to protect.
 
+## Deployment Separation Rules
+
+Hosted upstream deployment infrastructure is not accepted by default when it publishes, routes, or brands the upstream hosted service.
+
+Treat upstream relay deployment, Vercel hosted app deployment, mobile preview deployment, and upstream release workflow automation as upstream service operations unless a fork product spec accepts them.
+
+Fork owned remote backend deployment is a separate lane. Preserve or replay the fork server image and headless server runtime path when upstream syncs touch deployment files.
+
+Current owner surfaces include `docker/t3code-server.Dockerfile`, `.github/workflows/build-t3code-server-image.yml`, and headless `t3 serve` usage.
+
+Runtime connectivity is not deployment infrastructure. SSH launch, direct LAN endpoints, Tailscale endpoints, saved environments, pairing, and thread runtime connectivity should be reviewed as product runtime behavior even when upstream deployment files mention relay or hosted services.
+
+During upstream intake, classify hosted deployment changes separately from runtime connection changes. Remove, ignore, or keep disabled upstream hosted deployment automation when it is not part of the fork release or backend deployment lane.
+
 ## Protected Fork Features
 
 Treat these as protected product outcomes during every upstream sync:
@@ -138,6 +152,7 @@ Treat these as protected product outcomes during every upstream sync:
 - plan sidebar progress affordances and fork specific status cues, including plan progress such as `1/4` when a plan exists
 - plan markdown preview flows and markdown rendering behavior, including fullscreen in memory plan preview, plan specific markdown navigation, and horizontal overflow handling for wide markdown content
 - local branch, worktree, and promotion workflow behavior
+- fork owned remote backend deployment through the server image and headless `t3 serve` path
 - Omarchy specific Electron desktop and screenshot integration behavior
 - Omarchy system theme behavior derived from local Electron desktop theme state
 - Electron desktop screenshot capture and attach flows tied to Omarchy tooling and desktop capability checks
