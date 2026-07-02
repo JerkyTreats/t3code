@@ -1,9 +1,13 @@
 import {
   ApprovalRequestId,
+  EventId,
   type ChatAttachment,
   type OrchestrationEvent,
+  type OrchestrationThreadPlanProgress,
   ThreadId,
+  TurnId,
 } from "@t3tools/contracts";
+import { deriveThreadPlanProgressFromActivities } from "@t3tools/shared/planProgress";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -175,6 +179,16 @@ function deriveHasActionableProposedPlan(input: {
 
   const latestPlan = sorted.at(-1) ?? null;
   return latestPlan !== null && latestPlan.implementedAt === null;
+}
+
+function maxIso(left: string | null, right: string | null | undefined): string | null {
+  if (right === null || right === undefined) {
+    return left;
+  }
+  if (left === null) {
+    return right;
+  }
+  return left > right ? left : right;
 }
 
 function retainProjectionMessagesAfterRevert(
@@ -553,6 +567,45 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         latestTurnId: existingRow.value.latestTurnId,
         proposedPlans,
       });
+      const latestRuntimeActivityAt = activities.reduce<string | null>(
+        (latest, activity) => maxIso(latest, activity.createdAt),
+        null,
+      );
+      const derivedPlanProgress = deriveThreadPlanProgressFromActivities(
+        activities.map((activity) => ({
+          id: activity.activityId,
+          kind: activity.kind,
+          payload: activity.payload,
+          turnId: activity.turnId,
+          createdAt: activity.createdAt,
+          sequence: activity.sequence,
+        })),
+        existingRow.value.latestTurnId,
+      );
+      const activePlanProgress: OrchestrationThreadPlanProgress | null =
+        derivedPlanProgress === null
+          ? null
+          : {
+              completedAllSteps: derivedPlanProgress.completedAllSteps,
+              currentStepNumber: derivedPlanProgress.currentStepNumber,
+              totalSteps: derivedPlanProgress.totalSteps,
+              turnId:
+                derivedPlanProgress.turnId === null
+                  ? null
+                  : TurnId.make(derivedPlanProgress.turnId),
+              activityId: EventId.make(derivedPlanProgress.activityId),
+              updatedAt: derivedPlanProgress.updatedAt,
+            };
+      let statusSummaryUpdatedAt = maxIso(existingRow.value.updatedAt, latestUserMessageAt);
+      statusSummaryUpdatedAt = maxIso(statusSummaryUpdatedAt, latestRuntimeActivityAt);
+      for (const plan of proposedPlans) {
+        statusSummaryUpdatedAt = maxIso(statusSummaryUpdatedAt, plan.createdAt);
+        statusSummaryUpdatedAt = maxIso(statusSummaryUpdatedAt, plan.updatedAt);
+      }
+      for (const approval of pendingApprovals) {
+        statusSummaryUpdatedAt = maxIso(statusSummaryUpdatedAt, approval.createdAt);
+        statusSummaryUpdatedAt = maxIso(statusSummaryUpdatedAt, approval.resolvedAt);
+      }
 
       yield* projectionThreadRepository.upsert({
         ...existingRow.value,
@@ -560,6 +613,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         pendingApprovalCount,
         pendingUserInputCount,
         hasActionableProposedPlan: hasActionableProposedPlan ? 1 : 0,
+        activePlanProgress,
+        latestRuntimeActivityAt,
+        statusSummaryUpdatedAt,
       });
     });
 
@@ -586,6 +642,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             pendingApprovalCount: 0,
             pendingUserInputCount: 0,
             hasActionableProposedPlan: 0,
+            activePlanProgress: null,
+            latestRuntimeActivityAt: null,
+            statusSummaryUpdatedAt: null,
             deletedAt: null,
           });
           return;

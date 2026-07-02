@@ -145,6 +145,11 @@ interface MessagesTimelineProps {
   workspaceRoot: string | undefined;
   skills?: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   onIsAtEndChange: (isAtEnd: boolean) => void;
+  activationLoadingState?: {
+    title: string;
+    detail: string;
+    tone: "loading" | "error";
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +180,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   workspaceRoot,
   skills = EMPTY_TIMELINE_SKILLS,
   onIsAtEndChange,
+  activationLoadingState = null,
 }: MessagesTimelineProps) {
   const rawRows = useMemo(
     () =>
@@ -304,6 +310,24 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ),
     [],
   );
+
+  if (rows.length === 0 && activationLoadingState !== null) {
+    return (
+      <div className="flex h-full items-center justify-center px-4">
+        <div className="flex max-w-sm items-start gap-3 rounded-md border border-border/70 bg-card/70 px-4 py-3 text-left shadow-sm">
+          {activationLoadingState.tone === "loading" ? (
+            <span className="mt-0.5 size-3 shrink-0 animate-pulse rounded-full bg-sky-500" />
+          ) : (
+            <span className="mt-0.5 size-3 shrink-0 rounded-full bg-destructive" />
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">{activationLoadingState.title}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{activationLoadingState.detail}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (rows.length === 0 && !isWorking) {
     return (

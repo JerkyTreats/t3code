@@ -161,6 +161,8 @@ export interface SidebarThreadSummary {
   hasPendingUserInput: boolean;
   hasActionableProposedPlan: boolean;
   activePlanProgress: ActivePlanProgressState | null;
+  latestRuntimeActivityAt: string | null;
+  statusSummaryUpdatedAt: string | null;
 }
 
 export interface ThreadSession {

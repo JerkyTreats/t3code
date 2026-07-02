@@ -312,7 +312,9 @@ function mapThreadShell(
     hasPendingApprovals: thread.hasPendingApprovals,
     hasPendingUserInput: thread.hasPendingUserInput,
     hasActionableProposedPlan: thread.hasActionableProposedPlan,
-    activePlanProgress: null,
+    activePlanProgress: thread.activePlanProgress,
+    latestRuntimeActivityAt: thread.latestRuntimeActivityAt,
+    statusSummaryUpdatedAt: thread.statusSummaryUpdatedAt,
   };
   return {
     shell,
@@ -417,6 +419,7 @@ function sidebarThreadSummariesEqual(
   return (
     left !== undefined &&
     left.id === right.id &&
+    left.environmentId === right.environmentId &&
     left.projectId === right.projectId &&
     left.title === right.title &&
     left.interactionMode === right.interactionMode &&
@@ -433,7 +436,12 @@ function sidebarThreadSummariesEqual(
     left.hasActionableProposedPlan === right.hasActionableProposedPlan &&
     left.activePlanProgress?.completedAllSteps === right.activePlanProgress?.completedAllSteps &&
     left.activePlanProgress?.currentStepNumber === right.activePlanProgress?.currentStepNumber &&
-    left.activePlanProgress?.totalSteps === right.activePlanProgress?.totalSteps
+    left.activePlanProgress?.totalSteps === right.activePlanProgress?.totalSteps &&
+    left.activePlanProgress?.turnId === right.activePlanProgress?.turnId &&
+    left.activePlanProgress?.activityId === right.activePlanProgress?.activityId &&
+    left.activePlanProgress?.updatedAt === right.activePlanProgress?.updatedAt &&
+    left.latestRuntimeActivityAt === right.latestRuntimeActivityAt &&
+    left.statusSummaryUpdatedAt === right.statusSummaryUpdatedAt
   );
 }
 
@@ -710,22 +718,27 @@ function writeThreadState(
 
   const previousSummary = nextState.sidebarThreadSummaryById[nextThread.id];
   if (previousSummary) {
-    const activePlanProgress = deriveCurrentTurnPlanProgressState(
-      nextThread.activities,
-      nextThread.latestTurn?.turnId ?? undefined,
-    );
-    const nextSummary: SidebarThreadSummary = {
-      ...previousSummary,
-      activePlanProgress,
-    };
-    if (!sidebarThreadSummariesEqual(previousSummary, nextSummary)) {
-      nextState = {
-        ...nextState,
-        sidebarThreadSummaryById: {
-          ...nextState.sidebarThreadSummaryById,
-          [nextThread.id]: nextSummary,
-        },
+    const canUseDetailProgress =
+      previousSummary.activePlanProgress === null ||
+      previousSummary.statusSummaryUpdatedAt === null;
+    if (canUseDetailProgress) {
+      const activePlanProgress = deriveCurrentTurnPlanProgressState(
+        nextThread.activities,
+        nextThread.latestTurn?.turnId ?? undefined,
+      );
+      const nextSummary: SidebarThreadSummary = {
+        ...previousSummary,
+        activePlanProgress,
       };
+      if (!sidebarThreadSummariesEqual(previousSummary, nextSummary)) {
+        nextState = {
+          ...nextState,
+          sidebarThreadSummaryById: {
+            ...nextState.sidebarThreadSummaryById,
+            [nextThread.id]: nextSummary,
+          },
+        };
+      }
     }
   }
 
@@ -802,7 +815,7 @@ function writeThreadShellState(
   );
   const nextSummary: SidebarThreadSummary = {
     ...nextThread.summary,
-    activePlanProgress: storedActivePlanProgress,
+    activePlanProgress: nextThread.summary.activePlanProgress ?? storedActivePlanProgress,
   };
 
   if (

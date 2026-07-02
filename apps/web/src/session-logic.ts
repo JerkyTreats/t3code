@@ -12,6 +12,10 @@ import {
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
+import {
+  deriveThreadPlanProgressFromActivities,
+  parseRuntimePlanSteps,
+} from "@t3tools/shared/planProgress";
 
 import type {
   ChatMessage,
@@ -21,7 +25,6 @@ import type {
   ThreadSession,
   TurnDiffSummary,
 } from "./types";
-import { derivePlanProgressPresentation, type PlanStepStatus } from "./fork/planPresentationPolicy";
 
 export type ProviderPickerKind = ProviderDriverKind;
 
@@ -101,6 +104,9 @@ export interface ActivePlanProgressState {
   completedAllSteps: boolean;
   currentStepNumber: number;
   totalSteps: number;
+  turnId?: TurnId | null;
+  activityId?: string;
+  updatedAt?: string;
 }
 
 export interface LatestProposedPlanState {
@@ -385,7 +391,7 @@ export function deriveActivePlanState(
     latest.payload && typeof latest.payload === "object"
       ? (latest.payload as Record<string, unknown>)
       : null;
-  const steps = parsePlanSteps(payload?.plan);
+  const steps = parseRuntimePlanSteps(payload?.plan);
   if (steps.length === 0) {
     return null;
   }
@@ -403,44 +409,14 @@ export function deriveActivePlanProgressState(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
   latestTurnId: TurnId | undefined,
 ): ActivePlanProgressState | null {
-  const latest = findLatestPlanActivity(activities, latestTurnId);
-  return derivePlanProgressFromActivity(latest);
+  return deriveThreadPlanProgressFromActivities(activities, latestTurnId);
 }
 
 export function deriveCurrentTurnPlanProgressState(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
   latestTurnId: TurnId | undefined,
 ): ActivePlanProgressState | null {
-  if (!latestTurnId) {
-    return null;
-  }
-  const ordered = [...activities].toSorted(compareActivitiesByOrder);
-  const latest = Arr.findLast(
-    ordered,
-    (activity) => activity.kind === "turn.plan.updated" && activity.turnId === latestTurnId,
-  ).pipe(Option.getOrNull);
-  return derivePlanProgressFromActivity(latest);
-}
-
-function derivePlanProgressFromActivity(
-  latest: OrchestrationThreadActivity | null,
-): ActivePlanProgressState | null {
-  if (!latest) {
-    return null;
-  }
-  const payload =
-    latest.payload && typeof latest.payload === "object"
-      ? (latest.payload as Record<string, unknown>)
-      : null;
-  const progress = derivePlanProgressPresentation(parsePlanSteps(payload?.plan));
-  if (!progress) {
-    return null;
-  }
-  return {
-    completedAllSteps: progress.completedAllSteps,
-    currentStepNumber: progress.currentStepNumber,
-    totalSteps: progress.totalSteps,
-  };
+  return deriveThreadPlanProgressFromActivities(activities, latestTurnId);
 }
 
 function findLatestPlanActivity(
@@ -457,34 +433,6 @@ function findLatestPlanActivity(
       : Option.none()),
     Arr.last(allPlanActivities),
   ]).pipe(Option.getOrNull);
-}
-
-function parsePlanSteps(rawPlan: unknown): Array<{ step: string; status: PlanStepStatus }> {
-  if (!Array.isArray(rawPlan)) {
-    return [];
-  }
-  return rawPlan
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const record = entry as Record<string, unknown>;
-      if (typeof record.step !== "string") {
-        return null;
-      }
-      const status =
-        record.status === "completed" || record.status === "inProgress" ? record.status : "pending";
-      return {
-        step: record.step,
-        status,
-      };
-    })
-    .filter(
-      (
-        step,
-      ): step is {
-        step: string;
-        status: PlanStepStatus;
-      } => step !== null,
-    );
 }
 
 export function findLatestProposedPlan(

@@ -274,6 +274,9 @@ function makeThreadShellSnapshot(params: {
         hasPendingApprovals: params.hasPendingApprovals ?? false,
         hasPendingUserInput: params.hasPendingUserInput ?? false,
         hasActionableProposedPlan: params.hasActionableProposedPlan ?? false,
+        activePlanProgress: null,
+        latestRuntimeActivityAt: null,
+        statusSummaryUpdatedAt: null,
       },
     ],
   };

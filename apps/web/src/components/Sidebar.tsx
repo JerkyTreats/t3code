@@ -2059,6 +2059,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         {/* Environment badge – visible by default, crossfades with the
             "new thread" button on hover using the same pointer-events +
             opacity pattern as the thread row archive/timestamp swap. */}
+        {/* Backend degradation aggregation is deferred; healthy remote projects keep a quiet badge. */}
         {project.environmentPresence === "remote-only" && (
           <Tooltip>
             <TooltipTrigger

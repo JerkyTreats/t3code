@@ -11,6 +11,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationEvent,
+  type OrchestrationShellSnapshot,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -24,6 +25,7 @@ import {
   selectThreadExistsByRef,
   setThreadBranch,
   selectThreadsAcrossEnvironments,
+  syncServerShellSnapshot,
   type AppState,
   type EnvironmentState,
 } from "./store";
@@ -246,6 +248,67 @@ function makeEvent<T extends OrchestrationEvent["type"]>(
     payload,
     ...overrides,
   } as Extract<OrchestrationEvent, { type: T }>;
+}
+
+function makeShellSnapshot(
+  thread: Thread,
+  overrides: Partial<OrchestrationShellSnapshot["threads"][number]> = {},
+): OrchestrationShellSnapshot {
+  return {
+    snapshotSequence: 1,
+    updatedAt: "2026-02-27T00:00:03.000Z",
+    projects: [
+      {
+        id: thread.projectId,
+        title: "Project",
+        workspaceRoot: "/tmp/project",
+        repositoryIdentity: null,
+        defaultModelSelection: thread.modelSelection,
+        scripts: [],
+        createdAt: "2026-02-13T00:00:00.000Z",
+        updatedAt: "2026-02-13T00:00:00.000Z",
+      },
+    ],
+    threads: [
+      {
+        id: thread.id,
+        projectId: thread.projectId,
+        title: thread.title,
+        modelSelection: thread.modelSelection,
+        runtimeMode: thread.runtimeMode,
+        interactionMode: thread.interactionMode,
+        branch: thread.branch,
+        worktreePath: thread.worktreePath,
+        issueLink: thread.issueLink ?? null,
+        latestTurn: thread.latestTurn,
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt ?? thread.createdAt,
+        archivedAt: thread.archivedAt,
+        session: thread.session
+          ? {
+              threadId: thread.id,
+              status: thread.session.orchestrationStatus,
+              providerName: thread.session.provider,
+              ...(thread.session.providerInstanceId
+                ? { providerInstanceId: thread.session.providerInstanceId }
+                : {}),
+              runtimeMode: thread.runtimeMode,
+              activeTurnId: thread.session.activeTurnId ?? null,
+              lastError: thread.session.lastError ?? null,
+              updatedAt: thread.session.updatedAt,
+            }
+          : null,
+        latestUserMessageAt: null,
+        hasPendingApprovals: false,
+        hasPendingUserInput: false,
+        hasActionableProposedPlan: false,
+        activePlanProgress: null,
+        latestRuntimeActivityAt: null,
+        statusSummaryUpdatedAt: null,
+        ...overrides,
+      },
+    ],
+  };
 }
 
 describe("environment state removal", () => {
@@ -766,6 +829,8 @@ describe("incremental orchestration updates", () => {
           hasPendingUserInput: false,
           hasActionableProposedPlan: false,
           activePlanProgress: null,
+          latestRuntimeActivityAt: null,
+          statusSummaryUpdatedAt: null,
         },
       },
     });
@@ -802,10 +867,13 @@ describe("incremental orchestration updates", () => {
       completedAllSteps: false,
       currentStepNumber: 3,
       totalSteps: 5,
+      turnId,
+      activityId: "activity-plan",
+      updatedAt: "2026-02-27T00:00:01.000Z",
     });
   });
 
-  it("clears sidebar plan progress when a new running turn has no plan activity", () => {
+  it("preserves sidebar plan progress from the latest available plan activity", () => {
     const turn1 = TurnId.make("turn-1");
     const turn2 = TurnId.make("turn-2");
     const thread = makeThread({
@@ -865,7 +933,12 @@ describe("incremental orchestration updates", () => {
             completedAllSteps: false,
             currentStepNumber: 2,
             totalSteps: 2,
+            turnId: turn1,
+            activityId: "activity-plan",
+            updatedAt: "2026-02-27T00:00:01.000Z",
           },
+          latestRuntimeActivityAt: null,
+          statusSummaryUpdatedAt: null,
         },
       },
     });
@@ -890,7 +963,133 @@ describe("incremental orchestration updates", () => {
     expect(
       next.environmentStateById[localEnvironmentId]?.sidebarThreadSummaryById[thread.id]
         ?.activePlanProgress,
-    ).toBeNull();
+    ).toEqual({
+      completedAllSteps: false,
+      currentStepNumber: 2,
+      totalSteps: 2,
+      turnId: turn1,
+      activityId: "activity-plan",
+      updatedAt: "2026-02-27T00:00:01.000Z",
+    });
+  });
+
+  it("populates sidebar plan progress from shell data without thread detail", () => {
+    const turnId = TurnId.make("turn-shell");
+    const thread = makeThread({
+      latestTurn: {
+        turnId,
+        state: "running",
+        requestedAt: "2026-02-27T00:00:00.000Z",
+        startedAt: "2026-02-27T00:00:00.000Z",
+        completedAt: null,
+        assistantMessageId: null,
+      },
+      session: {
+        provider: ProviderDriverKind.make("codex"),
+        status: "running",
+        createdAt: "2026-02-27T00:00:00.000Z",
+        updatedAt: "2026-02-27T00:00:00.000Z",
+        orchestrationStatus: "running",
+        activeTurnId: turnId,
+      },
+    });
+    const state = makeEmptyState();
+
+    const next = syncServerShellSnapshot(
+      state,
+      makeShellSnapshot(thread, {
+        activePlanProgress: {
+          completedAllSteps: false,
+          currentStepNumber: 3,
+          totalSteps: 5,
+          turnId,
+          activityId: EventId.make("activity-shell"),
+          updatedAt: "2026-02-27T00:00:02.000Z",
+        },
+        latestRuntimeActivityAt: "2026-02-27T00:00:02.000Z",
+        statusSummaryUpdatedAt: "2026-02-27T00:00:02.000Z",
+      }),
+      localEnvironmentId,
+    );
+
+    expect(
+      next.environmentStateById[localEnvironmentId]?.sidebarThreadSummaryById[thread.id]
+        ?.activePlanProgress,
+    ).toEqual({
+      completedAllSteps: false,
+      currentStepNumber: 3,
+      totalSteps: 5,
+      turnId,
+      activityId: "activity-shell",
+      updatedAt: "2026-02-27T00:00:02.000Z",
+    });
+  });
+
+  it("uses shell plan progress over stale detail progress", () => {
+    const detailTurnId = TurnId.make("turn-detail");
+    const shellTurnId = TurnId.make("turn-shell");
+    const thread = makeThread({
+      latestTurn: {
+        turnId: shellTurnId,
+        state: "running",
+        requestedAt: "2026-02-27T00:00:00.000Z",
+        startedAt: "2026-02-27T00:00:00.000Z",
+        completedAt: null,
+        assistantMessageId: null,
+      },
+      session: {
+        provider: ProviderDriverKind.make("codex"),
+        status: "running",
+        createdAt: "2026-02-27T00:00:00.000Z",
+        updatedAt: "2026-02-27T00:00:00.000Z",
+        orchestrationStatus: "running",
+        activeTurnId: shellTurnId,
+      },
+      activities: [
+        {
+          id: EventId.make("activity-detail"),
+          kind: "turn.plan.updated",
+          tone: "info",
+          summary: "Plan updated",
+          turnId: detailTurnId,
+          createdAt: "2026-02-27T00:00:01.000Z",
+          payload: {
+            plan: [
+              { step: "Old one", status: "completed" },
+              { step: "Old two", status: "inProgress" },
+            ],
+          },
+        },
+      ],
+    });
+    const state = makeState(thread);
+
+    const next = syncServerShellSnapshot(
+      state,
+      makeShellSnapshot(thread, {
+        activePlanProgress: {
+          completedAllSteps: false,
+          currentStepNumber: 4,
+          totalSteps: 5,
+          turnId: shellTurnId,
+          activityId: EventId.make("activity-shell"),
+          updatedAt: "2026-02-27T00:00:02.000Z",
+        },
+        latestRuntimeActivityAt: "2026-02-27T00:00:02.000Z",
+        statusSummaryUpdatedAt: "2026-02-27T00:00:02.000Z",
+      }),
+      localEnvironmentId,
+    );
+
+    expect(
+      next.environmentStateById[localEnvironmentId]?.sidebarThreadSummaryById[thread.id]
+        ?.activePlanProgress,
+    ).toMatchObject({
+      currentStepNumber: 4,
+      totalSteps: 5,
+      turnId: shellTurnId,
+      activityId: "activity-shell",
+    });
   });
 
   it("applies replay batches in sequence and updates session state", () => {

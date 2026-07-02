@@ -187,7 +187,11 @@ import {
   useServerKeybindings,
 } from "~/rpc/serverState";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
-import { retainThreadDetailSubscription } from "../environments/runtime/service";
+import {
+  retainThreadDetailSubscription,
+  useThreadDetailActivationState,
+  type ThreadDetailActivationState,
+} from "../environments/runtime/service";
 import { RightPanelSheet } from "./RightPanelSheet";
 import { Button } from "./ui/button";
 import {
@@ -203,6 +207,62 @@ const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_PROPOSED_PLANS: Thread["proposedPlans"] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
+
+function resolveThreadActivationLoadingCopy(state: ThreadDetailActivationState): {
+  title: string;
+  detail: string;
+  tone: "loading" | "error";
+} {
+  switch (state.phase) {
+    case "waitingForConnection":
+      return {
+        title: "Connecting to remote backend",
+        detail: "Thread detail will load when the backend connection is ready.",
+        tone: "loading",
+      };
+    case "hydratingSnapshot":
+      return {
+        title: "Hydrating remote activity payloads",
+        detail: `${state.deferredPayloadCount} deferred payloads are being loaded.`,
+        tone: "loading",
+      };
+    case "error":
+      return {
+        title: "Failed to load thread detail",
+        detail: state.lastError ?? "The remote backend did not return thread detail.",
+        tone: "error",
+      };
+    case "subscribing":
+    case "idle":
+    case "live":
+      return {
+        title: "Loading thread snapshot",
+        detail: "The remote backend is preparing the thread detail stream.",
+        tone: "loading",
+      };
+  }
+}
+
+function RemoteThreadActivationStateView({ state }: { state: ThreadDetailActivationState }) {
+  const copy = resolveThreadActivationLoadingCopy(state);
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+        <div className="flex max-w-sm items-start gap-3 rounded-md border border-border bg-card px-4 py-3 shadow-sm">
+          {copy.tone === "error" ? (
+            <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
+          ) : (
+            <span className="mt-1 size-3 shrink-0 animate-pulse rounded-full bg-sky-500" />
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">{copy.title}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{copy.detail}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
 type EnvironmentUnavailableState = {
   readonly environmentId: EnvironmentId;
@@ -795,6 +855,10 @@ export default function ChatView(props: ChatViewProps) {
     [environmentId, threadId],
   );
   const routeThreadKey = useMemo(() => scopedThreadKey(routeThreadRef), [routeThreadRef]);
+  const threadDetailActivationState = useThreadDetailActivationState(
+    routeKind === "server" ? environmentId : null,
+    routeKind === "server" ? threadId : null,
+  );
   const composerDraftTarget: ScopedThreadRef | DraftId =
     routeKind === "server" ? routeThreadRef : props.draftId;
   const serverThread = useStore(
@@ -3803,8 +3867,19 @@ export default function ChatView(props: ChatViewProps) {
     void onRevertToTurnCountRef.current(targetTurnCount);
   }, []);
 
+  const threadActivationTimelineLoadingState =
+    routeKind === "server" &&
+    activeThread !== undefined &&
+    activeThread.messages.length === 0 &&
+    threadDetailActivationState.phase !== "live"
+      ? resolveThreadActivationLoadingCopy(threadDetailActivationState)
+      : null;
+
   // Empty state: no active thread
   if (!activeThread) {
+    if (routeKind === "server") {
+      return <RemoteThreadActivationStateView state={threadDetailActivationState} />;
+    }
     return <NoActiveThreadState />;
   }
 
@@ -3896,6 +3971,7 @@ export default function ChatView(props: ChatViewProps) {
                 workspaceRoot={activeWorkspaceRoot}
                 skills={activeProviderStatus?.skills ?? EMPTY_PROVIDER_SKILLS}
                 onIsAtEndChange={onIsAtEndChange}
+                activationLoadingState={threadActivationTimelineLoadingState}
               />
             )}
 

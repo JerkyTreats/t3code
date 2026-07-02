@@ -34,6 +34,7 @@ import { type QueryClient } from "@tanstack/react-query";
 import { Throttler } from "@tanstack/react-pacer";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { create } from "zustand";
 import {
   createKnownEnvironment,
   getKnownEnvironmentWsBaseUrl,
@@ -132,6 +133,38 @@ type ThreadDetailSubscriptionEntry = {
   lastAccessedAt: number;
   evictionTimeoutId: ReturnType<typeof setTimeout> | null;
 };
+
+export type ThreadDetailActivationPhase =
+  | "idle"
+  | "waitingForConnection"
+  | "subscribing"
+  | "hydratingSnapshot"
+  | "live"
+  | "error";
+
+export interface ThreadDetailActivationState {
+  readonly phase: ThreadDetailActivationPhase;
+  readonly syncVersion: "v1" | "v2" | null;
+  readonly deferredPayloadCount: number;
+  readonly estimatedBytes: number | null;
+  readonly lastError: string | null;
+}
+
+interface ThreadDetailActivationStoreState {
+  readonly byKey: Record<string, ThreadDetailActivationState>;
+}
+
+const IDLE_THREAD_DETAIL_ACTIVATION_STATE: ThreadDetailActivationState = {
+  phase: "idle",
+  syncVersion: null,
+  deferredPayloadCount: 0,
+  estimatedBytes: null,
+  lastError: null,
+};
+
+const useThreadDetailActivationStore = create<ThreadDetailActivationStoreState>(() => ({
+  byKey: {},
+}));
 
 const environmentConnections = new Map<EnvironmentId, EnvironmentConnection>();
 const isEnvironmentAuthInvalidError = Schema.is(EnvironmentAuthInvalidError);
@@ -369,6 +402,49 @@ function getThreadDetailSubscriptionKey(environmentId: EnvironmentId, threadId: 
   return scopedThreadKey(scopeThreadRef(environmentId, threadId));
 }
 
+function patchThreadDetailActivationState(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  patch: Partial<ThreadDetailActivationState>,
+): void {
+  const key = getThreadDetailSubscriptionKey(environmentId, threadId);
+  useThreadDetailActivationStore.setState((state) => ({
+    byKey: {
+      ...state.byKey,
+      [key]: {
+        ...(state.byKey[key] ?? IDLE_THREAD_DETAIL_ACTIVATION_STATE),
+        ...patch,
+      },
+    },
+  }));
+}
+
+function clearThreadDetailActivationState(environmentId: EnvironmentId, threadId: ThreadId): void {
+  const key = getThreadDetailSubscriptionKey(environmentId, threadId);
+  useThreadDetailActivationStore.setState((state) => {
+    if (!(key in state.byKey)) {
+      return state;
+    }
+    const { [key]: _removed, ...byKey } = state.byKey;
+    return { byKey };
+  });
+}
+
+export function useThreadDetailActivationState(
+  environmentId: EnvironmentId | null | undefined,
+  threadId: ThreadId | null | undefined,
+): ThreadDetailActivationState {
+  return useThreadDetailActivationStore((state) => {
+    if (!environmentId || !threadId) {
+      return IDLE_THREAD_DETAIL_ACTIVATION_STATE;
+    }
+    return (
+      state.byKey[getThreadDetailSubscriptionKey(environmentId, threadId)] ??
+      IDLE_THREAD_DETAIL_ACTIVATION_STATE
+    );
+  });
+}
+
 function clearThreadDetailSubscriptionEviction(
   entry: ThreadDetailSubscriptionEntry,
 ): ThreadDetailSubscriptionEntry {
@@ -563,6 +639,13 @@ async function applyThreadSyncV2Item(
   isDisposed: () => boolean,
 ): Promise<void> {
   if (item.kind === "snapshot") {
+    patchThreadDetailActivationState(entry.environmentId, entry.threadId, {
+      phase: item.snapshot.deferredActivityPayloads > 0 ? "hydratingSnapshot" : "subscribing",
+      syncVersion: "v2",
+      deferredPayloadCount: item.snapshot.deferredActivityPayloads,
+      estimatedBytes: item.snapshot.estimatedSerializedBytes,
+      lastError: null,
+    });
     recordThreadSyncSnapshot({
       environmentId: entry.environmentId,
       threadId: entry.threadId,
@@ -574,6 +657,13 @@ async function applyThreadSyncV2Item(
     const snapshot = await hydrateThreadSyncV2Snapshot(connection, item.snapshot);
     if (!isDisposed()) {
       useStore.getState().syncServerThreadDetail(snapshot.thread, entry.environmentId);
+      patchThreadDetailActivationState(entry.environmentId, entry.threadId, {
+        phase: "live",
+        syncVersion: "v2",
+        deferredPayloadCount: item.snapshot.deferredActivityPayloads,
+        estimatedBytes: item.snapshot.estimatedSerializedBytes,
+        lastError: null,
+      });
     }
     return;
   }
@@ -602,6 +692,11 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
 
   const connection = readEnvironmentConnection(entry.environmentId);
   if (!connection) {
+    patchThreadDetailActivationState(entry.environmentId, entry.threadId, {
+      phase: "waitingForConnection",
+      syncVersion: entry.syncVersion,
+      lastError: null,
+    });
     recordThreadSyncWaiting({
       environmentId: entry.environmentId,
       threadId: entry.threadId,
@@ -611,6 +706,13 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
 
   if (shouldUseThreadSyncV2(connection)) {
     entry.syncVersion = "v2";
+    patchThreadDetailActivationState(entry.environmentId, entry.threadId, {
+      phase: "subscribing",
+      syncVersion: "v2",
+      deferredPayloadCount: 0,
+      estimatedBytes: null,
+      lastError: null,
+    });
     recordThreadSyncSubscription({
       environmentId: entry.environmentId,
       threadId: entry.threadId,
@@ -629,6 +731,11 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
           })
           .catch((error) => {
             if (!disposed) {
+              patchThreadDetailActivationState(entry.environmentId, entry.threadId, {
+                phase: "error",
+                syncVersion: "v2",
+                lastError: formatUnknownErrorMessage(error),
+              });
               console.warn("Failed to apply thread sync v2 item", {
                 environmentId: entry.environmentId,
                 threadId: entry.threadId,
@@ -646,6 +753,13 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
   }
 
   entry.syncVersion = "v1";
+  patchThreadDetailActivationState(entry.environmentId, entry.threadId, {
+    phase: "subscribing",
+    syncVersion: "v1",
+    deferredPayloadCount: 0,
+    estimatedBytes: null,
+    lastError: null,
+  });
   recordThreadSyncSubscription({
     environmentId: entry.environmentId,
     threadId: entry.threadId,
@@ -661,6 +775,13 @@ function attachThreadDetailSubscription(entry: ThreadDetailSubscriptionEntry): b
           version: "v1",
         });
         useStore.getState().syncServerThreadDetail(item.snapshot.thread, entry.environmentId);
+        patchThreadDetailActivationState(entry.environmentId, entry.threadId, {
+          phase: "live",
+          syncVersion: "v1",
+          deferredPayloadCount: 0,
+          estimatedBytes: null,
+          lastError: null,
+        });
         return;
       }
       recordThreadSyncEvent({
@@ -705,6 +826,7 @@ function disposeThreadDetailSubscriptionByKey(key: string): boolean {
   entry.unsubscribe();
   entry.unsubscribe = NOOP;
   entry.syncVersion = null;
+  clearThreadDetailActivationState(entry.environmentId, entry.threadId);
   recordThreadSyncDisposed({
     environmentId: entry.environmentId,
     threadId: entry.threadId,
@@ -738,6 +860,11 @@ function detachThreadDetailSubscriptionsForEnvironment(environmentId: Environmen
     entry.unsubscribe();
     entry.unsubscribe = NOOP;
     entry.syncVersion = null;
+    patchThreadDetailActivationState(entry.environmentId, entry.threadId, {
+      phase: "waitingForConnection",
+      syncVersion: null,
+      lastError: null,
+    });
     recordThreadSyncWaiting({
       environmentId: entry.environmentId,
       threadId: entry.threadId,

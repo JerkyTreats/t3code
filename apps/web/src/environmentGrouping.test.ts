@@ -74,6 +74,8 @@ function makeSidebarThreadSummary(
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
     activePlanProgress: null,
+    latestRuntimeActivityAt: null,
+    statusSummaryUpdatedAt: null,
     ...overrides,
   };
 }

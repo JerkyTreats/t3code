@@ -399,6 +399,9 @@ describe("deriveActivePlanProgressState", () => {
       completedAllSteps: false,
       currentStepNumber: 3,
       totalSteps: 5,
+      turnId: TurnId.make("turn-1"),
+      activityId: "plan-progress",
+      updatedAt: "2026-02-23T00:00:02.000Z",
     });
   });
 
@@ -424,6 +427,9 @@ describe("deriveActivePlanProgressState", () => {
       completedAllSteps: true,
       currentStepNumber: 2,
       totalSteps: 2,
+      turnId: TurnId.make("turn-1"),
+      activityId: "plan-complete",
+      updatedAt: "2026-02-23T00:00:02.000Z",
     });
   });
 
@@ -447,7 +453,7 @@ describe("deriveActivePlanProgressState", () => {
 });
 
 describe("deriveCurrentTurnPlanProgressState", () => {
-  it("does not fall back to a previous turn plan", () => {
+  it("falls back to a previous turn plan when the latest turn has no plan activity", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "plan-from-turn-1",
@@ -462,7 +468,14 @@ describe("deriveCurrentTurnPlanProgressState", () => {
       }),
     ];
 
-    expect(deriveCurrentTurnPlanProgressState(activities, TurnId.make("turn-2"))).toBeNull();
+    expect(deriveCurrentTurnPlanProgressState(activities, TurnId.make("turn-2"))).toEqual({
+      completedAllSteps: true,
+      currentStepNumber: 1,
+      totalSteps: 1,
+      turnId: TurnId.make("turn-1"),
+      activityId: "plan-from-turn-1",
+      updatedAt: "2026-02-23T00:00:01.000Z",
+    });
   });
 
   it("returns current turn progress when the latest turn has plan activity", () => {
@@ -498,6 +511,9 @@ describe("deriveCurrentTurnPlanProgressState", () => {
       completedAllSteps: false,
       currentStepNumber: 2,
       totalSteps: 2,
+      turnId: TurnId.make("turn-2"),
+      activityId: "plan-from-turn-2",
+      updatedAt: "2026-02-23T00:00:02.000Z",
     });
   });
 });

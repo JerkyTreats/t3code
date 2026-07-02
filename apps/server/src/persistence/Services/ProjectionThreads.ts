@@ -11,6 +11,7 @@ import {
   GitHubIssueLink,
   ModelSelection,
   NonNegativeInt,
+  OrchestrationThreadPlanProgress,
   ProjectId,
   ProviderInteractionMode,
   RuntimeMode,
@@ -42,6 +43,9 @@ export const ProjectionThread = Schema.Struct({
   pendingApprovalCount: NonNegativeInt,
   pendingUserInputCount: NonNegativeInt,
   hasActionableProposedPlan: NonNegativeInt,
+  activePlanProgress: Schema.NullOr(OrchestrationThreadPlanProgress),
+  latestRuntimeActivityAt: Schema.NullOr(IsoDateTime),
+  statusSummaryUpdatedAt: Schema.NullOr(IsoDateTime),
   deletedAt: Schema.NullOr(IsoDateTime),
 });
 export type ProjectionThread = typeof ProjectionThread.Type;

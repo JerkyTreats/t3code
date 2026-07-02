@@ -85,6 +85,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
+          active_plan_progress_json,
+          latest_runtime_activity_at,
+          status_summary_updated_at,
           created_at,
           updated_at,
           deleted_at
@@ -103,6 +106,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           1,
           0,
           0,
+          '{"completedAllSteps":false,"currentStepNumber":3,"totalSteps":5,"turnId":"turn-1","activityId":"activity-plan","updatedAt":"2026-02-24T00:00:06.000Z"}',
+          '2026-02-24T00:00:06.000Z',
+          '2026-02-24T00:00:06.000Z',
           '2026-02-24T00:00:02.000Z',
           '2026-02-24T00:00:03.000Z',
           NULL
@@ -436,6 +442,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           hasPendingApprovals: true,
           hasPendingUserInput: false,
           hasActionableProposedPlan: false,
+          activePlanProgress: {
+            completedAllSteps: false,
+            currentStepNumber: 3,
+            totalSteps: 5,
+            turnId: asTurnId("turn-1"),
+            activityId: asEventId("activity-plan"),
+            updatedAt: "2026-02-24T00:00:06.000Z",
+          },
+          latestRuntimeActivityAt: "2026-02-24T00:00:06.000Z",
+          statusSummaryUpdatedAt: "2026-02-24T00:00:06.000Z",
         },
       ]);
 
@@ -494,6 +510,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
+          active_plan_progress_json,
+          latest_runtime_activity_at,
+          status_summary_updated_at,
           created_at,
           updated_at,
           archived_at,
@@ -514,6 +533,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             0,
             0,
             0,
+            NULL,
+            NULL,
+            NULL,
             '2026-04-06T00:00:02.000Z',
             '2026-04-06T00:00:03.000Z',
             NULL,
@@ -533,6 +555,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             0,
             0,
             0,
+            NULL,
+            NULL,
+            NULL,
             '2026-04-06T00:00:04.000Z',
             '2026-04-06T00:00:05.000Z',
             '2026-04-06T00:00:06.000Z',
@@ -564,6 +589,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         [ThreadId.make("thread-archived")],
       );
       assert.equal(archivedShellSnapshot.threads[0]?.archivedAt, "2026-04-06T00:00:06.000Z");
+      assert.equal(archivedShellSnapshot.threads[0]?.activePlanProgress, null);
+      assert.equal(archivedShellSnapshot.threads[0]?.latestRuntimeActivityAt, null);
+      assert.equal(archivedShellSnapshot.threads[0]?.statusSummaryUpdatedAt, null);
     }),
   );
 
@@ -901,6 +929,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
+          active_plan_progress_json,
+          latest_runtime_activity_at,
+          status_summary_updated_at,
           created_at,
           updated_at,
           deleted_at
@@ -919,6 +950,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           0,
           0,
           0,
+          NULL,
+          NULL,
+          NULL,
           '2026-04-01T00:00:02.000Z',
           '2026-04-01T00:00:03.000Z',
           NULL
@@ -1291,6 +1325,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
+          active_plan_progress_json,
+          latest_runtime_activity_at,
+          status_summary_updated_at,
           created_at,
           updated_at,
           archived_at,
@@ -1310,6 +1347,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           0,
           0,
           0,
+          '{"completedAllSteps":false,"currentStepNumber":2,"totalSteps":4,"turnId":"turn-running","activityId":"activity-running-plan","updatedAt":"2026-04-02T00:00:31.000Z"}',
+          '2026-04-02T00:00:31.000Z',
+          '2026-04-02T00:00:31.000Z',
           '2026-04-02T00:00:02.000Z',
           '2026-04-02T00:00:03.000Z',
           NULL,
@@ -1375,6 +1415,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         assert.equal(threadShell.value.latestTurn?.turnId, asTurnId("turn-running"));
         assert.equal(threadShell.value.latestTurn?.state, "running");
         assert.equal(threadShell.value.latestTurn?.startedAt, "2026-04-02T00:00:30.000Z");
+        assert.deepEqual(threadShell.value.activePlanProgress, {
+          completedAllSteps: false,
+          currentStepNumber: 2,
+          totalSteps: 4,
+          turnId: asTurnId("turn-running"),
+          activityId: asEventId("activity-running-plan"),
+          updatedAt: "2026-04-02T00:00:31.000Z",
+        });
+        assert.equal(threadShell.value.latestRuntimeActivityAt, "2026-04-02T00:00:31.000Z");
+        assert.equal(threadShell.value.statusSummaryUpdatedAt, "2026-04-02T00:00:31.000Z");
       }
 
       const threadDetail = yield* snapshotQuery.getThreadDetailById(ThreadId.make("thread-1"));

@@ -221,6 +221,9 @@ const makeDefaultOrchestrationThreadShell = (
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
+    activePlanProgress: null,
+    latestRuntimeActivityAt: null,
+    statusSummaryUpdatedAt: null,
     ...overrides,
   };
 };

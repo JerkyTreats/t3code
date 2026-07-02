@@ -383,6 +383,16 @@ export const OrchestrationProjectShell = Schema.Struct({
 });
 export type OrchestrationProjectShell = typeof OrchestrationProjectShell.Type;
 
+export const OrchestrationThreadPlanProgress = Schema.Struct({
+  completedAllSteps: Schema.Boolean,
+  currentStepNumber: PositiveInt,
+  totalSteps: PositiveInt,
+  turnId: Schema.NullOr(TurnId),
+  activityId: EventId,
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationThreadPlanProgress = typeof OrchestrationThreadPlanProgress.Type;
+
 export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -404,6 +414,15 @@ export const OrchestrationThreadShell = Schema.Struct({
   hasPendingApprovals: Schema.Boolean,
   hasPendingUserInput: Schema.Boolean,
   hasActionableProposedPlan: Schema.Boolean,
+  activePlanProgress: Schema.NullOr(OrchestrationThreadPlanProgress).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  latestRuntimeActivityAt: Schema.NullOr(IsoDateTime).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  statusSummaryUpdatedAt: Schema.NullOr(IsoDateTime).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
 });
 export type OrchestrationThreadShell = typeof OrchestrationThreadShell.Type;
 

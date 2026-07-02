@@ -16,6 +16,7 @@ import {
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
   OrchestrationSession,
+  OrchestrationThreadShell,
   ProjectCreateCommand,
   ThreadMetaUpdatedPayload,
   ThreadTurnStartCommand,
@@ -23,6 +24,7 @@ import {
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
 } from "./orchestration.ts";
+import { EventId, TurnId } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
@@ -38,6 +40,7 @@ const decodeThreadTurnStartCommand = Schema.decodeUnknownEffect(ThreadTurnStartC
 const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
   ThreadTurnStartRequestedPayload,
 );
+const decodeOrchestrationThreadShell = Schema.decodeUnknownEffect(OrchestrationThreadShell);
 const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLatestTurn);
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
@@ -53,6 +56,32 @@ const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPaylo
 const decodeOrchestrationCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
+
+function makeThreadShell(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "thread-1",
+    projectId: "project-1",
+    title: "Thread",
+    modelSelection: {
+      instanceId: "codex",
+      model: "gpt-5",
+    },
+    runtimeMode: DEFAULT_RUNTIME_MODE,
+    interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+    branch: null,
+    worktreePath: null,
+    latestTurn: null,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    updatedAt: "2026-05-01T00:00:00.000Z",
+    archivedAt: null,
+    session: null,
+    latestUserMessageAt: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    hasActionableProposedPlan: false,
+    ...overrides,
+  };
+}
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -104,6 +133,62 @@ it.effect("caps thread activity payload hydration requests", () =>
       }),
     );
     assert.strictEqual(oversized._tag, "Failure");
+  }),
+);
+
+it.effect("decodes legacy thread shell payloads without status summary fields", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationThreadShell(makeThreadShell());
+    assert.strictEqual(parsed.activePlanProgress, null);
+    assert.strictEqual(parsed.latestRuntimeActivityAt, null);
+    assert.strictEqual(parsed.statusSummaryUpdatedAt, null);
+  }),
+);
+
+it.effect("decodes thread shell active plan progress", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeOrchestrationThreadShell(
+      makeThreadShell({
+        activePlanProgress: {
+          completedAllSteps: false,
+          currentStepNumber: 3,
+          totalSteps: 5,
+          turnId: "turn-1",
+          activityId: "activity-1",
+          updatedAt: "2026-05-01T00:01:00.000Z",
+        },
+        latestRuntimeActivityAt: "2026-05-01T00:01:00.000Z",
+        statusSummaryUpdatedAt: "2026-05-01T00:01:00.000Z",
+      }),
+    );
+    assert.deepStrictEqual(parsed.activePlanProgress, {
+      completedAllSteps: false,
+      currentStepNumber: 3,
+      totalSteps: 5,
+      turnId: TurnId.make("turn-1"),
+      activityId: EventId.make("activity-1"),
+      updatedAt: "2026-05-01T00:01:00.000Z",
+    });
+  }),
+);
+
+it.effect("rejects invalid thread shell active plan progress", () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.exit(
+      decodeOrchestrationThreadShell(
+        makeThreadShell({
+          activePlanProgress: {
+            completedAllSteps: false,
+            currentStepNumber: 0,
+            totalSteps: 5,
+            turnId: "turn-1",
+            activityId: "activity-1",
+            updatedAt: "2026-05-01T00:01:00.000Z",
+          },
+        }),
+      ),
+    );
+    assert.strictEqual(result._tag, "Failure");
   }),
 );
 
