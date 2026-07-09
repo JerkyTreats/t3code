@@ -24,6 +24,7 @@ Codex provider setup follows the installed Codex app-server capability surface i
 - `apps/desktop/src/main.ts`
 - `apps/server/src/codexAppServerManager.ts`
 - `apps/server/src/provider/Layers/CodexProvider.ts`
+- `apps/server/src/provider/Layers/CodexSessionRuntime.ts`
 - `apps/server/src/provider/codexAppServer.ts`
 - `apps/server/src/provider/codexCliBinary.ts`
 - `apps/server/src/provider/providerSnapshot.ts`

@@ -5,15 +5,16 @@ Status: active
 
 ## Intent
 
-Electron desktop fork builds identify as `T3 Code Omarchy` instead of generic upstream `T3 Code`.
+Visible product identity belongs to the opinionated T3 Code fork.
 
-Other upstream product lanes, including mobile and hosted web, may keep upstream product identity unless a separate fork product decision changes them.
+The product must not present itself as an Omarchy edition. Omarchy may appear only where a surface is specifically describing Omarchy integration.
 
 ## Required Behavior
 
-- Electron desktop naming uses the Omarchy product identity across packaged and development surfaces.
-- Web branding used by the Electron desktop shell keeps the same Omarchy base identity where it represents the desktop product.
-- Mobile and other upstream product lanes are not required to use Omarchy naming by default.
+- Electron desktop naming uses the fork product identity across packaged and development surfaces.
+- Web branding used by the Electron desktop shell keeps the same fork base identity where it represents the desktop product.
+- Mobile and hosted lanes may keep upstream naming unless a separate fork product decision changes them.
+- Omarchy is not a product qualifier outside Omarchy specific integration surfaces.
 - Electron desktop release identity keeps fork naming visible and must not silently fall back to upstream naming.
 
 ## Owner Modules
@@ -38,20 +39,22 @@ Other upstream product lanes, including mobile and hosted web, may keep upstream
 
 - Restore shared product identity before Electron desktop, desktop web shell, and release wiring.
 - Keep technical storage identifiers stable unless a separate migration is approved.
-- Replace visible upstream naming at the Electron desktop identity seam instead of scattering product literals.
+- Replace visible upstream naming at the shared product identity seam instead of scattering product literals.
+- Remove `Omarchy` from broad product labels when it is not describing an Omarchy integration.
 - Recheck release scripts after upstream packaging changes because they can silently reintroduce generic names.
 
 ## Upstream Replay Rule
 
-- Override upstream naming changes that replace Electron desktop fork identity.
+- Override upstream naming changes that replace the fork identity.
 - Replay release workflow or packaging changes so Electron desktop fork naming survives.
 - Accept upstream naming for product lanes that are not governed by this Electron desktop identity spec.
 
 ## Verification
 
-- Electron desktop window title and packaged product name use the Omarchy identity.
-- Desktop web shell visible product name uses the Omarchy identity.
-- Electron desktop release artifact and announcement names use the Omarchy identity.
+- Electron desktop window title and packaged product name use the fork identity.
+- Desktop web shell visible product name uses the fork identity.
+- Electron desktop release artifact and announcement names use the fork identity.
+- Broad product labels do not include `Omarchy` unless they describe an Omarchy integration.
 - Mobile product identity can remain upstream `T3 Code` unless separately specified.
 
 ## Compatibility Checks

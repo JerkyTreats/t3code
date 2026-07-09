@@ -18,6 +18,7 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Markdown image links in document previews resolve through the document asset pipeline when possible and support image preview or lightbox behavior without breaking external image links.
 - Plan preview and project document links keep fork specific navigation behavior for workspace paths, local anchors, and external links.
 - Workspace relative links navigate within the document preview or files preview route instead of forcing an editor open when an in app preview target exists.
+- Relative links inside nested document files resolve from the document directory while preserving workspace relative metadata from the workspace root.
 - External links open through the native shell or supported local API boundary instead of being treated as workspace paths.
 - Local hash links scroll to the matching generated heading anchor inside the current document preview.
 - The document renderer can hide the source footer when the preview is virtual rather than backed by a real workspace file.
@@ -58,6 +59,7 @@ Plan review, project document preview, and markdown presentation preserve fork s
 ## One Shot Rebuild Notes
 
 - Restore markdown link classification before preview route wiring.
+- Preserve separate document-link cwd and workspace-root metadata when rebuilding document preview wiring.
 - Restore route search state before adding fullscreen preview UI.
 - Keep plan preview virtual when no workspace file exists.
 - Rebuild document markdown as a richer document surface, not as chat markdown reuse.
@@ -78,6 +80,7 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Wide markdown tables and code blocks remain horizontally scrollable instead of stretching or clipping the layout in chat markdown, plan preview, and project document preview.
 - Workspace path links, local heading links, and external links keep the expected fork navigation behavior in plan preview and markdown document surfaces.
 - Relative markdown links can navigate between in app document previews without opening an external editor when a preview route is available.
+- Nested document-relative links keep correct workspace relative paths for file panel and preview routing.
 - Local heading links scroll to generated heading anchors inside the current document preview.
 - Mermaid fenced code renders a diagram or a readable source backed failure state.
 - Markdown images in document previews resolve through the asset pipeline and can open in a preview or lightbox when available.

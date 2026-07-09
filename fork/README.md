@@ -7,9 +7,9 @@ Status: active
 
 This directory defines fork owned feature contracts for the T3 Code fork.
 
-Some specs protect the Omarchy Electron desktop lane.
+Some specs protect local desktop integration lanes, including Omarchy where it provides host capability.
 
-Other specs protect broader fork product behavior that is not limited to Omarchy.
+Other specs protect broader fork product behavior that is not limited to one desktop integration.
 
 `patch.md` is the authoritative index. Each file here defines one feature in enough detail for an upstream rebuild to replay the behavior without depending on old branch shape.
 

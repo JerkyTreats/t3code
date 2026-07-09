@@ -11,6 +11,7 @@ Thread and sidebar status cues reflect plan state directly instead of collapsing
 
 - Sidebar and activity surfaces show explicit plan aware progress when plan data exists.
 - Fractional plan progress such as `1/4` remains visible when a plan exposes step progress.
+- Shell snapshots derive active plan progress from `turn.plan.updated` activity rows.
 - Plan ready and active plan cues remain visible where the fork currently surfaces them.
 - Plan sidebar affordances remain available from the active thread view.
 - Optional logical project grouping may add sidebar group labels, but concrete project rows, thread rows, status dots, plan progress, rename, removal, and project path actions remain owned by the original project entries.
@@ -22,6 +23,8 @@ Thread and sidebar status cues reflect plan state directly instead of collapsing
 - `apps/web/src/components/Sidebar.tsx`
 - `apps/web/src/components/PlanSidebar.tsx`
 - `apps/web/src/components/ChatView.tsx`
+- `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
+- `packages/shared/src/planProgress.ts`
 - `apps/web/src/session-logic.ts`
 - `packages/client-runtime/src/threadDetailState.ts`
 
@@ -35,6 +38,7 @@ Thread and sidebar status cues reflect plan state directly instead of collapsing
 ## One Shot Rebuild Notes
 
 - Restore plan presentation derivation before sidebar layout changes.
+- Restore shell snapshot plan progress projection before relying on sidebar rendering tests.
 - Keep fractional progress visible on concrete thread rows even when grouping is enabled.
 - Treat project group labels as display only.
 - Verify plan sidebar entry points after route and layout changes.
@@ -47,6 +51,7 @@ Thread and sidebar status cues reflect plan state directly instead of collapsing
 ## Verification
 
 - Threads with active plan steps show fractional progress when the data exists.
+- Server shell snapshots include active plan progress when the latest turn has plan activity.
 - Plan ready and in progress cues render in sidebar and thread activity surfaces.
 - Plan sidebar remains reachable from the thread view.
 - Enabling logical project grouping keeps concrete project actions and plan aware thread cues visible.

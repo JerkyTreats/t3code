@@ -12,7 +12,8 @@ Source control support exposes GitHub, GitLab, Azure DevOps, and Bitbucket throu
 - Source control discovery reports real provider readiness for GitHub, GitLab, Azure DevOps, and Bitbucket.
 - Repository lookup, clone, and publish are exposed through additive source control RPC and native API capabilities.
 - Sidebar add project supports local path and clone remote modes, with provider clone lookup using SSH by default and raw Git URL clone bypassing provider lookup.
-- Git panel publish is the publish surface for repositories without an origin remote.
+- Git surface publish is the publish surface for repositories without an origin remote.
+- Git surface publish actions stay hidden or disabled until provider discovery reports an authenticated publish-capable provider.
 - Publish creates the remote repository, ensures the requested remote, and pushes to the actual remote returned by remote wiring.
 - Empty local repositories create and wire the remote but return `remote_added` without pushing.
 - GitHub issue UI remains GitHub only.
@@ -53,6 +54,7 @@ Source control support exposes GitHub, GitLab, Azure DevOps, and Bitbucket throu
 
 - Restore source control contracts before server and web wiring.
 - Keep provider discovery and publish behavior provider neutral.
+- Gate publish quick actions on provider discovery readiness.
 - Keep GitHub issue UI scoped to GitHub until parity exists.
 - Preserve fork Git workflow rules from `F6` and `F7` during publish and pull request work.
 - Verify empty repository publish separately from publish with commits.
@@ -69,7 +71,8 @@ Source control support exposes GitHub, GitLab, Azure DevOps, and Bitbucket throu
 - Publishing with commits pushes to the remote returned by `ensureRemote`.
 - Publishing an empty repository returns `remote_added`.
 - Sidebar clone by provider and raw Git URL both create projects at the cloned cwd.
-- Git panel publish remains hidden or disabled when source control capability is unavailable.
+- Git surface publish remains hidden or disabled when source control capability is unavailable.
+- Git quick action does not open publish before provider discovery is known and ready.
 
 ## Compatibility Checks
 

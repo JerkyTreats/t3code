@@ -13,6 +13,7 @@ Auth access management is exposed through the fork native API and Connections se
 - RPC errors use the shared auth access error contract instead of leaking server-only auth service errors.
 - NativeApi exposes the auth access surface through the RPC-backed adapter.
 - Native API capability detection reports access management availability and disables controls when the active transport cannot support it.
+- Standard paired client scopes include relay read and relay write so mobile and managed relay clients can complete relay setup without an administrative session.
 - Connections settings can create temporary pairing links, list and revoke active pairing links, list client sessions, revoke non-current client sessions, and revoke other client sessions.
 - Current session revocation remains disabled in the settings UI.
 - Existing paste pairing-link, saved environment reconnect, disconnect, forget, SSH connect, and local-first desktop fallback flows remain unchanged.
@@ -43,6 +44,7 @@ Auth access management is exposed through the fork native API and Connections se
 ## One Shot Rebuild Notes
 
 - Restore contracts and RPC methods before settings UI.
+- Keep standard client scopes aligned with relay endpoints used by paired mobile and managed relay clients.
 - Keep transport capability gating visible in NativeApi.
 - Preserve current session revocation protection.
 - Verify saved environment flows after adding access management actions.
@@ -61,6 +63,7 @@ Auth access management is exposed through the fork native API and Connections se
 - Connections settings can list client sessions, revoke non-current sessions, and revoke other sessions.
 - NativeApi forwards auth access actions through RPC in browser-backed and desktop-backed web flows.
 - Saved environment pairing, reconnect, disconnect, forget, and SSH connect flows continue to work unchanged.
+- Mobile and managed relay pairing tokens include relay write scope for relay configuration and link proof calls.
 
 ## Compatibility Checks
 
