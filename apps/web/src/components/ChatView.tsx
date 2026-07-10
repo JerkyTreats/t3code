@@ -191,7 +191,7 @@ import {
   serverEnvironment,
 } from "../state/server";
 import { terminalEnvironment } from "../state/terminal";
-import { threadEnvironment } from "../state/threads";
+import { threadEnvironment, useEnvironmentThread } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
 import {
@@ -1054,7 +1054,12 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const composerDraftTarget: ScopedThreadRef | DraftId =
     routeKind === "server" ? routeThreadRef : props.draftId;
+  const serverThreadState = useEnvironmentThread(
+    routeKind === "server" ? routeThreadRef.environmentId : null,
+    routeKind === "server" ? routeThreadRef.threadId : null,
+  );
   const serverThread = useThread(routeKind === "server" ? routeThreadRef : null);
+  const threadSyncStatus = routeKind === "server" ? (serverThreadState.syncStatus ?? null) : null;
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
   const activeThreadLastVisitedAt = useUiStateStore((store) =>
     routeKind === "server" ? store.threadLastVisitedAtById[routeThreadKey] : undefined,
@@ -5051,7 +5056,7 @@ function ChatViewContent(props: ChatViewProps) {
 
   // Empty state: no active thread
   if (!activeThread) {
-    return <NoActiveThreadState />;
+    return <NoActiveThreadState syncStatus={threadSyncStatus} />;
   }
 
   const panelToggleControls = (
@@ -5293,6 +5298,7 @@ function ChatViewContent(props: ChatViewProps) {
                 contentInsetEndAdjustment={composerOverlayHeight}
                 onIsAtEndChange={onIsAtEndChange}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
+                syncStatus={threadSyncStatus}
               />
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
