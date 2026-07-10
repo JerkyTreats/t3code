@@ -11,6 +11,7 @@ import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -24,6 +25,7 @@ const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
+const encodeUnknownJsonString = Schema.encodeUnknownSync(Schema.UnknownFromJsonString);
 
 const projectionSnapshotLayer = it.layer(
   OrchestrationProjectionSnapshotQueryLive.pipe(
@@ -82,6 +84,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
+          active_plan_progress_json,
+          latest_runtime_activity_at,
+          status_summary_updated_at,
           created_at,
           updated_at,
           deleted_at
@@ -100,6 +105,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           1,
           0,
           0,
+          '{"completedAllSteps":false,"currentStepNumber":3,"totalSteps":5,"turnId":"turn-1","activityId":"activity-plan","updatedAt":"2026-02-24T00:00:06.000Z"}',
+          '2026-02-24T00:00:06.000Z',
+          '2026-02-24T00:00:06.000Z',
           '2026-02-24T00:00:02.000Z',
           '2026-02-24T00:00:03.000Z',
           NULL
@@ -172,16 +180,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           'provider started',
           '{"stage":"start"}',
           '2026-02-24T00:00:06.000Z'
-        ),
-        (
-          'activity-plan-1',
-          'thread-1',
-          'turn-1',
-          'info',
-          'turn.plan.updated',
-          'plan updated',
-          '{"plan":[{"step":"Inspect","status":"completed"},{"step":"Replay","status":"in_progress"}]}',
-          '2026-02-24T00:00:06.500Z'
         )
       `;
 
@@ -351,20 +349,6 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
               turnId: asTurnId("turn-1"),
               createdAt: "2026-02-24T00:00:06.000Z",
             },
-            {
-              id: asEventId("activity-plan-1"),
-              tone: "info",
-              kind: "turn.plan.updated",
-              summary: "plan updated",
-              payload: {
-                plan: [
-                  { step: "Inspect", status: "completed" },
-                  { step: "Replay", status: "in_progress" },
-                ],
-              },
-              turnId: asTurnId("turn-1"),
-              createdAt: "2026-02-24T00:00:06.500Z",
-            },
           ],
           checkpoints: [
             {
@@ -457,14 +441,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           hasActionableProposedPlan: false,
           activePlanProgress: {
             completedAllSteps: false,
-            currentStepNumber: 2,
-            totalSteps: 2,
+            currentStepNumber: 3,
+            totalSteps: 5,
             turnId: asTurnId("turn-1"),
-            activityId: asEventId("activity-plan-1"),
-            updatedAt: "2026-02-24T00:00:06.500Z",
+            activityId: asEventId("activity-plan"),
+            updatedAt: "2026-02-24T00:00:06.000Z",
           },
-          latestRuntimeActivityAt: null,
-          statusSummaryUpdatedAt: null,
+          latestRuntimeActivityAt: "2026-02-24T00:00:06.000Z",
+          statusSummaryUpdatedAt: "2026-02-24T00:00:06.000Z",
         },
       ]);
 
@@ -476,13 +460,18 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
     }),
   );
 
-  it.effect("keeps archived threads out of the main shell snapshot", () =>
+  it.effect("keeps archived threads out of the main shell while allowing explicit detail", () =>
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;
       const sql = yield* SqlClient.SqlClient;
+      const archivedThreadId = ThreadId.make("thread-archived");
+      const archivedActivityId = asEventId("activity-archived-history");
+      const archivedPayload = { blob: "a".repeat(5_000) };
+      const archivedPayloadJson = encodeUnknownJsonString(archivedPayload);
 
       yield* sql`DELETE FROM projection_projects`;
       yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_thread_activities`;
       yield* sql`DELETE FROM projection_state`;
 
       yield* sql`
@@ -509,6 +498,31 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       `;
 
       yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id,
+          thread_id,
+          turn_id,
+          tone,
+          kind,
+          summary,
+          payload_json,
+          sequence,
+          created_at
+        )
+        VALUES (
+          ${archivedActivityId},
+          ${archivedThreadId},
+          NULL,
+          'tool',
+          'tool.output',
+          'Archived runtime output',
+          ${archivedPayloadJson},
+          1,
+          '2026-04-06T00:00:06.500Z'
+        )
+      `;
+
+      yield* sql`
         INSERT INTO projection_threads (
           thread_id,
           project_id,
@@ -523,6 +537,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
+          active_plan_progress_json,
+          latest_runtime_activity_at,
+          status_summary_updated_at,
           created_at,
           updated_at,
           archived_at,
@@ -543,6 +560,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             0,
             0,
             0,
+            NULL,
+            NULL,
+            NULL,
             '2026-04-06T00:00:02.000Z',
             '2026-04-06T00:00:03.000Z',
             NULL,
@@ -562,6 +582,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             0,
             0,
             0,
+            NULL,
+            NULL,
+            NULL,
             '2026-04-06T00:00:04.000Z',
             '2026-04-06T00:00:05.000Z',
             '2026-04-06T00:00:06.000Z',
@@ -593,6 +616,61 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         [ThreadId.make("thread-archived")],
       );
       assert.equal(archivedShellSnapshot.threads[0]?.archivedAt, "2026-04-06T00:00:06.000Z");
+      assert.equal(archivedShellSnapshot.threads[0]?.activePlanProgress, null);
+      assert.equal(archivedShellSnapshot.threads[0]?.latestRuntimeActivityAt, null);
+      assert.equal(archivedShellSnapshot.threads[0]?.statusSummaryUpdatedAt, null);
+
+      const archivedDetail = yield* snapshotQuery.getThreadDetailV2ById(archivedThreadId);
+      assert.equal(archivedDetail._tag, "Some");
+      if (archivedDetail._tag === "Some") {
+        assert.equal(archivedDetail.value.thread.archivedAt, "2026-04-06T00:00:06.000Z");
+        assert.deepEqual(archivedDetail.value.thread.activities[0]?.payload, {
+          __t3Deferred: "thread-activity-payload",
+          byteLength: new TextEncoder().encode(archivedPayloadJson).byteLength,
+        });
+      }
+
+      const archivedPage = yield* snapshotQuery.getThreadActivityPage({
+        threadId: archivedThreadId,
+        limit: 10,
+      });
+      assert.deepEqual(
+        archivedPage.items.map((activity) => activity.id),
+        [archivedActivityId],
+      );
+
+      const archivedHydration = yield* snapshotQuery.hydrateThreadActivityPayloads(
+        archivedThreadId,
+        [archivedActivityId],
+      );
+      assert.deepEqual(archivedHydration.payloads[0]?.payload, archivedPayload);
+      assert.deepEqual(archivedHydration.omitted, []);
+
+      yield* sql`
+        UPDATE projection_threads
+        SET deleted_at = '2026-04-06T00:00:08.000Z'
+        WHERE thread_id = ${archivedThreadId}
+      `;
+
+      const deletedDetail = yield* snapshotQuery.getThreadDetailV2ById(archivedThreadId);
+      assert.equal(deletedDetail._tag, "None");
+      const deletedPage = yield* snapshotQuery.getThreadActivityPage({
+        threadId: archivedThreadId,
+        limit: 10,
+      });
+      assert.deepEqual(deletedPage.items, []);
+      const deletedHydration = yield* snapshotQuery.hydrateThreadActivityPayloads(
+        archivedThreadId,
+        [archivedActivityId],
+      );
+      assert.deepEqual(deletedHydration.payloads, []);
+      assert.deepEqual(deletedHydration.omitted, [
+        {
+          activityId: archivedActivityId,
+          reason: "missing",
+          byteLength: null,
+        },
+      ]);
     }),
   );
 
@@ -930,6 +1008,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
+          active_plan_progress_json,
+          latest_runtime_activity_at,
+          status_summary_updated_at,
           created_at,
           updated_at,
           deleted_at
@@ -948,6 +1029,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           0,
           0,
           0,
+          NULL,
+          NULL,
+          NULL,
           '2026-04-01T00:00:02.000Z',
           '2026-04-01T00:00:03.000Z',
           NULL
@@ -1044,6 +1128,271 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
     }),
   );
 
+  it.effect("defers large thread sync v2 activity payloads without truncating snapshots", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-v2-large");
+      const activityId = asEventId("activity-large-payload");
+      const largePayload = { blob: "x".repeat(200_000) };
+      const largePayloadJson = encodeUnknownJsonString(largePayload);
+      const largePayloadBytes = new TextEncoder().encode(largePayloadJson).byteLength;
+
+      yield* sql`DELETE FROM projection_projects`;
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_thread_messages`;
+      yield* sql`DELETE FROM projection_thread_activities`;
+      yield* sql`DELETE FROM projection_thread_sessions`;
+      yield* sql`DELETE FROM projection_turns`;
+      yield* sql`DELETE FROM projection_state`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id,
+          title,
+          workspace_root,
+          default_model_selection_json,
+          scripts_json,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          'project-v2-large',
+          'Project V2 Large',
+          '/tmp/project-v2-large',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          '[]',
+          '2026-04-03T00:00:00.000Z',
+          '2026-04-03T00:00:01.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id,
+          project_id,
+          title,
+          model_selection_json,
+          runtime_mode,
+          interaction_mode,
+          branch,
+          worktree_path,
+          latest_turn_id,
+          latest_user_message_at,
+          pending_approval_count,
+          pending_user_input_count,
+          has_actionable_proposed_plan,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          ${threadId},
+          'project-v2-large',
+          'Thread V2 Large',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          'full-access',
+          'default',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          0,
+          0,
+          0,
+          '2026-04-03T00:00:02.000Z',
+          '2026-04-03T00:00:03.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id,
+          thread_id,
+          turn_id,
+          role,
+          text,
+          is_streaming,
+          created_at,
+          updated_at
+        )
+        VALUES
+          (
+            'message-v2-1',
+            ${threadId},
+            NULL,
+            'user',
+            'older message',
+            0,
+            '2026-04-03T00:00:03.100Z',
+            '2026-04-03T00:00:03.100Z'
+          ),
+          (
+            'message-v2-2',
+            ${threadId},
+            NULL,
+            'assistant',
+            'newer message',
+            0,
+            '2026-04-03T00:00:03.200Z',
+            '2026-04-03T00:00:03.200Z'
+          )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id,
+          thread_id,
+          turn_id,
+          tone,
+          kind,
+          summary,
+          payload_json,
+          sequence,
+          created_at
+        )
+        VALUES (
+          ${activityId},
+          ${threadId},
+          NULL,
+          'tool',
+          'tool.output',
+          'large payload',
+          ${largePayloadJson},
+          1,
+          '2026-04-03T00:00:04.000Z'
+        )
+      `;
+
+      const snapshot = yield* snapshotQuery.getThreadDetailV2ById(threadId, {
+        messages: 1,
+        proposedPlans: 1,
+        activities: 1,
+        checkpoints: 1,
+      });
+
+      assert.equal(snapshot._tag, "Some");
+      if (snapshot._tag === "Some") {
+        assert.equal(snapshot.value.thread.messages.length, 2);
+        assert.equal(snapshot.value.windows.messages.returned, 2);
+        assert.equal(snapshot.value.windows.messages.hasMoreBefore, false);
+        assert.equal(snapshot.value.thread.activities.length, 1);
+        assert.equal(snapshot.value.deferredActivityPayloads, 1);
+        assert.ok(snapshot.value.estimatedSerializedBytes < 20_000);
+        assert.deepEqual(snapshot.value.thread.activities[0]?.payload, {
+          __t3Deferred: "thread-activity-payload",
+          byteLength: largePayloadBytes,
+        });
+      }
+
+      const page = yield* snapshotQuery.getThreadActivityPage({
+        threadId,
+        limit: 1,
+      });
+      assert.equal(page.items.length, 1);
+      assert.equal(page.deferredActivityPayloads, 1);
+      assert.deepEqual(page.items[0]?.payload, {
+        __t3Deferred: "thread-activity-payload",
+        byteLength: largePayloadBytes,
+      });
+
+      const hydrated = yield* snapshotQuery.hydrateThreadActivityPayloads(threadId, [activityId]);
+      assert.equal(hydrated.omitted.length, 0);
+      assert.equal(hydrated.payloads.length, 1);
+      assert.equal(
+        (hydrated.payloads[0]?.payload as { readonly blob: string } | undefined)?.blob.length,
+        200_000,
+      );
+
+      const oversizedActivityId = asEventId("activity-oversized-payload");
+      const oversizedPayload = encodeUnknownJsonString({ blob: "z".repeat(2_100_000) });
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id,
+          thread_id,
+          turn_id,
+          tone,
+          kind,
+          summary,
+          payload_json,
+          sequence,
+          created_at
+        )
+        VALUES (
+          ${oversizedActivityId},
+          ${threadId},
+          NULL,
+          'tool',
+          'tool.output',
+          'oversized payload',
+          ${oversizedPayload},
+          2,
+          '2026-04-03T00:00:04.500Z'
+        )
+      `;
+      const oversizedHydrated = yield* snapshotQuery.hydrateThreadActivityPayloads(threadId, [
+        oversizedActivityId,
+      ]);
+      assert.deepEqual(oversizedHydrated.payloads, []);
+      assert.equal(oversizedHydrated.omitted[0]?.reason, "too-large");
+      assert.equal(
+        oversizedHydrated.omitted[0]?.byteLength,
+        new TextEncoder().encode(oversizedPayload).byteLength,
+      );
+
+      const aggregateActivityIds = Array.from({ length: 5 }, (_, index) =>
+        asEventId(`activity-aggregate-${index + 1}`),
+      );
+      const aggregatePayload = encodeUnknownJsonString({ blob: "y".repeat(1_700_000) });
+      for (const aggregateActivityId of aggregateActivityIds) {
+        yield* sql`
+          INSERT INTO projection_thread_activities (
+            activity_id,
+            thread_id,
+            turn_id,
+            tone,
+            kind,
+            summary,
+            payload_json,
+            sequence,
+            created_at
+          )
+          VALUES (
+            ${aggregateActivityId},
+            ${threadId},
+            NULL,
+            'tool',
+            'tool.output',
+            'aggregate payload',
+            ${aggregatePayload},
+            1,
+            '2026-04-03T00:00:05.000Z'
+          )
+        `;
+      }
+
+      const aggregateHydrated = yield* snapshotQuery.hydrateThreadActivityPayloads(
+        threadId,
+        aggregateActivityIds,
+      );
+      assert.equal(aggregateHydrated.payloads.length, 4);
+      assert.equal(aggregateHydrated.omitted.length, 1);
+      assert.equal(aggregateHydrated.omitted[0]?.reason, "too-large");
+
+      const overflowHydrated = yield* snapshotQuery.hydrateThreadActivityPayloads(
+        threadId,
+        Array.from({ length: 100 }, (_, index) => asEventId(`activity-overflow-${index + 1}`)),
+      );
+      assert.equal(
+        overflowHydrated.omitted.filter((omitted) => omitted.reason === "too-many").length,
+        25,
+      );
+    }),
+  );
+
   it.effect("uses projection_threads.latest_turn_id for targeted thread latest turn queries", () =>
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;
@@ -1091,6 +1440,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
+          active_plan_progress_json,
+          latest_runtime_activity_at,
+          status_summary_updated_at,
           created_at,
           updated_at,
           archived_at,
@@ -1110,6 +1462,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           0,
           0,
           0,
+          '{"completedAllSteps":false,"currentStepNumber":2,"totalSteps":4,"turnId":"turn-running","activityId":"activity-running-plan","updatedAt":"2026-04-02T00:00:31.000Z"}',
+          '2026-04-02T00:00:31.000Z',
+          '2026-04-02T00:00:31.000Z',
           '2026-04-02T00:00:02.000Z',
           '2026-04-02T00:00:03.000Z',
           NULL,
@@ -1175,6 +1530,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         assert.equal(threadShell.value.latestTurn?.turnId, asTurnId("turn-running"));
         assert.equal(threadShell.value.latestTurn?.state, "running");
         assert.equal(threadShell.value.latestTurn?.startedAt, "2026-04-02T00:00:30.000Z");
+        assert.deepEqual(threadShell.value.activePlanProgress, {
+          completedAllSteps: false,
+          currentStepNumber: 2,
+          totalSteps: 4,
+          turnId: asTurnId("turn-running"),
+          activityId: asEventId("activity-running-plan"),
+          updatedAt: "2026-04-02T00:00:31.000Z",
+        });
+        assert.equal(threadShell.value.latestRuntimeActivityAt, "2026-04-02T00:00:31.000Z");
+        assert.equal(threadShell.value.statusSummaryUpdatedAt, "2026-04-02T00:00:31.000Z");
       }
 
       const threadDetail = yield* snapshotQuery.getThreadDetailById(ThreadId.make("thread-1"));

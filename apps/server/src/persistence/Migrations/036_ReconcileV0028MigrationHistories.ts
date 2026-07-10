@@ -6,6 +6,9 @@ interface ProjectionThreadBackfillRow {
   readonly latestTurnId: string | null;
   readonly updatedAt: string;
   readonly latestUserMessageAt: string | null;
+  readonly activePlanProgressJson: string | null;
+  readonly latestRuntimeActivityAt: string | null;
+  readonly statusSummaryUpdatedAt: string | null;
 }
 
 interface ProjectionActivityBackfillRow {
@@ -15,6 +18,11 @@ interface ProjectionActivityBackfillRow {
   readonly payloadJson: string;
   readonly sequence: number | null;
   readonly createdAt: string;
+}
+
+interface ProjectionTimestampBackfillRow {
+  readonly threadId: string;
+  readonly latestAt: string | null;
 }
 
 type PlanStepStatus = "pending" | "inProgress" | "completed";
@@ -240,7 +248,10 @@ export default Effect.gen(function* () {
       thread_id AS "threadId",
       latest_turn_id AS "latestTurnId",
       updated_at AS "updatedAt",
-      latest_user_message_at AS "latestUserMessageAt"
+      latest_user_message_at AS "latestUserMessageAt",
+      active_plan_progress_json AS "activePlanProgressJson",
+      latest_runtime_activity_at AS "latestRuntimeActivityAt",
+      status_summary_updated_at AS "statusSummaryUpdatedAt"
     FROM projection_threads
   `;
   const activityRows = yield* sql<ProjectionActivityBackfillRow>`
@@ -254,31 +265,83 @@ export default Effect.gen(function* () {
     FROM projection_thread_activities
     WHERE kind = 'turn.plan.updated'
   `;
+  const latestUserMessageRows = yield* sql<ProjectionTimestampBackfillRow>`
+    SELECT
+      thread_id AS "threadId",
+      MAX(created_at) AS "latestAt"
+    FROM projection_thread_messages
+    WHERE role = 'user'
+    GROUP BY thread_id
+  `;
+  const latestActivityRows = yield* sql<ProjectionTimestampBackfillRow>`
+    SELECT
+      thread_id AS "threadId",
+      MAX(created_at) AS "latestAt"
+    FROM projection_thread_activities
+    GROUP BY thread_id
+  `;
+  const latestProposedPlanRows = yield* sql<ProjectionTimestampBackfillRow>`
+    SELECT
+      thread_id AS "threadId",
+      MAX(CASE WHEN created_at > updated_at THEN created_at ELSE updated_at END) AS "latestAt"
+    FROM projection_thread_proposed_plans
+    GROUP BY thread_id
+  `;
+  const latestApprovalRows = yield* sql<ProjectionTimestampBackfillRow>`
+    SELECT
+      thread_id AS "threadId",
+      MAX(
+        CASE
+          WHEN resolved_at IS NULL OR created_at > resolved_at THEN created_at
+          ELSE resolved_at
+        END
+      ) AS "latestAt"
+    FROM projection_pending_approvals
+    GROUP BY thread_id
+  `;
   const activitiesByThreadId = new Map<string, ProjectionActivityBackfillRow[]>();
   for (const activity of activityRows) {
     const activities = activitiesByThreadId.get(activity.threadId) ?? [];
     activities.push(activity);
     activitiesByThreadId.set(activity.threadId, activities);
   }
+  const latestTimestampByThreadId = (rows: ReadonlyArray<ProjectionTimestampBackfillRow>) =>
+    new Map(rows.map((row) => [row.threadId, row.latestAt] as const));
+  const latestUserMessageByThreadId = latestTimestampByThreadId(latestUserMessageRows);
+  const latestActivityByThreadId = latestTimestampByThreadId(latestActivityRows);
+  const latestProposedPlanByThreadId = latestTimestampByThreadId(latestProposedPlanRows);
+  const latestApprovalByThreadId = latestTimestampByThreadId(latestApprovalRows);
 
   for (const thread of threadRows) {
     const activities = activitiesByThreadId.get(thread.threadId) ?? [];
     const planProgressJson = derivePlanProgressJson(thread, activities);
-    const latestRuntimeActivityAt = activities.reduce<string | null>(
-      (latest, activity) => maxIso(latest, activity.createdAt),
-      null,
+    const latestUserMessageAt = maxIso(
+      thread.latestUserMessageAt,
+      latestUserMessageByThreadId.get(thread.threadId),
     );
-    const statusSummaryUpdatedAt = maxIso(
-      maxIso(thread.updatedAt, thread.latestUserMessageAt),
-      latestRuntimeActivityAt,
+    const latestRuntimeActivityAt = maxIso(
+      thread.latestRuntimeActivityAt,
+      latestActivityByThreadId.get(thread.threadId),
+    );
+    let statusSummaryUpdatedAt = maxIso(thread.statusSummaryUpdatedAt, thread.updatedAt);
+    statusSummaryUpdatedAt = maxIso(statusSummaryUpdatedAt, latestUserMessageAt);
+    statusSummaryUpdatedAt = maxIso(statusSummaryUpdatedAt, latestRuntimeActivityAt);
+    statusSummaryUpdatedAt = maxIso(
+      statusSummaryUpdatedAt,
+      latestProposedPlanByThreadId.get(thread.threadId),
+    );
+    statusSummaryUpdatedAt = maxIso(
+      statusSummaryUpdatedAt,
+      latestApprovalByThreadId.get(thread.threadId),
     );
 
     yield* sql`
       UPDATE projection_threads
       SET
-        active_plan_progress_json = COALESCE(active_plan_progress_json, ${planProgressJson}),
-        latest_runtime_activity_at = COALESCE(latest_runtime_activity_at, ${latestRuntimeActivityAt}),
-        status_summary_updated_at = COALESCE(status_summary_updated_at, ${statusSummaryUpdatedAt})
+        latest_user_message_at = ${latestUserMessageAt},
+        active_plan_progress_json = COALESCE(${thread.activePlanProgressJson}, ${planProgressJson}),
+        latest_runtime_activity_at = ${latestRuntimeActivityAt},
+        status_summary_updated_at = ${statusSummaryUpdatedAt}
       WHERE thread_id = ${thread.threadId}
     `;
   }
