@@ -257,6 +257,101 @@ describe("composerDraftStore addImages", () => {
   });
 });
 
+describe("composerDraftStore richDraftMode", () => {
+  const threadId = ThreadId.make("thread-rich-draft");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+
+  type StoreState = ReturnType<typeof useComposerDraftStore.getState>;
+  type PersistApi = {
+    getOptions: () => {
+      partialize: (state: StoreState) => unknown;
+      merge: (persistedState: unknown, currentState: StoreState) => StoreState;
+      migrate: (persistedState: unknown, version: number) => unknown | Promise<unknown>;
+    };
+  };
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("keeps enabled rich draft mode as active draft state", () => {
+    useComposerDraftStore.getState().setRichDraftMode(threadRef, true);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.richDraftMode).toBe(true);
+  });
+
+  it("removes an otherwise empty draft when rich draft mode is disabled", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setRichDraftMode(threadRef, true);
+    store.setRichDraftMode(threadRef, false);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
+  it("preserves prompt text when rich draft mode is disabled", () => {
+    const store = useComposerDraftStore.getState();
+
+    store.setPrompt(threadRef, "Keep this draft");
+    store.setRichDraftMode(threadRef, true);
+    store.setRichDraftMode(threadRef, false);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      prompt: "Keep this draft",
+      richDraftMode: false,
+    });
+  });
+
+  it("round trips enabled rich draft mode through version 8 persistence", () => {
+    useComposerDraftStore.getState().setRichDraftMode(threadRef, true);
+    const persistApi = useComposerDraftStore.persist as unknown as PersistApi;
+    const options = persistApi.getOptions();
+    const persistedState = options.partialize(useComposerDraftStore.getState()) as {
+      draftsByThreadKey?: Record<string, { richDraftMode?: boolean }>;
+    };
+
+    expect(
+      persistedState.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]
+        ?.richDraftMode,
+    ).toBe(true);
+
+    resetComposerDraftStore();
+    const mergedState = options.merge(persistedState, useComposerDraftStore.getState());
+
+    expect(
+      mergedState.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.richDraftMode,
+    ).toBe(true);
+  });
+
+  it("preserves enabled rich draft mode while migrating version 6 storage", async () => {
+    const persistApi = useComposerDraftStore.persist as unknown as PersistApi;
+    const options = persistApi.getOptions();
+    const threadKey = threadKeyFor(threadId, TEST_ENVIRONMENT_ID);
+    const migratedState = await options.migrate(
+      {
+        draftsByThreadKey: {
+          [threadKey]: {
+            prompt: "Migrated rich draft",
+            attachments: [],
+            richDraftMode: true,
+          },
+        },
+        draftThreadsByThreadKey: {},
+        logicalProjectDraftThreadKeyByLogicalProjectKey: {},
+        stickyModelSelectionByProvider: {},
+        stickyActiveProvider: null,
+      },
+      6,
+    );
+    const mergedState = options.merge(migratedState, useComposerDraftStore.getState());
+
+    expect(mergedState.draftsByThreadKey[threadKey]).toMatchObject({
+      prompt: "Migrated rich draft",
+      richDraftMode: true,
+    });
+  });
+});
+
 describe("composerDraftStore clearComposerContent", () => {
   const threadId = ThreadId.make("thread-clear");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
