@@ -25,6 +25,7 @@ The right panel provides compact global project context while `Open a surface` l
 - Inference rollups use the latest usage snapshot per turn and preserve provider reported total processed tokens when available.
 - Inference rollups handle cached input tokens without double counting cached input when providers report cached input as a subset of input.
 - The dashboard shows lifetime burn, recent burn, projected thirty day burn, input, cached input, output, tracked turns, and a ranked thread leaderboard.
+- Large token totals use compact magnitude suffixes through billions, trillions, and quadrillions instead of accumulating under the millions suffix.
 - Thread links from project surfaces and dashboard preserve environment aware thread routing.
 - Missing project data after bootstrap redirects or degrades safely instead of rendering stale project content.
 
@@ -100,6 +101,7 @@ The right panel provides compact global project context while `Open a surface` l
 - The inference dashboard counts only the latest usage snapshot for each turn.
 - The inference dashboard preserves `totalProcessedTokens` and falls back to `usedTokens` plus token components when needed.
 - Cached input handling avoids double counting when cached input is reported as an input subset.
+- Token totals remain readable across `K`, `M`, `B`, `T`, and `Q` magnitudes with stable rounding at unit boundaries.
 - Dashboard leaderboard links navigate to the correct environment scoped threads.
 - Missing or removed project state after bootstrap exits or degrades without stale project details.
 
