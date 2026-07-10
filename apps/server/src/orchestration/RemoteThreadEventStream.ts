@@ -3,7 +3,13 @@ import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-export interface RemoteThreadEventStreamInput<Snapshot, Item, SnapshotError, ReplayError> {
+export interface RemoteThreadEventStreamInput<
+  Snapshot,
+  SnapshotItem,
+  EventItem,
+  SnapshotError,
+  ReplayError,
+> {
   readonly subscribeLive: Effect.Effect<Stream.Stream<OrchestrationEvent>, never, Scope.Scope>;
   readonly loadSnapshot: Effect.Effect<Snapshot, SnapshotError>;
   readonly snapshotSequence: (snapshot: Snapshot) => number;
@@ -11,8 +17,8 @@ export interface RemoteThreadEventStreamInput<Snapshot, Item, SnapshotError, Rep
     fromSequenceExclusive: number,
   ) => Stream.Stream<OrchestrationEvent, ReplayError>;
   readonly isRelevant: (event: OrchestrationEvent) => boolean;
-  readonly toSnapshotItem: (snapshot: Snapshot) => Item;
-  readonly toEventItem: (event: OrchestrationEvent) => Item;
+  readonly toSnapshotItem: (snapshot: Snapshot) => SnapshotItem;
+  readonly toEventItem: (event: OrchestrationEvent) => EventItem;
 }
 
 /**
@@ -20,9 +26,21 @@ export interface RemoteThreadEventStreamInput<Snapshot, Item, SnapshotError, Rep
  * draining the queued live tail. The sequence accumulator preserves ordering
  * and suppresses replay and live duplicates.
  */
-export const makeRemoteThreadEventStream = <Snapshot, Item, SnapshotError, ReplayError>(
-  input: RemoteThreadEventStreamInput<Snapshot, Item, SnapshotError, ReplayError>,
-): Stream.Stream<Item, SnapshotError | ReplayError> =>
+export const makeRemoteThreadEventStream = <
+  Snapshot,
+  SnapshotItem,
+  EventItem,
+  SnapshotError,
+  ReplayError,
+>(
+  input: RemoteThreadEventStreamInput<
+    Snapshot,
+    SnapshotItem,
+    EventItem,
+    SnapshotError,
+    ReplayError
+  >,
+): Stream.Stream<SnapshotItem | EventItem, SnapshotError | ReplayError> =>
   Stream.scoped(
     Stream.unwrap(
       Effect.gen(function* () {
