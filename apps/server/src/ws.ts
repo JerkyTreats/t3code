@@ -1231,8 +1231,9 @@ const makeWsRpcLayer = (
               makeRemoteThreadEventStream({
                 subscribeLive: orchestrationEngine.subscribeDomainEvents,
                 loadSnapshot: Effect.gen(function* () {
-                  const [threadDetail, snapshotSequence] = yield* Effect.all([
-                    projectionSnapshotQuery.getThreadDetailById(input.threadId).pipe(
+                  const snapshot = yield* projectionSnapshotQuery
+                    .getThreadDetailSnapshotById(input.threadId)
+                    .pipe(
                       Effect.mapError(
                         (cause) =>
                           new OrchestrationGetSnapshotError({
@@ -1240,25 +1241,14 @@ const makeWsRpcLayer = (
                             cause,
                           }),
                       ),
-                    ),
-                    projectionSnapshotQuery.getSnapshotSequence().pipe(
-                      Effect.map(({ snapshotSequence }) => snapshotSequence),
-                      Effect.mapError(
-                        (cause) =>
-                          new OrchestrationGetSnapshotError({
-                            message: "Failed to load orchestration snapshot sequence",
-                            cause,
-                          }),
-                      ),
-                    ),
-                  ]);
-                  if (Option.isNone(threadDetail)) {
+                    );
+                  if (Option.isNone(snapshot)) {
                     return yield* new OrchestrationGetSnapshotError({
                       message: `Thread ${input.threadId} was not found`,
                       cause: input.threadId,
                     });
                   }
-                  return { snapshotSequence, thread: threadDetail.value };
+                  return snapshot.value;
                 }),
                 snapshotSequence: (snapshot) => snapshot.snapshotSequence,
                 readEvents: (snapshotSequence) =>

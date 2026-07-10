@@ -38,6 +38,7 @@ const assertTransitionWindow = (version: "v1" | "v2") =>
     const snapshotSubscriptionCounts: number[] = [];
     let subscriptionsAcquired = 0;
     let subscriptionsReleased = 0;
+    let threadDeleted = false;
 
     const stream = makeRemoteThreadEventStream({
       subscribeLive: Effect.acquireRelease(
@@ -54,9 +55,11 @@ const assertTransitionWindow = (version: "v1" | "v2") =>
       ),
       loadSnapshot: Effect.gen(function* () {
         snapshotSubscriptionCounts.push(subscriptionsAcquired);
+        const snapshot = { snapshotSequence, version, threadDeleted };
+        threadDeleted = true;
         yield* PubSub.publish(liveEvents, replayedEvent);
         yield* PubSub.publish(liveEvents, transitionEvent);
-        return { snapshotSequence, version };
+        return snapshot;
       }),
       snapshotSequence: (snapshot) => snapshot.snapshotSequence,
       readEvents: (fromSequenceExclusive) => {
@@ -64,7 +67,11 @@ const assertTransitionWindow = (version: "v1" | "v2") =>
         return Stream.make(replayedEvent);
       },
       isRelevant: (event) => event.aggregateId === threadId && isThreadDetailEvent(event),
-      toSnapshotItem: (snapshot) => ({ kind: "snapshot" as const, version: snapshot.version }),
+      toSnapshotItem: (snapshot) => ({
+        kind: "snapshot" as const,
+        version: snapshot.version,
+        threadDeleted: snapshot.threadDeleted,
+      }),
       toEventItem: (event) => ({ kind: "event" as const, sequence: event.sequence }),
     });
     const items = Array.from(yield* Stream.runCollect(Stream.take(stream, 3)));
@@ -73,16 +80,16 @@ const assertTransitionWindow = (version: "v1" | "v2") =>
     assert.deepEqual(replayCursors, [snapshotSequence]);
     assert.equal(subscriptionsReleased, 1);
     assert.deepEqual(items, [
-      { kind: "snapshot", version },
+      { kind: "snapshot", version, threadDeleted: false },
       { kind: "event", sequence: 4 },
       { kind: "event", sequence: 5 },
     ]);
   });
 
-it.effect("buffers transition-window events for the v1 thread subscription", () =>
+it.effect("replays deletion injected after the atomic v1 snapshot", () =>
   assertTransitionWindow("v1"),
 );
 
-it.effect("buffers transition-window events for the v2 thread subscription", () =>
+it.effect("replays deletion injected after the atomic v2 snapshot", () =>
   assertTransitionWindow("v2"),
 );

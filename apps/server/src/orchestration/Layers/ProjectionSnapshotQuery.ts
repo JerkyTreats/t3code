@@ -67,6 +67,7 @@ import {
   ProjectionSnapshotQuery,
   type ProjectionFullThreadDiffContext,
   type ProjectionSnapshotCounts,
+  type ProjectionThreadDetailSnapshot,
   type ProjectionThreadCheckpointContext,
   type ProjectionSnapshotQueryShape,
 } from "../Services/ProjectionSnapshotQuery.ts";
@@ -2992,6 +2993,29 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       );
     });
 
+  const getThreadDetailSnapshotById: ProjectionSnapshotQueryShape["getThreadDetailSnapshotById"] = (
+    threadId,
+  ) =>
+    sql.withTransaction(Effect.all([getThreadDetailById(threadId), getSnapshotSequence()])).pipe(
+      Effect.map(([threadDetail, snapshotSequence]) =>
+        Option.map(
+          threadDetail,
+          (thread): ProjectionThreadDetailSnapshot => ({
+            snapshotSequence: snapshotSequence.snapshotSequence,
+            thread,
+          }),
+        ),
+      ),
+      Effect.mapError((error) => {
+        if (isPersistenceError(error)) {
+          return error;
+        }
+        return toPersistenceSqlError(
+          "ProjectionSnapshotQuery.getThreadDetailSnapshotById:transaction",
+        )(error);
+      }),
+    );
+
   const getThreadDetailV2ById: ProjectionSnapshotQueryShape["getThreadDetailV2ById"] = (
     threadId,
     requestedLimits,
@@ -3220,7 +3244,17 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             break;
         }
       }
-    });
+    }).pipe(
+      sql.withTransaction,
+      Effect.mapError((error) => {
+        if (isPersistenceError(error)) {
+          return error;
+        }
+        return toPersistenceSqlError("ProjectionSnapshotQuery.getThreadDetailV2ById:transaction")(
+          error,
+        );
+      }),
+    );
 
   const getThreadMessagePage: ProjectionSnapshotQueryShape["getThreadMessagePage"] = (input) =>
     Effect.gen(function* () {
@@ -3631,6 +3665,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getFullThreadDiffContext,
     getThreadShellById,
     getThreadDetailById,
+    getThreadDetailSnapshotById,
     getThreadDetailV2ById,
     getThreadMessagePage,
     getThreadProposedPlanPage,

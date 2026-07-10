@@ -39,6 +39,7 @@ function makeThreadCheckpointContext(input: {
 }
 
 const unusedThreadSyncV2ProjectionMethods = {
+  getThreadDetailSnapshotById: () => Effect.die("unused"),
   getThreadDetailV2ById: () => Effect.die("unused"),
   getThreadMessagePage: () => Effect.die("unused"),
   getThreadProposedPlanPage: () => Effect.die("unused"),
@@ -48,6 +49,7 @@ const unusedThreadSyncV2ProjectionMethods = {
   hydrateThreadActivityPayloads: () => Effect.die("unused"),
 } satisfies Pick<
   ProjectionSnapshotQuery.ProjectionSnapshotQueryShape,
+  | "getThreadDetailSnapshotById"
   | "getThreadDetailV2ById"
   | "getThreadMessagePage"
   | "getThreadProposedPlanPage"

@@ -459,6 +459,15 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       if (threadDetail._tag === "Some") {
         assert.deepEqual(threadDetail.value, snapshot.threads[0]);
       }
+
+      const threadDetailSnapshot = yield* snapshotQuery.getThreadDetailSnapshotById(
+        ThreadId.make("thread-1"),
+      );
+      assert.equal(threadDetailSnapshot._tag, "Some");
+      if (threadDetailSnapshot._tag === "Some") {
+        assert.equal(threadDetailSnapshot.value.snapshotSequence, snapshot.snapshotSequence);
+        assert.deepEqual(threadDetailSnapshot.value.thread, snapshot.threads[0]);
+      }
     }),
   );
 
@@ -1431,9 +1440,11 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         activities: 1,
         checkpoints: 1,
       });
+      const snapshotSequence = yield* snapshotQuery.getSnapshotSequence();
 
       assert.equal(snapshot._tag, "Some");
       if (snapshot._tag === "Some") {
+        assert.equal(snapshot.value.snapshotSequence, snapshotSequence.snapshotSequence);
         assert.deepEqual(
           snapshot.value.thread.messages.map((message) => message.id),
           [asMessageId("message-v2-2")],
