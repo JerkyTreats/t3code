@@ -219,6 +219,52 @@ function buildUserTimelineEntry(text: string) {
 }
 
 describe("MessagesTimeline", () => {
+  it("renders thread sync phases before the empty conversation state", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const states = [
+      {
+        phase: "waiting" as const,
+        version: null,
+        deferredPayloadCount: 0,
+        estimatedBytes: null,
+        error: null,
+        expected: "Waiting for connection",
+      },
+      {
+        phase: "subscribing" as const,
+        version: "v1" as const,
+        deferredPayloadCount: 0,
+        estimatedBytes: null,
+        error: null,
+        expected: "Loading thread history",
+      },
+      {
+        phase: "hydrating" as const,
+        version: "v2" as const,
+        deferredPayloadCount: 51,
+        estimatedBytes: 4096,
+        error: null,
+        expected: "51 deferred activity payloads are loading.",
+      },
+      {
+        phase: "error" as const,
+        version: "v2" as const,
+        deferredPayloadCount: 0,
+        estimatedBytes: null,
+        error: "Remote snapshot failed.",
+        expected: "Remote snapshot failed.",
+      },
+    ];
+
+    for (const syncStatus of states) {
+      const markup = renderToStaticMarkup(
+        <MessagesTimeline {...buildProps()} timelineEntries={[]} syncStatus={syncStatus} />,
+      );
+      expect(markup).toContain(syncStatus.expected);
+      expect(markup).not.toContain("Send a message to start the conversation.");
+    }
+  });
+
   it("uses LegendList isNearEnd when deciding whether the live edge is visible", async () => {
     const {
       resolveTimelineIsAtEnd,

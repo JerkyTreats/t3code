@@ -7,6 +7,7 @@ import {
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
+import type { EnvironmentThreadSyncStatus } from "@t3tools/client-runtime/state/threads";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
@@ -50,6 +51,7 @@ import {
   EyeIcon,
   GlobeIcon,
   HammerIcon,
+  LoaderCircleIcon,
   MessageCircleIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
@@ -188,6 +190,7 @@ interface MessagesTimelineProps {
   contentInsetEndAdjustment: number;
   onIsAtEndChange: (isAtEnd: boolean) => void;
   onManualNavigation: () => void;
+  syncStatus?: EnvironmentThreadSyncStatus | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +225,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   contentInsetEndAdjustment,
   onIsAtEndChange,
   onManualNavigation,
+  syncStatus = null,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
@@ -469,6 +473,29 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [],
   );
 
+  if (rows.length === 0 && syncStatus !== null && syncStatus.phase !== "live") {
+    const content = resolveThreadSyncStatusContent(syncStatus);
+    return (
+      <div className="flex h-full items-center justify-center px-5">
+        <div
+          className="flex max-w-sm items-start gap-3 text-left"
+          role={syncStatus.phase === "error" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          {syncStatus.phase === "error" ? (
+            <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
+          ) : (
+            <LoaderCircleIcon className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" />
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">{content.title}</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{content.detail}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (rows.length === 0 && !isWorking) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -533,6 +560,41 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     </TimelineRowCtx>
   );
 });
+
+function resolveThreadSyncStatusContent(syncStatus: EnvironmentThreadSyncStatus): {
+  readonly title: string;
+  readonly detail: string;
+} {
+  switch (syncStatus.phase) {
+    case "waiting":
+      return {
+        title: "Waiting for connection",
+        detail: "Thread history will load when the environment is connected.",
+      };
+    case "subscribing":
+      return {
+        title: "Loading thread history",
+        detail: "Waiting for the thread snapshot.",
+      };
+    case "hydrating": {
+      const count = syncStatus.deferredPayloadCount;
+      return {
+        title: "Hydrating thread history",
+        detail: `${count} deferred activity ${count === 1 ? "payload is" : "payloads are"} loading.`,
+      };
+    }
+    case "error":
+      return {
+        title: "Could not load thread history",
+        detail: syncStatus.error ?? "The thread subscription failed.",
+      };
+    case "live":
+      return {
+        title: "Thread history loaded",
+        detail: "The thread is synchronized.",
+      };
+  }
+}
 
 function keyExtractor(item: MessagesTimelineRow) {
   return item.id;

@@ -1,4 +1,10 @@
-import { ORCHESTRATION_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
+import {
+  ORCHESTRATION_WS_METHODS,
+  type OrchestrationSubscribeThreadInput,
+  type OrchestrationThreadStreamItem,
+  type OrchestrationThreadStreamV2Item,
+  WS_METHODS,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import type * as Duration from "effect/Duration";
@@ -11,6 +17,7 @@ import { RpcClientError } from "effect/unstable/rpc";
 
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
+import type { RpcSession } from "../rpc/session.ts";
 
 export class EnvironmentRpcUnavailableError extends Schema.TaggedErrorClass<EnvironmentRpcUnavailableError>()(
   "EnvironmentRpcUnavailableError",
@@ -41,6 +48,7 @@ type RpcMethod<TTag extends EnvironmentRpcTag> = WsRpcProtocolClient[TTag];
 export type EnvironmentSubscriptionRpcTag =
   | typeof ORCHESTRATION_WS_METHODS.subscribeShell
   | typeof ORCHESTRATION_WS_METHODS.subscribeThread
+  | typeof ORCHESTRATION_WS_METHODS.subscribeThreadV2
   | typeof WS_METHODS.subscribeAuthAccess
   | typeof WS_METHODS.subscribeServerConfig
   | typeof WS_METHODS.subscribeServerLifecycle
@@ -63,6 +71,19 @@ export type EnvironmentStreamRpcTag =
 export type EnvironmentUnaryRpcTag = Exclude<EnvironmentRpcTag, EnvironmentStreamRpcTag>;
 const isRpcClientError = Schema.is(RpcClientError.RpcClientError);
 
+export type EnvironmentThreadSyncVersion = "v1" | "v2";
+
+export type EnvironmentThreadSubscriptionItem =
+  | {
+      readonly version: "v1";
+      readonly item: OrchestrationThreadStreamItem;
+    }
+  | {
+      readonly version: "v2";
+      readonly item: OrchestrationThreadStreamV2Item;
+      readonly hydrateActivityPayloads: EnvironmentThreadPayloadHydrator;
+    };
+
 export type EnvironmentRpcInput<TTag extends EnvironmentRpcTag> = Parameters<RpcMethod<TTag>>[0];
 
 export type EnvironmentRpcSuccess<TTag extends EnvironmentUnaryRpcTag> =
@@ -75,6 +96,13 @@ export type EnvironmentRpcFailure<TTag extends EnvironmentUnaryRpcTag> =
     ? E
     : never;
 
+export type EnvironmentThreadPayloadHydrator = (
+  input: EnvironmentRpcInput<typeof ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads>,
+) => Effect.Effect<
+  EnvironmentRpcSuccess<typeof ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads>,
+  EnvironmentRpcFailure<typeof ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads>
+>;
+
 export type EnvironmentRpcStreamValue<TTag extends EnvironmentStreamRpcTag> =
   RpcMethod<TTag> extends (input: any, options?: any) => Stream.Stream<infer A, any, any>
     ? A
@@ -84,6 +112,16 @@ export type EnvironmentRpcStreamFailure<TTag extends EnvironmentStreamRpcTag> =
   RpcMethod<TTag> extends (input: any, options?: any) => Stream.Stream<any, infer E, any>
     ? E
     : never;
+
+type ThreadSubscriptionFailure =
+  | EnvironmentRpcStreamFailure<typeof ORCHESTRATION_WS_METHODS.subscribeThread>
+  | EnvironmentRpcStreamFailure<typeof ORCHESTRATION_WS_METHODS.subscribeThreadV2>
+  | Effect.Error<RpcSession["initialConfig"]>;
+
+interface DurableSubscriptionOptions<E> {
+  readonly onExpectedFailure?: (cause: Cause.Cause<E>) => Effect.Effect<void, never, never>;
+  readonly retryExpectedFailureAfter?: Duration.Input;
+}
 
 const currentSession = Effect.fn("EnvironmentRpc.currentSession")(function* () {
   const supervisor = yield* EnvironmentSupervisor;
@@ -147,20 +185,11 @@ export function runStream<TTag extends EnvironmentStreamCommandRpcTag>(
   );
 }
 
-export function subscribe<TTag extends EnvironmentSubscriptionRpcTag>(
-  tag: TTag,
-  input: EnvironmentRpcInput<TTag>,
-  options?: {
-    readonly onExpectedFailure?: (
-      cause: Cause.Cause<EnvironmentRpcStreamFailure<TTag>>,
-    ) => Effect.Effect<void, never, never>;
-    readonly retryExpectedFailureAfter?: Duration.Input;
-  },
-): Stream.Stream<
-  EnvironmentRpcStreamValue<TTag>,
-  EnvironmentRpcStreamFailure<TTag>,
-  EnvironmentSupervisor
-> {
+function durableSubscription<A, E>(
+  methodName: string,
+  streamForSession: (session: RpcSession) => Stream.Stream<A, E>,
+  options?: DurableSubscriptionOptions<E>,
+): Stream.Stream<A, E, EnvironmentSupervisor> {
   return Stream.unwrap(
     EnvironmentSupervisor.pipe(
       Effect.map((supervisor) =>
@@ -169,18 +198,9 @@ export function subscribe<TTag extends EnvironmentSubscriptionRpcTag>(
             Option.match({
               onNone: () => Stream.empty,
               onSome: (session) => {
-                const method = session.client[tag] as (
-                  input: EnvironmentRpcInput<TTag>,
-                ) => Stream.Stream<
-                  EnvironmentRpcStreamValue<TTag>,
-                  EnvironmentRpcStreamFailure<TTag>
-                >;
-                const subscribeToSession = (): Stream.Stream<
-                  EnvironmentRpcStreamValue<TTag>,
-                  EnvironmentRpcStreamFailure<TTag>
-                > =>
+                const subscribeToSession = (): Stream.Stream<A, E> =>
                   Stream.suspend(() =>
-                    method(input).pipe(
+                    streamForSession(session).pipe(
                       Stream.catchCause((cause) => {
                         const hasOnlyExpectedFailures =
                           cause.reasons.length > 0 &&
@@ -196,7 +216,7 @@ export function subscribe<TTag extends EnvironmentSubscriptionRpcTag>(
                               "Durable RPC subscription lost its transport; waiting for the next session.",
                               {
                                 cause: Cause.pretty(cause),
-                                method: tag,
+                                method: methodName,
                                 environmentId: supervisor.target.environmentId,
                               },
                             ),
@@ -231,8 +251,88 @@ export function subscribe<TTag extends EnvironmentSubscriptionRpcTag>(
     ),
   ).pipe(
     Stream.withSpan("EnvironmentRpc.subscribe", {
-      attributes: { "rpc.method": tag },
+      attributes: { "rpc.method": methodName },
     }),
+  );
+}
+
+export function subscribe<TTag extends EnvironmentSubscriptionRpcTag>(
+  tag: TTag,
+  input: EnvironmentRpcInput<TTag>,
+  options?: DurableSubscriptionOptions<EnvironmentRpcStreamFailure<TTag>>,
+): Stream.Stream<
+  EnvironmentRpcStreamValue<TTag>,
+  EnvironmentRpcStreamFailure<TTag>,
+  EnvironmentSupervisor
+> {
+  return durableSubscription(
+    tag,
+    (session) => {
+      const method = session.client[tag] as (
+        input: EnvironmentRpcInput<TTag>,
+      ) => Stream.Stream<EnvironmentRpcStreamValue<TTag>, EnvironmentRpcStreamFailure<TTag>>;
+      return method(input);
+    },
+    options,
+  );
+}
+
+export function subscribeThread(
+  input: OrchestrationSubscribeThreadInput,
+  options?: DurableSubscriptionOptions<ThreadSubscriptionFailure> & {
+    readonly onSubscribe?: (
+      version: EnvironmentThreadSyncVersion,
+    ) => Effect.Effect<void, never, never>;
+  },
+): Stream.Stream<
+  EnvironmentThreadSubscriptionItem,
+  ThreadSubscriptionFailure,
+  EnvironmentSupervisor
+> {
+  return durableSubscription(
+    ORCHESTRATION_WS_METHODS.subscribeThread,
+    (session) =>
+      Stream.unwrap(
+        session.initialConfig.pipe(
+          Effect.map((config) => {
+            const version: EnvironmentThreadSyncVersion =
+              config.environment.capabilities.threadSyncV2 === true ? "v2" : "v1";
+            const subscribed = Stream.fromEffect(
+              options?.onSubscribe?.(version) ?? Effect.void,
+            ).pipe(Stream.drain);
+
+            if (version === "v2") {
+              return subscribed.pipe(
+                Stream.concat(
+                  session.client[ORCHESTRATION_WS_METHODS.subscribeThreadV2](input).pipe(
+                    Stream.map(
+                      (item): EnvironmentThreadSubscriptionItem => ({
+                        version: "v2",
+                        item,
+                        hydrateActivityPayloads: (hydrateInput) =>
+                          session.client[ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads](
+                            hydrateInput,
+                          ),
+                      }),
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return subscribed.pipe(
+              Stream.concat(
+                session.client[ORCHESTRATION_WS_METHODS.subscribeThread](input).pipe(
+                  Stream.map(
+                    (item): EnvironmentThreadSubscriptionItem => ({ version: "v1", item }),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    options,
   );
 }
 
