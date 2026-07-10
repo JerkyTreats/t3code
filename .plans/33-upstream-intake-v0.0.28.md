@@ -761,9 +761,15 @@ Fresh review findings still open at this checkpoint:
 
 - Close the event continuity gap between the V2 snapshot sequence and the live event stream with persisted replay.
 - Allow cursorless tail paging when aggregate byte trimming leaves an advertised history window empty.
+- Define and test a bounded representation or explicit storage limit for a single message or proposed plan that exceeds the eight MiB page ceiling.
 - Deliver `thread.deleted` through the server thread detail event filter so cached detail is removed.
 - Preserve visible cached row synchronization errors while an automatic retry is still subscribing.
 - Redact complete authorization values for every authentication scheme in thread synchronization diagnostics.
+- Add an append only proposed plan paging index that covers thread id, creation time, and plan id. Extend query plan coverage across every history pager.
+- Enforce advertised page item and byte bounds in result contracts, then cover equal timestamp cursor ties and WebSocket read scope behavior.
+- Strengthen migration 37 tests for clean migration, the released migration 36 schema, and an all-columns-present rerun. Migration 36 itself is verified byte-for-byte against `fdab29157`.
+
+Fresh verification also passed all 194 contract tests and all 1414 server tests before these findings were recorded.
 
 This checkpoint is recoverable and fully committed, but it is not final preservation signoff until these findings are repaired and all required gates pass.
 
