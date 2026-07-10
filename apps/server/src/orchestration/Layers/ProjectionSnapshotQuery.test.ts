@@ -1213,6 +1213,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       yield* sql`DELETE FROM projection_thread_activities`;
       yield* sql`DELETE FROM projection_thread_sessions`;
       yield* sql`DELETE FROM projection_turns`;
+      yield* sql`DELETE FROM orchestration_events`;
       yield* sql`DELETE FROM projection_state`;
 
       yield* sql`
@@ -1619,6 +1620,46 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         SET plan_markdown = ${oversizedPlanMarkdown}
         WHERE plan_id = 'plan-v2-2'
       `;
+      const oversizedDeltaEventId = asEventId("event-v2-oversized-delta");
+      yield* sql`
+        INSERT INTO orchestration_events (
+          event_id,
+          aggregate_kind,
+          stream_id,
+          stream_version,
+          event_type,
+          occurred_at,
+          command_id,
+          causation_event_id,
+          correlation_id,
+          actor_kind,
+          payload_json,
+          metadata_json
+        )
+        VALUES (
+          ${oversizedDeltaEventId},
+          'thread',
+          ${threadId},
+          1,
+          'thread.message-sent',
+          '2026-04-03T00:00:06.000Z',
+          NULL,
+          NULL,
+          NULL,
+          'system',
+          ${encodeUnknownJsonString({
+            threadId,
+            messageId: "message-v2-2",
+            role: "assistant",
+            text: oversizedMessageText,
+            turnId: null,
+            streaming: true,
+            createdAt: "2026-04-03T00:00:06.000Z",
+            updatedAt: "2026-04-03T00:00:06.000Z",
+          })},
+          '{}'
+        )
+      `;
 
       const oversizedContentSnapshot = yield* snapshotQuery.getThreadDetailV2ById(threadId, {
         messages: 1,
@@ -1665,6 +1706,11 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         content:
           | { readonly kind: "message-text"; readonly messageId: MessageId }
           | {
+              readonly kind: "message-text-delta";
+              readonly eventId: EventId;
+              readonly messageId: MessageId;
+            }
+          | {
               readonly kind: "proposed-plan-markdown";
               readonly planId: string;
             },
@@ -1695,6 +1741,12 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         }),
         oversizedMessageText,
       );
+      const deltaContent = yield* reassembleThreadContent({
+        kind: "message-text-delta",
+        eventId: oversizedDeltaEventId,
+        messageId: asMessageId("message-v2-2"),
+      });
+      assert.equal(deltaContent, oversizedMessageText);
       assert.equal(
         yield* reassembleThreadContent({
           kind: "proposed-plan-markdown",
@@ -1908,6 +1960,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         offset: 0,
       });
       assert.isTrue(archivedChunk.chunk.length > 0);
+      const archivedDeltaChunk = yield* snapshotQuery.getThreadContentChunk({
+        threadId,
+        content: {
+          kind: "message-text-delta",
+          eventId: oversizedDeltaEventId,
+          messageId: asMessageId("message-v2-2"),
+        },
+        offset: 0,
+      });
+      assert.isTrue(archivedDeltaChunk.chunk.length > 0);
 
       yield* sql`
         UPDATE projection_threads
@@ -1922,6 +1984,18 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         }),
       );
       assert.equal(deletedChunk._tag, "Failure");
+      const deletedDeltaChunk = yield* Effect.exit(
+        snapshotQuery.getThreadContentChunk({
+          threadId,
+          content: {
+            kind: "message-text-delta",
+            eventId: oversizedDeltaEventId,
+            messageId: asMessageId("message-v2-2"),
+          },
+          offset: 0,
+        }),
+      );
+      assert.equal(deletedDeltaChunk._tag, "Failure");
     }),
   );
 

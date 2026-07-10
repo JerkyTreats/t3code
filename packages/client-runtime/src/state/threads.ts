@@ -130,9 +130,12 @@ function isDeferredThreadContent(content: unknown): content is OrchestrationDefe
 }
 
 function threadContentReferenceKey(content: OrchestrationThreadContentReference): string {
-  return content.kind === "message-text"
-    ? `${content.kind}:${content.messageId}`
-    : `${content.kind}:${content.planId}`;
+  if (content.kind === "message-text" || content.kind === "message-text-delta") {
+    return content.kind === "message-text"
+      ? `${content.kind}:${content.messageId}`
+      : `${content.kind}:${content.eventId}:${content.messageId}`;
+  }
+  return `${content.kind}:${content.planId}`;
 }
 
 function assertThreadContentChunk(
@@ -579,13 +582,21 @@ const hydrateThreadSyncV2Event = Effect.fn("EnvironmentThreadState.hydrateThread
   ) {
     let hydratedEvent: OrchestrationEvent;
     if (event.type === "thread.message-sent" && isDeferredThreadContent(event.payload.text)) {
+      const content: OrchestrationThreadContentReference =
+        event.payload.text.kind === "message-text-delta"
+          ? {
+              kind: "message-text-delta",
+              eventId: event.payload.text.eventId,
+              messageId: event.payload.messageId,
+            }
+          : { kind: "message-text", messageId: event.payload.messageId };
       hydratedEvent = {
         ...event,
         payload: {
           ...event.payload,
           text: yield* hydrateDeferredThreadContent(
             threadId,
-            { kind: "message-text", messageId: event.payload.messageId },
+            content,
             event.payload.text,
             event.payload.updatedAt,
             hydrateThreadContent,

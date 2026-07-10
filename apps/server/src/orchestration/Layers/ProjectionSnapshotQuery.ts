@@ -192,6 +192,11 @@ const ThreadMessageContentLookupInput = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
 });
+const ThreadMessageDeltaContentLookupInput = Schema.Struct({
+  threadId: ThreadId,
+  eventId: EventId,
+  messageId: MessageId,
+});
 const ThreadProposedPlanContentLookupInput = Schema.Struct({
   threadId: ThreadId,
   planId: OrchestrationProposedPlanId,
@@ -1363,6 +1368,31 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             WHERE projection_threads.thread_id = projection_thread_messages.thread_id
               AND projection_threads.deleted_at IS NULL
           )
+      `,
+  });
+
+  const getThreadMessageDeltaContentRowByEventId = SqlSchema.findOneOption({
+    Request: ThreadMessageDeltaContentLookupInput,
+    Result: ProjectionThreadContentDbRowSchema,
+    execute: ({ threadId, eventId, messageId }) =>
+      sql`
+        SELECT
+          json_extract(payload_json, '$.text') AS "content",
+          json_extract(payload_json, '$.updatedAt') AS "contentVersion"
+        FROM orchestration_events
+        WHERE event_id = ${eventId}
+          AND aggregate_kind = 'thread'
+          AND stream_id = ${threadId}
+          AND EXISTS (
+            SELECT 1
+            FROM projection_threads
+            WHERE projection_threads.thread_id = ${threadId}
+              AND projection_threads.deleted_at IS NULL
+          )
+          AND event_type = 'thread.message-sent'
+          AND json_extract(payload_json, '$.messageId') = ${messageId}
+          AND json_extract(payload_json, '$.streaming') = 1
+          AND json_type(payload_json, '$.text') = 'text'
       `,
   });
 
@@ -3334,10 +3364,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               threadId: input.threadId,
               messageId: input.content.messageId,
             })
-          : getThreadProposedPlanContentRowById({
-              threadId: input.threadId,
-              planId: input.content.planId,
-            })
+          : input.content.kind === "message-text-delta"
+            ? getThreadMessageDeltaContentRowByEventId({
+                threadId: input.threadId,
+                eventId: input.content.eventId,
+                messageId: input.content.messageId,
+              })
+            : getThreadProposedPlanContentRowById({
+                threadId: input.threadId,
+                planId: input.content.planId,
+              })
       ).pipe(
         Effect.mapError(
           toPersistenceSqlOrDecodeError(

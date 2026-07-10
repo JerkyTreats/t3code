@@ -13,6 +13,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationThread,
+  type OrchestrationDeferredThreadContent,
   type OrchestrationThreadDetailV2Snapshot,
   type OrchestrationThreadActivity,
   type OrchestrationThreadStreamItem,
@@ -466,7 +467,32 @@ const v2ActivityAppended = (
 
 const contentEncoder = new TextEncoder();
 
-function deferredThreadContent(kind: "message-text" | "proposed-plan-markdown", content: string) {
+function deferredThreadContent(
+  kind: "message-text" | "proposed-plan-markdown",
+  content: string,
+): Exclude<OrchestrationDeferredThreadContent, { readonly kind: "message-text-delta" }>;
+function deferredThreadContent(
+  kind: "message-text-delta",
+  content: string,
+  eventId: EventId,
+): Extract<OrchestrationDeferredThreadContent, { readonly kind: "message-text-delta" }>;
+function deferredThreadContent(
+  kind: OrchestrationDeferredThreadContent["kind"],
+  content: string,
+  eventId?: EventId,
+): OrchestrationDeferredThreadContent {
+  if (kind === "message-text-delta") {
+    if (eventId === undefined) {
+      throw new Error("A delta marker requires an event id.");
+    }
+    return {
+      __t3Deferred: "thread-content",
+      kind,
+      eventId,
+      byteLength: contentEncoder.encode(content).byteLength,
+      characterLength: content.length,
+    };
+  }
   return {
     __t3Deferred: "thread-content" as const,
     kind,
@@ -1120,6 +1146,109 @@ describe("EnvironmentThreads", () => {
         expect(yield* Ref.get(harness.v2SubscriptionCount)).toBe(2);
       }),
     { timeout: 30_000 },
+  );
+
+  it.effect("hydrates an oversized streaming event as an exact delta", () =>
+    Effect.gen(function* () {
+      const prefix = "existing prefix: ";
+      const delta = oversizedUnicodeContent("streaming-delta");
+      const messageId = MessageId.make("streaming-message");
+      const eventId = EventId.make("event-streaming-delta");
+      const existingMessage = {
+        ...historyMessage(4),
+        id: messageId,
+        text: prefix,
+        streaming: true,
+      };
+      const event: OrchestrationThreadStreamV2Item = {
+        kind: "event",
+        event: {
+          eventId,
+          sequence: 2,
+          occurredAt: "2026-04-01T04:00:00.000Z",
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          aggregateKind: "thread",
+          aggregateId: THREAD_ID,
+          type: "thread.message-sent",
+          payload: {
+            threadId: THREAD_ID,
+            messageId,
+            role: "assistant",
+            text: deferredThreadContent("message-text-delta", delta, eventId),
+            turnId: null,
+            streaming: true,
+            createdAt: existingMessage.createdAt,
+            updatedAt: "2026-04-01T04:00:00.000Z",
+          },
+        },
+        deferredActivityPayloads: 0,
+        deferredThreadContents: 1,
+        estimatedSerializedBytes: 256,
+      };
+      let hydrationAttempt = 0;
+      const harness = yield* makeHarness({
+        cached: { ...BASE_THREAD, messages: [existingMessage] },
+        threadSyncV2: true,
+        replayV2Items: [event, v2TitleUpdated("After delta", 3)],
+        hydrateContent: (input) =>
+          Effect.suspend(() => {
+            hydrationAttempt += 1;
+            return hydrationAttempt === 1
+              ? Effect.fail(
+                  new OrchestrationGetSnapshotError({ message: "Delta hydration failed" }),
+                )
+              : Effect.succeed(testContentChunk(input, delta, "2026-04-01T04:00:00.000Z"));
+          }),
+      });
+
+      yield* Queue.offer(
+        harness.v2Inputs,
+        v2Snapshot({ ...BASE_THREAD, messages: [existingMessage] }),
+      );
+      yield* awaitThreadState(
+        harness.observed,
+        (state) =>
+          state.syncStatus?.phase === "live" &&
+          Option.getOrNull(state.data)?.messages[0]?.text === prefix,
+      );
+      yield* Queue.offer(harness.v2Inputs, event);
+      yield* Queue.offer(harness.v2Inputs, v2TitleUpdated("After delta", 3));
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.latest)).syncStatus?.phase === "error") {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+      expect((yield* Ref.get(harness.latest)).syncStatus?.error).toContain(
+        "Delta hydration failed",
+      );
+      expect(Option.getOrThrow((yield* Ref.get(harness.latest)).data).title).toBe("Cached thread");
+
+      yield* TestClock.adjust("250 millis");
+      const live = yield* awaitThreadState(
+        harness.observed,
+        (state) =>
+          state.syncStatus?.phase === "live" &&
+          Option.getOrNull(state.data)?.title === "After delta" &&
+          Option.getOrNull(state.data)?.messages[0]?.text === `${prefix}${delta}`,
+      );
+
+      expect(Option.getOrThrow(live.data).messages[0]?.text).toBe(`${prefix}${delta}`);
+      expect(yield* Ref.get(harness.contentChunkInputs)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            content: { kind: "message-text-delta", eventId, messageId },
+          }),
+        ]),
+      );
+      expect((yield* Ref.get(harness.contentChunkInputs)).every((input) => input.offset >= 0)).toBe(
+        true,
+      );
+      expect(hydrationAttempt).toBeGreaterThan(1);
+    }),
   );
 
   it.effect(

@@ -549,16 +549,27 @@ export type OrchestrationDeferredActivityPayload = typeof OrchestrationDeferredA
 
 export const OrchestrationThreadContentKind = Schema.Literals([
   "message-text",
+  "message-text-delta",
   "proposed-plan-markdown",
 ]);
 export type OrchestrationThreadContentKind = typeof OrchestrationThreadContentKind.Type;
 
-export const OrchestrationDeferredThreadContent = Schema.Struct({
+const OrchestrationDeferredThreadContentFields = {
   __t3Deferred: Schema.Literal("thread-content"),
-  kind: OrchestrationThreadContentKind,
   byteLength: NonNegativeInt,
   characterLength: NonNegativeInt,
-});
+};
+export const OrchestrationDeferredThreadContent = Schema.Union([
+  Schema.Struct({
+    ...OrchestrationDeferredThreadContentFields,
+    kind: Schema.Literals(["message-text", "proposed-plan-markdown"]),
+  }),
+  Schema.Struct({
+    ...OrchestrationDeferredThreadContentFields,
+    kind: Schema.Literal("message-text-delta"),
+    eventId: EventId,
+  }),
+]);
 export type OrchestrationDeferredThreadContent = typeof OrchestrationDeferredThreadContent.Type;
 
 export const OrchestrationThreadMessageV2 = OrchestrationMessage.mapFields((fields) =>
@@ -668,6 +679,11 @@ export type OrchestrationThreadProposedPlanPageResult =
 export const OrchestrationThreadContentReference = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("message-text"),
+    messageId: MessageId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("message-text-delta"),
+    eventId: EventId,
     messageId: MessageId,
   }),
   Schema.Struct({

@@ -283,16 +283,25 @@ function toThreadStreamV2EventItem(event: OrchestrationEvent): OrchestrationThre
     event.type === "thread.message-sent" &&
     estimateThreadSyncV2Bytes(event.payload.text) > THREAD_SYNC_V2_MAX_INLINE_CONTENT_ITEM_BYTES
   ) {
-    boundedEvent = {
-      ...event,
-      payload: {
-        ...event.payload,
-        text: {
+    const text = event.payload.streaming
+      ? {
+          __t3Deferred: "thread-content" as const,
+          kind: "message-text-delta" as const,
+          eventId: event.eventId,
+          byteLength: threadSyncV2TextEncoder.encode(event.payload.text).byteLength,
+          characterLength: event.payload.text.length,
+        }
+      : {
           __t3Deferred: "thread-content" as const,
           kind: "message-text" as const,
           byteLength: threadSyncV2TextEncoder.encode(event.payload.text).byteLength,
           characterLength: event.payload.text.length,
-        },
+        };
+    boundedEvent = {
+      ...event,
+      payload: {
+        ...event.payload,
+        text,
       },
     };
     deferredThreadContents = 1;
