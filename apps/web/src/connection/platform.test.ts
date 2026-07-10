@@ -253,4 +253,69 @@ describe("application activity wakeups", () => {
     windowEvents.dispatchEvent(new Event("focus"));
     expect(observed).toHaveLength(3);
   });
+
+  it("does not emit pageshow while the document remains hidden", () => {
+    const windowEvents = new EventTarget();
+    const documentEvents = Object.assign(new EventTarget(), {
+      visibilityState: "hidden" as DocumentVisibilityState,
+    });
+    const observed: string[] = [];
+    const unsubscribe = subscribeApplicationActiveEvents(
+      () => {
+        observed.push("application-active");
+      },
+      { window: windowEvents, document: documentEvents },
+    );
+
+    windowEvents.dispatchEvent(new Event("pageshow"));
+
+    expect(observed).toEqual([]);
+    unsubscribe();
+  });
+
+  it("coalesces BFCache pageshow and visibility restoration", () => {
+    const windowEvents = new EventTarget();
+    const documentEvents = Object.assign(new EventTarget(), {
+      visibilityState: "visible" as DocumentVisibilityState,
+    });
+    const observed: string[] = [];
+    const unsubscribe = subscribeApplicationActiveEvents(
+      () => {
+        observed.push("application-active");
+      },
+      { window: windowEvents, document: documentEvents },
+    );
+
+    documentEvents.visibilityState = "hidden";
+    documentEvents.dispatchEvent(new Event("visibilitychange"));
+    documentEvents.visibilityState = "visible";
+    windowEvents.dispatchEvent(new Event("pageshow"));
+    documentEvents.dispatchEvent(new Event("visibilitychange"));
+
+    expect(observed).toEqual(["application-active"]);
+    unsubscribe();
+  });
+
+  it("coalesces focus and visibility restoration after a hidden interval", () => {
+    const windowEvents = new EventTarget();
+    const documentEvents = Object.assign(new EventTarget(), {
+      visibilityState: "visible" as DocumentVisibilityState,
+    });
+    const observed: string[] = [];
+    const unsubscribe = subscribeApplicationActiveEvents(
+      () => {
+        observed.push("application-active");
+      },
+      { window: windowEvents, document: documentEvents },
+    );
+
+    documentEvents.visibilityState = "hidden";
+    documentEvents.dispatchEvent(new Event("visibilitychange"));
+    documentEvents.visibilityState = "visible";
+    windowEvents.dispatchEvent(new Event("focus"));
+    documentEvents.dispatchEvent(new Event("visibilitychange"));
+
+    expect(observed).toEqual(["application-active"]);
+    unsubscribe();
+  });
 });

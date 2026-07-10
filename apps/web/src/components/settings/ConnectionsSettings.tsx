@@ -150,6 +150,7 @@ import { desktopSshHostsStateAtom } from "~/state/desktopSshHosts";
 import { desktopWslStateAtom, refreshDesktopWslState } from "~/state/desktopWslState";
 import {
   type EnvironmentPresentation,
+  useEnvironmentConnectionState,
   useEnvironments,
   usePrimaryEnvironment,
   useRelayEnvironmentDiscovery,
@@ -1629,12 +1630,12 @@ function SavedBackendListRow({
   onForget,
 }: SavedBackendListRowProps) {
   const environmentId = environment.environmentId;
+  const supervisorState = useEnvironmentConnectionState(environmentId).data;
   const connectionState = environment.connection.phase;
-  const isConnected = connectionState === "connected";
-  const isConnecting = connectionState === "connecting" || connectionState === "reconnecting";
   const isDisconnecting = disconnectingEnvironmentId === environmentId;
   const isForgetting = forgettingEnvironmentId === environmentId;
-  const controlAction = resolveConnectionControlAction(connectionState);
+  const [forgetDialogOpen, setForgetDialogOpen] = useState(false);
+  const controlAction = resolveConnectionControlAction(supervisorState?.desired ?? false);
   const stateDotClassName =
     connectionState === "connected"
       ? "bg-success"
@@ -1748,9 +1749,11 @@ function SavedBackendListRow({
               <Button
                 size="xs"
                 variant="outline"
-                disabled={isConnecting || isDisconnecting || isForgetting}
+                disabled={isDisconnecting || isForgetting}
                 onClick={() =>
-                  void (isConnected ? onDisconnect(environmentId) : onConnect(environmentId))
+                  void (controlAction === "disconnect"
+                    ? onDisconnect(environmentId)
+                    : onConnect(environmentId))
                 }
               >
                 {controlAction === "disconnect" ? (
@@ -1758,23 +1761,55 @@ function SavedBackendListRow({
                 ) : (
                   <PlugIcon aria-hidden className="size-3.5" />
                 )}
-                {isConnected
+                {controlAction === "disconnect"
                   ? isDisconnecting
                     ? "Disconnecting…"
                     : "Disconnect"
-                  : isConnecting
-                    ? "Connecting…"
-                    : "Connect"}
+                  : "Connect"}
               </Button>
               <Button
                 size="xs"
                 variant="destructive-outline"
-                disabled={isConnecting || isDisconnecting || isForgetting}
-                onClick={() => void onForget(environmentId)}
+                disabled={isDisconnecting || isForgetting}
+                onClick={() => setForgetDialogOpen(true)}
               >
                 <Trash2Icon aria-hidden className="size-3.5" />
                 {isForgetting ? "Forgetting…" : "Forget"}
               </Button>
+              <AlertDialog
+                open={forgetDialogOpen}
+                onOpenChange={(open) => {
+                  if (!isForgetting) setForgetDialogOpen(open);
+                }}
+              >
+                <AlertDialogPopup>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Forget {environment.label}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This removes the saved registration, credentials, cached shell and thread
+                      data, and local drafts. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogClose
+                      disabled={isForgetting}
+                      render={<Button variant="outline" disabled={isForgetting} />}
+                    >
+                      Cancel
+                    </AlertDialogClose>
+                    <Button
+                      variant="destructive"
+                      disabled={isForgetting}
+                      onClick={() => {
+                        setForgetDialogOpen(false);
+                        onForget(environmentId);
+                      }}
+                    >
+                      {isForgetting ? "Forgetting…" : "Forget environment"}
+                    </Button>
+                  </AlertDialogFooter>
+                </AlertDialogPopup>
+              </AlertDialog>
             </>
           )}
         </div>

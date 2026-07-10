@@ -2,6 +2,7 @@ import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId, TurnId } from "
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Thread } from "../types";
+import chatViewSource from "./ChatView.tsx?raw";
 import {
   MAX_HIDDEN_MOUNTED_PREVIEW_THREADS,
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
@@ -21,6 +22,15 @@ const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
 const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
+
+describe("active environment reconnect", () => {
+  it("restores desired connection intent through the explicit connect command", () => {
+    expect(chatViewSource).toContain(
+      "useAtomCommand(environmentCatalog.connect, { reportFailure: false })",
+    );
+    expect(chatViewSource).not.toContain("useAtomCommand(environmentCatalog.retryNow");
+  });
+});
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
   return {

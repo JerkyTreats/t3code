@@ -80,13 +80,19 @@ export function subscribeApplicationActiveEvents(
   sources: ApplicationActiveEventSources = { window, document },
 ): () => void {
   let wasHidden = sources.document.visibilityState === "hidden";
-  const handleFocus: EventListener = () => {
-    if (sources.document.visibilityState === "visible") {
-      emit();
+  const emitIfVisible = () => {
+    if (sources.document.visibilityState !== "visible") {
+      wasHidden = true;
+      return;
     }
+    wasHidden = false;
+    emit();
+  };
+  const handleFocus: EventListener = () => {
+    emitIfVisible();
   };
   const handlePageShow: EventListener = () => {
-    emit();
+    emitIfVisible();
   };
   const handleVisibilityChange: EventListener = () => {
     if (sources.document.visibilityState === "hidden") {

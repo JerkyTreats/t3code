@@ -8,6 +8,17 @@ export const MAX_RECENT_CONNECTION_EVENTS = 25;
 
 const MAX_DIAGNOSTIC_TEXT_LENGTH = 500;
 const MAX_DIAGNOSTIC_URL_LENGTH = 2_048;
+const DIAGNOSTIC_URL = /\b(?:https?|wss?):\/\/[^\s"'<>]+/giu;
+const SENSITIVE_JSON_FIELD =
+  /(["'](?:access[_-]?token|authorization|bearer|cookies?|pairing[_ -]?code|set-cookie|token|ticket|wsTicket)["']\s*:\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^,}\]\s]+)/giu;
+const AUTHORIZATION_VALUE =
+  /\b(authorization\s*[:=]\s*)(?:bearer\s+)?(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/giu;
+const COOKIE_VALUE = /\b((?:set-)?cookies?\s*:\s*)[^\r\n]+/giu;
+const BEARER_VALUE = /\bBearer\s+[A-Za-z0-9._~+/=-]+/giu;
+const SENSITIVE_ASSIGNMENT =
+  /\b(access[_-]?token|bearer|cookies?|pairing[_ -]?code|set-cookie|token|ticket|wsTicket)(\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/giu;
+const PAIRING_CODE_VALUE =
+  /\b(pairing[_ -]?code)\s+(?:is\s+)?(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z0-9._~+/-]{4,})/giu;
 
 export type ConnectionDiagnosticsPhase =
   | "idle"
@@ -133,9 +144,25 @@ export function sanitizeDiagnosticText(value: string | null | undefined): string
     return null;
   }
   return normalized
-    .replace(/\b(?:https?|wss?):\/\/[^\s"'<>]+/giu, sanitizeDiagnosticUrl)
-    .replace(/((?:wsTicket|ticket)\s*[=:]\s*)[^&\s,;]+/giu, "$1[redacted]")
+    .replace(DIAGNOSTIC_URL, sanitizeDiagnosticUrl)
+    .replace(SENSITIVE_JSON_FIELD, '$1"[redacted]"')
+    .replace(COOKIE_VALUE, "$1[redacted]")
+    .replace(AUTHORIZATION_VALUE, "$1[redacted]")
+    .replace(BEARER_VALUE, "Bearer [redacted]")
+    .replace(SENSITIVE_ASSIGNMENT, "$1$2[redacted]")
+    .replace(PAIRING_CODE_VALUE, "$1 [redacted]")
+    .replace(/\s+/gu, " ")
     .slice(0, MAX_DIAGNOSTIC_TEXT_LENGTH);
+}
+
+export function rememberProcessedSessionEventId(
+  processed: ReadonlySet<string>,
+  eventId: string,
+): readonly [isNew: boolean, processed: ReadonlySet<string>] {
+  if (processed.has(eventId)) {
+    return [false, processed];
+  }
+  return [true, new Set([...processed, eventId].slice(-MAX_RECENT_CONNECTION_EVENTS))];
 }
 
 export function sanitizeDiagnosticOrigin(value: string | null | undefined): string | null {

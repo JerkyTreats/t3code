@@ -7,6 +7,7 @@ import {
   getConnectionDiagnosticsDurations,
   recordRpcSessionDiagnosticEvent,
   recordSupervisorConnectionState,
+  rememberProcessedSessionEventId,
   sanitizeDiagnosticText,
   sanitizeDiagnosticUrl,
   selectConnectionDiagnosticsEntries,
@@ -106,6 +107,59 @@ describe("connection diagnostics", () => {
         "failed at wss://remote.example.test/ws?wsTicket=text-secret and wsTicket=other-secret",
       ),
     ).toBe("failed at wss://remote.example.test/ws and wsTicket=[redacted]");
+  });
+
+  it("redacts sensitive connection credentials across diagnostic formats", () => {
+    const cases: ReadonlyArray<readonly [message: string, secrets: ReadonlyArray<string>]> = [
+      ["access_token=access-secret", ["access-secret"]],
+      ["token: token-secret", ["token-secret"]],
+      ["Authorization: Bearer authorization-secret", ["authorization-secret"]],
+      ["bearer=bearer-secret", ["bearer-secret"]],
+      ["pairing code pairing-secret", ["pairing-secret"]],
+      ["Cookie: session=cookie-secret; Path=/", ["cookie-secret"]],
+      ["ticket=ticket-secret", ["ticket-secret"]],
+      ["wsTicket=ws-ticket-secret", ["ws-ticket-secret"]],
+      [
+        '{"access_token":"json-access-secret","authorization":"Bearer json-auth-secret","pairing_code":"json-pairing-secret","cookie":"json-cookie-secret"}',
+        ["json-access-secret", "json-auth-secret", "json-pairing-secret", "json-cookie-secret"],
+      ],
+      [
+        "failed at https://user:url-password@remote.example.test/ws?token=url-secret",
+        ["url-password", "url-secret"],
+      ],
+    ];
+
+    for (const [message, secrets] of cases) {
+      const sanitized = sanitizeDiagnosticText(message);
+      if (!message.includes("https://")) {
+        expect(sanitized).toContain("[redacted]");
+      }
+      for (const secret of secrets) {
+        expect(sanitized).not.toContain(secret);
+      }
+    }
+  });
+
+  it("bounds processed session event ids to the retained event horizon", () => {
+    let processed: ReadonlySet<string> = new Set();
+    for (let index = 0; index < MAX_RECENT_CONNECTION_EVENTS + 10; index += 1) {
+      const [isNew, next] = rememberProcessedSessionEventId(processed, `event:${index}`);
+      expect(isNew).toBe(true);
+      processed = next;
+    }
+
+    expect(processed.size).toBe(MAX_RECENT_CONNECTION_EVENTS);
+    expect(processed.has("event:0")).toBe(false);
+    expect(processed.has(`event:${MAX_RECENT_CONNECTION_EVENTS + 9}`)).toBe(true);
+
+    const latestEventId = `event:${MAX_RECENT_CONNECTION_EVENTS + 9}`;
+    const [latestIsNew, unchanged] = rememberProcessedSessionEventId(processed, latestEventId);
+    expect(latestIsNew).toBe(false);
+    expect(unchanged).toBe(processed);
+
+    const [evictedIsNew, recycled] = rememberProcessedSessionEventId(processed, "event:0");
+    expect(evictedIsNew).toBe(true);
+    expect(recycled.size).toBe(MAX_RECENT_CONNECTION_EVENTS);
   });
 
   it("bounds target and event retention while retaining the primary environment", () => {

@@ -40,10 +40,8 @@ export { getConnectionDiagnosticsDurations };
 
 export type ConnectionControlAction = "connect" | "disconnect";
 
-export function resolveConnectionControlAction(
-  phase: "available" | "offline" | "connecting" | "reconnecting" | "connected" | "error",
-): ConnectionControlAction {
-  return phase === "connected" ? "disconnect" : "connect";
+export function resolveConnectionControlAction(desired: boolean): ConnectionControlAction {
+  return desired ? "disconnect" : "connect";
 }
 
 export function createEnvironmentCatalogAtoms<R, E>(

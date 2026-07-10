@@ -27,6 +27,7 @@ import {
   type ConnectionDiagnosticsTarget,
   recordRpcSessionDiagnosticEvent,
   recordSupervisorConnectionState,
+  rememberProcessedSessionEventId,
   removeConnectionDiagnosticsEntry,
 } from "./diagnostics.ts";
 import * as ConnectionCredentialStore from "./credentialStore.ts";
@@ -342,14 +343,9 @@ export const make = Effect.gen(function* () {
         Effect.forEach(
           [...events].toReversed(),
           (event) =>
-            Ref.modify(processedSessionEventIds, (processed) => {
-              if (processed.has(event.id)) {
-                return [false, processed] as const;
-              }
-              const next = new Set(processed);
-              next.add(event.id);
-              return [true, next] as const;
-            }).pipe(
+            Ref.modify(processedSessionEventIds, (processed) =>
+              rememberProcessedSessionEventId(processed, event.id),
+            ).pipe(
               Effect.flatMap((isNew) =>
                 isNew
                   ? SubscriptionRef.update(diagnostics, (current) =>

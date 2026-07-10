@@ -2,6 +2,7 @@ import type { DesktopWslState } from "@t3tools/contracts";
 import { resolveConnectionControlAction } from "@t3tools/client-runtime/state/connections";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { applyWslEnableSelection } from "./ConnectionsSettings.logic";
+import connectionsSettingsSource from "./ConnectionsSettings.tsx?raw";
 
 const baseWslState: DesktopWslState = {
   enabled: false,
@@ -76,12 +77,23 @@ describe("applyWslEnableSelection", () => {
 });
 
 describe("saved environment connection controls", () => {
-  it("disconnects only a live connection and connects every inactive state", () => {
-    expect(resolveConnectionControlAction("connected")).toBe("disconnect");
-    expect(resolveConnectionControlAction("available")).toBe("connect");
-    expect(resolveConnectionControlAction("offline")).toBe("connect");
-    expect(resolveConnectionControlAction("connecting")).toBe("connect");
-    expect(resolveConnectionControlAction("reconnecting")).toBe("connect");
-    expect(resolveConnectionControlAction("error")).toBe("connect");
+  it("disconnects whenever supervisor intent remains desired", () => {
+    for (const phase of ["connected", "offline", "connecting", "backoff", "blocked"] as const) {
+      expect({ phase, action: resolveConnectionControlAction(true) }).toEqual({
+        phase,
+        action: "disconnect",
+      });
+    }
+  });
+
+  it("connects when explicit disconnect cleared desired intent", () => {
+    expect(resolveConnectionControlAction(false)).toBe("connect");
+  });
+
+  it("confirms destructive owned-data removal before Forget", () => {
+    expect(connectionsSettingsSource).toContain("setForgetDialogOpen(true)");
+    expect(connectionsSettingsSource).toMatch(
+      /<AlertDialogTitle>Forget \{environment\.label\}\?<\/AlertDialogTitle>[\s\S]*?This removes the saved registration, credentials, cached shell and thread[\s\S]*?onForget\(environmentId\)/u,
+    );
   });
 });
