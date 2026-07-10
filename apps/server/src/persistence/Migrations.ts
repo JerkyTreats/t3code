@@ -45,6 +45,7 @@ import Migration0029 from "./Migrations/029_ProjectionThreadDetailOrderingIndexe
 import Migration0030 from "./Migrations/030_ProjectionThreadShellArchiveIndexes.ts";
 import Migration0031 from "./Migrations/031_AuthAuthorizationScopes.ts";
 import Migration0032 from "./Migrations/032_AuthPairingProofKeyThumbprint.ts";
+import Migration0036 from "./Migrations/036_ReconcileV0028MigrationHistories.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -89,6 +90,8 @@ export const migrationEntries = [
   [30, "ProjectionThreadShellArchiveIndexes", Migration0030],
   [31, "AuthAuthorizationScopes", Migration0031],
   [32, "AuthPairingProofKeyThumbprint", Migration0032],
+  // IDs 33 through 35 are permanently reserved for the shipped fork migration history.
+  [36, "ReconcileV0028MigrationHistories", Migration0036],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>
