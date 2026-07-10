@@ -22,7 +22,7 @@ interface GitPanelSurfaceProps {
   status: VcsStatusResult | null;
   statusPending: boolean;
   statusError: string | null;
-  onOpenDiff: () => void;
+  onOpenDiff?: () => void;
 }
 
 export function GitPanelSurface(props: GitPanelSurfaceProps) {
@@ -113,36 +113,52 @@ export function GitPanelSurface(props: GitPanelSurfaceProps) {
                     {props.statusPending ? "Refreshing" : `${files.length} total`}
                   </p>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={!props.status?.isRepo}
-                  onClick={props.onOpenDiff}
-                >
-                  <FileDiffIcon className="size-4" />
-                  Diff
-                </Button>
+                {props.onOpenDiff ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={!props.status?.isRepo}
+                    onClick={props.onOpenDiff}
+                  >
+                    <FileDiffIcon className="size-4" />
+                    Diff
+                  </Button>
+                ) : null}
               </div>
 
               {files.length > 0 ? (
                 <div className="divide-y divide-border">
-                  {files.map((file) => (
-                    <button
-                      key={file.path}
-                      type="button"
-                      className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-left hover:bg-accent/55"
-                      onClick={props.onOpenDiff}
-                    >
-                      <span className="truncate font-mono text-xs text-foreground/90">
-                        {file.path}
-                      </span>
-                      <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                        <span className="text-emerald-600">+{file.insertions}</span>{" "}
-                        <span className="text-red-500">-{file.deletions}</span>
-                      </span>
-                    </button>
-                  ))}
+                  {files.map((file) => {
+                    const content = (
+                      <>
+                        <span className="truncate font-mono text-xs text-foreground/90">
+                          {file.path}
+                        </span>
+                        <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                          <span className="text-emerald-600">+{file.insertions}</span>{" "}
+                          <span className="text-red-500">-{file.deletions}</span>
+                        </span>
+                      </>
+                    );
+                    return props.onOpenDiff ? (
+                      <button
+                        key={file.path}
+                        type="button"
+                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-left hover:bg-accent/55"
+                        onClick={props.onOpenDiff}
+                      >
+                        {content}
+                      </button>
+                    ) : (
+                      <div
+                        key={file.path}
+                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-left"
+                      >
+                        {content}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="flex min-h-28 items-center justify-center px-6 text-center text-sm text-muted-foreground">

@@ -92,6 +92,7 @@ export function ProjectContextHeader(props: ProjectContextHeaderProps) {
             keybindings={props.keybindings}
             availableEditors={props.availableEditors}
             openInCwd={props.workspaceRoot}
+            enableShortcut={false}
           />
           <ProjectScriptsControl
             scripts={props.scripts}

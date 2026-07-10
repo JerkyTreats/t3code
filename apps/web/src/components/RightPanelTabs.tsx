@@ -168,8 +168,8 @@ function RightPanelEmptyState(props: {
   ] as const;
 
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-      <div className="w-full max-w-xl">
+    <div className="flex min-h-0 flex-1 items-start justify-center overflow-auto p-6">
+      <div className="my-auto w-full max-w-xl">
         <div className="mb-5 text-center">
           <h3 className="text-sm font-medium text-foreground">Open a surface</h3>
           <p className="mt-1 text-xs text-muted-foreground">

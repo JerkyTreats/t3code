@@ -47,6 +47,7 @@ function useThreadActivitiesByKey(
 
 export function useProjectManagementThreads(
   target: Pick<ProjectManagementRouteTarget, "environmentId" | "projectId"> | null,
+  options?: { readonly includeArchivedActivities?: boolean },
 ): ReadonlyArray<ProjectManagementThread> {
   const projectRefs = useMemo(
     () => (target ? [scopeProjectRef(target.environmentId, target.projectId)] : []),
@@ -80,8 +81,11 @@ export function useProjectManagementThreads(
     [activeShells, archivedShells, target],
   );
   const refs = useMemo(
-    () => shells.map((thread) => scopeThreadRef(thread.environmentId, thread.id)),
-    [shells],
+    () =>
+      shells
+        .filter((thread) => thread.archivedAt === null || options?.includeArchivedActivities)
+        .map((thread) => scopeThreadRef(thread.environmentId, thread.id)),
+    [options?.includeArchivedActivities, shells],
   );
   const activitiesByKey = useThreadActivitiesByKey(refs);
 

@@ -111,7 +111,9 @@ export function ProjectManagementRouteView({
   );
   const project = useProject(projectRef);
   const serverConfigs = useServerConfigs();
-  const threads = useProjectManagementThreads(target);
+  const threads = useProjectManagementThreads(target, {
+    includeArchivedActivities: target.view === "inference",
+  });
   const shell = useEnvironmentQuery(environmentShell.stateAtom(target.environmentId));
   const bootstrapComplete = shell.data?.snapshot._tag === "Some";
   const statusQuery = useEnvironmentQuery(

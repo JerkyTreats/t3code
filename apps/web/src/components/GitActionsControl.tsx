@@ -1270,6 +1270,26 @@ export default function GitActionsControl({
   const commitMenuItem = gitActionMenuItems.find((item) => item.id === "commit") ?? null;
   const pullRequestMenuItem = gitActionMenuItems.find((item) => item.id === "pr") ?? null;
   const promoteMenuItem = gitActionMenuItems.find((item) => item.id === "promote") ?? null;
+  const panelPullEnabled =
+    gitStatusForActions != null &&
+    gitStatusForActions.refName !== null &&
+    !gitStatusForActions.hasWorkingTreeChanges &&
+    gitStatusForActions.behindCount > 0 &&
+    !isGitActionRunning;
+  const panelCommitPushAvailable =
+    gitStatusForActions != null &&
+    gitStatusForActions.refName !== null &&
+    !isGitActionRunning &&
+    (gitStatusForActions.hasWorkingTreeChanges || gitStatusForActions.aheadCount > 0);
+  const panelCommitPushDisabledReason = !gitStatusForActions
+    ? "Status unavailable"
+    : gitStatusForActions.refName === null
+      ? "Detached HEAD"
+      : isGitActionRunning
+        ? "Action in progress"
+        : !(gitStatusForActions.hasWorkingTreeChanges || gitStatusForActions.aheadCount > 0)
+          ? "Nothing to push"
+          : null;
   const pendingDefaultBranchActionCopy = pendingDefaultBranchAction
     ? resolveDefaultBranchActionDialogCopy({
         action: pendingDefaultBranchAction.action,
@@ -1831,12 +1851,14 @@ export default function GitActionsControl({
             <Button
               className="min-w-0 flex-1"
               size="sm"
-              disabled={isGitActionRunning || quickAction.disabled}
-              title={quickActionDisabledReason ?? undefined}
-              onClick={runQuickAction}
+              disabled={!panelCommitPushAvailable}
+              title={panelCommitPushDisabledReason ?? undefined}
+              onClick={() => {
+                void runGitActionWithToast({ action: "commit_push" });
+              }}
             >
-              <GitQuickActionIcon quickAction={quickAction} SourceControlIcon={SourceControlIcon} />
-              <span className="truncate">{quickAction.label}</span>
+              <CloudUploadIcon className="size-4" />
+              <span className="truncate">Commit &amp; Push</span>
             </Button>
             <Tooltip>
               <TooltipTrigger
@@ -1852,7 +1874,13 @@ export default function GitActionsControl({
             </Tooltip>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {panelCommitPushDisabledReason ? (
+            <p className="text-center text-xs text-muted-foreground">
+              {panelCommitPushDisabledReason}
+            </p>
+          ) : null}
+
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(7rem,1fr))] gap-2">
             <Button
               size="sm"
               variant="outline"
@@ -1867,9 +1895,7 @@ export default function GitActionsControl({
             <Button
               size="sm"
               variant="outline"
-              disabled={
-                isGitActionRunning || !hasPrimaryRemote || gitStatusForActions?.refName == null
-              }
+              disabled={!panelPullEnabled}
               onClick={runPullAction}
             >
               <RefreshCcwIcon className="size-4" />
@@ -1895,7 +1921,7 @@ export default function GitActionsControl({
               }}
             >
               <GitPullRequestIcon className="size-4" />
-              PR
+              {pullRequestMenuItem?.kind === "open_pr" ? "View PR" : "PR"}
             </Button>
           </div>
 

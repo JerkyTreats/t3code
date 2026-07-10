@@ -197,6 +197,7 @@ import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
 import {
   useProject,
   useProjects,
+  useServerConfigs,
   useThread,
   useThreadProposedPlans,
   useThreadRefs,
@@ -1409,7 +1410,9 @@ function ChatViewContent(props: ChatViewProps) {
         : null,
     [activeProject],
   );
-  const projectManagementThreads = useProjectManagementThreads(projectManagementTarget);
+  const projectManagementThreads = useProjectManagementThreads(projectManagementTarget, {
+    includeArchivedActivities: activeRightPanelSurface?.kind === "inference",
+  });
   const activeEnvironmentShell = useEnvironmentQuery(
     activeThread ? environmentShell.stateAtom(activeThread.environmentId) : null,
   );
@@ -2153,6 +2156,7 @@ function ChatViewContent(props: ChatViewProps) {
         worktreePath: activeThread?.worktreePath ?? null,
       })
     : null;
+  const projectGitCwd = activeProject?.workspaceRoot ?? null;
   const gitStatusQuery = useEnvironmentQuery(
     gitCwd === null
       ? null
@@ -2161,15 +2165,23 @@ function ChatViewContent(props: ChatViewProps) {
           input: { cwd: gitCwd },
         }),
   );
-  const projectRepositoryStatus = mapVcsStatusToProjectRepositoryStatus(gitStatusQuery.data);
+  const projectGitStatusQuery = useEnvironmentQuery(
+    activeProject && projectGitCwd
+      ? vcsEnvironment.status({
+          environmentId: activeProject.environmentId,
+          input: { cwd: projectGitCwd },
+        })
+      : null,
+  );
+  const projectRepositoryStatus = mapVcsStatusToProjectRepositoryStatus(projectGitStatusQuery.data);
   const projectOverviewSnapshot = useMemo(
     () =>
       buildProjectOverviewSnapshot({
         threads: projectManagementThreads,
         repositoryStatus: projectRepositoryStatus,
-        repositoryContext: { isWorktree: activeThread?.worktreePath != null },
+        repositoryContext: { isWorktree: false },
       }),
-    [activeThread?.worktreePath, projectManagementThreads, projectRepositoryStatus],
+    [projectManagementThreads, projectRepositoryStatus],
   );
   const latestProjectThread = useMemo(() => {
     const latest = projectOverviewSnapshot.linkedThreads.find(
@@ -2183,8 +2195,14 @@ function ChatViewContent(props: ChatViewProps) {
     );
   }, [projectManagementThreads, projectOverviewSnapshot.linkedThreads]);
   const startNewProjectThread = useNewThreadHandler();
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
+  const primaryKeybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const primaryAvailableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
+  const serverConfigs = useServerConfigs();
+  const activeProjectServerConfig = activeProject
+    ? (serverConfigs.get(activeProject.environmentId) ?? null)
+    : null;
+  const keybindings = activeProjectServerConfig?.keybindings ?? primaryKeybindings;
+  const availableEditors = activeProjectServerConfig?.availableEditors ?? primaryAvailableEditors;
   // Prefer an instance-id match so a custom Codex instance (e.g.
   // `codex_personal`) surfaces its own status/message in the banner rather
   // than the default Codex's. Falls back to first-match-by-kind when no
@@ -5065,8 +5083,8 @@ function ChatViewContent(props: ChatViewProps) {
       workspaceRoot={activeProject.workspaceRoot}
       environmentLabel={activeEnvironment?.label ?? activeProject.environmentId}
       environmentId={activeProject.environmentId}
-      branch={gitStatusQuery.data?.refName ?? activeThread.branch}
-      changedFileCount={gitStatusQuery.data?.workingTree.files.length ?? 0}
+      branch={projectGitStatusQuery.data?.refName ?? null}
+      changedFileCount={projectGitStatusQuery.data?.workingTree.files.length ?? 0}
       availableEditors={availableEditors}
       keybindings={keybindings}
       scripts={activeProject.scripts}
@@ -5134,16 +5152,17 @@ function ChatViewContent(props: ChatViewProps) {
         }
         mode="embedded"
       />
-    ) : activeRightPanelSurface?.kind === "git" && activeProject && gitCwd ? (
+    ) : activeRightPanelSurface?.kind === "git" && activeProject && projectGitCwd ? (
       <GitPanelSurface
         environmentId={activeProject.environmentId}
-        gitCwd={gitCwd}
-        activeThreadRef={isServerThread ? activeThreadRef : null}
-        {...(routeKind === "draft" && draftId ? { draftId } : {})}
-        status={gitStatusQuery.data}
-        statusPending={gitStatusQuery.isPending}
-        statusError={gitStatusQuery.error}
-        onOpenDiff={addDiffSurface}
+        gitCwd={projectGitCwd}
+        activeThreadRef={null}
+        status={projectGitStatusQuery.data}
+        statusPending={projectGitStatusQuery.isPending}
+        statusError={projectGitStatusQuery.error}
+        {...(isServerThread && activeThread.worktreePath === null
+          ? { onOpenDiff: addDiffSurface }
+          : {})}
       />
     ) : activeRightPanelSurface?.kind === "inference" && activeProject ? (
       <ProjectInferenceDashboardPage
