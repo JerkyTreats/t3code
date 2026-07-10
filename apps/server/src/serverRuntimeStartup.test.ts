@@ -18,11 +18,19 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 
 const unusedThreadSyncV2ProjectionMethods = {
   getThreadDetailV2ById: () => Effect.die("unused"),
+  getThreadMessagePage: () => Effect.die("unused"),
+  getThreadProposedPlanPage: () => Effect.die("unused"),
   getThreadActivityPage: () => Effect.die("unused"),
+  getThreadCheckpointPage: () => Effect.die("unused"),
   hydrateThreadActivityPayloads: () => Effect.die("unused"),
 } satisfies Pick<
   ProjectionSnapshotQuery.ProjectionSnapshotQueryShape,
-  "getThreadDetailV2ById" | "getThreadActivityPage" | "hydrateThreadActivityPayloads"
+  | "getThreadDetailV2ById"
+  | "getThreadMessagePage"
+  | "getThreadProposedPlanPage"
+  | "getThreadActivityPage"
+  | "getThreadCheckpointPage"
+  | "hydrateThreadActivityPayloads"
 >;
 
 it("uses the canonical Codex default for auto-bootstrapped model selection", () => {

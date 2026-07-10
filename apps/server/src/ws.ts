@@ -353,7 +353,10 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.subscribeThread, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.subscribeThreadV2, AuthOrchestrationReadScope],
+  [ORCHESTRATION_WS_METHODS.getThreadMessagePage, AuthOrchestrationReadScope],
+  [ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.getThreadActivityPage, AuthOrchestrationReadScope],
+  [ORCHESTRATION_WS_METHODS.getThreadCheckpointPage, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads, AuthOrchestrationReadScope],
   [WS_METHODS.serverGetConfig, AuthOrchestrationReadScope],
   [WS_METHODS.serverRefreshProviders, AuthOrchestrationOperateScope],
@@ -1294,6 +1297,34 @@ const makeWsRpcLayer = (
             }),
             { "rpc.aggregate": "orchestration" },
           ),
+        [ORCHESTRATION_WS_METHODS.getThreadMessagePage]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getThreadMessagePage,
+            projectionSnapshotQuery.getThreadMessagePage(input).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: `Failed to load thread message page for ${input.threadId}`,
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage,
+            projectionSnapshotQuery.getThreadProposedPlanPage(input).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: `Failed to load thread proposed plan page for ${input.threadId}`,
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
         [ORCHESTRATION_WS_METHODS.getThreadActivityPage]: (input) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.getThreadActivityPage,
@@ -1302,6 +1333,20 @@ const makeWsRpcLayer = (
                 (cause) =>
                   new OrchestrationGetSnapshotError({
                     message: `Failed to load thread activity page for ${input.threadId}`,
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.getThreadCheckpointPage]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getThreadCheckpointPage,
+            projectionSnapshotQuery.getThreadCheckpointPage(input).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: `Failed to load thread checkpoint page for ${input.threadId}`,
                     cause,
                   }),
               ),

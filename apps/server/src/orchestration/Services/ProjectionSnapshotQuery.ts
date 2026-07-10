@@ -12,6 +12,8 @@ import type {
   OrchestrationHydrateThreadActivityPayloadsResult,
   OrchestrationThreadActivityPageInput,
   OrchestrationThreadActivityPageResult,
+  OrchestrationThreadCheckpointPageInput,
+  OrchestrationThreadCheckpointPageResult,
   OrchestrationCheckpointSummary,
   OrchestrationProject,
   OrchestrationProjectShell,
@@ -19,6 +21,10 @@ import type {
   OrchestrationShellSnapshot,
   OrchestrationThread,
   OrchestrationThreadDetailV2Snapshot,
+  OrchestrationThreadMessagePageInput,
+  OrchestrationThreadMessagePageResult,
+  OrchestrationThreadProposedPlanPageInput,
+  OrchestrationThreadProposedPlanPageResult,
   OrchestrationThreadShell,
   OrchestrationThreadSyncV2Limits,
   ProjectId,
@@ -172,6 +178,14 @@ export interface ProjectionSnapshotQueryShape {
     limits?: OrchestrationThreadSyncV2Limits,
   ) => Effect.Effect<Option.Option<OrchestrationThreadDetailV2Snapshot>, ProjectionRepositoryError>;
 
+  readonly getThreadMessagePage: (
+    input: OrchestrationThreadMessagePageInput,
+  ) => Effect.Effect<OrchestrationThreadMessagePageResult, ProjectionRepositoryError>;
+
+  readonly getThreadProposedPlanPage: (
+    input: OrchestrationThreadProposedPlanPageInput,
+  ) => Effect.Effect<OrchestrationThreadProposedPlanPageResult, ProjectionRepositoryError>;
+
   /**
    * Page projected thread activity around the stable activity cursor used by
    * thread detail v2.
@@ -179,6 +193,10 @@ export interface ProjectionSnapshotQueryShape {
   readonly getThreadActivityPage: (
     input: OrchestrationThreadActivityPageInput,
   ) => Effect.Effect<OrchestrationThreadActivityPageResult, ProjectionRepositoryError>;
+
+  readonly getThreadCheckpointPage: (
+    input: OrchestrationThreadCheckpointPageInput,
+  ) => Effect.Effect<OrchestrationThreadCheckpointPageResult, ProjectionRepositoryError>;
 
   /**
    * Hydrate deferred v2 activity payloads on explicit demand.

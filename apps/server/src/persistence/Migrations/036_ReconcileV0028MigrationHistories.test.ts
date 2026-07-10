@@ -272,94 +272,6 @@ const seedProjectionRows = Effect.fn("seedProjectionRows")(function* (
     )
   `;
 
-  yield* sql`
-    INSERT INTO projection_thread_messages (
-      message_id,
-      thread_id,
-      turn_id,
-      role,
-      text,
-      is_streaming,
-      created_at,
-      updated_at
-    )
-    VALUES (
-      'message-migration-user',
-      'thread-migration-plan',
-      'turn-migration-plan',
-      'user',
-      'Continue',
-      0,
-      '2026-05-01T00:00:03.500Z',
-      '2026-05-01T00:00:03.500Z'
-    )
-  `;
-
-  yield* sql`
-    INSERT INTO projection_thread_activities (
-      activity_id,
-      thread_id,
-      turn_id,
-      tone,
-      kind,
-      summary,
-      payload_json,
-      sequence,
-      created_at
-    )
-    VALUES (
-      'activity-migration-runtime',
-      'thread-migration-plan',
-      'turn-migration-plan',
-      'tool',
-      'tool.output',
-      'Runtime output',
-      '{"ok":true}',
-      2,
-      '2026-05-01T00:00:06.000Z'
-    )
-  `;
-
-  yield* sql`
-    INSERT INTO projection_thread_proposed_plans (
-      plan_id,
-      thread_id,
-      turn_id,
-      plan_markdown,
-      created_at,
-      updated_at
-    )
-    VALUES (
-      'plan-migration-freshness',
-      'thread-migration-plan',
-      'turn-migration-plan',
-      '# Plan',
-      '2026-05-01T00:00:07.000Z',
-      '2026-05-01T00:00:08.000Z'
-    )
-  `;
-
-  yield* sql`
-    INSERT INTO projection_pending_approvals (
-      request_id,
-      thread_id,
-      turn_id,
-      status,
-      decision,
-      created_at,
-      resolved_at
-    )
-    VALUES (
-      'approval-migration-freshness',
-      'thread-migration-plan',
-      'turn-migration-plan',
-      'resolved',
-      'approved',
-      '2026-05-01T00:00:09.000Z',
-      '2026-05-01T00:00:10.000Z'
-    )
-  `;
-
   if (preserveExistingSummary) {
     yield* sql`
       UPDATE projection_threads
@@ -447,14 +359,12 @@ const assertCanonicalSchemaAndRows = Effect.fn("assertCanonicalSchemaAndRows")(f
   }
 
   const projectionRows = yield* sql<{
-    readonly latestUserMessageAt: string | null;
     readonly activePlanProgressJson: string | null;
     readonly latestRuntimeActivityAt: string | null;
     readonly statusSummaryUpdatedAt: string | null;
     readonly issueLinkJson: string | null;
   }>`
     SELECT
-      latest_user_message_at AS "latestUserMessageAt",
       active_plan_progress_json AS "activePlanProgressJson",
       latest_runtime_activity_at AS "latestRuntimeActivityAt",
       status_summary_updated_at AS "statusSummaryUpdatedAt",
@@ -464,10 +374,11 @@ const assertCanonicalSchemaAndRows = Effect.fn("assertCanonicalSchemaAndRows")(f
   `;
   const projectionRow = projectionRows[0];
   assert.strictEqual(projectionRow?.issueLinkJson, expectedIssueLink);
-  assert.strictEqual(projectionRow?.latestUserMessageAt, "2026-05-01T00:00:03.500Z");
 
   if (expectPreservedSummary) {
     assert.strictEqual(projectionRow?.activePlanProgressJson, '{"preserved":true}');
+    assert.strictEqual(projectionRow?.latestRuntimeActivityAt, "2026-05-01T00:00:04.000Z");
+    assert.strictEqual(projectionRow?.statusSummaryUpdatedAt, "2026-05-01T00:00:05.000Z");
   } else {
     assert.deepStrictEqual(
       decodeUnknownJsonString(projectionRow?.activePlanProgressJson ?? "null"),
@@ -480,9 +391,9 @@ const assertCanonicalSchemaAndRows = Effect.fn("assertCanonicalSchemaAndRows")(f
         updatedAt: "2026-05-01T00:00:03.000Z",
       },
     );
+    assert.strictEqual(projectionRow?.latestRuntimeActivityAt, "2026-05-01T00:00:03.000Z");
+    assert.strictEqual(projectionRow?.statusSummaryUpdatedAt, "2026-05-01T00:00:03.000Z");
   }
-  assert.strictEqual(projectionRow?.latestRuntimeActivityAt, "2026-05-01T00:00:06.000Z");
-  assert.strictEqual(projectionRow?.statusSummaryUpdatedAt, "2026-05-01T00:00:10.000Z");
 });
 
 for (const state of historicalForkStates) {

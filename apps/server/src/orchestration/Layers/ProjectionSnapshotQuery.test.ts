@@ -604,6 +604,38 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           (${ORCHESTRATION_PROJECTOR_NAMES.checkpoints}, 4, '2026-04-06T00:00:07.000Z')
       `;
 
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at
+        )
+        VALUES (
+          'message-archived-history', ${archivedThreadId}, NULL, 'user', 'Archived message', 0,
+          '2026-04-06T00:00:06.600Z', '2026-04-06T00:00:06.600Z'
+        )
+      `;
+      yield* sql`
+        INSERT INTO projection_thread_proposed_plans (
+          plan_id, thread_id, turn_id, plan_markdown, created_at, updated_at
+        )
+        VALUES (
+          'plan-archived-history', ${archivedThreadId}, NULL, '# Archived plan',
+          '2026-04-06T00:00:06.700Z', '2026-04-06T00:00:06.700Z'
+        )
+      `;
+      yield* sql`
+        INSERT INTO projection_turns (
+          thread_id, turn_id, pending_message_id, source_proposed_plan_thread_id,
+          source_proposed_plan_id, assistant_message_id, state, requested_at, started_at,
+          completed_at, checkpoint_turn_count, checkpoint_ref, checkpoint_status,
+          checkpoint_files_json
+        )
+        VALUES (
+          ${archivedThreadId}, 'turn-archived-history', NULL, NULL, NULL, NULL, 'completed',
+          '2026-04-06T00:00:06.800Z', '2026-04-06T00:00:06.800Z',
+          '2026-04-06T00:00:06.800Z', 1, 'checkpoint-archived-history', 'ready', '[]'
+        )
+      `;
+
       const shellSnapshot = yield* snapshotQuery.getShellSnapshot();
       assert.deepEqual(
         shellSnapshot.threads.map((thread) => thread.id),
@@ -645,6 +677,19 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       );
       assert.deepEqual(archivedHydration.payloads[0]?.payload, archivedPayload);
       assert.deepEqual(archivedHydration.omitted, []);
+      assert.equal(
+        (yield* snapshotQuery.getThreadMessagePage({ threadId: archivedThreadId })).items.length,
+        1,
+      );
+      assert.equal(
+        (yield* snapshotQuery.getThreadProposedPlanPage({ threadId: archivedThreadId })).items
+          .length,
+        1,
+      );
+      assert.equal(
+        (yield* snapshotQuery.getThreadCheckpointPage({ threadId: archivedThreadId })).items.length,
+        1,
+      );
 
       yield* sql`
         UPDATE projection_threads
@@ -671,6 +716,18 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           byteLength: null,
         },
       ]);
+      assert.deepEqual(
+        (yield* snapshotQuery.getThreadMessagePage({ threadId: archivedThreadId })).items,
+        [],
+      );
+      assert.deepEqual(
+        (yield* snapshotQuery.getThreadProposedPlanPage({ threadId: archivedThreadId })).items,
+        [],
+      );
+      assert.deepEqual(
+        (yield* snapshotQuery.getThreadCheckpointPage({ threadId: archivedThreadId })).items,
+        [],
+      );
     }),
   );
 
@@ -1128,7 +1185,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
     }),
   );
 
-  it.effect("defers large thread sync v2 activity payloads without truncating snapshots", () =>
+  it.effect("bounds thread sync v2 history and pages remaining activities", () =>
     Effect.gen(function* () {
       const snapshotQuery = yield* ProjectionSnapshotQuery;
       const sql = yield* SqlClient.SqlClient;
@@ -1141,6 +1198,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       yield* sql`DELETE FROM projection_projects`;
       yield* sql`DELETE FROM projection_threads`;
       yield* sql`DELETE FROM projection_thread_messages`;
+      yield* sql`DELETE FROM projection_thread_proposed_plans`;
       yield* sql`DELETE FROM projection_thread_activities`;
       yield* sql`DELETE FROM projection_thread_sessions`;
       yield* sql`DELETE FROM projection_turns`;
@@ -1167,6 +1225,40 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           '2026-04-03T00:00:01.000Z',
           NULL
         )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_thread_proposed_plans (
+          plan_id,
+          thread_id,
+          turn_id,
+          plan_markdown,
+          implemented_at,
+          implementation_thread_id,
+          created_at,
+          updated_at
+        )
+        VALUES
+          (
+            'plan-v2-1',
+            ${threadId},
+            NULL,
+            '# Older plan',
+            NULL,
+            NULL,
+            '2026-04-03T00:00:03.300Z',
+            '2026-04-03T00:00:03.300Z'
+          ),
+          (
+            'plan-v2-2',
+            ${threadId},
+            NULL,
+            '# Newer plan',
+            NULL,
+            NULL,
+            '2026-04-03T00:00:03.400Z',
+            '2026-04-03T00:00:03.400Z'
+          )
       `;
 
       yield* sql`
@@ -1254,17 +1346,81 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           sequence,
           created_at
         )
-        VALUES (
-          ${activityId},
-          ${threadId},
-          NULL,
-          'tool',
-          'tool.output',
-          'large payload',
-          ${largePayloadJson},
-          1,
-          '2026-04-03T00:00:04.000Z'
+        VALUES
+          (
+            'activity-older-payload',
+            ${threadId},
+            NULL,
+            'info',
+            'runtime.note',
+            'older payload',
+            '{"stage":"older"}',
+            0,
+            '2026-04-03T00:00:03.500Z'
+          ),
+          (
+            ${activityId},
+            ${threadId},
+            NULL,
+            'tool',
+            'tool.output',
+            'large payload',
+            ${largePayloadJson},
+            1,
+            '2026-04-03T00:00:04.000Z'
+          )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_turns (
+          thread_id,
+          turn_id,
+          pending_message_id,
+          source_proposed_plan_thread_id,
+          source_proposed_plan_id,
+          assistant_message_id,
+          state,
+          requested_at,
+          started_at,
+          completed_at,
+          checkpoint_turn_count,
+          checkpoint_ref,
+          checkpoint_status,
+          checkpoint_files_json
         )
+        VALUES
+          (
+            ${threadId},
+            'turn-v2-1',
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            'completed',
+            '2026-04-03T00:00:04.100Z',
+            '2026-04-03T00:00:04.100Z',
+            '2026-04-03T00:00:04.100Z',
+            1,
+            'checkpoint-v2-1',
+            'ready',
+            '[]'
+          ),
+          (
+            ${threadId},
+            'turn-v2-2',
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            'completed',
+            '2026-04-03T00:00:04.200Z',
+            '2026-04-03T00:00:04.200Z',
+            '2026-04-03T00:00:04.200Z',
+            2,
+            'checkpoint-v2-2',
+            'ready',
+            '[]'
+          )
       `;
 
       const snapshot = yield* snapshotQuery.getThreadDetailV2ById(threadId, {
@@ -1276,10 +1432,25 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
 
       assert.equal(snapshot._tag, "Some");
       if (snapshot._tag === "Some") {
-        assert.equal(snapshot.value.thread.messages.length, 2);
-        assert.equal(snapshot.value.windows.messages.returned, 2);
-        assert.equal(snapshot.value.windows.messages.hasMoreBefore, false);
+        assert.deepEqual(
+          snapshot.value.thread.messages.map((message) => message.id),
+          [asMessageId("message-v2-2")],
+        );
+        assert.deepEqual(
+          snapshot.value.thread.proposedPlans.map((plan) => plan.id),
+          ["plan-v2-2"],
+        );
         assert.equal(snapshot.value.thread.activities.length, 1);
+        assert.deepEqual(
+          snapshot.value.thread.checkpoints.map((checkpoint) => checkpoint.checkpointRef),
+          [asCheckpointRef("checkpoint-v2-2")],
+        );
+        for (const window of Object.values(snapshot.value.windows)) {
+          assert.equal(window.returned, 1);
+          assert.equal(window.limit, 1);
+          assert.equal(window.hasMoreBefore, true);
+          assert.equal(window.hasMoreAfter, false);
+        }
         assert.equal(snapshot.value.deferredActivityPayloads, 1);
         assert.ok(snapshot.value.estimatedSerializedBytes < 20_000);
         assert.deepEqual(snapshot.value.thread.activities[0]?.payload, {
@@ -1288,16 +1459,156 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         });
       }
 
+      const messagePage = yield* snapshotQuery.getThreadMessagePage({ threadId, limit: 1 });
+      assert.deepEqual(
+        messagePage.items.map((message) => message.id),
+        [asMessageId("message-v2-2")],
+      );
+      assert.equal(messagePage.hasMoreBefore, true);
+      assert.isNotNull(messagePage.startCursor);
+      const olderMessages = yield* snapshotQuery.getThreadMessagePage({
+        threadId,
+        limit: 1,
+        ...(messagePage.startCursor === null ? {} : { before: messagePage.startCursor }),
+      });
+      assert.deepEqual(
+        olderMessages.items.map((message) => message.id),
+        [asMessageId("message-v2-1")],
+      );
+      assert.equal(olderMessages.hasMoreBefore, false);
+
+      const planPage = yield* snapshotQuery.getThreadProposedPlanPage({ threadId, limit: 1 });
+      assert.deepEqual(
+        planPage.items.map((plan) => plan.id),
+        ["plan-v2-2"],
+      );
+      assert.equal(planPage.hasMoreBefore, true);
+      assert.isNotNull(planPage.startCursor);
+      const olderPlans = yield* snapshotQuery.getThreadProposedPlanPage({
+        threadId,
+        limit: 1,
+        ...(planPage.startCursor === null ? {} : { before: planPage.startCursor }),
+      });
+      assert.deepEqual(
+        olderPlans.items.map((plan) => plan.id),
+        ["plan-v2-1"],
+      );
+      assert.equal(olderPlans.hasMoreBefore, false);
+
+      const checkpointPage = yield* snapshotQuery.getThreadCheckpointPage({
+        threadId,
+        limit: 1,
+      });
+      assert.deepEqual(
+        checkpointPage.items.map((checkpoint) => checkpoint.checkpointRef),
+        [asCheckpointRef("checkpoint-v2-2")],
+      );
+      assert.equal(checkpointPage.hasMoreBefore, true);
+      assert.isNotNull(checkpointPage.startCursor);
+      const olderCheckpoints = yield* snapshotQuery.getThreadCheckpointPage({
+        threadId,
+        limit: 1,
+        ...(checkpointPage.startCursor === null ? {} : { before: checkpointPage.startCursor }),
+      });
+      assert.deepEqual(
+        olderCheckpoints.items.map((checkpoint) => checkpoint.checkpointRef),
+        [asCheckpointRef("checkpoint-v2-1")],
+      );
+      assert.equal(olderCheckpoints.hasMoreBefore, false);
+      for (const pageResult of [messagePage, planPage, checkpointPage]) {
+        assert.isTrue(pageResult.estimatedSerializedBytes <= 8 * 1024 * 1024);
+      }
+
       const page = yield* snapshotQuery.getThreadActivityPage({
         threadId,
         limit: 1,
       });
       assert.equal(page.items.length, 1);
+      assert.equal(page.hasMoreBefore, true);
+      assert.equal(page.hasMoreAfter, false);
       assert.equal(page.deferredActivityPayloads, 1);
       assert.deepEqual(page.items[0]?.payload, {
         __t3Deferred: "thread-activity-payload",
         byteLength: largePayloadBytes,
       });
+      assert.isNotNull(page.startCursor);
+      if (page.startCursor === null) {
+        return yield* Effect.die("Expected the activity page cursor.");
+      }
+      const previousPage = yield* snapshotQuery.getThreadActivityPage({
+        threadId,
+        limit: 1,
+        cursor: {
+          direction: "before",
+          position: page.startCursor,
+        },
+      });
+      assert.deepEqual(
+        previousPage.items.map((activity) => activity.id),
+        [asEventId("activity-older-payload")],
+      );
+      assert.equal(previousPage.hasMoreBefore, false);
+      assert.equal(previousPage.hasMoreAfter, true);
+
+      const fullDetail = yield* snapshotQuery.getThreadDetailById(threadId);
+      assert.equal(fullDetail._tag, "Some");
+      if (fullDetail._tag === "Some") {
+        assert.equal(fullDetail.value.messages.length, 2);
+        assert.equal(fullDetail.value.proposedPlans.length, 2);
+        assert.equal(fullDetail.value.activities.length, 2);
+        assert.equal(fullDetail.value.checkpoints.length, 2);
+      }
+
+      const largeMessageText = "m".repeat(4_500_000);
+      yield* sql`
+        UPDATE projection_thread_messages
+        SET text = ${largeMessageText}
+        WHERE thread_id = ${threadId}
+      `;
+      const byteBoundedSnapshot = yield* snapshotQuery.getThreadDetailV2ById(threadId, {
+        messages: 2,
+        proposedPlans: 1,
+        activities: 1,
+        checkpoints: 1,
+      });
+      assert.equal(byteBoundedSnapshot._tag, "Some");
+      if (byteBoundedSnapshot._tag === "Some") {
+        assert.equal(byteBoundedSnapshot.value.thread.messages.length, 1);
+        assert.equal(byteBoundedSnapshot.value.windows.messages.hasMoreBefore, true);
+        assert.isTrue(byteBoundedSnapshot.value.estimatedSerializedBytes <= 8 * 1024 * 1024);
+      }
+      const byteBoundedMessagePage = yield* snapshotQuery.getThreadMessagePage({
+        threadId,
+        limit: 2,
+      });
+      assert.equal(byteBoundedMessagePage.items.length, 1);
+      assert.equal(byteBoundedMessagePage.hasMoreBefore, true);
+      assert.isTrue(byteBoundedMessagePage.estimatedSerializedBytes <= 8 * 1024 * 1024);
+
+      const activityQueryPlan = yield* sql<{ readonly detail: string }>`
+        EXPLAIN QUERY PLAN
+        SELECT activity_id
+        FROM projection_thread_activities
+        WHERE thread_id = ${threadId}
+          AND (
+            sequence IS NULL
+            OR sequence < 1
+            OR (sequence = 1 AND created_at < '2026-04-03T00:00:04.000Z')
+            OR (
+              sequence = 1
+              AND created_at = '2026-04-03T00:00:04.000Z'
+              AND activity_id < ${activityId}
+            )
+          )
+        ORDER BY sequence DESC, created_at DESC, activity_id DESC
+        LIMIT 2
+      `;
+      assert.isTrue(
+        activityQueryPlan.some((row) =>
+          row.detail.includes("idx_projection_thread_activities_thread_sequence_created_id"),
+        ),
+      );
+      assert.isFalse(activityQueryPlan.some((row) => row.detail.includes("TEMP B-TREE")));
 
       const hydrated = yield* snapshotQuery.hydrateThreadActivityPayloads(threadId, [activityId]);
       assert.equal(hydrated.omitted.length, 0);
