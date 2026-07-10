@@ -33,7 +33,10 @@ export const ORCHESTRATION_WS_METHODS = {
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
   subscribeThreadV2: "orchestration.subscribeThreadV2",
+  getThreadMessagePage: "orchestration.getThreadMessagePage",
+  getThreadProposedPlanPage: "orchestration.getThreadProposedPlanPage",
   getThreadActivityPage: "orchestration.getThreadActivityPage",
+  getThreadCheckpointPage: "orchestration.getThreadCheckpointPage",
   hydrateThreadActivityPayloads: "orchestration.hydrateThreadActivityPayloads",
 } as const;
 export const ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS = 50;
@@ -532,6 +535,23 @@ export const OrchestrationActivityCursor = Schema.Struct({
 });
 export type OrchestrationActivityCursor = typeof OrchestrationActivityCursor.Type;
 
+export const OrchestrationMessageCursor = Schema.Struct({
+  messageId: MessageId,
+  createdAt: IsoDateTime,
+});
+export type OrchestrationMessageCursor = typeof OrchestrationMessageCursor.Type;
+
+export const OrchestrationProposedPlanCursor = Schema.Struct({
+  planId: OrchestrationProposedPlanId,
+  createdAt: IsoDateTime,
+});
+export type OrchestrationProposedPlanCursor = typeof OrchestrationProposedPlanCursor.Type;
+
+export const OrchestrationCheckpointCursor = Schema.Struct({
+  checkpointTurnCount: NonNegativeInt,
+});
+export type OrchestrationCheckpointCursor = typeof OrchestrationCheckpointCursor.Type;
+
 export const OrchestrationThreadDetailV2Snapshot = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   thread: OrchestrationThread,
@@ -540,6 +560,55 @@ export const OrchestrationThreadDetailV2Snapshot = Schema.Struct({
   estimatedSerializedBytes: NonNegativeInt,
 });
 export type OrchestrationThreadDetailV2Snapshot = typeof OrchestrationThreadDetailV2Snapshot.Type;
+
+export const OrchestrationThreadMessagePageInput = Schema.Struct({
+  threadId: ThreadId,
+  limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
+  before: Schema.optional(OrchestrationMessageCursor),
+});
+export type OrchestrationThreadMessagePageInput = typeof OrchestrationThreadMessagePageInput.Type;
+
+export const OrchestrationThreadMessagePageResult = Schema.Struct({
+  items: Schema.Array(OrchestrationMessage),
+  startCursor: Schema.NullOr(OrchestrationMessageCursor),
+  hasMoreBefore: Schema.Boolean,
+  estimatedSerializedBytes: NonNegativeInt,
+});
+export type OrchestrationThreadMessagePageResult = typeof OrchestrationThreadMessagePageResult.Type;
+
+export const OrchestrationThreadProposedPlanPageInput = Schema.Struct({
+  threadId: ThreadId,
+  limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(100))),
+  before: Schema.optional(OrchestrationProposedPlanCursor),
+});
+export type OrchestrationThreadProposedPlanPageInput =
+  typeof OrchestrationThreadProposedPlanPageInput.Type;
+
+export const OrchestrationThreadProposedPlanPageResult = Schema.Struct({
+  items: Schema.Array(OrchestrationProposedPlan),
+  startCursor: Schema.NullOr(OrchestrationProposedPlanCursor),
+  hasMoreBefore: Schema.Boolean,
+  estimatedSerializedBytes: NonNegativeInt,
+});
+export type OrchestrationThreadProposedPlanPageResult =
+  typeof OrchestrationThreadProposedPlanPageResult.Type;
+
+export const OrchestrationThreadCheckpointPageInput = Schema.Struct({
+  threadId: ThreadId,
+  limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
+  before: Schema.optional(OrchestrationCheckpointCursor),
+});
+export type OrchestrationThreadCheckpointPageInput =
+  typeof OrchestrationThreadCheckpointPageInput.Type;
+
+export const OrchestrationThreadCheckpointPageResult = Schema.Struct({
+  items: Schema.Array(OrchestrationCheckpointSummary),
+  startCursor: Schema.NullOr(OrchestrationCheckpointCursor),
+  hasMoreBefore: Schema.Boolean,
+  estimatedSerializedBytes: NonNegativeInt,
+});
+export type OrchestrationThreadCheckpointPageResult =
+  typeof OrchestrationThreadCheckpointPageResult.Type;
 
 export const OrchestrationThreadActivityPageInput = Schema.Struct({
   threadId: ThreadId,
@@ -1401,9 +1470,21 @@ export const OrchestrationRpcSchemas = {
     input: OrchestrationSubscribeThreadV2Input,
     output: OrchestrationThreadStreamV2Item,
   },
+  getThreadMessagePage: {
+    input: OrchestrationThreadMessagePageInput,
+    output: OrchestrationThreadMessagePageResult,
+  },
+  getThreadProposedPlanPage: {
+    input: OrchestrationThreadProposedPlanPageInput,
+    output: OrchestrationThreadProposedPlanPageResult,
+  },
   getThreadActivityPage: {
     input: OrchestrationThreadActivityPageInput,
     output: OrchestrationThreadActivityPageResult,
+  },
+  getThreadCheckpointPage: {
+    input: OrchestrationThreadCheckpointPageInput,
+    output: OrchestrationThreadCheckpointPageResult,
   },
   hydrateThreadActivityPayloads: {
     input: OrchestrationHydrateThreadActivityPayloadsInput,

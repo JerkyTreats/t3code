@@ -729,11 +729,38 @@ export const WsOrchestrationSubscribeThreadV2Rpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationGetThreadMessagePageRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadMessagePage,
+  {
+    payload: OrchestrationRpcSchemas.getThreadMessagePage.input,
+    success: OrchestrationRpcSchemas.getThreadMessagePage.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsOrchestrationGetThreadProposedPlanPageRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage,
+  {
+    payload: OrchestrationRpcSchemas.getThreadProposedPlanPage.input,
+    success: OrchestrationRpcSchemas.getThreadProposedPlanPage.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsOrchestrationGetThreadActivityPageRpc = Rpc.make(
   ORCHESTRATION_WS_METHODS.getThreadActivityPage,
   {
     payload: OrchestrationRpcSchemas.getThreadActivityPage.input,
     success: OrchestrationRpcSchemas.getThreadActivityPage.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsOrchestrationGetThreadCheckpointPageRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadCheckpointPage,
+  {
+    payload: OrchestrationRpcSchemas.getThreadCheckpointPage.input,
+    success: OrchestrationRpcSchemas.getThreadCheckpointPage.output,
     error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
   },
 );
@@ -860,6 +887,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
   WsOrchestrationSubscribeThreadV2Rpc,
+  WsOrchestrationGetThreadMessagePageRpc,
+  WsOrchestrationGetThreadProposedPlanPageRpc,
   WsOrchestrationGetThreadActivityPageRpc,
+  WsOrchestrationGetThreadCheckpointPageRpc,
   WsOrchestrationHydrateThreadActivityPayloadsRpc,
 );
