@@ -6,11 +6,12 @@ const DIAGNOSTIC_IDENTIFIER_LIMIT = 128;
 const DIAGNOSTIC_MESSAGE_LIMIT = 512;
 const DIAGNOSTIC_MESSAGE_INPUT_LIMIT = 4096;
 const JSON_QUOTED_SENSITIVE_FIELD =
-  /"(authorization|password|secret|token|wsTicket|ticket)"\s*:\s*"(?:\\.|[^"\\])*"/giu;
-const AUTHORIZATION_BEARER_VALUE = /\bauthorization\s*:\s*bearer\s+[^\s,;]+/giu;
+  /"(authorization|password|secret|token|wsTicket|ticket|api[_-]?key|x[_-]?api[_-]?key)"\s*:\s*"(?:\\.|[^"\\])*"/giu;
+const AUTHORIZATION_FIELD =
+  /(\bauthorization\b\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\r\n,;]+)/giu;
 const BEARER_CREDENTIAL = /\b(bearer)\s+[^\s,;]+/giu;
 const SENSITIVE_ASSIGNMENT =
-  /\b(authorization|password|secret|token|wsTicket|ticket)\b\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s,;]+)/giu;
+  /\b(authorization|password|secret|token|wsTicket|ticket|api[_-]?key|x[_-]?api[_-]?key)\b\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s,;]+)/giu;
 const DIAGNOSTIC_URL = /(?:https?|wss?|file):\/\/[^\s"'<>),;}\]]+/giu;
 
 export type ThreadSyncDiagnosticsVersion = "v1" | "v2";
@@ -275,7 +276,7 @@ function sanitizeDiagnosticError(error: unknown): string {
   const sanitized = message
     .replace(DIAGNOSTIC_URL, redactDiagnosticUrl)
     .replace(JSON_QUOTED_SENSITIVE_FIELD, (_match, field: string) => `"${field}":"[redacted]"`)
-    .replace(AUTHORIZATION_BEARER_VALUE, "Authorization: [redacted]")
+    .replace(AUTHORIZATION_FIELD, "$1[redacted]")
     .replace(BEARER_CREDENTIAL, "$1 [redacted]")
     .replace(SENSITIVE_ASSIGNMENT, "$1=[redacted]")
     .split("")

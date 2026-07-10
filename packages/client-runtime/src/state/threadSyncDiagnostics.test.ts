@@ -64,7 +64,7 @@ describe("thread sync diagnostics", () => {
     expect(snapshots).toEqual([1, 1, 1]);
   });
 
-  it("redacts bearer headers, quoted fields, tickets, and urls", () => {
+  it("redacts authorization schemes, API keys, quoted fields, tickets, and urls", () => {
     recordThreadSyncError({
       environmentId: ENVIRONMENT_ID,
       threadId: THREAD_ID,
@@ -72,9 +72,12 @@ describe("thread sync diagnostics", () => {
       error: new Error(
         [
           "Authorization: Bearer authorization-secret",
+          "Authorization: Basic basic-secret",
+          "Authorization: ApiKey api-key-secret",
           "Bearer standalone-secret",
-          '{"token":"json-token","ticket":"json-ticket","wsTicket":"json-ws-ticket"}',
+          '{"token":"json-token","ticket":"json-ticket","wsTicket":"json-ws-ticket","apiKey":"json-api-key","x-api-key":"json-x-api-key"}',
           "ticket=assignment-ticket wsTicket: assignment-ws-ticket",
+          "api_key=assignment-api-key x-api-key: assignment-x-api-key",
           "wss://user:password@example.test/ws?wsTicket=url-ws-ticket#trace",
           "https://example.test/api?token=url-token",
         ].join("\n"),
@@ -85,12 +88,18 @@ describe("thread sync diagnostics", () => {
     const serialized = JSON.stringify(entry);
     for (const secret of [
       "authorization-secret",
+      "basic-secret",
+      "api-key-secret",
       "standalone-secret",
       "json-token",
       "json-ticket",
       "json-ws-ticket",
       "assignment-ticket",
       "assignment-ws-ticket",
+      "assignment-api-key",
+      "assignment-x-api-key",
+      "json-api-key",
+      "json-x-api-key",
       "url-ws-ticket",
       "url-token",
       "password@example",
@@ -98,6 +107,8 @@ describe("thread sync diagnostics", () => {
       expect(serialized).not.toContain(secret);
     }
     expect(entry?.lastError).toContain("Authorization=[redacted]");
+    expect(entry?.lastError).toContain("api_key=[redacted]");
+    expect(entry?.lastError).toContain('"x-api-key":"[redacted]"');
     expect(entry?.lastError).toContain('"token":"[redacted]"');
     expect(entry?.lastError).toContain("ticket=[redacted]");
     expect(entry?.lastError).toContain("wsTicket=[redacted]");

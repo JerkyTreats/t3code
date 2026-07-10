@@ -109,6 +109,12 @@ import type {
   OrchestrationHydrateThreadActivityPayloadsResult,
   OrchestrationThreadActivityPageInput,
   OrchestrationThreadActivityPageResult,
+  OrchestrationThreadCheckpointPageInput,
+  OrchestrationThreadCheckpointPageResult,
+  OrchestrationThreadMessagePageInput,
+  OrchestrationThreadMessagePageResult,
+  OrchestrationThreadProposedPlanPageInput,
+  OrchestrationThreadProposedPlanPageResult,
   OrchestrationGetTurnDiffInput,
   OrchestrationGetTurnDiffResult,
   OrchestrationShellSnapshot,
@@ -1295,6 +1301,15 @@ export interface EnvironmentApi {
     getThreadActivityPage: (
       input: OrchestrationThreadActivityPageInput,
     ) => Promise<OrchestrationThreadActivityPageResult>;
+    getThreadMessagePage: (
+      input: OrchestrationThreadMessagePageInput,
+    ) => Promise<OrchestrationThreadMessagePageResult>;
+    getThreadProposedPlanPage: (
+      input: OrchestrationThreadProposedPlanPageInput,
+    ) => Promise<OrchestrationThreadProposedPlanPageResult>;
+    getThreadCheckpointPage: (
+      input: OrchestrationThreadCheckpointPageInput,
+    ) => Promise<OrchestrationThreadCheckpointPageResult>;
     hydrateThreadActivityPayloads: (
       input: OrchestrationHydrateThreadActivityPayloadsInput,
     ) => Promise<OrchestrationHydrateThreadActivityPayloadsResult>;

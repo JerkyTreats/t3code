@@ -1,6 +1,10 @@
 import {
   type EventId,
   ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS,
   type EnvironmentId as EnvironmentIdType,
   type OrchestrationEvent,
   type OrchestrationThread,
@@ -140,7 +144,9 @@ function loadThreadSyncV2HistoryPages<T, Cursor, E, R>(options: {
   readonly items: ReadonlyArray<T>;
   readonly hasMoreBefore: boolean;
   readonly initialCursor: (item: T | undefined) => Cursor | null;
-  readonly loadPage: (cursor: Cursor) => Effect.Effect<ThreadSyncV2HistoryPage<T, Cursor>, E, R>;
+  readonly loadPage: (
+    cursor: Cursor | null,
+  ) => Effect.Effect<ThreadSyncV2HistoryPage<T, Cursor>, E, R>;
   readonly itemKey: (item: T) => string | number;
   readonly cursorKey: (cursor: Cursor) => string | number;
   readonly budget: ThreadSyncV2HistoryPageBudget;
@@ -153,11 +159,6 @@ function loadThreadSyncV2HistoryPages<T, Cursor, E, R>(options: {
     let cursor = options.initialCursor(options.items[0]);
 
     while (hasMoreBefore) {
-      if (cursor === null) {
-        return yield* Effect.fail(
-          new ThreadSyncV2PagingError("Thread sync v2 history page is missing its start cursor."),
-        );
-      }
       if (options.budget.requests >= THREAD_SYNC_V2_MAX_HISTORY_PAGE_REQUESTS) {
         return yield* Effect.fail(
           new ThreadSyncV2PagingError(
@@ -184,7 +185,7 @@ function loadThreadSyncV2HistoryPages<T, Cursor, E, R>(options: {
       }
       if (
         page.startCursor === null ||
-        options.cursorKey(page.startCursor) === options.cursorKey(cursor)
+        (cursor !== null && options.cursorKey(page.startCursor) === options.cursorKey(cursor))
       ) {
         return yield* Effect.fail(
           new ThreadSyncV2PagingError("Thread sync v2 history paging did not advance."),
@@ -221,7 +222,11 @@ const hydrateThreadSyncV2History = Effect.fn("EnvironmentThreadState.hydrateThre
       initialCursor: (message) =>
         message === undefined ? null : { messageId: message.id, createdAt: message.createdAt },
       loadPage: (before) =>
-        historyPager.getMessagePage({ threadId: snapshot.thread.id, limit: 200, before }),
+        historyPager.getMessagePage({
+          threadId: snapshot.thread.id,
+          limit: ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS,
+          ...(before === null ? {} : { before }),
+        }),
       itemKey: (message) => message.id,
       cursorKey: (cursor) => `${cursor.createdAt}:${cursor.messageId}`,
       budget,
@@ -232,7 +237,11 @@ const hydrateThreadSyncV2History = Effect.fn("EnvironmentThreadState.hydrateThre
       initialCursor: (plan) =>
         plan === undefined ? null : { planId: plan.id, createdAt: plan.createdAt },
       loadPage: (before) =>
-        historyPager.getProposedPlanPage({ threadId: snapshot.thread.id, limit: 100, before }),
+        historyPager.getProposedPlanPage({
+          threadId: snapshot.thread.id,
+          limit: ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS,
+          ...(before === null ? {} : { before }),
+        }),
       itemKey: (plan) => plan.id,
       cursorKey: (cursor) => `${cursor.createdAt}:${cursor.planId}`,
       budget,
@@ -251,8 +260,8 @@ const hydrateThreadSyncV2History = Effect.fn("EnvironmentThreadState.hydrateThre
       loadPage: (position) =>
         historyPager.getActivityPage({
           threadId: snapshot.thread.id,
-          limit: 300,
-          cursor: { direction: "before", position },
+          limit: ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS,
+          ...(position === null ? {} : { cursor: { direction: "before" as const, position } }),
         }),
       itemKey: (activity) => activity.id,
       cursorKey: (cursor) => `${cursor.createdAt}:${cursor.sequence ?? ""}:${cursor.activityId}`,
@@ -264,7 +273,11 @@ const hydrateThreadSyncV2History = Effect.fn("EnvironmentThreadState.hydrateThre
       initialCursor: (checkpoint) =>
         checkpoint === undefined ? null : { checkpointTurnCount: checkpoint.checkpointTurnCount },
       loadPage: (before) =>
-        historyPager.getCheckpointPage({ threadId: snapshot.thread.id, limit: 200, before }),
+        historyPager.getCheckpointPage({
+          threadId: snapshot.thread.id,
+          limit: ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS,
+          ...(before === null ? {} : { before }),
+        }),
       itemKey: (checkpoint) => checkpoint.checkpointRef,
       cursorKey: (cursor) => cursor.checkpointTurnCount,
       budget,
@@ -519,6 +532,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     syncStatus: WAITING_ENVIRONMENT_THREAD_SYNC_STATUS,
   });
   const lastSequence = yield* SubscriptionRef.make(0);
+  const lastSyncError = yield* Ref.make<Option.Option<string>>(Option.none());
   const useThreadSyncV2 = yield* Ref.make(true);
   const persistence = yield* Queue.sliding<OrchestrationThread>(1);
 
@@ -547,7 +561,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const setSynchronizing = SubscriptionRef.update(state, (current) => ({
     ...current,
     status: "synchronizing" as const,
-    error: Option.none(),
+    error: current.error,
     syncStatus:
       current.syncStatus?.phase === "live"
         ? current.syncStatus
@@ -559,7 +573,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       : {
           ...current,
           status: "synchronizing" as const,
-          error: Option.none(),
+          error: current.error,
         },
   );
   const setDisconnected = SubscriptionRef.update(state, (current) => ({
@@ -583,6 +597,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         error: new Error(message),
       }),
     );
+    yield* Ref.set(lastSyncError, Option.some(message));
     yield* SubscriptionRef.set(state, {
       ...current,
       status: current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
@@ -598,13 +613,14 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const setSubscribing = Effect.fn("EnvironmentThreadState.setSubscribing")(function* (
     version: EnvironmentThreadSyncVersion,
   ) {
+    const syncError = yield* Ref.get(lastSyncError);
     yield* Effect.sync(() => recordThreadSyncSubscription({ environmentId, threadId, version }));
     yield* SubscriptionRef.update(
       state,
       (current): EnvironmentThreadState => ({
         ...current,
         status: current.status === "deleted" ? current.status : "synchronizing",
-        error: Option.none(),
+        error: syncError,
         syncStatus: {
           phase: "subscribing",
           version,
@@ -639,6 +655,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     thread: OrchestrationThread,
     syncStatus: EnvironmentThreadSyncStatus,
   ) {
+    yield* Ref.set(lastSyncError, Option.none());
     yield* SubscriptionRef.set(state, {
       data: Option.some(thread),
       status: "live",
@@ -649,6 +666,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   });
 
   const setDeleted = Effect.fn("EnvironmentThreadState.setDeleted")(function* () {
+    yield* Ref.set(lastSyncError, Option.none());
     yield* SubscriptionRef.set(state, {
       data: Option.none(),
       status: "deleted",

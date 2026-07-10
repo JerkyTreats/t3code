@@ -804,6 +804,67 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("pages backward from an empty byte-trimmed initial window", () =>
+    Effect.gen(function* () {
+      const olderMessage = historyMessage(1);
+      const pagedSnapshot = {
+        ...v2Snapshot({ ...BASE_THREAD, messages: [] }),
+        snapshot: {
+          ...v2Snapshot({ ...BASE_THREAD, messages: [] }).snapshot,
+          windows: {
+            ...v2Snapshot({ ...BASE_THREAD, messages: [] }).snapshot.windows,
+            messages: {
+              ...v2Snapshot({ ...BASE_THREAD, messages: [] }).snapshot.windows.messages,
+              hasMoreBefore: true,
+            },
+          },
+        },
+      };
+      let pageAttempt = 0;
+      const harness = yield* makeHarness({
+        threadSyncV2: true,
+        getMessagePage: (input) => {
+          pageAttempt += 1;
+          if (pageAttempt === 1) {
+            expect(input.before).toBeUndefined();
+            return Effect.succeed({
+              items: [],
+              startCursor: {
+                messageId: olderMessage.id,
+                createdAt: olderMessage.createdAt,
+              },
+              hasMoreBefore: true,
+              estimatedSerializedBytes: 64,
+            });
+          }
+          expect(input.before?.messageId).toBe(olderMessage.id);
+          return Effect.succeed({
+            items: [olderMessage],
+            startCursor: {
+              messageId: olderMessage.id,
+              createdAt: olderMessage.createdAt,
+            },
+            hasMoreBefore: false,
+            estimatedSerializedBytes: 64,
+          });
+        },
+      });
+
+      yield* Queue.offer(harness.v2Inputs, pagedSnapshot);
+      const live = yield* awaitThreadState(
+        harness.observed,
+        (state) =>
+          state.syncStatus?.phase === "live" &&
+          Option.getOrNull(state.data)?.messages[0]?.id === olderMessage.id,
+      );
+
+      expect(Option.getOrThrow(live.data).messages.map((message) => message.id)).toEqual([
+        olderMessage.id,
+      ]);
+      expect(pageAttempt).toBe(2);
+    }),
+  );
+
   it.effect("retries a failed history page before publishing the v2 snapshot", () =>
     Effect.gen(function* () {
       const olderMessage = historyMessage(1);
@@ -1255,6 +1316,7 @@ describe("EnvironmentThreads", () => {
     Effect.gen(function* () {
       const harness = yield* makeHarness({ cached: BASE_THREAD });
       yield* Queue.offer(harness.inputs, snapshot(BASE_THREAD));
+      yield* awaitThreadState(harness.observed, (value) => value.status === "live");
       yield* Queue.offer(harness.inputs, new Error("stream failed"));
 
       const state = yield* awaitThreadState(harness.observed, (value) =>
@@ -1277,6 +1339,13 @@ describe("EnvironmentThreads", () => {
         }
         yield* Effect.yieldNow;
       }
+      const retrying = yield* awaitThreadState(
+        harness.observed,
+        (value) => value.syncStatus?.phase === "subscribing" && Option.isSome(value.data),
+      );
+      expect(Option.getOrThrow(retrying.data)).toEqual(BASE_THREAD);
+      expect(Option.getOrThrow(retrying.error)).toBe("stream failed");
+      expect(retrying.syncStatus?.phase).toBe("subscribing");
       yield* Queue.offer(
         harness.inputs,
         snapshot({

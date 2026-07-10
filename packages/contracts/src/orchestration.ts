@@ -40,6 +40,11 @@ export const ORCHESTRATION_WS_METHODS = {
   hydrateThreadActivityPayloads: "orchestration.hydrateThreadActivityPayloads",
 } as const;
 export const ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS = 50;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES = 8 * 1024 * 1024;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS = 200;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS = 100;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS = 300;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS = 200;
 
 export const ProviderApprovalPolicy = Schema.Literals([
   "untrusted",
@@ -493,10 +498,22 @@ export const OrchestrationThreadDetailSnapshot = Schema.Struct({
 export type OrchestrationThreadDetailSnapshot = typeof OrchestrationThreadDetailSnapshot.Type;
 
 export const OrchestrationThreadSyncV2Limits = Schema.Struct({
-  messages: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
-  proposedPlans: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(100))),
-  activities: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(300))),
-  checkpoints: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
+  messages: Schema.optional(
+    PositiveInt.check(Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS)),
+  ),
+  proposedPlans: Schema.optional(
+    PositiveInt.check(
+      Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS),
+    ),
+  ),
+  activities: Schema.optional(
+    PositiveInt.check(Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS)),
+  ),
+  checkpoints: Schema.optional(
+    PositiveInt.check(
+      Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS),
+    ),
+  ),
 });
 export type OrchestrationThreadSyncV2Limits = typeof OrchestrationThreadSyncV2Limits.Type;
 
@@ -557,62 +574,88 @@ export const OrchestrationThreadDetailV2Snapshot = Schema.Struct({
   thread: OrchestrationThread,
   windows: OrchestrationThreadSyncV2Windows,
   deferredActivityPayloads: NonNegativeInt,
-  estimatedSerializedBytes: NonNegativeInt,
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
 });
 export type OrchestrationThreadDetailV2Snapshot = typeof OrchestrationThreadDetailV2Snapshot.Type;
 
 export const OrchestrationThreadMessagePageInput = Schema.Struct({
   threadId: ThreadId,
-  limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
+  limit: Schema.optional(
+    PositiveInt.check(Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS)),
+  ),
   before: Schema.optional(OrchestrationMessageCursor),
 });
 export type OrchestrationThreadMessagePageInput = typeof OrchestrationThreadMessagePageInput.Type;
 
 export const OrchestrationThreadMessagePageResult = Schema.Struct({
-  items: Schema.Array(OrchestrationMessage),
+  items: Schema.Array(OrchestrationMessage).check(
+    Schema.isMaxLength(ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS),
+  ),
   startCursor: Schema.NullOr(OrchestrationMessageCursor),
   hasMoreBefore: Schema.Boolean,
-  estimatedSerializedBytes: NonNegativeInt,
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
 });
 export type OrchestrationThreadMessagePageResult = typeof OrchestrationThreadMessagePageResult.Type;
 
 export const OrchestrationThreadProposedPlanPageInput = Schema.Struct({
   threadId: ThreadId,
-  limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(100))),
+  limit: Schema.optional(
+    PositiveInt.check(
+      Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS),
+    ),
+  ),
   before: Schema.optional(OrchestrationProposedPlanCursor),
 });
 export type OrchestrationThreadProposedPlanPageInput =
   typeof OrchestrationThreadProposedPlanPageInput.Type;
 
 export const OrchestrationThreadProposedPlanPageResult = Schema.Struct({
-  items: Schema.Array(OrchestrationProposedPlan),
+  items: Schema.Array(OrchestrationProposedPlan).check(
+    Schema.isMaxLength(ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS),
+  ),
   startCursor: Schema.NullOr(OrchestrationProposedPlanCursor),
   hasMoreBefore: Schema.Boolean,
-  estimatedSerializedBytes: NonNegativeInt,
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
 });
 export type OrchestrationThreadProposedPlanPageResult =
   typeof OrchestrationThreadProposedPlanPageResult.Type;
 
 export const OrchestrationThreadCheckpointPageInput = Schema.Struct({
   threadId: ThreadId,
-  limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
+  limit: Schema.optional(
+    PositiveInt.check(
+      Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS),
+    ),
+  ),
   before: Schema.optional(OrchestrationCheckpointCursor),
 });
 export type OrchestrationThreadCheckpointPageInput =
   typeof OrchestrationThreadCheckpointPageInput.Type;
 
 export const OrchestrationThreadCheckpointPageResult = Schema.Struct({
-  items: Schema.Array(OrchestrationCheckpointSummary),
+  items: Schema.Array(OrchestrationCheckpointSummary).check(
+    Schema.isMaxLength(ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS),
+  ),
   startCursor: Schema.NullOr(OrchestrationCheckpointCursor),
   hasMoreBefore: Schema.Boolean,
-  estimatedSerializedBytes: NonNegativeInt,
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
 });
 export type OrchestrationThreadCheckpointPageResult =
   typeof OrchestrationThreadCheckpointPageResult.Type;
 
 export const OrchestrationThreadActivityPageInput = Schema.Struct({
   threadId: ThreadId,
-  limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(300))),
+  limit: Schema.optional(
+    PositiveInt.check(Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS)),
+  ),
   cursor: Schema.optional(
     Schema.Struct({
       direction: Schema.Literals(["before", "after"]),
@@ -623,13 +666,17 @@ export const OrchestrationThreadActivityPageInput = Schema.Struct({
 export type OrchestrationThreadActivityPageInput = typeof OrchestrationThreadActivityPageInput.Type;
 
 export const OrchestrationThreadActivityPageResult = Schema.Struct({
-  items: Schema.Array(OrchestrationThreadActivity),
+  items: Schema.Array(OrchestrationThreadActivity).check(
+    Schema.isMaxLength(ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS),
+  ),
   startCursor: Schema.NullOr(OrchestrationActivityCursor),
   endCursor: Schema.NullOr(OrchestrationActivityCursor),
   hasMoreBefore: Schema.Boolean,
   hasMoreAfter: Schema.Boolean,
   deferredActivityPayloads: NonNegativeInt,
-  estimatedSerializedBytes: NonNegativeInt,
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
 });
 export type OrchestrationThreadActivityPageResult =
   typeof OrchestrationThreadActivityPageResult.Type;
@@ -1342,7 +1389,9 @@ export const OrchestrationThreadStreamV2Item = Schema.Union([
     kind: Schema.Literal("event"),
     event: OrchestrationEvent,
     deferredActivityPayloads: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
-    estimatedSerializedBytes: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+    estimatedSerializedBytes: NonNegativeInt.check(
+      Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+    ).pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   }),
 ]);
 export type OrchestrationThreadStreamV2Item = typeof OrchestrationThreadStreamV2Item.Type;

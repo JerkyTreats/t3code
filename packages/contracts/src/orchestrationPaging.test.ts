@@ -5,12 +5,18 @@ import * as Schema from "effect/Schema";
 import {
   ORCHESTRATION_WS_METHODS,
   OrchestrationRpcSchemas,
+  OrchestrationThreadActivityPageResult,
   OrchestrationThreadCheckpointPageInput,
   OrchestrationThreadCheckpointPageResult,
   OrchestrationThreadMessagePageInput,
   OrchestrationThreadMessagePageResult,
   OrchestrationThreadProposedPlanPageInput,
   OrchestrationThreadProposedPlanPageResult,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS,
 } from "./orchestration.ts";
 import {
   WsOrchestrationGetThreadCheckpointPageRpc,
@@ -33,6 +39,7 @@ const decodeProposedPlanPageResult = Schema.decodeUnknownEffect(
 const decodeCheckpointPageResult = Schema.decodeUnknownEffect(
   OrchestrationThreadCheckpointPageResult,
 );
+const decodeActivityPageResult = Schema.decodeUnknownEffect(OrchestrationThreadActivityPageResult);
 
 it.effect("decodes backward history cursors for every non-activity collection", () =>
   Effect.gen(function* () {
@@ -157,6 +164,111 @@ it.effect("decodes ordered history page results with resumable start cursors", (
     assert.strictEqual(plans.items[0]?.implementedAt, null);
     assert.strictEqual(plans.items[0]?.implementationThreadId, null);
     assert.strictEqual(checkpoints.items[0]?.checkpointRef, "checkpoint-1");
+  }),
+);
+
+it.effect("rejects oversized history page results", () =>
+  Effect.gen(function* () {
+    const message = {
+      id: "message-1",
+      role: "user" as const,
+      text: "Message",
+      turnId: null,
+      streaming: false,
+      createdAt: "2026-07-10T10:00:00.000Z",
+      updatedAt: "2026-07-10T10:00:00.000Z",
+    };
+    const plan = {
+      id: "plan-1",
+      turnId: null,
+      planMarkdown: "Plan",
+      implementedAt: null,
+      implementationThreadId: null,
+      createdAt: "2026-07-10T10:00:00.000Z",
+      updatedAt: "2026-07-10T10:00:00.000Z",
+    };
+    const activity = {
+      id: "event-1",
+      tone: "info" as const,
+      kind: "activity",
+      summary: "Activity",
+      payload: null,
+      turnId: null,
+      sequence: 1,
+      createdAt: "2026-07-10T10:00:00.000Z",
+    };
+    const checkpoint = {
+      turnId: "turn-1",
+      checkpointTurnCount: 1,
+      checkpointRef: "checkpoint-1",
+      status: "ready" as const,
+      files: [],
+      assistantMessageId: null,
+      completedAt: "2026-07-10T10:00:00.000Z",
+    };
+
+    const oversizedItems = [
+      yield* Effect.exit(
+        decodeMessagePageResult({
+          items: Array.from(
+            { length: ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS + 1 },
+            () => message,
+          ),
+          startCursor: null,
+          hasMoreBefore: false,
+          estimatedSerializedBytes: 0,
+        }),
+      ),
+      yield* Effect.exit(
+        decodeProposedPlanPageResult({
+          items: Array.from(
+            { length: ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS + 1 },
+            () => plan,
+          ),
+          startCursor: null,
+          hasMoreBefore: false,
+          estimatedSerializedBytes: 0,
+        }),
+      ),
+      yield* Effect.exit(
+        decodeActivityPageResult({
+          items: Array.from(
+            { length: ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS + 1 },
+            () => activity,
+          ),
+          startCursor: null,
+          endCursor: null,
+          hasMoreBefore: false,
+          hasMoreAfter: false,
+          deferredActivityPayloads: 0,
+          estimatedSerializedBytes: 0,
+        }),
+      ),
+      yield* Effect.exit(
+        decodeCheckpointPageResult({
+          items: Array.from(
+            { length: ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS + 1 },
+            () => checkpoint,
+          ),
+          startCursor: null,
+          hasMoreBefore: false,
+          estimatedSerializedBytes: 0,
+        }),
+      ),
+    ];
+    for (const result of oversizedItems) {
+      assert.strictEqual(result._tag, "Failure");
+    }
+
+    const oversizedBytes = yield* Effect.exit(
+      decodeMessagePageResult({
+        items: [],
+        startCursor: null,
+        hasMoreBefore: false,
+        estimatedSerializedBytes: ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES + 1,
+      }),
+    );
+    assert.strictEqual(oversizedBytes._tag, "Failure");
   }),
 );
 
