@@ -1341,11 +1341,18 @@ describe("EnvironmentThreads", () => {
       }
       const retrying = yield* awaitThreadState(
         harness.observed,
-        (value) => value.syncStatus?.phase === "subscribing" && Option.isSome(value.data),
+        (value) =>
+          value.syncStatus?.phase === "error" &&
+          value.syncStatus.error === "stream failed" &&
+          Option.isSome(value.data),
       );
       expect(Option.getOrThrow(retrying.data)).toEqual(BASE_THREAD);
       expect(Option.getOrThrow(retrying.error)).toBe("stream failed");
-      expect(retrying.syncStatus?.phase).toBe("subscribing");
+      expect(retrying.syncStatus).toMatchObject({
+        phase: "error",
+        version: "v1",
+        error: "stream failed",
+      });
       yield* Queue.offer(
         harness.inputs,
         snapshot({

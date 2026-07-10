@@ -615,21 +615,29 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   ) {
     const syncError = yield* Ref.get(lastSyncError);
     yield* Effect.sync(() => recordThreadSyncSubscription({ environmentId, threadId, version }));
-    yield* SubscriptionRef.update(
-      state,
-      (current): EnvironmentThreadState => ({
-        ...current,
-        status: current.status === "deleted" ? current.status : "synchronizing",
-        error: syncError,
-        syncStatus: {
-          phase: "subscribing",
+    yield* SubscriptionRef.update(state, (current): EnvironmentThreadState => {
+      const syncStatus: EnvironmentThreadSyncStatus = Option.match(syncError, {
+        onNone: () => ({
+          phase: "subscribing" as const,
           version,
           deferredPayloadCount: 0,
           estimatedBytes: null,
           error: null,
-        },
-      }),
-    );
+        }),
+        onSome: (error) => ({
+          ...(current.syncStatus ?? WAITING_ENVIRONMENT_THREAD_SYNC_STATUS),
+          phase: "error" as const,
+          version,
+          error,
+        }),
+      });
+      return {
+        ...current,
+        status: current.status === "deleted" ? current.status : "synchronizing",
+        error: syncError,
+        syncStatus,
+      };
+    });
   });
 
   const setHydrating = Effect.fn("EnvironmentThreadState.setHydrating")(function* (
