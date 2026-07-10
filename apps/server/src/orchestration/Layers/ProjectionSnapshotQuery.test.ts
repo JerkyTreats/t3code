@@ -2,6 +2,8 @@ import {
   CheckpointRef,
   EventId,
   MessageId,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
   ProjectId,
   ThreadId,
   TurnId,
@@ -1587,6 +1589,109 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       assert.equal(byteBoundedMessagePage.hasMoreBefore, true);
       assert.isTrue(byteBoundedMessagePage.estimatedSerializedBytes <= 8 * 1024 * 1024);
 
+      const oversizedUnicodePrefix = `${"x".repeat(
+        ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES - 1,
+      )}🙂`;
+      const oversizedMessageText = `${oversizedUnicodePrefix}${"m".repeat(
+        ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
+      )}`;
+      const oversizedPlanMarkdown = `# ${oversizedUnicodePrefix}${"p".repeat(
+        ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
+      )}`;
+      yield* sql`
+        UPDATE projection_thread_messages
+        SET text = ${oversizedMessageText}
+        WHERE message_id = 'message-v2-2'
+      `;
+      yield* sql`
+        UPDATE projection_thread_proposed_plans
+        SET plan_markdown = ${oversizedPlanMarkdown}
+        WHERE plan_id = 'plan-v2-2'
+      `;
+
+      const oversizedContentSnapshot = yield* snapshotQuery.getThreadDetailV2ById(threadId, {
+        messages: 1,
+        proposedPlans: 1,
+        activities: 1,
+        checkpoints: 1,
+      });
+      assert.equal(oversizedContentSnapshot._tag, "Some");
+      if (oversizedContentSnapshot._tag === "Some") {
+        assert.equal(oversizedContentSnapshot.value.deferredThreadContents, 2);
+        assert.deepEqual(oversizedContentSnapshot.value.thread.messages[0]?.text, {
+          __t3Deferred: "thread-content",
+          kind: "message-text",
+          byteLength: new TextEncoder().encode(oversizedMessageText).byteLength,
+          characterLength: oversizedMessageText.length,
+        });
+        assert.deepEqual(oversizedContentSnapshot.value.thread.proposedPlans[0]?.planMarkdown, {
+          __t3Deferred: "thread-content",
+          kind: "proposed-plan-markdown",
+          byteLength: new TextEncoder().encode(oversizedPlanMarkdown).byteLength,
+          characterLength: oversizedPlanMarkdown.length,
+        });
+        assert.isTrue(
+          oversizedContentSnapshot.value.estimatedSerializedBytes <=
+            ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
+        );
+      }
+
+      const oversizedContentPages = yield* Effect.all([
+        snapshotQuery.getThreadMessagePage({ threadId, limit: 1 }),
+        snapshotQuery.getThreadProposedPlanPage({ threadId, limit: 1 }),
+      ]);
+      assert.isTrue(typeof oversizedContentPages[0].items[0]?.text !== "string");
+      assert.isTrue(typeof oversizedContentPages[1].items[0]?.planMarkdown !== "string");
+      for (const pageResult of oversizedContentPages) {
+        assert.isTrue(
+          pageResult.estimatedSerializedBytes <= ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
+        );
+      }
+
+      const reassembleThreadContent = Effect.fn(
+        "ProjectionSnapshotQueryTest.reassembleThreadContent",
+      )(function* (
+        content:
+          | { readonly kind: "message-text"; readonly messageId: MessageId }
+          | {
+              readonly kind: "proposed-plan-markdown";
+              readonly planId: string;
+            },
+      ) {
+        const chunks: string[] = [];
+        let offset = 0;
+        while (true) {
+          const chunk = yield* snapshotQuery.getThreadContentChunk({ threadId, content, offset });
+          assert.equal(chunk.offset, offset);
+          assert.isTrue(
+            chunk.chunkByteLength <= ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES,
+          );
+          assert.isTrue(
+            chunk.estimatedSerializedBytes <= ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
+          );
+          chunks.push(chunk.chunk);
+          if (chunk.nextOffset === null) {
+            return chunks.join("");
+          }
+          assert.isTrue(chunk.nextOffset > offset);
+          offset = chunk.nextOffset;
+        }
+      });
+      assert.equal(
+        yield* reassembleThreadContent({
+          kind: "message-text",
+          messageId: asMessageId("message-v2-2"),
+        }),
+        oversizedMessageText,
+      );
+      assert.equal(
+        yield* reassembleThreadContent({
+          kind: "proposed-plan-markdown",
+          planId: "plan-v2-2",
+        }),
+        oversizedPlanMarkdown,
+      );
+
       const messageTailQueryPlan = yield* sql<{ readonly detail: string }>`
         EXPLAIN QUERY PLAN
         SELECT message_id
@@ -1780,6 +1885,32 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         overflowHydrated.omitted.filter((omitted) => omitted.reason === "too-many").length,
         25,
       );
+
+      yield* sql`
+        UPDATE projection_threads
+        SET archived_at = '2026-04-03T01:00:00.000Z'
+        WHERE thread_id = ${threadId}
+      `;
+      const archivedChunk = yield* snapshotQuery.getThreadContentChunk({
+        threadId,
+        content: { kind: "message-text", messageId: asMessageId("message-v2-2") },
+        offset: 0,
+      });
+      assert.isTrue(archivedChunk.chunk.length > 0);
+
+      yield* sql`
+        UPDATE projection_threads
+        SET deleted_at = '2026-04-03T02:00:00.000Z'
+        WHERE thread_id = ${threadId}
+      `;
+      const deletedChunk = yield* Effect.exit(
+        snapshotQuery.getThreadContentChunk({
+          threadId,
+          content: { kind: "message-text", messageId: asMessageId("message-v2-2") },
+          offset: 0,
+        }),
+      );
+      assert.equal(deletedChunk._tag, "Failure");
     }),
   );
 

@@ -82,6 +82,7 @@ export type EnvironmentThreadSubscriptionItem =
       readonly version: "v2";
       readonly item: OrchestrationThreadStreamV2Item;
       readonly hydrateActivityPayloads: EnvironmentThreadPayloadHydrator;
+      readonly hydrateThreadContent: EnvironmentThreadContentHydrator;
       readonly historyPager: EnvironmentThreadHistoryPager;
     };
 
@@ -102,6 +103,13 @@ export type EnvironmentThreadPayloadHydrator = (
 ) => Effect.Effect<
   EnvironmentRpcSuccess<typeof ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads>,
   EnvironmentRpcFailure<typeof ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads>
+>;
+
+export type EnvironmentThreadContentHydrator = (
+  input: EnvironmentRpcInput<typeof ORCHESTRATION_WS_METHODS.getThreadContentChunk>,
+) => Effect.Effect<
+  EnvironmentRpcSuccess<typeof ORCHESTRATION_WS_METHODS.getThreadContentChunk>,
+  EnvironmentRpcFailure<typeof ORCHESTRATION_WS_METHODS.getThreadContentChunk>
 >;
 
 export interface EnvironmentThreadHistoryPager {
@@ -356,6 +364,10 @@ export function subscribeThread(
                         hydrateActivityPayloads: (hydrateInput) =>
                           session.client[ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads](
                             hydrateInput,
+                          ),
+                        hydrateThreadContent: (contentInput) =>
+                          session.client[ORCHESTRATION_WS_METHODS.getThreadContentChunk](
+                            contentInput,
                           ),
                         historyPager,
                       }),

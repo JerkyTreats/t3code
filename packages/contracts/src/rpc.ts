@@ -747,6 +747,15 @@ export const WsOrchestrationGetThreadProposedPlanPageRpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationGetThreadContentChunkRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadContentChunk,
+  {
+    payload: OrchestrationRpcSchemas.getThreadContentChunk.input,
+    success: OrchestrationRpcSchemas.getThreadContentChunk.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsOrchestrationGetThreadActivityPageRpc = Rpc.make(
   ORCHESTRATION_WS_METHODS.getThreadActivityPage,
   {
@@ -889,6 +898,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationSubscribeThreadV2Rpc,
   WsOrchestrationGetThreadMessagePageRpc,
   WsOrchestrationGetThreadProposedPlanPageRpc,
+  WsOrchestrationGetThreadContentChunkRpc,
   WsOrchestrationGetThreadActivityPageRpc,
   WsOrchestrationGetThreadCheckpointPageRpc,
   WsOrchestrationHydrateThreadActivityPayloadsRpc,

@@ -111,6 +111,8 @@ import type {
   OrchestrationThreadActivityPageResult,
   OrchestrationThreadCheckpointPageInput,
   OrchestrationThreadCheckpointPageResult,
+  OrchestrationThreadContentChunkInput,
+  OrchestrationThreadContentChunkResult,
   OrchestrationThreadMessagePageInput,
   OrchestrationThreadMessagePageResult,
   OrchestrationThreadProposedPlanPageInput,
@@ -1307,6 +1309,9 @@ export interface EnvironmentApi {
     getThreadProposedPlanPage: (
       input: OrchestrationThreadProposedPlanPageInput,
     ) => Promise<OrchestrationThreadProposedPlanPageResult>;
+    getThreadContentChunk: (
+      input: OrchestrationThreadContentChunkInput,
+    ) => Promise<OrchestrationThreadContentChunkResult>;
     getThreadCheckpointPage: (
       input: OrchestrationThreadCheckpointPageInput,
     ) => Promise<OrchestrationThreadCheckpointPageResult>;

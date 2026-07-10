@@ -31,6 +31,7 @@ import {
   type OrchestrationEvent,
   type OrchestrationShellStreamEvent,
   type OrchestrationThreadStreamV2Item,
+  type OrchestrationThreadSyncV2Event,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
   OrchestrationGetTurnDiffError,
@@ -268,6 +269,7 @@ function projectSetupScriptCompatibilityDetail(
 
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
 const THREAD_SYNC_V2_INLINE_ACTIVITY_PAYLOAD_BYTES = 4 * 1024;
+const THREAD_SYNC_V2_MAX_INLINE_CONTENT_ITEM_BYTES = 8 * 1024 * 1024 - 64 * 1024;
 const threadSyncV2TextEncoder = new TextEncoder();
 
 function estimateThreadSyncV2Bytes(value: unknown): number {
@@ -275,11 +277,55 @@ function estimateThreadSyncV2Bytes(value: unknown): number {
 }
 
 function toThreadStreamV2EventItem(event: OrchestrationEvent): OrchestrationThreadStreamV2Item {
-  if (event.type !== "thread.activity-appended") {
+  let boundedEvent: OrchestrationThreadSyncV2Event = event;
+  let deferredThreadContents = 0;
+  if (
+    event.type === "thread.message-sent" &&
+    estimateThreadSyncV2Bytes(event.payload.text) > THREAD_SYNC_V2_MAX_INLINE_CONTENT_ITEM_BYTES
+  ) {
+    boundedEvent = {
+      ...event,
+      payload: {
+        ...event.payload,
+        text: {
+          __t3Deferred: "thread-content" as const,
+          kind: "message-text" as const,
+          byteLength: threadSyncV2TextEncoder.encode(event.payload.text).byteLength,
+          characterLength: event.payload.text.length,
+        },
+      },
+    };
+    deferredThreadContents = 1;
+  } else if (
+    event.type === "thread.proposed-plan-upserted" &&
+    estimateThreadSyncV2Bytes(event.payload.proposedPlan.planMarkdown) >
+      THREAD_SYNC_V2_MAX_INLINE_CONTENT_ITEM_BYTES
+  ) {
+    boundedEvent = {
+      ...event,
+      payload: {
+        ...event.payload,
+        proposedPlan: {
+          ...event.payload.proposedPlan,
+          planMarkdown: {
+            __t3Deferred: "thread-content" as const,
+            kind: "proposed-plan-markdown" as const,
+            byteLength: threadSyncV2TextEncoder.encode(event.payload.proposedPlan.planMarkdown)
+              .byteLength,
+            characterLength: event.payload.proposedPlan.planMarkdown.length,
+          },
+        },
+      },
+    };
+    deferredThreadContents = 1;
+  }
+
+  if (boundedEvent.type !== "thread.activity-appended") {
     const item = {
       kind: "event" as const,
-      event,
+      event: boundedEvent,
       deferredActivityPayloads: 0,
+      deferredThreadContents,
     };
     return {
       ...item,
@@ -287,12 +333,13 @@ function toThreadStreamV2EventItem(event: OrchestrationEvent): OrchestrationThre
     };
   }
 
-  const payloadBytes = estimateThreadSyncV2Bytes(event.payload.activity.payload);
+  const payloadBytes = estimateThreadSyncV2Bytes(boundedEvent.payload.activity.payload);
   if (payloadBytes <= THREAD_SYNC_V2_INLINE_ACTIVITY_PAYLOAD_BYTES) {
     const item = {
       kind: "event" as const,
-      event,
+      event: boundedEvent,
       deferredActivityPayloads: 0,
+      deferredThreadContents,
     };
     return {
       ...item,
@@ -300,12 +347,12 @@ function toThreadStreamV2EventItem(event: OrchestrationEvent): OrchestrationThre
     };
   }
 
-  const boundedEvent = {
-    ...event,
+  boundedEvent = {
+    ...boundedEvent,
     payload: {
-      ...event.payload,
+      ...boundedEvent.payload,
       activity: {
-        ...event.payload.activity,
+        ...boundedEvent.payload.activity,
         payload: {
           __t3Deferred: "thread-activity-payload" as const,
           byteLength: payloadBytes,
@@ -317,6 +364,7 @@ function toThreadStreamV2EventItem(event: OrchestrationEvent): OrchestrationThre
     kind: "event" as const,
     event: boundedEvent,
     deferredActivityPayloads: 1,
+    deferredThreadContents,
   };
   return {
     ...item,
@@ -335,6 +383,7 @@ const RPC_REQUIRED_SCOPE = new Map<string, AuthEnvironmentScope>([
   [ORCHESTRATION_WS_METHODS.subscribeThreadV2, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.getThreadMessagePage, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage, AuthOrchestrationReadScope],
+  [ORCHESTRATION_WS_METHODS.getThreadContentChunk, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.getThreadActivityPage, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.getThreadCheckpointPage, AuthOrchestrationReadScope],
   [ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads, AuthOrchestrationReadScope],
@@ -1300,6 +1349,20 @@ const makeWsRpcLayer = (
                 (cause) =>
                   new OrchestrationGetSnapshotError({
                     message: `Failed to load thread proposed plan page for ${input.threadId}`,
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.getThreadContentChunk]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getThreadContentChunk,
+            projectionSnapshotQuery.getThreadContentChunk(input).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: `Failed to load thread content chunk for ${input.threadId}`,
                     cause,
                   }),
               ),

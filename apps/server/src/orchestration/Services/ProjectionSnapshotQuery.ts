@@ -10,6 +10,8 @@ import type {
   CheckpointRef,
   EventId,
   OrchestrationHydrateThreadActivityPayloadsResult,
+  OrchestrationThreadContentChunkInput,
+  OrchestrationThreadContentChunkResult,
   OrchestrationThreadActivityPageInput,
   OrchestrationThreadActivityPageResult,
   OrchestrationThreadCheckpointPageInput,
@@ -185,6 +187,13 @@ export interface ProjectionSnapshotQueryShape {
   readonly getThreadProposedPlanPage: (
     input: OrchestrationThreadProposedPlanPageInput,
   ) => Effect.Effect<OrchestrationThreadProposedPlanPageResult, ProjectionRepositoryError>;
+
+  /**
+   * Read one bounded deferred message or proposed plan content chunk.
+   */
+  readonly getThreadContentChunk: (
+    input: OrchestrationThreadContentChunkInput,
+  ) => Effect.Effect<OrchestrationThreadContentChunkResult, ProjectionRepositoryError>;
 
   /**
    * Page projected thread activity around the stable activity cursor used by

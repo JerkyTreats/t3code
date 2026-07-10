@@ -35,12 +35,14 @@ export const ORCHESTRATION_WS_METHODS = {
   subscribeThreadV2: "orchestration.subscribeThreadV2",
   getThreadMessagePage: "orchestration.getThreadMessagePage",
   getThreadProposedPlanPage: "orchestration.getThreadProposedPlanPage",
+  getThreadContentChunk: "orchestration.getThreadContentChunk",
   getThreadActivityPage: "orchestration.getThreadActivityPage",
   getThreadCheckpointPage: "orchestration.getThreadCheckpointPage",
   hydrateThreadActivityPayloads: "orchestration.hydrateThreadActivityPayloads",
 } as const;
 export const ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS = 50;
 export const ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES = 8 * 1024 * 1024;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES = 1024 * 1024;
 export const ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS = 200;
 export const ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS = 100;
 export const ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS = 300;
@@ -545,6 +547,42 @@ export const OrchestrationDeferredActivityPayload = Schema.Struct({
 });
 export type OrchestrationDeferredActivityPayload = typeof OrchestrationDeferredActivityPayload.Type;
 
+export const OrchestrationThreadContentKind = Schema.Literals([
+  "message-text",
+  "proposed-plan-markdown",
+]);
+export type OrchestrationThreadContentKind = typeof OrchestrationThreadContentKind.Type;
+
+export const OrchestrationDeferredThreadContent = Schema.Struct({
+  __t3Deferred: Schema.Literal("thread-content"),
+  kind: OrchestrationThreadContentKind,
+  byteLength: NonNegativeInt,
+  characterLength: NonNegativeInt,
+});
+export type OrchestrationDeferredThreadContent = typeof OrchestrationDeferredThreadContent.Type;
+
+export const OrchestrationThreadMessageV2 = OrchestrationMessage.mapFields((fields) =>
+  Struct.assign(fields, {
+    text: Schema.Union([Schema.String, OrchestrationDeferredThreadContent]),
+  }),
+);
+export type OrchestrationThreadMessageV2 = typeof OrchestrationThreadMessageV2.Type;
+
+export const OrchestrationProposedPlanV2 = OrchestrationProposedPlan.mapFields((fields) =>
+  Struct.assign(fields, {
+    planMarkdown: Schema.Union([TrimmedNonEmptyString, OrchestrationDeferredThreadContent]),
+  }),
+);
+export type OrchestrationProposedPlanV2 = typeof OrchestrationProposedPlanV2.Type;
+
+export const OrchestrationThreadV2 = OrchestrationThread.mapFields((fields) =>
+  Struct.assign(fields, {
+    messages: Schema.Array(OrchestrationThreadMessageV2),
+    proposedPlans: Schema.Array(OrchestrationProposedPlanV2),
+  }),
+);
+export type OrchestrationThreadV2 = typeof OrchestrationThreadV2.Type;
+
 export const OrchestrationActivityCursor = Schema.Struct({
   activityId: EventId,
   createdAt: IsoDateTime,
@@ -571,9 +609,10 @@ export type OrchestrationCheckpointCursor = typeof OrchestrationCheckpointCursor
 
 export const OrchestrationThreadDetailV2Snapshot = Schema.Struct({
   snapshotSequence: NonNegativeInt,
-  thread: OrchestrationThread,
+  thread: OrchestrationThreadV2,
   windows: OrchestrationThreadSyncV2Windows,
   deferredActivityPayloads: NonNegativeInt,
+  deferredThreadContents: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   estimatedSerializedBytes: NonNegativeInt.check(
     Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
   ),
@@ -590,7 +629,7 @@ export const OrchestrationThreadMessagePageInput = Schema.Struct({
 export type OrchestrationThreadMessagePageInput = typeof OrchestrationThreadMessagePageInput.Type;
 
 export const OrchestrationThreadMessagePageResult = Schema.Struct({
-  items: Schema.Array(OrchestrationMessage).check(
+  items: Schema.Array(OrchestrationThreadMessageV2).check(
     Schema.isMaxLength(ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS),
   ),
   startCursor: Schema.NullOr(OrchestrationMessageCursor),
@@ -614,7 +653,7 @@ export type OrchestrationThreadProposedPlanPageInput =
   typeof OrchestrationThreadProposedPlanPageInput.Type;
 
 export const OrchestrationThreadProposedPlanPageResult = Schema.Struct({
-  items: Schema.Array(OrchestrationProposedPlan).check(
+  items: Schema.Array(OrchestrationProposedPlanV2).check(
     Schema.isMaxLength(ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS),
   ),
   startCursor: Schema.NullOr(OrchestrationProposedPlanCursor),
@@ -625,6 +664,44 @@ export const OrchestrationThreadProposedPlanPageResult = Schema.Struct({
 });
 export type OrchestrationThreadProposedPlanPageResult =
   typeof OrchestrationThreadProposedPlanPageResult.Type;
+
+export const OrchestrationThreadContentReference = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("message-text"),
+    messageId: MessageId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("proposed-plan-markdown"),
+    planId: OrchestrationProposedPlanId,
+  }),
+]);
+export type OrchestrationThreadContentReference = typeof OrchestrationThreadContentReference.Type;
+
+export const OrchestrationThreadContentChunkInput = Schema.Struct({
+  threadId: ThreadId,
+  content: OrchestrationThreadContentReference,
+  offset: NonNegativeInt,
+});
+export type OrchestrationThreadContentChunkInput = typeof OrchestrationThreadContentChunkInput.Type;
+
+export const OrchestrationThreadContentChunkResult = Schema.Struct({
+  threadId: ThreadId,
+  content: OrchestrationThreadContentReference,
+  contentVersion: IsoDateTime,
+  offset: NonNegativeInt,
+  chunk: Schema.String,
+  chunkByteLength: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES),
+  ),
+  nextOffset: Schema.NullOr(NonNegativeInt),
+  totalByteLength: NonNegativeInt,
+  totalCharacterLength: NonNegativeInt,
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
+});
+export type OrchestrationThreadContentChunkResult =
+  typeof OrchestrationThreadContentChunkResult.Type;
 
 export const OrchestrationThreadCheckpointPageInput = Schema.Struct({
   threadId: ThreadId,
@@ -1368,6 +1445,32 @@ export const OrchestrationEvent = Schema.Union([
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
 
+const ThreadMessageSentV2Payload = ThreadMessageSentPayload.mapFields((fields) =>
+  Struct.assign(fields, {
+    text: Schema.Union([Schema.String, OrchestrationDeferredThreadContent]),
+  }),
+);
+const ThreadProposedPlanUpsertedV2Payload = ThreadProposedPlanUpsertedPayload.mapFields((fields) =>
+  Struct.assign(fields, {
+    proposedPlan: OrchestrationProposedPlanV2,
+  }),
+);
+
+export const OrchestrationThreadSyncV2Event = Schema.Union([
+  OrchestrationEvent,
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.message-sent"),
+    payload: ThreadMessageSentV2Payload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.proposed-plan-upserted"),
+    payload: ThreadProposedPlanUpsertedV2Payload,
+  }),
+]);
+export type OrchestrationThreadSyncV2Event = typeof OrchestrationThreadSyncV2Event.Type;
+
 export const OrchestrationThreadStreamItem = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("snapshot"),
@@ -1387,8 +1490,9 @@ export const OrchestrationThreadStreamV2Item = Schema.Union([
   }),
   Schema.Struct({
     kind: Schema.Literal("event"),
-    event: OrchestrationEvent,
+    event: OrchestrationThreadSyncV2Event,
     deferredActivityPayloads: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+    deferredThreadContents: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
     estimatedSerializedBytes: NonNegativeInt.check(
       Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
     ).pipe(Schema.withDecodingDefault(Effect.succeed(0))),
@@ -1526,6 +1630,10 @@ export const OrchestrationRpcSchemas = {
   getThreadProposedPlanPage: {
     input: OrchestrationThreadProposedPlanPageInput,
     output: OrchestrationThreadProposedPlanPageResult,
+  },
+  getThreadContentChunk: {
+    input: OrchestrationThreadContentChunkInput,
+    output: OrchestrationThreadContentChunkResult,
   },
   getThreadActivityPage: {
     input: OrchestrationThreadActivityPageInput,

@@ -6,6 +6,7 @@ import {
   MessageId,
   NonNegativeInt,
   ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES,
   OrchestrationCheckpointFile,
   OrchestrationThreadActivityTone,
   OrchestrationProposedPlanId,
@@ -18,14 +19,13 @@ import {
   type OrchestrationCheckpointSummary,
   type OrchestrationActivityCursor,
   type OrchestrationHydrateThreadActivityPayloadsResult,
+  type OrchestrationThreadContentChunkResult,
   type OrchestrationLatestTurn,
   type OrchestrationMessage,
   type OrchestrationThreadActivityPageResult,
-  type OrchestrationThreadCheckpointPageResult,
   type OrchestrationThreadDetailV2Snapshot,
-  type OrchestrationThreadMessagePageResult,
-  type OrchestrationThreadProposedPlanPageResult,
   type OrchestrationThreadSyncV2Limits,
+  OrchestrationThreadV2,
   type OrchestrationProjectShell,
   type OrchestrationProposedPlan,
   type OrchestrationProject,
@@ -74,6 +74,7 @@ import {
 const decodeReadModel = Schema.decodeUnknownEffect(OrchestrationReadModel);
 const decodeShellSnapshot = Schema.decodeUnknownEffect(OrchestrationShellSnapshot);
 const decodeThread = Schema.decodeUnknownEffect(OrchestrationThread);
+const decodeThreadV2 = Schema.decodeUnknownEffect(OrchestrationThreadV2);
 const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
@@ -118,6 +119,10 @@ const ProjectionThreadActivityPayloadMetadataDbRowSchema = Schema.Struct({
 const ProjectionThreadActivityPayloadJsonDbRowSchema = Schema.Struct({
   activityId: EventId,
   payloadJson: Schema.String,
+});
+const ProjectionThreadContentDbRowSchema = Schema.Struct({
+  content: Schema.String,
+  contentVersion: IsoDateTime,
 });
 const ProjectionThreadSessionDbRowSchema = ProjectionThreadSession;
 const ProjectionCheckpointDbRowSchema = ProjectionCheckpoint.mapFields(
@@ -182,6 +187,14 @@ const ThreadActivityIdLookupInput = Schema.Struct({
   threadId: ThreadId,
   activityId: EventId,
 });
+const ThreadMessageContentLookupInput = Schema.Struct({
+  threadId: ThreadId,
+  messageId: MessageId,
+});
+const ThreadProposedPlanContentLookupInput = Schema.Struct({
+  threadId: ThreadId,
+  planId: OrchestrationProposedPlanId,
+});
 const ProjectionProjectLookupRowSchema = ProjectionProjectDbRowSchema;
 const ProjectionThreadIdLookupRowSchema = Schema.Struct({
   threadId: ThreadId,
@@ -233,6 +246,8 @@ const THREAD_SYNC_V2_MAX_HYDRATE_ACTIVITY_IDS =
 const THREAD_SYNC_V2_MAX_HYDRATED_ACTIVITY_PAYLOAD_BYTES = 2 * 1024 * 1024;
 const THREAD_SYNC_V2_MAX_HYDRATED_RESPONSE_BYTES = 8 * 1024 * 1024;
 const THREAD_SYNC_V2_MAX_PAGE_RESPONSE_BYTES = 8 * 1024 * 1024;
+const THREAD_SYNC_V2_MAX_INLINE_CONTENT_ITEM_BYTES =
+  THREAD_SYNC_V2_MAX_PAGE_RESPONSE_BYTES - 64 * 1024;
 const THREAD_SYNC_V2_MAX_HYDRATE_OVERFLOW_OMISSIONS = 25;
 const threadSyncV2TextEncoder = new TextEncoder();
 const decodeRawActivityPayloadJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
@@ -592,6 +607,103 @@ function mapProposedPlanRow(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function makeDeferredThreadContent(
+  kind: "message-text" | "proposed-plan-markdown",
+  content: string,
+) {
+  return {
+    __t3Deferred: "thread-content" as const,
+    kind,
+    byteLength: utf8ByteLength(content),
+    characterLength: content.length,
+  };
+}
+
+function mapThreadSyncV2MessageRow(
+  row: Schema.Schema.Type<typeof ProjectionThreadMessageDbRowSchema>,
+) {
+  const message = mapMessageRow(row);
+  return estimatedSerializedBytes(message) > THREAD_SYNC_V2_MAX_INLINE_CONTENT_ITEM_BYTES
+    ? { ...message, text: makeDeferredThreadContent("message-text", message.text) }
+    : message;
+}
+
+function mapThreadSyncV2ProposedPlanRow(
+  row: Schema.Schema.Type<typeof ProjectionThreadProposedPlanDbRowSchema>,
+) {
+  const proposedPlan = mapProposedPlanRow(row);
+  return estimatedSerializedBytes(proposedPlan) > THREAD_SYNC_V2_MAX_INLINE_CONTENT_ITEM_BYTES
+    ? {
+        ...proposedPlan,
+        planMarkdown: makeDeferredThreadContent(
+          "proposed-plan-markdown",
+          proposedPlan.planMarkdown,
+        ),
+      }
+    : proposedPlan;
+}
+
+function deferredThreadContentCount(input: {
+  readonly messages: ReadonlyArray<{ readonly text: unknown }>;
+  readonly proposedPlans: ReadonlyArray<{ readonly planMarkdown: unknown }>;
+}): number {
+  return (
+    input.messages.filter((message) => {
+      const content = message.text;
+      return (
+        typeof content === "object" &&
+        content !== null &&
+        (content as { readonly __t3Deferred?: unknown }).__t3Deferred === "thread-content"
+      );
+    }).length +
+    input.proposedPlans.filter((proposedPlan) => {
+      const content = proposedPlan.planMarkdown;
+      return (
+        typeof content === "object" &&
+        content !== null &&
+        (content as { readonly __t3Deferred?: unknown }).__t3Deferred === "thread-content"
+      );
+    }).length
+  );
+}
+
+function isUnsafeUtf16Boundary(content: string, offset: number): boolean {
+  if (offset <= 0 || offset >= content.length) {
+    return false;
+  }
+  const previous = content.charCodeAt(offset - 1);
+  const current = content.charCodeAt(offset);
+  return previous >= 0xd800 && previous <= 0xdbff && current >= 0xdc00 && current <= 0xdfff;
+}
+
+function safeUtf16Boundary(content: string, offset: number): number {
+  return isUnsafeUtf16Boundary(content, offset) ? offset - 1 : offset;
+}
+
+function findBoundedThreadContentChunkEnd(content: string, offset: number): number {
+  let lower = offset;
+  let upper = Math.min(
+    content.length,
+    offset + ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES,
+  );
+  upper = safeUtf16Boundary(content, upper);
+  while (lower < upper) {
+    const midpoint = safeUtf16Boundary(content, Math.ceil((lower + upper) / 2));
+    if (midpoint <= lower) {
+      break;
+    }
+    if (
+      utf8ByteLength(content.slice(offset, midpoint)) <=
+      ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES
+    ) {
+      lower = midpoint;
+    } else {
+      upper = midpoint - 1;
+    }
+  }
+  return lower;
 }
 
 function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: string) {
@@ -1233,6 +1345,26 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  const getThreadMessageContentRowById = SqlSchema.findOneOption({
+    Request: ThreadMessageContentLookupInput,
+    Result: ProjectionThreadContentDbRowSchema,
+    execute: ({ threadId, messageId }) =>
+      sql`
+        SELECT
+          text AS "content",
+          updated_at AS "contentVersion"
+        FROM projection_thread_messages
+        WHERE thread_id = ${threadId}
+          AND message_id = ${messageId}
+          AND EXISTS (
+            SELECT 1
+            FROM projection_threads
+            WHERE projection_threads.thread_id = projection_thread_messages.thread_id
+              AND projection_threads.deleted_at IS NULL
+          )
+      `,
+  });
+
   const listThreadProposedPlanRowsByThread = SqlSchema.findAll({
     Request: ThreadIdLookupInput,
     Result: ProjectionThreadProposedPlanDbRowSchema,
@@ -1308,6 +1440,26 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           )
         ORDER BY created_at DESC, plan_id DESC
         LIMIT ${limit}
+      `,
+  });
+
+  const getThreadProposedPlanContentRowById = SqlSchema.findOneOption({
+    Request: ThreadProposedPlanContentLookupInput,
+    Result: ProjectionThreadContentDbRowSchema,
+    execute: ({ threadId, planId }) =>
+      sql`
+        SELECT
+          plan_markdown AS "content",
+          updated_at AS "contentVersion"
+        FROM projection_thread_proposed_plans
+        WHERE thread_id = ${threadId}
+          AND plan_id = ${planId}
+          AND EXISTS (
+            SELECT 1
+            FROM projection_threads
+            WHERE projection_threads.thread_id = projection_thread_proposed_plans.thread_id
+              AND projection_threads.deleted_at IS NULL
+          )
       `,
   });
 
@@ -2943,8 +3095,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         activityWindow.rows,
         decodeThreadSyncV2ActivityRow,
       );
-      let messages = messageWindow.rows.map(mapMessageRow);
-      let proposedPlans = proposedPlanWindow.rows.map(mapProposedPlanRow);
+      let messages = messageWindow.rows.map(mapThreadSyncV2MessageRow);
+      let proposedPlans = proposedPlanWindow.rows.map(mapThreadSyncV2ProposedPlanRow);
       let checkpoints = checkpointWindow.rows.map(mapCheckpointRow);
       let messagesHaveMoreBefore = messageWindow.hasMore;
       let proposedPlansHaveMoreBefore = proposedPlanWindow.hasMore;
@@ -3006,13 +3158,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             (sum, item) => sum + item.deferredActivityPayloads,
             0,
           ),
+          deferredThreadContents: deferredThreadContentCount({ messages, proposedPlans }),
         };
         const responseBytes = estimatedSerializedBytesWithEstimate(snapshotWithoutBytes);
         if (responseBytes <= THREAD_SYNC_V2_MAX_PAGE_RESPONSE_BYTES) {
-          const thread = yield* decodeThread(threadInput).pipe(
+          const thread = yield* decodeThreadV2(threadInput).pipe(
             Effect.mapError(
               toPersistenceDecodeError(
-                "ProjectionSnapshotQuery.getThreadDetailV2ById:decodeThread",
+                "ProjectionSnapshotQuery.getThreadDetailV2ById:decodeThreadV2",
               ),
             ),
           );
@@ -3095,7 +3248,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       );
       const limited = takeLimitedRows(rows, limit, { reverse: true });
       return yield* makeBoundedChronologicalPage({
-        items: limited.rows.map(mapMessageRow),
+        items: limited.rows.map(mapThreadSyncV2MessageRow),
         hasMoreBefore: limited.hasMore,
         cursor: (message) => ({ messageId: message.id, createdAt: message.createdAt }),
         operation: "ProjectionSnapshotQuery.getThreadMessagePage:responseBound",
@@ -3131,12 +3284,82 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       );
       const limited = takeLimitedRows(rows, limit, { reverse: true });
       return yield* makeBoundedChronologicalPage({
-        items: limited.rows.map(mapProposedPlanRow),
+        items: limited.rows.map(mapThreadSyncV2ProposedPlanRow),
         hasMoreBefore: limited.hasMore,
         cursor: (plan) => ({ planId: plan.id, createdAt: plan.createdAt }),
         operation: "ProjectionSnapshotQuery.getThreadProposedPlanPage:responseBound",
         threadId: input.threadId,
       });
+    });
+
+  const getThreadContentChunk: ProjectionSnapshotQueryShape["getThreadContentChunk"] = (input) =>
+    Effect.gen(function* () {
+      const contentRow = yield* (
+        input.content.kind === "message-text"
+          ? getThreadMessageContentRowById({
+              threadId: input.threadId,
+              messageId: input.content.messageId,
+            })
+          : getThreadProposedPlanContentRowById({
+              threadId: input.threadId,
+              planId: input.content.planId,
+            })
+      ).pipe(
+        Effect.mapError(
+          toPersistenceSqlOrDecodeError(
+            "ProjectionSnapshotQuery.getThreadContentChunk:query",
+            "ProjectionSnapshotQuery.getThreadContentChunk:decodeRow",
+          ),
+        ),
+      );
+      if (Option.isNone(contentRow)) {
+        return yield* new PersistenceDecodeError({
+          operation: "ProjectionSnapshotQuery.getThreadContentChunk",
+          issue: "Thread content is not available.",
+          correlation: { threadId: input.threadId },
+        });
+      }
+
+      const { content, contentVersion } = contentRow.value;
+      if (input.offset > content.length || isUnsafeUtf16Boundary(content, input.offset)) {
+        return yield* new PersistenceDecodeError({
+          operation: "ProjectionSnapshotQuery.getThreadContentChunk",
+          issue: "Thread content offset is not a valid UTF-16 boundary.",
+          correlation: { threadId: input.threadId },
+        });
+      }
+      const end = findBoundedThreadContentChunkEnd(content, input.offset);
+      if (end <= input.offset && input.offset < content.length) {
+        return yield* new PersistenceDecodeError({
+          operation: "ProjectionSnapshotQuery.getThreadContentChunk",
+          issue: "Thread content could not produce a bounded chunk.",
+          correlation: { threadId: input.threadId },
+        });
+      }
+      const chunk = content.slice(input.offset, end);
+      const resultWithoutBytes = {
+        threadId: input.threadId,
+        content: input.content,
+        contentVersion,
+        offset: input.offset,
+        chunk,
+        chunkByteLength: utf8ByteLength(chunk),
+        nextOffset: end === content.length ? null : end,
+        totalByteLength: utf8ByteLength(content),
+        totalCharacterLength: content.length,
+      };
+      const estimatedSerializedBytes = estimatedSerializedBytesWithEstimate(resultWithoutBytes);
+      if (estimatedSerializedBytes > THREAD_SYNC_V2_MAX_PAGE_RESPONSE_BYTES) {
+        return yield* new PersistenceDecodeError({
+          operation: "ProjectionSnapshotQuery.getThreadContentChunk",
+          issue: `Thread content chunk exceeds ${THREAD_SYNC_V2_MAX_PAGE_RESPONSE_BYTES} bytes`,
+          correlation: { threadId: input.threadId },
+        });
+      }
+      return {
+        ...resultWithoutBytes,
+        estimatedSerializedBytes,
+      } satisfies OrchestrationThreadContentChunkResult;
     });
 
   const getThreadActivityPage: ProjectionSnapshotQueryShape["getThreadActivityPage"] = (input) =>
@@ -3411,6 +3634,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getThreadDetailV2ById,
     getThreadMessagePage,
     getThreadProposedPlanPage,
+    getThreadContentChunk,
     getThreadActivityPage,
     getThreadCheckpointPage,
     hydrateThreadActivityPayloads,

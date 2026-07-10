@@ -3,6 +3,8 @@ import {
   EnvironmentId,
   EventId,
   MessageId,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
   ORCHESTRATION_WS_METHODS,
   OrchestrationGetSnapshotError,
   OrchestrationProposedPlanId,
@@ -11,6 +13,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationThread,
+  type OrchestrationThreadDetailV2Snapshot,
   type OrchestrationThreadActivity,
   type OrchestrationThreadStreamItem,
   type OrchestrationThreadStreamV2Item,
@@ -79,6 +82,9 @@ type TestThreadV2Input = OrchestrationThreadStreamV2Item | Error;
 type HydrateThreadActivityPayloadsInput = Parameters<
   WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads]
 >[0];
+type GetThreadContentChunkInput = Parameters<
+  WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.getThreadContentChunk]
+>[0];
 type GetThreadMessagePageInput = Parameters<
   WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.getThreadMessagePage]
 >[0];
@@ -134,6 +140,9 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   ) => ReturnType<
     WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads]
   >;
+  readonly hydrateContent?: (
+    input: GetThreadContentChunkInput,
+  ) => ReturnType<WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.getThreadContentChunk]>;
   readonly replayV2Items?: ReadonlyArray<OrchestrationThreadStreamV2Item>;
   readonly getMessagePage?: (
     input: GetThreadMessagePageInput,
@@ -158,6 +167,7 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   const v2SubscriptionCount = yield* Ref.make(0);
   const subscriptionVersions = yield* Ref.make<ReadonlyArray<"v1" | "v2">>([]);
   const hydrationActivityIdChunks = yield* Ref.make<ReadonlyArray<ReadonlyArray<EventId>>>([]);
+  const contentChunkInputs = yield* Ref.make<ReadonlyArray<GetThreadContentChunkInput>>([]);
   const historyPageCalls = yield* Ref.make<ReadonlyArray<TestHistoryPageCall>>([]);
   const savedThreads = yield* Ref.make<ReadonlyArray<OrchestrationThread>>([]);
   const removedThreads = yield* Ref.make<ReadonlyArray<ThreadId>>([]);
@@ -209,6 +219,13 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
               })),
               omitted: [],
             }),
+        ),
+      ),
+    [ORCHESTRATION_WS_METHODS.getThreadContentChunk]: (input: GetThreadContentChunkInput) =>
+      Ref.update(contentChunkInputs, (inputs) => [...inputs, input]).pipe(
+        Effect.andThen(
+          options?.hydrateContent?.(input) ??
+            Effect.die(new Error("Unexpected deferred thread content request.")),
         ),
       ),
     [ORCHESTRATION_WS_METHODS.getThreadMessagePage]: (input: GetThreadMessagePageInput) =>
@@ -324,6 +341,7 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
     v2SubscriptionCount,
     subscriptionVersions,
     hydrationActivityIdChunks,
+    contentChunkInputs,
     historyPageCalls,
     supervisorState,
     supervisorSession,
@@ -347,7 +365,7 @@ const snapshot = (thread: OrchestrationThread): OrchestrationThreadStreamItem =>
 });
 
 const v2Snapshot = (
-  thread: OrchestrationThread,
+  thread: OrchestrationThreadDetailV2Snapshot["thread"],
   snapshotSequence = 1,
 ): Extract<OrchestrationThreadStreamV2Item, { readonly kind: "snapshot" }> => ({
   kind: "snapshot",
@@ -381,6 +399,7 @@ const v2Snapshot = (
       },
     },
     deferredActivityPayloads: thread.activities.length,
+    deferredThreadContents: 0,
     estimatedSerializedBytes: 4096,
   },
 });
@@ -414,6 +433,7 @@ const v2TitleUpdated = (title: string, sequence = 2): OrchestrationThreadStreamV
   return {
     ...item,
     deferredActivityPayloads: 0,
+    deferredThreadContents: 0,
     estimatedSerializedBytes: 128,
   };
 };
@@ -440,8 +460,63 @@ const v2ActivityAppended = (
     },
   },
   deferredActivityPayloads: 1,
+  deferredThreadContents: 0,
   estimatedSerializedBytes: 192,
 });
+
+const contentEncoder = new TextEncoder();
+
+function deferredThreadContent(kind: "message-text" | "proposed-plan-markdown", content: string) {
+  return {
+    __t3Deferred: "thread-content" as const,
+    kind,
+    byteLength: contentEncoder.encode(content).byteLength,
+    characterLength: content.length,
+  };
+}
+
+function testContentChunk(
+  input: GetThreadContentChunkInput,
+  content: string,
+  contentVersion: string,
+) {
+  let end = Math.min(
+    input.offset + Math.floor(ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES / 2),
+    content.length,
+  );
+  if (
+    end > input.offset &&
+    end < content.length &&
+    content.charCodeAt(end - 1) >= 0xd800 &&
+    content.charCodeAt(end - 1) <= 0xdbff &&
+    content.charCodeAt(end) >= 0xdc00 &&
+    content.charCodeAt(end) <= 0xdfff
+  ) {
+    end -= 1;
+  }
+  const chunk = content.slice(input.offset, end);
+  return {
+    threadId: THREAD_ID,
+    content: input.content,
+    contentVersion,
+    offset: input.offset,
+    chunk,
+    chunkByteLength: contentEncoder.encode(chunk).byteLength,
+    nextOffset: end === content.length ? null : end,
+    totalByteLength: contentEncoder.encode(content).byteLength,
+    totalCharacterLength: content.length,
+    estimatedSerializedBytes: Math.min(
+      ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
+      contentEncoder.encode(JSON.stringify({ chunk })).byteLength + 256,
+    ),
+  };
+}
+
+function oversizedUnicodeContent(suffix: string): string {
+  return `${"x".repeat(ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES - 1)}🙂${"y".repeat(
+    ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
+  )}${suffix}`;
+}
 
 function historyMessage(index: number): OrchestrationThread["messages"][number] {
   const createdAt = `2026-04-01T0${index}:00:00.000Z`;
@@ -863,6 +938,287 @@ describe("EnvironmentThreads", () => {
       ]);
       expect(pageAttempt).toBe(2);
     }),
+  );
+
+  it.effect(
+    "hydrates a cursorless oversized message page exactly across Unicode chunk boundaries",
+    () =>
+      Effect.gen(function* () {
+        const content = oversizedUnicodeContent("cursorless-message");
+        const message = {
+          ...historyMessage(1),
+          text: deferredThreadContent("message-text", content),
+        };
+        const emptySnapshot = v2Snapshot({ ...BASE_THREAD, messages: [] });
+        const pagedSnapshot = {
+          ...emptySnapshot,
+          snapshot: {
+            ...emptySnapshot.snapshot,
+            windows: {
+              ...emptySnapshot.snapshot.windows,
+              messages: { ...emptySnapshot.snapshot.windows.messages, hasMoreBefore: true },
+            },
+          },
+        };
+        let pageAttempt = 0;
+        const harness = yield* makeHarness({
+          threadSyncV2: true,
+          getMessagePage: (input) => {
+            pageAttempt += 1;
+            if (pageAttempt === 1) {
+              expect(input.before).toBeUndefined();
+              return Effect.succeed({
+                items: [],
+                startCursor: { messageId: message.id, createdAt: message.createdAt },
+                hasMoreBefore: true,
+                estimatedSerializedBytes: 64,
+              });
+            }
+            return Effect.succeed({
+              items: [message],
+              startCursor: { messageId: message.id, createdAt: message.createdAt },
+              hasMoreBefore: false,
+              estimatedSerializedBytes: 256,
+            });
+          },
+          hydrateContent: (input) =>
+            Effect.succeed(testContentChunk(input, content, message.updatedAt)),
+        });
+
+        yield* Queue.offer(harness.v2Inputs, pagedSnapshot);
+        const live = yield* awaitThreadState(
+          harness.observed,
+          (state) =>
+            state.syncStatus?.phase === "live" &&
+            Option.getOrNull(state.data)?.messages[0]?.text === content,
+        );
+
+        expect(Option.getOrThrow(live.data).messages[0]?.text).toBe(content);
+        expect(pageAttempt).toBe(2);
+        const chunkInputs = yield* Ref.get(harness.contentChunkInputs);
+        expect(chunkInputs.length).toBeGreaterThan(1);
+        expect(chunkInputs.map((input) => input.offset)[0]).toBe(0);
+        expect(
+          chunkInputs.every(
+            (input, index) => index === 0 || input.offset > chunkInputs[index - 1]!.offset,
+          ),
+        ).toBe(true);
+      }),
+    { timeout: 30_000 },
+  );
+
+  it.effect(
+    "hydrates oversized snapshot message and plan content serially without data loss",
+    () =>
+      Effect.gen(function* () {
+        const messageContent = oversizedUnicodeContent("snapshot-message");
+        const planContent = `# ${oversizedUnicodeContent("snapshot-plan")}`;
+        const message = {
+          ...historyMessage(2),
+          text: deferredThreadContent("message-text", messageContent),
+        };
+        const proposedPlan = {
+          ...historyProposedPlan(2),
+          planMarkdown: deferredThreadContent("proposed-plan-markdown", planContent),
+        };
+        const snapshot = {
+          ...v2Snapshot({ ...BASE_THREAD, messages: [message], proposedPlans: [proposedPlan] }),
+          snapshot: {
+            ...v2Snapshot({ ...BASE_THREAD, messages: [message], proposedPlans: [proposedPlan] })
+              .snapshot,
+            deferredThreadContents: 2,
+          },
+        };
+        const harness = yield* makeHarness({
+          threadSyncV2: true,
+          hydrateContent: (input) =>
+            Effect.succeed(
+              testContentChunk(
+                input,
+                input.content.kind === "message-text" ? messageContent : planContent,
+                input.content.kind === "message-text" ? message.updatedAt : proposedPlan.updatedAt,
+              ),
+            ),
+        });
+
+        yield* Queue.offer(harness.v2Inputs, snapshot);
+        const live = yield* awaitThreadState(
+          harness.observed,
+          (state) =>
+            state.syncStatus?.phase === "live" &&
+            Option.getOrNull(state.data)?.messages[0]?.text === messageContent &&
+            Option.getOrNull(state.data)?.proposedPlans[0]?.planMarkdown === planContent,
+        );
+
+        const thread = Option.getOrThrow(live.data);
+        expect(thread.messages[0]?.text).toBe(messageContent);
+        expect(thread.proposedPlans[0]?.planMarkdown).toBe(planContent);
+        expect(live.syncStatus?.deferredPayloadCount).toBe(2);
+        const kinds = (yield* Ref.get(harness.contentChunkInputs)).map(
+          (input) => input.content.kind,
+        );
+        expect(kinds.filter((kind) => kind === "message-text").length).toBeGreaterThan(1);
+        expect(kinds.filter((kind) => kind === "proposed-plan-markdown").length).toBeGreaterThan(1);
+        expect(kinds.lastIndexOf("message-text")).toBeLessThan(
+          kinds.indexOf("proposed-plan-markdown"),
+        );
+      }),
+    { timeout: 30_000 },
+  );
+
+  it.effect(
+    "retries the V2 subscription after mismatched deferred content progress",
+    () =>
+      Effect.gen(function* () {
+        const content = oversizedUnicodeContent("replay-content");
+        const message = {
+          ...historyMessage(3),
+          text: deferredThreadContent("message-text", content),
+        };
+        const snapshot = {
+          ...v2Snapshot({ ...BASE_THREAD, messages: [message] }),
+          snapshot: {
+            ...v2Snapshot({ ...BASE_THREAD, messages: [message] }).snapshot,
+            deferredThreadContents: 1,
+          },
+        };
+        let contentAttempt = 0;
+        const harness = yield* makeHarness({
+          cached: BASE_THREAD,
+          threadSyncV2: true,
+          replayV2Items: [snapshot],
+          hydrateContent: (input) => {
+            contentAttempt += 1;
+            const result = testContentChunk(input, content, message.updatedAt);
+            return Effect.succeed(
+              contentAttempt === 1 && result.nextOffset !== null
+                ? { ...result, nextOffset: result.nextOffset + 1 }
+                : result,
+            );
+          },
+        });
+
+        yield* Queue.offer(harness.v2Inputs, snapshot);
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          if ((yield* Ref.get(harness.latest)).syncStatus?.phase === "error") {
+            break;
+          }
+          yield* Effect.yieldNow;
+        }
+        expect((yield* Ref.get(harness.latest)).syncStatus?.error).toContain(
+          "deferred content did not advance",
+        );
+
+        yield* TestClock.adjust("250 millis");
+        const recovered = yield* awaitThreadState(
+          harness.observed,
+          (state) =>
+            state.syncStatus?.phase === "live" &&
+            Option.getOrNull(state.data)?.messages[0]?.text === content,
+        );
+        expect(Option.getOrThrow(recovered.data).messages[0]?.text).toBe(content);
+        expect(yield* Ref.get(harness.v2SubscriptionCount)).toBe(2);
+      }),
+    { timeout: 30_000 },
+  );
+
+  it.effect(
+    "hydrates oversized live message and plan events before publishing them",
+    () =>
+      Effect.gen(function* () {
+        const messageContent = oversizedUnicodeContent("live-message");
+        const planContent = `# ${oversizedUnicodeContent("live-plan")}`;
+        const message = {
+          ...historyMessage(4),
+          text: deferredThreadContent("message-text", messageContent),
+        };
+        const proposedPlan = {
+          ...historyProposedPlan(4),
+          planMarkdown: deferredThreadContent("proposed-plan-markdown", planContent),
+        };
+        const messageEvent: OrchestrationThreadStreamV2Item = {
+          kind: "event",
+          event: {
+            eventId: EventId.make("event-live-oversized-message"),
+            sequence: 2,
+            occurredAt: message.updatedAt,
+            commandId: null,
+            causationEventId: null,
+            correlationId: null,
+            metadata: {},
+            aggregateKind: "thread",
+            aggregateId: THREAD_ID,
+            type: "thread.message-sent",
+            payload: {
+              threadId: THREAD_ID,
+              messageId: message.id,
+              role: message.role,
+              text: message.text,
+              turnId: message.turnId,
+              streaming: message.streaming,
+              createdAt: message.createdAt,
+              updatedAt: message.updatedAt,
+            },
+          },
+          deferredActivityPayloads: 0,
+          deferredThreadContents: 1,
+          estimatedSerializedBytes: 256,
+        };
+        const proposedPlanEvent: OrchestrationThreadStreamV2Item = {
+          kind: "event",
+          event: {
+            eventId: EventId.make("event-live-oversized-plan"),
+            sequence: 3,
+            occurredAt: proposedPlan.updatedAt,
+            commandId: null,
+            causationEventId: null,
+            correlationId: null,
+            metadata: {},
+            aggregateKind: "thread",
+            aggregateId: THREAD_ID,
+            type: "thread.proposed-plan-upserted",
+            payload: { threadId: THREAD_ID, proposedPlan },
+          },
+          deferredActivityPayloads: 0,
+          deferredThreadContents: 1,
+          estimatedSerializedBytes: 256,
+        };
+        const harness = yield* makeHarness({
+          threadSyncV2: true,
+          hydrateContent: (input) =>
+            Effect.succeed(
+              testContentChunk(
+                input,
+                input.content.kind === "message-text" ? messageContent : planContent,
+                input.content.kind === "message-text" ? message.updatedAt : proposedPlan.updatedAt,
+              ),
+            ),
+        });
+
+        yield* Queue.offer(harness.v2Inputs, v2Snapshot(BASE_THREAD));
+        yield* awaitThreadState(harness.observed, (state) => state.syncStatus?.phase === "live");
+        yield* Queue.offer(harness.v2Inputs, messageEvent);
+        const messageLive = yield* awaitThreadState(
+          harness.observed,
+          (state) =>
+            state.syncStatus?.phase === "live" &&
+            Option.getOrNull(state.data)?.messages[0]?.text === messageContent,
+        );
+        expect(messageLive.syncStatus?.deferredPayloadCount).toBe(1);
+
+        yield* Queue.offer(harness.v2Inputs, proposedPlanEvent);
+        const planLive = yield* awaitThreadState(
+          harness.observed,
+          (state) =>
+            state.syncStatus?.phase === "live" &&
+            Option.getOrNull(state.data)?.proposedPlans[0]?.planMarkdown === planContent,
+        );
+        const thread = Option.getOrThrow(planLive.data);
+        expect(thread.messages[0]?.text).toBe(messageContent);
+        expect(thread.proposedPlans[0]?.planMarkdown).toBe(planContent);
+        expect(planLive.syncStatus?.deferredPayloadCount).toBe(1);
+      }),
+    { timeout: 30_000 },
   );
 
   it.effect("retries a failed history page before publishing the v2 snapshot", () =>

@@ -5642,6 +5642,25 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                   estimatedSerializedBytes: 0,
                 };
               }),
+            getThreadContentChunk: () =>
+              Effect.sync(() => {
+                calls.push("content");
+                return {
+                  threadId: defaultThreadId,
+                  content: {
+                    kind: "message-text" as const,
+                    messageId: MessageId.make("message-1"),
+                  },
+                  contentVersion: "2026-01-01T00:00:00.000Z",
+                  offset: 0,
+                  chunk: "content",
+                  chunkByteLength: 7,
+                  nextOffset: null,
+                  totalByteLength: 7,
+                  totalCharacterLength: 7,
+                  estimatedSerializedBytes: 256,
+                };
+              }),
             getThreadActivityPage: () =>
               Effect.sync(() => {
                 calls.push("activities");
@@ -5688,6 +5707,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
       yield* Effect.scoped(
         withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+          client[ORCHESTRATION_WS_METHODS.getThreadContentChunk]({
+            threadId: defaultThreadId,
+            content: { kind: "message-text", messageId: MessageId.make("message-1") },
+            offset: 0,
+          }),
+        ),
+      );
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
           client[ORCHESTRATION_WS_METHODS.getThreadActivityPage]({ threadId: defaultThreadId }),
         ),
       );
@@ -5697,7 +5725,13 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
 
-      assert.deepEqual(calls, ["messages", "proposed-plans", "activities", "checkpoints"]);
+      assert.deepEqual(calls, [
+        "messages",
+        "proposed-plans",
+        "content",
+        "activities",
+        "checkpoints",
+      ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -5722,6 +5756,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
             client[ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage]({
               threadId: defaultThreadId,
+            }),
+          ).pipe(Effect.result),
+        ),
+        Effect.scoped(
+          withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+            client[ORCHESTRATION_WS_METHODS.getThreadContentChunk]({
+              threadId: defaultThreadId,
+              content: { kind: "message-text", messageId: MessageId.make("message-1") },
+              offset: 0,
             }),
           ).pipe(Effect.result),
         ),

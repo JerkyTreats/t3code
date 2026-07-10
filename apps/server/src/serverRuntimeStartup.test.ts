@@ -20,6 +20,7 @@ const unusedThreadSyncV2ProjectionMethods = {
   getThreadDetailV2ById: () => Effect.die("unused"),
   getThreadMessagePage: () => Effect.die("unused"),
   getThreadProposedPlanPage: () => Effect.die("unused"),
+  getThreadContentChunk: () => Effect.die("unused"),
   getThreadActivityPage: () => Effect.die("unused"),
   getThreadCheckpointPage: () => Effect.die("unused"),
   hydrateThreadActivityPayloads: () => Effect.die("unused"),
@@ -28,6 +29,7 @@ const unusedThreadSyncV2ProjectionMethods = {
   | "getThreadDetailV2ById"
   | "getThreadMessagePage"
   | "getThreadProposedPlanPage"
+  | "getThreadContentChunk"
   | "getThreadActivityPage"
   | "getThreadCheckpointPage"
   | "hydrateThreadActivityPayloads"

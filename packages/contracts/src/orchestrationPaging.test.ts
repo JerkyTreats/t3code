@@ -8,18 +8,22 @@ import {
   OrchestrationThreadActivityPageResult,
   OrchestrationThreadCheckpointPageInput,
   OrchestrationThreadCheckpointPageResult,
+  OrchestrationThreadContentChunkInput,
+  OrchestrationThreadContentChunkResult,
   OrchestrationThreadMessagePageInput,
   OrchestrationThreadMessagePageResult,
   OrchestrationThreadProposedPlanPageInput,
   OrchestrationThreadProposedPlanPageResult,
   ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS,
   ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES,
   ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS,
   ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
   ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS,
 } from "./orchestration.ts";
 import {
   WsOrchestrationGetThreadCheckpointPageRpc,
+  WsOrchestrationGetThreadContentChunkRpc,
   WsOrchestrationGetThreadMessagePageRpc,
   WsOrchestrationGetThreadProposedPlanPageRpc,
   WsRpcGroup,
@@ -40,6 +44,12 @@ const decodeCheckpointPageResult = Schema.decodeUnknownEffect(
   OrchestrationThreadCheckpointPageResult,
 );
 const decodeActivityPageResult = Schema.decodeUnknownEffect(OrchestrationThreadActivityPageResult);
+const decodeThreadContentChunkInput = Schema.decodeUnknownEffect(
+  OrchestrationThreadContentChunkInput,
+);
+const decodeThreadContentChunkResult = Schema.decodeUnknownEffect(
+  OrchestrationThreadContentChunkResult,
+);
 
 it.effect("decodes backward history cursors for every non-activity collection", () =>
   Effect.gen(function* () {
@@ -272,6 +282,61 @@ it.effect("rejects oversized history page results", () =>
   }),
 );
 
+it.effect("decodes deferred content markers and bounded chunk responses", () =>
+  Effect.gen(function* () {
+    const page = yield* decodeMessagePageResult({
+      items: [
+        {
+          id: "message-1",
+          role: "assistant",
+          text: {
+            __t3Deferred: "thread-content",
+            kind: "message-text",
+            byteLength: ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES + 1,
+            characterLength: ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES + 1,
+          },
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-07-10T10:00:00.000Z",
+          updatedAt: "2026-07-10T10:00:00.000Z",
+        },
+      ],
+      startCursor: null,
+      hasMoreBefore: false,
+      estimatedSerializedBytes: 512,
+    });
+    const input = yield* decodeThreadContentChunkInput({
+      threadId: "thread-1",
+      content: { kind: "message-text", messageId: "message-1" },
+      offset: 0,
+    });
+    const chunk = yield* decodeThreadContentChunkResult({
+      threadId: "thread-1",
+      content: { kind: "message-text", messageId: "message-1" },
+      contentVersion: "2026-07-10T10:00:00.000Z",
+      offset: 0,
+      chunk: "first chunk",
+      chunkByteLength: 11,
+      nextOffset: 11,
+      totalByteLength: ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES + 1,
+      totalCharacterLength: ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES + 1,
+      estimatedSerializedBytes: 256,
+    });
+
+    assert.strictEqual(typeof page.items[0]?.text, "object");
+    assert.strictEqual(input.content.kind, "message-text");
+    assert.strictEqual(chunk.nextOffset, 11);
+
+    const oversizedChunk = yield* Effect.exit(
+      decodeThreadContentChunkResult({
+        ...chunk,
+        chunkByteLength: ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES + 1,
+      }),
+    );
+    assert.strictEqual(oversizedChunk._tag, "Failure");
+  }),
+);
+
 it("registers all non-activity history page RPCs", () => {
   const registrations = [
     [
@@ -283,6 +348,11 @@ it("registers all non-activity history page RPCs", () => {
       "getThreadProposedPlanPage",
       "orchestration.getThreadProposedPlanPage",
       WsOrchestrationGetThreadProposedPlanPageRpc,
+    ],
+    [
+      "getThreadContentChunk",
+      "orchestration.getThreadContentChunk",
+      WsOrchestrationGetThreadContentChunkRpc,
     ],
     [
       "getThreadCheckpointPage",
