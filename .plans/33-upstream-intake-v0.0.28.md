@@ -1,7 +1,7 @@
 # Upstream Intake v0.0.28
 
 Date: 2026-07-02
-Status: cleanup and completeness active, remote hardening and final preservation gate in progress
+Status: cleanup and completeness active, remote review repair and final preservation gate in progress
 
 ## Scope
 
@@ -752,7 +752,20 @@ Current evidence:
 
 - Committed append only migration 36 to reconcile old fork migration ids 31 through 35 with upstream ids 31 and 32 while leaving historical ledger rows unchanged.
 - Updated F5 and F14 owner modules and verification expectations for unified right panel ownership.
-- Remote connection hardening from main commits `11e35c658` and `55509fe5c` is the remaining implementation wave before final preservation signoff.
+- Replayed remote connection controls, browser wakeups, bounded diagnostics, shell plan progress, capability selected `subscribeThreadV2`, and cached thread sync state from main commits `11e35c658` and `55509fe5c`.
+- Added bounded server tail windows plus exclusive before paging for messages, proposed plans, activities, and checkpoints. Client hydration now loads all advertised history pages before publishing live state.
+- Restored migration 36 exactly to commit `fdab29157` and moved runtime summary reconciliation into append only migration 37 with interim schema coverage.
+- Clean committed implementation checkpoint is `3d410ca2d`. The full repository type gate passed across 15 workspaces through `corepack pnpm typecheck` under Node `v26.0.0`, with the expected engine warning for required Node `^24.13.1`.
+
+Fresh review findings still open at this checkpoint:
+
+- Close the event continuity gap between the V2 snapshot sequence and the live event stream with persisted replay.
+- Allow cursorless tail paging when aggregate byte trimming leaves an advertised history window empty.
+- Deliver `thread.deleted` through the server thread detail event filter so cached detail is removed.
+- Preserve visible cached row synchronization errors while an automatic retry is still subscribing.
+- Redact complete authorization values for every authentication scheme in thread synchronization diagnostics.
+
+This checkpoint is recoverable and fully committed, but it is not final preservation signoff until these findings are repaired and all required gates pass.
 
 ## Intake Summary
 
