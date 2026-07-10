@@ -503,6 +503,9 @@ const hydrateDeferredThreadActivityPayloads = Effect.fn(
     for (const payload of result.payloads) {
       payloadByActivityId.set(payload.activityId, payload.payload);
     }
+    for (const omitted of result.omitted) {
+      payloadByActivityId.set(omitted.activityId, null);
+    }
     if (result.omitted.length > 0) {
       yield* Effect.logWarning("Thread sync v2 omitted deferred activity payloads.").pipe(
         Effect.annotateLogs({

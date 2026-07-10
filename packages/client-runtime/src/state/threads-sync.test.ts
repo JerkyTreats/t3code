@@ -1455,6 +1455,66 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("replaces omitted deferred activity payloads before publishing web state", () =>
+    Effect.gen(function* () {
+      const snapshotActivity: OrchestrationThreadActivity = {
+        id: EventId.make("activity-omitted-snapshot"),
+        tone: "tool",
+        kind: "tool.call",
+        summary: "Oversized snapshot payload",
+        payload: {
+          __t3Deferred: "thread-activity-payload",
+          byteLength: 2_100_000,
+        },
+        turnId: null,
+        sequence: 1,
+        createdAt: "2026-04-01T01:00:00.000Z",
+      };
+      const harness = yield* makeHarness({
+        threadSyncV2: true,
+        hydrate: (input) =>
+          Effect.succeed({
+            payloads: [],
+            omitted: input.activityIds.map((activityId) => ({
+              activityId,
+              reason: "too-large" as const,
+              byteLength: 2_100_000,
+            })),
+          }),
+      });
+
+      yield* Queue.offer(
+        harness.v2Inputs,
+        v2Snapshot({ ...BASE_THREAD, activities: [snapshotActivity] }),
+      );
+      const snapshotLive = yield* awaitThreadState(
+        harness.observed,
+        (state) =>
+          state.syncStatus?.phase === "live" &&
+          Option.isSome(state.data) &&
+          state.data.value.activities[0]?.payload === null,
+      );
+      expect(Option.getOrThrow(snapshotLive.data).activities[0]?.payload).toBeNull();
+
+      const eventActivity: OrchestrationThreadActivity = {
+        ...snapshotActivity,
+        id: EventId.make("activity-omitted-event"),
+        summary: "Oversized event payload",
+        sequence: 2,
+      };
+      yield* Queue.offer(harness.v2Inputs, v2ActivityAppended(eventActivity, 2));
+      const eventLive = yield* awaitThreadState(
+        harness.observed,
+        (state) =>
+          Option.isSome(state.data) &&
+          state.data.value.activities.some(
+            (activity) => activity.id === eventActivity.id && activity.payload === null,
+          ),
+      );
+      expect(Option.getOrThrow(eventLive.data).activities.at(-1)?.payload).toBeNull();
+    }),
+  );
+
   it.effect("retries a failed snapshot hydration before consuming later events", () =>
     Effect.gen(function* () {
       const activity: OrchestrationThreadActivity = {
