@@ -341,6 +341,9 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
         yield* reportProgress({ stage: "opening", prepared });
         yield* options?.beforeSessionConnect?.(target.environmentId) ?? Effect.void;
         const closed = yield* Deferred.make<never, ConnectionTransientError>();
+        const diagnosticEvents = yield* SubscriptionRef.make<
+          ReadonlyArray<import("./diagnostics.ts").RpcSessionDiagnosticEvent>
+        >([]);
         yield* Ref.update(sessions, (current) => [...current, { closed }]);
         const session = yield* Effect.acquireRelease(
           Effect.succeed({
@@ -349,6 +352,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
             ready: Effect.void,
             probe: Effect.void,
             closed: Deferred.await(closed),
+            diagnosticEvents,
           } satisfies RpcSession.RpcSession),
           () => Ref.update(releasedSessions, (count) => count + 1),
         );
@@ -567,6 +571,102 @@ describe("EnvironmentRegistry", () => {
           false,
         );
       }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("disconnects without deleting owned data and reconnects the registration", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [BEARER_TARGET],
+        [BEARER_PROFILE],
+        [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      yield* Ref.update(harness.shellCache, (current) =>
+        new Map(current).set(BEARER_TARGET.environmentId, CACHED_SNAPSHOT),
+      );
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* awaitConnectionState(
+          registry,
+          BEARER_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+
+        yield* registry.disconnect(BEARER_TARGET.environmentId);
+        yield* awaitConnectionState(
+          registry,
+          BEARER_TARGET.environmentId,
+          (state) => state.phase === "available",
+        );
+
+        expect((yield* Ref.get(harness.storedTargets)).get(BEARER_TARGET.environmentId)).toEqual(
+          BEARER_TARGET,
+        );
+        expect((yield* Ref.get(harness.storedProfiles)).get(BEARER_TARGET.connectionId)).toEqual(
+          BEARER_PROFILE,
+        );
+        expect((yield* Ref.get(harness.storedCredentials)).get(BEARER_TARGET.connectionId)).toEqual(
+          BEARER_CREDENTIAL,
+        );
+        expect((yield* Ref.get(harness.shellCache)).get(BEARER_TARGET.environmentId)).toEqual(
+          CACHED_SNAPSHOT,
+        );
+        expect(yield* Ref.get(harness.cacheClears)).toEqual([]);
+        expect(yield* Ref.get(harness.ownedDataClears)).toEqual([]);
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).has(BEARER_TARGET.environmentId),
+        ).toBe(true);
+
+        yield* registry.connect(BEARER_TARGET.environmentId);
+        yield* awaitConnectionState(
+          registry,
+          BEARER_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(2);
+
+        yield* registry.forget(BEARER_TARGET.environmentId);
+        expect((yield* Ref.get(harness.storedTargets)).has(BEARER_TARGET.environmentId)).toBe(
+          false,
+        );
+        expect((yield* Ref.get(harness.storedProfiles)).has(BEARER_TARGET.connectionId)).toBe(
+          false,
+        );
+        expect((yield* Ref.get(harness.storedCredentials)).has(BEARER_TARGET.connectionId)).toBe(
+          false,
+        );
+        expect((yield* Ref.get(harness.shellCache)).has(BEARER_TARGET.environmentId)).toBe(false);
+        expect(yield* Ref.get(harness.cacheClears)).toEqual([BEARER_TARGET.environmentId]);
+        expect(yield* Ref.get(harness.ownedDataClears)).toEqual([BEARER_TARGET.environmentId]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("stops an SSH tunnel on disconnect without forgetting its profile", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([SSH_CONNECTION], [SSH_PROFILE]);
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* awaitConnectionState(
+          registry,
+          SSH_CONNECTION.environmentId,
+          (state) => state.phase === "connected",
+        );
+
+        yield* registry.disconnect(SSH_CONNECTION.environmentId);
+
+        expect((yield* Ref.get(harness.storedTargets)).get(SSH_CONNECTION.environmentId)).toEqual(
+          SSH_CONNECTION,
+        );
+        expect((yield* Ref.get(harness.storedProfiles)).get(SSH_CONNECTION.connectionId)).toEqual(
+          SSH_PROFILE,
+        );
+        expect(yield* Ref.get(harness.disconnectedSshTargets)).toEqual([SSH_TARGET]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );
 

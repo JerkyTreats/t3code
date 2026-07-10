@@ -1,15 +1,23 @@
 import { type ServerConfig, WS_METHODS } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as RpcClient from "effect/unstable/rpc/RpcClient";
 import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
 import * as Socket from "effect/unstable/socket/Socket";
 
 import { makeWsRpcProtocolClient, type WsRpcProtocolClient } from "./protocol.ts";
+import {
+  sanitizeDiagnosticText,
+  sanitizeDiagnosticUrl,
+  type RpcSessionDiagnosticEvent,
+  type RpcSessionDiagnosticEventInput,
+} from "../connection/diagnostics.ts";
 import type {
   ConnectionAttemptError,
   ConnectionTransientError,
@@ -21,6 +29,9 @@ import {
 } from "../connection/model.ts";
 
 const SOCKET_OPEN_TIMEOUT = "15 seconds";
+const MAX_RPC_SESSION_DIAGNOSTIC_EVENTS = 16;
+
+let nextRpcSessionId = 0;
 
 export interface RpcSession {
   readonly client: WsRpcProtocolClient;
@@ -28,6 +39,9 @@ export interface RpcSession {
   readonly ready: Effect.Effect<void, ConnectionAttemptError>;
   readonly probe: Effect.Effect<void, ConnectionAttemptError>;
   readonly closed: Effect.Effect<never, ConnectionTransientError>;
+  readonly diagnosticEvents?: SubscriptionRef.SubscriptionRef<
+    ReadonlyArray<RpcSessionDiagnosticEvent>
+  >;
 }
 
 export class RpcSessionFactory extends Context.Service<
@@ -72,20 +86,87 @@ export const make = Effect.gen(function* () {
       "connection.environment.id": connection.environmentId,
     });
 
+    nextRpcSessionId += 1;
+    const sessionId = nextRpcSessionId;
+    let nextDiagnosticEventId = 0;
+    let intentionalClose = false;
+    let lastCloseCode: number | null = null;
+    let lastCloseReason: string | null = null;
+    const initialObservedAtMs = yield* Clock.currentTimeMillis;
+    const diagnosticEvents = yield* SubscriptionRef.make<ReadonlyArray<RpcSessionDiagnosticEvent>>([
+      {
+        id: `${sessionId}:1`,
+        type: "attempt",
+        observedAtMs: initialObservedAtMs,
+        socketUrl: sanitizeDiagnosticUrl(connection.socketUrl),
+      },
+    ]);
+    nextDiagnosticEventId = 1;
+    const appendDiagnosticEvent = Effect.fnUntraced(function* (
+      event: RpcSessionDiagnosticEventInput,
+    ) {
+      nextDiagnosticEventId += 1;
+      yield* SubscriptionRef.update(diagnosticEvents, (current) =>
+        [{ ...event, id: `${sessionId}:${nextDiagnosticEventId}` }, ...current].slice(
+          0,
+          MAX_RPC_SESSION_DIAGNOSTIC_EVENTS,
+        ),
+      );
+    });
+
+    const observedWebSocketConstructor: Socket.WebSocketConstructor["Service"] = (
+      url,
+      protocols,
+    ) => {
+      const socket = webSocketConstructor(url, protocols);
+      socket.addEventListener(
+        "close",
+        (event) => {
+          lastCloseCode = typeof event.code === "number" ? event.code : null;
+          lastCloseReason = sanitizeDiagnosticText(event.reason);
+        },
+        { once: true },
+      );
+      return socket;
+    };
+
     const connected = yield* Deferred.make<void>();
     const disconnected = yield* Deferred.make<never, ConnectionTransientError>();
     const hooks = RpcClient.ConnectionHooks.of({
-      onConnect: Deferred.succeed(connected, undefined).pipe(Effect.asVoid),
+      onConnect: Clock.currentTimeMillis.pipe(
+        Effect.flatMap((observedAtMs) =>
+          appendDiagnosticEvent({
+            type: "connected",
+            observedAtMs,
+          }),
+        ),
+        Effect.andThen(Deferred.succeed(connected, undefined)),
+        Effect.asVoid,
+      ),
       onDisconnect: Deferred.isDone(connected).pipe(
         Effect.flatMap((wasConnected) =>
-          Deferred.fail(
-            disconnected,
-            new ConnectionTransientErrorClass({
-              reason: "transport",
-              detail: wasConnected
-                ? `${connection.label} disconnected.`
-                : `${connection.label} could not establish a WebSocket connection.`,
-            }),
+          Clock.currentTimeMillis.pipe(
+            Effect.flatMap((observedAtMs) =>
+              appendDiagnosticEvent({
+                type: "disconnected",
+                observedAtMs,
+                closeCode: lastCloseCode,
+                closeReason: lastCloseReason,
+                intentional: intentionalClose,
+                wasConnected,
+              }),
+            ),
+            Effect.andThen(
+              Deferred.fail(
+                disconnected,
+                new ConnectionTransientErrorClass({
+                  reason: "transport",
+                  detail: wasConnected
+                    ? `${connection.label} disconnected.`
+                    : `${connection.label} could not establish a WebSocket connection.`,
+                }),
+              ),
+            ),
           ),
         ),
         Effect.asVoid,
@@ -93,7 +174,9 @@ export const make = Effect.gen(function* () {
     });
     const socketLayer = Socket.layerWebSocket(connection.socketUrl, {
       openTimeout: SOCKET_OPEN_TIMEOUT,
-    }).pipe(Layer.provide(Layer.succeed(Socket.WebSocketConstructor, webSocketConstructor)));
+    }).pipe(
+      Layer.provide(Layer.succeed(Socket.WebSocketConstructor, observedWebSocketConstructor)),
+    );
     const protocolLayer = Layer.effect(
       RpcClient.Protocol,
       RpcClient.makeProtocolSocket({
@@ -111,6 +194,11 @@ export const make = Effect.gen(function* () {
     );
     const protocolContext = yield* Layer.build(protocolLayer).pipe(
       Effect.withSpan("environment.websocket.connect"),
+    );
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        intentionalClose = true;
+      }),
     );
     const client = yield* makeWsRpcProtocolClient.pipe(Effect.provide(protocolContext));
     const initialConfig = yield* Effect.cached(
@@ -135,6 +223,7 @@ export const make = Effect.gen(function* () {
       ),
       probe,
       closed: Deferred.await(disconnected),
+      diagnosticEvents,
     } satisfies RpcSession;
   });
 

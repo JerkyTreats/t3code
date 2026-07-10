@@ -7,6 +7,10 @@
       "types": "./src/connection/index.ts",
       "default": "./src/connection/index.ts"
     },
+    "./connection/diagnostics": {
+      "types": "./src/connection/diagnostics.ts",
+      "default": "./src/connection/diagnostics.ts"
+    },
     "./authorization": {
       "types": "./src/authorization/index.ts",
       "default": "./src/authorization/index.ts"

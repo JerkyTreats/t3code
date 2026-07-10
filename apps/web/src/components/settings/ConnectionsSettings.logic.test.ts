@@ -1,4 +1,5 @@
 import type { DesktopWslState } from "@t3tools/contracts";
+import { resolveConnectionControlAction } from "@t3tools/client-runtime/state/connections";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { applyWslEnableSelection } from "./ConnectionsSettings.logic";
 
@@ -71,5 +72,16 @@ describe("applyWslEnableSelection", () => {
     expect(calls).toEqual(["setWslOnly:true", "setWslBackendEnabled:true"]);
     expect(setWslDistro).not.toHaveBeenCalled();
     expect(state).toMatchObject({ enabled: true, wslOnly: true });
+  });
+});
+
+describe("saved environment connection controls", () => {
+  it("disconnects only a live connection and connects every inactive state", () => {
+    expect(resolveConnectionControlAction("connected")).toBe("disconnect");
+    expect(resolveConnectionControlAction("available")).toBe("connect");
+    expect(resolveConnectionControlAction("offline")).toBe("connect");
+    expect(resolveConnectionControlAction("connecting")).toBe("connect");
+    expect(resolveConnectionControlAction("reconnecting")).toBe("connect");
+    expect(resolveConnectionControlAction("error")).toBe("connect");
   });
 });

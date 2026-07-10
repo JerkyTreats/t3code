@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
 import * as Socket from "effect/unstable/socket/Socket";
 
@@ -207,6 +208,18 @@ describe("RpcSessionFactory", () => {
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory();
       const session = yield* factory.connect(PREPARED);
+      if (session.diagnosticEvents === undefined) {
+        return yield* Effect.die(new Error("Expected RPC session diagnostics."));
+      }
+      const initialDiagnostics = yield* SubscriptionRef.get(session.diagnosticEvents);
+      const initialEvent = initialDiagnostics[0];
+      expect(initialEvent).toMatchObject({
+        type: "attempt",
+        socketUrl: "wss://environment.example.test/ws",
+      });
+      expect(initialEvent?.type === "attempt" ? initialEvent.socketUrl : null).not.toContain(
+        "wsTicket=test",
+      );
       const readyFiber = yield* Effect.forkChild(session.ready);
       const socket = yield* awaitSocket(sockets);
 
@@ -227,6 +240,13 @@ describe("RpcSessionFactory", () => {
         reason: "transport",
         message: "Test environment disconnected.",
       });
+      expect((yield* SubscriptionRef.get(session.diagnosticEvents))[0]).toMatchObject({
+        type: "disconnected",
+        closeCode: 1012,
+        closeReason: "service restart",
+        intentional: false,
+        wasConnected: true,
+      });
       yield* Effect.yieldNow;
       expect(sockets).toHaveLength(1);
     }),
@@ -236,7 +256,7 @@ describe("RpcSessionFactory", () => {
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory();
 
-      yield* Effect.scoped(
+      const diagnosticEvents = yield* Effect.scoped(
         Effect.gen(function* () {
           const session = yield* factory.connect(PREPARED);
           const readyFiber = yield* Effect.forkChild(session.ready);
@@ -244,10 +264,21 @@ describe("RpcSessionFactory", () => {
           socket.open();
           yield* completeInitialConfig(socket);
           yield* Fiber.join(readyFiber);
+          if (session.diagnosticEvents === undefined) {
+            return yield* Effect.die(new Error("Expected RPC session diagnostics."));
+          }
+          return session.diagnosticEvents;
         }),
       );
 
       expect(sockets[0]?.readyState).toBe(TestWebSocket.CLOSED);
+      yield* Effect.yieldNow;
+      expect((yield* SubscriptionRef.get(diagnosticEvents))[0]).toMatchObject({
+        type: "disconnected",
+        closeCode: 1000,
+        intentional: true,
+        wasConnected: true,
+      });
     }),
   );
 
