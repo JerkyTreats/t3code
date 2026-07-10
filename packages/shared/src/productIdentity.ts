@@ -1,8 +1,8 @@
 export type ProductStageLabel = "Alpha" | "Dev" | "Nightly";
 export type ProductReleaseChannel = "latest" | "nightly";
 
-export const PRODUCT_BASE_NAME = "T3 Code Omarchy";
-export const PRODUCT_PACKAGE_DESCRIPTION = "T3 Code Omarchy desktop build";
+export const PRODUCT_BASE_NAME = "T3 Code";
+export const PRODUCT_PACKAGE_DESCRIPTION = "T3 Code desktop build";
 
 export const PRODUCT_TECHNICAL_IDENTITY = {
   appId: "com.t3tools.t3code",

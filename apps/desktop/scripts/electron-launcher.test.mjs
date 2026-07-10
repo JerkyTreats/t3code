@@ -7,10 +7,10 @@ import {
 } from "./electron-launcher.mjs";
 
 describe("electron development launcher", () => {
-  it("uses the Omarchy identity for launcher display names", () => {
-    assert.equal(APP_DISPLAY_NAME, "T3 Code Omarchy (Alpha)");
-    assert.equal(resolveLauncherDisplayName(false), "T3 Code Omarchy (Alpha)");
-    assert.equal(resolveLauncherDisplayName(true), "T3 Code Omarchy (Dev)");
+  it("uses the fork identity for launcher display names", () => {
+    assert.equal(APP_DISPLAY_NAME, "T3 Code (Alpha)");
+    assert.equal(resolveLauncherDisplayName(false), "T3 Code (Alpha)");
+    assert.equal(resolveLauncherDisplayName(true), "T3 Code (Dev)");
   });
 
   it("uses captured values only as fallbacks for a live runner environment", () => {

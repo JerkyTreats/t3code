@@ -1,4 +1,4 @@
-// This file mostly exists because we want dev mode to say "T3 Code Omarchy (Dev)" instead of "electron"
+// This file mostly exists because we want dev mode to say "T3 Code (Dev)" instead of "electron"
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -15,7 +15,7 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-const APP_BASE_NAME = "T3 Code Omarchy";
+const APP_BASE_NAME = "T3 Code";
 export function resolveLauncherDisplayName(isDevelopmentBuild) {
   return `${APP_BASE_NAME} (${isDevelopmentBuild ? "Dev" : "Alpha"})`;
 }
