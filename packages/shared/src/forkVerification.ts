@@ -63,42 +63,46 @@ export const FORK_FEATURE_CONTRACTS = [
     scenarios: [
       {
         id: "f1-web-brand-name",
-        outcome: "Web visible product identity resolves to the Omarchy brand.",
+        outcome: "Web visible product identity resolves to the fork product identity.",
         levels: ["unit"],
       },
       {
         id: "f1-desktop-brand-name",
-        outcome: "Desktop package and window identity keep the Omarchy brand.",
+        outcome: "Desktop package and window identity keep the fork product identity.",
         levels: ["unit", "manual"],
       },
     ],
   },
   {
     id: "F2",
-    title: "Omarchy system theme projection",
+    title: "Local desktop theme projection",
     ownerModules: [
-      "apps/desktop/src/omarchyTheme.ts",
+      "apps/desktop/src/fork/OmarchyThemeSource.ts",
+      "apps/desktop/src/fork/DesktopSystemThemeService.ts",
       "apps/desktop/src/main.ts",
       "apps/desktop/src/preload.ts",
+      "apps/desktop/src/ipc/channels.ts",
+      "apps/desktop/src/ipc/methods/window.ts",
+      "apps/web/src/hooks/useTheme.ts",
       "apps/web/src/index.css",
     ],
     scenarios: [
       {
-        id: "f2-read-omarchy-theme-state",
-        outcome: "Desktop theme discovery reads Omarchy state and reports Omarchy as the source.",
+        id: "f2-read-local-theme-state",
+        outcome: "Desktop theme discovery reads the selected local host theme source.",
         levels: ["unit"],
       },
       {
         id: "f2-project-web-theme-values",
         outcome:
-          "Web theme variables receive Omarchy accent, foreground, background, selection, and terminal colors.",
+          "Web theme variables receive accent, foreground, background, selection, and terminal colors from the selected local source.",
         levels: ["browser", "manual"],
       },
     ],
   },
   {
     id: "F3",
-    title: "Omarchy screenshot capture and attach flow",
+    title: "Desktop screenshot capture and attach flow",
     ownerModules: [
       "apps/desktop/src/fork/OmarchyScreenshotCapture.ts",
       "apps/desktop/src/main.ts",
@@ -110,9 +114,9 @@ export const FORK_FEATURE_CONTRACTS = [
     ],
     scenarios: [
       {
-        id: "f3-prefer-omarchy-capture",
+        id: "f3-capture-stable-png",
         outcome:
-          "Screenshot capture prefers Omarchy tooling and waits for a complete PNG artifact.",
+          "Screenshot capture uses a supported host adapter and waits for a complete PNG artifact.",
         levels: ["unit", "manual"],
       },
       {
@@ -157,18 +161,21 @@ export const FORK_FEATURE_CONTRACTS = [
   },
   {
     id: "F5",
-    title: "Git panel isolation from draft ownership",
+    title: "Git surface isolation from draft ownership",
     ownerModules: [
       "apps/web/src/components/GitActionsControl.tsx",
       "apps/web/src/components/GitActionsControl.logic.ts",
+      "apps/web/src/components/RightPanelTabs.tsx",
+      "apps/web/src/rightPanelStore.ts",
       "apps/web/src/composerDraftStore.ts",
       "apps/web/src/components/ChatView.browser.tsx",
       "apps/web/src/lib/threadDeletionWorkflow.ts",
     ],
     scenarios: [
       {
-        id: "f5-git-panel-does-not-clear-draft",
-        outcome: "Git panel actions do not claim, clear, or mutate unrelated active draft content.",
+        id: "f5-git-surface-does-not-clear-draft",
+        outcome:
+          "Git surface actions do not claim, clear, or mutate unrelated active draft content.",
         levels: ["unit", "browser"],
       },
       {
@@ -401,12 +408,14 @@ export const FORK_FEATURE_CONTRACTS = [
   },
   {
     id: "F14",
-    title: "Project management and inference dashboard",
+    title: "Unified project context and inference dashboard",
     ownerModules: [
       "apps/web/src/routes/_chat.projects.$environmentId.$projectId.tsx",
       "apps/web/src/components/project-management/ProjectManagementRoute.tsx",
       "apps/web/src/components/project-management/ProjectManagementPage.tsx",
       "apps/web/src/components/project-management/ProjectInferenceDashboardPage.tsx",
+      "apps/web/src/components/RightPanelTabs.tsx",
+      "apps/web/src/rightPanelStore.ts",
       "apps/web/src/project-management/projectManagementRoute.ts",
       "apps/web/src/project-management/projectManagementOverview.ts",
       "apps/web/src/project-management/projectManagementInference.ts",
@@ -417,9 +426,9 @@ export const FORK_FEATURE_CONTRACTS = [
     ],
     scenarios: [
       {
-        id: "f14-project-management-targets-concrete-project",
+        id: "f14-unified-project-context-targets-concrete-project",
         outcome:
-          "Sidebar and command palette project management actions target concrete environment scoped projects.",
+          "Sidebar and command palette project actions open unified right panel context for concrete environment scoped projects.",
         levels: ["unit", "browser"],
       },
       {
@@ -431,7 +440,7 @@ export const FORK_FEATURE_CONTRACTS = [
       {
         id: "f14-project-git-does-not-claim-draft",
         outcome:
-          "Project scoped Git management renders repository state without clearing unrelated active composer drafts.",
+          "Project scoped Git surface renders repository state without clearing unrelated active composer drafts.",
         levels: ["unit", "browser"],
       },
     ],

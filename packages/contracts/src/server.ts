@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { ServerAuthDescriptor } from "./auth.ts";
 import {
@@ -18,7 +19,11 @@ import {
 } from "./keybindings.ts";
 import { EditorId } from "./editor.ts";
 import { ModelCapabilities } from "./model.ts";
-import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  defaultInstanceIdForDriver,
+} from "./providerInstance.ts";
 import { ServerSettings } from "./settings.ts";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
@@ -153,13 +158,7 @@ export const ServerProviderUpdateState = Schema.Struct({
 });
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
-export const ServerProvider = Schema.Struct({
-  // Routing key for the configured instance this snapshot represents. This
-  // is the only stable identity consumers may use for provider routing.
-  instanceId: ProviderInstanceId,
-  // Open driver kind slug that selects the implementation handling this
-  // instance. It is metadata/capability context, not a routing key.
-  driver: ProviderDriverKind,
+const ServerProviderPayloadFields = {
   displayName: Schema.optional(TrimmedNonEmptyString),
   accentColor: Schema.optional(TrimmedNonEmptyString),
   badgeLabel: Schema.optional(TrimmedNonEmptyString),
@@ -189,7 +188,72 @@ export const ServerProvider = Schema.Struct({
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
+} as const;
+
+const ServerProviderSource = Schema.Struct({
+  provider: Schema.optional(Schema.Unknown),
+  instanceId: Schema.optional(Schema.Unknown),
+  driver: Schema.optional(Schema.Unknown),
+  ...ServerProviderPayloadFields,
 });
+
+const ServerProviderWire = Schema.Struct({
+  // Legacy provider kind preserved for compatibility while consumers migrate
+  // to `driver` for metadata and `instanceId` for routing.
+  provider: Schema.optional(ProviderDriverKind),
+  // Routing key for the configured instance this snapshot represents. This
+  // is the only stable identity consumers may use for provider routing.
+  instanceId: ProviderInstanceId,
+  // Open driver kind slug that selects the implementation handling this
+  // instance. It is metadata/capability context, not a routing key.
+  driver: ProviderDriverKind,
+  ...ServerProviderPayloadFields,
+});
+
+export const ServerProvider = ServerProviderSource.pipe(
+  Schema.decodeTo(
+    ServerProviderWire,
+    SchemaTransformation.transformOrFail({
+      decode: (raw) => {
+        const driverSource =
+          raw.driver !== undefined
+            ? raw.driver
+            : typeof raw.provider === "string"
+              ? raw.provider
+              : undefined;
+        const providerSource =
+          raw.provider !== undefined
+            ? raw.provider
+            : typeof raw.driver === "string"
+              ? raw.driver
+              : undefined;
+        const instanceIdSource =
+          raw.instanceId !== undefined
+            ? raw.instanceId
+            : typeof driverSource === "string"
+              ? defaultInstanceIdForDriver(ProviderDriverKind.make(driverSource))
+              : undefined;
+        return Effect.succeed({
+          ...raw,
+          provider: providerSource,
+          instanceId: instanceIdSource,
+          driver: driverSource,
+        } as typeof ServerProviderWire.Encoded);
+      },
+      encode: (value) => {
+        const encoded = {
+          ...value,
+          ...(value.provider !== undefined ? { provider: value.provider } : {}),
+          instanceId: value.instanceId,
+          driver: value.driver,
+          slashCommands: value.slashCommands ?? [],
+          skills: value.skills ?? [],
+        } as unknown as typeof ServerProviderSource.Type;
+        return Effect.succeed(encoded);
+      },
+    }),
+  ),
+);
 export type ServerProvider = typeof ServerProvider.Type;
 
 export const ServerProviders = Schema.Array(ServerProvider);
@@ -364,6 +428,16 @@ export const ServerProcessResourceHistorySummary = Schema.Struct({
 });
 export type ServerProcessResourceHistorySummary = typeof ServerProcessResourceHistorySummary.Type;
 
+export const ServerProcessResourceHistoryFailureTag = Schema.Literals([
+  "ProcessDiagnosticsQueryTimeoutError",
+  "ProcessDiagnosticsQueryFailedError",
+  "ProcessDiagnosticsServerProcessSignalError",
+  "ProcessDiagnosticsNotDescendantError",
+  "ProcessDiagnosticsSignalFailedError",
+]);
+export type ServerProcessResourceHistoryFailureTag =
+  typeof ServerProcessResourceHistoryFailureTag.Type;
+
 export const ServerProcessResourceHistoryResult = Schema.Struct({
   readAt: Schema.DateTimeUtc,
   windowMs: NonNegativeInt,
@@ -375,6 +449,7 @@ export const ServerProcessResourceHistoryResult = Schema.Struct({
   topProcesses: Schema.Array(ServerProcessResourceHistorySummary),
   error: Schema.Option(
     Schema.Struct({
+      failureTag: ServerProcessResourceHistoryFailureTag,
       message: TrimmedNonEmptyString,
     }),
   ),

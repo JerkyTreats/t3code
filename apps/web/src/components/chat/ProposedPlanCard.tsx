@@ -1,5 +1,9 @@
 import { memo, useState, useId } from "react";
-import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import {
   buildCollapsedProposedPlanPreviewMarkdown,
   buildProposedPlanMarkdownFilename,
@@ -9,7 +13,7 @@ import {
   stripDisplayedPlanMarkdown,
 } from "../../proposedPlan";
 import ChatMarkdown from "../ChatMarkdown";
-import { EllipsisIcon } from "lucide-react";
+import { EllipsisIcon, Maximize2Icon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -25,27 +29,34 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-import { readEnvironmentApi } from "~/environmentApi";
+import { projectEnvironment } from "~/state/projects";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useAtomCommand } from "~/state/use-atom-command";
 
 export const ProposedPlanCard = memo(function ProposedPlanCard({
   planMarkdown,
   environmentId,
+  threadRef,
   cwd,
   workspaceRoot,
-  onOpenMarkdownFilePreview,
+  onOpenPreview,
 }: {
   planMarkdown: string;
   environmentId: EnvironmentId;
+  threadRef?: ScopedThreadRef | undefined;
   cwd: string | undefined;
   workspaceRoot: string | undefined;
-  onOpenMarkdownFilePreview?: (relativePath: string) => void;
+  onOpenPreview?: (() => void) | undefined;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [savePath, setSavePath] = useState("");
   const [isSavingToWorkspace, setIsSavingToWorkspace] = useState(false);
+  const writeProjectFile = useAtomCommand(projectEnvironment.writeFile, {
+    reportFailure: false,
+  });
   const { copyToClipboard, isCopied } = useCopyToClipboard({
+    target: "plan",
     onError: (error) => {
       toastManager.add(
         stackedThreadToast({
@@ -91,9 +102,8 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   };
 
   const handleSaveToWorkspace = () => {
-    const api = readEnvironmentApi(environmentId);
     const relativePath = savePath.trim();
-    if (!api || !workspaceRoot) {
+    if (!workspaceRoot) {
       return;
     }
     if (!relativePath) {
@@ -105,21 +115,27 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
     }
 
     setIsSavingToWorkspace(true);
-    void api.projects
-      .writeFile({
-        cwd: workspaceRoot,
-        relativePath,
-        contents: saveContents,
-      })
-      .then((result) => {
+    void (async () => {
+      const result = await writeProjectFile({
+        environmentId,
+        input: {
+          cwd: workspaceRoot,
+          relativePath,
+          contents: saveContents,
+        },
+      });
+      setIsSavingToWorkspace(false);
+      if (result._tag === "Success") {
         setIsSaveDialogOpen(false);
         toastManager.add({
           type: "success",
           title: "Plan saved to workspace",
-          description: result.relativePath,
+          description: result.value.relativePath,
         });
-      })
-      .catch((error) => {
+        return;
+      }
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -127,15 +143,8 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
             description: error instanceof Error ? error.message : "An error occurred while saving.",
           }),
         );
-      })
-      .then(
-        () => {
-          setIsSavingToWorkspace(false);
-        },
-        () => {
-          setIsSavingToWorkspace(false);
-        },
-      );
+      }
+    })();
   };
 
   return (
@@ -145,22 +154,38 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           <Badge variant="secondary">Plan</Badge>
           <p className="truncate text-sm font-medium text-foreground">{title}</p>
         </div>
-        <Menu>
-          <MenuTrigger
-            render={<Button aria-label="Plan actions" size="icon-xs" variant="outline" />}
-          >
-            <EllipsisIcon aria-hidden="true" className="size-4" />
-          </MenuTrigger>
-          <MenuPopup align="end">
-            <MenuItem onClick={handleCopyPlan}>
-              {isCopied ? "Copied!" : "Copy to clipboard"}
-            </MenuItem>
-            <MenuItem onClick={handleDownload}>Download as markdown</MenuItem>
-            <MenuItem onClick={openSaveDialog} disabled={!workspaceRoot || isSavingToWorkspace}>
-              Save to workspace
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
+        <div className="flex items-center gap-1">
+          {onOpenPreview ? (
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="outline"
+              aria-label="Open plan preview"
+              onClick={onOpenPreview}
+            >
+              <Maximize2Icon className="size-3.5" />
+            </Button>
+          ) : null}
+          <Menu>
+            <MenuTrigger
+              render={<Button aria-label="Plan actions" size="icon-xs" variant="outline" />}
+            >
+              <EllipsisIcon aria-hidden="true" className="size-4" />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              {onOpenPreview ? (
+                <MenuItem onClick={onOpenPreview}>Open fullscreen preview</MenuItem>
+              ) : null}
+              <MenuItem onClick={handleCopyPlan}>
+                {isCopied ? "Copied!" : "Copy to clipboard"}
+              </MenuItem>
+              <MenuItem onClick={handleDownload}>Download as markdown</MenuItem>
+              <MenuItem onClick={openSaveDialog} disabled={!workspaceRoot || isSavingToWorkspace}>
+                Save to workspace
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+        </div>
       </div>
       <div className="mt-4">
         <div className={cn("relative", canCollapse && !expanded && "max-h-104 overflow-hidden")}>
@@ -168,15 +193,15 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
             <ChatMarkdown
               text={collapsedPreview ?? ""}
               cwd={cwd}
+              threadRef={threadRef}
               isStreaming={false}
-              {...(onOpenMarkdownFilePreview ? { onOpenMarkdownFilePreview } : {})}
             />
           ) : (
             <ChatMarkdown
               text={displayedPlanMarkdown}
               cwd={cwd}
+              threadRef={threadRef}
               isStreaming={false}
-              {...(onOpenMarkdownFilePreview ? { onOpenMarkdownFilePreview } : {})}
             />
           )}
           {canCollapse && !expanded ? (

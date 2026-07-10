@@ -43,11 +43,8 @@ import Migration0027 from "./Migrations/027_ProviderSessionRuntimeInstanceId.ts"
 import Migration0028 from "./Migrations/028_ProjectionThreadSessionInstanceId.ts";
 import Migration0029 from "./Migrations/029_ProjectionThreadDetailOrderingIndexes.ts";
 import Migration0030 from "./Migrations/030_ProjectionThreadShellArchiveIndexes.ts";
-import Migration0031 from "./Migrations/031_RepairProjectionThreadShellSummary.ts";
-import Migration0032 from "./Migrations/032_ProjectionThreadIssueLink.ts";
-import Migration0033 from "./Migrations/033_AuthAuthorizationScopes.ts";
-import Migration0034 from "./Migrations/034_AuthPairingProofKeyThumbprint.ts";
-import Migration0035 from "./Migrations/035_ProjectionThreadStatusSummary.ts";
+import Migration0031 from "./Migrations/031_AuthAuthorizationScopes.ts";
+import Migration0032 from "./Migrations/032_AuthPairingProofKeyThumbprint.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -90,11 +87,8 @@ export const migrationEntries = [
   [28, "ProjectionThreadSessionInstanceId", Migration0028],
   [29, "ProjectionThreadDetailOrderingIndexes", Migration0029],
   [30, "ProjectionThreadShellArchiveIndexes", Migration0030],
-  [31, "RepairProjectionThreadShellSummary", Migration0031],
-  [32, "ProjectionThreadIssueLink", Migration0032],
-  [33, "AuthAuthorizationScopes", Migration0033],
-  [34, "AuthPairingProofKeyThumbprint", Migration0034],
-  [35, "ProjectionThreadStatusSummary", Migration0035],
+  [31, "AuthAuthorizationScopes", Migration0031],
+  [32, "AuthPairingProofKeyThumbprint", Migration0032],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

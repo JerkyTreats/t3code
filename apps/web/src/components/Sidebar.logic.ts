@@ -9,6 +9,7 @@ import {
 import type { SidebarThreadSummary, Thread } from "../types";
 import { cn } from "../lib/utils";
 import { isLatestTurnSettled } from "../session-logic";
+import { resolveServerBackedAppStageLabel } from "../branding.logic";
 
 export const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
@@ -18,7 +19,7 @@ export const SIDEBAR_THREAD_PREWARM_LIMIT = 10;
 export type SidebarNewThreadEnvMode = "local" | "worktree";
 type SidebarProject = {
   id: string;
-  name: string;
+  title: string;
   createdAt?: string | undefined;
   updatedAt?: string | undefined;
 };
@@ -39,7 +40,7 @@ export interface ThreadStatusPill {
   pulse: boolean;
 }
 
-const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
+const THREAD_STATUS_PRIORITY: Record<string, number> = {
   "Pending Approval": 5,
   "Awaiting Input": 4,
   Working: 3,
@@ -49,7 +50,7 @@ const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
 };
 
 function threadStatusPriority(status: ThreadStatusPill): number {
-  return THREAD_STATUS_PRIORITY[status.label] ?? THREAD_STATUS_PRIORITY.Working;
+  return THREAD_STATUS_PRIORITY[status.label] ?? 3;
 }
 
 type ThreadStatusInput = Pick<
@@ -59,14 +60,31 @@ type ThreadStatusInput = Pick<
   | "hasPendingUserInput"
   | "interactionMode"
   | "latestTurn"
+  | "activePlanProgress"
   | "session"
 > & {
   lastVisitedAt?: string | undefined;
 };
 
+function isPlanProgressCurrent(thread: ThreadStatusInput): boolean {
+  const progress = thread.activePlanProgress;
+  const session = thread.session;
+  if (!progress || session?.status !== "running" || session.activeTurnId === null) {
+    return false;
+  }
+  return progress.turnId === null || progress.turnId === session.activeTurnId;
+}
+
 export interface ThreadJumpHintVisibilityController {
   sync: (shouldShow: boolean) => void;
   dispose: () => void;
+}
+
+export function resolveSidebarStageBadgeLabel(input: {
+  primaryServerVersion: string | null | undefined;
+  fallbackStageLabel: string;
+}): string {
+  return resolveServerBackedAppStageLabel(input);
 }
 
 export function createThreadJumpHintVisibilityController(input: {
@@ -153,7 +171,7 @@ export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
   if (!thread.latestTurn?.completedAt) return false;
   const completedAt = Date.parse(thread.latestTurn.completedAt);
   if (Number.isNaN(completedAt)) return false;
-  if (!thread.lastVisitedAt) return true;
+  if (!thread.lastVisitedAt) return false;
 
   const lastVisitedAt = Date.parse(thread.lastVisitedAt);
   if (Number.isNaN(lastVisitedAt)) return true;
@@ -163,6 +181,15 @@ export function hasUnseenCompletion(thread: ThreadStatusInput): boolean {
 export function shouldClearThreadSelectionOnMouseDown(target: HTMLElement | null): boolean {
   if (target === null) return true;
   return !target.closest(THREAD_SELECTION_SAFE_SELECTOR);
+}
+
+// A double-click dispatches two `click` events before `dblclick`: the first has
+// `detail === 1`, the second `detail === 2`. The second click must not run the
+// row's single-click navigation, otherwise double-click-to-rename would also
+// navigate. `MouseEvent.detail` is 0 for synthetic/keyboard activations, which
+// still count as a normal single activation.
+export function isTrailingDoubleClick(detail: number): boolean {
+  return detail > 1;
 }
 
 export function resolveSidebarNewThreadEnvMode(input: {
@@ -185,11 +212,13 @@ export function resolveSidebarNewThreadSeedContext(input: {
     branch: string | null;
     worktreePath: string | null;
     envMode: SidebarNewThreadEnvMode;
+    startFromOrigin: boolean;
   } | null;
 }): {
   branch?: string | null;
   worktreePath?: string | null;
   envMode: SidebarNewThreadEnvMode;
+  startFromOrigin?: boolean;
 } {
   if (input.defaultEnvMode === "worktree") {
     return {
@@ -202,6 +231,7 @@ export function resolveSidebarNewThreadSeedContext(input: {
       branch: input.activeDraftThread.branch,
       worktreePath: input.activeDraftThread.worktreePath,
       envMode: input.activeDraftThread.envMode,
+      startFromOrigin: input.activeDraftThread.startFromOrigin,
     };
   }
 
@@ -222,27 +252,38 @@ export function orderItemsByPreferredIds<TItem, TId>(input: {
   items: readonly TItem[];
   preferredIds: readonly TId[];
   getId: (item: TItem) => TId;
+  getPreferenceIds?: (item: TItem) => readonly TId[];
 }): TItem[] {
-  const { getId, items, preferredIds } = input;
+  const { getId, getPreferenceIds, items, preferredIds } = input;
   if (preferredIds.length === 0) {
     return [...items];
   }
 
-  const itemsById = new Map(items.map((item) => [getId(item), item] as const));
-  const preferredIdSet = new Set(preferredIds);
-  const emittedPreferredIds = new Set<TId>();
+  const indexesByPreferenceId = new Map<TId, number[]>();
+  for (const [index, item] of items.entries()) {
+    const preferenceIds = getPreferenceIds?.(item) ?? [getId(item)];
+    for (const preferenceId of new Set(preferenceIds)) {
+      const indexes = indexesByPreferenceId.get(preferenceId);
+      if (indexes) {
+        indexes.push(index);
+      } else {
+        indexesByPreferenceId.set(preferenceId, [index]);
+      }
+    }
+  }
+
+  const emittedIndexes = new Set<number>();
   const ordered = preferredIds.flatMap((id) => {
-    if (emittedPreferredIds.has(id)) {
+    const index = indexesByPreferenceId
+      .get(id)
+      ?.find((candidate) => !emittedIndexes.has(candidate));
+    if (index === undefined) {
       return [];
     }
-    const item = itemsById.get(id);
-    if (!item) {
-      return [];
-    }
-    emittedPreferredIds.add(id);
-    return [item];
+    emittedIndexes.add(index);
+    return [items[index]!];
   });
-  const remaining = items.filter((item) => !preferredIdSet.has(getId(item)));
+  const remaining = items.filter((_, index) => !emittedIndexes.has(index));
   return [...ordered, ...remaining];
 }
 
@@ -332,7 +373,7 @@ export function resolveThreadRowClassName(input: {
 }
 
 export function resolveThreadStatusPill(input: {
-  thread: ThreadStatusInput & Pick<SidebarThreadSummary, "activePlanProgress">;
+  thread: ThreadStatusInput;
 }): ThreadStatusPill | null {
   const { thread } = input;
 
@@ -354,6 +395,34 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
+  const activePlanProgress = thread.activePlanProgress;
+  if (activePlanProgress && isPlanProgressCurrent(thread)) {
+    return {
+      label: `${activePlanProgress.currentStepNumber}/${activePlanProgress.totalSteps}`,
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: !activePlanProgress.completedAllSteps,
+    };
+  }
+
+  if (thread.session?.status === "running") {
+    return {
+      label: "Working",
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: true,
+    };
+  }
+
+  if (thread.session?.status === "starting") {
+    return {
+      label: "Connecting",
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: true,
+    };
+  }
+
   const hasPlanReadyPrompt =
     !thread.hasPendingUserInput &&
     thread.interactionMode === "plan" &&
@@ -368,40 +437,12 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
-  if (isLatestTurnSettled(thread.latestTurn, thread.session) && hasUnseenCompletion(thread)) {
+  if (hasUnseenCompletion(thread)) {
     return {
       label: "Completed",
       colorClass: "text-emerald-600 dark:text-emerald-300/90",
       dotClass: "bg-emerald-500 dark:bg-emerald-300/90",
       pulse: false,
-    };
-  }
-
-  if (thread.session?.status === "running") {
-    if (thread.activePlanProgress) {
-      return {
-        label: thread.activePlanProgress.completedAllSteps
-          ? `${thread.activePlanProgress.totalSteps}/${thread.activePlanProgress.totalSteps}`
-          : `${thread.activePlanProgress.currentStepNumber}/${thread.activePlanProgress.totalSteps}`,
-        colorClass: "text-sky-600 dark:text-sky-300/80",
-        dotClass: "bg-sky-500 dark:bg-sky-300/80",
-        pulse: true,
-      };
-    }
-    return {
-      label: "Working",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
-      pulse: true,
-    };
-  }
-
-  if (thread.session?.status === "connecting") {
-    return {
-      label: "Connecting",
-      colorClass: "text-sky-600 dark:text-sky-300/80",
-      dotClass: "bg-sky-500 dark:bg-sky-300/80",
-      pulse: true,
     };
   }
 
@@ -551,6 +592,6 @@ export function sortProjectsForSidebar<
     const byTimestamp =
       rightTimestamp === leftTimestamp ? 0 : rightTimestamp > leftTimestamp ? 1 : -1;
     if (byTimestamp !== 0) return byTimestamp;
-    return left.name.localeCompare(right.name) || left.id.localeCompare(right.id);
+    return left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
   });
 }

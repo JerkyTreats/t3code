@@ -1,211 +1,367 @@
-import { scopeThreadRef } from "@t3tools/client-runtime";
-import type { EnvironmentId, ProjectId, ProjectScript } from "@t3tools/contracts";
-import { Link } from "@tanstack/react-router";
-import { BarChart3Icon, ClockIcon, FolderTreeIcon, SquarePenIcon } from "lucide-react";
-import { useCallback } from "react";
+import type { ProjectScript, ResolvedKeybindingsConfig, VcsStatusResult } from "@t3tools/contracts";
+import {
+  ArrowRightIcon,
+  ClipboardIcon,
+  Code2Icon,
+  ExternalLinkIcon,
+  GitPullRequestArrowIcon,
+  PlayIcon,
+  RefreshCwIcon,
+  SquarePenIcon,
+} from "lucide-react";
 
-import { ProjectPanel } from "~/components/ProjectPanel";
-import ProjectScriptsControl from "~/components/ProjectScriptsControl";
-import { OpenInPicker } from "~/components/chat/OpenInPicker";
-import { Button } from "~/components/ui/button";
-import { usePrimaryEnvironmentId } from "~/environments/primary";
-import { useHandleNewThread } from "~/hooks/useHandleNewThread";
-import { schedulePendingProjectScriptRun } from "~/projectPendingScriptRun";
-import { useProjectManagementScriptActions } from "~/project-management/adapters/projectManagementScriptAdapter";
-import { useProjectManagementData } from "~/project-management/adapters/projectManagementStoreAdapter";
-import { useServerAvailableEditors, useServerKeybindings } from "~/rpc/serverState";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { buildThreadRouteParams } from "~/threadRoutes";
-import { ProjectManagementHeader } from "./ProjectManagementHeader";
-import { ProjectManagementShell } from "./ProjectManagementShell";
+import ProjectScriptsControl, {
+  type NewProjectScriptInput,
+  type ProjectScriptActionResult,
+} from "~/components/ProjectScriptsControl";
+import type {
+  ProjectManagementProject,
+  ProjectManagementThread,
+} from "~/project-management/projectManagementTypes";
+import type { ProjectOverviewSnapshot } from "~/project-management/projectManagementOverview";
+import { Button } from "../ui/button";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 import { ProjectMetricCard } from "./ProjectMetricCard";
-import { ProjectScopedGitPanel } from "./ProjectScopedGitPanel";
 
 interface ProjectManagementPageProps {
-  readonly environmentId: EnvironmentId;
-  readonly projectId: ProjectId;
+  readonly project: ProjectManagementProject;
+  readonly snapshot: ProjectOverviewSnapshot;
+  readonly repositoryStatus: VcsStatusResult | null;
+  readonly repositoryStatusError: string | null;
+  readonly repositoryStatusPending: boolean;
+  readonly latestActiveThread: ProjectManagementThread | null;
+  readonly onNewThread: () => void;
+  readonly onOpenEditor: () => void;
+  readonly onOpenLatestThread: () => void;
+  readonly onOpenThread: (thread: ProjectManagementThread) => void;
+  readonly onRefreshGit: () => void;
+  readonly onPullGit: () => void;
+  readonly onRunScript: (script: ProjectScript) => void;
+  readonly keybindings: ResolvedKeybindingsConfig;
+  readonly onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
+  readonly onUpdateProjectScript: (
+    scriptId: string,
+    input: NewProjectScriptInput,
+  ) => Promise<ProjectScriptActionResult>;
+  readonly onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
 }
 
-export function ProjectManagementPage({ environmentId, projectId }: ProjectManagementPageProps) {
-  const data = useProjectManagementData({ environmentId, projectId });
-  const { handleNewThread } = useHandleNewThread();
-  const keybindings = useServerKeybindings();
-  const availableEditors = useServerAvailableEditors();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const { deleteProjectScript, saveProjectScript, updateProjectScript } =
-    useProjectManagementScriptActions(data.project);
-  const showOpenInPicker =
-    primaryEnvironmentId !== null && data.project?.environmentId === primaryEnvironmentId;
+function formatCount(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
+}
 
-  const runScriptFromProjectPage = useCallback(
-    async (script: ProjectScript) => {
-      const project = data.project;
-      const projectRef = data.projectRef;
-      if (!project || !projectRef) {
-        return;
-      }
-      await handleNewThread(projectRef, {
-        beforeNavigate: (threadId) => {
-          schedulePendingProjectScriptRun({
-            threadId,
-            projectId: project.id,
-            scriptId: script.id,
-          });
-        },
+function formatThreadTime(value: string): string {
+  return formatRelativeTimeLabel(value);
+}
+
+export function ProjectManagementPage({
+  project,
+  snapshot,
+  repositoryStatus,
+  repositoryStatusError,
+  repositoryStatusPending,
+  latestActiveThread,
+  onNewThread,
+  onOpenEditor,
+  onOpenLatestThread,
+  onOpenThread,
+  onRefreshGit,
+  onPullGit,
+  onRunScript,
+  keybindings,
+  onAddProjectScript,
+  onUpdateProjectScript,
+  onDeleteProjectScript,
+}: ProjectManagementPageProps) {
+  const { copyToClipboard: copyScriptCommand } = useCopyToClipboard<{
+    scriptName: string;
+  }>({
+    onCopy: (ctx) => {
+      toastManager.add({
+        type: "success",
+        title: "Command copied",
+        description: ctx.scriptName,
       });
     },
-    [data.project, data.projectRef, handleNewThread],
-  );
-
-  if (!data.project || !data.projectRef || !data.workspacePath) {
-    return null;
-  }
-
-  const project = data.project;
-  const projectRef = data.projectRef;
-  const workspacePath = data.workspacePath;
+    onError: (error) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not copy command",
+          description: error instanceof Error ? error.message : "The command was not copied.",
+        }),
+      );
+    },
+  });
+  const changedFiles = repositoryStatus?.workingTree.files ?? [];
 
   return (
-    <ProjectManagementShell title="Project management">
-      <ProjectManagementHeader
-        environmentId={project.environmentId}
-        faviconCwd={project.cwd}
-        projectName={project.name}
-        repoSummary={data.overview.repoSummary}
-        workspacePath={workspacePath}
-        actions={
-          <>
-            <Button size="sm" onClick={() => void handleNewThread(projectRef)}>
-              <SquarePenIcon className="size-3.5" />
-              New thread
-            </Button>
-            <Button
-              render={
-                <Link
-                  to="/projects/$environmentId/$projectId"
-                  params={{
-                    environmentId: project.environmentId,
-                    projectId: project.id,
-                  }}
-                  search={{ view: "inference" }}
-                />
-              }
-              size="sm"
-              variant="outline"
-            >
-              <BarChart3Icon className="size-3.5" />
-              Inference
-            </Button>
-            {data.latestActiveThreadRef ? (
-              <Button
-                render={
-                  <Link
-                    to="/$environmentId/$threadId"
-                    params={buildThreadRouteParams(data.latestActiveThreadRef)}
-                  />
-                }
-                size="sm"
-                variant="outline"
-              >
-                <FolderTreeIcon className="size-3.5" />
-                Latest thread
-              </Button>
-            ) : null}
-            {showOpenInPicker ? (
-              <OpenInPicker
-                keybindings={keybindings}
-                availableEditors={availableEditors}
-                openInCwd={project.cwd}
-              />
-            ) : null}
-            <ProjectScriptsControl
-              scripts={[...project.scripts]}
-              keybindings={keybindings}
-              onRunScript={(script) => {
-                void runScriptFromProjectPage(script);
-              }}
-              onAddScript={saveProjectScript}
-              onUpdateScript={updateProjectScript}
-              onDeleteScript={deleteProjectScript}
-            />
-          </>
-        }
-      />
-
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+      <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <ProjectMetricCard
           label="Active threads"
-          value={data.overview.activeThreadCount}
-          detail={`${data.overview.archivedThreadCount} archived`}
+          value={snapshot.activeThreadCount}
+          detail={`${snapshot.archivedThreadCount} archived`}
         />
         <ProjectMetricCard
           label="Branches"
-          value={data.overview.branches.length}
-          detail={
-            data.overview.branches.length > 0
-              ? data.overview.branches.slice(0, 3).join(", ")
-              : "No branches tracked"
-          }
+          value={snapshot.branches.length}
+          detail={snapshot.branches.slice(0, 2).join(", ") || "No branches yet"}
         />
         <ProjectMetricCard
           label="Worktrees"
-          value={data.overview.worktreeCount}
-          detail="Linked thread workspaces"
+          value={snapshot.worktreeCount}
+          detail={snapshot.repoSummary.workspaceKindLabel}
         />
         <ProjectMetricCard
-          label="7 day runtime"
-          value={data.overview.inference.recentLabel}
-          detail={`${data.overview.inference.recentTurns} tracked turns`}
+          label="Tracked turns"
+          value={snapshot.inference.totalTurns}
+          detail={snapshot.inference.totalLabel}
         />
       </section>
 
-      <ProjectScopedGitPanel
-        projectRef={projectRef}
-        repoCwd={data.repoRoot}
-        workspaceCwd={workspacePath}
-      />
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <div className="rounded-lg border border-border bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold tracking-normal text-foreground">Workspace</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{project.cwd}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" size="sm" onClick={onNewThread}>
+                <SquarePenIcon className="size-4" />
+                New thread
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={onOpenEditor}>
+                <Code2Icon className="size-4" />
+                Open editor
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={latestActiveThread === null}
+                onClick={onOpenLatestThread}
+              >
+                <ArrowRightIcon className="size-4" />
+                Latest thread
+              </Button>
+            </div>
+          </div>
 
-      <ProjectPanel
-        header={
-          <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm font-medium">
-            <ClockIcon className="size-4" />
-            Recent project activity
+          <div className="grid gap-3 p-4 sm:grid-cols-3">
+            <div>
+              <div className="text-xs font-medium text-muted-foreground">Repository</div>
+              <div className="mt-1 text-sm font-medium text-foreground">
+                {snapshot.repoSummary.statusLabel}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-medium text-muted-foreground">Branch</div>
+              <div className="mt-1 text-sm font-medium text-foreground">
+                {snapshot.repoSummary.branchLabel}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-medium text-muted-foreground">Remote</div>
+              <div className="mt-1 text-sm font-medium text-foreground">
+                {snapshot.repoSummary.remoteLabel}
+              </div>
+            </div>
           </div>
-        }
-        contentClassName="p-0"
-        className="min-h-0"
-      >
-        {data.overview.linkedThreads.length === 0 ? (
-          <div className="px-4 py-6 text-sm text-muted-foreground">
-            No threads have been linked to this project yet.
+        </div>
+
+        <div className="rounded-lg border border-border bg-card">
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold tracking-normal text-foreground">Git status</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {repositoryStatusError ??
+                  (repositoryStatusPending ? "Refreshing repository status" : project.cwd)}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button type="button" size="icon-sm" variant="ghost" onClick={onRefreshGit}>
+                <RefreshCwIcon className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!repositoryStatus?.isRepo}
+                onClick={onPullGit}
+              >
+                <GitPullRequestArrowIcon className="size-4" />
+                Pull
+              </Button>
+            </div>
           </div>
-        ) : (
+          <div className="max-h-72 overflow-auto p-4">
+            {changedFiles.length > 0 ? (
+              <div className="space-y-2">
+                {changedFiles.slice(0, 12).map((file) => (
+                  <div
+                    key={file.path}
+                    className="flex items-center justify-between gap-3 rounded-md bg-background px-3 py-2 text-sm"
+                  >
+                    <span className="min-w-0 truncate">{file.path}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      +{file.insertions} -{file.deletions}
+                    </span>
+                  </div>
+                ))}
+                {changedFiles.length > 12 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {formatCount(changedFiles.length - 12)} more changed files
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {repositoryStatus?.isRepo === false
+                  ? "This workspace is not a Git repository."
+                  : "No changed files detected."}
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
+        <div className="rounded-lg border border-border bg-card">
+          <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold tracking-normal text-foreground">
+                Project scripts
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Commands saved on this concrete project.
+              </p>
+            </div>
+            <ProjectScriptsControl
+              scripts={project.scripts}
+              keybindings={keybindings}
+              onRunScript={onRunScript}
+              onAddScript={onAddProjectScript}
+              onUpdateScript={onUpdateProjectScript}
+              onDeleteScript={onDeleteProjectScript}
+            />
+          </div>
           <div className="divide-y divide-border">
-            {data.overview.linkedThreads.slice(0, 8).map((thread) => {
-              const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-              return (
-                <Link
+            {project.scripts.length > 0 ? (
+              project.scripts.map((script) => (
+                <div key={script.id} className="grid gap-2 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-foreground">
+                        {script.name}
+                      </div>
+                      <div className="truncate font-mono text-xs text-muted-foreground">
+                        {script.command}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        onClick={() => onRunScript(script)}
+                      >
+                        <PlayIcon className="size-4" />
+                      </Button>
+                      {script.previewUrl ? (
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          onClick={() => window.open(script.previewUrl, "_blank", "noopener")}
+                        >
+                          <ExternalLinkIcon className="size-4" />
+                        </Button>
+                      ) : null}
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        onClick={() =>
+                          copyScriptCommand(script.command, { scriptName: script.name })
+                        }
+                      >
+                        <ClipboardIcon className="size-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  {script.runOnWorktreeCreate ? (
+                    <div className="w-fit rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                      Worktree setup
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            ) : (
+              <p className="px-4 py-6 text-sm text-muted-foreground">
+                No project scripts are configured.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-card">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold tracking-normal text-foreground">
+              Linked threads
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Threads attached to this environment scoped project.
+            </p>
+          </div>
+          <div className="divide-y divide-border">
+            {snapshot.linkedThreads.length > 0 ? (
+              snapshot.linkedThreads.slice(0, 10).map((thread) => (
+                <button
+                  type="button"
                   key={`${thread.environmentId}:${thread.id}`}
-                  to="/$environmentId/$threadId"
-                  params={buildThreadRouteParams(threadRef)}
-                  className="flex min-w-0 items-center justify-between gap-4 px-4 py-3 text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 text-left hover:bg-accent"
+                  onClick={() =>
+                    onOpenThread({
+                      id: thread.id,
+                      environmentId: thread.environmentId,
+                      projectId: project.id,
+                      title: thread.title,
+                      archivedAt: thread.archivedAt,
+                      createdAt: thread.latestActivityAt,
+                      updatedAt: thread.latestActivityAt,
+                      latestTurn: null,
+                      branch: thread.branch,
+                      worktreePath: thread.worktreePath,
+                      activities: [],
+                    })
+                  }
                 >
                   <span className="min-w-0">
-                    <span className="block truncate font-medium">{thread.title}</span>
-                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {thread.branch ?? "No branch"} /{" "}
-                      {thread.worktreePath ? "Dedicated worktree" : "Primary checkout"}
+                    <span className="block truncate text-sm font-medium text-foreground">
+                      {thread.title}
+                    </span>
+                    <span className="mt-1 block truncate text-xs text-muted-foreground">
+                      {thread.branch ?? "No branch"}
+                      {thread.worktreePath ? ` - ${thread.worktreePath}` : ""}
                     </span>
                   </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {formatRelativeTimeLabel(thread.latestActivityAt)}
+                  <span className="text-xs text-muted-foreground">
+                    {formatThreadTime(thread.latestActivityAt)}
                   </span>
-                </Link>
-              );
-            })}
+                </button>
+              ))
+            ) : (
+              <p className="px-4 py-6 text-sm text-muted-foreground">
+                No linked threads for this project yet.
+              </p>
+            )}
           </div>
-        )}
-      </ProjectPanel>
-    </ProjectManagementShell>
+        </div>
+      </section>
+    </div>
   );
 }

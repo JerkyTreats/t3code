@@ -19,8 +19,8 @@ import type {
   OrchestrationShellSnapshot,
   OrchestrationThread,
   OrchestrationThreadDetailV2Snapshot,
-  OrchestrationThreadSyncV2Limits,
   OrchestrationThreadShell,
+  OrchestrationThreadSyncV2Limits,
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -166,9 +166,6 @@ export interface ProjectionSnapshotQueryShape {
 
   /**
    * Read a bounded active thread detail snapshot for remote WebSocket sync.
-   *
-   * Large historical activity payloads are represented by explicit deferred
-   * placeholders so reconnect never has to replay the entire thread body.
    */
   readonly getThreadDetailV2ById: (
     threadId: ThreadId,

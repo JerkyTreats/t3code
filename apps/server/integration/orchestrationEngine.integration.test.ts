@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import fs from "node:fs";
-import path from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 
 import {
   ApprovalRequestId,
@@ -49,7 +49,6 @@ const APPROVAL_REQUEST_ID = asApprovalRequestId("req-approval-1");
 type IntegrationProvider = ProviderDriverKind;
 const CODEX_PROVIDER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_PROVIDER = ProviderDriverKind.make("claudeAgent");
-const RUN_REAL_CODEX_INTEGRATION = process.env.T3CODE_RUN_REAL_CODEX_INTEGRATION_TESTS === "1";
 
 function nowIso() {
   return "2026-05-01T00:00:00.000Z";
@@ -267,7 +266,7 @@ it.live("runs a single turn end-to-end and persists checkpoint state in sqlite +
   ),
 );
 
-it.live.skipIf(!process.env.CODEX_BINARY_PATH || !RUN_REAL_CODEX_INTEGRATION)(
+it.live.skipIf(!process.env.CODEX_BINARY_PATH)(
   "keeps the same Codex provider thread across runtime mode switches",
   () =>
     withRealCodexHarness((harness) =>
@@ -360,7 +359,6 @@ it.live.skipIf(!process.env.CODEX_BINARY_PATH || !RUN_REAL_CODEX_INTEGRATION)(
         assert.equal(secondThread.session?.threadId, "thread-1");
       }),
     ),
-  420_000,
 );
 
 it.live("runs multi-turn file edits and persists checkpoint diffs", () =>
@@ -411,7 +409,7 @@ it.live("runs multi-turn file edits and persists checkpoint diffs", () =>
         ],
         mutateWorkspace: ({ cwd }) =>
           Effect.sync(() => {
-            fs.writeFileSync(path.join(cwd, "README.md"), "v2\n", "utf8");
+            NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v2\n", "utf8");
           }),
       });
 
@@ -458,7 +456,7 @@ it.live("runs multi-turn file edits and persists checkpoint diffs", () =>
         ],
         mutateWorkspace: ({ cwd }) =>
           Effect.sync(() => {
-            fs.writeFileSync(path.join(cwd, "README.md"), "v3\n", "utf8");
+            NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v3\n", "utf8");
           }),
       });
 
@@ -754,7 +752,7 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
         ],
         mutateWorkspace: ({ cwd }) =>
           Effect.sync(() => {
-            fs.writeFileSync(path.join(cwd, "README.md"), "v2\n", "utf8");
+            NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v2\n", "utf8");
           }),
       });
       yield* startTurn({
@@ -813,7 +811,7 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
         ],
         mutateWorkspace: ({ cwd }) =>
           Effect.sync(() => {
-            fs.writeFileSync(path.join(cwd, "README.md"), "v3\n", "utf8");
+            NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v3\n", "utf8");
           }),
       });
       yield* startTurn({
@@ -871,7 +869,10 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
         ),
         true,
       );
-      assert.equal(fs.readFileSync(path.join(harness.workspaceDir, "README.md"), "utf8"), "v2\n");
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(harness.workspaceDir, "README.md"), "utf8"),
+        "v2\n",
+      );
       assert.equal(
         gitRefExists(harness.workspaceDir, checkpointRefForThreadTurn(THREAD_ID, 2)),
         false,
@@ -1334,7 +1335,7 @@ it.live("reverts claudeAgent turns and rolls back provider conversation state", 
           ],
           mutateWorkspace: ({ cwd }) =>
             Effect.sync(() => {
-              fs.writeFileSync(path.join(cwd, "README.md"), "v2\n", "utf8");
+              NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v2\n", "utf8");
             }),
         });
 
@@ -1392,7 +1393,7 @@ it.live("reverts claudeAgent turns and rolls back provider conversation state", 
           ],
           mutateWorkspace: ({ cwd }) =>
             Effect.sync(() => {
-              fs.writeFileSync(path.join(cwd, "README.md"), "v3\n", "utf8");
+              NodeFS.writeFileSync(NodePath.join(cwd, "README.md"), "v3\n", "utf8");
             }),
         });
 

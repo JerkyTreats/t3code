@@ -1,9 +1,4 @@
-import { EDITORS, EditorId, type EditorId as EditorIdType } from "@t3tools/contracts";
-
-import { getLocalStorageItem } from "./hooks/useLocalStorage";
 import { isMacPlatform } from "./lib/utils";
-
-const LAST_EDITOR_KEY = "t3code:last-editor";
 
 export type TerminalLinkKind = "url" | "path";
 
@@ -288,13 +283,4 @@ export function resolvePathLinkTarget(rawPath: string, cwd: string): string {
 
   if (!line) return resolvedPath;
   return `${resolvedPath}:${line}${column ? `:${column}` : ""}`;
-}
-
-export function preferredTerminalEditor(): EditorIdType {
-  const stored = getLocalStorageItem(LAST_EDITOR_KEY, EditorId);
-  if (stored) {
-    return stored;
-  }
-
-  return EDITORS.find((editor) => editor.commands !== null)?.id ?? EDITORS[0]?.id ?? "cursor";
 }

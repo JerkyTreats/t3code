@@ -4,8 +4,43 @@
 /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
 @custom-variant wco (&:is(.wco, .wco *));
 
+:root {
+  --app-scrollbar-width: 6px;
+  --workspace-topbar-height: 52px;
+  --workspace-controls-top: 0px;
+  --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
+  --workspace-controls-right: calc(env(safe-area-inset-right) + 0.75rem);
+  --workspace-native-controls-inset: 0px;
+  --workspace-titlebar-control-size: 1.75rem;
+  --workspace-titlebar-control-gap: 0.75rem;
+}
+
+[data-slot="sidebar-wrapper"] {
+  --workspace-titlebar-content-left: calc(
+    var(--workspace-controls-left) + var(--workspace-titlebar-control-size) +
+      var(--workspace-titlebar-control-gap)
+  );
+}
+
+.wco {
+  --workspace-topbar-height: env(titlebar-area-height, 52px);
+  --workspace-controls-top: env(titlebar-area-y, 0px);
+  --workspace-controls-left: calc(env(titlebar-area-x, 0px) + 0.75rem);
+  --workspace-controls-right: calc(
+    100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 0.75rem
+  );
+  --workspace-native-controls-inset: calc(
+    100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 0.75rem
+  );
+}
+
 @theme inline {
   --animate-skeleton: skeleton 2s -1s infinite linear;
+  --font-sans:
+    "DM Sans Variable", "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+    sans-serif;
+  --font-mono:
+    "SF Mono", "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", Menlo, monospace;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-success-foreground: var(--success-foreground);
@@ -19,12 +54,6 @@
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -55,12 +84,118 @@
   * {
     @apply border-border outline-ring/50;
   }
+  :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]):focus,
+  :where(
+    [data-slot="menu-popup"],
+    [data-slot="select-popup"],
+    [data-slot="popover-popup"]
+  ):focus-visible {
+    @apply outline-none ring-0;
+  }
   html {
     background-color: var(--app-chrome-background);
   }
   body {
     @apply text-foreground relative;
     background-color: var(--app-chrome-background);
+  }
+}
+
+@layer components {
+  .sidebar-brand {
+    display: none;
+  }
+
+  .sidebar-brand-stage {
+    display: none;
+  }
+
+  @media (min-width: 48rem) {
+    @container sidebar-header (min-width: 13.5rem) {
+      .sidebar-brand {
+        display: flex;
+      }
+    }
+
+    @container sidebar-header (min-width: 15.75rem) {
+      .sidebar-brand-stage {
+        display: inline-flex;
+      }
+    }
+  }
+
+  .workspace-topbar {
+    display: flex;
+    height: var(--workspace-topbar-height);
+    min-height: var(--workspace-topbar-height);
+    flex-shrink: 0;
+    align-items: center;
+  }
+
+  .workspace-titlebar-controls {
+    position: absolute;
+    top: var(--workspace-controls-top);
+    right: var(--workspace-controls-right);
+    display: flex;
+    height: var(--workspace-topbar-height);
+    align-items: center;
+    -webkit-app-region: no-drag;
+  }
+
+  .surface-subheader {
+    @apply flex h-10 min-h-10 shrink-0 items-center border-b border-border/60 bg-background;
+  }
+
+  .chat-composer-horizontal-inset {
+    padding-inline-start: calc(env(safe-area-inset-left) + 0.75rem);
+    padding-inline-end: calc(env(safe-area-inset-right) + 0.75rem);
+  }
+
+  .chat-composer-glass,
+  .chat-composer-lower-chrome {
+    background: color-mix(in srgb, var(--card) 20%, transparent);
+  }
+
+  .chat-composer-glass {
+    box-shadow:
+      0 18px 48px -20px rgb(0 0 0 / 28%),
+      0 4px 14px -7px rgb(0 0 0 / 22%);
+  }
+
+  .chat-composer-shared-blur {
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+  }
+
+  .dark .chat-composer-glass,
+  .dark .chat-composer-lower-chrome {
+    background: color-mix(in srgb, var(--card) 45%, transparent);
+  }
+
+  .dark .chat-composer-glass {
+    box-shadow:
+      0 18px 48px -20px rgb(0 0 0 / 60%),
+      0 4px 14px -7px rgb(0 0 0 / 40%);
+  }
+
+  .chat-composer-lower-chrome {
+    margin-top: -1px;
+    margin-inline-end: var(--app-scrollbar-width);
+    padding-top: 1px;
+  }
+
+  @media (min-width: 40rem) {
+    .chat-composer-horizontal-inset {
+      padding-inline-start: calc(env(safe-area-inset-left) + 1.25rem);
+      padding-inline-end: calc(env(safe-area-inset-right) + 1.25rem);
+    }
+  }
+
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .chat-composer-glass,
+    .chat-composer-lower-chrome {
+      background: var(--card);
+    }
   }
 }
 
@@ -118,32 +253,6 @@
   --success-foreground: var(--color-emerald-700);
   --warning: var(--color-amber-500);
   --warning-foreground: var(--color-amber-700);
-  --sidebar: color-mix(in srgb, var(--background) 95%, var(--color-neutral-200));
-  --sidebar-foreground: var(--foreground);
-  --sidebar-accent: color-mix(in srgb, var(--primary) 10%, var(--background));
-  --sidebar-accent-foreground: var(--foreground);
-  --sidebar-border: color-mix(in srgb, var(--foreground) 14%, var(--background));
-  --sidebar-ring: var(--ring);
-  --selection-background: color-mix(in srgb, var(--primary) 25%, var(--background));
-  --selection-foreground: var(--foreground);
-  --terminal-cursor: var(--primary);
-  --terminal-selection: color-mix(in srgb, var(--primary) 20%, transparent);
-  --terminal-black: var(--foreground);
-  --terminal-red: var(--destructive);
-  --terminal-green: var(--success);
-  --terminal-yellow: var(--warning);
-  --terminal-blue: var(--info);
-  --terminal-magenta: var(--primary);
-  --terminal-cyan: var(--info);
-  --terminal-white: var(--background);
-  --terminal-bright-black: color-mix(in srgb, var(--foreground) 70%, var(--background));
-  --terminal-bright-red: var(--destructive);
-  --terminal-bright-green: var(--success);
-  --terminal-bright-yellow: var(--warning);
-  --terminal-bright-blue: var(--info);
-  --terminal-bright-magenta: var(--primary);
-  --terminal-bright-cyan: var(--info);
-  --terminal-bright-white: color-mix(in srgb, var(--background) 92%, white);
 
   @variant dark {
     color-scheme: dark;
@@ -173,271 +282,12 @@
     --success-foreground: var(--color-emerald-400);
     --warning: var(--color-amber-500);
     --warning-foreground: var(--color-amber-400);
-    --sidebar: color-mix(in srgb, var(--background) 90%, var(--color-neutral-900));
-    --sidebar-foreground: var(--foreground);
-    --sidebar-accent: color-mix(in srgb, var(--primary) 14%, var(--background));
-    --sidebar-accent-foreground: var(--foreground);
-    --sidebar-border: color-mix(in srgb, var(--foreground) 12%, var(--background));
-    --sidebar-ring: var(--ring);
-    --selection-background: color-mix(in srgb, var(--primary) 28%, transparent);
-    --selection-foreground: var(--foreground);
-    --terminal-cursor: var(--primary);
-    --terminal-selection: color-mix(in srgb, var(--primary) 24%, transparent);
-    --terminal-black: color-mix(in srgb, var(--foreground) 72%, var(--background));
-    --terminal-red: var(--destructive);
-    --terminal-green: var(--success);
-    --terminal-yellow: var(--warning);
-    --terminal-blue: var(--info);
-    --terminal-magenta: var(--primary);
-    --terminal-cyan: var(--info);
-    --terminal-white: var(--foreground);
-    --terminal-bright-black: color-mix(in srgb, var(--foreground) 58%, var(--background));
-    --terminal-bright-red: color-mix(in srgb, var(--destructive) 88%, white);
-    --terminal-bright-green: color-mix(in srgb, var(--success) 88%, white);
-    --terminal-bright-yellow: color-mix(in srgb, var(--warning) 88%, white);
-    --terminal-bright-blue: color-mix(in srgb, var(--info) 88%, white);
-    --terminal-bright-magenta: color-mix(in srgb, var(--primary) 88%, white);
-    --terminal-bright-cyan: color-mix(in srgb, var(--info) 88%, white);
-    --terminal-bright-white: color-mix(in srgb, var(--foreground) 96%, white);
   }
-}
-
-:root[data-system-theme-source="omarchy"] {
-  --primary: var(--desktop-system-theme-accent);
-  --ring: var(--desktop-system-theme-accent);
-  --destructive: var(--desktop-system-theme-color1);
-  --info: var(--desktop-system-theme-color4);
-  --success: var(--desktop-system-theme-color2);
-  --warning: var(--desktop-system-theme-color3);
-  --sidebar-ring: var(--desktop-system-theme-accent);
-  --terminal-cursor: var(--desktop-system-theme-accent);
-  --terminal-selection: color-mix(
-    in srgb,
-    var(--desktop-system-theme-selection-background, var(--desktop-system-theme-color8)) 72%,
-    transparent
-  );
-  --terminal-black: var(--desktop-system-theme-color0, var(--desktop-system-theme-background));
-  --terminal-red: var(--desktop-system-theme-color1, var(--destructive));
-  --terminal-green: var(--desktop-system-theme-color2, var(--success));
-  --terminal-yellow: var(--desktop-system-theme-color3, var(--warning));
-  --terminal-blue: var(--desktop-system-theme-color4, var(--info));
-  --terminal-magenta: var(--desktop-system-theme-color5, var(--primary));
-  --terminal-cyan: var(--desktop-system-theme-color6, var(--primary));
-  --terminal-white: var(--desktop-system-theme-color7, var(--foreground));
-  --terminal-bright-black: var(--desktop-system-theme-color8, var(--muted-foreground));
-  --terminal-bright-red: var(--desktop-system-theme-color9, var(--destructive));
-  --terminal-bright-green: var(--desktop-system-theme-color10, var(--success));
-  --terminal-bright-yellow: var(--desktop-system-theme-color11, var(--warning));
-  --terminal-bright-blue: var(--desktop-system-theme-color12, var(--info));
-  --terminal-bright-magenta: var(--desktop-system-theme-color13, var(--primary));
-  --terminal-bright-cyan: var(--desktop-system-theme-color14, var(--primary));
-  --terminal-bright-white: var(--desktop-system-theme-color15, var(--foreground));
-}
-
-:root[data-system-theme-source="omarchy"][data-system-theme-mode="dark"] {
-  color-scheme: dark;
-  --background: var(--desktop-system-theme-background);
-  --app-chrome-background: var(--desktop-system-theme-background);
-  --foreground: var(--desktop-system-theme-foreground);
-  --card: color-mix(
-    in srgb,
-    var(--desktop-system-theme-background) 92%,
-    var(--desktop-system-theme-foreground)
-  );
-  --card-foreground: var(--desktop-system-theme-foreground);
-  --popover: color-mix(
-    in srgb,
-    var(--desktop-system-theme-background) 94%,
-    var(--desktop-system-theme-foreground)
-  );
-  --popover-foreground: var(--desktop-system-theme-foreground);
-  --primary-foreground: var(
-    --desktop-system-theme-selection-foreground,
-    var(--desktop-system-theme-background)
-  );
-  --secondary: color-mix(
-    in srgb,
-    var(--desktop-system-theme-selection-background, var(--desktop-system-theme-color0)) 62%,
-    var(--desktop-system-theme-background)
-  );
-  --secondary-foreground: var(--desktop-system-theme-foreground);
-  --muted: color-mix(
-    in srgb,
-    var(--desktop-system-theme-selection-background, var(--desktop-system-theme-color8)) 52%,
-    var(--desktop-system-theme-background)
-  );
-  --muted-foreground: color-mix(
-    in srgb,
-    var(--desktop-system-theme-foreground) 78%,
-    var(--desktop-system-theme-background)
-  );
-  --accent: color-mix(
-    in srgb,
-    var(--desktop-system-theme-accent) 22%,
-    var(--desktop-system-theme-background)
-  );
-  --accent-foreground: var(--desktop-system-theme-foreground);
-  --sidebar: color-mix(
-    in srgb,
-    var(--desktop-system-theme-background) 84%,
-    var(--desktop-system-theme-color0, var(--desktop-system-theme-foreground))
-  );
-  --sidebar-foreground: var(--desktop-system-theme-foreground);
-  --sidebar-accent: color-mix(
-    in srgb,
-    var(--desktop-system-theme-accent) 18%,
-    var(--desktop-system-theme-background)
-  );
-  --sidebar-accent-foreground: var(--desktop-system-theme-foreground);
-  --sidebar-border: color-mix(
-    in srgb,
-    var(--desktop-system-theme-foreground) 19%,
-    var(--desktop-system-theme-background)
-  );
-  --border: color-mix(
-    in srgb,
-    var(--desktop-system-theme-foreground) 17%,
-    var(--desktop-system-theme-background)
-  );
-  --input: color-mix(
-    in srgb,
-    var(--desktop-system-theme-foreground) 21%,
-    var(--desktop-system-theme-background)
-  );
-  --destructive-foreground: color-mix(
-    in srgb,
-    var(--desktop-system-theme-color1) 78%,
-    var(--desktop-system-theme-foreground)
-  );
-  --info-foreground: color-mix(
-    in srgb,
-    var(--desktop-system-theme-color4) 78%,
-    var(--desktop-system-theme-foreground)
-  );
-  --success-foreground: color-mix(
-    in srgb,
-    var(--desktop-system-theme-color2) 78%,
-    var(--desktop-system-theme-foreground)
-  );
-  --warning-foreground: color-mix(
-    in srgb,
-    var(--desktop-system-theme-color3) 78%,
-    var(--desktop-system-theme-foreground)
-  );
-  --selection-background: color-mix(
-    in srgb,
-    var(--desktop-system-theme-selection-background, var(--desktop-system-theme-accent)) 66%,
-    transparent
-  );
-  --selection-foreground: var(
-    --desktop-system-theme-selection-foreground,
-    var(--desktop-system-theme-foreground)
-  );
-}
-
-:root[data-system-theme-source="omarchy"][data-system-theme-mode="light"] {
-  color-scheme: light;
-  --background: var(--desktop-system-theme-background);
-  --app-chrome-background: var(--desktop-system-theme-background);
-  --foreground: var(--desktop-system-theme-foreground);
-  --card: color-mix(
-    in srgb,
-    var(--desktop-system-theme-background) 96%,
-    var(--desktop-system-theme-color0, var(--desktop-system-theme-foreground))
-  );
-  --card-foreground: var(--desktop-system-theme-foreground);
-  --popover: color-mix(
-    in srgb,
-    var(--desktop-system-theme-background) 98%,
-    var(--desktop-system-theme-color0, var(--desktop-system-theme-foreground))
-  );
-  --popover-foreground: var(--desktop-system-theme-foreground);
-  --primary-foreground: var(
-    --desktop-system-theme-selection-foreground,
-    var(--desktop-system-theme-background)
-  );
-  --secondary: color-mix(
-    in srgb,
-    var(--desktop-system-theme-selection-background, var(--desktop-system-theme-color7)) 32%,
-    var(--desktop-system-theme-background)
-  );
-  --secondary-foreground: var(--desktop-system-theme-foreground);
-  --muted: color-mix(
-    in srgb,
-    var(--desktop-system-theme-selection-background, var(--desktop-system-theme-color7)) 22%,
-    var(--desktop-system-theme-background)
-  );
-  --muted-foreground: color-mix(
-    in srgb,
-    var(--desktop-system-theme-foreground) 82%,
-    var(--desktop-system-theme-background)
-  );
-  --accent: color-mix(
-    in srgb,
-    var(--desktop-system-theme-accent) 16%,
-    var(--desktop-system-theme-background)
-  );
-  --accent-foreground: var(--desktop-system-theme-foreground);
-  --sidebar: color-mix(
-    in srgb,
-    var(--desktop-system-theme-background) 92%,
-    var(--desktop-system-theme-color7, var(--desktop-system-theme-foreground))
-  );
-  --sidebar-foreground: var(--desktop-system-theme-foreground);
-  --sidebar-accent: color-mix(
-    in srgb,
-    var(--desktop-system-theme-accent) 12%,
-    var(--desktop-system-theme-background)
-  );
-  --sidebar-accent-foreground: var(--desktop-system-theme-foreground);
-  --sidebar-border: color-mix(
-    in srgb,
-    var(--desktop-system-theme-foreground) 17%,
-    var(--desktop-system-theme-background)
-  );
-  --border: color-mix(
-    in srgb,
-    var(--desktop-system-theme-foreground) 20%,
-    var(--desktop-system-theme-background)
-  );
-  --input: color-mix(
-    in srgb,
-    var(--desktop-system-theme-foreground) 24%,
-    var(--desktop-system-theme-background)
-  );
-  --destructive-foreground: color-mix(
-    in srgb,
-    var(--desktop-system-theme-color1) 82%,
-    var(--desktop-system-theme-background)
-  );
-  --info-foreground: color-mix(
-    in srgb,
-    var(--desktop-system-theme-color4) 82%,
-    var(--desktop-system-theme-background)
-  );
-  --success-foreground: color-mix(
-    in srgb,
-    var(--desktop-system-theme-color2) 82%,
-    var(--desktop-system-theme-background)
-  );
-  --warning-foreground: color-mix(
-    in srgb,
-    var(--desktop-system-theme-color3) 82%,
-    var(--desktop-system-theme-background)
-  );
-  --selection-background: color-mix(
-    in srgb,
-    var(--desktop-system-theme-selection-background, var(--desktop-system-theme-accent)) 42%,
-    var(--desktop-system-theme-background)
-  );
-  --selection-foreground: var(
-    --desktop-system-theme-selection-foreground,
-    var(--desktop-system-theme-foreground)
-  );
 }
 
 body {
   font-family:
+    "DM Sans Variable",
     "DM Sans",
     -apple-system,
     BlinkMacSystemFont,
@@ -455,8 +305,8 @@ body {
 }
 
 ::selection {
-  background: var(--selection-background);
-  color: var(--selection-foreground);
+  background: var(--omarchy-selection-background, Highlight);
+  color: var(--omarchy-selection-foreground, HighlightText);
 }
 
 body {
@@ -480,7 +330,7 @@ body::after {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: var(--noise-opacity, 0.035);
+  opacity: 0.035;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-repeat: repeat;
   background-size: 256px 256px;
@@ -488,7 +338,8 @@ body::after {
 
 pre,
 code {
-  font-family: "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-family:
+    "SF Mono", "SFMono-Regular", "JetBrains Mono", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 /* Window drag region (frameless titlebar) */
@@ -506,7 +357,7 @@ code {
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: var(--app-scrollbar-width);
 }
 
 ::-webkit-scrollbar-track {
@@ -587,8 +438,42 @@ label:has(> select#reasoning-effort) select {
 .chat-markdown ol,
 .chat-markdown blockquote,
 .chat-markdown pre,
-.chat-markdown table {
+.chat-markdown .chat-markdown-table-container {
   margin: 0.65rem 0;
+}
+
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4,
+.chat-markdown h5,
+.chat-markdown h6 {
+  margin: 1.25rem 0 0.5rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
+.chat-markdown h1 {
+  font-size: 1.25rem;
+}
+
+.chat-markdown h2 {
+  font-size: 1.125rem;
+}
+
+.chat-markdown h3 {
+  font-size: 1rem;
+}
+
+.chat-markdown h4,
+.chat-markdown h5,
+.chat-markdown h6 {
+  font-size: 0.875rem;
+}
+
+.chat-markdown h6 {
+  color: var(--muted-foreground);
 }
 
 .chat-markdown ul {
@@ -621,20 +506,74 @@ label:has(> select#reasoning-effort) select {
   margin-top: 0.25rem;
 }
 
-.chat-markdown a {
-  color: var(--info-foreground);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--info-foreground) 40%, transparent);
+/* GitHub-style task lists: the checkbox replaces the list marker. */
+.chat-markdown li.task-list-item {
+  list-style-type: none;
 }
 
-.chat-markdown a:hover {
-  opacity: 0.8;
+.chat-markdown li.task-list-item input[type="checkbox"] {
+  margin: 0 0.35em 0.15em -1.25rem;
+  vertical-align: middle;
+}
+
+.chat-markdown a {
+  color: var(--info-foreground);
+  text-decoration: none;
+}
+
+.chat-markdown a:not(.chat-markdown-file-link):hover,
+.chat-markdown a:not(.chat-markdown-file-link):focus-visible {
+  background-image: radial-gradient(circle, currentcolor 0.75px, transparent 1px);
+  background-position: left bottom;
+  background-repeat: repeat-x;
+  background-size: 4px 2px;
+}
+
+.chat-markdown .chat-markdown-link-favicon {
+  @apply inline-flex;
+  width: 14px;
+  height: 14px;
+  margin-inline: 0.25em 0.2em;
+  vertical-align: -0.125em;
+}
+
+.chat-markdown .chat-markdown-link-leading {
+  white-space: nowrap;
 }
 
 .chat-markdown blockquote {
   border-left: 2px solid var(--border);
   padding-left: 0.8rem;
   color: var(--muted-foreground);
+}
+
+.chat-markdown section[data-footnotes] {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.chat-markdown section[data-footnotes] ol {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.chat-markdown section[data-footnotes] li + li {
+  margin-top: 0.35rem;
+}
+
+.chat-markdown a[data-footnote-ref],
+.chat-markdown a[data-footnote-backref] {
+  display: inline-flex;
+  min-width: 1rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  text-decoration: none;
+  font-size: 0.6875rem;
+  font-weight: 600;
 }
 
 .chat-markdown :not(pre) > code {
@@ -646,45 +585,19 @@ label:has(> select#reasoning-effort) select {
   font-size: 0.75rem;
 }
 
-.chat-markdown-file-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.28rem;
-  border: 1px solid color-mix(in srgb, var(--border) 92%, transparent);
-  border-radius: 0.375rem;
-  background: color-mix(in srgb, var(--muted) 88%, var(--background));
-  padding: 0.08rem 0.34rem;
+.chat-markdown a.chat-markdown-file-link {
   color: var(--foreground);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.75rem;
-  line-height: 1.15;
-  vertical-align: text-bottom;
-  transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease,
-    opacity 120ms ease;
+  text-decoration: none;
 }
 
-.chat-markdown-file-link:hover {
-  opacity: 1;
+.chat-markdown a.chat-markdown-file-link:hover {
   color: var(--foreground);
-  border-color: color-mix(in srgb, var(--border) 65%, var(--foreground));
-  background: color-mix(in srgb, var(--muted) 72%, var(--background));
+  text-decoration: none;
 }
 
-.chat-markdown-file-link:focus-visible {
+.chat-markdown a.chat-markdown-file-link:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ring) 70%, transparent);
-}
-
-.chat-markdown-file-link-icon {
-  opacity: 0.72;
-}
-
-.chat-markdown-file-link-label {
-  color: color-mix(in srgb, var(--foreground) 88%, transparent);
-  line-height: 1.1;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 70%, transparent);
 }
 
 .chat-markdown pre {
@@ -701,6 +614,24 @@ label:has(> select#reasoning-effort) select {
   background: transparent;
   padding: 0;
   font-size: 0.75rem;
+}
+
+.chat-markdown pre {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--border) 78%, transparent) transparent;
+}
+
+.chat-markdown pre::-webkit-scrollbar {
+  height: 7px;
+}
+
+.chat-markdown pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-markdown pre::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 78%, transparent);
 }
 
 .markdown-file-link-tooltip-scroll {
@@ -722,52 +653,131 @@ label:has(> select#reasoning-effort) select {
 }
 
 .chat-markdown .chat-markdown-codeblock {
-  --chat-markdown-codeblock-copy-button-space: 1.5rem;
-  position: relative;
   margin: 0.65rem 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--muted) 78%, var(--background));
+}
+
+.chat-markdown .chat-markdown-codeblock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--muted);
+  padding: 0.25rem 0.375rem 0.25rem 0.7rem;
+  color: var(--muted-foreground);
+}
+
+.chat-markdown .chat-markdown-codeblock-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 0.6875rem;
+}
+
+.chat-markdown .chat-markdown-chrome-action {
+  color: var(--muted-foreground);
+}
+
+.chat-markdown .chat-markdown-chrome-action:hover {
+  color: var(--foreground);
+}
+
+.chat-markdown .chat-markdown-chrome-action[aria-pressed="true"] {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
 .chat-markdown .chat-markdown-codeblock pre {
   margin: 0;
-  padding-right: calc(0.9rem + var(--chat-markdown-codeblock-copy-button-space));
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
-.chat-markdown .chat-markdown-copy-button {
-  position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 1.5rem;
-  width: 1.5rem;
-  border-radius: 0.375rem;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--background) 82%, transparent);
-  color: var(--muted-foreground);
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 120ms ease,
-    color 120ms ease,
-    border-color 120ms ease;
-}
-
-.chat-markdown .chat-markdown-codeblock:hover .chat-markdown-copy-button,
-.chat-markdown .chat-markdown-codeblock:focus-within .chat-markdown-copy-button {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.chat-markdown .chat-markdown-copy-button:hover {
-  color: var(--foreground);
-  border-color: color-mix(in srgb, var(--border) 70%, var(--foreground));
+.chat-markdown .chat-markdown-codeblock[data-wrap="true"] pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .chat-markdown .chat-markdown-shiki .shiki {
-  background: color-mix(in srgb, var(--muted) 78%, var(--background)) !important;
+  background: transparent !important;
+}
+
+.document-markdown-shell {
+  background: var(--background);
+}
+
+.document-markdown-article {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--card) 80%, var(--background));
+  padding: clamp(1rem, 2vw, 2rem);
+}
+
+.document-markdown.document-markdown-content {
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+.document-markdown [id] {
+  scroll-margin-top: 1rem;
+}
+
+.document-markdown h1 {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  padding-bottom: 0.45rem;
+  font-size: 1.75rem;
+}
+
+.document-markdown h2 {
+  margin-top: 1.8rem;
+  font-size: 1.35rem;
+}
+
+.document-markdown h3 {
+  margin-top: 1.5rem;
+  font-size: 1.1rem;
+}
+
+.document-markdown p,
+.document-markdown ul,
+.document-markdown ol,
+.document-markdown blockquote,
+.document-markdown pre,
+.document-markdown .chat-markdown-table-container {
+  margin: 0.9rem 0;
+}
+
+.document-markdown-outline {
+  position: sticky;
+  top: 1rem;
+  align-self: start;
+  max-height: calc(100vh - 7rem);
+  overflow: auto;
+  border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  padding-left: 0.75rem;
+}
+
+.chat-markdown-document-image {
+  display: block;
+  max-width: 100%;
+  cursor: zoom-in;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.chat-markdown-document-image img {
+  max-height: min(68vh, 42rem);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 0.5rem;
 }
 
 .chat-markdown .chat-markdown-mermaid {
@@ -775,14 +785,13 @@ label:has(> select#reasoning-effort) select {
   max-width: 100%;
   margin: 0.75rem 0;
   overflow-x: auto;
-  overscroll-behavior-x: contain;
-  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
   border-radius: 0.75rem;
   background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--card) 88%, var(--background)),
-      color-mix(in srgb, var(--muted) 62%, var(--background))
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--accent) 10%, transparent),
+      transparent 42%
     ),
     var(--card);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--foreground) 5%, transparent);
@@ -814,7 +823,7 @@ label:has(> select#reasoning-effort) select {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--card) 72%, transparent);
+  background: color-mix(in srgb, var(--background) 72%, transparent);
   color: var(--muted-foreground);
   font-size: 0.75rem;
 }
@@ -843,206 +852,6 @@ label:has(> select#reasoning-effort) select {
   color: var(--muted-foreground);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.72rem;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-
-.chat-markdown table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.chat-markdown .chat-markdown-table-scroll {
-  max-width: 100%;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-}
-
-.chat-markdown .chat-markdown-table-scroll table {
-  min-width: max-content;
-}
-
-.chat-markdown th,
-.chat-markdown td {
-  border: 1px solid var(--border);
-  padding: 0.35rem 0.45rem;
-  text-align: left;
-}
-
-.document-markdown {
-  min-width: 0;
-  color: color-mix(in srgb, var(--foreground) 88%, transparent);
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.document-markdown .chat-markdown {
-  color: inherit;
-  font-size: 0.95rem;
-  line-height: 1.72;
-}
-
-.document-markdown .chat-markdown > :first-child {
-  margin-top: 0;
-}
-
-.document-markdown .chat-markdown > :last-child {
-  margin-bottom: 0;
-}
-
-.document-markdown h1,
-.document-markdown h2,
-.document-markdown h3,
-.document-markdown h4,
-.document-markdown h5,
-.document-markdown h6 {
-  margin: 1.35rem 0 0.7rem;
-  color: var(--foreground);
-  font-weight: 650;
-  letter-spacing: 0;
-  scroll-margin-top: 1rem;
-}
-
-.document-markdown h1 {
-  font-size: 2rem;
-  line-height: 1.05;
-}
-
-.document-markdown h2 {
-  font-size: 1.5rem;
-  line-height: 1.12;
-}
-
-.document-markdown h3 {
-  font-size: 1.2rem;
-  line-height: 1.2;
-}
-
-.document-markdown h4,
-.document-markdown h5,
-.document-markdown h6 {
-  font-size: 1rem;
-  line-height: 1.3;
-}
-
-.document-markdown p,
-.document-markdown ul,
-.document-markdown ol,
-.document-markdown blockquote,
-.document-markdown pre,
-.document-markdown table,
-.document-markdown details {
-  margin: 0.85rem 0;
-}
-
-.document-markdown ul,
-.document-markdown ol {
-  padding-left: 1.35rem;
-}
-
-.document-markdown ul {
-  list-style-type: disc;
-}
-
-.document-markdown ol {
-  list-style-type: decimal;
-}
-
-.document-markdown ul ul {
-  list-style-type: circle;
-}
-
-.document-markdown ul ul ul {
-  list-style-type: square;
-}
-
-.document-markdown ol ol {
-  list-style-type: lower-alpha;
-}
-
-.document-markdown ol ol ol {
-  list-style-type: lower-roman;
-}
-
-.document-markdown li + li {
-  margin-top: 0.3rem;
-}
-
-.document-markdown a {
-  color: color-mix(in srgb, var(--foreground) 70%, var(--primary));
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, currentColor 38%, transparent);
-  text-underline-offset: 0.18em;
-}
-
-.document-markdown blockquote {
-  border-left: 2px solid color-mix(in srgb, var(--border) 55%, var(--foreground));
-  padding-left: 0.95rem;
-  color: var(--muted-foreground);
-}
-
-.document-markdown :not(pre) > code {
-  border: 1px solid var(--border);
-  border-radius: 0.45rem;
-  background: color-mix(in srgb, var(--muted) 82%, var(--background));
-  padding: 0.14rem 0.4rem;
-  font-size: 0.78rem;
-  color: var(--foreground);
-}
-
-.document-markdown .chat-markdown-table-scroll {
-  max-width: 100%;
-  overflow-x: auto;
-  margin: 0.85rem 0;
-}
-
-.document-markdown .chat-markdown-table-scroll table {
-  width: max-content;
-  min-width: 100%;
-  margin: 0;
-  overflow: hidden;
-  border-collapse: separate;
-  border-spacing: 0;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-}
-
-.document-markdown thead th {
-  position: sticky;
-  top: 0;
-  background: color-mix(in srgb, var(--card) 88%, var(--background));
-}
-
-.document-markdown th,
-.document-markdown td {
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  padding: 0.55rem 0.7rem;
-  text-align: left;
-  overflow-wrap: normal;
-  word-break: normal;
-}
-
-.document-markdown tr:last-child td {
-  border-bottom: none;
-}
-
-.document-markdown .chat-markdown-codeblock {
-  max-width: 100%;
-  min-width: 0;
-  margin: 0.85rem 0;
-}
-
-.document-markdown .chat-markdown-codeblock pre {
-  border-color: color-mix(in srgb, var(--border) 75%, transparent);
-  border-radius: 0.75rem;
-  background: color-mix(in srgb, var(--muted) 74%, var(--background));
-}
-
-.document-markdown .chat-markdown-shiki .shiki {
-  margin: 0 !important;
-  padding: 1rem 1rem 1rem 1.05rem !important;
-  background: color-mix(in srgb, var(--muted) 74%, var(--background)) !important;
 }
 
 .document-markdown .chat-markdown-mermaid {
@@ -1055,53 +864,57 @@ label:has(> select#reasoning-effort) select {
   padding: 1.35rem;
 }
 
-.document-markdown .chat-markdown-copy-button {
-  height: 1.75rem;
-  width: 1.75rem;
-  border-radius: 0.5rem;
-  background: color-mix(in srgb, var(--background) 85%, transparent);
-}
-
-.document-code-renderer {
+/* Diagnostics-style tables: row separators only, uppercase headers, and a
+   scroll-fade container for horizontal overflow. The root chat-markdown
+   wrapping rules (overflow-wrap: anywhere) would let columns shrink to single
+   characters and defeat the overflow — restore word-boundary wrapping so the
+   min column width is the longest word. */
+.chat-markdown table {
+  width: 100%;
   min-width: max-content;
-}
-
-.document-code-renderer .chat-markdown-codeblock {
-  min-height: 100%;
-  margin: 0;
-}
-
-.document-code-renderer .chat-markdown-codeblock pre {
-  min-height: 100%;
-  margin: 0;
-  border: none;
-  border-radius: 0;
-  background: color-mix(in srgb, var(--muted) 56%, var(--background));
-  padding-right: calc(1rem + var(--chat-markdown-codeblock-copy-button-space));
-}
-
-.document-code-renderer .chat-markdown-shiki .shiki {
-  min-height: 100%;
-  margin: 0 !important;
-  padding: 1rem 1rem 1rem 1.05rem !important;
-  background: color-mix(in srgb, var(--muted) 56%, var(--background)) !important;
+  border-collapse: collapse;
+  overflow-wrap: normal;
+  word-break: normal;
   font-size: 0.75rem;
-  line-height: 1.55;
 }
 
-.document-code-renderer[data-word-wrap="true"] {
-  min-width: 0;
+.chat-markdown th,
+.chat-markdown td {
+  padding: 0.45rem 0.75rem;
+  text-align: left;
 }
 
-.document-code-renderer[data-word-wrap="true"] .shiki,
-.document-code-renderer[data-word-wrap="true"] .shiki code,
-.document-code-renderer[data-word-wrap="true"] .shiki span {
-  white-space: pre-wrap !important;
+.chat-markdown thead th {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  padding-block: 0.55rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chat-markdown tbody td {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+/* Collapsed (default): single-line cells truncate so arbitrary chat content
+   cannot blow the column out; the footer toggle expands cells to wrap. */
+.chat-markdown .chat-markdown-table-container[data-expanded="false"] th,
+.chat-markdown .chat-markdown-table-container[data-expanded="false"] td {
+  overflow: hidden;
+  max-width: 24rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-markdown .chat-markdown-table-container[data-expanded="true"] td {
+  max-width: 24rem;
   overflow-wrap: anywhere;
 }
 
-.document-preview-shell {
-  min-width: 0;
+.chat-markdown .chat-markdown-table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.125rem;
 }
 
 @keyframes provider-update-pill-countdown {
@@ -1122,7 +935,8 @@ label:has(> select#reasoning-effort) select {
   background: color-mix(in srgb, var(--background) 94%, var(--card));
 }
 
-.diff-render-file {
+.diff-render-file,
+.diff-render-surface > diffs-container {
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   overflow: clip;
@@ -1160,6 +974,7 @@ label:has(> select#reasoning-effort) select {
   );
   background-image: var(--ultrathink-spectrum);
   background-size: 220% 220%;
+  filter: saturate(0.82) brightness(0.92);
   animation: ultrathink-rainbow 10s linear infinite;
 }
 

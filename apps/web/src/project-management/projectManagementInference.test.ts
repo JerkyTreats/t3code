@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it } from "vite-plus/test";
 import type { EnvironmentId, ProjectId, ThreadId, TurnId } from "@t3tools/contracts";
 
 import { buildProjectInferenceDashboardSnapshot } from "./projectManagementInference";

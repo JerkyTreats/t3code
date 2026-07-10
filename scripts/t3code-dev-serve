@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+export HOME="${HOME:-/home/jerkytreats}"
+export T3CODE_HOME="${T3CODE_HOME:-$HOME/.t3-dev}"
+export T3CODE_HOST="${T3CODE_HOST:-127.0.0.1}"
+export T3CODE_PORT="${T3CODE_PORT:-3774}"
+export T3CODE_NO_BROWSER="${T3CODE_NO_BROWSER:-true}"
+export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+
+prod_home="$HOME/.t3"
+prod_port="3773"
+
+if [[ "$T3CODE_HOME" == "$prod_home" ]]; then
+  printf 'Refusing to start dev server with prod T3CODE_HOME: %s\n' "$T3CODE_HOME" >&2
+  exit 64
+fi
+
+if [[ "$T3CODE_PORT" == "$prod_port" ]]; then
+  printf 'Refusing to start dev server on prod T3CODE_PORT: %s\n' "$T3CODE_PORT" >&2
+  exit 64
+fi
+
+export PATH="$HOME/.local/share/mise/shims:$HOME/.bun/bin:$HOME/.cargo/bin:$HOME/.local/bin:$HOME/bin:$PATH"
+
+NVM_DIR="${NVM_DIR:-$HOME/.config/nvm}"
+if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+  # shellcheck disable=SC1090
+  . "$NVM_DIR/nvm.sh"
+  nvm use --silent 24 >/dev/null || nvm use --silent default >/dev/null || true
+fi
+
+mkdir -p "$T3CODE_HOME"
+
+exec node "$repo_root/apps/server/dist/bin.mjs" \
+  serve \
+  --host "$T3CODE_HOST" \
+  --port "$T3CODE_PORT" \
+  --base-dir "$T3CODE_HOME" \
+  "$HOME"

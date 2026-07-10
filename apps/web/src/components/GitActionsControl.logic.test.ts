@@ -253,51 +253,6 @@ describe("when: ref is clean, ahead, and has no open PR", () => {
   });
 });
 
-describe("when: promote target is available", () => {
-  it("buildMenuItems adds a promote action for feature refs", () => {
-    const items = buildMenuItems(status({ refName: "feature/test" }), false, true, "main");
-
-    assert.deepInclude(items[3], {
-      id: "promote",
-      label: "Promote to main",
-      disabled: false,
-      icon: "promote",
-      kind: "open_dialog",
-      dialogAction: "promote",
-      targetBranch: "main",
-    });
-  });
-
-  it("buildMenuItems disables promote on the target ref", () => {
-    const items = buildMenuItems(status({ refName: "main" }), false, true, "main");
-
-    assert.deepInclude(items[3], {
-      id: "promote",
-      label: "Promote to main",
-      disabled: true,
-    });
-  });
-
-  it("buildGitActionProgressStages includes promote phases", () => {
-    assert.deepEqual(
-      buildGitActionProgressStages({
-        action: "promote",
-        hasCustomCommitMessage: false,
-        hasWorkingTreeChanges: true,
-        targetBranch: "main",
-      }),
-      [
-        "Generating commit message...",
-        "Committing...",
-        "Pushing backup...",
-        "Merging into main...",
-        "Pushing main...",
-        "Cleaning up...",
-      ],
-    );
-  });
-});
-
 describe("when: source control provider uses merge requests", () => {
   it("uses GitLab MR terminology in quick actions and menu items", () => {
     const gitlabStatus = status({
@@ -785,11 +740,32 @@ describe("when: ref has no upstream configured", () => {
       false,
       false,
       false,
+      true,
     );
     assert.deepEqual(quick, {
       kind: "open_publish",
       label: "Publish repository",
       disabled: false,
+    });
+  });
+
+  it("resolveQuickAction disables publish before provider readiness is known", () => {
+    const quick = resolveQuickAction(
+      status({
+        hasUpstream: false,
+        aheadCount: 2,
+        pr: null,
+      }),
+      false,
+      false,
+      false,
+      false,
+    );
+    assert.deepEqual(quick, {
+      kind: "show_hint",
+      label: "Publish repository",
+      disabled: true,
+      hint: "No authenticated source control provider is ready.",
     });
   });
 
@@ -1096,34 +1072,6 @@ describe("resolveThreadBranchUpdate", () => {
 
     assert.equal(update, null);
   });
-
-  it("returns the target branch after a successful promote action", () => {
-    const update = resolveThreadBranchUpdate({
-      action: "promote",
-      branch: {
-        status: "skipped_not_requested",
-      },
-      commit: {
-        status: "skipped_not_requested",
-      },
-      push: { status: "pushed", branch: "main" },
-      pr: { status: "skipped_not_requested" },
-      promote: {
-        status: "promoted",
-        sourceBranch: "feature/test",
-        targetBranch: "main",
-        branchDeleted: true,
-      },
-      toast: {
-        title: "Promoted to main",
-        cta: { kind: "none" },
-      },
-    });
-
-    assert.deepEqual(update, {
-      branch: "main",
-    });
-  });
 });
 
 describe("resolveLiveThreadBranchUpdate", () => {
@@ -1172,6 +1120,15 @@ describe("resolveLiveThreadBranchUpdate", () => {
     });
 
     assert.equal(update, null);
+  });
+
+  it("allows a temporary worktree ref to reconcile to a semantic branch", () => {
+    const update = resolveLiveThreadBranchUpdate({
+      threadBranch: "t3code/a9628676",
+      gitStatus: status({ refName: "feature/diff-panel-toggle" }),
+    });
+
+    assert.deepEqual(update, { branch: "feature/diff-panel-toggle" });
   });
 });
 

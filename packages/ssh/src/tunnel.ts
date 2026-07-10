@@ -665,7 +665,7 @@ export function buildRemoteT3RunnerScript(input?: RemoteT3RunnerOptions): string
   );
 }
 
-function buildRemoteNodeEnvScript(input?: RemoteT3RunnerOptions): string {
+export function buildRemoteNodeEnvScript(input?: RemoteT3RunnerOptions): string {
   return stripTrailingNewlines(
     applyScriptPlaceholders(REMOTE_NODE_ENV_SCRIPT, {
       T3_NODE_ENGINE_RANGE: shellSingleQuote(input?.nodeEngineRange?.trim() || ""),

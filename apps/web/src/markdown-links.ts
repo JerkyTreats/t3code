@@ -9,7 +9,6 @@ const RELATIVE_FILE_PATH_PATTERN = /^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+(?::\d
 const RELATIVE_FILE_NAME_PATTERN = /^[A-Za-z0-9._-]+\.[A-Za-z0-9_-]+(?::\d+){0,2}$/;
 const POSITION_SUFFIX_PATTERN = /:\d+(?::\d+)?$/;
 const POSITION_ONLY_PATTERN = /^\d+(?::\d+)?$/;
-const MARKDOWN_FILE_EXTENSIONS = new Set([".md", ".markdown", ".mdown", ".mkd"]);
 const POSIX_FILE_ROOT_PREFIXES = [
   "/Users/",
   "/home/",
@@ -27,9 +26,8 @@ export interface MarkdownFileLinkMeta {
   filePath: string;
   targetPath: string;
   displayPath: string;
+  workspaceRelativePath: string | null;
   basename: string;
-  workspaceRelativePath?: string;
-  isMarkdown: boolean;
   line?: number;
   column?: number;
 }
@@ -61,14 +59,6 @@ function stripSearchAndHash(value: string): { path: string; hash: string } {
 
 function normalizeWindowsDrivePath(path: string): string {
   return /^\/[A-Za-z]:[\\/]/.test(path) ? path.slice(1) : path;
-}
-
-function normalizePathSeparators(path: string): string {
-  return path.replaceAll("\\", "/");
-}
-
-function trimTrailingPathSeparators(path: string): string {
-  return path.replace(/[\\/]+$/, "");
 }
 
 function parseFileUrlHref(
@@ -110,6 +100,20 @@ function looksLikePosixFilesystemPath(path: string): boolean {
   return /\.[A-Za-z0-9_-]+$/.test(basename);
 }
 
+function looksLikeBroadRelativeFilePath(path: string): boolean {
+  if (!/[\s%]/.test(path)) return false;
+  if (path.includes("\u0000") || path.includes("<") || path.includes(">")) return false;
+
+  const pathWithoutPosition = path.replace(POSITION_SUFFIX_PATTERN, "");
+  const separatorIndex = Math.max(
+    pathWithoutPosition.lastIndexOf("/"),
+    pathWithoutPosition.lastIndexOf("\\"),
+  );
+  const basename =
+    separatorIndex >= 0 ? pathWithoutPosition.slice(separatorIndex + 1) : pathWithoutPosition;
+  return /\.[A-Za-z0-9_-]+$/.test(basename);
+}
+
 function appendLineColumnFromHash(path: string, hash: string): string {
   if (!hash || POSITION_SUFFIX_PATTERN.test(path)) return path;
   const match = hash.match(/^#L(\d+)(?:C(\d+))?$/i);
@@ -123,7 +127,11 @@ function isLikelyPathCandidate(path: string): boolean {
   if (WINDOWS_DRIVE_PATH_PATTERN.test(path) || WINDOWS_UNC_PATH_PATTERN.test(path)) return true;
   if (RELATIVE_PATH_PREFIX_PATTERN.test(path)) return true;
   if (path.startsWith("/")) return looksLikePosixFilesystemPath(path);
-  return RELATIVE_FILE_PATH_PATTERN.test(path) || RELATIVE_FILE_NAME_PATTERN.test(path);
+  return (
+    RELATIVE_FILE_PATH_PATTERN.test(path) ||
+    RELATIVE_FILE_NAME_PATTERN.test(path) ||
+    looksLikeBroadRelativeFilePath(path)
+  );
 }
 
 function isRelativePath(path: string): boolean {
@@ -185,43 +193,23 @@ function basenameOfPath(path: string): string {
   return separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
 }
 
-function extensionOfPath(path: string): string {
-  const basename = basenameOfPath(splitPathAndPosition(path).path);
-  const extensionIndex = basename.lastIndexOf(".");
-  return extensionIndex > 0 ? basename.slice(extensionIndex).toLowerCase() : "";
-}
-
-export function isMarkdownFilePath(path: string): boolean {
-  return MARKDOWN_FILE_EXTENSIONS.has(extensionOfPath(path));
-}
-
-export function resolveWorkspaceRelativePath(
-  targetPath: string,
-  workspaceRoot: string | undefined,
-): string | null {
+function workspaceRelativePath(path: string, workspaceRoot: string | undefined): string | null {
   if (!workspaceRoot) return null;
-
-  const normalizedTargetPath = normalizeWindowsDrivePath(
-    normalizePathSeparators(splitPathAndPosition(targetPath).path),
+  const normalizedPath = normalizeWindowsDrivePath(path.replaceAll("\\", "/"));
+  const normalizedRoot = normalizeWindowsDrivePath(workspaceRoot.replaceAll("\\", "/")).replace(
+    /\/+$/,
+    "",
   );
-  const normalizedWorkspaceRoot = trimTrailingPathSeparators(
-    normalizeWindowsDrivePath(normalizePathSeparators(workspaceRoot.trim())),
-  );
-  if (normalizedWorkspaceRoot.length === 0) return null;
-
-  const targetForCompare = normalizedTargetPath.toLowerCase();
-  const workspaceForCompare = normalizedWorkspaceRoot.toLowerCase();
-  const workspacePrefix = `${workspaceForCompare}/`;
-
-  if (!targetForCompare.startsWith(workspacePrefix)) return null;
-
-  const relativePath = normalizedTargetPath.slice(normalizedWorkspaceRoot.length + 1);
-  return relativePath.length > 0 ? relativePath : null;
+  const pathForCompare = normalizedPath.toLowerCase();
+  const rootForCompare = normalizedRoot.toLowerCase();
+  if (!pathForCompare.startsWith(`${rootForCompare}/`)) return null;
+  return normalizedPath.slice(normalizedRoot.length + 1);
 }
 
 export function resolveMarkdownFileLinkMeta(
   href: string | undefined,
   cwd?: string,
+  workspaceRoot?: string,
 ): MarkdownFileLinkMeta | null {
   const targetPath = resolveMarkdownFileLinkTarget(href, cwd);
   if (!targetPath) return null;
@@ -231,15 +219,15 @@ export function resolveMarkdownFileLinkMeta(
   const parsedColumn = column ? Number.parseInt(column, 10) : Number.NaN;
   const lineNumber = Number.isFinite(parsedLine) ? parsedLine : undefined;
   const columnNumber = Number.isFinite(parsedColumn) ? parsedColumn : undefined;
-  const workspaceRelativePath = resolveWorkspaceRelativePath(path, cwd);
+
+  const displayRoot = workspaceRoot ?? cwd;
 
   return {
     filePath: path,
     targetPath,
-    displayPath: formatWorkspaceRelativePath(targetPath, cwd),
+    displayPath: formatWorkspaceRelativePath(targetPath, displayRoot),
+    workspaceRelativePath: workspaceRelativePath(path, displayRoot),
     basename: basenameOfPath(path),
-    ...(workspaceRelativePath ? { workspaceRelativePath } : {}),
-    isMarkdown: isMarkdownFilePath(path),
     ...(lineNumber !== undefined ? { line: lineNumber } : {}),
     ...(columnNumber !== undefined ? { column: columnNumber } : {}),
   };

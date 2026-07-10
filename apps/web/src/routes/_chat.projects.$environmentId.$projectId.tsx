@@ -5,8 +5,9 @@ import {
   parseProjectManagementRouteTarget,
   projectManagementRouteSearch,
 } from "~/project-management/projectManagementRoute";
+import { SidebarInset } from "~/components/ui/sidebar";
 
-function ProjectRouteView() {
+function ProjectManagementRouteComponent() {
   const params = Route.useParams();
   const search = Route.useSearch();
   const target = parseProjectManagementRouteTarget({
@@ -15,10 +16,14 @@ function ProjectRouteView() {
     view: search.view,
   });
 
-  return <ProjectManagementRouteView target={target} />;
+  return (
+    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
+      <ProjectManagementRouteView target={target} />
+    </SidebarInset>
+  );
 }
 
 export const Route = createFileRoute("/_chat/projects/$environmentId/$projectId")({
-  validateSearch: (search: Record<string, unknown>) => projectManagementRouteSearch(search.view),
-  component: ProjectRouteView,
+  validateSearch: (search) => projectManagementRouteSearch(search.view),
+  component: ProjectManagementRouteComponent,
 });

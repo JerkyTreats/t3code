@@ -9,6 +9,7 @@ import {
   resolveDesktopRuntimeDependencies,
   resolveBuildOptions,
   resolveDesktopBuildIconAssets,
+  resolveDesktopProtocolName,
   resolveDesktopProductName,
   resolveDesktopUpdateChannel,
   resolveMockUpdateServerPort,
@@ -28,6 +29,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       resolveDesktopProductName("0.0.17-nightly.20260413.42"),
       "T3 Code Omarchy (Nightly)",
     );
+  });
+
+  it("uses the Omarchy identity for the desktop protocol label", () => {
+    assert.equal(resolveDesktopProtocolName(), "T3 Code Omarchy");
   });
 
   it("switches desktop packaging icons to the nightly artwork for nightly versions", () => {

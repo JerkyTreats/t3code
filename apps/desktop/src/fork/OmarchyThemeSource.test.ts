@@ -3,8 +3,7 @@ import * as FS from "node:fs/promises";
 import * as OS from "node:os";
 import * as Path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
-import { vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const { mockedHomedir } = vi.hoisted(() => ({
   mockedHomedir: vi.fn(),

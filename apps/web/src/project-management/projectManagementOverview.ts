@@ -56,7 +56,7 @@ function deriveRecentWork(
 ): ProjectOverviewRecentWorkEntry[] {
   return threads
     .flatMap((thread) =>
-      deriveWorkLogEntries(thread.activities, undefined).map((entry) => {
+      deriveWorkLogEntries(thread.activities).map((entry) => {
         return {
           id: entry.id,
           threadId: thread.id,

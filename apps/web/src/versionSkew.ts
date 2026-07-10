@@ -1,5 +1,4 @@
 import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
-import { PRODUCT_BASE_NAME } from "@t3tools/shared/productIdentity";
 import * as Schema from "effect/Schema";
 
 import { APP_VERSION } from "./branding";
@@ -40,7 +39,7 @@ export function resolveVersionMismatch(
   return {
     clientVersion: normalizedClientVersion,
     serverVersion: normalizedServerVersion,
-    hint: `Version mismatch. Try syncing the client and server to the same ${PRODUCT_BASE_NAME} version.`,
+    hint: "Version mismatch. Try syncing the client and server to the same T3 Code version.",
   };
 }
 
@@ -65,7 +64,8 @@ function readVersionMismatchDismissals(): VersionMismatchDismissals {
         VersionMismatchDismissalsSchema,
       ) ?? { keys: [] }
     );
-  } catch {
+  } catch (error) {
+    console.error("Could not read version-mismatch dismissals.", error);
     return { keys: [] };
   }
 }
@@ -77,8 +77,8 @@ function writeVersionMismatchDismissals(document: VersionMismatchDismissals): vo
       document,
       VersionMismatchDismissalsSchema,
     );
-  } catch {
-    // Dismissal state is best-effort UI state; a storage failure should not block the banner.
+  } catch (error) {
+    console.error("Could not persist version-mismatch dismissals.", error);
   }
 }
 

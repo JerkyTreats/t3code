@@ -1,40 +1,69 @@
 import type { ReactNode } from "react";
+import { BarChart3Icon, FolderGit2Icon } from "lucide-react";
 
-import { APP_DISPLAY_NAME } from "~/branding";
-import { isElectron } from "~/env";
-import { SidebarInset, SidebarTrigger } from "~/components/ui/sidebar";
+import type { ProjectManagementRouteTarget } from "~/project-management/projectManagementTypes";
+import { buildProjectManagementRouteTarget } from "~/project-management/projectManagementRoute";
+import { Button } from "../ui/button";
 
 interface ProjectManagementShellProps {
-  readonly children: ReactNode;
+  readonly target: ProjectManagementRouteTarget;
   readonly title: string;
+  readonly workspaceRoot: string | null;
+  readonly onNavigate: (target: ProjectManagementRouteTarget) => void;
+  readonly children: ReactNode;
 }
 
-export function ProjectManagementShell({ children, title }: ProjectManagementShellProps) {
-  return (
-    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
-        {!isElectron ? (
-          <header className="border-b border-border bg-background px-3 py-2 sm:px-5">
-            <div className="flex items-center gap-2">
-              <SidebarTrigger className="size-7 shrink-0 md:hidden" />
-              <span className="text-sm font-medium text-foreground">{title}</span>
-              <span className="hidden text-xs text-muted-foreground sm:inline">
-                {APP_DISPLAY_NAME}
-              </span>
-            </div>
-          </header>
-        ) : (
-          <div className="drag-region flex h-[52px] shrink-0 items-center border-b border-border bg-background px-5 wco:h-[env(titlebar-area-height)] wco:pl-[calc(env(titlebar-area-x)+1em)]">
-            <span className="text-xs font-medium text-muted-foreground">{title}</span>
-          </div>
-        )}
+export function ProjectManagementShell({
+  target,
+  title,
+  workspaceRoot,
+  onNavigate,
+  children,
+}: ProjectManagementShellProps) {
+  const managementTarget = buildProjectManagementRouteTarget({
+    environmentId: target.environmentId,
+    projectId: target.projectId,
+    view: "management",
+  });
+  const inferenceTarget = buildProjectManagementRouteTarget({
+    environmentId: target.environmentId,
+    projectId: target.projectId,
+    view: "inference",
+  });
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-            {children}
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-background text-foreground">
+      <header className="shrink-0 border-b border-border bg-card/65 px-5 py-4">
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold tracking-normal">{title}</h1>
+            {workspaceRoot ? (
+              <p className="text-muted-foreground mt-1 truncate text-sm">{workspaceRoot}</p>
+            ) : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-1 rounded-lg border border-border bg-background p-1">
+            <Button
+              type="button"
+              variant={target.view === "management" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => onNavigate(managementTarget)}
+            >
+              <FolderGit2Icon className="size-4" />
+              Manage
+            </Button>
+            <Button
+              type="button"
+              variant={target.view === "inference" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => onNavigate(inferenceTarget)}
+            >
+              <BarChart3Icon className="size-4" />
+              Inference
+            </Button>
           </div>
         </div>
-      </div>
-    </SidebarInset>
+      </header>
+      <main className="min-h-0 flex-1 overflow-auto px-5 py-4">{children}</main>
+    </div>
   );
 }

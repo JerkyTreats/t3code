@@ -1,20 +1,18 @@
-import type { ReactNode } from "react";
-
 import { cn } from "~/lib/utils";
 
 interface ProjectMetricCardProps {
-  readonly detail?: ReactNode;
   readonly label: string;
-  readonly value: ReactNode;
+  readonly value: string | number;
+  readonly detail?: string | null;
   readonly className?: string;
 }
 
-export function ProjectMetricCard({ className, detail, label, value }: ProjectMetricCardProps) {
+export function ProjectMetricCard({ label, value, detail, className }: ProjectMetricCardProps) {
   return (
-    <div className={cn("rounded-lg border border-border bg-card px-4 py-3 shadow-sm", className)}>
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold text-foreground">{value}</div>
-      {detail ? <div className="mt-1 text-xs text-muted-foreground">{detail}</div> : null}
+    <div className={cn("rounded-lg border border-border bg-card px-3 py-2", className)}>
+      <div className="text-muted-foreground text-xs font-medium">{label}</div>
+      <div className="mt-1 text-xl font-semibold tracking-normal text-foreground">{value}</div>
+      {detail ? <div className="text-muted-foreground mt-1 text-xs">{detail}</div> : null}
     </div>
   );
 }

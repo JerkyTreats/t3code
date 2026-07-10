@@ -686,6 +686,10 @@ export function resolveDesktopProductName(version: string): string {
     : (desktopPackageJson.productName ?? formatProductDisplayName("Alpha"));
 }
 
+export function resolveDesktopProtocolName(): string {
+  return PRODUCT_BASE_NAME;
+}
+
 const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   platform: typeof BuildPlatform.Type,
   target: string,
@@ -722,7 +726,7 @@ const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "public.app-category.developer-tools",
       protocols: [
         {
-          name: "T3 Code",
+          name: resolveDesktopProtocolName(),
           schemes: ["t3code"],
         },
       ],

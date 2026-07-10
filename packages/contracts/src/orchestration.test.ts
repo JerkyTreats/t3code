@@ -10,13 +10,11 @@ import {
   OrchestrationEvent,
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetTurnDiffInput,
-  OrchestrationHydrateThreadActivityPayloadsInput,
   OrchestrationLatestTurn,
   ProjectCreatedPayload,
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
   OrchestrationSession,
-  OrchestrationThreadShell,
   ProjectCreateCommand,
   ThreadMetaUpdatedPayload,
   ThreadTurnStartCommand,
@@ -24,14 +22,10 @@ import {
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
 } from "./orchestration.ts";
-import { EventId, TurnId } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 const decodeTurnDiffInput = Schema.decodeUnknownEffect(OrchestrationGetTurnDiffInput);
 const decodeFullThreadDiffInput = Schema.decodeUnknownEffect(OrchestrationGetFullThreadDiffInput);
-const decodeHydrateThreadActivityPayloadsInput = Schema.decodeUnknownEffect(
-  OrchestrationHydrateThreadActivityPayloadsInput,
-);
 const decodeThreadTurnDiff = Schema.decodeUnknownEffect(ThreadTurnDiff);
 const decodeProjectCreateCommand = Schema.decodeUnknownEffect(ProjectCreateCommand);
 const decodeProjectCreatedPayload = Schema.decodeUnknownEffect(ProjectCreatedPayload);
@@ -40,7 +34,6 @@ const decodeThreadTurnStartCommand = Schema.decodeUnknownEffect(ThreadTurnStartC
 const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
   ThreadTurnStartRequestedPayload,
 );
-const decodeOrchestrationThreadShell = Schema.decodeUnknownEffect(OrchestrationThreadShell);
 const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLatestTurn);
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
@@ -56,32 +49,13 @@ const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPaylo
 const decodeOrchestrationCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
-
-function makeThreadShell(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "thread-1",
-    projectId: "project-1",
-    title: "Thread",
-    modelSelection: {
-      instanceId: "codex",
-      model: "gpt-5",
-    },
-    runtimeMode: DEFAULT_RUNTIME_MODE,
-    interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-    branch: null,
-    worktreePath: null,
-    latestTurn: null,
-    createdAt: "2026-05-01T00:00:00.000Z",
-    updatedAt: "2026-05-01T00:00:00.000Z",
-    archivedAt: null,
-    session: null,
-    latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
-    ...overrides,
-  };
-}
+const linkedIssue = {
+  repoNameWithOwner: "t3tools/t3code",
+  number: 42,
+  title: "Replay upstream release",
+  url: "https://github.com/t3tools/t3code/issues/42",
+  state: "open" as const,
+};
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -115,80 +89,6 @@ it.effect("parses full thread diff input with whitespace ignoring enabled", () =
       ignoreWhitespace: true,
     });
     assert.strictEqual(parsed.ignoreWhitespace, true);
-  }),
-);
-
-it.effect("caps thread activity payload hydration requests", () =>
-  Effect.gen(function* () {
-    const parsed = yield* decodeHydrateThreadActivityPayloadsInput({
-      threadId: "thread-1",
-      activityIds: Array.from({ length: 50 }, (_, index) => `activity-${index + 1}`),
-    });
-    assert.strictEqual(parsed.activityIds.length, 50);
-
-    const oversized = yield* Effect.exit(
-      decodeHydrateThreadActivityPayloadsInput({
-        threadId: "thread-1",
-        activityIds: Array.from({ length: 51 }, (_, index) => `activity-${index + 1}`),
-      }),
-    );
-    assert.strictEqual(oversized._tag, "Failure");
-  }),
-);
-
-it.effect("decodes legacy thread shell payloads without status summary fields", () =>
-  Effect.gen(function* () {
-    const parsed = yield* decodeOrchestrationThreadShell(makeThreadShell());
-    assert.strictEqual(parsed.activePlanProgress, null);
-    assert.strictEqual(parsed.latestRuntimeActivityAt, null);
-    assert.strictEqual(parsed.statusSummaryUpdatedAt, null);
-  }),
-);
-
-it.effect("decodes thread shell active plan progress", () =>
-  Effect.gen(function* () {
-    const parsed = yield* decodeOrchestrationThreadShell(
-      makeThreadShell({
-        activePlanProgress: {
-          completedAllSteps: false,
-          currentStepNumber: 3,
-          totalSteps: 5,
-          turnId: "turn-1",
-          activityId: "activity-1",
-          updatedAt: "2026-05-01T00:01:00.000Z",
-        },
-        latestRuntimeActivityAt: "2026-05-01T00:01:00.000Z",
-        statusSummaryUpdatedAt: "2026-05-01T00:01:00.000Z",
-      }),
-    );
-    assert.deepStrictEqual(parsed.activePlanProgress, {
-      completedAllSteps: false,
-      currentStepNumber: 3,
-      totalSteps: 5,
-      turnId: TurnId.make("turn-1"),
-      activityId: EventId.make("activity-1"),
-      updatedAt: "2026-05-01T00:01:00.000Z",
-    });
-  }),
-);
-
-it.effect("rejects invalid thread shell active plan progress", () =>
-  Effect.gen(function* () {
-    const result = yield* Effect.exit(
-      decodeOrchestrationThreadShell(
-        makeThreadShell({
-          activePlanProgress: {
-            completedAllSteps: false,
-            currentStepNumber: 0,
-            totalSteps: 5,
-            turnId: "turn-1",
-            activityId: "activity-1",
-            updatedAt: "2026-05-01T00:01:00.000Z",
-          },
-        }),
-      ),
-    );
-    assert.strictEqual(result._tag, "Failure");
   }),
 );
 
@@ -378,20 +278,58 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
           interactionMode: "default",
           branch: null,
           worktreePath: null,
+          issueLink: linkedIssue,
           createdAt: "2026-01-01T00:00:00.000Z",
         },
         prepareWorktree: {
           projectCwd: "/tmp/workspace",
           baseBranch: "main",
           branch: "t3code/example",
+          startFromOrigin: true,
         },
         runSetupScript: true,
       },
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.bootstrap?.createThread?.projectId, "project-1");
+    assert.deepStrictEqual(parsed.bootstrap?.createThread?.issueLink, linkedIssue);
     assert.strictEqual(parsed.bootstrap?.prepareWorktree?.baseBranch, "main");
+    assert.strictEqual(parsed.bootstrap?.prepareWorktree?.startFromOrigin, true);
     assert.strictEqual(parsed.bootstrap?.runSetupScript, true);
+  }),
+);
+
+it.effect("preserves issue links through thread command payloads", () =>
+  Effect.gen(function* () {
+    const created = yield* decodeOrchestrationCommand({
+      type: "thread.create",
+      commandId: "cmd-thread-create-issue",
+      threadId: "thread-1",
+      projectId: "project-1",
+      title: "Issue linked thread",
+      modelSelection: {
+        provider: "codex",
+        model: "gpt-5.4",
+      },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      issueLink: linkedIssue,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const updated = yield* decodeOrchestrationCommand({
+      type: "thread.meta.update",
+      commandId: "cmd-thread-meta-issue",
+      threadId: "thread-1",
+      issueLink: linkedIssue,
+    });
+
+    if (created.type !== "thread.create" || updated.type !== "thread.meta.update") {
+      assert.fail("Expected thread issue link commands.");
+    }
+    assert.deepStrictEqual(created.issueLink, linkedIssue);
+    assert.deepStrictEqual(updated.issueLink, linkedIssue);
   }),
 );
 
@@ -428,6 +366,62 @@ it.effect("decodes thread.meta-updated payloads with explicit provider", () =>
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.modelSelection?.instanceId, "claudeAgent");
+  }),
+);
+
+it.effect("preserves issue links through thread events", () =>
+  Effect.gen(function* () {
+    const created = yield* decodeOrchestrationEvent({
+      eventId: "event-thread-created-issue",
+      type: "thread.created",
+      sequence: 1,
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-thread-create-issue",
+      causationEventId: null,
+      correlationId: "cmd-thread-create-issue",
+      metadata: {},
+      payload: {
+        threadId: "thread-1",
+        projectId: "project-1",
+        title: "Issue linked thread",
+        modelSelection: {
+          provider: "codex",
+          model: "gpt-5.4",
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        issueLink: linkedIssue,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const updated = yield* decodeOrchestrationEvent({
+      eventId: "event-thread-meta-issue",
+      type: "thread.meta-updated",
+      sequence: 2,
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      occurredAt: "2026-01-01T00:00:01.000Z",
+      commandId: "cmd-thread-meta-issue",
+      causationEventId: null,
+      correlationId: "cmd-thread-meta-issue",
+      metadata: {},
+      payload: {
+        threadId: "thread-1",
+        issueLink: linkedIssue,
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      },
+    });
+
+    if (created.type !== "thread.created" || updated.type !== "thread.meta-updated") {
+      assert.fail("Expected thread issue link events.");
+    }
+    assert.deepStrictEqual(created.payload.issueLink, linkedIssue);
+    assert.deepStrictEqual(updated.payload.issueLink, linkedIssue);
   }),
 );
 

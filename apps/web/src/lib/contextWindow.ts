@@ -25,6 +25,28 @@ export type ContextWindowSnapshot = NullableContextWindowUsage & {
   readonly updatedAt: string;
 };
 
+/** Map a provider driver kind to a user-facing display name. */
+export function formatProviderDisplayName(provider: string | null | undefined): string {
+  if (!provider) return "This agent";
+  switch (provider) {
+    case "claudeAgent":
+    case "claude":
+      return "Claude";
+    case "codex":
+      return "Codex";
+    case "cursor":
+      return "Cursor";
+    case "opencode":
+      return "OpenCode";
+    default: {
+      // Title-case unknown driver kinds so they read reasonably.
+      const trimmed = provider.replace(/Agent$/i, "").trim();
+      if (trimmed.length === 0) return provider;
+      return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+    }
+  }
+}
+
 export function deriveLatestContextWindowSnapshot(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): ContextWindowSnapshot | null {
@@ -77,36 +99,14 @@ export function formatContextWindowTokens(value: number | null): string {
   if (value === null || !Number.isFinite(value)) {
     return "0";
   }
-
-  const absoluteValue = Math.abs(value);
-  if (absoluteValue < 1_000) {
+  if (value < 1_000) {
     return `${Math.round(value)}`;
   }
-
-  const units = [
-    { suffix: "T", value: 1_000_000_000_000 },
-    { suffix: "B", value: 1_000_000_000 },
-    { suffix: "M", value: 1_000_000 },
-    { suffix: "k", value: 1_000 },
-  ] as const;
-
-  for (const unit of units) {
-    if (absoluteValue < unit.value) {
-      continue;
-    }
-
-    const scaledValue = value / unit.value;
-    const roundedValue =
-      Math.abs(scaledValue) >= 100 ? Math.round(scaledValue) : Number(scaledValue.toFixed(1));
-    if (Math.abs(roundedValue) >= 1000) {
-      continue;
-    }
-
-    const formattedValue = `${roundedValue}`.replace(/\.0$/, "");
-    return unit.suffix === "k"
-      ? `${formattedValue}${unit.suffix}`
-      : `${formattedValue} ${unit.suffix}`;
+  if (value < 10_000) {
+    return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
   }
-
-  return `${Math.round(value)}`;
+  if (value < 1_000_000) {
+    return `${Math.round(value / 1_000)}k`;
+  }
+  return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
 }

@@ -15,7 +15,6 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
@@ -25,7 +24,7 @@ import {
   SqlitePersistenceMemory,
 } from "../../persistence/Layers/Sqlite.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
-import { RepositoryIdentityResolverLive } from "../../project/Layers/RepositoryIdentityResolver.ts";
+import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import {
   ORCHESTRATION_PROJECTOR_NAMES,
@@ -52,7 +51,6 @@ const exists = (filePath: string) =>
   });
 
 const BaseTestLayer = makeProjectionPipelinePrefixedTestLayer("t3-projection-pipeline-test-");
-const decodeUnknownJsonString = Schema.decodeUnknownSync(Schema.UnknownFromJsonString);
 
 it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
   it.effect("bootstraps all projection states and writes projection rows", () =>
@@ -1234,6 +1232,227 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
     }),
   );
 
+  it.effect("keeps the turn running across interim assistant messages until the session ends", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = "2026-01-01T00:00:00.000Z";
+      const threadId = ThreadId.make("thread-turn-lifecycle");
+      const turnId = TurnId.make("turn-lifecycle-1");
+
+      yield* eventStore.append({
+        type: "thread.created",
+        eventId: EventId.make("evt-tl1"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-tl1"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-tl1"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId: ProjectId.make("project-turn-lifecycle"),
+          title: "Turn lifecycle",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claude"),
+            model: "claude-opus",
+          },
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      yield* eventStore.append({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-tl2"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-01-01T00:00:01.000Z",
+        commandId: CommandId.make("cmd-tl2"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-tl2"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "running",
+            providerName: "claude",
+            runtimeMode: "full-access",
+            activeTurnId: turnId,
+            lastError: null,
+            updatedAt: "2026-01-01T00:00:01.000Z",
+          },
+        },
+      });
+
+      // Interim assistant message completes mid-turn (commentary between
+      // tool calls) — the turn must stay running and unsettled.
+      yield* eventStore.append({
+        type: "thread.message-sent",
+        eventId: EventId.make("evt-tl3"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-01-01T00:00:05.000Z",
+        commandId: CommandId.make("cmd-tl3"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-tl3"),
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: MessageId.make("message-tl-interim"),
+          role: "assistant",
+          text: "interim commentary",
+          turnId,
+          streaming: false,
+          createdAt: "2026-01-01T00:00:05.000Z",
+          updatedAt: "2026-01-01T00:00:05.000Z",
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const runningRows = yield* sql<{
+        readonly state: string;
+        readonly completedAt: string | null;
+      }>`
+        SELECT state, completed_at AS "completedAt"
+        FROM projection_turns
+        WHERE thread_id = ${threadId} AND turn_id = ${turnId}
+      `;
+      assert.deepEqual(runningRows, [{ state: "running", completedAt: null }]);
+
+      // The session leaving "running" is the turn-end signal.
+      yield* eventStore.append({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-tl4"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-01-01T00:01:00.000Z",
+        commandId: CommandId.make("cmd-tl4"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-tl4"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "ready",
+            providerName: "claude",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: "2026-01-01T00:01:00.000Z",
+          },
+        },
+      });
+
+      yield* projectionPipeline.bootstrap;
+
+      const settledRows = yield* sql<{
+        readonly state: string;
+        readonly completedAt: string | null;
+      }>`
+        SELECT state, completed_at AS "completedAt"
+        FROM projection_turns
+        WHERE thread_id = ${threadId} AND turn_id = ${turnId}
+      `;
+      assert.deepEqual(settledRows, [
+        { state: "completed", completedAt: "2026-01-01T00:01:00.000Z" },
+      ]);
+    }),
+  );
+
+  it.effect("settles a superseded running turn when a new turn becomes active", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const now = "2026-01-01T00:00:00.000Z";
+      const threadId = ThreadId.make("thread-turn-supersede");
+      const oldTurnId = TurnId.make("turn-superseded");
+      const newTurnId = TurnId.make("turn-steer");
+
+      yield* eventStore.append({
+        type: "thread.created",
+        eventId: EventId.make("evt-ts1"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("cmd-ts1"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-ts1"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId: ProjectId.make("project-turn-supersede"),
+          title: "Turn supersede",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("opencode"),
+            model: "big-pickle",
+          },
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const appendRunningSessionSet = (eventId: string, turnId: TurnId, updatedAt: string) =>
+        eventStore.append({
+          type: "thread.session-set",
+          eventId: EventId.make(eventId),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: updatedAt,
+          commandId: CommandId.make(`cmd-${eventId}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-${eventId}`),
+          metadata: {},
+          payload: {
+            threadId,
+            session: {
+              threadId,
+              status: "running",
+              providerName: "opencode",
+              runtimeMode: "full-access",
+              activeTurnId: turnId,
+              lastError: null,
+              updatedAt,
+            },
+          },
+        });
+
+      yield* appendRunningSessionSet("evt-ts2", oldTurnId, "2026-01-01T00:00:01.000Z");
+      // A steer: a new turn becomes active without the provider ever
+      // completing the previous one.
+      yield* appendRunningSessionSet("evt-ts3", newTurnId, "2026-01-01T00:00:30.000Z");
+
+      yield* projectionPipeline.bootstrap;
+
+      const rows = yield* sql<{
+        readonly turnId: string;
+        readonly state: string;
+        readonly completedAt: string | null;
+      }>`
+        SELECT turn_id AS "turnId", state, completed_at AS "completedAt"
+        FROM projection_turns
+        WHERE thread_id = ${threadId}
+        ORDER BY requested_at
+      `;
+      assert.deepEqual(rows, [
+        { turnId: oldTurnId, state: "completed", completedAt: "2026-01-01T00:00:30.000Z" },
+        { turnId: newTurnId, state: "running", completedAt: null },
+      ]);
+    }),
+  );
+
   it.effect("keeps accumulated assistant text when completion payload text is empty", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;
@@ -1658,14 +1877,11 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
     }),
   );
 
-  it.effect("updates projected shell plan progress from activity append events", () =>
+  it.effect("clears stale pending user input from projected shell summaries", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;
       const eventStore = yield* OrchestrationEventStore;
       const sql = yield* SqlClient.SqlClient;
-      const threadId = ThreadId.make("thread-plan-progress");
-      const projectId = ProjectId.make("project-plan-progress");
-      const turnId = TurnId.make("turn-plan-progress");
       const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
         eventStore
           .append(event)
@@ -1673,129 +1889,127 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
 
       yield* appendAndProject({
         type: "project.created",
-        eventId: EventId.make("evt-plan-progress-1"),
+        eventId: EventId.make("evt-stale-user-input-1"),
         aggregateKind: "project",
-        aggregateId: projectId,
-        occurredAt: "2026-02-26T13:00:00.000Z",
-        commandId: CommandId.make("cmd-plan-progress-1"),
+        aggregateId: ProjectId.make("project-stale-user-input"),
+        occurredAt: "2026-02-26T12:35:00.000Z",
+        commandId: CommandId.make("cmd-stale-user-input-1"),
         causationEventId: null,
-        correlationId: CorrelationId.make("cmd-plan-progress-1"),
+        correlationId: CorrelationId.make("cmd-stale-user-input-1"),
         metadata: {},
         payload: {
-          projectId,
-          title: "Project Plan Progress",
-          workspaceRoot: "/tmp/project-plan-progress",
+          projectId: ProjectId.make("project-stale-user-input"),
+          title: "Project Stale User Input",
+          workspaceRoot: "/tmp/project-stale-user-input",
           defaultModelSelection: null,
           scripts: [],
-          createdAt: "2026-02-26T13:00:00.000Z",
-          updatedAt: "2026-02-26T13:00:00.000Z",
+          createdAt: "2026-02-26T12:35:00.000Z",
+          updatedAt: "2026-02-26T12:35:00.000Z",
         },
       });
 
       yield* appendAndProject({
         type: "thread.created",
-        eventId: EventId.make("evt-plan-progress-2"),
+        eventId: EventId.make("evt-stale-user-input-2"),
         aggregateKind: "thread",
-        aggregateId: threadId,
-        occurredAt: "2026-02-26T13:00:01.000Z",
-        commandId: CommandId.make("cmd-plan-progress-2"),
+        aggregateId: ThreadId.make("thread-stale-user-input"),
+        occurredAt: "2026-02-26T12:35:01.000Z",
+        commandId: CommandId.make("cmd-stale-user-input-2"),
         causationEventId: null,
-        correlationId: CorrelationId.make("cmd-plan-progress-2"),
+        correlationId: CorrelationId.make("cmd-stale-user-input-2"),
         metadata: {},
         payload: {
-          threadId,
-          projectId,
-          title: "Thread Plan Progress",
+          threadId: ThreadId.make("thread-stale-user-input"),
+          projectId: ProjectId.make("project-stale-user-input"),
+          title: "Thread Stale User Input",
           modelSelection: {
             instanceId: ProviderInstanceId.make("codex"),
             model: "gpt-5-codex",
           },
-          runtimeMode: "full-access",
+          runtimeMode: "approval-required",
           interactionMode: "default",
           branch: null,
           worktreePath: null,
-          createdAt: "2026-02-26T13:00:01.000Z",
-          updatedAt: "2026-02-26T13:00:01.000Z",
+          createdAt: "2026-02-26T12:35:01.000Z",
+          updatedAt: "2026-02-26T12:35:01.000Z",
         },
       });
 
       yield* appendAndProject({
-        type: "thread.session-set",
-        eventId: EventId.make("evt-plan-progress-3"),
+        type: "thread.activity-appended",
+        eventId: EventId.make("evt-stale-user-input-3"),
         aggregateKind: "thread",
-        aggregateId: threadId,
-        occurredAt: "2026-02-26T13:00:02.000Z",
-        commandId: CommandId.make("cmd-plan-progress-3"),
+        aggregateId: ThreadId.make("thread-stale-user-input"),
+        occurredAt: "2026-02-26T12:35:02.000Z",
+        commandId: CommandId.make("cmd-stale-user-input-3"),
         causationEventId: null,
-        correlationId: CorrelationId.make("cmd-plan-progress-3"),
+        correlationId: CorrelationId.make("cmd-stale-user-input-3"),
         metadata: {},
         payload: {
-          threadId,
-          session: {
-            threadId,
-            status: "running",
-            providerName: "codex",
-            runtimeMode: "full-access",
-            activeTurnId: turnId,
-            lastError: null,
-            updatedAt: "2026-02-26T13:00:02.000Z",
+          threadId: ThreadId.make("thread-stale-user-input"),
+          activity: {
+            id: EventId.make("activity-stale-user-input-requested"),
+            tone: "info",
+            kind: "user-input.requested",
+            summary: "User input requested",
+            payload: {
+              requestId: "user-input-request-stale-1",
+              questions: [
+                {
+                  id: "sandbox_mode",
+                  header: "Sandbox",
+                  question: "Which mode should be used?",
+                  options: [
+                    {
+                      label: "workspace-write",
+                      description: "Allow workspace writes only",
+                    },
+                  ],
+                },
+              ],
+            },
+            turnId: null,
+            createdAt: "2026-02-26T12:35:02.000Z",
           },
         },
       });
 
       yield* appendAndProject({
         type: "thread.activity-appended",
-        eventId: EventId.make("evt-plan-progress-4"),
+        eventId: EventId.make("evt-stale-user-input-4"),
         aggregateKind: "thread",
-        aggregateId: threadId,
-        occurredAt: "2026-02-26T13:00:03.000Z",
-        commandId: CommandId.make("cmd-plan-progress-4"),
+        aggregateId: ThreadId.make("thread-stale-user-input"),
+        occurredAt: "2026-02-26T12:35:03.000Z",
+        commandId: CommandId.make("cmd-stale-user-input-4"),
         causationEventId: null,
-        correlationId: CorrelationId.make("cmd-plan-progress-4"),
+        correlationId: CorrelationId.make("cmd-stale-user-input-4"),
         metadata: {},
         payload: {
-          threadId,
+          threadId: ThreadId.make("thread-stale-user-input"),
           activity: {
-            id: EventId.make("activity-plan-progress"),
-            tone: "info",
-            kind: "turn.plan.updated",
-            summary: "Plan updated",
+            id: EventId.make("activity-stale-user-input-failed"),
+            tone: "error",
+            kind: "provider.user-input.respond.failed",
+            summary: "Provider user input response failed",
             payload: {
-              plan: [
-                { step: "Inspect", status: "completed" },
-                { step: "Implement", status: "in_progress" },
-                { step: "Verify", status: "pending" },
-              ],
+              requestId: "user-input-request-stale-1",
+              detail:
+                "Provider adapter request failed (codex) for item/tool/requestUserInput: Unknown pending Codex user input request: user-input-request-stale-1",
             },
-            turnId,
-            createdAt: "2026-02-26T13:00:03.000Z",
+            turnId: null,
+            createdAt: "2026-02-26T12:35:03.000Z",
           },
         },
       });
 
       const threadRows = yield* sql<{
-        readonly activePlanProgressJson: string | null;
-        readonly latestRuntimeActivityAt: string | null;
-        readonly statusSummaryUpdatedAt: string | null;
+        readonly pendingUserInputCount: number;
       }>`
-        SELECT
-          active_plan_progress_json AS "activePlanProgressJson",
-          latest_runtime_activity_at AS "latestRuntimeActivityAt",
-          status_summary_updated_at AS "statusSummaryUpdatedAt"
+        SELECT pending_user_input_count AS "pendingUserInputCount"
         FROM projection_threads
-        WHERE thread_id = ${threadId}
+        WHERE thread_id = 'thread-stale-user-input'
       `;
-      assert.equal(threadRows.length, 1);
-      assert.deepEqual(decodeUnknownJsonString(threadRows[0]?.activePlanProgressJson ?? "null"), {
-        completedAllSteps: false,
-        currentStepNumber: 2,
-        totalSteps: 3,
-        turnId,
-        activityId: "activity-plan-progress",
-        updatedAt: "2026-02-26T13:00:03.000Z",
-      });
-      assert.equal(threadRows[0]?.latestRuntimeActivityAt, "2026-02-26T13:00:03.000Z");
-      assert.equal(threadRows[0]?.statusSummaryUpdatedAt, "2026-02-26T13:00:03.000Z");
+      assert.deepEqual(threadRows, [{ pendingUserInputCount: 0 }]);
     }),
   );
 
@@ -2321,7 +2535,7 @@ const engineLayer = it.layer(
     Layer.provide(OrchestrationProjectionPipelineLive),
     Layer.provide(OrchestrationEventStoreLive),
     Layer.provide(OrchestrationCommandReceiptRepositoryLive),
-    Layer.provide(RepositoryIdentityResolverLive),
+    Layer.provide(RepositoryIdentityResolver.layer),
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(
       ServerConfig.layerTest(process.cwd(), {

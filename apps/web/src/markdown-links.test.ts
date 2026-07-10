@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  isMarkdownFilePath,
   resolveMarkdownFileLinkMeta,
   resolveMarkdownFileLinkTarget,
-  resolveWorkspaceRelativePath,
   rewriteMarkdownFileUriHref,
 } from "./markdown-links";
 
@@ -61,6 +59,18 @@ describe("resolveMarkdownFileLinkTarget", () => {
     );
   });
 
+  it("resolves angle-wrapped relative file paths with spaces", () => {
+    expect(resolveMarkdownFileLinkTarget("<docs/release notes.md>", "/Users/julius/project")).toBe(
+      "/Users/julius/project/docs/release notes.md",
+    );
+  });
+
+  it("resolves encoded relative file paths with spaces", () => {
+    expect(resolveMarkdownFileLinkTarget("docs/release%20notes.md", "/Users/julius/project")).toBe(
+      "/Users/julius/project/docs/release notes.md",
+    );
+  });
+
   it("maps #L line anchors to editor line suffixes", () => {
     expect(resolveMarkdownFileLinkTarget("/Users/julius/project/src/main.ts#L42C7")).toBe(
       "/Users/julius/project/src/main.ts:42:7",
@@ -85,6 +95,7 @@ describe("resolveMarkdownFileLinkTarget", () => {
       ),
     ).toMatchObject({
       displayPath: "t3code/apps/web/src/session-logic.ts:501",
+      workspaceRelativePath: "apps/web/src/session-logic.ts",
     });
   });
 
@@ -97,6 +108,24 @@ describe("resolveMarkdownFileLinkTarget", () => {
     ).toMatchObject({
       displayPath:
         "t3code/apps/web/src/components/chat/MessagesTimeline.virtualization.browser.tsx",
+      workspaceRelativePath:
+        "apps/web/src/components/chat/MessagesTimeline.virtualization.browser.tsx",
+    });
+  });
+
+  it("does not create a preview path for files outside the workspace", () => {
+    expect(resolveMarkdownFileLinkMeta("/tmp/report.ts", "/repo/project")).toMatchObject({
+      workspaceRelativePath: null,
+    });
+  });
+
+  it("keeps nested document links relative to the workspace root", () => {
+    expect(
+      resolveMarkdownFileLinkMeta("sibling.md", "/repo/project/docs/guides", "/repo/project"),
+    ).toMatchObject({
+      targetPath: "/repo/project/docs/guides/sibling.md",
+      displayPath: "project/docs/guides/sibling.md",
+      workspaceRelativePath: "docs/guides/sibling.md",
     });
   });
 
@@ -118,42 +147,5 @@ describe("resolveMarkdownFileLinkTarget", () => {
 
   it("does not treat app routes as file links", () => {
     expect(resolveMarkdownFileLinkTarget("/chat/settings")).toBeNull();
-  });
-
-  it("marks markdown links and stores a workspace relative preview path", () => {
-    expect(
-      resolveMarkdownFileLinkMeta(
-        "/Users/julius/project/design/plan/execution/task_network/PLAN.md",
-        "/Users/julius/project",
-      ),
-    ).toMatchObject({
-      isMarkdown: true,
-      workspaceRelativePath: "design/plan/execution/task_network/PLAN.md",
-    });
-  });
-});
-
-describe("isMarkdownFilePath", () => {
-  it("detects markdown file extensions", () => {
-    expect(isMarkdownFilePath("docs/PLAN.md")).toBe(true);
-    expect(isMarkdownFilePath("docs/PLAN.mdown:12")).toBe(true);
-    expect(isMarkdownFilePath("src/plan.ts")).toBe(false);
-  });
-});
-
-describe("resolveWorkspaceRelativePath", () => {
-  it("returns a relative path for files inside the workspace", () => {
-    expect(
-      resolveWorkspaceRelativePath(
-        "/Users/julius/project/design/plan/execution/task_network/PLAN.md:12",
-        "/Users/julius/project",
-      ),
-    ).toBe("design/plan/execution/task_network/PLAN.md");
-  });
-
-  it("returns null for files outside the workspace", () => {
-    expect(
-      resolveWorkspaceRelativePath("/Users/julius/other/PLAN.md", "/Users/julius/project"),
-    ).toBeNull();
   });
 });
