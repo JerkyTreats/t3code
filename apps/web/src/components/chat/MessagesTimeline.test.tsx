@@ -265,6 +265,30 @@ describe("MessagesTimeline", () => {
     }
   });
 
+  it("shows thread sync errors without replacing cached history", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[buildUserTimelineEntry("Cached history remains visible.")]}
+        syncStatus={{
+          phase: "error",
+          version: "v2",
+          deferredPayloadCount: 0,
+          estimatedBytes: null,
+          error: "Remote snapshot failed while refreshing.",
+        }}
+      />,
+    );
+
+    expect(markup).toContain('data-thread-sync-error="true"');
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain("Remote snapshot failed while refreshing.");
+    expect(markup).toContain("Cached history remains visible.");
+    expect(markup).toContain('data-testid="legend-list"');
+    expect(markup).not.toContain("Send a message to start the conversation.");
+  });
+
   it("uses LegendList isNearEnd when deciding whether the live edge is visible", async () => {
     const {
       resolveTimelineIsAtEnd,

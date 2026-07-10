@@ -82,6 +82,7 @@ export type EnvironmentThreadSubscriptionItem =
       readonly version: "v2";
       readonly item: OrchestrationThreadStreamV2Item;
       readonly hydrateActivityPayloads: EnvironmentThreadPayloadHydrator;
+      readonly historyPager: EnvironmentThreadHistoryPager;
     };
 
 export type EnvironmentRpcInput<TTag extends EnvironmentRpcTag> = Parameters<RpcMethod<TTag>>[0];
@@ -102,6 +103,33 @@ export type EnvironmentThreadPayloadHydrator = (
   EnvironmentRpcSuccess<typeof ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads>,
   EnvironmentRpcFailure<typeof ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads>
 >;
+
+export interface EnvironmentThreadHistoryPager {
+  readonly getMessagePage: (
+    input: EnvironmentRpcInput<typeof ORCHESTRATION_WS_METHODS.getThreadMessagePage>,
+  ) => Effect.Effect<
+    EnvironmentRpcSuccess<typeof ORCHESTRATION_WS_METHODS.getThreadMessagePage>,
+    EnvironmentRpcFailure<typeof ORCHESTRATION_WS_METHODS.getThreadMessagePage>
+  >;
+  readonly getProposedPlanPage: (
+    input: EnvironmentRpcInput<typeof ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage>,
+  ) => Effect.Effect<
+    EnvironmentRpcSuccess<typeof ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage>,
+    EnvironmentRpcFailure<typeof ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage>
+  >;
+  readonly getActivityPage: (
+    input: EnvironmentRpcInput<typeof ORCHESTRATION_WS_METHODS.getThreadActivityPage>,
+  ) => Effect.Effect<
+    EnvironmentRpcSuccess<typeof ORCHESTRATION_WS_METHODS.getThreadActivityPage>,
+    EnvironmentRpcFailure<typeof ORCHESTRATION_WS_METHODS.getThreadActivityPage>
+  >;
+  readonly getCheckpointPage: (
+    input: EnvironmentRpcInput<typeof ORCHESTRATION_WS_METHODS.getThreadCheckpointPage>,
+  ) => Effect.Effect<
+    EnvironmentRpcSuccess<typeof ORCHESTRATION_WS_METHODS.getThreadCheckpointPage>,
+    EnvironmentRpcFailure<typeof ORCHESTRATION_WS_METHODS.getThreadCheckpointPage>
+  >;
+}
 
 export type EnvironmentRpcStreamValue<TTag extends EnvironmentStreamRpcTag> =
   RpcMethod<TTag> extends (input: any, options?: any) => Stream.Stream<infer A, any, any>
@@ -283,6 +311,7 @@ export function subscribeThread(
     readonly onSubscribe?: (
       version: EnvironmentThreadSyncVersion,
     ) => Effect.Effect<void, never, never>;
+    readonly useV2?: Effect.Effect<boolean, never, never>;
   },
 ): Stream.Stream<
   EnvironmentThreadSubscriptionItem,
@@ -294,14 +323,29 @@ export function subscribeThread(
     (session) =>
       Stream.unwrap(
         session.initialConfig.pipe(
-          Effect.map((config) => {
+          Effect.flatMap((config) =>
+            (options?.useV2 ?? Effect.succeed(true)).pipe(
+              Effect.map((useV2) => ({ config, useV2 })),
+            ),
+          ),
+          Effect.map(({ config, useV2 }) => {
             const version: EnvironmentThreadSyncVersion =
-              config.environment.capabilities.threadSyncV2 === true ? "v2" : "v1";
+              useV2 && config.environment.capabilities.threadSyncV2 === true ? "v2" : "v1";
             const subscribed = Stream.fromEffect(
               options?.onSubscribe?.(version) ?? Effect.void,
             ).pipe(Stream.drain);
 
             if (version === "v2") {
+              const historyPager: EnvironmentThreadHistoryPager = {
+                getMessagePage: (pageInput) =>
+                  session.client[ORCHESTRATION_WS_METHODS.getThreadMessagePage](pageInput),
+                getProposedPlanPage: (pageInput) =>
+                  session.client[ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage](pageInput),
+                getActivityPage: (pageInput) =>
+                  session.client[ORCHESTRATION_WS_METHODS.getThreadActivityPage](pageInput),
+                getCheckpointPage: (pageInput) =>
+                  session.client[ORCHESTRATION_WS_METHODS.getThreadCheckpointPage](pageInput),
+              };
               return subscribed.pipe(
                 Stream.concat(
                   session.client[ORCHESTRATION_WS_METHODS.subscribeThreadV2](input).pipe(
@@ -313,6 +357,7 @@ export function subscribeThread(
                           session.client[ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads](
                             hydrateInput,
                           ),
+                        historyPager,
                       }),
                     ),
                   ),

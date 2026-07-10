@@ -472,6 +472,25 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ),
     [],
   );
+  const syncErrorContent =
+    syncStatus?.phase === "error" ? resolveThreadSyncStatusContent(syncStatus) : null;
+  const listHeader =
+    syncErrorContent === null ? (
+      TIMELINE_LIST_HEADER
+    ) : (
+      <div
+        className="mx-auto flex w-full max-w-3xl items-start gap-2 border-b border-destructive/20 py-3 text-xs"
+        data-thread-sync-error="true"
+        role="alert"
+        aria-live="polite"
+      >
+        <CircleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+        <p className="min-w-0 break-words leading-5 text-muted-foreground">
+          <span className="font-medium text-destructive">{syncErrorContent.title}.</span>{" "}
+          {syncErrorContent.detail}
+        </p>
+      </div>
+    );
 
   if (rows.length === 0 && syncStatus !== null && syncStatus.phase !== "live") {
     const content = resolveThreadSyncStatusContent(syncStatus);
@@ -538,7 +557,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             }}
             onScroll={handleScroll}
             className="scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] sm:px-5"
-            ListHeaderComponent={TIMELINE_LIST_HEADER}
+            ListHeaderComponent={listHeader}
             ListFooterComponent={TIMELINE_LIST_FOOTER}
           />
           <TimelineMinimap

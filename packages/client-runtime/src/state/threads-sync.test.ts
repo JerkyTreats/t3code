@@ -1,11 +1,15 @@
 import {
+  CheckpointRef,
   EnvironmentId,
   EventId,
   MessageId,
   ORCHESTRATION_WS_METHODS,
+  OrchestrationGetSnapshotError,
+  OrchestrationProposedPlanId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  TurnId,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
   type OrchestrationThreadStreamItem,
@@ -75,6 +79,23 @@ type TestThreadV2Input = OrchestrationThreadStreamV2Item | Error;
 type HydrateThreadActivityPayloadsInput = Parameters<
   WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads]
 >[0];
+type GetThreadMessagePageInput = Parameters<
+  WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.getThreadMessagePage]
+>[0];
+type GetThreadProposedPlanPageInput = Parameters<
+  WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage]
+>[0];
+type GetThreadActivityPageInput = Parameters<
+  WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.getThreadActivityPage]
+>[0];
+type GetThreadCheckpointPageInput = Parameters<
+  WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.getThreadCheckpointPage]
+>[0];
+type TestHistoryPageCall =
+  | { readonly method: "messages"; readonly input: GetThreadMessagePageInput }
+  | { readonly method: "proposedPlans"; readonly input: GetThreadProposedPlanPageInput }
+  | { readonly method: "activities"; readonly input: GetThreadActivityPageInput }
+  | { readonly method: "checkpoints"; readonly input: GetThreadCheckpointPageInput };
 
 function testSession(client: WsRpcProtocolClient, threadSyncV2 = false): RpcSession.RpcSession {
   return {
@@ -113,6 +134,19 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   ) => ReturnType<
     WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads]
   >;
+  readonly replayV2Items?: ReadonlyArray<OrchestrationThreadStreamV2Item>;
+  readonly getMessagePage?: (
+    input: GetThreadMessagePageInput,
+  ) => ReturnType<WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.getThreadMessagePage]>;
+  readonly getProposedPlanPage?: (
+    input: GetThreadProposedPlanPageInput,
+  ) => ReturnType<WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage]>;
+  readonly getActivityPage?: (
+    input: GetThreadActivityPageInput,
+  ) => ReturnType<WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.getThreadActivityPage]>;
+  readonly getCheckpointPage?: (
+    input: GetThreadCheckpointPageInput,
+  ) => ReturnType<WsRpcProtocolClient[typeof ORCHESTRATION_WS_METHODS.getThreadCheckpointPage]>;
 }) {
   resetThreadSyncDiagnosticsForTests();
   const inputs = yield* Queue.unbounded<TestThreadInput>();
@@ -121,8 +155,10 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   const latest = yield* Ref.make<EnvironmentThreadState>(EMPTY_ENVIRONMENT_THREAD_STATE);
   const retryCount = yield* Ref.make(0);
   const subscriptionCount = yield* Ref.make(0);
+  const v2SubscriptionCount = yield* Ref.make(0);
   const subscriptionVersions = yield* Ref.make<ReadonlyArray<"v1" | "v2">>([]);
   const hydrationActivityIdChunks = yield* Ref.make<ReadonlyArray<ReadonlyArray<EventId>>>([]);
+  const historyPageCalls = yield* Ref.make<ReadonlyArray<TestHistoryPageCall>>([]);
   const savedThreads = yield* Ref.make<ReadonlyArray<OrchestrationThread>>([]);
   const removedThreads = yield* Ref.make<ReadonlyArray<ThreadId>>([]);
   const supervisorState = yield* SubscriptionRef.make<SupervisorConnectionState>(
@@ -150,7 +186,13 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
           Effect.tap(() =>
             Ref.update(subscriptionVersions, (versions) => [...versions, "v2" as const]),
           ),
-          Effect.map(() => streamFrom(v2Inputs)),
+          Effect.andThen(Ref.updateAndGet(v2SubscriptionCount, (count) => count + 1)),
+          Effect.map((count) => {
+            const live = streamFrom(v2Inputs);
+            return count > 1 && options?.replayV2Items !== undefined
+              ? Stream.fromIterable(options.replayV2Items).pipe(Stream.concat(live))
+              : live;
+          }),
         ),
       ),
     [ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads]: (
@@ -166,6 +208,69 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
                 byteLength: 32,
               })),
               omitted: [],
+            }),
+        ),
+      ),
+    [ORCHESTRATION_WS_METHODS.getThreadMessagePage]: (input: GetThreadMessagePageInput) =>
+      Ref.update(historyPageCalls, (calls) => [
+        ...calls,
+        { method: "messages" as const, input },
+      ]).pipe(
+        Effect.andThen(
+          options?.getMessagePage?.(input) ??
+            Effect.succeed({
+              items: [],
+              startCursor: null,
+              hasMoreBefore: false,
+              estimatedSerializedBytes: 0,
+            }),
+        ),
+      ),
+    [ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage]: (input: GetThreadProposedPlanPageInput) =>
+      Ref.update(historyPageCalls, (calls) => [
+        ...calls,
+        { method: "proposedPlans" as const, input },
+      ]).pipe(
+        Effect.andThen(
+          options?.getProposedPlanPage?.(input) ??
+            Effect.succeed({
+              items: [],
+              startCursor: null,
+              hasMoreBefore: false,
+              estimatedSerializedBytes: 0,
+            }),
+        ),
+      ),
+    [ORCHESTRATION_WS_METHODS.getThreadActivityPage]: (input: GetThreadActivityPageInput) =>
+      Ref.update(historyPageCalls, (calls) => [
+        ...calls,
+        { method: "activities" as const, input },
+      ]).pipe(
+        Effect.andThen(
+          options?.getActivityPage?.(input) ??
+            Effect.succeed({
+              items: [],
+              startCursor: null,
+              endCursor: null,
+              hasMoreBefore: false,
+              hasMoreAfter: false,
+              deferredActivityPayloads: 0,
+              estimatedSerializedBytes: 0,
+            }),
+        ),
+      ),
+    [ORCHESTRATION_WS_METHODS.getThreadCheckpointPage]: (input: GetThreadCheckpointPageInput) =>
+      Ref.update(historyPageCalls, (calls) => [
+        ...calls,
+        { method: "checkpoints" as const, input },
+      ]).pipe(
+        Effect.andThen(
+          options?.getCheckpointPage?.(input) ??
+            Effect.succeed({
+              items: [],
+              startCursor: null,
+              hasMoreBefore: false,
+              estimatedSerializedBytes: 0,
             }),
         ),
       ),
@@ -216,8 +321,10 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
     latest,
     retryCount,
     subscriptionCount,
+    v2SubscriptionCount,
     subscriptionVersions,
     hydrationActivityIdChunks,
+    historyPageCalls,
     supervisorState,
     supervisorSession,
     savedThreads,
@@ -239,16 +346,19 @@ const snapshot = (thread: OrchestrationThread): OrchestrationThreadStreamItem =>
   },
 });
 
-const v2Snapshot = (thread: OrchestrationThread): OrchestrationThreadStreamV2Item => ({
+const v2Snapshot = (
+  thread: OrchestrationThread,
+  snapshotSequence = 1,
+): Extract<OrchestrationThreadStreamV2Item, { readonly kind: "snapshot" }> => ({
   kind: "snapshot",
   snapshot: {
-    snapshotSequence: 1,
+    snapshotSequence,
     thread,
     windows: {
       messages: {
         returned: thread.messages.length,
         limit: Math.max(1, thread.messages.length),
-        hasMoreBefore: true,
+        hasMoreBefore: false,
         hasMoreAfter: false,
       },
       proposedPlans: {
@@ -332,6 +442,60 @@ const v2ActivityAppended = (
   deferredActivityPayloads: 1,
   estimatedSerializedBytes: 192,
 });
+
+function historyMessage(index: number): OrchestrationThread["messages"][number] {
+  const createdAt = `2026-04-01T0${index}:00:00.000Z`;
+  return {
+    id: MessageId.make(`history-message-${index}`),
+    role: index % 2 === 0 ? "assistant" : "user",
+    text: `History message ${index}`,
+    turnId: null,
+    streaming: false,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+function historyProposedPlan(index: number): OrchestrationThread["proposedPlans"][number] {
+  const createdAt = `2026-04-01T0${index}:10:00.000Z`;
+  return {
+    id: OrchestrationProposedPlanId.make(`history-plan-${index}`),
+    turnId: null,
+    planMarkdown: `History plan ${index}`,
+    implementedAt: null,
+    implementationThreadId: null,
+    createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+function historyActivity(index: number): OrchestrationThreadActivity {
+  return {
+    id: EventId.make(`history-activity-${index}`),
+    tone: "tool",
+    kind: "tool.call",
+    summary: `History activity ${index}`,
+    payload: {
+      __t3Deferred: "thread-activity-payload",
+      byteLength: 4097,
+    },
+    turnId: null,
+    sequence: index,
+    createdAt: `2026-04-01T0${index}:20:00.000Z`,
+  };
+}
+
+function historyCheckpoint(index: number): OrchestrationThread["checkpoints"][number] {
+  return {
+    turnId: TurnId.make(`history-turn-${index}`),
+    checkpointTurnCount: index,
+    checkpointRef: CheckpointRef.make(`history-checkpoint-${index}`),
+    status: "ready",
+    files: [],
+    assistantMessageId: null,
+    completedAt: `2026-04-01T0${index}:30:00.000Z`,
+  };
+}
 
 const deleted = (): OrchestrationThreadStreamItem => ({
   kind: "event",
@@ -435,6 +599,315 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("falls back to v1 when a v2 history window requires forward paging", () =>
+    Effect.gen(function* () {
+      const olderMessage = {
+        id: MessageId.make("message-older"),
+        role: "user" as const,
+        text: "Older history",
+        turnId: null,
+        streaming: false,
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-01T00:00:00.000Z",
+      };
+      const tailMessage = {
+        ...olderMessage,
+        id: MessageId.make("message-tail"),
+        text: "Tail history",
+        createdAt: "2026-04-01T01:00:00.000Z",
+        updatedAt: "2026-04-01T01:00:00.000Z",
+      };
+      const tailSnapshot = v2Snapshot({ ...BASE_THREAD, messages: [tailMessage] });
+      const truncatedSnapshot = {
+        ...tailSnapshot,
+        snapshot: {
+          ...tailSnapshot.snapshot,
+          windows: {
+            ...tailSnapshot.snapshot.windows,
+            messages: {
+              ...tailSnapshot.snapshot.windows.messages,
+              hasMoreAfter: true,
+            },
+          },
+        },
+      };
+      const completeThread = {
+        ...BASE_THREAD,
+        title: "Complete v1 history",
+        messages: [olderMessage, tailMessage],
+      };
+      const harness = yield* makeHarness({
+        cached: BASE_THREAD,
+        threadSyncV2: true,
+      });
+
+      yield* Queue.offer(harness.v2Inputs, truncatedSnapshot);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.subscriptionVersions)).length >= 2) {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+      expect(yield* Ref.get(harness.subscriptionVersions)).toEqual(["v2", "v1"]);
+
+      yield* Queue.offer(harness.inputs, snapshot(completeThread));
+      const live = yield* awaitThreadState(
+        harness.observed,
+        (state) =>
+          state.syncStatus?.phase === "live" &&
+          state.syncStatus.version === "v1" &&
+          Option.isSome(state.data),
+      );
+      expect(Option.getOrThrow(live.data).messages.map((message) => message.id)).toEqual([
+        olderMessage.id,
+        tailMessage.id,
+      ]);
+      expect(Option.isNone(live.error)).toBe(true);
+    }),
+  );
+
+  it.effect("restores complete cold-cache v2 history across every paged collection", () =>
+    Effect.gen(function* () {
+      const messages = [historyMessage(1), historyMessage(2), historyMessage(3)];
+      const proposedPlans = [
+        historyProposedPlan(1),
+        historyProposedPlan(2),
+        historyProposedPlan(3),
+      ];
+      const activities = [historyActivity(1), historyActivity(2), historyActivity(3)];
+      const checkpoints = [historyCheckpoint(1), historyCheckpoint(2), historyCheckpoint(3)];
+      const tailSnapshot = v2Snapshot({
+        ...BASE_THREAD,
+        messages: [messages[2]!],
+        proposedPlans: [proposedPlans[2]!],
+        activities: [activities[2]!],
+        checkpoints: [checkpoints[2]!],
+      });
+      const pagedSnapshot = {
+        ...tailSnapshot,
+        snapshot: {
+          ...tailSnapshot.snapshot,
+          windows: {
+            messages: { ...tailSnapshot.snapshot.windows.messages, hasMoreBefore: true },
+            proposedPlans: {
+              ...tailSnapshot.snapshot.windows.proposedPlans,
+              hasMoreBefore: true,
+            },
+            activities: { ...tailSnapshot.snapshot.windows.activities, hasMoreBefore: true },
+            checkpoints: { ...tailSnapshot.snapshot.windows.checkpoints, hasMoreBefore: true },
+          },
+        },
+      };
+      let messagePageIndex = 0;
+      let proposedPlanPageIndex = 0;
+      let activityPageIndex = 0;
+      let checkpointPageIndex = 0;
+      const harness = yield* makeHarness({
+        threadSyncV2: true,
+        getMessagePage: (input) => {
+          const item = messages[1 - messagePageIndex]!;
+          expect(input.before?.messageId).toBe(messages[2 - messagePageIndex]?.id);
+          messagePageIndex += 1;
+          return Effect.succeed({
+            items: [item],
+            startCursor: { messageId: item.id, createdAt: item.createdAt },
+            hasMoreBefore: messagePageIndex < 2,
+            estimatedSerializedBytes: 64,
+          });
+        },
+        getProposedPlanPage: (input) => {
+          const item = proposedPlans[1 - proposedPlanPageIndex]!;
+          expect(input.before?.planId).toBe(proposedPlans[2 - proposedPlanPageIndex]?.id);
+          proposedPlanPageIndex += 1;
+          return Effect.succeed({
+            items: [item],
+            startCursor: { planId: item.id, createdAt: item.createdAt },
+            hasMoreBefore: proposedPlanPageIndex < 2,
+            estimatedSerializedBytes: 64,
+          });
+        },
+        getActivityPage: (input) => {
+          const item = activities[1 - activityPageIndex]!;
+          expect(input.cursor?.position.activityId).toBe(activities[2 - activityPageIndex]?.id);
+          activityPageIndex += 1;
+          const cursor = {
+            activityId: item.id,
+            createdAt: item.createdAt,
+            sequence: item.sequence ?? null,
+          };
+          return Effect.succeed({
+            items: [item],
+            startCursor: cursor,
+            endCursor: cursor,
+            hasMoreBefore: activityPageIndex < 2,
+            hasMoreAfter: false,
+            deferredActivityPayloads: 1,
+            estimatedSerializedBytes: 64,
+          });
+        },
+        getCheckpointPage: (input) => {
+          const item = checkpoints[1 - checkpointPageIndex]!;
+          expect(input.before?.checkpointTurnCount).toBe(
+            checkpoints[2 - checkpointPageIndex]?.checkpointTurnCount,
+          );
+          checkpointPageIndex += 1;
+          return Effect.succeed({
+            items: [item],
+            startCursor: { checkpointTurnCount: item.checkpointTurnCount },
+            hasMoreBefore: checkpointPageIndex < 2,
+            estimatedSerializedBytes: 64,
+          });
+        },
+      });
+
+      yield* Queue.offer(harness.v2Inputs, pagedSnapshot);
+      const live = yield* awaitThreadState(
+        harness.observed,
+        (state) =>
+          state.syncStatus?.phase === "live" && Option.getOrNull(state.data)?.messages.length === 3,
+      );
+      const thread = Option.getOrThrow(live.data);
+      expect(thread.messages.map((message) => message.id)).toEqual(
+        messages.map((message) => message.id),
+      );
+      expect(thread.proposedPlans.map((plan) => plan.id)).toEqual(
+        proposedPlans.map((plan) => plan.id),
+      );
+      expect(thread.activities.map((activity) => activity.id)).toEqual(
+        activities.map((activity) => activity.id),
+      );
+      expect(thread.checkpoints.map((checkpoint) => checkpoint.checkpointRef)).toEqual(
+        checkpoints.map((checkpoint) => checkpoint.checkpointRef),
+      );
+      expect(thread.activities.map((activity) => activity.payload)).toEqual(
+        activities.map((activity) => ({ hydratedActivityId: activity.id })),
+      );
+      expect((yield* Ref.get(harness.historyPageCalls)).map((call) => call.method)).toEqual([
+        "messages",
+        "messages",
+        "proposedPlans",
+        "proposedPlans",
+        "activities",
+        "activities",
+        "checkpoints",
+        "checkpoints",
+      ]);
+      expect(yield* Ref.get(harness.hydrationActivityIdChunks)).toEqual([
+        activities.map((activity) => activity.id),
+      ]);
+      expect(live.syncStatus).toMatchObject({
+        phase: "live",
+        version: "v2",
+        deferredPayloadCount: 3,
+        estimatedBytes: 4_608,
+      });
+    }),
+  );
+
+  it.effect("retries a failed history page before publishing the v2 snapshot", () =>
+    Effect.gen(function* () {
+      const olderMessage = historyMessage(1);
+      const tailMessage = historyMessage(2);
+      const tailSnapshot = v2Snapshot({ ...BASE_THREAD, messages: [tailMessage] });
+      const pagedSnapshot = {
+        ...tailSnapshot,
+        snapshot: {
+          ...tailSnapshot.snapshot,
+          windows: {
+            ...tailSnapshot.snapshot.windows,
+            messages: { ...tailSnapshot.snapshot.windows.messages, hasMoreBefore: true },
+          },
+        },
+      };
+      let pageAttempt = 0;
+      const harness = yield* makeHarness({
+        cached: BASE_THREAD,
+        threadSyncV2: true,
+        replayV2Items: [pagedSnapshot],
+        getMessagePage: () => {
+          pageAttempt += 1;
+          return pageAttempt === 1
+            ? Effect.fail(new OrchestrationGetSnapshotError({ message: "History page failed" }))
+            : Effect.succeed({
+                items: [olderMessage],
+                startCursor: {
+                  messageId: olderMessage.id,
+                  createdAt: olderMessage.createdAt,
+                },
+                hasMoreBefore: false,
+                estimatedSerializedBytes: 64,
+              });
+        },
+      });
+
+      yield* Queue.offer(harness.v2Inputs, pagedSnapshot);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.latest)).syncStatus?.phase === "error") {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+      const failed = yield* Ref.get(harness.latest);
+      expect(failed.syncStatus?.phase).toBe("error");
+      expect(Option.getOrThrow(failed.data)).toEqual(BASE_THREAD);
+      expect(yield* Ref.get(harness.v2SubscriptionCount)).toBe(1);
+
+      yield* TestClock.adjust("250 millis");
+      const recovered = yield* awaitThreadState(
+        harness.observed,
+        (state) => state.syncStatus?.phase === "live" && Option.isSome(state.data),
+      );
+      expect(Option.getOrThrow(recovered.data).messages.map((message) => message.id)).toEqual([
+        olderMessage.id,
+        tailMessage.id,
+      ]);
+      expect(yield* Ref.get(harness.v2SubscriptionCount)).toBe(2);
+      expect(pageAttempt).toBe(2);
+    }),
+  );
+
+  it.effect("stops malformed history paging when the server cursor does not advance", () =>
+    Effect.gen(function* () {
+      const tailMessage = historyMessage(2);
+      const tailSnapshot = v2Snapshot({ ...BASE_THREAD, messages: [tailMessage] });
+      const pagedSnapshot = {
+        ...tailSnapshot,
+        snapshot: {
+          ...tailSnapshot.snapshot,
+          windows: {
+            ...tailSnapshot.snapshot.windows,
+            messages: { ...tailSnapshot.snapshot.windows.messages, hasMoreBefore: true },
+          },
+        },
+      };
+      const harness = yield* makeHarness({
+        cached: BASE_THREAD,
+        threadSyncV2: true,
+        getMessagePage: (input) =>
+          Effect.succeed({
+            items: [],
+            startCursor: input.before ?? null,
+            hasMoreBefore: true,
+            estimatedSerializedBytes: 0,
+          }),
+      });
+
+      yield* Queue.offer(harness.v2Inputs, pagedSnapshot);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.latest)).syncStatus?.phase === "error") {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+
+      const failed = yield* Ref.get(harness.latest);
+      expect(failed.syncStatus?.phase).toBe("error");
+      expect(failed.syncStatus?.error).toContain("history paging did not advance");
+      expect(Option.getOrThrow(failed.data)).toEqual(BASE_THREAD);
+      expect(yield* Ref.get(harness.historyPageCalls)).toHaveLength(1);
+    }),
+  );
+
   it.effect("hydrates v2 payloads serially in chunks while preserving cached history", () =>
     Effect.gen(function* () {
       const firstHydration = yield* Deferred.make<void>();
@@ -472,7 +945,7 @@ describe("EnvironmentThreads", () => {
       const liveThread = {
         ...BASE_THREAD,
         title: "V2 snapshot",
-        messages: [liveMessage],
+        messages: [cachedMessage, liveMessage],
         activities: deferredActivities,
       };
       const harness = yield* makeHarness({
@@ -562,6 +1035,203 @@ describe("EnvironmentThreads", () => {
       expect(
         (yield* Ref.get(harness.hydrationActivityIdChunks)).map((chunk) => chunk.length),
       ).toEqual([50, 1, 1]);
+    }),
+  );
+
+  it.effect("retries a failed snapshot hydration before consuming later events", () =>
+    Effect.gen(function* () {
+      const activity: OrchestrationThreadActivity = {
+        id: EventId.make("activity-failed-snapshot"),
+        tone: "tool",
+        kind: "tool.call",
+        summary: "Deferred snapshot activity",
+        payload: {
+          __t3Deferred: "thread-activity-payload",
+          byteLength: 4097,
+        },
+        turnId: null,
+        sequence: 1,
+        createdAt: "2026-04-01T01:00:00.000Z",
+      };
+      const failedSnapshot = v2Snapshot({
+        ...BASE_THREAD,
+        title: "Failed snapshot",
+        activities: [activity],
+      });
+      const replayedSnapshot = v2Snapshot(
+        {
+          ...BASE_THREAD,
+          title: "Later event",
+          activities: [activity],
+        },
+        2,
+      );
+      let hydrationAttempt = 0;
+      const harness = yield* makeHarness({
+        cached: BASE_THREAD,
+        threadSyncV2: true,
+        replayV2Items: [replayedSnapshot],
+        hydrate: (input) => {
+          hydrationAttempt += 1;
+          return hydrationAttempt === 1
+            ? Effect.fail(
+                new OrchestrationGetSnapshotError({ message: "Snapshot hydration failed" }),
+              )
+            : Effect.succeed({
+                payloads: input.activityIds.map((activityId) => ({
+                  activityId,
+                  payload: { hydratedActivityId: activityId },
+                  byteLength: 32,
+                })),
+                omitted: [],
+              });
+        },
+      });
+
+      yield* Queue.offer(harness.v2Inputs, failedSnapshot);
+      yield* Queue.offer(harness.v2Inputs, v2TitleUpdated("Later event"));
+
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.latest)).syncStatus?.phase === "error") {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+      const failed = yield* Ref.get(harness.latest);
+      expect(failed.syncStatus?.phase).toBe("error");
+      expect(Option.getOrThrow(failed.data).title).toBe("Cached thread");
+      expect(Option.getOrThrow(failed.data).activities).toEqual([]);
+      expect(yield* Ref.get(harness.v2SubscriptionCount)).toBe(1);
+
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("249 millis");
+      expect(yield* Ref.get(harness.v2SubscriptionCount)).toBe(1);
+      expect(
+        Option.getOrThrow(yield* Ref.get(harness.latest).pipe(Effect.map((x) => x.data))).title,
+      ).toBe("Cached thread");
+
+      yield* TestClock.adjust("1 millis");
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.v2SubscriptionCount)) >= 2) {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+      expect(yield* Ref.get(harness.v2SubscriptionCount)).toBe(2);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const state = yield* Ref.get(harness.latest);
+        if (
+          state.syncStatus?.phase === "live" &&
+          Option.getOrNull(state.data)?.title === "Later event"
+        ) {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+      const recovered = yield* Ref.get(harness.latest);
+      expect(Option.getOrThrow(recovered.data).title).toBe("Later event");
+      expect(yield* Ref.get(harness.v2SubscriptionCount)).toBe(2);
+      expect(Option.getOrThrow(recovered.data).activities[0]?.payload).toEqual({
+        hydratedActivityId: activity.id,
+      });
+      expect(hydrationAttempt).toBe(2);
+    }),
+  );
+
+  it.effect("retries a failed event hydration before consuming the next mutation", () =>
+    Effect.gen(function* () {
+      const initialSnapshot = v2Snapshot({
+        ...BASE_THREAD,
+        title: "Initial snapshot",
+      });
+      const activity: OrchestrationThreadActivity = {
+        id: EventId.make("activity-failed-event"),
+        tone: "approval",
+        kind: "approval.requested",
+        summary: "Deferred event activity",
+        payload: {
+          __t3Deferred: "thread-activity-payload",
+          byteLength: 4097,
+        },
+        turnId: null,
+        sequence: 2,
+        createdAt: "2026-04-01T02:00:00.000Z",
+      };
+      const replayedEvent = v2ActivityAppended(activity, 2);
+      const replayedSnapshot = v2Snapshot(
+        {
+          ...BASE_THREAD,
+          title: "Mutation after failure",
+          activities: [activity],
+        },
+        3,
+      );
+      let hydrationAttempt = 0;
+      const harness = yield* makeHarness({
+        cached: BASE_THREAD,
+        threadSyncV2: true,
+        replayV2Items: [replayedSnapshot],
+        hydrate: (input) => {
+          hydrationAttempt += 1;
+          return hydrationAttempt === 1
+            ? Effect.fail(new OrchestrationGetSnapshotError({ message: "Event hydration failed" }))
+            : Effect.succeed({
+                payloads: input.activityIds.map((activityId) => ({
+                  activityId,
+                  payload: { hydratedActivityId: activityId },
+                  byteLength: 32,
+                })),
+                omitted: [],
+              });
+        },
+      });
+
+      yield* Queue.offer(harness.v2Inputs, initialSnapshot);
+      yield* awaitThreadState(
+        harness.observed,
+        (state) => Option.isSome(state.data) && state.data.value.title === "Initial snapshot",
+      );
+      yield* Queue.offer(harness.v2Inputs, replayedEvent);
+      yield* Queue.offer(harness.v2Inputs, v2TitleUpdated("Mutation after failure", 3));
+
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.latest)).syncStatus?.phase === "error") {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+      const failed = yield* Ref.get(harness.latest);
+      expect(failed.syncStatus?.phase).toBe("error");
+      expect(Option.getOrThrow(failed.data).title).toBe("Initial snapshot");
+      expect(Option.getOrThrow(failed.data).activities).toEqual([]);
+
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("250 millis");
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.v2SubscriptionCount)) >= 2) {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+      expect(yield* Ref.get(harness.v2SubscriptionCount)).toBe(2);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (
+          Option.getOrNull((yield* Ref.get(harness.latest)).data)?.title ===
+          "Mutation after failure"
+        ) {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+      const recovered = yield* Ref.get(harness.latest);
+      const recoveredThread = Option.getOrThrow(recovered.data);
+      expect(recoveredThread.title).toBe("Mutation after failure");
+      expect(recoveredThread.activities).toHaveLength(1);
+      expect(recoveredThread.activities[0]?.payload).toEqual({
+        hydratedActivityId: activity.id,
+      });
+      expect(yield* Ref.get(harness.v2SubscriptionCount)).toBe(2);
+      expect(hydrationAttempt).toBe(2);
     }),
   );
 

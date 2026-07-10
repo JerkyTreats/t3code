@@ -11,8 +11,10 @@ import {
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { Atom } from "effect/unstable/reactivity";
@@ -23,6 +25,7 @@ import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import { EnvironmentCacheStore } from "../platform/persistence.ts";
 import {
   subscribeThread,
+  type EnvironmentThreadHistoryPager,
   type EnvironmentThreadPayloadHydrator,
   type EnvironmentThreadSubscriptionItem,
   type EnvironmentThreadSyncVersion,
@@ -80,6 +83,13 @@ const THREAD_SYNC_V2_HYDRATE_CHUNK_SIZE = Math.min(
   50,
   ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS,
 );
+const THREAD_SYNC_V2_MAX_HISTORY_PAGE_REQUESTS = 1_000;
+class ThreadSyncV2FallbackError extends Error {
+  readonly _tag = "ThreadSyncV2FallbackError";
+}
+class ThreadSyncV2PagingError extends Error {
+  readonly _tag = "ThreadSyncV2PagingError";
+}
 
 function statusWithoutLiveData(data: Option.Option<OrchestrationThread>): EnvironmentThreadStatus {
   return Option.isSome(data) ? "cached" : "empty";
@@ -114,6 +124,194 @@ function collectDeferredThreadActivityIds(
   }
   return activityIds;
 }
+
+interface ThreadSyncV2HistoryPage<T, Cursor> {
+  readonly items: ReadonlyArray<T>;
+  readonly startCursor: Cursor | null;
+  readonly hasMoreBefore: boolean;
+  readonly estimatedSerializedBytes: number;
+}
+
+interface ThreadSyncV2HistoryPageBudget {
+  requests: number;
+}
+
+function loadThreadSyncV2HistoryPages<T, Cursor, E, R>(options: {
+  readonly items: ReadonlyArray<T>;
+  readonly hasMoreBefore: boolean;
+  readonly initialCursor: (item: T | undefined) => Cursor | null;
+  readonly loadPage: (cursor: Cursor) => Effect.Effect<ThreadSyncV2HistoryPage<T, Cursor>, E, R>;
+  readonly itemKey: (item: T) => string | number;
+  readonly cursorKey: (cursor: Cursor) => string | number;
+  readonly budget: ThreadSyncV2HistoryPageBudget;
+}) {
+  return Effect.gen(function* () {
+    const historyPages: Array<ReadonlyArray<T>> = [];
+    const existingKeys = new Set(options.items.map(options.itemKey));
+    let estimatedSerializedBytes = 0;
+    let hasMoreBefore = options.hasMoreBefore;
+    let cursor = options.initialCursor(options.items[0]);
+
+    while (hasMoreBefore) {
+      if (cursor === null) {
+        return yield* Effect.fail(
+          new ThreadSyncV2PagingError("Thread sync v2 history page is missing its start cursor."),
+        );
+      }
+      if (options.budget.requests >= THREAD_SYNC_V2_MAX_HISTORY_PAGE_REQUESTS) {
+        return yield* Effect.fail(
+          new ThreadSyncV2PagingError(
+            `Thread sync v2 exceeded ${THREAD_SYNC_V2_MAX_HISTORY_PAGE_REQUESTS} history page requests.`,
+          ),
+        );
+      }
+
+      options.budget.requests += 1;
+      const page = yield* options.loadPage(cursor);
+      estimatedSerializedBytes += page.estimatedSerializedBytes;
+      const uniquePageItems = page.items.filter((item) => {
+        const key = options.itemKey(item);
+        if (existingKeys.has(key)) {
+          return false;
+        }
+        existingKeys.add(key);
+        return true;
+      });
+      historyPages.push(uniquePageItems);
+      hasMoreBefore = page.hasMoreBefore;
+      if (!hasMoreBefore) {
+        continue;
+      }
+      if (
+        page.startCursor === null ||
+        options.cursorKey(page.startCursor) === options.cursorKey(cursor)
+      ) {
+        return yield* Effect.fail(
+          new ThreadSyncV2PagingError("Thread sync v2 history paging did not advance."),
+        );
+      }
+      cursor = page.startCursor;
+    }
+
+    historyPages.reverse();
+    return {
+      items: historyPages.flat().concat(options.items),
+      estimatedSerializedBytes,
+    };
+  });
+}
+
+const hydrateThreadSyncV2History = Effect.fn("EnvironmentThreadState.hydrateThreadSyncV2History")(
+  function* (
+    snapshot: OrchestrationThreadDetailV2Snapshot,
+    historyPager: EnvironmentThreadHistoryPager,
+  ) {
+    if (Object.values(snapshot.windows).some((window) => window.hasMoreAfter)) {
+      return yield* Effect.fail(
+        new ThreadSyncV2FallbackError(
+          "Thread sync v2 returned a non-tail history window without forward paging support.",
+        ),
+      );
+    }
+
+    const budget: ThreadSyncV2HistoryPageBudget = { requests: 0 };
+    const messages = yield* loadThreadSyncV2HistoryPages({
+      items: snapshot.thread.messages,
+      hasMoreBefore: snapshot.windows.messages.hasMoreBefore,
+      initialCursor: (message) =>
+        message === undefined ? null : { messageId: message.id, createdAt: message.createdAt },
+      loadPage: (before) =>
+        historyPager.getMessagePage({ threadId: snapshot.thread.id, limit: 200, before }),
+      itemKey: (message) => message.id,
+      cursorKey: (cursor) => `${cursor.createdAt}:${cursor.messageId}`,
+      budget,
+    });
+    const proposedPlans = yield* loadThreadSyncV2HistoryPages({
+      items: snapshot.thread.proposedPlans,
+      hasMoreBefore: snapshot.windows.proposedPlans.hasMoreBefore,
+      initialCursor: (plan) =>
+        plan === undefined ? null : { planId: plan.id, createdAt: plan.createdAt },
+      loadPage: (before) =>
+        historyPager.getProposedPlanPage({ threadId: snapshot.thread.id, limit: 100, before }),
+      itemKey: (plan) => plan.id,
+      cursorKey: (cursor) => `${cursor.createdAt}:${cursor.planId}`,
+      budget,
+    });
+    const activities = yield* loadThreadSyncV2HistoryPages({
+      items: snapshot.thread.activities,
+      hasMoreBefore: snapshot.windows.activities.hasMoreBefore,
+      initialCursor: (activity) =>
+        activity === undefined
+          ? null
+          : {
+              activityId: activity.id,
+              createdAt: activity.createdAt,
+              sequence: activity.sequence ?? null,
+            },
+      loadPage: (position) =>
+        historyPager.getActivityPage({
+          threadId: snapshot.thread.id,
+          limit: 300,
+          cursor: { direction: "before", position },
+        }),
+      itemKey: (activity) => activity.id,
+      cursorKey: (cursor) => `${cursor.createdAt}:${cursor.sequence ?? ""}:${cursor.activityId}`,
+      budget,
+    });
+    const checkpoints = yield* loadThreadSyncV2HistoryPages({
+      items: snapshot.thread.checkpoints,
+      hasMoreBefore: snapshot.windows.checkpoints.hasMoreBefore,
+      initialCursor: (checkpoint) =>
+        checkpoint === undefined ? null : { checkpointTurnCount: checkpoint.checkpointTurnCount },
+      loadPage: (before) =>
+        historyPager.getCheckpointPage({ threadId: snapshot.thread.id, limit: 200, before }),
+      itemKey: (checkpoint) => checkpoint.checkpointRef,
+      cursorKey: (cursor) => cursor.checkpointTurnCount,
+      budget,
+    });
+    const thread = {
+      ...snapshot.thread,
+      messages: messages.items,
+      proposedPlans: proposedPlans.items,
+      activities: activities.items,
+      checkpoints: checkpoints.items,
+    };
+
+    return {
+      ...snapshot,
+      thread,
+      windows: {
+        messages: {
+          ...snapshot.windows.messages,
+          returned: thread.messages.length,
+          hasMoreBefore: false,
+        },
+        proposedPlans: {
+          ...snapshot.windows.proposedPlans,
+          returned: thread.proposedPlans.length,
+          hasMoreBefore: false,
+        },
+        activities: {
+          ...snapshot.windows.activities,
+          returned: thread.activities.length,
+          hasMoreBefore: false,
+        },
+        checkpoints: {
+          ...snapshot.windows.checkpoints,
+          returned: thread.checkpoints.length,
+          hasMoreBefore: false,
+        },
+      },
+      deferredActivityPayloads: collectDeferredThreadActivityIds(thread.activities).length,
+      estimatedSerializedBytes:
+        snapshot.estimatedSerializedBytes +
+        messages.estimatedSerializedBytes +
+        proposedPlans.estimatedSerializedBytes +
+        activities.estimatedSerializedBytes +
+        checkpoints.estimatedSerializedBytes,
+    };
+  },
+);
 
 const hydrateDeferredThreadActivityPayloads = Effect.fn(
   "EnvironmentThreadState.hydrateDeferredThreadActivityPayloads",
@@ -179,22 +377,24 @@ const hydrateThreadSyncV2Snapshot = Effect.fn("EnvironmentThreadState.hydrateThr
     environmentId: EnvironmentIdType,
     snapshot: OrchestrationThreadDetailV2Snapshot,
     hydrateActivityPayloads: EnvironmentThreadPayloadHydrator,
+    historyPager: EnvironmentThreadHistoryPager,
   ) {
+    const completeSnapshot = yield* hydrateThreadSyncV2History(snapshot, historyPager);
     const payloadByActivityId = yield* hydrateDeferredThreadActivityPayloads(
       environmentId,
-      snapshot.thread.id,
-      snapshot.thread.activities,
+      completeSnapshot.thread.id,
+      completeSnapshot.thread.activities,
       hydrateActivityPayloads,
     );
     if (payloadByActivityId.size === 0) {
-      return snapshot;
+      return completeSnapshot;
     }
     return {
-      ...snapshot,
+      ...completeSnapshot,
       thread: {
-        ...snapshot.thread,
+        ...completeSnapshot.thread,
         activities: applyHydratedThreadActivityPayloads(
-          snapshot.thread.activities,
+          completeSnapshot.thread.activities,
           payloadByActivityId,
         ),
       },
@@ -319,6 +519,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     syncStatus: WAITING_ENVIRONMENT_THREAD_SYNC_STATUS,
   });
   const lastSequence = yield* SubscriptionRef.make(0);
+  const useThreadSyncV2 = yield* Ref.make(true);
   const persistence = yield* Queue.sliding<OrchestrationThread>(1);
 
   const persist = Effect.fn("EnvironmentThreadState.persist")(function* (
@@ -489,7 +690,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             windows: item.snapshot.windows,
           }),
         );
-        if (item.snapshot.deferredActivityPayloads > 0) {
+        if (
+          item.snapshot.deferredActivityPayloads > 0 ||
+          Object.values(item.snapshot.windows).some((window) => window.hasMoreBefore)
+        ) {
           yield* setHydrating(
             item.snapshot.deferredActivityPayloads,
             item.snapshot.estimatedSerializedBytes,
@@ -499,6 +703,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           environmentId,
           item.snapshot,
           subscriptionItem.hydrateActivityPayloads,
+          subscriptionItem.historyPager,
         );
         const current = yield* SubscriptionRef.get(state);
         const thread = Option.match(current.data, {
@@ -602,17 +807,43 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
 
   yield* Effect.sync(() => recordThreadSyncWaiting({ environmentId, threadId }));
   yield* setSynchronizing;
-  yield* subscribeThread(
-    { threadId },
-    {
-      onSubscribe: setSubscribing,
-      onExpectedFailure: setStreamError,
-      retryExpectedFailureAfter: "250 millis",
+  const runSubscription = Effect.fn("EnvironmentThreadState.runSubscription")(
+    function* (): Effect.fn.Return<void, never, EnvironmentSupervisor> {
+      const exit = yield* subscribeThread(
+        { threadId },
+        {
+          onSubscribe: setSubscribing,
+          onExpectedFailure: setStreamError,
+          retryExpectedFailureAfter: "250 millis",
+          useV2: Ref.get(useThreadSyncV2),
+        },
+      ).pipe(Stream.runForEach(applyItem), Effect.exit);
+      if (Exit.isSuccess(exit)) {
+        return;
+      }
+
+      const hasOnlyExpectedFailures =
+        exit.cause.reasons.length > 0 &&
+        exit.cause.reasons.every((reason) => reason._tag === "Fail");
+      const requestsV1Fallback =
+        hasOnlyExpectedFailures &&
+        exit.cause.reasons.every(
+          (reason) => reason._tag === "Fail" && reason.error instanceof ThreadSyncV2FallbackError,
+        );
+      if (requestsV1Fallback) {
+        yield* Ref.set(useThreadSyncV2, false);
+        return yield* runSubscription();
+      }
+      if (!hasOnlyExpectedFailures) {
+        return yield* Effect.die(Cause.squash(exit.cause));
+      }
+
+      yield* setStreamError(exit.cause);
+      yield* Effect.sleep("250 millis");
+      return yield* runSubscription();
     },
-  ).pipe(
-    Stream.runForEach((item) => applyItem(item).pipe(Effect.catchCause(setStreamError))),
-    Effect.forkScoped,
   );
+  yield* runSubscription().pipe(Effect.forkScoped);
 
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {

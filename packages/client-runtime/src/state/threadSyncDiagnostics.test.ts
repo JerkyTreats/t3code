@@ -64,6 +64,47 @@ describe("thread sync diagnostics", () => {
     expect(snapshots).toEqual([1, 1, 1]);
   });
 
+  it("redacts bearer headers, quoted fields, tickets, and urls", () => {
+    recordThreadSyncError({
+      environmentId: ENVIRONMENT_ID,
+      threadId: THREAD_ID,
+      version: "v2",
+      error: new Error(
+        [
+          "Authorization: Bearer authorization-secret",
+          "Bearer standalone-secret",
+          '{"token":"json-token","ticket":"json-ticket","wsTicket":"json-ws-ticket"}',
+          "ticket=assignment-ticket wsTicket: assignment-ws-ticket",
+          "wss://user:password@example.test/ws?wsTicket=url-ws-ticket#trace",
+          "https://example.test/api?token=url-token",
+        ].join("\n"),
+      ),
+    });
+
+    const [entry] = getThreadSyncDiagnosticsSnapshot();
+    const serialized = JSON.stringify(entry);
+    for (const secret of [
+      "authorization-secret",
+      "standalone-secret",
+      "json-token",
+      "json-ticket",
+      "json-ws-ticket",
+      "assignment-ticket",
+      "assignment-ws-ticket",
+      "url-ws-ticket",
+      "url-token",
+      "password@example",
+    ]) {
+      expect(serialized).not.toContain(secret);
+    }
+    expect(entry?.lastError).toContain("Authorization=[redacted]");
+    expect(entry?.lastError).toContain('"token":"[redacted]"');
+    expect(entry?.lastError).toContain("ticket=[redacted]");
+    expect(entry?.lastError).toContain("wsTicket=[redacted]");
+    expect(entry?.lastError).toContain("wss://example.test/ws");
+    expect(entry?.lastError).toContain("https://example.test/api");
+  });
+
   it("retains only the most recently observed thread entries", () => {
     for (let index = 0; index < THREAD_SYNC_DIAGNOSTICS_ENTRY_LIMIT + 10; index += 1) {
       recordThreadSyncWaiting({

@@ -5,8 +5,13 @@ export const THREAD_SYNC_DIAGNOSTICS_ENTRY_LIMIT = 50;
 const DIAGNOSTIC_IDENTIFIER_LIMIT = 128;
 const DIAGNOSTIC_MESSAGE_LIMIT = 512;
 const DIAGNOSTIC_MESSAGE_INPUT_LIMIT = 4096;
-const SENSITIVE_ASSIGNMENT = /\b(authorization|bearer|password|secret|token)\s*[:=]\s*[^\s,;]+/giu;
-const DIAGNOSTIC_URL = /(?:https?|wss?|file):\/\/[^\s]+/giu;
+const JSON_QUOTED_SENSITIVE_FIELD =
+  /"(authorization|password|secret|token|wsTicket|ticket)"\s*:\s*"(?:\\.|[^"\\])*"/giu;
+const AUTHORIZATION_BEARER_VALUE = /\bauthorization\s*:\s*bearer\s+[^\s,;]+/giu;
+const BEARER_CREDENTIAL = /\b(bearer)\s+[^\s,;]+/giu;
+const SENSITIVE_ASSIGNMENT =
+  /\b(authorization|password|secret|token|wsTicket|ticket)\b\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s,;]+)/giu;
+const DIAGNOSTIC_URL = /(?:https?|wss?|file):\/\/[^\s"'<>),;}\]]+/giu;
 
 export type ThreadSyncDiagnosticsVersion = "v1" | "v2";
 export type ThreadSyncDiagnosticsPhase =
@@ -269,6 +274,9 @@ function sanitizeDiagnosticError(error: unknown): string {
   );
   const sanitized = message
     .replace(DIAGNOSTIC_URL, redactDiagnosticUrl)
+    .replace(JSON_QUOTED_SENSITIVE_FIELD, (_match, field: string) => `"${field}":"[redacted]"`)
+    .replace(AUTHORIZATION_BEARER_VALUE, "Authorization: [redacted]")
+    .replace(BEARER_CREDENTIAL, "$1 [redacted]")
     .replace(SENSITIVE_ASSIGNMENT, "$1=[redacted]")
     .split("")
     .map((character) => {
