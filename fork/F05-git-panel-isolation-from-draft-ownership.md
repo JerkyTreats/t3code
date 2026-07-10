@@ -1,6 +1,6 @@
 # F5 Git Surface Isolation From Draft Ownership
 
-Date: 2026-06-02
+Date: 2026-07-10
 Status: active
 
 ## Intent
@@ -23,17 +23,16 @@ The primary Git management UI belongs in the unified right panel as a selectable
 
 - `apps/web/src/components/GitActionsControl.tsx`
 - `apps/web/src/components/GitActionsControl.logic.ts`
-- `apps/web/src/components/git-panel/GitPanel.tsx`
+- `apps/web/src/components/git-panel/GitPanelSurface.tsx`
+- `apps/web/src/components/ChatView.tsx`
+- `apps/web/src/components/chat/ChatHeader.tsx`
 - `apps/web/src/components/RightPanelTabs.tsx`
 - `apps/web/src/rightPanelStore.ts`
-- `apps/web/src/lib/vcsStatusState.ts`
-- `apps/web/src/lib/vcsRefState.ts`
-- `apps/web/src/lib/gitStatusState.ts`
+- `apps/web/src/lib/sourceControlActions.ts`
+- `apps/web/src/state/vcs.ts`
+- `apps/web/src/state/sourceControl.ts`
 - `apps/web/src/composerDraftStore.ts`
-- `apps/web/src/components/ChatView.browser.tsx`
 - `apps/web/src/lib/threadDeletionWorkflow.ts`
-- `packages/client-runtime/src/vcsStatusState.ts`
-- `packages/client-runtime/src/vcsRefState.ts`
 
 ## Fork Seams
 
@@ -62,6 +61,8 @@ The primary Git management UI belongs in the unified right panel as a selectable
 
 - Opening and using the Git surface does not clear the active draft.
 - `Open a surface` exposes Git Panel without forcing project management navigation.
+- The chat header exposes a direct Git button that opens the unified Git surface instead of an inline commit and push control.
+- Git surface provides the prior visible commit, pull, promote, pull request, publish, refresh, workspace, sync, and changed file workflow hierarchy over current source control primitives.
 - Branch and worktree routing preserves the expected draft thread state.
 - Changing the Git base branch preserves prompt text, images, terminal context chips, and rich draft mode on the active draft.
 - Worktree removal completes before fallback navigation when deleting the only thread linked to a dedicated worktree.

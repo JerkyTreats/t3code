@@ -1,7 +1,7 @@
 # Upstream Intake v0.0.28
 
 Date: 2026-07-02
-Status: Wave 4 cross slice repairs complete with full gates passing
+Status: cleanup and completeness active, remote hardening and final preservation gate in progress
 
 ## Scope
 
@@ -596,7 +596,7 @@ Wave 2 execution evidence:
 
 Parallelization: limited
 
-Status: in progress
+Status: complete in working tree
 
 Candidate split:
 
@@ -619,6 +619,12 @@ Implementation evidence:
 - Script run from the project page schedules a pending script run before thread navigation, then `ChatView` consumes it and uses the existing terminal runner, avoiding a duplicate terminal lifecycle.
 - Script save and update paths preserve `previewUrl` and `autoOpenPreview` fields in both the project page and chat header paths.
 - Inference dashboard uses restored rollup helpers and current resident thread activity atoms, including latest usage snapshot per turn and provider reported processed token totals when available.
+- Made the unified right panel the primary project management destination. Sidebar, command palette, and compatibility routes now open the concise `Open a surface` launcher on a concrete project thread.
+- Added a compact project context header above the right panel with project, workspace, environment, branch, changed file, thread, editor, and script actions.
+- Added project scoped Git and Inference surfaces to the right panel store and launcher, with persisted surface migration and concrete project reference replacement.
+- Replaced the chat header commit and push control with the fork owned Git button that opens the unified Git surface.
+- Restored the previous Git panel action hierarchy over current source control primitives, including primary action, commit, pull, promote, pull request, publish, refresh, workspace state, sync counts, and changed files.
+- Restored the previous inference dashboard density with lifetime, recent, projected, input, output, tracked turn, cached input detail, runtime, progress share, and ranked thread usage.
 - F9 planning and final mile review used two read only explorer agents, then central implementation for route shape, timeline wiring, right panel integration, and document rendering.
 - Added `planPreviewRouteSearch` for virtual plan preview search parsing and clearing, then wired `_chat.$environmentId.$threadId` to render `PlanConversationDocument` without requiring a workspace write.
 - Replayed fullscreen plan preview entry points from both timeline `ProposedPlanCard` rows and the right panel `PlanSidebar`, with copy, download, save to workspace, close, and return to chat behavior.
@@ -643,6 +649,9 @@ Focused gate evidence:
 - `corepack pnpm --filter @t3tools/web typecheck` passed after F9 plan preview, document markdown, Mermaid, and image routing replay.
 - `corepack pnpm --filter @t3tools/web test` passed after final F9 review fixes with `155` files and `1306` tests.
 - `corepack pnpm --filter @t3tools/web build` passed after final F9 review fixes, with expected chunk size warnings from the production bundle and Mermaid split chunks emitted.
+- `corepack pnpm --filter @t3tools/web typecheck` passed after unified right panel Git and inference integration.
+- `corepack pnpm --filter @t3tools/web test -- rightPanelStore.test.ts` passed through the web unit project with `162` files and `1357` tests.
+- `corepack pnpm --filter @t3tools/web build` passed after unified right panel integration, with expected bundle chunk warnings.
 - All `corepack pnpm` commands warned that this shell uses Node `v26.0.0` while the repo engine asks for `^24.13.1`.
 
 Full gate evidence:
@@ -729,6 +738,8 @@ Remaining risks:
 
 Parallelization: central only
 
+Status: in progress
+
 Scope:
 
 - Required fork preservation gate.
@@ -736,6 +747,12 @@ Scope:
 - `pnpm lint:mobile` if native mobile changed.
 - Final mile verification evidence for F1 through F14.
 - Update `patch.md` or feature specs only if behavior, owner modules, or verification expectations changed.
+
+Current evidence:
+
+- Committed append only migration 36 to reconcile old fork migration ids 31 through 35 with upstream ids 31 and 32 while leaving historical ledger rows unchanged.
+- Updated F5 and F14 owner modules and verification expectations for unified right panel ownership.
+- Remote connection hardening from main commits `11e35c658` and `55509fe5c` is the remaining implementation wave before final preservation signoff.
 
 ## Intake Summary
 

@@ -160,7 +160,7 @@ import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
 } from "../logicalProject";
-import { buildDraftThreadRouteParams } from "../threadRoutes";
+import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
@@ -202,11 +202,18 @@ import {
   useThreadRefs,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
+import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useProjectManagementThreads } from "../project-management/useProjectManagementThreads";
+import { mapVcsStatusToProjectRepositoryStatus } from "../project-management/projectManagementStatusAdapter";
+import { buildProjectOverviewSnapshot } from "../project-management/projectManagementOverview";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { ChatHeader } from "./chat/ChatHeader";
+import { GitPanelSurface } from "./git-panel/GitPanelSurface";
+import { ProjectContextHeader } from "./project-management/ProjectContextHeader";
+import { ProjectInferenceDashboardPage } from "./project-management/ProjectInferenceDashboardPage";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -1392,6 +1399,17 @@ function ChatViewContent(props: ChatViewProps) {
     ? scopeProjectRef(activeThread.environmentId, activeThread.projectId)
     : null;
   const activeProject = useProject(activeProjectRef);
+  const projectManagementTarget = useMemo(
+    () =>
+      activeProject
+        ? {
+            environmentId: activeProject.environmentId,
+            projectId: activeProject.id,
+          }
+        : null,
+    [activeProject],
+  );
+  const projectManagementThreads = useProjectManagementThreads(projectManagementTarget);
   const activeEnvironmentShell = useEnvironmentQuery(
     activeThread ? environmentShell.stateAtom(activeThread.environmentId) : null,
   );
@@ -2143,6 +2161,28 @@ function ChatViewContent(props: ChatViewProps) {
           input: { cwd: gitCwd },
         }),
   );
+  const projectRepositoryStatus = mapVcsStatusToProjectRepositoryStatus(gitStatusQuery.data);
+  const projectOverviewSnapshot = useMemo(
+    () =>
+      buildProjectOverviewSnapshot({
+        threads: projectManagementThreads,
+        repositoryStatus: projectRepositoryStatus,
+        repositoryContext: { isWorktree: activeThread?.worktreePath != null },
+      }),
+    [activeThread?.worktreePath, projectManagementThreads, projectRepositoryStatus],
+  );
+  const latestProjectThread = useMemo(() => {
+    const latest = projectOverviewSnapshot.linkedThreads.find(
+      (thread) => thread.archivedAt === null,
+    );
+    if (!latest) return null;
+    return (
+      projectManagementThreads.find(
+        (thread) => thread.id === latest.id && thread.environmentId === latest.environmentId,
+      ) ?? null
+    );
+  }, [projectManagementThreads, projectOverviewSnapshot.linkedThreads]);
+  const startNewProjectThread = useNewThreadHandler();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
   // Prefer an instance-id match so a custom Codex instance (e.g.
@@ -2827,6 +2867,39 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
   }, [activeProject, activeThreadRef]);
+  const addGitSurface = useCallback(() => {
+    if (!activeThreadRef || !activeProject) return;
+    useRightPanelStore
+      .getState()
+      .openProjectSurface(
+        activeThreadRef,
+        "git",
+        scopeProjectRef(activeProject.environmentId, activeProject.id),
+      );
+  }, [activeProject, activeThreadRef]);
+  const addInferenceSurface = useCallback(() => {
+    if (!activeThreadRef || !activeProject) return;
+    useRightPanelStore
+      .getState()
+      .openProjectSurface(
+        activeThreadRef,
+        "inference",
+        scopeProjectRef(activeProject.environmentId, activeProject.id),
+      );
+  }, [activeProject, activeThreadRef]);
+  const createProjectThread = useCallback(() => {
+    if (!activeProject) return;
+    void startNewProjectThread(scopeProjectRef(activeProject.environmentId, activeProject.id));
+  }, [activeProject, startNewProjectThread]);
+  const openLatestProjectThread = useCallback(() => {
+    if (!latestProjectThread) return;
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: buildThreadRouteParams(
+        scopeThreadRef(latestProjectThread.environmentId, latestProjectThread.id),
+      ),
+    });
+  }, [latestProjectThread, navigate]);
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !activeProject) return;
@@ -4986,6 +5059,27 @@ function ChatViewContent(props: ChatViewProps) {
       {panelToggleControls}
     </div>
   );
+  const projectContextHeader = activeProject ? (
+    <ProjectContextHeader
+      projectName={activeProject.title}
+      workspaceRoot={activeProject.workspaceRoot}
+      environmentLabel={activeEnvironment?.label ?? activeProject.environmentId}
+      environmentId={activeProject.environmentId}
+      branch={gitStatusQuery.data?.refName ?? activeThread.branch}
+      changedFileCount={gitStatusQuery.data?.workingTree.files.length ?? 0}
+      availableEditors={availableEditors}
+      keybindings={keybindings}
+      scripts={activeProject.scripts}
+      preferredScriptId={lastInvokedScriptByProjectId[activeProject.id] ?? null}
+      latestThreadAvailable={latestProjectThread !== null}
+      onNewThread={createProjectThread}
+      onOpenLatestThread={openLatestProjectThread}
+      onRunProjectScript={runProjectScript}
+      onAddProjectScript={saveProjectScript}
+      onUpdateProjectScript={updateProjectScript}
+      onDeleteProjectScript={deleteProjectScript}
+    />
+  ) : null;
   const rightPanelContent = activeThreadRef ? (
     activeRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
@@ -5039,6 +5133,28 @@ function ChatViewContent(props: ChatViewProps) {
             : undefined
         }
         mode="embedded"
+      />
+    ) : activeRightPanelSurface?.kind === "git" && activeProject && gitCwd ? (
+      <GitPanelSurface
+        environmentId={activeProject.environmentId}
+        gitCwd={gitCwd}
+        activeThreadRef={isServerThread ? activeThreadRef : null}
+        {...(routeKind === "draft" && draftId ? { draftId } : {})}
+        status={gitStatusQuery.data}
+        statusPending={gitStatusQuery.isPending}
+        statusError={gitStatusQuery.error}
+        onOpenDiff={addDiffSurface}
+      />
+    ) : activeRightPanelSurface?.kind === "inference" && activeProject ? (
+      <ProjectInferenceDashboardPage
+        projectId={activeProject.id}
+        threads={projectManagementThreads}
+        onOpenThread={(thread) => {
+          void navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(scopeThreadRef(thread.environmentId, thread.id)),
+          });
+        }}
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&
@@ -5094,8 +5210,6 @@ function ChatViewContent(props: ChatViewProps) {
           {!rightPanelOpen ? panelLayoutControls : null}
           <ChatHeader
             activeThreadEnvironmentId={activeThread.environmentId}
-            activeThreadId={activeThread.id}
-            {...(routeKind === "draft" && draftId ? { draftId } : {})}
             activeThreadTitle={activeThread.title}
             activeProjectName={activeProject?.title}
             openInCwd={gitCwd}
@@ -5106,7 +5220,7 @@ function ChatViewContent(props: ChatViewProps) {
             keybindings={keybindings}
             availableEditors={availableEditors}
             rightPanelOpen={rightPanelOpen}
-            gitCwd={gitCwd}
+            onOpenGitPanel={addGitSurface}
             onRunProjectScript={runProjectScript}
             onAddProjectScript={saveProjectScript}
             onUpdateProjectScript={updateProjectScript}
@@ -5373,9 +5487,14 @@ function ChatViewContent(props: ChatViewProps) {
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
+          onAddGit={addGitSurface}
+          onAddInference={addInferenceSurface}
           browserAvailable={isPreviewSupportedInRuntime()}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={activeProject !== null}
+          gitAvailable={activeProject !== null}
+          inferenceAvailable={activeProject !== null}
+          projectHeader={projectContextHeader}
         >
           {rightPanelContent}
         </RightPanelTabs>
@@ -5400,9 +5519,14 @@ function ChatViewContent(props: ChatViewProps) {
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
+            onAddGit={addGitSurface}
+            onAddInference={addInferenceSurface}
             browserAvailable={isPreviewSupportedInRuntime()}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={activeProject !== null}
+            gitAvailable={activeProject !== null}
+            inferenceAvailable={activeProject !== null}
+            projectHeader={projectContextHeader}
           >
             {rightPanelContent}
           </RightPanelTabs>

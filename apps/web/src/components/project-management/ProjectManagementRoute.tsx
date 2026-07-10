@@ -1,21 +1,15 @@
-import { useAtomValue } from "@effect/atom-react";
-import {
-  scopeProjectRef,
-  scopedThreadKey,
-  scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   type EnvironmentId,
   type KeybindingCommand,
-  type OrchestrationThreadActivity,
   type ProjectId,
   type ProjectScript,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback, useEffect, useMemo } from "react";
+import { AsyncResult } from "effect/unstable/reactivity";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import type {
   NewProjectScriptInput,
@@ -28,21 +22,17 @@ import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybinding
 import { commandForProjectScript, nextProjectScriptId } from "~/projectScripts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { mapVcsStatusToProjectRepositoryStatus } from "~/project-management/projectManagementStatusAdapter";
-import {
-  buildProjectOverviewSnapshot,
-  type ProjectOverviewSnapshot,
-} from "~/project-management/projectManagementOverview";
+import { buildProjectOverviewSnapshot } from "~/project-management/projectManagementOverview";
 import type {
   ProjectManagementProject,
   ProjectManagementRouteTarget,
   ProjectManagementThread,
 } from "~/project-management/projectManagementTypes";
 import { buildThreadRouteParams } from "~/threadRoutes";
-import { useServerConfigs, useProject, useThreadShellsForProjectRefs } from "~/state/entities";
+import { useServerConfigs, useProject } from "~/state/entities";
 import { projectEnvironment } from "~/state/projects";
 import { environmentShell } from "~/state/shell";
 import { serverEnvironment } from "~/state/server";
-import { environmentThreadDetails } from "~/state/threads";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsEnvironment } from "~/state/vcs";
@@ -56,11 +46,11 @@ import { ProjectManagementShell } from "./ProjectManagementShell";
 import { ProjectManagementPage } from "./ProjectManagementPage";
 import { ProjectInferenceDashboardPage } from "./ProjectInferenceDashboardPage";
 import { stackedThreadToast, toastManager } from "../ui/toast";
-
-const EMPTY_ACTIVITIES_BY_THREAD_KEY = new Map<
-  string,
-  ReadonlyArray<OrchestrationThreadActivity>
->();
+import { useRightPanelStore } from "~/rightPanelStore";
+import {
+  latestActiveProjectThread,
+  useProjectManagementThreads,
+} from "~/project-management/useProjectManagementThreads";
 
 function threadRefForManagementThread(thread: ProjectManagementThread): ScopedThreadRef {
   return scopeThreadRef(thread.environmentId, thread.id);
@@ -80,79 +70,6 @@ function buildManagementProject(input: {
     cwd: input.workspaceRoot,
     scripts: input.scripts,
   };
-}
-
-function useThreadActivitiesByKey(
-  refs: ReadonlyArray<ScopedThreadRef>,
-): ReadonlyMap<string, ReadonlyArray<OrchestrationThreadActivity>> {
-  const refsKey = useMemo(() => refs.map(scopedThreadKey).join("\n"), [refs]);
-  const atom = useMemo(() => {
-    if (refs.length === 0) {
-      return Atom.make(EMPTY_ACTIVITIES_BY_THREAD_KEY).pipe(
-        Atom.withLabel("project-management-thread-activities:empty"),
-      );
-    }
-
-    return Atom.make((get) => {
-      const next = new Map<string, ReadonlyArray<OrchestrationThreadActivity>>();
-      for (const ref of refs) {
-        next.set(scopedThreadKey(ref), get(environmentThreadDetails.activitiesAtom(ref)));
-      }
-      return next;
-    }).pipe(Atom.withLabel(`project-management-thread-activities:${refsKey}`));
-  }, [refs, refsKey]);
-
-  return useAtomValue(atom);
-}
-
-function useProjectManagementThreads(
-  target: ProjectManagementRouteTarget,
-): ReadonlyArray<ProjectManagementThread> {
-  const projectRef = useMemo(
-    () => scopeProjectRef(target.environmentId, target.projectId),
-    [target.environmentId, target.projectId],
-  );
-  const shells = useThreadShellsForProjectRefs([projectRef]);
-  const refs = useMemo(
-    () => shells.map((thread) => scopeThreadRef(thread.environmentId, thread.id)),
-    [shells],
-  );
-  const activitiesByKey = useThreadActivitiesByKey(refs);
-
-  return useMemo(
-    () =>
-      shells.map((thread) => ({
-        id: thread.id,
-        environmentId: thread.environmentId,
-        projectId: thread.projectId,
-        title: thread.title,
-        archivedAt: thread.archivedAt,
-        createdAt: thread.createdAt,
-        updatedAt: thread.updatedAt,
-        latestTurn: thread.latestTurn,
-        branch: thread.branch,
-        worktreePath: thread.worktreePath,
-        activities:
-          activitiesByKey.get(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))) ??
-          [],
-      })),
-    [activitiesByKey, shells],
-  );
-}
-
-function latestActiveThreadFromSnapshot(
-  threads: ReadonlyArray<ProjectManagementThread>,
-  snapshot: ProjectOverviewSnapshot,
-): ProjectManagementThread | null {
-  const latest = snapshot.linkedThreads.find((thread) => thread.archivedAt === null);
-  if (!latest) {
-    return null;
-  }
-  return (
-    threads.find(
-      (thread) => thread.id === latest.id && thread.environmentId === latest.environmentId,
-    ) ?? null
-  );
 }
 
 function reportActionFailure(title: string, error: unknown): void {
@@ -187,6 +104,7 @@ export function ProjectManagementRouteView({
   readonly target: ProjectManagementRouteTarget;
 }) {
   const navigate = useNavigate();
+  const redirectStartedRef = useRef(false);
   const projectRef = useMemo(
     () => scopeProjectRef(target.environmentId, target.projectId),
     [target.environmentId, target.projectId],
@@ -256,9 +174,46 @@ export function ProjectManagementRouteView({
     [repositoryStatus, threads],
   );
   const latestActiveThread = useMemo(
-    () => latestActiveThreadFromSnapshot(threads, snapshot),
+    () => latestActiveProjectThread(threads, snapshot),
     [snapshot, threads],
   );
+
+  useEffect(() => {
+    if (!project || !bootstrapComplete || redirectStartedRef.current) return;
+    redirectStartedRef.current = true;
+
+    const openPanel = (threadRef: ScopedThreadRef) => {
+      if (target.view === "inference") {
+        useRightPanelStore.getState().openProjectSurface(threadRef, "inference", projectRef);
+      } else {
+        useRightPanelStore.getState().showLauncher(threadRef);
+      }
+    };
+
+    if (latestActiveThread) {
+      const threadRef = threadRefForManagementThread(latestActiveThread);
+      openPanel(threadRef);
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(threadRef),
+        replace: true,
+      });
+      return;
+    }
+
+    void handleNewThread(projectRef, {
+      beforeNavigate: (threadId) => openPanel(scopeThreadRef(target.environmentId, threadId)),
+    });
+  }, [
+    bootstrapComplete,
+    handleNewThread,
+    latestActiveThread,
+    navigate,
+    project,
+    projectRef,
+    target.environmentId,
+    target.view,
+  ]);
 
   const openThread = useCallback(
     (thread: ProjectManagementThread) => {

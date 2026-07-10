@@ -1,6 +1,6 @@
 # F14 Unified Project Context And Inference Dashboard
 
-Date: 2026-06-02
+Date: 2026-07-10
 Status: active
 
 ## Intent
@@ -34,25 +34,21 @@ The right panel provides compact global project context while `Open a surface` l
 - `apps/web/src/components/project-management/ProjectManagementRoute.tsx`
 - `apps/web/src/components/project-management/ProjectManagementPage.tsx`
 - `apps/web/src/components/project-management/ProjectInferenceDashboardPage.tsx`
-- `apps/web/src/components/project-management/ProjectManagementHeader.tsx`
+- `apps/web/src/components/project-management/ProjectContextHeader.tsx`
 - `apps/web/src/components/project-management/ProjectManagementShell.tsx`
 - `apps/web/src/components/project-management/ProjectMetricCard.tsx`
-- `apps/web/src/components/project-management/ProjectScopedGitPanel.tsx`
+- `apps/web/src/components/git-panel/GitPanelSurface.tsx`
+- `apps/web/src/components/GitActionsControl.tsx`
+- `apps/web/src/components/ChatView.tsx`
 - `apps/web/src/components/RightPanelTabs.tsx`
 - `apps/web/src/rightPanelStore.ts`
 - `apps/web/src/project-management/projectManagementRoute.ts`
 - `apps/web/src/project-management/projectManagementOverview.ts`
 - `apps/web/src/project-management/projectManagementInference.ts`
 - `apps/web/src/project-management/projectManagementTypes.ts`
+- `apps/web/src/project-management/useProjectManagementThreads.ts`
 - `apps/web/src/project-management/adapters/projectManagementScriptAdapter.ts`
-- `apps/web/src/project-management/adapters/projectManagementStatusAdapter.ts`
-- `apps/web/src/project-management/adapters/projectManagementStoreAdapter.ts`
 - `apps/web/src/components/ProjectScriptsControl.tsx`
-- `apps/web/src/components/git-panel/GitPanel.tsx`
-- `apps/web/src/components/git-panel/GitPanelRouteAdapter.tsx`
-- `apps/web/src/lib/projectReactQuery.ts`
-- `apps/web/src/lib/gitStatusState.ts`
-- `packages/client-runtime/src/vcsStatusState.ts`
 - `packages/client-runtime/src/projectPaths.ts`
 - `apps/web/src/components/Sidebar.tsx`
 - `apps/web/src/components/CommandPalette.tsx`
@@ -100,6 +96,7 @@ The right panel provides compact global project context while `Open a surface` l
 - Project context can start a new thread, open the latest active thread, open the project in an available editor, and run project scripts.
 - `Open a surface` exposes Git Panel and Inference Dashboard as concise launchers.
 - Project scoped Git surface renders repository state without an active thread and does not clear active composer drafts.
+- Git surface keeps commit, pull, promote, pull request, publish, status refresh, workspace summary, and changed file actions visible without returning to a standalone route.
 - The inference dashboard counts only the latest usage snapshot for each turn.
 - The inference dashboard preserves `totalProcessedTokens` and falls back to `usedTokens` plus token components when needed.
 - Cached input handling avoids double counting when cached input is reported as an input subset.

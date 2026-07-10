@@ -27,9 +27,11 @@ import {
   GitBranchPlusIcon,
   GitCommitIcon,
   GitMergeIcon,
+  GitPullRequestIcon,
   InfoIcon,
   LockIcon,
   GlobeIcon,
+  RefreshCcwIcon,
 } from "lucide-react";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "~/components/Icons";
@@ -103,6 +105,7 @@ interface GitActionsControlProps {
   activeThreadRef?: ScopedThreadRef | null;
   environmentId?: EnvironmentId | null;
   draftId?: DraftId;
+  variant?: "compact" | "panel";
 }
 
 interface PendingDefaultBranchAction {
@@ -1001,6 +1004,7 @@ export default function GitActionsControl({
   activeThreadRef = null,
   environmentId,
   draftId,
+  variant = "compact",
 }: GitActionsControlProps) {
   const updateThreadMetadata = useAtomCommand(
     threadEnvironment.updateMetadata,
@@ -1263,6 +1267,9 @@ export default function GitActionsControl({
   const quickActionDisabledReason = quickAction.disabled
     ? (quickAction.hint ?? "This action is currently unavailable.")
     : null;
+  const commitMenuItem = gitActionMenuItems.find((item) => item.id === "commit") ?? null;
+  const pullRequestMenuItem = gitActionMenuItems.find((item) => item.id === "pr") ?? null;
+  const promoteMenuItem = gitActionMenuItems.find((item) => item.id === "promote") ?? null;
   const pendingDefaultBranchActionCopy = pendingDefaultBranchAction
     ? resolveDefaultBranchActionDialogCopy({
         action: pendingDefaultBranchAction.action,
@@ -1633,6 +1640,46 @@ export default function GitActionsControl({
     });
   };
 
+  const runPullAction = () => {
+    const toastId = toastManager.add({
+      type: "loading",
+      title: "Pulling...",
+      timeout: 0,
+      data: threadToastData,
+    });
+    void (async () => {
+      const result = await pullAction.run();
+      if (result._tag === "Failure") {
+        if (isAtomCommandInterrupted(result)) {
+          toastManager.close(toastId);
+          return;
+        }
+        const error = squashAtomCommandFailure(result);
+        toastManager.update(
+          toastId,
+          stackedThreadToast({
+            type: "error",
+            title: "Pull failed",
+            description: error instanceof Error ? error.message : "An error occurred.",
+            ...(threadToastData !== undefined ? { data: threadToastData } : {}),
+          }),
+        );
+        return;
+      }
+
+      const pullResult = result.value;
+      toastManager.update(toastId, {
+        type: "success",
+        title: pullResult.status === "pulled" ? "Pulled" : "Already up to date",
+        description:
+          pullResult.status === "pulled"
+            ? `Updated ${pullResult.refName} from ${pullResult.upstreamRef ?? "upstream"}`
+            : `${pullResult.refName} is already synchronized.`,
+        data: threadToastData,
+      });
+    })();
+  };
+
   const runQuickAction = () => {
     if (quickAction.kind === "open_pr") {
       void openExistingPr();
@@ -1643,43 +1690,7 @@ export default function GitActionsControl({
       return;
     }
     if (quickAction.kind === "run_pull") {
-      const toastId = toastManager.add({
-        type: "loading",
-        title: "Pulling...",
-        timeout: 0,
-        data: threadToastData,
-      });
-      void (async () => {
-        const result = await pullAction.run();
-        if (result._tag === "Failure") {
-          if (isAtomCommandInterrupted(result)) {
-            toastManager.close(toastId);
-            return;
-          }
-          const error = squashAtomCommandFailure(result);
-          toastManager.update(
-            toastId,
-            stackedThreadToast({
-              type: "error",
-              title: "Pull failed",
-              description: error instanceof Error ? error.message : "An error occurred.",
-              ...(threadToastData !== undefined ? { data: threadToastData } : {}),
-            }),
-          );
-          return;
-        }
-
-        const pullResult = result.value;
-        toastManager.update(toastId, {
-          type: "success",
-          title: pullResult.status === "pulled" ? "Pulled" : "Already up to date",
-          description:
-            pullResult.status === "pulled"
-              ? `Updated ${pullResult.refName} from ${pullResult.upstreamRef ?? "upstream"}`
-              : `${pullResult.refName} is already synchronized.`,
-          data: threadToastData,
-        });
-      })();
+      runPullAction();
       return;
     }
     if (quickAction.kind === "show_hint") {
@@ -1787,8 +1798,9 @@ export default function GitActionsControl({
     <>
       {!isRepo ? (
         <Button
+          className={cn(variant === "panel" && "w-full")}
           variant="outline"
-          size="xs"
+          size={variant === "panel" ? "sm" : "xs"}
           disabled={initAction.isPending}
           onClick={() => {
             void (async () => {
@@ -1813,6 +1825,97 @@ export default function GitActionsControl({
             {initAction.isPending ? "Initializing..." : "Initialize Git"}
           </span>
         </Button>
+      ) : variant === "panel" ? (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <Button
+              className="min-w-0 flex-1"
+              size="sm"
+              disabled={isGitActionRunning || quickAction.disabled}
+              title={quickActionDisabledReason ?? undefined}
+              onClick={runQuickAction}
+            >
+              <GitQuickActionIcon quickAction={quickAction} SourceControlIcon={SourceControlIcon} />
+              <span className="truncate">{quickAction.label}</span>
+            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={<Button aria-label="Refresh Git status" size="icon-sm" variant="outline" />}
+                disabled={isGitActionRunning}
+                onClick={() => {
+                  requestVcsStatusRefresh(refreshVcsStatus, activeEnvironmentId, gitCwd);
+                }}
+              >
+                <RefreshCcwIcon className="size-4" />
+              </TooltipTrigger>
+              <TooltipPopup>Refresh Git status</TooltipPopup>
+            </Tooltip>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={commitMenuItem?.disabled ?? true}
+              onClick={() => {
+                if (commitMenuItem) openDialogForMenuItem(commitMenuItem);
+              }}
+            >
+              <GitCommitIcon className="size-4" />
+              Commit
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={
+                isGitActionRunning || !hasPrimaryRemote || gitStatusForActions?.refName == null
+              }
+              onClick={runPullAction}
+            >
+              <RefreshCcwIcon className="size-4" />
+              Pull
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={promoteMenuItem?.disabled ?? true}
+              onClick={() => {
+                if (promoteMenuItem) openDialogForMenuItem(promoteMenuItem);
+              }}
+            >
+              <GitMergeIcon className="size-4" />
+              Promote
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pullRequestMenuItem?.disabled ?? true}
+              onClick={() => {
+                if (pullRequestMenuItem) openDialogForMenuItem(pullRequestMenuItem);
+              }}
+            >
+              <GitPullRequestIcon className="size-4" />
+              PR
+            </Button>
+          </div>
+
+          {canPublishRepository ? (
+            <Button
+              className="w-full"
+              size="sm"
+              variant="outline"
+              disabled={isGitActionRunning}
+              onClick={() => {
+                setIsPublishDialogOpen(true);
+              }}
+            >
+              <CloudUploadIcon className="size-4" />
+              Publish repository
+            </Button>
+          ) : null}
+
+          {gitStatusError ? <p className="text-xs text-destructive">{gitStatusError}</p> : null}
+        </div>
       ) : (
         <Group aria-label="Git actions" className="shrink-0">
           {quickActionDisabledReason ? (

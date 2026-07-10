@@ -1,8 +1,11 @@
 import type { ProjectId } from "@t3tools/contracts";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowRightIcon, BarChart3Icon } from "lucide-react";
 
+import { Badge } from "~/components/ui/badge";
+import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { buildProjectInferenceDashboardSnapshot } from "~/project-management/projectManagementInference";
 import type { ProjectManagementThread } from "~/project-management/projectManagementTypes";
+import { formatDuration } from "~/session-logic";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { ProjectMetricCard } from "./ProjectMetricCard";
 
@@ -12,8 +15,20 @@ interface ProjectInferenceDashboardPageProps {
   readonly onOpenThread: (thread: ProjectManagementThread) => void;
 }
 
-function formatNumber(value: number): string {
+function formatExactTokens(value: number): string {
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatInputDetail(
+  inputTokens: number,
+  cachedInputTokens: number,
+  recentInputTokens: number,
+): string {
+  const cachedDetail =
+    cachedInputTokens > 0
+      ? `${formatExactTokens(cachedInputTokens)} cached`
+      : "No separate cache total";
+  return `${formatExactTokens(inputTokens)} input, ${formatExactTokens(recentInputTokens)} recent, ${cachedDetail}`;
 }
 
 function findThread(
@@ -28,105 +43,161 @@ function findThread(
 }
 
 export function ProjectInferenceDashboardPage({
-  projectId,
   threads,
   onOpenThread,
 }: ProjectInferenceDashboardPageProps) {
-  const snapshot = buildProjectInferenceDashboardSnapshot({ threads });
+  const dashboard = buildProjectInferenceDashboardSnapshot({ threads });
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-      <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <ProjectMetricCard
-          label="Lifetime burn"
-          value={formatNumber(snapshot.lifetimeTotalBurnTokens)}
-          detail={`${formatNumber(snapshot.trackedTurns)} tracked turns`}
-        />
-        <ProjectMetricCard
-          label="Recent burn"
-          value={formatNumber(snapshot.recentTotalBurnTokens)}
-          detail={`${formatNumber(snapshot.recentTrackedTurns)} turns in 7 days`}
-        />
-        <ProjectMetricCard
-          label="30 day projection"
-          value={formatNumber(snapshot.projectedMonthlyBurnTokens)}
-          detail="Based on recent burn"
-        />
-        <ProjectMetricCard
-          label="Average burn"
-          value={formatNumber(snapshot.averageBurnPerTrackedTurn)}
-          detail="Per tracked turn"
-        />
-      </section>
-
-      <section className="grid gap-2 sm:grid-cols-3">
-        <ProjectMetricCard
-          label="Input tokens"
-          value={formatNumber(snapshot.lifetimeInputTokens)}
-        />
-        <ProjectMetricCard
-          label="Cached input"
-          value={formatNumber(snapshot.lifetimeCachedInputTokens)}
-        />
-        <ProjectMetricCard
-          label="Output tokens"
-          value={formatNumber(snapshot.lifetimeOutputTokens)}
-        />
-      </section>
-
-      <section className="rounded-lg border border-border bg-card">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="text-sm font-semibold tracking-normal text-foreground">
-            Thread leaderboard
-          </h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Ranked by latest project scoped usage snapshots for {projectId}.
-          </p>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <BarChart3Icon className="size-4" />
+            <span>Inference dashboard</span>
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">Processed token usage by thread</p>
         </div>
-        <div className="divide-y divide-border">
-          {snapshot.leaderboard.length > 0 ? (
-            snapshot.leaderboard.map((entry) => {
-              const thread = findThread(threads, entry.threadId, entry.environmentId);
-              return (
-                <button
-                  type="button"
-                  key={`${entry.environmentId}:${entry.threadId}`}
-                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-4 px-4 py-3 text-left hover:bg-accent"
-                  disabled={thread === null}
-                  onClick={() => {
-                    if (thread) {
-                      onOpenThread(thread);
-                    }
-                  }}
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-foreground">
-                      {entry.title}
-                    </span>
-                    <span className="mt-1 block text-xs text-muted-foreground">
-                      {formatNumber(entry.trackedTurns)} turns -{" "}
-                      {formatRelativeTimeLabel(entry.latestActivityAt)}
-                    </span>
-                  </span>
-                  <span className="flex items-center gap-4 text-right">
-                    <span>
-                      <span className="block text-sm font-semibold text-foreground">
-                        {formatNumber(entry.totalProcessedTokens)}
-                      </span>
-                      <span className="block text-xs text-muted-foreground">burn</span>
-                    </span>
-                    <ArrowRightIcon className="size-4 text-muted-foreground" />
-                  </span>
-                </button>
-              );
-            })
+        <Badge variant="outline" className="bg-muted/40 font-normal">
+          {formatContextWindowTokens(dashboard.recentTotalBurnTokens)} in 7 days
+        </Badge>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-5 overflow-auto p-4">
+        <section className="grid grid-cols-2 gap-2">
+          <ProjectMetricCard
+            label="Lifetime burn"
+            value={formatContextWindowTokens(dashboard.lifetimeTotalBurnTokens)}
+            detail={`${formatExactTokens(dashboard.lifetimeTotalBurnTokens)} processed`}
+          />
+          <ProjectMetricCard
+            label="7 day burn"
+            value={formatContextWindowTokens(dashboard.recentTotalBurnTokens)}
+            detail={`${dashboard.recentTrackedTurns} recent turns`}
+          />
+          <ProjectMetricCard
+            label="30 day projection"
+            value={formatContextWindowTokens(dashboard.projectedMonthlyBurnTokens)}
+            detail="Based on the last 7 days"
+          />
+          <ProjectMetricCard
+            label="Input tokens"
+            value={formatContextWindowTokens(dashboard.lifetimeInputTokens)}
+            detail={formatInputDetail(
+              dashboard.lifetimeInputTokens,
+              dashboard.lifetimeCachedInputTokens,
+              dashboard.recentInputTokens,
+            )}
+          />
+          <ProjectMetricCard
+            label="Output tokens"
+            value={formatContextWindowTokens(dashboard.lifetimeOutputTokens)}
+            detail={`${formatExactTokens(dashboard.recentOutputTokens)} recent`}
+          />
+          <ProjectMetricCard
+            label="Tracked turns"
+            value={dashboard.trackedTurns}
+            detail={`${formatContextWindowTokens(dashboard.averageBurnPerTrackedTurn)} average burn`}
+          />
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Thread burn</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">Ranked by processed tokens</p>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {dashboard.leaderboard.length} threads
+            </span>
+          </div>
+
+          {dashboard.leaderboard.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+              No token usage snapshots yet.
+            </div>
           ) : (
-            <p className="px-4 py-6 text-sm text-muted-foreground">
-              No inference usage snapshots have been recorded for this project.
-            </p>
+            <div className="divide-y divide-border rounded-lg border border-border">
+              {dashboard.leaderboard.map((entry, index) => {
+                const thread = findThread(threads, entry.threadId, entry.environmentId);
+                const share =
+                  dashboard.lifetimeTotalBurnTokens > 0
+                    ? Math.max(
+                        4,
+                        Math.round(
+                          (entry.totalProcessedTokens / dashboard.lifetimeTotalBurnTokens) * 100,
+                        ),
+                      )
+                    : 0;
+
+                return (
+                  <button
+                    type="button"
+                    key={`${entry.environmentId}:${entry.threadId}`}
+                    className="group block w-full px-3 py-3 text-left transition-colors hover:bg-accent disabled:pointer-events-none"
+                    disabled={thread === null}
+                    onClick={() => {
+                      if (thread) onOpenThread(thread);
+                    }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-xs font-semibold">
+                        {index + 1}
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="truncate text-sm font-medium text-foreground">
+                                {entry.title}
+                              </span>
+                              {entry.archivedAt ? (
+                                <Badge
+                                  variant="outline"
+                                  className="shrink-0 bg-muted/40 font-normal"
+                                >
+                                  Archived
+                                </Badge>
+                              ) : null}
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-muted-foreground">
+                              Updated {formatRelativeTimeLabel(entry.latestActivityAt)}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <div className="text-sm font-semibold text-foreground">
+                              {formatContextWindowTokens(entry.totalProcessedTokens)}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground">burn</div>
+                          </div>
+                        </div>
+
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary"
+                            style={{ width: `${Math.min(100, Math.max(share, 0))}%` }}
+                          />
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+                          <span>{entry.trackedTurns} turns</span>
+                          <span>{formatDuration(entry.totalDurationMs)}</span>
+                          <span>{formatContextWindowTokens(entry.totalInputTokens)} input</span>
+                          {entry.cachedInputTokens > 0 ? (
+                            <span>{formatContextWindowTokens(entry.cachedInputTokens)} cached</span>
+                          ) : null}
+                          <span>{formatContextWindowTokens(entry.outputTokens)} output</span>
+                          <ArrowRightIcon className="ml-auto size-3.5 transition-transform group-hover:translate-x-0.5" />
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           )}
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
   );
 }

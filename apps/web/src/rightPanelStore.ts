@@ -8,13 +8,22 @@
  * workspace paths, and diff/plan/files remain singleton surfaces.
  */
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { resolveStorage } from "./lib/storage";
 
-export const RIGHT_PANEL_KINDS = ["plan", "diff", "files", "file", "preview", "terminal"] as const;
+export const RIGHT_PANEL_KINDS = [
+  "plan",
+  "diff",
+  "files",
+  "file",
+  "preview",
+  "terminal",
+  "git",
+  "inference",
+] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
 export type RightPanelSurface =
@@ -30,6 +39,8 @@ export type RightPanelSurface =
     }
   | { id: "diff"; kind: "diff" }
   | { id: "files"; kind: "files" }
+  | { id: "git"; kind: "git"; projectRef: ScopedProjectRef }
+  | { id: "inference"; kind: "inference"; projectRef: ScopedProjectRef }
   | {
       id: `file:${string}`;
       kind: "file";
@@ -40,7 +51,7 @@ export type RightPanelSurface =
   | { id: "plan"; kind: "plan" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
-const RIGHT_PANEL_STORAGE_VERSION = 7;
+const RIGHT_PANEL_STORAGE_VERSION = 8;
 
 export interface ThreadRightPanelState {
   isOpen: boolean;
@@ -50,7 +61,15 @@ export interface ThreadRightPanelState {
 
 interface RightPanelStoreState {
   byThreadKey: Record<string, ThreadRightPanelState>;
-  open: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
+  open: (
+    ref: ScopedThreadRef,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "git" | "inference">,
+  ) => void;
+  openProjectSurface: (
+    ref: ScopedThreadRef,
+    kind: "git" | "inference",
+    projectRef: ScopedProjectRef,
+  ) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
@@ -70,9 +89,13 @@ interface RightPanelStoreState {
   reconcileBrowserSurfaces: (ref: ScopedThreadRef, tabIds: readonly string[]) => void;
   reconcileFileSurfaces: (ref: ScopedThreadRef, workspaceAvailable: boolean) => void;
   show: (ref: ScopedThreadRef) => void;
+  showLauncher: (ref: ScopedThreadRef) => void;
   close: (ref: ScopedThreadRef) => void;
   toggleVisibility: (ref: ScopedThreadRef) => void;
-  toggle: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
+  toggle: (
+    ref: ScopedThreadRef,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "git" | "inference">,
+  ) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
 
@@ -83,7 +106,7 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
 };
 
 const singletonSurface = (
-  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal">,
+  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "git" | "inference">,
 ): RightPanelSurface => {
   switch (kind) {
     case "diff":
@@ -94,6 +117,14 @@ const singletonSurface = (
       return { id: "plan", kind };
   }
 };
+
+const projectSurface = (
+  kind: "git" | "inference",
+  projectRef: ScopedProjectRef,
+): Extract<RightPanelSurface, { kind: "git" | "inference" }> =>
+  kind === "git"
+    ? { id: "git", kind: "git", projectRef }
+    : { id: "inference", kind: "inference", projectRef };
 
 const browserSurface = (tabId: string | null): RightPanelSurface =>
   tabId
@@ -130,6 +161,17 @@ const upsertSurface = (
     ? current.surfaces
     : [...current.surfaces, surface],
   activeSurfaceId: activate ? surface.id : current.activeSurfaceId,
+});
+
+const upsertProjectSurface = (
+  current: ThreadRightPanelState,
+  surface: Extract<RightPanelSurface, { kind: "git" | "inference" }>,
+): ThreadRightPanelState => ({
+  isOpen: true,
+  surfaces: current.surfaces.some((entry) => entry.id === surface.id)
+    ? current.surfaces.map((entry) => (entry.id === surface.id ? surface : entry))
+    : [...current.surfaces, surface],
+  activeSurfaceId: surface.id,
 });
 
 const updateThread = (
@@ -248,6 +290,12 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             }
             return upsertSurface(current, singletonSurface(kind));
           }),
+        })),
+      openProjectSurface: (ref, kind, projectRef) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
+            upsertProjectSurface(current, projectSurface(kind, projectRef)),
+          ),
         })),
       openBrowser: (ref, tabId) =>
         set((state) => ({
@@ -483,6 +531,14 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) =>
             current.isOpen ? current : { ...current, isOpen: true },
           ),
+        })),
+      showLauncher: (ref) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => ({
+            ...current,
+            isOpen: true,
+            activeSurfaceId: null,
+          })),
         })),
       close: (ref) =>
         set((state) => ({

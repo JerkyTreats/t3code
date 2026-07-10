@@ -1,5 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { type EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { type EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
@@ -115,6 +115,56 @@ describe("rightPanelStore", () => {
     expect(
       selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
     ).toHaveLength(2);
+  });
+
+  it("opens project scoped Git and inference surfaces for the concrete project", () => {
+    const projectRef = {
+      environmentId: refA.environmentId,
+      projectId: ProjectId.make("project-a"),
+    } as const;
+
+    useRightPanelStore.getState().openProjectSurface(refA, "git", projectRef);
+    useRightPanelStore.getState().openProjectSurface(refA, "inference", projectRef);
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "inference",
+      surfaces: [
+        { id: "git", kind: "git", projectRef },
+        { id: "inference", kind: "inference", projectRef },
+      ],
+    });
+  });
+
+  it("replaces a project surface reference when the thread project changes", () => {
+    const firstProjectRef = {
+      environmentId: refA.environmentId,
+      projectId: ProjectId.make("project-a"),
+    } as const;
+    const nextProjectRef = {
+      environmentId: refA.environmentId,
+      projectId: ProjectId.make("project-b"),
+    } as const;
+
+    useRightPanelStore.getState().openProjectSurface(refA, "git", firstProjectRef);
+    useRightPanelStore.getState().openProjectSurface(refA, "git", nextProjectRef);
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "git",
+      surfaces: [{ id: "git", kind: "git", projectRef: nextProjectRef }],
+    });
+  });
+
+  it("shows the launcher without discarding existing surfaces", () => {
+    useRightPanelStore.getState().open(refA, "plan");
+    useRightPanelStore.getState().showLauncher(refA);
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: null,
+      surfaces: [{ id: "plan", kind: "plan" }],
+    });
   });
 
   it("keeps files as a singleton surface", () => {

@@ -1,6 +1,16 @@
 import type { ContextMenuItem, PreviewSessionSnapshot } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
-import { ClipboardList, FileDiff, Files, Globe2, Plus, TerminalSquare, X } from "lucide-react";
+import {
+  BarChart3,
+  ClipboardList,
+  FileDiff,
+  Files,
+  GitBranch,
+  Globe2,
+  Plus,
+  TerminalSquare,
+  X,
+} from "lucide-react";
 import {
   type MouseEvent as ReactMouseEvent,
   type ReactElement,
@@ -44,9 +54,14 @@ interface RightPanelTabsProps {
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
+  onAddGit: () => void;
+  onAddInference: () => void;
   browserAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
+  gitAvailable: boolean;
+  inferenceAvailable: boolean;
+  projectHeader?: ReactNode;
   children: ReactNode;
 }
 
@@ -54,6 +69,8 @@ const SURFACE_DISABLED_REASONS = {
   browser: "Browser previews are only available in the T3 Code desktop app.",
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
+  git: "Git is only available when a project is open.",
+  inference: "Inference is only available when a project is open.",
 } as const;
 
 type TabContextMenuAction = "copy-path" | "close" | "close-others" | "close-to-right" | "close-all";
@@ -91,14 +108,34 @@ function RightPanelEmptyState(props: {
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
+  onAddGit: () => void;
+  onAddInference: () => void;
   browserAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
+  gitAvailable: boolean;
+  inferenceAvailable: boolean;
 }) {
   const actions = [
     {
+      label: "Git Panel",
+      description: "Branches, changes, and publishing.",
+      icon: GitBranch,
+      available: props.gitAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.git,
+      onClick: props.onAddGit,
+    },
+    {
+      label: "Inference",
+      description: "Project usage and thread burn.",
+      icon: BarChart3,
+      available: props.inferenceAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.inference,
+      onClick: props.onAddInference,
+    },
+    {
       label: "Browser",
-      description: "Open a local app or URL.",
+      description: "Open an app or URL.",
       icon: Globe2,
       available: props.browserAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.browser,
@@ -106,7 +143,7 @@ function RightPanelEmptyState(props: {
     },
     {
       label: "Terminal",
-      description: "Start a shell in this workspace.",
+      description: "Start a workspace shell.",
       icon: TerminalSquare,
       available: true,
       disabledReason: null,
@@ -114,7 +151,7 @@ function RightPanelEmptyState(props: {
     },
     {
       label: "Files",
-      description: "Browse and read workspace files.",
+      description: "Browse workspace files.",
       icon: Files,
       available: props.filesAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.files,
@@ -122,7 +159,7 @@ function RightPanelEmptyState(props: {
     },
     {
       label: "Diff",
-      description: "Review changes in this thread.",
+      description: "Review thread changes.",
       icon: FileDiff,
       available: props.diffAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.diff,
@@ -196,6 +233,10 @@ function surfaceTitle(
       return "Diff";
     case "files":
       return "Files";
+    case "git":
+      return "Git";
+    case "inference":
+      return "Inference";
     case "file":
       return surface.relativePath.slice(surface.relativePath.lastIndexOf("/") + 1);
     case "terminal":
@@ -253,6 +294,10 @@ function SurfaceIcon({
       return <FileDiff className="size-3.5 shrink-0" />;
     case "files":
       return <Files className="size-3.5 shrink-0" />;
+    case "git":
+      return <GitBranch className="size-3.5 shrink-0" />;
+    case "inference":
+      return <BarChart3 className="size-3.5 shrink-0" />;
     case "file":
       return (
         <PierreEntryIcon
@@ -428,6 +473,22 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 </MenuTrigger>
                 <MenuPopup align="start" side="bottom" sideOffset={6} className="min-w-44">
                   <SurfaceMenuItem
+                    available={props.gitAvailable}
+                    disabledReason={SURFACE_DISABLED_REASONS.git}
+                    onClick={props.onAddGit}
+                  >
+                    <GitBranch />
+                    Git Panel
+                  </SurfaceMenuItem>
+                  <SurfaceMenuItem
+                    available={props.inferenceAvailable}
+                    disabledReason={SURFACE_DISABLED_REASONS.inference}
+                    onClick={props.onAddInference}
+                  >
+                    <BarChart3 />
+                    Inference
+                  </SurfaceMenuItem>
+                  <SurfaceMenuItem
                     available={props.browserAvailable}
                     disabledReason={SURFACE_DISABLED_REASONS.browser}
                     onClick={props.onAddBrowser}
@@ -462,6 +523,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         </ScrollArea>
         {props.layoutControls}
       </div>
+      {props.projectHeader ? (
+        <div className="shrink-0 border-b border-border">{props.projectHeader}</div>
+      ) : null}
       <div className="flex min-h-0 flex-1 flex-col">
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState
@@ -469,9 +533,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}
+            onAddGit={props.onAddGit}
+            onAddInference={props.onAddInference}
             browserAvailable={props.browserAvailable}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
+            gitAvailable={props.gitAvailable}
+            inferenceAvailable={props.inferenceAvailable}
           />
         ) : (
           props.children
