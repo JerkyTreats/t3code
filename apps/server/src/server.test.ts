@@ -681,6 +681,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(
         Layer.mock(OrchestrationEngine.OrchestrationEngineService)({
           readEvents: () => Stream.empty,
+          subscribeDomainEvents: Effect.succeed(Stream.empty),
           dispatch: () => Effect.succeed({ sequence: 0 }),
           streamDomainEvents: Stream.empty,
           ...options?.layers?.orchestrationEngine,
@@ -1234,6 +1235,20 @@ const getWsServerUrl = (
       baseUrl,
       yield* getAuthenticatedSessionCookieHeader(options?.credential),
     );
+  });
+
+const getWsTicketUrl = (accessToken: string) =>
+  Effect.gen(function* () {
+    const ticketUrl = yield* getHttpServerUrl("/api/auth/websocket-ticket");
+    const response = yield* fetchEffect(ticketUrl, {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    const body = yield* responseJsonEffect<{ readonly ticket?: string }>(response);
+    if (!responseOk(response) || !body.ticket) {
+      return yield* Effect.die("Expected scoped access token to receive a websocket ticket.");
+    }
+    return `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(body.ticket)}`;
   });
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
@@ -5598,6 +5613,137 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
       assert.deepEqual(replayResult, []);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("authorizes all thread history pages with orchestration read scope", () =>
+    Effect.gen(function* () {
+      const calls: string[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadMessagePage: () =>
+              Effect.sync(() => {
+                calls.push("messages");
+                return {
+                  items: [],
+                  startCursor: null,
+                  hasMoreBefore: false,
+                  estimatedSerializedBytes: 0,
+                };
+              }),
+            getThreadProposedPlanPage: () =>
+              Effect.sync(() => {
+                calls.push("proposed-plans");
+                return {
+                  items: [],
+                  startCursor: null,
+                  hasMoreBefore: false,
+                  estimatedSerializedBytes: 0,
+                };
+              }),
+            getThreadActivityPage: () =>
+              Effect.sync(() => {
+                calls.push("activities");
+                return {
+                  items: [],
+                  startCursor: null,
+                  endCursor: null,
+                  hasMoreBefore: false,
+                  hasMoreAfter: false,
+                  deferredActivityPayloads: 0,
+                  estimatedSerializedBytes: 0,
+                };
+              }),
+            getThreadCheckpointPage: () =>
+              Effect.sync(() => {
+                calls.push("checkpoints");
+                return {
+                  items: [],
+                  startCursor: null,
+                  hasMoreBefore: false,
+                  estimatedSerializedBytes: 0,
+                };
+              }),
+          },
+        },
+      });
+      const { body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        scope: "orchestration:read",
+      });
+      const accessToken = body.access_token;
+      if (!accessToken) {
+        return yield* Effect.die("Expected orchestration read access token.");
+      }
+
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+          client[ORCHESTRATION_WS_METHODS.getThreadMessagePage]({ threadId: defaultThreadId }),
+        ),
+      );
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+          client[ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage]({ threadId: defaultThreadId }),
+        ),
+      );
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+          client[ORCHESTRATION_WS_METHODS.getThreadActivityPage]({ threadId: defaultThreadId }),
+        ),
+      );
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+          client[ORCHESTRATION_WS_METHODS.getThreadCheckpointPage]({ threadId: defaultThreadId }),
+        ),
+      );
+
+      assert.deepEqual(calls, ["messages", "proposed-plans", "activities", "checkpoints"]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects thread history pages without orchestration read scope", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const { body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        scope: "access:write",
+      });
+      const accessToken = body.access_token;
+      if (!accessToken) {
+        return yield* Effect.die("Expected access management token.");
+      }
+
+      const results = yield* Effect.all([
+        Effect.scoped(
+          withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+            client[ORCHESTRATION_WS_METHODS.getThreadMessagePage]({ threadId: defaultThreadId }),
+          ).pipe(Effect.result),
+        ),
+        Effect.scoped(
+          withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+            client[ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage]({
+              threadId: defaultThreadId,
+            }),
+          ).pipe(Effect.result),
+        ),
+        Effect.scoped(
+          withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+            client[ORCHESTRATION_WS_METHODS.getThreadActivityPage]({ threadId: defaultThreadId }),
+          ).pipe(Effect.result),
+        ),
+        Effect.scoped(
+          withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+            client[ORCHESTRATION_WS_METHODS.getThreadCheckpointPage]({ threadId: defaultThreadId }),
+          ).pipe(Effect.result),
+        ),
+      ]);
+
+      for (const result of results) {
+        assertTrue(result._tag === "Failure");
+        assert.equal(result.failure._tag, "EnvironmentAuthorizationError");
+        if (result.failure._tag === "EnvironmentAuthorizationError") {
+          assert.equal(result.failure.requiredScope, "orchestration:read");
+        }
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

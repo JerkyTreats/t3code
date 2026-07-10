@@ -1256,8 +1256,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             '# Newer plan',
             NULL,
             NULL,
-            '2026-04-03T00:00:03.400Z',
-            '2026-04-03T00:00:03.400Z'
+            '2026-04-03T00:00:03.300Z',
+            '2026-04-03T00:00:03.300Z'
           )
       `;
 
@@ -1329,8 +1329,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             'assistant',
             'newer message',
             0,
-            '2026-04-03T00:00:03.200Z',
-            '2026-04-03T00:00:03.200Z'
+            '2026-04-03T00:00:03.100Z',
+            '2026-04-03T00:00:03.100Z'
           )
       `;
 
@@ -1466,6 +1466,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       );
       assert.equal(messagePage.hasMoreBefore, true);
       assert.isNotNull(messagePage.startCursor);
+      assert.equal(messagePage.startCursor?.createdAt, "2026-04-03T00:00:03.100Z");
       const olderMessages = yield* snapshotQuery.getThreadMessagePage({
         threadId,
         limit: 1,
@@ -1484,6 +1485,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       );
       assert.equal(planPage.hasMoreBefore, true);
       assert.isNotNull(planPage.startCursor);
+      assert.equal(planPage.startCursor?.createdAt, "2026-04-03T00:00:03.300Z");
       const olderPlans = yield* snapshotQuery.getThreadProposedPlanPage({
         threadId,
         limit: 1,
@@ -1585,6 +1587,54 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       assert.equal(byteBoundedMessagePage.hasMoreBefore, true);
       assert.isTrue(byteBoundedMessagePage.estimatedSerializedBytes <= 8 * 1024 * 1024);
 
+      const messageTailQueryPlan = yield* sql<{ readonly detail: string }>`
+        EXPLAIN QUERY PLAN
+        SELECT message_id
+        FROM projection_thread_messages
+        WHERE thread_id = ${threadId}
+        ORDER BY created_at DESC, message_id DESC
+        LIMIT 2
+      `;
+      const messageBeforeQueryPlan = yield* sql<{ readonly detail: string }>`
+        EXPLAIN QUERY PLAN
+        SELECT message_id
+        FROM projection_thread_messages
+        WHERE thread_id = ${threadId}
+          AND (
+            created_at < '2026-04-03T00:00:03.100Z'
+            OR (created_at = '2026-04-03T00:00:03.100Z' AND message_id < 'message-v2-2')
+          )
+        ORDER BY created_at DESC, message_id DESC
+        LIMIT 2
+      `;
+      const proposedPlanTailQueryPlan = yield* sql<{ readonly detail: string }>`
+        EXPLAIN QUERY PLAN
+        SELECT plan_id
+        FROM projection_thread_proposed_plans
+        WHERE thread_id = ${threadId}
+        ORDER BY created_at DESC, plan_id DESC
+        LIMIT 2
+      `;
+      const proposedPlanBeforeQueryPlan = yield* sql<{ readonly detail: string }>`
+        EXPLAIN QUERY PLAN
+        SELECT plan_id
+        FROM projection_thread_proposed_plans
+        WHERE thread_id = ${threadId}
+          AND (
+            created_at < '2026-04-03T00:00:03.300Z'
+            OR (created_at = '2026-04-03T00:00:03.300Z' AND plan_id < 'plan-v2-2')
+          )
+        ORDER BY created_at DESC, plan_id DESC
+        LIMIT 2
+      `;
+      const activityTailQueryPlan = yield* sql<{ readonly detail: string }>`
+        EXPLAIN QUERY PLAN
+        SELECT activity_id
+        FROM projection_thread_activities
+        WHERE thread_id = ${threadId}
+        ORDER BY sequence DESC, created_at DESC, activity_id DESC
+        LIMIT 2
+      `;
       const activityQueryPlan = yield* sql<{ readonly detail: string }>`
         EXPLAIN QUERY PLAN
         SELECT activity_id
@@ -1603,12 +1653,41 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         ORDER BY sequence DESC, created_at DESC, activity_id DESC
         LIMIT 2
       `;
-      assert.isTrue(
-        activityQueryPlan.some((row) =>
-          row.detail.includes("idx_projection_thread_activities_thread_sequence_created_id"),
-        ),
-      );
-      assert.isFalse(activityQueryPlan.some((row) => row.detail.includes("TEMP B-TREE")));
+      const checkpointTailQueryPlan = yield* sql<{ readonly detail: string }>`
+        EXPLAIN QUERY PLAN
+        SELECT turn_id
+        FROM projection_turns
+        WHERE thread_id = ${threadId}
+          AND checkpoint_turn_count IS NOT NULL
+        ORDER BY checkpoint_turn_count DESC
+        LIMIT 2
+      `;
+      const checkpointBeforeQueryPlan = yield* sql<{ readonly detail: string }>`
+        EXPLAIN QUERY PLAN
+        SELECT turn_id
+        FROM projection_turns
+        WHERE thread_id = ${threadId}
+          AND checkpoint_turn_count IS NOT NULL
+          AND checkpoint_turn_count < 2
+        ORDER BY checkpoint_turn_count DESC
+        LIMIT 2
+      `;
+      for (const queryPlan of [
+        messageTailQueryPlan,
+        proposedPlanTailQueryPlan,
+        activityTailQueryPlan,
+        checkpointTailQueryPlan,
+      ]) {
+        assert.isFalse(queryPlan.some((row) => row.detail.includes("TEMP B-TREE")));
+      }
+      for (const queryPlan of [
+        messageBeforeQueryPlan,
+        proposedPlanBeforeQueryPlan,
+        activityQueryPlan,
+        checkpointBeforeQueryPlan,
+      ]) {
+        assert.isFalse(queryPlan.some((row) => row.detail.includes("TEMP B-TREE")));
+      }
 
       const hydrated = yield* snapshotQuery.hydrateThreadActivityPayloads(threadId, [activityId]);
       assert.equal(hydrated.omitted.length, 0);

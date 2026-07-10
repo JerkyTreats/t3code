@@ -68,8 +68,10 @@ import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import { makeRemoteThreadEventStream } from "./orchestration/RemoteThreadEventStream.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { isThreadDetailEvent } from "./orchestration/ThreadDetailEvents.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
   observeRpcStream as instrumentRpcStream,
@@ -262,28 +264,6 @@ function projectSetupScriptCompatibilityDetail(
     default:
       return unexpectedCompatibilityError(error);
   }
-}
-
-function isThreadDetailEvent(event: OrchestrationEvent): event is Extract<
-  OrchestrationEvent,
-  {
-    type:
-      | "thread.message-sent"
-      | "thread.proposed-plan-upserted"
-      | "thread.activity-appended"
-      | "thread.turn-diff-completed"
-      | "thread.reverted"
-      | "thread.session-set";
-  }
-> {
-  return (
-    event.type === "thread.message-sent" ||
-    event.type === "thread.proposed-plan-upserted" ||
-    event.type === "thread.activity-appended" ||
-    event.type === "thread.turn-diff-completed" ||
-    event.type === "thread.reverted" ||
-    event.type === "thread.session-set"
-  );
 }
 
 const PROVIDER_STATUS_DEBOUNCE_MS = 200;
@@ -1198,103 +1178,104 @@ const makeWsRpcLayer = (
         [ORCHESTRATION_WS_METHODS.subscribeThread]: (input) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,
-            Effect.gen(function* () {
-              const [threadDetail, snapshotSequence] = yield* Effect.all([
-                projectionSnapshotQuery.getThreadDetailById(input.threadId).pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new OrchestrationGetSnapshotError({
-                        message: `Failed to load thread ${input.threadId}`,
-                        cause,
-                      }),
-                  ),
-                ),
-                projectionSnapshotQuery.getSnapshotSequence().pipe(
-                  Effect.map(({ snapshotSequence }) => snapshotSequence),
-                  Effect.mapError(
-                    (cause) =>
-                      new OrchestrationGetSnapshotError({
-                        message: "Failed to load orchestration snapshot sequence",
-                        cause,
-                      }),
-                  ),
-                ),
-              ]);
-
-              if (Option.isNone(threadDetail)) {
-                return yield* new OrchestrationGetSnapshotError({
-                  message: `Thread ${input.threadId} was not found`,
-                  cause: input.threadId,
-                });
-              }
-
-              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
-                Stream.filter(
-                  (event) =>
-                    event.aggregateKind === "thread" &&
-                    event.aggregateId === input.threadId &&
-                    isThreadDetailEvent(event),
-                ),
-                Stream.map((event) => ({
-                  kind: "event" as const,
-                  event,
-                })),
-              );
-
-              return Stream.concat(
-                Stream.make({
-                  kind: "snapshot" as const,
-                  snapshot: {
-                    snapshotSequence,
-                    thread: threadDetail.value,
-                  },
+            Effect.succeed(
+              makeRemoteThreadEventStream({
+                subscribeLive: orchestrationEngine.subscribeDomainEvents,
+                loadSnapshot: Effect.gen(function* () {
+                  const [threadDetail, snapshotSequence] = yield* Effect.all([
+                    projectionSnapshotQuery.getThreadDetailById(input.threadId).pipe(
+                      Effect.mapError(
+                        (cause) =>
+                          new OrchestrationGetSnapshotError({
+                            message: `Failed to load thread ${input.threadId}`,
+                            cause,
+                          }),
+                      ),
+                    ),
+                    projectionSnapshotQuery.getSnapshotSequence().pipe(
+                      Effect.map(({ snapshotSequence }) => snapshotSequence),
+                      Effect.mapError(
+                        (cause) =>
+                          new OrchestrationGetSnapshotError({
+                            message: "Failed to load orchestration snapshot sequence",
+                            cause,
+                          }),
+                      ),
+                    ),
+                  ]);
+                  if (Option.isNone(threadDetail)) {
+                    return yield* new OrchestrationGetSnapshotError({
+                      message: `Thread ${input.threadId} was not found`,
+                      cause: input.threadId,
+                    });
+                  }
+                  return { snapshotSequence, thread: threadDetail.value };
                 }),
-                liveStream,
-              );
-            }),
+                snapshotSequence: (snapshot) => snapshot.snapshotSequence,
+                readEvents: (snapshotSequence) =>
+                  orchestrationEngine.readEvents(snapshotSequence).pipe(
+                    Stream.mapError(
+                      (cause) =>
+                        new OrchestrationGetSnapshotError({
+                          message: `Failed to replay thread ${input.threadId} after snapshot`,
+                          cause,
+                        }),
+                    ),
+                  ),
+                isRelevant: (event) =>
+                  event.aggregateKind === "thread" &&
+                  event.aggregateId === input.threadId &&
+                  isThreadDetailEvent(event),
+                toSnapshotItem: (snapshot) => ({ kind: "snapshot" as const, snapshot }),
+                toEventItem: (event) => ({ kind: "event" as const, event }),
+              }),
+            ),
             { "rpc.aggregate": "orchestration" },
           ),
         [ORCHESTRATION_WS_METHODS.subscribeThreadV2]: (input) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThreadV2,
-            Effect.gen(function* () {
-              const threadDetail = yield* projectionSnapshotQuery
-                .getThreadDetailV2ById(input.threadId, input.limits)
-                .pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new OrchestrationGetSnapshotError({
-                        message: `Failed to load thread ${input.threadId}`,
-                        cause,
-                      }),
+            Effect.succeed(
+              makeRemoteThreadEventStream({
+                subscribeLive: orchestrationEngine.subscribeDomainEvents,
+                loadSnapshot: projectionSnapshotQuery
+                  .getThreadDetailV2ById(input.threadId, input.limits)
+                  .pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new OrchestrationGetSnapshotError({
+                          message: `Failed to load thread ${input.threadId}`,
+                          cause,
+                        }),
+                    ),
+                    Effect.flatMap((threadDetail) =>
+                      Option.isSome(threadDetail)
+                        ? Effect.succeed(threadDetail.value)
+                        : new OrchestrationGetSnapshotError({
+                            message: `Thread ${input.threadId} was not found`,
+                            cause: input.threadId,
+                          }),
+                    ),
                   ),
-                );
-
-              if (Option.isNone(threadDetail)) {
-                return yield* new OrchestrationGetSnapshotError({
-                  message: `Thread ${input.threadId} was not found`,
-                  cause: input.threadId,
-                });
-              }
-
-              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
-                Stream.filter(
-                  (event) =>
-                    event.aggregateKind === "thread" &&
-                    event.aggregateId === input.threadId &&
-                    isThreadDetailEvent(event),
-                ),
-                Stream.map(toThreadStreamV2EventItem),
-              );
-
-              return Stream.concat(
-                Stream.make({
-                  kind: "snapshot" as const,
-                  snapshot: threadDetail.value,
-                }),
-                liveStream,
-              );
-            }),
+                snapshotSequence: (snapshot) => snapshot.snapshotSequence,
+                readEvents: (snapshotSequence) =>
+                  orchestrationEngine.readEvents(snapshotSequence).pipe(
+                    Stream.mapError(
+                      (cause) =>
+                        new OrchestrationGetSnapshotError({
+                          message: `Failed to replay thread ${input.threadId} after snapshot`,
+                          cause,
+                        }),
+                    ),
+                  ),
+                isRelevant: (event) =>
+                  event.aggregateKind === "thread" &&
+                  event.aggregateId === input.threadId &&
+                  isThreadDetailEvent(event),
+                toSnapshotItem: (snapshot) => ({ kind: "snapshot" as const, snapshot }),
+                toEventItem: toThreadStreamV2EventItem,
+              }),
+            ),
             { "rpc.aggregate": "orchestration" },
           ),
         [ORCHESTRATION_WS_METHODS.getThreadMessagePage]: (input) =>
