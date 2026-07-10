@@ -10,17 +10,18 @@ import {
   type ChangeRequestTerminology,
 } from "../sourceControlPresentation";
 
-export type GitActionIconName = "commit" | "push" | "pr";
+export type GitActionIconName = "commit" | "push" | "pr" | "promote";
 
-export type GitDialogAction = "commit" | "push" | "create_pr";
+export type GitDialogAction = "commit" | "push" | "create_pr" | "promote";
 
 export interface GitActionMenuItem {
-  id: "commit" | "push" | "pr";
+  id: "commit" | "push" | "pr" | "promote";
   label: string;
   disabled: boolean;
   icon: GitActionIconName;
   kind: "open_dialog" | "open_pr";
   dialogAction?: GitDialogAction;
+  targetBranch?: string;
 }
 
 export interface GitQuickAction {
@@ -56,6 +57,7 @@ export function buildGitActionProgressStages(input: {
   hasCustomCommitMessage: boolean;
   hasWorkingTreeChanges: boolean;
   pushTarget?: string;
+  targetBranch?: string;
   featureBranch?: boolean;
   shouldPushBeforePr?: boolean;
   terminology?: ChangeRequestTerminology;
@@ -71,6 +73,20 @@ export function buildGitActionProgressStages(input: {
 
   if (input.action === "push") {
     return [pushStage];
+  }
+  if (input.action === "promote") {
+    const targetLabel = input.targetBranch ? ` into ${input.targetBranch}` : "";
+    return [
+      ...(input.hasWorkingTreeChanges
+        ? input.hasCustomCommitMessage
+          ? ["Committing..."]
+          : ["Generating commit message...", "Committing..."]
+        : []),
+      "Pushing backup...",
+      `Merging${targetLabel}...`,
+      `Pushing ${input.targetBranch ?? "target"}...`,
+      "Cleaning up...",
+    ];
   }
   if (input.action === "create_pr") {
     return input.shouldPushBeforePr ? [pushStage, ...prStages] : prStages;
@@ -95,6 +111,7 @@ export function buildMenuItems(
   gitStatus: VcsStatusResult | null,
   isBusy: boolean,
   hasPrimaryRemote = true,
+  promoteTargetBranch: string | null = null,
 ): GitActionMenuItem[] {
   if (!gitStatus) return [];
   const terminology = resolveChangeRequestTerminology(gitStatus);
@@ -121,6 +138,13 @@ export function buildMenuItems(
     !isBehind &&
     (gitStatus.hasUpstream || canPushWithoutUpstream);
   const canOpenPr = !isBusy && hasOpenPr;
+  const canPromote =
+    !isBusy &&
+    hasPrimaryRemote &&
+    hasBranch &&
+    promoteTargetBranch !== null &&
+    gitStatus.refName !== promoteTargetBranch &&
+    !isBehind;
 
   const commitItem: GitActionMenuItem = {
     id: "commit",
@@ -135,7 +159,7 @@ export function buildMenuItems(
     return [commitItem];
   }
 
-  return [
+  const items: GitActionMenuItem[] = [
     commitItem,
     {
       id: "push",
@@ -162,6 +186,20 @@ export function buildMenuItems(
           dialogAction: "create_pr",
         },
   ];
+
+  if (promoteTargetBranch) {
+    items.push({
+      id: "promote",
+      label: `Promote to ${promoteTargetBranch}`,
+      disabled: !canPromote,
+      icon: "promote",
+      kind: "open_dialog",
+      dialogAction: "promote",
+      targetBranch: promoteTargetBranch,
+    });
+  }
+
+  return items;
 }
 
 export function resolveQuickAction(
@@ -373,6 +411,12 @@ export function resolveDefaultBranchActionDialogCopy(input: {
 export function resolveThreadBranchUpdate(
   result: GitRunStackedActionResult,
 ): { branch: string } | null {
+  if (result.promote?.status === "promoted" && result.promote.targetBranch) {
+    return {
+      branch: result.promote.targetBranch,
+    };
+  }
+
   if (result.branch.status !== "created" || !result.branch.name) {
     return null;
   }
