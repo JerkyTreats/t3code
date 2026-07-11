@@ -1,5 +1,6 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { useMemo, useRef } from "react";
+import { PanelRightIcon } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 
 import { documentMarkdownLinkCwd, extractDocumentMarkdownOutline } from "~/documentMarkdown";
 import { cn } from "~/lib/utils";
@@ -31,11 +32,55 @@ export function DocumentMarkdownRenderer(props: {
     [props.filePath, props.workspaceCwd],
   );
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const [outlineOpen, setOutlineOpen] = useState(true);
+
+  const navigateToOutlineItem = (id: string) => {
+    const shell = shellRef.current;
+    if (shell) {
+      findDocumentOutlineTarget(shell, id)?.scrollIntoView({ block: "start" });
+    }
+    history.replaceState(null, "", `#${id}`);
+  };
 
   return (
     <div ref={shellRef} className="document-markdown-shell min-h-0 flex-1 overflow-auto">
-      <div className="mx-auto grid min-h-full w-full max-w-6xl grid-cols-1 gap-5 px-5 py-5 lg:grid-cols-[minmax(0,1fr)_13rem]">
+      <div
+        className="document-markdown-layout mx-auto grid min-h-full w-full max-w-6xl grid-cols-1 gap-4 px-3 py-3 sm:gap-5 sm:px-5 sm:py-5"
+        data-outline-open={outlineOpen}
+      >
+        {outline.length > 1 ? (
+          <details className="document-markdown-outline-menu">
+            <summary>Outline</summary>
+            <nav aria-label="Outline">
+              {outline.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={cn(item.level > 2 && "ps-5", item.level > 3 && "ps-7")}
+                  onClick={(event) => {
+                    navigateToOutlineItem(item.id);
+                    event.currentTarget.closest("details")?.removeAttribute("open");
+                  }}
+                >
+                  {item.title}
+                </button>
+              ))}
+            </nav>
+          </details>
+        ) : null}
         <article className="document-markdown-article min-w-0">
+          {outline.length > 1 ? (
+            <button
+              type="button"
+              className="document-markdown-outline-toggle"
+              aria-label={outlineOpen ? "Hide outline" : "Show outline"}
+              aria-pressed={outlineOpen}
+              title={outlineOpen ? "Hide outline" : "Show outline"}
+              onClick={() => setOutlineOpen((open) => !open)}
+            >
+              <PanelRightIcon className="size-3.5" />
+            </button>
+          ) : null}
           <ChatMarkdown
             text={props.markdown}
             cwd={markdownLinkCwd}
@@ -59,7 +104,7 @@ export function DocumentMarkdownRenderer(props: {
           ) : null}
         </article>
         {outline.length > 1 ? (
-          <nav className="document-markdown-outline hidden min-w-0 lg:block" aria-label="Outline">
+          <nav className="document-markdown-outline min-w-0" aria-label="Outline">
             <p className="mb-2 text-[10px] font-semibold tracking-widest text-muted-foreground/55 uppercase">
               Outline
             </p>
@@ -75,13 +120,7 @@ export function DocumentMarkdownRenderer(props: {
                     item.level > 2 && "ps-4",
                     item.level > 3 && "ps-6",
                   )}
-                  onClick={() => {
-                    const shell = shellRef.current;
-                    if (shell) {
-                      findDocumentOutlineTarget(shell, item.id)?.scrollIntoView({ block: "start" });
-                    }
-                    history.replaceState(null, "", `#${item.id}`);
-                  }}
+                  onClick={() => navigateToOutlineItem(item.id)}
                 >
                   <span className="truncate">{item.title}</span>
                 </Button>

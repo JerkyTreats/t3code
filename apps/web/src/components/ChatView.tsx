@@ -116,7 +116,10 @@ import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteContext";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
-import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
+import {
+  FILE_READER_FOCUSED_LAYOUT_MEDIA_QUERY,
+  RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
+} from "../rightPanelLayout";
 import {
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
@@ -1147,6 +1150,7 @@ function ChatViewContent(props: ChatViewProps) {
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
   const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const shouldFocusFileReader = useMediaQuery(FILE_READER_FOCUSED_LAYOUT_MEDIA_QUERY);
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   const planSidebarDismissedForTurnRef = useRef<string | null>(null);
   // When set, the thread-change reset effect will open the sidebar instead of closing it.
@@ -1344,8 +1348,11 @@ function ChatViewContent(props: ChatViewProps) {
   const previewPanelOpen = activeRightPanelKind === "preview" && isPreviewSupportedInRuntime();
   const rightPanelOpen = rightPanelState.isOpen;
   const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
+  const fileReaderAutoMaximized =
+    canMaximizeRightPanel && shouldFocusFileReader && activeRightPanelSurface?.kind === "file";
   const rightPanelMaximized =
-    canMaximizeRightPanel && maximizedRightPanelThreadKey === routeThreadKey;
+    fileReaderAutoMaximized ||
+    (canMaximizeRightPanel && maximizedRightPanelThreadKey === routeThreadKey);
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
 
   useEffect(() => {
@@ -5073,7 +5080,7 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const panelLayoutControls = (
     <div className="workspace-titlebar-controls z-50 gap-1 [-webkit-app-region:no-drag]">
-      {rightPanelOpen && !shouldUsePlanSidebarSheet ? (
+      {rightPanelOpen && !shouldUsePlanSidebarSheet && !fileReaderAutoMaximized ? (
         <RightPanelMaximizeControl
           maximized={rightPanelMaximized}
           onToggle={toggleRightPanelMaximized}
@@ -5210,8 +5217,8 @@ function ChatViewContent(props: ChatViewProps) {
       {rightPanelOpen && !shouldUsePlanSidebarSheet ? panelLayoutControls : null}
       <div
         className={cn(
-          "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
-          rightPanelMaximized ? "w-0 flex-none" : "flex-1",
+          "flex min-h-0 min-w-0 flex-col overflow-x-hidden transition-[width,opacity] duration-200 motion-reduce:transition-none",
+          rightPanelMaximized ? "w-0 flex-none opacity-0" : "flex-1 opacity-100",
         )}
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
@@ -5525,7 +5532,11 @@ function ChatViewContent(props: ChatViewProps) {
         </RightPanelTabs>
       ) : null}
       {shouldUsePlanSidebarSheet && rightPanelOpen && activeThreadRef ? (
-        <RightPanelSheet open onClose={planSidebarOpen ? closePlanSidebar : closePreviewPanel}>
+        <RightPanelSheet
+          open
+          fullWidth={activeRightPanelSurface?.kind === "file"}
+          onClose={planSidebarOpen ? closePlanSidebar : closePreviewPanel}
+        >
           <RightPanelTabs
             mode="sheet"
             layoutControls={panelToggleControls}
