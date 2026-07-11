@@ -262,7 +262,7 @@ jobs:
           set -euo pipefail
 
           tag_name="${GITHUB_REF_NAME}"
-          release_title="T3 Code Omarchy ${tag_name}"
+          release_title="T3 Code ${tag_name}"
           notes_file="$(mktemp)"
           printf "Desktop artifacts for %s.\n" "$tag_name" > "$notes_file"
 
