@@ -1,6 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { isComposerScreenshotCaptureDisabled, shouldSubmitComposerOnEnter } from "./ChatComposer";
+import {
+  isComposerEditingDisabled,
+  isComposerScreenshotCaptureDisabled,
+  shouldSubmitComposerOnEnter,
+} from "./ChatComposer";
 
 describe("shouldSubmitComposerOnEnter", () => {
   it("submits plain drafts on Enter", () => {
@@ -42,14 +46,27 @@ describe("isComposerScreenshotCaptureDisabled", () => {
     expect(isComposerScreenshotCaptureDisabled(readyState)).toBe(false);
   });
 
-  it.each([
-    "captureInFlight",
-    "isSendBusy",
-    "isConnecting",
-    "environmentUnavailable",
-    "hasPendingApproval",
-    "hasPendingUserInput",
-  ] as const)("disables capture for %s", (guard) => {
-    expect(isComposerScreenshotCaptureDisabled({ ...readyState, [guard]: true })).toBe(true);
+  it.each(["captureInFlight", "isSendBusy", "hasPendingApproval", "hasPendingUserInput"] as const)(
+    "disables capture for %s",
+    (guard) => {
+      expect(isComposerScreenshotCaptureDisabled({ ...readyState, [guard]: true })).toBe(true);
+    },
+  );
+
+  it.each(["isConnecting", "environmentUnavailable"] as const)(
+    "keeps local capture available for %s",
+    (state) => {
+      expect(isComposerScreenshotCaptureDisabled({ ...readyState, [state]: true })).toBe(false);
+    },
+  );
+});
+
+describe("isComposerEditingDisabled", () => {
+  it("keeps drafting available while transport state changes", () => {
+    expect(isComposerEditingDisabled({ isComposerApprovalState: false })).toBe(false);
+  });
+
+  it("reserves the editor while an approval requires a dedicated response", () => {
+    expect(isComposerEditingDisabled({ isComposerApprovalState: true })).toBe(true);
   });
 });

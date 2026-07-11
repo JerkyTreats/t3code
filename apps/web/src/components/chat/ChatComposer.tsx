@@ -200,11 +200,13 @@ export function isComposerScreenshotCaptureDisabled(options: {
   return (
     options.captureInFlight ||
     options.isSendBusy ||
-    options.isConnecting ||
-    options.environmentUnavailable ||
     options.hasPendingApproval ||
     options.hasPendingUserInput
   );
+}
+
+export function isComposerEditingDisabled(options: { isComposerApprovalState: boolean }): boolean {
+  return options.isComposerApprovalState;
 }
 
 const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
@@ -2558,7 +2560,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             pendingUserInputs.length === 0 ? (
               <div className="mb-2">
                 <ComposerRichDraftToolbar
-                  disabled={isConnecting || isSendBusy || environmentUnavailable !== null}
+                  disabled={isSendBusy}
                   onApplyFormat={onApplyRichDraftFormat}
                 />
               </div>
@@ -2601,11 +2603,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             ? "Ask for follow-up changes or attach images"
                             : "Ask anything, @tag files/folders, $use skills, or / for commands"
                 }
-                disabled={
-                  isConnecting ||
-                  isComposerApprovalState ||
-                  (environmentUnavailable !== null && activePendingProgress === null)
-                }
+                disabled={isComposerEditingDisabled({ isComposerApprovalState })}
               />
               {showMobilePendingAnswerActions ? (
                 <div
