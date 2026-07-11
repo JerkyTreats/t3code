@@ -1,7 +1,7 @@
 # Upstream Intake v0.0.28
 
 Date: 2026-07-02
-Status: cleanup and completeness active, remote review repair and final preservation gate in progress
+Status: complete
 
 ## Scope
 
@@ -738,7 +738,7 @@ Remaining risks:
 
 Parallelization: central only
 
-Status: in progress
+Status: complete
 
 Scope:
 
@@ -757,21 +757,38 @@ Current evidence:
 - Restored migration 36 exactly to commit `fdab29157` and moved runtime summary reconciliation into append only migration 37 with interim schema coverage.
 - Clean committed implementation checkpoint is `3d410ca2d`. The full repository type gate passed across 15 workspaces through `corepack pnpm typecheck` under Node `v26.0.0`, with the expected engine warning for required Node `^24.13.1`.
 
-Fresh review findings still open at this checkpoint:
+Remote connection repair and final review evidence:
 
-- Close the event continuity gap between the V2 snapshot sequence and the live event stream with persisted replay.
-- Allow cursorless tail paging when aggregate byte trimming leaves an advertised history window empty.
-- Define and test a bounded representation or explicit storage limit for a single message or proposed plan that exceeds the eight MiB page ceiling.
-- Deliver `thread.deleted` through the server thread detail event filter so cached detail is removed.
-- Preserve visible cached row synchronization errors while an automatic retry is still subscribing.
-- Redact complete authorization values for every authentication scheme in thread synchronization diagnostics.
-- Add an append only proposed plan paging index that covers thread id, creation time, and plan id. Extend query plan coverage across every history pager.
-- Enforce advertised page item and byte bounds in result contracts, then cover equal timestamp cursor ties and WebSocket read scope behavior.
-- Strengthen migration 37 tests for clean migration, the released migration 36 schema, and an all-columns-present rerun. Migration 36 itself is verified byte-for-byte against `fdab29157`.
+- Closed the snapshot and live event boundary with eager scoped PubSub subscription, persisted replay, and sequence filtering.
+- Repaired cursorless tail paging, bounded every history response, added content chunk hydration for oversized messages and plans, and preserved Unicode boundaries.
+- Restored remote deletion, archive, unarchive, cached sync error, authorization redaction, migration, index, and contract bound behavior.
+- Repaired activity deferred marker clearing, atomic V1 and V2 snapshots, event-specific streaming delta hydration, and archived V1 snapshot restore.
+- Completed scalable inference metric formatting through `K`, `M`, `B`, `T`, and `Q` units.
+- Removed the final product-facing Omarchy release title. The product is T3 Code, with Omarchy as a supported integration lane rather than an edition boundary.
+- Committed the repair sequence through `869dbd2f0` and `549165d27` after the original checkpoint, including focused tests for archived legacy snapshots.
 
-Fresh verification also passed all 194 contract tests and all 1414 server tests before these findings were recorded.
+Fresh review outcome:
 
-This checkpoint is recoverable and fully committed, but it is not final preservation signoff until these findings are repaired and all required gates pass.
+- Final cross-surface review found one obsolete release title and one V1 archived reconnect gap. Both were repaired and regression tested.
+- Final protocol review found no other confirmed behavior defects across snapshot atomicity, event replay, deletion, archive handling, bounded history, deferred activity payloads, and streaming delta hydration.
+- A test-depth gap remains for a real SQLite write, PubSub delivery, and WebSocket startup interleave. Existing synthetic boundary coverage passed and no defect was found.
+
+Final preservation evidence:
+
+- Production UI verification showed the T3 Code identity, Git right-panel entry point, sidebar plan progress, unified Inference surface, and live metric values reaching billions. Screenshot artifact: `/tmp/t3code-final-inference.png`.
+- `corepack pnpm fmt` passed on `2042` files.
+- `corepack pnpm lint` passed with `0` errors and `6` existing unused-disable warnings.
+- `corepack pnpm typecheck` passed across `15` workspaces.
+- `corepack pnpm test` passed with `168` files and `1433` tests, with `2` files and `7` tests skipped.
+- `corepack pnpm lint:mobile` passed. Optional SwiftLint, ktlint, and detekt checks were unavailable and skipped by the repository script.
+- `git diff --check` passed before the final ledger commit.
+
+Final reconciliation:
+
+- Unified right panel is the expected entry point for Git and Inference surfaces.
+- Composer screenshot attach remains independent from upstream browser preview capture.
+- Main remote connection hardening is replayed, including V2 subscription selection, full history hydration, bounded transport, settings, and diagnostics.
+- The complete change set is committed on `upstream-v0.0.28-replay` with no upstream write or push action.
 
 ## Intake Summary
 
