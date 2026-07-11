@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
   scopedThreadKey,
   scopeProjectRef,
@@ -21,6 +22,35 @@ const EMPTY_ACTIVITIES_BY_THREAD_KEY = new Map<
   string,
   ReadonlyArray<OrchestrationThreadActivity>
 >();
+
+export function projectActivityThreadRefs(
+  shells: ReadonlyArray<EnvironmentThreadShell>,
+  includeActivities: boolean,
+): ReadonlyArray<ScopedThreadRef> {
+  if (!includeActivities) return [];
+  return shells.map((thread) => scopeThreadRef(thread.environmentId, thread.id));
+}
+
+function latestThreadShellActivityAt(thread: EnvironmentThreadShell): string {
+  return (
+    thread.latestTurn?.completedAt ??
+    thread.latestTurn?.startedAt ??
+    thread.updatedAt ??
+    thread.createdAt
+  );
+}
+
+export function latestActiveProjectThreadShell(
+  shells: ReadonlyArray<EnvironmentThreadShell>,
+): EnvironmentThreadShell | null {
+  return (
+    shells
+      .filter((thread) => thread.archivedAt === null)
+      .toSorted((left, right) =>
+        latestThreadShellActivityAt(right).localeCompare(latestThreadShellActivityAt(left)),
+      )[0] ?? null
+  );
+}
 
 function useThreadActivitiesByKey(
   refs: ReadonlyArray<ScopedThreadRef>,
@@ -81,10 +111,7 @@ export function useProjectManagementThreads(
     [activeShells, archivedShells, target],
   );
   const refs = useMemo(
-    () =>
-      shells
-        .filter((thread) => thread.archivedAt === null || options?.includeArchivedActivities)
-        .map((thread) => scopeThreadRef(thread.environmentId, thread.id)),
+    () => projectActivityThreadRefs(shells, options?.includeArchivedActivities === true),
     [options?.includeArchivedActivities, shells],
   );
   const activitiesByKey = useThreadActivitiesByKey(refs);

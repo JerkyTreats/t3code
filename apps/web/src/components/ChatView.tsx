@@ -204,12 +204,18 @@ import {
   useThread,
   useThreadProposedPlans,
   useThreadRefs,
+  useThreadShellsForProjectRefs,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
-import { useProjectManagementThreads } from "../project-management/useProjectManagementThreads";
-import { mapVcsStatusToProjectRepositoryStatus } from "../project-management/projectManagementStatusAdapter";
-import { buildProjectOverviewSnapshot } from "../project-management/projectManagementOverview";
+import {
+  latestActiveProjectThreadShell,
+  useProjectManagementThreads,
+} from "../project-management/useProjectManagementThreads";
+import type {
+  ProjectManagementRouteTarget,
+  ProjectManagementThread,
+} from "../project-management/projectManagementTypes";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -1000,6 +1006,23 @@ const PersistentThreadTerminalPanel = memo(function PersistentThreadTerminalPane
   );
 });
 
+function ProjectInferenceDashboard({
+  target,
+  onOpenThread,
+}: {
+  readonly target: Pick<ProjectManagementRouteTarget, "environmentId" | "projectId">;
+  readonly onOpenThread: (thread: ProjectManagementThread) => void;
+}) {
+  const threads = useProjectManagementThreads(target, { includeArchivedActivities: true });
+  return (
+    <ProjectInferenceDashboardPage
+      projectId={target.projectId}
+      threads={threads}
+      onOpenThread={onOpenThread}
+    />
+  );
+}
+
 function ChatViewContent(props: ChatViewProps) {
   const {
     environmentId,
@@ -1412,6 +1435,15 @@ function ChatViewContent(props: ChatViewProps) {
     ? scopeProjectRef(activeThread.environmentId, activeThread.projectId)
     : null;
   const activeProject = useProject(activeProjectRef);
+  const activeProjectRefs = useMemo(
+    () => (activeProjectRef ? [activeProjectRef] : []),
+    [activeProjectRef?.environmentId, activeProjectRef?.projectId],
+  );
+  const activeProjectThreadShells = useThreadShellsForProjectRefs(activeProjectRefs);
+  const latestProjectThread = useMemo(
+    () => latestActiveProjectThreadShell(activeProjectThreadShells),
+    [activeProjectThreadShells],
+  );
   const projectManagementTarget = useMemo(
     () =>
       activeProject
@@ -1422,9 +1454,6 @@ function ChatViewContent(props: ChatViewProps) {
         : null,
     [activeProject],
   );
-  const projectManagementThreads = useProjectManagementThreads(projectManagementTarget, {
-    includeArchivedActivities: activeRightPanelSurface?.kind === "inference",
-  });
   const activeEnvironmentShell = useEnvironmentQuery(
     activeThread ? environmentShell.stateAtom(activeThread.environmentId) : null,
   );
@@ -2185,27 +2214,6 @@ function ChatViewContent(props: ChatViewProps) {
         })
       : null,
   );
-  const projectRepositoryStatus = mapVcsStatusToProjectRepositoryStatus(projectGitStatusQuery.data);
-  const projectOverviewSnapshot = useMemo(
-    () =>
-      buildProjectOverviewSnapshot({
-        threads: projectManagementThreads,
-        repositoryStatus: projectRepositoryStatus,
-        repositoryContext: { isWorktree: false },
-      }),
-    [projectManagementThreads, projectRepositoryStatus],
-  );
-  const latestProjectThread = useMemo(() => {
-    const latest = projectOverviewSnapshot.linkedThreads.find(
-      (thread) => thread.archivedAt === null,
-    );
-    if (!latest) return null;
-    return (
-      projectManagementThreads.find(
-        (thread) => thread.id === latest.id && thread.environmentId === latest.environmentId,
-      ) ?? null
-    );
-  }, [projectManagementThreads, projectOverviewSnapshot.linkedThreads]);
   const startNewProjectThread = useNewThreadHandler();
   const primaryKeybindings = useAtomValue(primaryServerKeybindingsAtom);
   const primaryAvailableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
@@ -5176,10 +5184,11 @@ function ChatViewContent(props: ChatViewProps) {
           ? { onOpenDiff: addDiffSurface }
           : {})}
       />
-    ) : activeRightPanelSurface?.kind === "inference" && activeProject ? (
-      <ProjectInferenceDashboardPage
-        projectId={activeProject.id}
-        threads={projectManagementThreads}
+    ) : activeRightPanelSurface?.kind === "inference" &&
+      activeProject &&
+      projectManagementTarget ? (
+      <ProjectInferenceDashboard
+        target={projectManagementTarget}
         onOpenThread={(thread) => {
           void navigate({
             to: "/$environmentId/$threadId",
