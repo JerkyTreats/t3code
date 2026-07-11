@@ -3,8 +3,9 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
+import * as Tracer from "effect/Tracer";
 
-import { makeRemoteThreadEventStream } from "./RemoteThreadEventStream.ts";
+import { makeRemoteSnapshotEventStream } from "./RemoteThreadEventStream.ts";
 import { isThreadDetailEvent } from "./ThreadDetailEvents.ts";
 
 const threadId = ThreadId.make("thread-remote-replay");
@@ -82,7 +83,7 @@ const assertTransitionWindow = (version: "v1" | "v2") =>
     let subscriptionsReleased = 0;
     let threadDeleted = false;
 
-    const stream = makeRemoteThreadEventStream({
+    const stream = makeRemoteSnapshotEventStream({
       subscribeLive: Effect.acquireRelease(
         PubSub.subscribe(liveEvents).pipe(
           Effect.map((queue) => {
@@ -136,12 +137,87 @@ it.effect("replays deletion injected after the atomic v2 snapshot", () =>
   assertTransitionWindow("v2"),
 );
 
+it.effect("deduplicates replay and queued live overlap by sequence", () =>
+  Effect.gen(function* () {
+    const replayedEvent = makeDeletedEvent(4);
+    const nextLiveEvent = makeDeletedEvent(5);
+    const liveEvents = yield* PubSub.unbounded<OrchestrationEvent>();
+    const stream = makeRemoteSnapshotEventStream({
+      subscribeLive: PubSub.subscribe(liveEvents).pipe(
+        Effect.map((queue) => Stream.fromEffectRepeat(PubSub.take(queue))),
+      ),
+      loadSnapshot: Effect.gen(function* () {
+        yield* PubSub.publish(liveEvents, replayedEvent);
+        yield* PubSub.publish(liveEvents, nextLiveEvent);
+        return { snapshotSequence: 3 };
+      }),
+      snapshotSequence: (snapshot) => snapshot.snapshotSequence,
+      readEvents: () => Stream.make(replayedEvent),
+      isRelevant: (event) => event.aggregateId === threadId,
+      toSnapshotItem: () => ({ kind: "snapshot" as const }),
+      toEventItem: (event) => ({ kind: "event" as const, sequence: event.sequence }),
+    });
+
+    assert.deepEqual(Array.from(yield* Stream.runCollect(Stream.take(stream, 3))), [
+      { kind: "snapshot" },
+      { kind: "event", sequence: 4 },
+      { kind: "event", sequence: 5 },
+    ]);
+  }),
+);
+
+it.effect("records bounded replay counts without payload data", () =>
+  Effect.gen(function* () {
+    const completedSpans: Tracer.NativeSpan[] = [];
+    const tracer = Tracer.make({
+      span: (options) => {
+        const span = new Tracer.NativeSpan(options);
+        const end = span.end.bind(span);
+        span.end = (endTime, exit) => {
+          end(endTime, exit);
+          completedSpans.push(span);
+        };
+        return span;
+      },
+    });
+    const sensitiveValue = "sensitive-prompt-fragment";
+    const stream = makeRemoteSnapshotEventStream({
+      subscribeLive: Effect.succeed(Stream.empty),
+      loadSnapshot: Effect.succeed({ snapshotSequence: 0 }),
+      snapshotSequence: (snapshot) => snapshot.snapshotSequence,
+      readEvents: () =>
+        Stream.range(1, 10_001).pipe(
+          Stream.map((sequence) => ({
+            ...makeDeletedEvent(sequence),
+            metadata: sequence === 1 ? { adapterKey: sensitiveValue } : {},
+          })),
+        ),
+      isRelevant: () => true,
+      toSnapshotItem: () => ({ kind: "snapshot" as const }),
+      toEventItem: (event) => ({ kind: "event" as const, sequence: event.sequence }),
+    });
+
+    yield* Stream.runDrain(stream).pipe(
+      Effect.withSpan("remote-snapshot-replay-measurement"),
+      Effect.withTracer(tracer),
+    );
+
+    const span = completedSpans.find(
+      (candidate) => candidate.name === "remote-snapshot-replay-measurement",
+    );
+    assert.isDefined(span);
+    assert.equal(span.attributes.get("orchestration.replay.event_count"), 10_000);
+    assert.equal(span.attributes.get("orchestration.replay.event_count_capped"), true);
+    assert.equal(Array.from(span.attributes.values()).includes(sensitiveValue), false);
+  }),
+);
+
 const assertArchiveTransitions = (version: "v1" | "v2") =>
   Effect.gen(function* () {
     const archived = makeArchiveEvent("thread.archived", 1);
     const unarchived = makeArchiveEvent("thread.unarchived", 2);
     const liveEvents = yield* PubSub.unbounded<OrchestrationEvent>();
-    const stream = makeRemoteThreadEventStream({
+    const stream = makeRemoteSnapshotEventStream({
       subscribeLive: PubSub.subscribe(liveEvents).pipe(
         Effect.map((queue) => Stream.fromEffectRepeat(PubSub.take(queue))),
       ),

@@ -29,7 +29,9 @@ import {
   type GitManagerServiceError,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
+  type OrchestrationShellSnapshot,
   type OrchestrationShellStreamEvent,
+  type OrchestrationShellStreamItem,
   type OrchestrationThreadStreamV2Item,
   type OrchestrationThreadSyncV2Event,
   OrchestrationGetFullThreadDiffError,
@@ -69,7 +71,7 @@ import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
-import { makeRemoteThreadEventStream } from "./orchestration/RemoteThreadEventStream.ts";
+import { makeRemoteSnapshotEventStream } from "./orchestration/RemoteThreadEventStream.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { isThreadDetailEvent } from "./orchestration/ThreadDetailEvents.ts";
@@ -798,6 +800,17 @@ const makeWsRpcLayer = (
         }
       };
 
+      type ShellSnapshotReplayItem =
+        | { readonly kind: "snapshot"; readonly snapshot: OrchestrationShellSnapshot }
+        | { readonly kind: "event"; readonly event: OrchestrationEvent };
+
+      const materializeShellStreamItem = (
+        item: ShellSnapshotReplayItem,
+      ): Effect.Effect<Option.Option<OrchestrationShellStreamItem>, never, never> =>
+        item.kind === "snapshot"
+          ? Effect.succeed(Option.some(item))
+          : toShellStreamEvent(item.event);
+
       const dispatchBootstrapTurnStart = (
         command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
       ): Effect.Effect<{ readonly sequence: number }, OrchestrationDispatchCommandError> =>
@@ -1185,35 +1198,42 @@ const makeWsRpcLayer = (
         [ORCHESTRATION_WS_METHODS.subscribeShell]: (_input) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeShell,
-            Effect.gen(function* () {
-              const snapshot = yield* projectionSnapshotQuery.getShellSnapshot().pipe(
-                Effect.tapError((cause) =>
-                  Effect.logError("orchestration shell snapshot load failed", { cause }),
+            Effect.succeed(
+              makeRemoteSnapshotEventStream({
+                subscribeLive: orchestrationEngine.subscribeDomainEvents,
+                loadSnapshot: projectionSnapshotQuery.getShellSnapshot().pipe(
+                  Effect.tapError((cause) =>
+                    Effect.logError("orchestration shell snapshot load failed", { cause }),
+                  ),
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationGetSnapshotError({
+                        message: "Failed to load orchestration shell snapshot",
+                        cause,
+                      }),
+                  ),
                 ),
-                Effect.mapError(
-                  (cause) =>
-                    new OrchestrationGetSnapshotError({
-                      message: "Failed to load orchestration shell snapshot",
-                      cause,
-                    }),
+                snapshotSequence: (snapshot) => snapshot.snapshotSequence,
+                readEvents: (snapshotSequence) =>
+                  orchestrationEngine.readEvents(snapshotSequence).pipe(
+                    Stream.mapError(
+                      (cause) =>
+                        new OrchestrationGetSnapshotError({
+                          message: "Failed to replay orchestration shell after snapshot",
+                          cause,
+                        }),
+                    ),
+                  ),
+                isRelevant: () => true,
+                toSnapshotItem: (snapshot) => ({ kind: "snapshot" as const, snapshot }),
+                toEventItem: (event) => ({ kind: "event" as const, event }),
+              }).pipe(
+                Stream.mapEffect(materializeShellStreamItem),
+                Stream.flatMap((item) =>
+                  Option.isSome(item) ? Stream.succeed(item.value) : Stream.empty,
                 ),
-              );
-
-              const liveStream = orchestrationEngine.streamDomainEvents.pipe(
-                Stream.mapEffect(toShellStreamEvent),
-                Stream.flatMap((event) =>
-                  Option.isSome(event) ? Stream.succeed(event.value) : Stream.empty,
-                ),
-              );
-
-              return Stream.concat(
-                Stream.make({
-                  kind: "snapshot" as const,
-                  snapshot,
-                }),
-                liveStream,
-              );
-            }),
+              ),
+            ),
             { "rpc.aggregate": "orchestration" },
           ),
         [ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot]: (_input) =>
@@ -1237,7 +1257,7 @@ const makeWsRpcLayer = (
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,
             Effect.succeed(
-              makeRemoteThreadEventStream({
+              makeRemoteSnapshotEventStream({
                 subscribeLive: orchestrationEngine.subscribeDomainEvents,
                 loadSnapshot: Effect.gen(function* () {
                   const snapshot = yield* projectionSnapshotQuery
@@ -1284,7 +1304,7 @@ const makeWsRpcLayer = (
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThreadV2,
             Effect.succeed(
-              makeRemoteThreadEventStream({
+              makeRemoteSnapshotEventStream({
                 subscribeLive: orchestrationEngine.subscribeDomainEvents,
                 loadSnapshot: projectionSnapshotQuery
                   .getThreadDetailV2ById(input.threadId, input.limits)

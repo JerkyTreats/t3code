@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-export interface RemoteThreadEventStreamInput<
+export interface RemoteSnapshotEventStreamInput<
   Snapshot,
   SnapshotItem,
   EventItem,
@@ -21,19 +21,22 @@ export interface RemoteThreadEventStreamInput<
   readonly toEventItem: (event: OrchestrationEvent) => EventItem;
 }
 
+// Bound telemetry values even if a stale cursor causes an unexpectedly large replay.
+const REPLAY_EVENT_COUNT_LIMIT = 10_000;
+
 /**
  * Subscribes before snapshot loading, then replays persisted events before
  * draining the queued live tail. The sequence accumulator preserves ordering
  * and suppresses replay and live duplicates.
  */
-export const makeRemoteThreadEventStream = <
+export const makeRemoteSnapshotEventStream = <
   Snapshot,
   SnapshotItem,
   EventItem,
   SnapshotError,
   ReplayError,
 >(
-  input: RemoteThreadEventStreamInput<
+  input: RemoteSnapshotEventStreamInput<
     Snapshot,
     SnapshotItem,
     EventItem,
@@ -47,10 +50,23 @@ export const makeRemoteThreadEventStream = <
         const liveEvents = (yield* input.subscribeLive).pipe(Stream.filter(input.isRelevant));
         const snapshot = yield* input.loadSnapshot;
         const snapshotSequence = input.snapshotSequence(snapshot);
-        const eventsAfterSnapshot = Stream.concat(
-          input.readEvents(snapshotSequence),
-          liveEvents,
-        ).pipe(
+        let replayEventCount = 0;
+        let replayEventCountCapped = false;
+        const replayEvents = input.readEvents(snapshotSequence).pipe(
+          Stream.mapArray((events) => {
+            const remainingCount = REPLAY_EVENT_COUNT_LIMIT - replayEventCount;
+            replayEventCountCapped ||= events.length > remainingCount;
+            replayEventCount += Math.min(events.length, remainingCount);
+            return events;
+          }),
+          Stream.onExit(() =>
+            Effect.annotateCurrentSpan({
+              "orchestration.replay.event_count": replayEventCount,
+              "orchestration.replay.event_count_capped": replayEventCountCapped,
+            }),
+          ),
+        );
+        const eventsAfterSnapshot = Stream.concat(replayEvents, liveEvents).pipe(
           Stream.filter((event) => input.isRelevant(event) && event.sequence > snapshotSequence),
           Stream.mapAccum<number, OrchestrationEvent, OrchestrationEvent>(
             () => snapshotSequence,
@@ -64,3 +80,12 @@ export const makeRemoteThreadEventStream = <
       }),
     ),
   );
+
+export const makeRemoteThreadEventStream = makeRemoteSnapshotEventStream;
+export type RemoteThreadEventStreamInput<
+  Snapshot,
+  SnapshotItem,
+  EventItem,
+  SnapshotError,
+  ReplayError,
+> = RemoteSnapshotEventStreamInput<Snapshot, SnapshotItem, EventItem, SnapshotError, ReplayError>;

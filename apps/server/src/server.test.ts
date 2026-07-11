@@ -5787,6 +5787,80 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("closes the shell snapshot replay and live transition window", () =>
+    Effect.gen(function* () {
+      const liveEvents = yield* PubSub.unbounded<OrchestrationEvent>();
+      const snapshotSubscriptionCounts: number[] = [];
+      let subscriptionsAcquired = 0;
+      const makeDeletedEvent = (
+        sequence: number,
+      ): Extract<OrchestrationEvent, { type: "thread.deleted" }> => ({
+        sequence,
+        eventId: EventId.make(`event-shell-thread-deleted-${sequence}`),
+        aggregateKind: "thread",
+        aggregateId: defaultThreadId,
+        occurredAt: `2026-04-05T00:00:0${sequence}.000Z`,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.deleted",
+        payload: {
+          threadId: defaultThreadId,
+          deletedAt: `2026-04-05T00:00:0${sequence}.000Z`,
+        },
+      });
+      const replayedEvent = makeDeletedEvent(1);
+      const nextLiveEvent = makeDeletedEvent(2);
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            subscribeDomainEvents: PubSub.subscribe(liveEvents).pipe(
+              Effect.map((queue) => {
+                subscriptionsAcquired += 1;
+                return Stream.fromEffectRepeat(PubSub.take(queue));
+              }),
+            ),
+            readEvents: () => Stream.make(replayedEvent),
+          },
+          projectionSnapshotQuery: {
+            getShellSnapshot: () =>
+              Effect.gen(function* () {
+                snapshotSubscriptionCounts.push(subscriptionsAcquired);
+                yield* PubSub.publish(liveEvents, replayedEvent);
+                yield* PubSub.publish(liveEvents, nextLiveEvent);
+                return {
+                  snapshotSequence: 0,
+                  projects: [],
+                  threads: [],
+                  updatedAt: "2026-04-05T00:00:00.000Z",
+                };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeShell]({}).pipe(
+            Stream.take(3),
+            Stream.runCollect,
+          ),
+        ),
+      );
+
+      assert.deepEqual(snapshotSubscriptionCounts, [1]);
+      assert.deepEqual(
+        Array.from(items).map((item) =>
+          item.kind === "snapshot" ? item.kind : [item.kind, item.sequence],
+        ),
+        ["snapshot", ["thread-removed", 1], ["thread-removed", 2]],
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("enriches replayed project events with repository identity metadata", () =>
     Effect.gen(function* () {
       const repositoryIdentity = {
