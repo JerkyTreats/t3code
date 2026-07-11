@@ -673,6 +673,13 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         });
       }
 
+      const archivedLegacyDetail =
+        yield* snapshotQuery.getThreadDetailSnapshotById(archivedThreadId);
+      assert.equal(archivedLegacyDetail._tag, "Some");
+      if (archivedLegacyDetail._tag === "Some") {
+        assert.equal(archivedLegacyDetail.value.thread.archivedAt, "2026-04-06T00:00:06.000Z");
+      }
+
       const archivedPage = yield* snapshotQuery.getThreadActivityPage({
         threadId: archivedThreadId,
         limit: 10,
