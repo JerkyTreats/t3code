@@ -15,6 +15,7 @@ The primary Git management UI belongs in the unified right panel as a selectable
 - Git actions operate on thread, project, branch, and worktree context without consuming draft text or attachments.
 - Draft state remains intact while Git panel operations run.
 - Git related thread routing keeps fork specific draft ownership semantics.
+- A terminal Git action failure releases the Git action state and triggers a status refresh, so recovery actions remain available.
 - Worktree discard completes active worktree thread teardown before primary workspace draft routing runs, so teardown does not race draft routing.
 - Worktree discard never silently claims or clears unrelated composer content while switching back to the primary workspace.
 - Project scoped Git is repository scoped unless a thread scoped action is explicit.
@@ -30,6 +31,8 @@ The primary Git management UI belongs in the unified right panel as a selectable
 - `apps/web/src/rightPanelStore.ts`
 - `apps/web/src/lib/sourceControlActions.ts`
 - `apps/web/src/state/vcs.ts`
+- `packages/client-runtime/src/state/vcsAction.ts`
+- `apps/server/src/ws.ts`
 - `apps/web/src/state/sourceControl.ts`
 - `apps/web/src/composerDraftStore.ts`
 - `apps/web/src/lib/threadDeletionWorkflow.ts`
@@ -63,6 +66,7 @@ The primary Git management UI belongs in the unified right panel as a selectable
 - `Open a surface` exposes Git Panel without forcing project management navigation.
 - The chat header exposes a direct Git button that opens the unified Git surface instead of an inline commit and push control.
 - Git surface provides the prior visible commit, pull, promote, pull request, publish, refresh, workspace, sync, and changed file workflow hierarchy over current source control primitives.
+- Failed push and pull request actions return the Git surface to an actionable state after their terminal failure event.
 - Branch and worktree routing preserves the expected draft thread state.
 - Changing the Git base branch preserves prompt text, images, terminal context chips, and rich draft mode on the active draft.
 - Worktree removal completes before fallback navigation when deleting the only thread linked to a dedicated worktree.

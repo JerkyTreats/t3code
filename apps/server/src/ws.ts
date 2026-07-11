@@ -1736,7 +1736,12 @@ const makeWsRpcLayer = (
                 })
                 .pipe(
                   Effect.matchCauseEffect({
-                    onFailure: (cause) => Queue.failCause(queue, cause),
+                    // GitManager publishes action_failed before it fails. End cleanly so
+                    // clients can consume that terminal event and release their action state.
+                    onFailure: () =>
+                      refreshGitStatus(input.cwd).pipe(
+                        Effect.andThen(Queue.end(queue).pipe(Effect.asVoid)),
+                      ),
                     onSuccess: () =>
                       refreshGitStatus(input.cwd).pipe(
                         Effect.andThen(Queue.end(queue).pipe(Effect.asVoid)),

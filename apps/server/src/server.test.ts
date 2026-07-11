@@ -13,6 +13,7 @@ import {
   EnvironmentId,
   EventId,
   GitCommandError,
+  type GitActionProgressEvent,
   KeybindingRule,
   MessageId,
   ExternalLauncherCommandNotFoundError,
@@ -5218,7 +5219,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("routes websocket rpc git.runStackedAction errors after refreshing git status", () =>
+  it.effect("delivers terminal git.runStackedAction failures to websocket clients", () =>
     Effect.gen(function* () {
       const gitError = new GitCommandError({
         operation: "commit",
@@ -5226,77 +5227,44 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         cwd: "/tmp/repo",
         detail: "nothing to commit",
       });
-      let invalidationCalls = 0;
-      let statusCalls = 0;
       yield* buildAppUnderTest({
         layers: {
           gitManager: {
-            invalidateLocalStatus: () =>
-              Effect.sync(() => {
-                invalidationCalls += 1;
-              }),
-            invalidateRemoteStatus: () =>
-              Effect.sync(() => {
-                invalidationCalls += 1;
-              }),
-            invalidateStatus: () =>
-              Effect.sync(() => {
-                invalidationCalls += 1;
-              }),
-            localStatus: () =>
-              Effect.succeed({
-                isRepo: true,
-                hasPrimaryRemote: true,
-                isDefaultRef: false,
-                refName: "feature/demo",
-                hasWorkingTreeChanges: true,
-                workingTree: { files: [], insertions: 0, deletions: 0 },
-              }),
-            remoteStatus: () =>
-              Effect.sync(() => {
-                statusCalls += 1;
-                return {
-                  hasUpstream: true,
-                  aheadCount: 0,
-                  behindCount: 0,
-                  pr: null,
-                };
-              }),
-            status: () =>
-              Effect.sync(() => {
-                statusCalls += 1;
-                return {
-                  isRepo: true,
-                  hasPrimaryRemote: true,
-                  isDefaultRef: false,
-                  refName: "feature/demo",
-                  hasWorkingTreeChanges: true,
-                  workingTree: { files: [], insertions: 0, deletions: 0 },
-                  hasUpstream: true,
-                  aheadCount: 0,
-                  behindCount: 0,
-                  pr: null,
-                };
-              }),
-            runStackedAction: () => Effect.fail(gitError),
+            runStackedAction: (input, options) =>
+              (
+                options?.progressReporter?.publish({
+                  actionId: options.actionId ?? input.actionId,
+                  cwd: input.cwd,
+                  action: input.action,
+                  kind: "action_failed",
+                  phase: "commit",
+                  message: gitError.message,
+                }) ?? Effect.void
+              ).pipe(Effect.andThen(Effect.fail(gitError))),
           },
         },
       });
 
       const wsUrl = yield* getWsServerUrl("/ws");
-      const result = yield* Effect.scoped(
+      const events = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[WS_METHODS.gitRunStackedAction]({
             actionId: "action-1",
             cwd: "/tmp/repo",
             action: "commit",
-          }).pipe(Stream.runCollect, Effect.result),
+          }).pipe(
+            Stream.runCollect,
+            Effect.map((events) => Array.from(events) as GitActionProgressEvent[]),
+          ),
         ),
       );
 
-      assertFailure(result, gitError);
-      assert.equal(invalidationCalls, 0);
-      assert.equal(statusCalls, 0);
+      const terminalEvent = events.at(-1);
+      assert.equal(terminalEvent?.kind, "action_failed");
+      if (terminalEvent?.kind === "action_failed") {
+        assert.equal(terminalEvent.phase, "commit");
+        assert.equal(terminalEvent.message, gitError.message);
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
