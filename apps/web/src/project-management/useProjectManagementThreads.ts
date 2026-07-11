@@ -25,10 +25,11 @@ const EMPTY_ACTIVITIES_BY_THREAD_KEY = new Map<
 
 export function projectActivityThreadRefs(
   shells: ReadonlyArray<EnvironmentThreadShell>,
-  includeActivities: boolean,
+  includeArchivedActivities: boolean,
 ): ReadonlyArray<ScopedThreadRef> {
-  if (!includeActivities) return [];
-  return shells.map((thread) => scopeThreadRef(thread.environmentId, thread.id));
+  return shells
+    .filter((thread) => thread.archivedAt === null || includeArchivedActivities)
+    .map((thread) => scopeThreadRef(thread.environmentId, thread.id));
 }
 
 function latestThreadShellActivityAt(thread: EnvironmentThreadShell): string {

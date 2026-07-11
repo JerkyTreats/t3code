@@ -26,13 +26,21 @@ function threadShell(
 }
 
 describe("project thread detail ownership", () => {
-  it("creates no project activity refs for a normal chat with 104 project shells", () => {
-    const shells = Array.from({ length: 104 }, (_, index) => threadShell(index));
+  it("keeps active activity details available on the dedicated project page", () => {
+    const shells = Array.from({ length: 104 }, (_, index) =>
+      threadShell(index, {
+        archivedAt: index % 2 === 0 ? null : "2026-02-01T00:00:00.000Z",
+      }),
+    );
 
-    expect(projectActivityThreadRefs(shells, false)).toEqual([]);
+    const refs = projectActivityThreadRefs(shells, false);
+
+    expect(refs).toHaveLength(52);
+    expect(refs[0]).toEqual({ environmentId: ENVIRONMENT_ID, threadId: shells[0]?.id });
+    expect(refs[51]).toEqual({ environmentId: ENVIRONMENT_ID, threadId: shells[102]?.id });
   });
 
-  it("opts every project shell into activity details for the inference surface", () => {
+  it("opts archived shells into activity details for the inference surface", () => {
     const shells = Array.from({ length: 104 }, (_, index) =>
       threadShell(index, {
         archivedAt: index % 2 === 0 ? null : "2026-02-01T00:00:00.000Z",
