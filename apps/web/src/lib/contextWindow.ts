@@ -105,10 +105,7 @@ export function formatContextWindowTokens(value: number | null): string {
   }
 
   const suffixes = ["", "K", "M", "B", "T", "Q"] as const;
-  let magnitude = Math.min(
-    Math.floor(Math.log10(absoluteValue) / 3),
-    suffixes.length - 1,
-  );
+  let magnitude = Math.min(Math.floor(Math.log10(absoluteValue) / 3), suffixes.length - 1);
   let scaledValue = value / 1_000 ** magnitude;
   let roundedValue = Math.round(scaledValue * 10) / 10;
 
