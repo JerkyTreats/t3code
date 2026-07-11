@@ -23,6 +23,7 @@ const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linu
 const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
+const RENDERER_CRASH_RECOVERY_DELAY_MS = 250;
 const DEVELOPMENT_RETRYABLE_LOAD_ERROR_CODES = new Set([
   -2, // ERR_FAILED
   -7, // ERR_TIMED_OUT
@@ -136,6 +137,12 @@ export function isRetryableDevelopmentRendererLoadFailure(input: {
       navigationUrl: input.validatedUrl,
     })
   );
+}
+
+export function shouldRecoverRendererProcess(
+  reason: Electron.RenderProcessGoneDetails["reason"],
+): boolean {
+  return reason !== "clean-exit";
 }
 
 function getWindowTitleBarOptions(
@@ -367,6 +374,7 @@ export const make = Effect.gen(function* () {
 
     let developmentLoadRetryIndex = 0;
     let developmentLoadRetryFiber: Fiber.Fiber<void, never> | undefined;
+    let rendererCrashRecoveryFiber: Fiber.Fiber<void, never> | undefined;
     const clearDevelopmentLoadRetry = () => {
       if (developmentLoadRetryFiber === undefined) {
         return;
@@ -380,6 +388,30 @@ export const make = Effect.gen(function* () {
         return;
       }
       void window.loadURL(applicationUrl).catch(() => undefined);
+    };
+    const clearRendererCrashRecovery = () => {
+      if (rendererCrashRecoveryFiber === undefined) {
+        return;
+      }
+      const recoveryFiber = rendererCrashRecoveryFiber;
+      rendererCrashRecoveryFiber = undefined;
+      runFork(Fiber.interrupt(recoveryFiber));
+    };
+    const scheduleRendererCrashRecovery = () => {
+      if (rendererCrashRecoveryFiber !== undefined || window.isDestroyed()) {
+        return false;
+      }
+      rendererCrashRecoveryFiber = runFork(
+        Effect.sleep(RENDERER_CRASH_RECOVERY_DELAY_MS).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              rendererCrashRecoveryFiber = undefined;
+              loadApplication();
+            }),
+          ),
+        ),
+      );
+      return true;
     };
     const scheduleDevelopmentLoadRetry = () => {
       if (developmentLoadRetryFiber !== undefined || window.isDestroyed()) {
@@ -448,10 +480,30 @@ export const make = Effect.gen(function* () {
       },
     );
     window.webContents.on("render-process-gone", (_event, details) => {
+      const recoveryScheduled = shouldRecoverRendererProcess(details.reason)
+        ? scheduleRendererCrashRecovery()
+        : false;
       void runPromise(
         logWindowWarning("main window render process gone", {
           reason: details.reason,
           exitCode: details.exitCode,
+          recoveryScheduled,
+          ...(recoveryScheduled ? { recoveryInMs: RENDERER_CRASH_RECOVERY_DELAY_MS } : {}),
+        }),
+      );
+    });
+    window.on("unresponsive", () => {
+      void runPromise(
+        logWindowWarning("main window renderer unresponsive", {
+          url: window.webContents.getURL(),
+          isLoadingMainFrame: window.webContents.isLoadingMainFrame(),
+        }),
+      );
+    });
+    window.on("responsive", () => {
+      void runPromise(
+        logWindowInfo("main window renderer responsive", {
+          url: window.webContents.getURL(),
         }),
       );
     });
@@ -473,6 +525,7 @@ export const make = Effect.gen(function* () {
 
     window.on("closed", () => {
       clearDevelopmentLoadRetry();
+      clearRendererCrashRecovery();
       void runPromise(electronWindow.clearMain(Option.some(window)));
     });
 
