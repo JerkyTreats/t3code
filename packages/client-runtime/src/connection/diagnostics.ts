@@ -44,11 +44,14 @@ export interface ConnectionDiagnosticsTarget {
 export interface ConnectionDiagnosticsCounters {
   readonly connectionStartCount: number;
   readonly socketAttemptCount: number;
+  readonly failedOpenCount: number;
   readonly reconnectAttemptCount: number;
   readonly connectCount: number;
   readonly disconnectCount: number;
   readonly unexpectedDisconnectCount: number;
   readonly intentionalDisconnectCount: number;
+  readonly probeCount: number;
+  readonly probeFailureCount: number;
   readonly errorCount: number;
 }
 
@@ -62,6 +65,8 @@ export interface ConnectionDiagnosticsEvent {
   readonly closeCode: number | null;
   readonly closeReason: string | null;
   readonly intentional: boolean | null;
+  readonly attemptDurationMs: number | null;
+  readonly connectionDurationMs: number | null;
 }
 
 export interface ConnectionDiagnosticsEntry {
@@ -79,6 +84,11 @@ export interface ConnectionDiagnosticsEntry {
   readonly lastError: string | null;
   readonly lastCloseCode: number | null;
   readonly lastCloseReason: string | null;
+  readonly lastAttemptDurationMs: number | null;
+  readonly lastConnectionDurationMs: number | null;
+  readonly lastProbeAt: string | null;
+  readonly lastProbeDurationMs: number | null;
+  readonly lastProbeError: string | null;
   readonly counters: ConnectionDiagnosticsCounters;
   readonly totalConnectedMs: number;
   readonly totalDisconnectedMs: number;
@@ -99,6 +109,7 @@ export type RpcSessionDiagnosticEventInput =
   | {
       readonly type: "connected";
       readonly observedAtMs: number;
+      readonly attemptDurationMs?: number;
     }
   | {
       readonly type: "disconnected";
@@ -107,20 +118,32 @@ export type RpcSessionDiagnosticEventInput =
       readonly closeReason: string | null;
       readonly intentional: boolean;
       readonly wasConnected: boolean;
+      readonly attemptDurationMs?: number;
+      readonly connectionDurationMs?: number | null;
     };
 
 export type RpcSessionDiagnosticEvent = RpcSessionDiagnosticEventInput & {
   readonly id: string;
 };
 
+export interface RpcSessionProbeDiagnosticEvent {
+  readonly id: string;
+  readonly observedAtMs: number;
+  readonly durationMs: number;
+  readonly error: string | null;
+}
+
 const INITIAL_COUNTERS: ConnectionDiagnosticsCounters = Object.freeze({
   connectionStartCount: 0,
   socketAttemptCount: 0,
+  failedOpenCount: 0,
   reconnectAttemptCount: 0,
   connectCount: 0,
   disconnectCount: 0,
   unexpectedDisconnectCount: 0,
   intentionalDisconnectCount: 0,
+  probeCount: 0,
+  probeFailureCount: 0,
   errorCount: 0,
 });
 
@@ -210,6 +233,8 @@ export function recordSupervisorConnectionState(
         closeCode: null,
         closeReason: null,
         intentional: null,
+        attemptDurationMs: null,
+        connectionDurationMs: null,
       },
     );
   }
@@ -238,6 +263,8 @@ export function recordSupervisorConnectionState(
         closeCode: null,
         closeReason: null,
         intentional: null,
+        attemptDurationMs: null,
+        connectionDurationMs: null,
       },
     );
   }
@@ -279,6 +306,8 @@ export function recordRpcSessionDiagnosticEvent(
           closeCode: null,
           closeReason: null,
           intentional: null,
+          attemptDurationMs: null,
+          connectionDurationMs: null,
         },
       );
       break;
@@ -291,6 +320,7 @@ export function recordRpcSessionDiagnosticEvent(
           disconnectedAt: null,
           hasConnected: true,
           lastError: null,
+          lastAttemptDurationMs: event.attemptDurationMs ?? null,
           counters: {
             ...next.counters,
             connectCount: next.counters.connectCount + 1,
@@ -306,6 +336,8 @@ export function recordRpcSessionDiagnosticEvent(
           closeCode: null,
           closeReason: null,
           intentional: null,
+          attemptDurationMs: event.attemptDurationMs ?? null,
+          connectionDurationMs: null,
         },
       );
       break;
@@ -320,8 +352,12 @@ export function recordRpcSessionDiagnosticEvent(
           disconnectedAt: phase === "disconnected" ? observedAt : next.disconnectedAt,
           lastCloseCode: event.closeCode,
           lastCloseReason: closeReason,
+          lastAttemptDurationMs: event.attemptDurationMs ?? next.lastAttemptDurationMs,
+          lastConnectionDurationMs: event.connectionDurationMs ?? null,
           counters: {
             ...next.counters,
+            failedOpenCount:
+              next.counters.failedOpenCount + (!event.wasConnected && !event.intentional ? 1 : 0),
             disconnectCount: next.counters.disconnectCount + (shouldCountDisconnect ? 1 : 0),
             intentionalDisconnectCount:
               next.counters.intentionalDisconnectCount +
@@ -341,12 +377,41 @@ export function recordRpcSessionDiagnosticEvent(
           closeCode: event.closeCode,
           closeReason,
           intentional: event.intentional,
+          attemptDurationMs: event.attemptDurationMs ?? null,
+          connectionDurationMs: event.connectionDurationMs ?? null,
         },
       );
       break;
     }
   }
 
+  return installEntry(entries, next);
+}
+
+export function recordRpcSessionProbeDiagnosticEvent(
+  entries: ReadonlyMap<EnvironmentId, ConnectionDiagnosticsEntry>,
+  target: ConnectionDiagnosticsTarget,
+  event: RpcSessionProbeDiagnosticEvent,
+): ReadonlyMap<EnvironmentId, ConnectionDiagnosticsEntry> {
+  const observedAt = DateTime.formatIso(DateTime.makeUnsafe(event.observedAtMs));
+  const current =
+    entries.get(target.environmentId) ?? createConnectionDiagnosticsEntry(target, observedAt);
+  const error = sanitizeDiagnosticText(event.error);
+  const next = applyTarget(
+    {
+      ...current,
+      lastProbeAt: observedAt,
+      lastProbeDurationMs: Math.max(0, event.durationMs),
+      lastProbeError: error,
+      counters: {
+        ...current.counters,
+        probeCount: current.counters.probeCount + 1,
+        probeFailureCount: current.counters.probeFailureCount + (error === null ? 0 : 1),
+      },
+    },
+    target,
+    observedAt,
+  );
   return installEntry(entries, next);
 }
 
@@ -428,6 +493,11 @@ function createConnectionDiagnosticsEntry(
     lastError: null,
     lastCloseCode: null,
     lastCloseReason: null,
+    lastAttemptDurationMs: null,
+    lastConnectionDurationMs: null,
+    lastProbeAt: null,
+    lastProbeDurationMs: null,
+    lastProbeError: null,
     counters: INITIAL_COUNTERS,
     totalConnectedMs: 0,
     totalDisconnectedMs: 0,

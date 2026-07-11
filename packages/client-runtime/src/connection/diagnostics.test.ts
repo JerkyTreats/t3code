@@ -6,6 +6,7 @@ import {
   MAX_RECENT_CONNECTION_EVENTS,
   getConnectionDiagnosticsDurations,
   recordRpcSessionDiagnosticEvent,
+  recordRpcSessionProbeDiagnosticEvent,
   recordSupervisorConnectionState,
   rememberProcessedSessionEventId,
   sanitizeDiagnosticText,
@@ -107,6 +108,70 @@ describe("connection diagnostics", () => {
         "failed at wss://remote.example.test/ws?wsTicket=text-secret and wsTicket=other-secret",
       ),
     ).toBe("failed at wss://remote.example.test/ws and wsTicket=[redacted]");
+  });
+
+  it("distinguishes failed opens and records sanitized probe outcomes", () => {
+    let entries = recordRpcSessionDiagnosticEvent(new Map(), TARGET, {
+      id: "failed-open:attempt",
+      type: "attempt",
+      observedAtMs: 1_000,
+      socketUrl: "wss://remote.example.test/ws?wsTicket=socket-secret",
+    });
+    entries = recordRpcSessionDiagnosticEvent(entries, TARGET, {
+      id: "cancelled-open:closed",
+      type: "disconnected",
+      observedAtMs: 2_000,
+      closeCode: 1000,
+      closeReason: "client cancellation",
+      intentional: true,
+      wasConnected: false,
+      attemptDurationMs: 1_000,
+      connectionDurationMs: null,
+    });
+    entries = recordRpcSessionDiagnosticEvent(entries, TARGET, {
+      id: "failed-open:closed",
+      type: "disconnected",
+      observedAtMs: 16_000,
+      closeCode: 1006,
+      closeReason: "upgrade rejected token=close-secret",
+      intentional: false,
+      wasConnected: false,
+      attemptDurationMs: 15_000,
+      connectionDurationMs: null,
+    });
+    entries = recordRpcSessionProbeDiagnosticEvent(entries, TARGET, {
+      id: "probe:1",
+      observedAtMs: 17_000,
+      durationMs: 350,
+      error: "probe failed Authorization: Bearer probe-secret",
+    });
+    entries = recordRpcSessionProbeDiagnosticEvent(entries, TARGET, {
+      id: "probe:2",
+      observedAtMs: 18_000,
+      durationMs: 25,
+      error: null,
+    });
+
+    const entry = entries.get(ENVIRONMENT_ID);
+    expect(entry).toMatchObject({
+      lastCloseCode: 1006,
+      lastCloseReason: "upgrade rejected token=[redacted]",
+      lastAttemptDurationMs: 15_000,
+      lastConnectionDurationMs: null,
+      lastProbeDurationMs: 25,
+      lastProbeError: null,
+      counters: {
+        socketAttemptCount: 1,
+        failedOpenCount: 1,
+        connectCount: 0,
+        disconnectCount: 0,
+        probeCount: 2,
+        probeFailureCount: 1,
+      },
+    });
+    expect(JSON.stringify(entry)).not.toContain("socket-secret");
+    expect(JSON.stringify(entry)).not.toContain("close-secret");
+    expect(JSON.stringify(entry)).not.toContain("probe-secret");
   });
 
   it("redacts sensitive connection credentials across diagnostic formats", () => {

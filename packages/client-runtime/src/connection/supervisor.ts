@@ -32,6 +32,7 @@ import * as ConnectionWakeups from "./wakeups.ts";
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000] as const;
 const CONNECTION_ESTABLISHMENT_TIMEOUT = "15 seconds";
 const CONNECTION_PROBE_TIMEOUT = "15 seconds";
+const CONNECTION_PROBE_TIMEOUT_MS = 15_000;
 const BACKOFF_RESET_AFTER_MS = 30_000;
 
 interface SupervisorIntent {
@@ -199,6 +200,9 @@ export class EnvironmentSupervisor extends Context.Service<
     readonly target: ConnectionTarget;
     readonly state: SubscriptionRef.SubscriptionRef<SupervisorConnectionState>;
     readonly session: SubscriptionRef.SubscriptionRef<Option.Option<RpcSession.RpcSession>>;
+    readonly diagnosticSession?: SubscriptionRef.SubscriptionRef<
+      Option.Option<RpcSession.RpcSession>
+    >;
     readonly prepared: SubscriptionRef.SubscriptionRef<Option.Option<PreparedConnection>>;
     readonly connect: Effect.Effect<void>;
     readonly disconnect: Effect.Effect<void>;
@@ -237,6 +241,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         : connectingState(initialIntent, 0, 1, null),
   );
   const session = yield* SubscriptionRef.make<Option.Option<RpcSession.RpcSession>>(Option.none());
+  const diagnosticSession = yield* SubscriptionRef.make<Option.Option<RpcSession.RpcSession>>(
+    Option.none(),
+  );
   const prepared = yield* SubscriptionRef.make<Option.Option<PreparedConnection>>(Option.none());
 
   const clearLease = Effect.all(
@@ -271,6 +278,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   ) {
     if ("prepared" in progress) {
       yield* SubscriptionRef.set(prepared, Option.some(progress.prepared));
+    }
+    if (progress.stage === "synchronizing" && progress.session !== undefined) {
+      yield* SubscriptionRef.set(diagnosticSession, Option.some(progress.session));
     }
     yield* setState(
       connectingState(yield* Ref.get(intent), generation, attempt, lastFailure, progress.stage),
@@ -407,11 +417,17 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
               Effect.timeoutOrElse({
                 duration: CONNECTION_PROBE_TIMEOUT,
                 orElse: () =>
-                  Effect.fail(
-                    new ConnectionTransientError({
-                      reason: "timeout",
-                      detail: `${target.label} did not respond to a connection health check.`,
-                    }),
+                  (
+                    lease.session.recordProbeTimeout?.(CONNECTION_PROBE_TIMEOUT_MS) ?? Effect.void
+                  ).pipe(
+                    Effect.andThen(
+                      Effect.fail(
+                        new ConnectionTransientError({
+                          reason: "timeout",
+                          detail: `${target.label} did not respond to a connection health check.`,
+                        }),
+                      ),
+                    ),
                   ),
               }),
               Effect.forkChild,
@@ -529,6 +545,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
 
     const connectedAt = yield* Clock.currentTimeMillis;
     yield* SubscriptionRef.set(prepared, Option.some(active.lease.prepared));
+    yield* SubscriptionRef.set(diagnosticSession, Option.some(active.lease.session));
     yield* SubscriptionRef.set(session, Option.some(active.lease.session));
     yield* setState({
       desired: true,
@@ -711,6 +728,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     target,
     state,
     session,
+    diagnosticSession,
     prepared,
     connect,
     disconnect,

@@ -4,11 +4,7 @@ import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
 
 import type { ConnectionCatalogEntry } from "./catalog.ts";
-import type {
-  ConnectionAttemptError,
-  ConnectionAttemptStage,
-  PreparedConnection,
-} from "./model.ts";
+import type { ConnectionAttemptError, PreparedConnection } from "./model.ts";
 import * as ConnectionResolver from "./resolver.ts";
 import * as RpcSession from "../rpc/session.ts";
 
@@ -17,8 +13,13 @@ export type ConnectionDriverProgress =
       readonly stage: "preparing";
     }
   | {
-      readonly stage: Exclude<ConnectionAttemptStage, "preparing">;
+      readonly stage: "opening";
       readonly prepared: PreparedConnection;
+    }
+  | {
+      readonly stage: "synchronizing";
+      readonly prepared: PreparedConnection;
+      readonly session?: RpcSession.RpcSession;
     };
 
 export interface EnvironmentConnectionLease {
@@ -53,7 +54,7 @@ export const make = Effect.gen(function* () {
     const prepared = yield* resolver.prepare(entry);
     yield* reportProgress({ stage: "opening", prepared });
     const session = yield* sessions.connect(prepared);
-    yield* reportProgress({ stage: "synchronizing", prepared });
+    yield* reportProgress({ stage: "synchronizing", prepared, session });
     yield* session.ready;
     return { prepared, session } satisfies EnvironmentConnectionLease;
   });

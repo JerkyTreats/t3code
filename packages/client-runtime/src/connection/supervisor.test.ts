@@ -115,6 +115,7 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
   ) => Effect.Effect<PreparedConnection, ConnectionAttemptError>;
   readonly ready?: (attempt: number) => Effect.Effect<void, ConnectionAttemptError>;
   readonly probe?: (attempt: number) => Effect.Effect<void, ConnectionAttemptError>;
+  readonly recordProbeTimeout?: (attempt: number, durationMs: number) => Effect.Effect<void>;
 }) {
   const networkStatus = yield* SubscriptionRef.make<NetworkStatus>(
     options?.networkStatus ?? "online",
@@ -165,12 +166,18 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
         initialConfig: Effect.die(new Error("Initial config is not used by supervisor tests.")),
         ready: options?.ready?.(attempt) ?? Effect.void,
         probe: options?.probe?.(attempt) ?? Effect.void,
+        ...(options?.recordProbeTimeout === undefined
+          ? {}
+          : {
+              recordProbeTimeout: (durationMs: number) =>
+                options.recordProbeTimeout!(attempt, durationMs),
+            }),
         closed: Deferred.await(closed),
       } satisfies RpcSession.RpcSession),
       () => Ref.update(releaseCount, (count) => count + 1),
     );
 
-    yield* reportProgress({ stage: "synchronizing", prepared });
+    yield* reportProgress({ stage: "synchronizing", prepared, session });
     yield* session.ready;
     return { prepared, session } satisfies ConnectionDriver.EnvironmentConnectionLease;
   });
@@ -401,6 +408,39 @@ describe("EnvironmentSupervisor", () => {
       });
       expect(yield* Ref.get(harness.releaseCount)).toBe(1);
       expect(Option.isNone(yield* SubscriptionRef.get(supervisor.prepared))).toBe(true);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("retains each diagnostic session before readiness until the next attempt", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        ready: (attempt) =>
+          attempt === 1 ? Effect.fail(transient("Handshake failed.")) : Effect.never,
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(Effect.provide(harness.dependencies));
+      const diagnosticSession = supervisor.diagnosticSession;
+      if (diagnosticSession === undefined) {
+        return yield* Effect.die(new Error("Expected a diagnostic session channel."));
+      }
+
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "backoff" && state.attempt === 1,
+      );
+      const failedAttempt = Option.getOrThrow(yield* SubscriptionRef.get(diagnosticSession));
+      expect(Option.isNone(yield* SubscriptionRef.get(supervisor.session))).toBe(true);
+
+      yield* TestClock.adjust("1 second");
+      yield* awaitState(
+        supervisor.state,
+        (state) => state.phase === "connecting" && state.stage === "synchronizing",
+      );
+      const retryAttempt = Option.getOrThrow(yield* SubscriptionRef.get(diagnosticSession));
+
+      expect(retryAttempt).not.toBe(failedAttempt);
+      expect(yield* Ref.get(harness.sessionCount)).toBe(2);
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
@@ -703,8 +743,11 @@ describe("EnvironmentSupervisor", () => {
 
   it.effect("times out a stalled foreground liveness probe and reconnects", () =>
     Effect.gen(function* () {
+      const timeoutDurations = yield* Ref.make<ReadonlyArray<number>>([]);
       const harness = yield* makeHarness({
         probe: (attempt) => (attempt === 1 ? Effect.never : Effect.void),
+        recordProbeTimeout: (_attempt, durationMs) =>
+          Ref.update(timeoutDurations, (current) => [...current, durationMs]),
       });
       const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
         initiallyDesired: true,
@@ -717,6 +760,7 @@ describe("EnvironmentSupervisor", () => {
         supervisor.state,
         (state) => state.phase === "backoff" && state.lastFailure?.reason === "timeout",
       );
+      expect(yield* Ref.get(timeoutDurations)).toEqual([15_000]);
       yield* TestClock.adjust("1 second");
       yield* eventuallyState(
         supervisor.state,

@@ -26,6 +26,7 @@ import {
   type ConnectionDiagnosticsEntry,
   type ConnectionDiagnosticsTarget,
   recordRpcSessionDiagnosticEvent,
+  recordRpcSessionProbeDiagnosticEvent,
   recordSupervisorConnectionState,
   rememberProcessedSessionEventId,
   removeConnectionDiagnosticsEntry,
@@ -309,6 +310,7 @@ export const make = Effect.gen(function* () {
   ) {
     const target = diagnosticsTarget(entry);
     const processedSessionEventIds = yield* Ref.make<ReadonlySet<string>>(new Set());
+    const processedProbeEventIds = yield* Ref.make<ReadonlySet<string>>(new Set());
     const stateProgram = Stream.concat(
       Stream.fromEffect(SubscriptionRef.get(supervisor.state)),
       SubscriptionRef.changes(supervisor.state),
@@ -323,10 +325,12 @@ export const make = Effect.gen(function* () {
         ),
       ),
     );
-    const sessionProgram = Stream.concat(
-      Stream.fromEffect(SubscriptionRef.get(supervisor.session)),
-      SubscriptionRef.changes(supervisor.session),
-    ).pipe(
+    const diagnosticSession = supervisor.diagnosticSession ?? supervisor.session;
+    const sessionStream = Stream.concat(
+      Stream.fromEffect(SubscriptionRef.get(diagnosticSession)),
+      SubscriptionRef.changes(diagnosticSession),
+    );
+    const sessionProgram = sessionStream.pipe(
       Stream.switchMap(
         Option.match({
           onNone: () => Stream.empty,
@@ -358,8 +362,40 @@ export const make = Effect.gen(function* () {
         ),
       ),
     );
+    const probeProgram = sessionStream.pipe(
+      Stream.switchMap(
+        Option.match({
+          onNone: () => Stream.empty,
+          onSome: (session) =>
+            session.probeDiagnosticEvents === undefined
+              ? Stream.empty
+              : Stream.concat(
+                  Stream.fromEffect(SubscriptionRef.get(session.probeDiagnosticEvents)),
+                  SubscriptionRef.changes(session.probeDiagnosticEvents),
+                ),
+        }),
+      ),
+      Stream.runForEach((events) =>
+        Effect.forEach(
+          [...events].toReversed(),
+          (event) =>
+            Ref.modify(processedProbeEventIds, (processed) =>
+              rememberProcessedSessionEventId(processed, event.id),
+            ).pipe(
+              Effect.flatMap((isNew) =>
+                isNew
+                  ? SubscriptionRef.update(diagnostics, (current) =>
+                      recordRpcSessionProbeDiagnosticEvent(current, target, event),
+                    )
+                  : Effect.void,
+              ),
+            ),
+          { discard: true },
+        ),
+      ),
+    );
 
-    yield* Effect.all([stateProgram, sessionProgram], {
+    yield* Effect.all([stateProgram, sessionProgram, probeProgram], {
       concurrency: "unbounded",
       discard: true,
     });

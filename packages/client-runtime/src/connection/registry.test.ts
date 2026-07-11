@@ -129,6 +129,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   initialCredentials: ReadonlyArray<readonly [string, ConnectionCredential]> = [],
   options?: {
     readonly beforeSessionConnect?: (environmentId: EnvironmentId) => Effect.Effect<void>;
+    readonly sessionReady?: (attempt: number) => Effect.Effect<void, ConnectionTransientError>;
     readonly beforeRegistrationRegister?: (
       registration: ConnectionRegistration,
     ) => Effect.Effect<void, Persistence.ConnectionPersistenceError>;
@@ -340,23 +341,31 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
         yield* reportProgress({ stage: "preparing" });
         yield* reportProgress({ stage: "opening", prepared });
         yield* options?.beforeSessionConnect?.(target.environmentId) ?? Effect.void;
+        const attempt = (yield* Ref.get(sessions)).length + 1;
         const closed = yield* Deferred.make<never, ConnectionTransientError>();
         const diagnosticEvents = yield* SubscriptionRef.make<
           ReadonlyArray<import("./diagnostics.ts").RpcSessionDiagnosticEvent>
-        >([]);
+        >([
+          {
+            id: `test-session:${attempt}:1`,
+            type: "attempt",
+            observedAtMs: attempt,
+            socketUrl: `${prepared.socketUrl}?wsTicket=registry-secret-${attempt}`,
+          },
+        ]);
         yield* Ref.update(sessions, (current) => [...current, { closed }]);
         const session = yield* Effect.acquireRelease(
           Effect.succeed({
             client: {} as RpcSession.RpcSession["client"],
             initialConfig: Effect.die(new Error("Config is not used by registry tests.")),
-            ready: Effect.void,
+            ready: options?.sessionReady?.(attempt) ?? Effect.void,
             probe: Effect.void,
             closed: Deferred.await(closed),
             diagnosticEvents,
           } satisfies RpcSession.RpcSession),
           () => Ref.update(releasedSessions, (count) => count + 1),
         );
-        yield* reportProgress({ stage: "synchronizing", prepared });
+        yield* reportProgress({ stage: "synchronizing", prepared, session });
         yield* session.ready;
         return { prepared, session };
       }),
@@ -480,6 +489,60 @@ describe("EnvironmentRegistry", () => {
         yield* Fiber.join(start);
 
         expect(yield* Ref.get(loadCount)).toBe(2);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("records a socket attempt before a failed handshake becomes ready", () =>
+    Effect.gen(function* () {
+      const handshake = yield* Deferred.make<void, ConnectionTransientError>();
+      const harness = yield* makeHarness([TARGET], [], [], {
+        sessionReady: () => Deferred.await(handshake),
+      });
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        const observed = yield* Stream.concat(
+          Stream.fromEffect(SubscriptionRef.get(registry.diagnostics)),
+          SubscriptionRef.changes(registry.diagnostics),
+        ).pipe(
+          Stream.filterMap((entries) => {
+            const entry = entries.get(TARGET.environmentId);
+            return entry?.counters.socketAttemptCount === 1
+              ? Result.succeed(entry)
+              : Result.failVoid;
+          }),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+          Effect.timeout("1 second"),
+        );
+
+        expect(observed.lastSocketUrl).toBe(PREPARED.socketUrl);
+        expect(observed.recentEvents[0]?.socketUrl).not.toContain("registry-secret-1");
+        expect(
+          (yield* SubscriptionRef.get(registry.diagnostics)).get(TARGET.environmentId),
+        ).toMatchObject({
+          counters: { socketAttemptCount: 1 },
+        });
+
+        yield* Deferred.fail(
+          handshake,
+          new ConnectionTransientError({
+            reason: "transport",
+            detail: "Handshake failed.",
+          }),
+        );
+        yield* awaitConnectionState(
+          registry,
+          TARGET.environmentId,
+          (state) => state.phase === "backoff",
+        );
+        expect(
+          (yield* SubscriptionRef.get(registry.diagnostics)).get(TARGET.environmentId),
+        ).toMatchObject({
+          counters: { socketAttemptCount: 1 },
+        });
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

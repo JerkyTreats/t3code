@@ -17,6 +17,7 @@ import {
   sanitizeDiagnosticUrl,
   type RpcSessionDiagnosticEvent,
   type RpcSessionDiagnosticEventInput,
+  type RpcSessionProbeDiagnosticEvent,
 } from "../connection/diagnostics.ts";
 import type {
   ConnectionAttemptError,
@@ -38,9 +39,13 @@ export interface RpcSession {
   readonly initialConfig: Effect.Effect<ServerConfig, ConnectionAttemptError>;
   readonly ready: Effect.Effect<void, ConnectionAttemptError>;
   readonly probe: Effect.Effect<void, ConnectionAttemptError>;
+  readonly recordProbeTimeout?: (durationMs: number) => Effect.Effect<void>;
   readonly closed: Effect.Effect<never, ConnectionTransientError>;
   readonly diagnosticEvents?: SubscriptionRef.SubscriptionRef<
     ReadonlyArray<RpcSessionDiagnosticEvent>
+  >;
+  readonly probeDiagnosticEvents?: SubscriptionRef.SubscriptionRef<
+    ReadonlyArray<RpcSessionProbeDiagnosticEvent>
   >;
 }
 
@@ -92,6 +97,7 @@ export const make = Effect.gen(function* () {
     let intentionalClose = false;
     let lastCloseCode: number | null = null;
     let lastCloseReason: string | null = null;
+    let connectedAtMs: number | null = null;
     const initialObservedAtMs = yield* Clock.currentTimeMillis;
     const diagnosticEvents = yield* SubscriptionRef.make<ReadonlyArray<RpcSessionDiagnosticEvent>>([
       {
@@ -102,12 +108,27 @@ export const make = Effect.gen(function* () {
       },
     ]);
     nextDiagnosticEventId = 1;
+    const probeDiagnosticEvents = yield* SubscriptionRef.make<
+      ReadonlyArray<RpcSessionProbeDiagnosticEvent>
+    >([]);
+    let nextProbeDiagnosticEventId = 0;
     const appendDiagnosticEvent = Effect.fnUntraced(function* (
       event: RpcSessionDiagnosticEventInput,
     ) {
       nextDiagnosticEventId += 1;
       yield* SubscriptionRef.update(diagnosticEvents, (current) =>
         [{ ...event, id: `${sessionId}:${nextDiagnosticEventId}` }, ...current].slice(
+          0,
+          MAX_RPC_SESSION_DIAGNOSTIC_EVENTS,
+        ),
+      );
+    });
+    const appendProbeDiagnosticEvent = Effect.fnUntraced(function* (
+      event: Omit<RpcSessionProbeDiagnosticEvent, "id">,
+    ) {
+      nextProbeDiagnosticEventId += 1;
+      yield* SubscriptionRef.update(probeDiagnosticEvents, (current) =>
+        [{ ...event, id: `${sessionId}:probe:${nextProbeDiagnosticEventId}` }, ...current].slice(
           0,
           MAX_RPC_SESSION_DIAGNOSTIC_EVENTS,
         ),
@@ -134,10 +155,16 @@ export const make = Effect.gen(function* () {
     const disconnected = yield* Deferred.make<never, ConnectionTransientError>();
     const hooks = RpcClient.ConnectionHooks.of({
       onConnect: Clock.currentTimeMillis.pipe(
+        Effect.tap((observedAtMs) =>
+          Effect.sync(() => {
+            connectedAtMs = observedAtMs;
+          }),
+        ),
         Effect.flatMap((observedAtMs) =>
           appendDiagnosticEvent({
             type: "connected",
             observedAtMs,
+            attemptDurationMs: Math.max(0, observedAtMs - initialObservedAtMs),
           }),
         ),
         Effect.andThen(Deferred.succeed(connected, undefined)),
@@ -154,6 +181,12 @@ export const make = Effect.gen(function* () {
                 closeReason: lastCloseReason,
                 intentional: intentionalClose,
                 wasConnected,
+                attemptDurationMs: Math.max(
+                  0,
+                  (connectedAtMs ?? observedAtMs) - initialObservedAtMs,
+                ),
+                connectionDurationMs:
+                  connectedAtMs === null ? null : Math.max(0, observedAtMs - connectedAtMs),
               }),
             ),
             Effect.andThen(
@@ -207,11 +240,45 @@ export const make = Effect.gen(function* () {
         Effect.withSpan("environment.initialSync"),
       ),
     );
-    const probe = client[WS_METHODS.serverGetConfig]({}).pipe(
-      Effect.mapError(mapInitialConfigError),
-      Effect.asVoid,
-      Effect.withSpan("clientRuntime.connection.rpcSession.probe"),
-    );
+    const probe = Effect.gen(function* () {
+      const startedAtMs = yield* Clock.currentTimeMillis;
+      return yield* client[WS_METHODS.serverGetConfig]({}).pipe(
+        Effect.mapError(mapInitialConfigError),
+        Effect.asVoid,
+        Effect.tap(() =>
+          Clock.currentTimeMillis.pipe(
+            Effect.flatMap((observedAtMs) =>
+              appendProbeDiagnosticEvent({
+                observedAtMs,
+                durationMs: Math.max(0, observedAtMs - startedAtMs),
+                error: null,
+              }),
+            ),
+          ),
+        ),
+        Effect.tapError((error) =>
+          Clock.currentTimeMillis.pipe(
+            Effect.flatMap((observedAtMs) =>
+              appendProbeDiagnosticEvent({
+                observedAtMs,
+                durationMs: Math.max(0, observedAtMs - startedAtMs),
+                error: sanitizeDiagnosticText(error.message),
+              }),
+            ),
+          ),
+        ),
+      );
+    }).pipe(Effect.withSpan("clientRuntime.connection.rpcSession.probe"));
+    const recordProbeTimeout = (durationMs: number) =>
+      Clock.currentTimeMillis.pipe(
+        Effect.flatMap((observedAtMs) =>
+          appendProbeDiagnosticEvent({
+            observedAtMs,
+            durationMs: Math.max(0, durationMs),
+            error: "Connection health check timed out.",
+          }),
+        ),
+      );
 
     return {
       client,
@@ -222,8 +289,10 @@ export const make = Effect.gen(function* () {
         Effect.raceFirst(Deferred.await(disconnected)),
       ),
       probe,
+      recordProbeTimeout,
       closed: Deferred.await(disconnected),
       diagnosticEvents,
+      probeDiagnosticEvents,
     } satisfies RpcSession;
   });
 
