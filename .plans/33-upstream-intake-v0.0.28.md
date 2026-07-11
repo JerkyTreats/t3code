@@ -790,6 +790,18 @@ Final reconciliation:
 - Main remote connection hardening is replayed, including V2 subscription selection, full history hydration, bounded transport, settings, and diagnostics.
 - The complete change set is committed on `upstream-v0.0.28-replay` with no upstream write or push action.
 
+## Post Signoff Amendment
+
+Date: 2026-07-11
+
+### Git Action Recovery
+
+- A production trace recorded `git.runStackedAction` failing after Git emitted the action failure event. The WebSocket route then failed the stream instead of ending it, which could leave the Git surface waiting on a terminal stream state.
+- The route now refreshes VCS status and ends cleanly after the terminal failure event. The Git surface receives the failure, clears its running state, and keeps recovery actions available.
+- The local Git credential helper was also changed to use the already authenticated GitHub CLI helper. A dry push to `origin` succeeded after the change. No branch was pushed by this work.
+- `e333586f0` adds the terminal failure WebSocket regression and updates F5 verification expectations.
+- Final verification passed through `corepack pnpm fmt`, `corepack pnpm lint`, `corepack pnpm typecheck`, and `corepack pnpm test` with `1433` tests passed and `7` skipped.
+
 ## Intake Summary
 
 The upstream range from `v0.0.27` to `v0.0.28` has 341 commits.
