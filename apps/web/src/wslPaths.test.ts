@@ -42,6 +42,18 @@ describe("resolveWslProjectSelection", () => {
     });
   });
 
+  it("routes a UNC path for a distro with an internal space", () => {
+    expect(
+      resolveWslProjectSelection("\\\\wsl.localhost\\Ubuntu Dev\\home\\theo\\repo", [
+        { environmentId: "env-ubuntu", backendId: "wsl:Ubuntu Dev", runningDistro: null },
+      ]),
+    ).toEqual({
+      distro: "Ubuntu Dev",
+      environmentId: "env-ubuntu",
+      linuxPath: "/home/theo/repo",
+    });
+  });
+
   it("does not route to the only WSL backend when its distro is unknown", () => {
     expect(
       resolveWslProjectSelection("\\\\wsl.localhost\\Ubuntu\\home\\theo\\repo", [
