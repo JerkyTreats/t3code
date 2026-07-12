@@ -50,6 +50,13 @@ export const providerTurnsTotal = Metric.counter("t3_provider_turns_total", {
   description: "Total provider turn lifecycle operations.",
 });
 
+export const providerTurnStartRecoveriesTotal = Metric.counter(
+  "t3_provider_turn_start_recoveries_total",
+  {
+    description: "Total durable provider turn-start intents handled during reactor recovery.",
+  },
+);
+
 export const providerTurnDuration = Metric.timer("t3_provider_turn_duration", {
   description: "Provider turn request duration.",
 });

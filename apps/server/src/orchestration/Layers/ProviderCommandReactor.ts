@@ -26,7 +26,11 @@ import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
-import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
+import {
+  increment,
+  orchestrationEventsProcessedTotal,
+  providerTurnStartRecoveriesTotal,
+} from "../../observability/Metrics.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
@@ -34,6 +38,8 @@ import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { PendingProviderTurnStartQuery } from "../Services/PendingProviderTurnStartQuery.ts";
+import { PendingProviderTurnStartQueryLive } from "./PendingProviderTurnStartQuery.ts";
 import {
   ProviderCommandReactor,
   type ProviderCommandReactorShape,
@@ -85,6 +91,7 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
 
 const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
+const TURN_START_RECOVERY_PAGE_SIZE = 100;
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const DEFAULT_THREAD_TITLE = "New thread";
 
@@ -190,6 +197,7 @@ const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+  const pendingProviderTurnStartQuery = yield* PendingProviderTurnStartQuery;
   const providerService = yield* ProviderService;
   const providerRegistry = yield* ProviderRegistry;
   const gitWorkflow = yield* GitWorkflowService;
@@ -1060,6 +1068,28 @@ const make = Effect.gen(function* () {
 
   const worker = yield* makeDrainableWorker(processDomainEventSafely);
 
+  const recoverPendingTurnStarts = Effect.fn("recoverPendingTurnStarts")(function* () {
+    let sequenceExclusive = 0;
+    while (true) {
+      const pendingEvents = yield* pendingProviderTurnStartQuery.list(
+        sequenceExclusive,
+        TURN_START_RECOVERY_PAGE_SIZE,
+      );
+      if (pendingEvents.length === 0) {
+        return;
+      }
+      for (const event of pendingEvents) {
+        yield* increment(providerTurnStartRecoveriesTotal, { outcome: "discovered" });
+        yield* worker.enqueue(event);
+        yield* increment(providerTurnStartRecoveriesTotal, { outcome: "enqueued" });
+        sequenceExclusive = event.sequence;
+      }
+      if (pendingEvents.length < TURN_START_RECOVERY_PAGE_SIZE) {
+        return;
+      }
+    }
+  });
+
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
     const processEvent = Effect.fn("processEvent")(function* (event: OrchestrationEvent) {
       if (
@@ -1074,8 +1104,21 @@ const make = Effect.gen(function* () {
       }
     });
 
-    yield* Effect.forkScoped(
-      Stream.runForEach(orchestrationEngine.streamDomainEvents, processEvent),
+    // Acquire the live subscription before scanning durable pending intents. Any
+    // event committed during the scan is buffered, and the turn-start key makes
+    // the replay and live paths converge on one provider dispatch.
+    const domainEvents = yield* orchestrationEngine.subscribeDomainEvents;
+    yield* Effect.forkScoped(Stream.runForEach(domainEvents, processEvent));
+    yield* recoverPendingTurnStarts().pipe(
+      Effect.catchCause((cause) =>
+        increment(providerTurnStartRecoveriesTotal, { outcome: "scan_failed" }).pipe(
+          Effect.flatMap(() =>
+            Effect.logWarning("provider command reactor failed to recover pending turn starts", {
+              cause: Cause.pretty(cause),
+            }),
+          ),
+        ),
+      ),
     );
   });
 
@@ -1085,4 +1128,6 @@ const make = Effect.gen(function* () {
   } satisfies ProviderCommandReactorShape;
 });
 
-export const ProviderCommandReactorLive = Layer.effect(ProviderCommandReactor, make);
+export const ProviderCommandReactorLive = Layer.effect(ProviderCommandReactor, make).pipe(
+  Layer.provide(PendingProviderTurnStartQueryLive),
+);
