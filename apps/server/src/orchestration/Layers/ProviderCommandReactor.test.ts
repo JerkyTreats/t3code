@@ -504,6 +504,53 @@ describe("ProviderCommandReactor", () => {
     });
   });
 
+  it("recovers every pending turn start in acceptance order", async () => {
+    const harness = await createHarness({ startReactor: false });
+    const messages = [
+      {
+        commandId: CommandId.make("cmd-pending-turn-one"),
+        messageId: asMessageId("user-message-pending-one"),
+        text: "first accepted pending turn",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        commandId: CommandId.make("cmd-pending-turn-two"),
+        messageId: asMessageId("user-message-pending-two"),
+        text: "second accepted pending turn",
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+    ] as const;
+
+    for (const message of messages) {
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: message.commandId,
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: message.messageId,
+            role: "user",
+            text: message.text,
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: message.createdAt,
+        }),
+      );
+    }
+
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+    await harness.startReactor();
+    await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+    await harness.drain();
+
+    expect(harness.sendTurn.mock.calls.map(([input]) => input)).toMatchObject([
+      { input: "first accepted pending turn" },
+      { input: "second accepted pending turn" },
+    ]);
+  });
+
   it("generates a thread title on the first turn", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

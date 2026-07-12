@@ -1090,6 +1090,24 @@ const make = Effect.gen(function* () {
     }
   });
 
+  const recoverPendingTurnStartsWithRetry: Effect.Effect<void> = Effect.suspend(() =>
+    recoverPendingTurnStarts().pipe(
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+        return increment(providerTurnStartRecoveriesTotal, { outcome: "scan_failed" }).pipe(
+          Effect.flatMap(() =>
+            Effect.logWarning("provider command reactor failed to recover pending turn starts", {
+              cause: Cause.pretty(cause),
+              retryInMs: 5_000,
+            }),
+          ),
+          Effect.andThen(Effect.sleep("5 seconds")),
+          Effect.andThen(recoverPendingTurnStartsWithRetry),
+        );
+      }),
+    ),
+  );
+
   const start: ProviderCommandReactorShape["start"] = Effect.fn("start")(function* () {
     const processEvent = Effect.fn("processEvent")(function* (event: OrchestrationEvent) {
       if (
@@ -1109,17 +1127,7 @@ const make = Effect.gen(function* () {
     // the replay and live paths converge on one provider dispatch.
     const domainEvents = yield* orchestrationEngine.subscribeDomainEvents;
     yield* Effect.forkScoped(Stream.runForEach(domainEvents, processEvent));
-    yield* recoverPendingTurnStarts().pipe(
-      Effect.catchCause((cause) =>
-        increment(providerTurnStartRecoveriesTotal, { outcome: "scan_failed" }).pipe(
-          Effect.flatMap(() =>
-            Effect.logWarning("provider command reactor failed to recover pending turn starts", {
-              cause: Cause.pretty(cause),
-            }),
-          ),
-        ),
-      ),
-    );
+    yield* Effect.forkScoped(recoverPendingTurnStartsWithRetry);
   });
 
   return {
