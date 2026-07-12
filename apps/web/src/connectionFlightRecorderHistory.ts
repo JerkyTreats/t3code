@@ -5,6 +5,7 @@ import type {
 
 const STORAGE_KEY = "t3code:connection-flight-recorder:v1";
 const MAX_RECORDED_EVENTS = 256;
+const MAX_RECORDED_ENTRIES = 64;
 
 export interface RecordedConnectionEvent {
   readonly key: string;
@@ -14,8 +15,15 @@ export interface RecordedConnectionEvent {
   readonly event: ConnectionDiagnosticsEvent;
 }
 
+export interface RecordedConnectionEntry {
+  readonly key: string;
+  readonly sessionId: string;
+  readonly entry: ConnectionDiagnosticsEntry;
+}
+
 export interface ConnectionFlightRecorderSnapshot {
   readonly events: ReadonlyArray<RecordedConnectionEvent>;
+  readonly entries: ReadonlyArray<RecordedConnectionEntry>;
 }
 
 export interface ConnectionFlightRecorderStorage {
@@ -37,7 +45,9 @@ function isConnectionDiagnosticsEvent(value: unknown): value is ConnectionDiagno
   const event = value as Record<string, unknown>;
   return (
     typeof event.id === "string" &&
-    ["connecting", "attempt", "connected", "disconnected", "error"].includes(String(event.type)) &&
+    ["connecting", "attempt", "connected", "disconnected", "error", "probe"].includes(
+      String(event.type),
+    ) &&
     typeof event.observedAt === "string" &&
     ["idle", "connecting", "connected", "disconnected", "error"].includes(String(event.phase)) &&
     isNullableString(event.socketUrl) &&
@@ -50,24 +60,60 @@ function isConnectionDiagnosticsEvent(value: unknown): value is ConnectionDiagno
   );
 }
 
-function decodeStoredEvents(value: string | null): ReadonlyArray<RecordedConnectionEvent> {
-  if (value === null) return [];
+function decodeRecordedEvents(value: unknown): ReadonlyArray<RecordedConnectionEvent> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate) => {
+    if (typeof candidate !== "object" || candidate === null) return [];
+    const record = candidate as Record<string, unknown>;
+    return typeof record.key === "string" &&
+      typeof record.sessionId === "string" &&
+      typeof record.environmentId === "string" &&
+      typeof record.environmentLabel === "string" &&
+      isConnectionDiagnosticsEvent(record.event)
+      ? [record as unknown as RecordedConnectionEvent]
+      : [];
+  });
+}
+
+function isConnectionDiagnosticsEntry(value: unknown): value is ConnectionDiagnosticsEntry {
+  if (typeof value !== "object" || value === null) return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.environmentId === "string" &&
+    typeof entry.label === "string" &&
+    typeof entry.phase === "string" &&
+    typeof entry.counters === "object" &&
+    Array.isArray(entry.recentEvents) &&
+    entry.recentEvents.every(isConnectionDiagnosticsEvent)
+  );
+}
+
+function decodeRecordedEntries(value: unknown): ReadonlyArray<RecordedConnectionEntry> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((candidate) => {
+    if (typeof candidate !== "object" || candidate === null) return [];
+    const record = candidate as Record<string, unknown>;
+    return typeof record.key === "string" &&
+      typeof record.sessionId === "string" &&
+      isConnectionDiagnosticsEntry(record.entry)
+      ? [record as unknown as RecordedConnectionEntry]
+      : [];
+  });
+}
+
+function decodeStoredSnapshot(value: string | null): ConnectionFlightRecorderSnapshot {
+  if (value === null) return { events: [], entries: [] };
   try {
     const parsed: unknown = JSON.parse(value);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((candidate) => {
-      if (typeof candidate !== "object" || candidate === null) return [];
-      const record = candidate as Record<string, unknown>;
-      return typeof record.key === "string" &&
-        typeof record.sessionId === "string" &&
-        typeof record.environmentId === "string" &&
-        typeof record.environmentLabel === "string" &&
-        isConnectionDiagnosticsEvent(record.event)
-        ? [record as unknown as RecordedConnectionEvent]
-        : [];
-    });
+    if (Array.isArray(parsed)) return { events: decodeRecordedEvents(parsed), entries: [] };
+    if (typeof parsed !== "object" || parsed === null) return { events: [], entries: [] };
+    const stored = parsed as Record<string, unknown>;
+    return {
+      events: decodeRecordedEvents(stored.events),
+      entries: decodeRecordedEntries(stored.entries),
+    };
   } catch {
-    return [];
+    return { events: [], entries: [] };
   }
 }
 
@@ -80,13 +126,18 @@ export function createConnectionFlightRecorder(
   storage: ConnectionFlightRecorderStorage,
   sessionId = makeSessionId(),
 ) {
+  const stored = decodeStoredSnapshot(storage.read());
   let snapshot: ConnectionFlightRecorderSnapshot = {
-    events: decodeStoredEvents(storage.read()).slice(0, MAX_RECORDED_EVENTS),
+    events: stored.events.slice(0, MAX_RECORDED_EVENTS),
+    entries: stored.entries.slice(0, MAX_RECORDED_ENTRIES),
   };
   const listeners = new Set<() => void>();
 
-  const publish = (events: ReadonlyArray<RecordedConnectionEvent>) => {
-    snapshot = { events };
+  const publish = (
+    events: ReadonlyArray<RecordedConnectionEvent>,
+    entries: ReadonlyArray<RecordedConnectionEntry>,
+  ) => {
+    snapshot = { events, entries };
     for (const listener of listeners) listener();
   };
 
@@ -113,18 +164,34 @@ export function createConnectionFlightRecorder(
       const nextEvents = [...nextByKey.values()]
         .toSorted((left, right) => right.event.observedAt.localeCompare(left.event.observedAt))
         .slice(0, MAX_RECORDED_EVENTS);
+      const nextEntriesByKey = new Map(snapshot.entries.map((entry) => [entry.key, entry]));
+      for (const entry of entries) {
+        const key = `${sessionId}:${entry.environmentId}`;
+        nextEntriesByKey.set(key, { key, sessionId, entry });
+      }
+      const nextEntries = [...nextEntriesByKey.values()]
+        .toSorted((left, right) =>
+          right.entry.lastObservedAt.localeCompare(left.entry.lastObservedAt),
+        )
+        .slice(0, MAX_RECORDED_ENTRIES);
       if (
         nextEvents.length === snapshot.events.length &&
-        nextEvents.every((event, index) => event.key === snapshot.events[index]?.key)
+        nextEvents.every((event, index) => event.key === snapshot.events[index]?.key) &&
+        nextEntries.length === snapshot.entries.length &&
+        nextEntries.every(
+          (entry, index) =>
+            entry.key === snapshot.entries[index]?.key &&
+            entry.entry.lastObservedAt === snapshot.entries[index]?.entry.lastObservedAt,
+        )
       ) {
         return;
       }
-      storage.write(JSON.stringify(nextEvents));
-      publish(nextEvents);
+      storage.write(JSON.stringify({ version: 2, events: nextEvents, entries: nextEntries }));
+      publish(nextEvents, nextEntries);
     },
     clear: () => {
       storage.remove();
-      publish([]);
+      publish([], []);
     },
   };
 }

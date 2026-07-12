@@ -89,6 +89,10 @@ describe("connection flight recorder history", () => {
       "renderer-two",
       "renderer-one",
     ]);
+    expect(restarted.getSnapshot().entries.map((entry) => entry.sessionId)).toEqual([
+      "renderer-two",
+      "renderer-one",
+    ]);
   });
 
   it("deduplicates repeated observations in one renderer session", () => {
@@ -111,5 +115,6 @@ describe("connection flight recorder history", () => {
 
     expect(memory.read()).toBeNull();
     expect(recorder.getSnapshot().events).toEqual([]);
+    expect(recorder.getSnapshot().entries).toEqual([]);
   });
 });

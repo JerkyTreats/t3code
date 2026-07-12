@@ -10,13 +10,13 @@ const MAX_DIAGNOSTIC_TEXT_LENGTH = 500;
 const MAX_DIAGNOSTIC_URL_LENGTH = 2_048;
 const DIAGNOSTIC_URL = /\b(?:https?|wss?):\/\/[^\s"'<>]+/giu;
 const SENSITIVE_JSON_FIELD =
-  /(["'](?:access[_-]?token|authorization|bearer|cookies?|pairing[_ -]?code|set-cookie|token|ticket|wsTicket)["']\s*:\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^,}\]\s]+)/giu;
+  /(["'](?:access[_-]?token|api[_-]?key|authorization|bearer|client[_-]?secret|cookies?|credentials?|dpop|pairing[_ -]?(?:code|token)|password|passwd|refresh[_-]?token|secret|set-cookie|token|ticket|wsTicket)["']\s*:\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^,}\]\s]+)/giu;
 const AUTHORIZATION_VALUE =
   /\b(authorization\s*[:=]\s*)(?:bearer\s+)?(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/giu;
 const COOKIE_VALUE = /\b((?:set-)?cookies?\s*:\s*)[^\r\n]+/giu;
 const BEARER_VALUE = /\bBearer\s+[A-Za-z0-9._~+/=-]+/giu;
 const SENSITIVE_ASSIGNMENT =
-  /\b(access[_-]?token|bearer|cookies?|pairing[_ -]?code|set-cookie|token|ticket|wsTicket)(\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/giu;
+  /\b(access[_-]?token|api[_-]?key|bearer|client[_-]?secret|cookies?|credentials?|dpop|pairing[_ -]?(?:code|token)|password|passwd|refresh[_-]?token|secret|set-cookie|token|ticket|wsTicket)(\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)/giu;
 const PAIRING_CODE_VALUE =
   /\b(pairing[_ -]?code)\s+(?:is\s+)?(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[A-Za-z0-9._~+/-]{4,})/giu;
 
@@ -32,7 +32,8 @@ export type ConnectionDiagnosticsEventType =
   | "attempt"
   | "connected"
   | "disconnected"
-  | "error";
+  | "error"
+  | "probe";
 
 export interface ConnectionDiagnosticsTarget {
   readonly environmentId: EnvironmentId;
@@ -209,6 +210,9 @@ export function recordSupervisorConnectionState(
   const observedAt = DateTime.formatIso(DateTime.makeUnsafe(observedAtMs));
   const current =
     entries.get(target.environmentId) ?? createConnectionDiagnosticsEntry(target, observedAt);
+  if (observedAt < current.lastObservedAt) {
+    return installEntry(entries, applyTarget(current, target, observedAt));
+  }
   const phase = supervisorDiagnosticsPhase(state);
   const lastError = sanitizeDiagnosticText(state.lastFailure?.message);
   let next = applyPhaseTransition(current, phase, observedAt);
@@ -280,7 +284,9 @@ export function recordRpcSessionDiagnosticEvent(
   const observedAt = DateTime.formatIso(DateTime.makeUnsafe(event.observedAtMs));
   const current =
     entries.get(target.environmentId) ?? createConnectionDiagnosticsEntry(target, observedAt);
+  if (current.recentEvents.some((candidate) => candidate.id === event.id)) return entries;
   let next = applyTarget(current, target, observedAt);
+  const isLatestObservation = observedAt >= current.lastObservedAt;
 
   switch (event.type) {
     case "attempt": {
@@ -288,7 +294,7 @@ export function recordRpcSessionDiagnosticEvent(
       next = appendDiagnosticsEvent(
         {
           ...applyPhaseTransition(next, "connecting", observedAt),
-          lastSocketUrl: socketUrl,
+          ...(isLatestObservation ? { lastSocketUrl: socketUrl } : {}),
           counters: {
             ...next.counters,
             socketAttemptCount: next.counters.socketAttemptCount + 1,
@@ -316,11 +322,15 @@ export function recordRpcSessionDiagnosticEvent(
       next = appendDiagnosticsEvent(
         {
           ...applyPhaseTransition(next, "connected", observedAt),
-          connectedAt: observedAt,
-          disconnectedAt: null,
-          hasConnected: true,
-          lastError: null,
-          lastAttemptDurationMs: event.attemptDurationMs ?? null,
+          ...(isLatestObservation
+            ? {
+                connectedAt: observedAt,
+                disconnectedAt: null,
+                hasConnected: true,
+                lastError: null,
+                lastAttemptDurationMs: event.attemptDurationMs ?? null,
+              }
+            : {}),
           counters: {
             ...next.counters,
             connectCount: next.counters.connectCount + 1,
@@ -342,18 +352,22 @@ export function recordRpcSessionDiagnosticEvent(
       );
       break;
     case "disconnected": {
-      const shouldCountDisconnect = event.wasConnected && next.phase !== "disconnected";
+      const shouldCountDisconnect = event.wasConnected;
       const phase = !event.wasConnected && next.phase === "error" ? "error" : "disconnected";
       const closeReason = sanitizeDiagnosticText(event.closeReason);
       next = appendDiagnosticsEvent(
         {
           ...applyPhaseTransition(next, phase, observedAt),
-          connectedAt: null,
-          disconnectedAt: phase === "disconnected" ? observedAt : next.disconnectedAt,
-          lastCloseCode: event.closeCode,
-          lastCloseReason: closeReason,
-          lastAttemptDurationMs: event.attemptDurationMs ?? next.lastAttemptDurationMs,
-          lastConnectionDurationMs: event.connectionDurationMs ?? null,
+          ...(isLatestObservation
+            ? {
+                connectedAt: null,
+                disconnectedAt: phase === "disconnected" ? observedAt : next.disconnectedAt,
+                lastCloseCode: event.closeCode,
+                lastCloseReason: closeReason,
+                lastAttemptDurationMs: event.attemptDurationMs ?? next.lastAttemptDurationMs,
+                lastConnectionDurationMs: event.connectionDurationMs ?? null,
+              }
+            : {}),
           counters: {
             ...next.counters,
             failedOpenCount:
@@ -396,19 +410,40 @@ export function recordRpcSessionProbeDiagnosticEvent(
   const observedAt = DateTime.formatIso(DateTime.makeUnsafe(event.observedAtMs));
   const current =
     entries.get(target.environmentId) ?? createConnectionDiagnosticsEntry(target, observedAt);
+  if (current.recentEvents.some((candidate) => candidate.id === event.id)) return entries;
   const error = sanitizeDiagnosticText(event.error);
+  const isLatestObservation = observedAt >= current.lastObservedAt;
   const next = applyTarget(
-    {
-      ...current,
-      lastProbeAt: observedAt,
-      lastProbeDurationMs: Math.max(0, event.durationMs),
-      lastProbeError: error,
-      counters: {
-        ...current.counters,
-        probeCount: current.counters.probeCount + 1,
-        probeFailureCount: current.counters.probeFailureCount + (error === null ? 0 : 1),
+    appendDiagnosticsEvent(
+      {
+        ...current,
+        ...(isLatestObservation
+          ? {
+              lastProbeAt: observedAt,
+              lastProbeDurationMs: Math.max(0, event.durationMs),
+              lastProbeError: error,
+            }
+          : {}),
+        counters: {
+          ...current.counters,
+          probeCount: current.counters.probeCount + 1,
+          probeFailureCount: current.counters.probeFailureCount + (error === null ? 0 : 1),
+        },
       },
-    },
+      {
+        id: event.id,
+        type: "probe",
+        observedAt,
+        phase: current.phase,
+        socketUrl: null,
+        message: error,
+        closeCode: null,
+        closeReason: null,
+        intentional: null,
+        attemptDurationMs: Math.max(0, event.durationMs),
+        connectionDurationMs: null,
+      },
+    ),
     target,
     observedAt,
   );
@@ -515,7 +550,7 @@ function applyTarget(
     kind: target.kind,
     label: sanitizeDiagnosticText(target.label) ?? entry.label,
     origin: sanitizeDiagnosticOrigin(target.origin) ?? entry.origin,
-    lastObservedAt: observedAt,
+    lastObservedAt: observedAt > entry.lastObservedAt ? observedAt : entry.lastObservedAt,
   };
 }
 
@@ -528,7 +563,8 @@ function appendDiagnosticsEvent(
   }
   return {
     ...entry,
-    lastObservedAt: event.observedAt,
+    lastObservedAt:
+      event.observedAt > entry.lastObservedAt ? event.observedAt : entry.lastObservedAt,
     recentEvents: [event, ...entry.recentEvents].slice(0, MAX_RECENT_CONNECTION_EVENTS),
   };
 }
@@ -538,6 +574,7 @@ function applyPhaseTransition(
   nextPhase: ConnectionDiagnosticsPhase,
   observedAt: string,
 ): ConnectionDiagnosticsEntry {
+  if (observedAt < entry.lastObservedAt) return entry;
   if (entry.phase === nextPhase) {
     return {
       ...entry,

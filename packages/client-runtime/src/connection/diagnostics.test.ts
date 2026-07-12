@@ -15,7 +15,7 @@ import {
   type ConnectionDiagnosticsEntry,
   type ConnectionDiagnosticsTarget,
 } from "./diagnostics.ts";
-import type { SupervisorConnectionState } from "./model.ts";
+import { ConnectionTransientError, type SupervisorConnectionState } from "./model.ts";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-diagnostics");
 const TARGET: ConnectionDiagnosticsTarget = {
@@ -151,6 +151,18 @@ describe("connection diagnostics", () => {
       durationMs: 25,
       error: null,
     });
+    entries = recordRpcSessionProbeDiagnosticEvent(entries, TARGET, {
+      id: "probe:stale",
+      observedAtMs: 17_500,
+      durationMs: 900,
+      error: "older probe failure",
+    });
+    entries = recordRpcSessionProbeDiagnosticEvent(entries, TARGET, {
+      id: "probe:2",
+      observedAtMs: 18_000,
+      durationMs: 25,
+      error: null,
+    });
 
     const entry = entries.get(ENVIRONMENT_ID);
     expect(entry).toMatchObject({
@@ -165,10 +177,11 @@ describe("connection diagnostics", () => {
         failedOpenCount: 1,
         connectCount: 0,
         disconnectCount: 0,
-        probeCount: 2,
-        probeFailureCount: 1,
+        probeCount: 3,
+        probeFailureCount: 2,
       },
     });
+    expect(entry?.recentEvents.filter((event) => event.type === "probe")).toHaveLength(3);
     expect(JSON.stringify(entry)).not.toContain("socket-secret");
     expect(JSON.stringify(entry)).not.toContain("close-secret");
     expect(JSON.stringify(entry)).not.toContain("probe-secret");
@@ -184,6 +197,13 @@ describe("connection diagnostics", () => {
       ["Cookie: session=cookie-secret; Path=/", ["cookie-secret"]],
       ["ticket=ticket-secret", ["ticket-secret"]],
       ["wsTicket=ws-ticket-secret", ["ws-ticket-secret"]],
+      ["password=password-secret", ["password-secret"]],
+      ["credential: credential-secret", ["credential-secret"]],
+      ["clientSecret=client-secret", ["client-secret"]],
+      ["api_key=api-secret", ["api-secret"]],
+      ["pairingToken=pairing-token-secret", ["pairing-token-secret"]],
+      ["refresh_token=refresh-secret", ["refresh-secret"]],
+      ["dpop=dpop-secret", ["dpop-secret"]],
       [
         '{"access_token":"json-access-secret","authorization":"Bearer json-auth-secret","pairing_code":"json-pairing-secret","cookie":"json-cookie-secret"}',
         ["json-access-secret", "json-auth-secret", "json-pairing-secret", "json-cookie-secret"],
@@ -203,6 +223,41 @@ describe("connection diagnostics", () => {
         expect(sanitized).not.toContain(secret);
       }
     }
+  });
+
+  it("retains close evidence without letting an older close overwrite supervisor state", () => {
+    let entries = recordSupervisorConnectionState(
+      new Map(),
+      TARGET,
+      state("backoff", {
+        lastFailure: new ConnectionTransientError({
+          reason: "transport",
+          detail: "retrying",
+        }),
+      }),
+      20_000,
+    );
+    entries = recordRpcSessionDiagnosticEvent(entries, TARGET, {
+      id: "out-of-order-close",
+      type: "disconnected",
+      observedAtMs: 19_000,
+      closeCode: 1006,
+      closeReason: "socket closed",
+      intentional: false,
+      wasConnected: true,
+      connectionDurationMs: 15_000,
+    });
+
+    const entry = entries.get(ENVIRONMENT_ID);
+    expect(entry).toMatchObject({
+      phase: "error",
+      lastObservedAt: "1970-01-01T00:00:20.000Z",
+      counters: {
+        disconnectCount: 1,
+        unexpectedDisconnectCount: 1,
+      },
+    });
+    expect(entry?.recentEvents.some((event) => event.id === "out-of-order-close")).toBe(true);
   });
 
   it("bounds processed session event ids to the retained event horizon", () => {

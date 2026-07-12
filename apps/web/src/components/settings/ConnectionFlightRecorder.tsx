@@ -83,6 +83,10 @@ function describeEvent(event: ConnectionDiagnosticsEvent): string {
     }
     case "error":
       return event.message ?? "Connection error";
+    case "probe":
+      return event.message === null
+        ? `Health probe passed in ${formatDuration(duration)}`
+        : `Health probe failed in ${formatDuration(duration)} · ${event.message}`;
   }
 }
 
@@ -106,7 +110,9 @@ export function ConnectionFlightRecorder({
       );
     return [...primary, ...remotes].slice(0, MAX_VISIBLE_ENTRIES);
   }, [entries]);
-  const summary = summarizeConnectionFleet(entries);
+  const summaryEntries =
+    recorded.entries.length > 0 ? recorded.entries.map((record) => record.entry) : entries;
+  const summary = summarizeConnectionFleet(summaryEntries);
   const events = recorded.events.slice(0, MAX_VISIBLE_EVENTS);
   const headline =
     summary.flappingCount > 0
@@ -145,7 +151,7 @@ export function ConnectionFlightRecorder({
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/65 px-3 py-1 font-mono text-[11px] tabular-nums text-muted-foreground">
               <RadioTowerIcon className="size-3" />
-              {summary.liveCount}/{entries.length} live
+              {entries.filter((entry) => entry.phase === "connected").length}/{entries.length} live
             </div>
             {recorded.events.length > 0 ? (
               <Button size="xs" variant="ghost" onClick={() => connectionFlightRecorder.clear()}>
