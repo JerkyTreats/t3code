@@ -263,11 +263,13 @@ export class GitHubCli extends Context.Service<
       readonly cwd: string;
       readonly headSelector: string;
       readonly limit?: number;
+      readonly repository?: string;
     }) => Effect.Effect<ReadonlyArray<GitHubPullRequestSummary>, GitHubCliError>;
 
     readonly getPullRequest: (input: {
       readonly cwd: string;
       readonly reference: string;
+      readonly repository?: string;
     }) => Effect.Effect<GitHubPullRequestSummary, GitHubCliError>;
 
     readonly getRepositoryCloneUrls: (input: {
@@ -287,16 +289,19 @@ export class GitHubCli extends Context.Service<
       readonly headSelector: string;
       readonly title: string;
       readonly bodyFile: string;
+      readonly repository: string;
     }) => Effect.Effect<void, GitHubCliError>;
 
     readonly getDefaultBranch: (input: {
       readonly cwd: string;
+      readonly repository?: string;
     }) => Effect.Effect<string | null, GitHubCliError>;
 
     readonly checkoutPullRequest: (input: {
       readonly cwd: string;
       readonly reference: string;
       readonly force?: boolean;
+      readonly repository?: string;
     }) => Effect.Effect<void, GitHubCliError>;
 
     readonly getStatus: (
@@ -488,7 +493,10 @@ function parseRemoteHostAndPath(remoteUrl: string): { host: string; path: string
   }
 }
 
-function parseGitHubRepositoryFromRemoteUrl(remoteUrl: string, hostname: string): string | null {
+export function parseGitHubRepositoryFromRemoteUrl(
+  remoteUrl: string,
+  hostname: string,
+): string | null {
   const parsed = parseRemoteHostAndPath(remoteUrl);
   if (!parsed || parsed.host !== hostname.toLowerCase()) return null;
 
@@ -597,6 +605,55 @@ export const make = Effect.gen(function* () {
       ? (parseGitHubRepositoryFromRemoteUrl(selectedRemote.remoteUrl, hostname) ?? undefined)
       : undefined;
   });
+
+  const resolveOriginRepositoryArg = Effect.fn("GitHubCli.resolveOriginRepositoryArg")(
+    function* (input: { cwd: string | null; repository?: string }) {
+      const cwd = resolveCommandCwd(input.cwd);
+      if (!input.cwd) {
+        return yield* new GitHubCliCommandError({
+          command: "gh",
+          cwd,
+          cause: new Error("Origin-only policy requires a repository working directory."),
+        });
+      }
+
+      const originUrl = yield* runGitStdout({
+        cwd: input.cwd,
+        args: ["remote", "get-url", "origin"],
+      });
+      const remote = parseRemoteHostAndPath(originUrl);
+      const originRepositoryName = remote
+        ? parseGitHubRepositoryFromRemoteUrl(originUrl, remote.host)
+        : null;
+      if (!remote || !originRepositoryName) {
+        return yield* new GitHubCliCommandError({
+          command: "gh",
+          cwd,
+          cause: new Error("Origin-only policy requires origin to identify a GitHub repository."),
+        });
+      }
+      const originRepository =
+        remote.host === "github.com"
+          ? originRepositoryName
+          : `${remote.host}/${originRepositoryName}`;
+
+      const explicitRepository = input.repository?.trim();
+      if (
+        explicitRepository &&
+        explicitRepository.toLowerCase() !== originRepository.toLowerCase()
+      ) {
+        return yield* new GitHubCliCommandError({
+          command: "gh",
+          cwd,
+          cause: new Error(
+            "Origin-only policy rejected an issue mutation targeting a non-origin repository.",
+          ),
+        });
+      }
+
+      return originRepository;
+    },
+  );
 
   const readRepository = (input: { cwd: string | null; repository?: string; hostname?: string }) =>
     resolveRepositoryArg(input).pipe(
@@ -760,6 +817,7 @@ export const make = Effect.gen(function* () {
         args: [
           "pr",
           "list",
+          ...buildRepoFlag(input.repository),
           "--head",
           input.headSelector,
           "--state",
@@ -800,6 +858,7 @@ export const make = Effect.gen(function* () {
           "pr",
           "view",
           input.reference,
+          ...buildRepoFlag(input.repository),
           "--json",
           "number,title,url,baseRefName,headRefName,state,mergedAt,isCrossRepository,headRepository,headRepositoryOwner",
         ],
@@ -860,6 +919,8 @@ export const make = Effect.gen(function* () {
         args: [
           "pr",
           "create",
+          "--repo",
+          input.repository,
           "--base",
           input.baseBranch,
           "--head",
@@ -873,7 +934,15 @@ export const make = Effect.gen(function* () {
     getDefaultBranch: (input) =>
       execute({
         cwd: input.cwd,
-        args: ["repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"],
+        args: [
+          "repo",
+          "view",
+          ...(input.repository ? [input.repository] : []),
+          "--json",
+          "defaultBranchRef",
+          "--jq",
+          ".defaultBranchRef.name",
+        ],
       }).pipe(
         Effect.map((value) => {
           const trimmed = value.stdout.trim();
@@ -883,7 +952,13 @@ export const make = Effect.gen(function* () {
     checkoutPullRequest: (input) =>
       execute({
         cwd: input.cwd,
-        args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
+        args: [
+          "pr",
+          "checkout",
+          input.reference,
+          ...buildRepoFlag(input.repository),
+          ...(input.force ? ["--force"] : []),
+        ],
       }).pipe(Effect.asVoid),
     getStatus,
     login,
@@ -930,7 +1005,7 @@ export const make = Effect.gen(function* () {
         ),
       ),
     createIssue: (input) =>
-      resolveRepositoryArg({
+      resolveOriginRepositoryArg({
         cwd: input.cwd,
         ...(input.repo ? { repository: input.repo } : {}),
       }).pipe(
@@ -972,7 +1047,7 @@ export const make = Effect.gen(function* () {
         ),
       ),
     closeIssue: (input) =>
-      resolveRepositoryArg({
+      resolveOriginRepositoryArg({
         cwd: input.cwd,
         ...(input.repo ? { repository: input.repo } : {}),
       }).pipe(
@@ -988,7 +1063,7 @@ export const make = Effect.gen(function* () {
         }),
       ),
     reopenIssue: (input) =>
-      resolveRepositoryArg({
+      resolveOriginRepositoryArg({
         cwd: input.cwd,
         ...(input.repo ? { repository: input.repo } : {}),
       }).pipe(

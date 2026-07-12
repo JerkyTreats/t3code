@@ -21,15 +21,16 @@ This repository is a VERY EARLY WIP. Proposing sweeping changes that improve lon
 - [Patch Guide](patch.md)
 - [Policy Proposal Flow](governance/policy_proposal_flow.md)
 - [Complex Change Workflow Governance](governance/complex_change_workflow.md)
-- [Upstream Merge Policy](governance/upstream_merge_policy.md)
+- [Origin Only Source Control Policy](governance/upstream_merge_policy.md)
 
 ## Governance Rules
 
 - For any request that asks for a commit or amend, review [Commit Policy](governance/commit_policy.md) before running `git commit` or `git commit --amend`.
 - For any request to edit `AGENTS.md`, `patch.md`, or files under `governance/`, review [Policy Proposal Flow](governance/policy_proposal_flow.md) before editing.
-- For upstream sync, merge, or divergence decisions, review [Upstream Merge Policy](governance/upstream_merge_policy.md) first.
-- For upstream sync or merge implementation work, complete the required fork preservation gate in [Upstream Merge Policy](governance/upstream_merge_policy.md) before considering the work ready for review or merge.
-- For upstream sync or any change that modifies fork owned behavior, review [Patch Guide](patch.md) first and update it in the same change.
+- **CRITICAL: DO NOT WRITE TO UPSTREAM. ONLY ACCEPT ORIGIN.**
+- Upstream access is limited to read only inspection under the [Origin Only Source Control Policy](governance/upstream_merge_policy.md).
+- Never push, publish, open a pull request, merge, rebase, cherry-pick, replay, or otherwise accept upstream code. Before every source control mutation, verify that `origin` is the only remote write and repository target.
+- For changes that modify fork owned behavior, review [Patch Guide](patch.md) first and update it in the same change.
 - Complex workflow mode is opt in and not enforced by CI.
 
 ## Core Priorities

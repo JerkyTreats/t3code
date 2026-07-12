@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { sanitizeBranchFragment } from "@t3tools/shared/git";
+import { selectOriginRemoteName } from "./originOnlySourceControlPolicy.ts";
 
 const PROMOTE_BACKUP_BRANCH_PREFIX = "t3code/promote-backup";
 
@@ -49,25 +50,5 @@ export function choosePromotePushRemoteName(input: {
   branchPushRemote: string | null;
   pushDefaultRemote: string | null;
 }): string | null {
-  const upstreamRemote = parseRemoteRefWithRemoteNames(
-    input.upstreamRef,
-    input.remoteNames,
-  )?.remoteName;
-  if (upstreamRemote) {
-    return upstreamRemote;
-  }
-
-  if (input.branchPushRemote) {
-    return input.branchPushRemote;
-  }
-
-  if (input.pushDefaultRemote) {
-    return input.pushDefaultRemote;
-  }
-
-  if (input.remoteNames.includes("origin")) {
-    return "origin";
-  }
-
-  return input.remoteNames[0] ?? null;
+  return selectOriginRemoteName(input.remoteNames);
 }

@@ -270,6 +270,106 @@ describe("GitHubCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("creates pull requests against the explicitly selected repository", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(processOutput("https://github.com/jerkytreats/t3code-omarchy/pull/1\n")),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.createPullRequest({
+        cwd: "/repo",
+        repository: "jerkytreats/t3code-omarchy",
+        baseBranch: "main",
+        headSelector: "fix/origin-only-prs",
+        title: "Enforce origin-only PRs",
+        bodyFile: "/tmp/pr-body.md",
+      });
+
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "pr",
+          "create",
+          "--repo",
+          "jerkytreats/t3code-omarchy",
+          "--base",
+          "main",
+          "--head",
+          "fix/origin-only-prs",
+          "--title",
+          "Enforce origin-only PRs",
+          "--body-file",
+          "/tmp/pr-body.md",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("rejects issue mutations that name a repository other than origin", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(processOutput("git@github.com:jerkytreats/t3code-omarchy.git\n")),
+      );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const error = yield* gh
+        .createIssue({
+          cwd: "/repo",
+          repo: "pingdotgg/t3code",
+          title: "Blocked issue",
+        })
+        .pipe(Effect.flip);
+
+      assert.equal(error._tag, "GitHubCliCommandError");
+      assert.equal(error.cause instanceof Error, true);
+      assert.equal(
+        (error.cause as Error).message,
+        "Origin-only policy rejected an issue mutation targeting a non-origin repository.",
+      );
+      expect(mockRun).toHaveBeenCalledTimes(1);
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "GitHubCli.git",
+        command: "git",
+        args: ["remote", "get-url", "origin"],
+        cwd: "/repo",
+        allowNonZeroExit: true,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("looks up the default branch with an explicit positional repository", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("trunk\n")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const branch = yield* gh.getDefaultBranch({
+        cwd: "/repo",
+        repository: "jerkytreats/t3code-omarchy",
+      });
+
+      assert.equal(branch, "trunk");
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "repo",
+          "view",
+          "jerkytreats/t3code-omarchy",
+          "--json",
+          "defaultBranchRef",
+          "--jq",
+          ".defaultBranchRef.name",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("falls back to constructed URLs when create output omits a URL", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));

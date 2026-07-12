@@ -71,8 +71,12 @@ Examples:
 
 Verify with the user before push unless the user explicitly asked for the push in the current request.
 
-## Upstream Write Guard
+## CRITICAL ORIGIN ONLY GUARD
 
-- Never commit, push, or open pull requests against the `upstream` remote.
-- Treat `upstream` as read only reference material for fetch, sync, merge, and compare operations.
-- Before any push or pull request action, verify the target remote is not `upstream`.
+**DO NOT WRITE TO UPSTREAM. ONLY ACCEPT ORIGIN.**
+
+- Treat `upstream` as read only reference material. Read and comparison operations are allowed only under the [Origin Only Source Control Policy](upstream_merge_policy.md).
+- Never push, open a pull request, publish a branch, create a release, or mutate repository state against `upstream`.
+- Never merge, rebase, cherry-pick, replay, or otherwise accept upstream code into an origin branch.
+- Before every source control mutation, verify that `origin` is the only remote and repository target.
+- Stop and report any command or automation that selects `upstream` as an integration or write target.

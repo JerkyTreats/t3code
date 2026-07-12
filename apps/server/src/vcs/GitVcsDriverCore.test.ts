@@ -732,6 +732,37 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect("rejects non-origin remote refs before checkout or worktree creation", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const upstreamRemote = yield* makeTmpDir("git-upstream-remote-");
+        const worktreePath = yield* makeTmpDir("git-upstream-worktree-");
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(upstreamRemote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "upstream", upstreamRemote]);
+        yield* git(cwd, ["push", "upstream", initialBranch]);
+        yield* git(cwd, ["fetch", "upstream"]);
+
+        const switchError = yield* driver
+          .switchRef({ cwd, refName: `upstream/${initialBranch}` })
+          .pipe(Effect.flip);
+        const worktreeError = yield* driver
+          .createWorktree({ cwd, path: worktreePath, refName: `upstream/${initialBranch}` })
+          .pipe(Effect.flip);
+
+        assert.equal(
+          switchError.detail,
+          "Origin-only policy permits accepting a remote ref only from origin.",
+        );
+        assert.equal(
+          worktreeError.detail,
+          "Origin-only policy permits accepting a remote ref only from origin.",
+        );
+        assert.equal(yield* git(cwd, ["branch", "--show-current"]), initialBranch);
+      }),
+    );
+
     it.effect(
       "pushes upstream branches to the remote branch name, not the upstream shorthand",
       () =>
@@ -771,7 +802,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         }),
     );
 
-    it.effect("pushes to the requested remote instead of the primary remote", () =>
+    it.effect("rejects a requested remote other than origin", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
         const originRemote = yield* makeTmpDir("git-origin-remote-");
@@ -784,17 +815,13 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         yield* git(cwd, ["remote", "add", "origin", originRemote]);
         yield* git(cwd, ["remote", "add", "origin-1", publishRemote]);
 
-        const pushed = yield* driver.pushCurrentBranch(cwd, null, { remoteName: "origin-1" });
+        const error = yield* driver
+          .pushCurrentBranch(cwd, null, { remoteName: "origin-1" })
+          .pipe(Effect.flip);
 
-        assert.deepInclude(pushed, {
-          status: "pushed",
-          branch: "main",
-          upstreamBranch: "origin-1/main",
-          setUpstream: true,
-        });
         assert.equal(
-          yield* git(publishRemote, ["log", "-1", "--pretty=%s", "main"]),
-          "initial commit",
+          error.detail,
+          "Origin-only policy permits publishing only through the origin remote.",
         );
         const originMain = yield* driver.execute({
           operation: "GitVcsDriver.test.originMainMissing",
@@ -804,6 +831,52 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           timeoutMs: 10_000,
         });
         assert.notEqual(originMain.exitCode, 0);
+        const publishMain = yield* driver.execute({
+          operation: "GitVcsDriver.test.publishMainMissing",
+          cwd: publishRemote,
+          args: ["show-ref", "--verify", "--quiet", "refs/heads/main"],
+          allowNonZeroExit: true,
+          timeoutMs: 10_000,
+        });
+        assert.notEqual(publishMain.exitCode, 0);
+      }),
+    );
+
+    it.effect("rejects origin when any configured push URL differs from its fetch URL", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const originRemote = yield* makeTmpDir("git-origin-remote-");
+        const upstreamRemote = yield* makeTmpDir("git-upstream-remote-");
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(originRemote, ["init", "--bare"]);
+        yield* git(upstreamRemote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", originRemote]);
+        yield* git(cwd, ["config", "--add", "remote.origin.pushurl", originRemote]);
+        yield* git(cwd, ["config", "--add", "remote.origin.pushurl", upstreamRemote]);
+
+        const error = yield* driver.pushCurrentBranch(cwd, null).pipe(Effect.flip);
+
+        assert.equal(
+          error.detail,
+          "Origin-only policy rejected origin because its push URL differs from its fetch URL.",
+        );
+        const originMain = yield* driver.execute({
+          operation: "GitVcsDriver.test.originMainMissingAfterPushUrlRejection",
+          cwd: originRemote,
+          args: ["show-ref", "--verify", "--quiet", "refs/heads/main"],
+          allowNonZeroExit: true,
+          timeoutMs: 10_000,
+        });
+        const upstreamMain = yield* driver.execute({
+          operation: "GitVcsDriver.test.upstreamMainMissingAfterPushUrlRejection",
+          cwd: upstreamRemote,
+          args: ["show-ref", "--verify", "--quiet", "refs/heads/main"],
+          allowNonZeroExit: true,
+          timeoutMs: 10_000,
+        });
+        assert.notEqual(originMain.exitCode, 0);
+        assert.notEqual(upstreamMain.exitCode, 0);
       }),
     );
   });

@@ -1,17 +1,18 @@
-# F6 Fork First GitHub Identity Resolution
+# F6 Origin Only GitHub Target Resolution
 
 Date: 2026-06-02
 Status: active
 
 ## Intent
 
-GitHub context resolves to the fork remote first so repo, issue, and panel actions follow fork ownership by default.
+GitHub change request mutations resolve to `origin` so repository, branch, and pull request targets cannot drift to `upstream` or another remote.
 
 ## Required Behavior
 
-- User facing GitHub repository context resolves to the fork remote before upstream.
-- Issue and pull request context preserve fork first identity.
-- Cross repository head handling may add remotes for pull request heads without replacing fork first default identity.
+- Pull request lookup, default branch lookup, and creation use the repository identified by `origin`.
+- GitHub CLI pull request creation supplies an explicit repository argument derived from `origin`.
+- A missing origin, an unsupported origin provider, or a non-origin branch tracking target fails before a pull request is created.
+- Read-only inspection may identify other remotes without changing the origin mutation target.
 
 ## Owner Modules
 
@@ -22,29 +23,29 @@ GitHub context resolves to the fork remote first so repo, issue, and panel actio
 
 ## Fork Seams
 
-- GitHub identity policy
+- Origin-only GitHub target policy
 - Git manager repository context resolution
 - source control context policy
 
 ## One Shot Rebuild Notes
 
-- Restore identity policy before issue, pull request, and panel actions.
-- Test remote combinations with fork, upstream, origin, and cross repository head remotes.
-- Keep fallback behavior explicit when a fork remote cannot be found.
-- Do not let provider neutral source control wiring replace the GitHub fork default.
+- Restore origin-only target resolution before pull request actions.
+- Test origin, upstream, and missing-origin combinations.
+- Keep read-only remote discovery separate from mutation target selection.
+- Do not let provider-neutral wiring fall back to upstream for a pull request target.
 
-## Upstream Replay Rule
+## Origin Rebuild Rule
 
-- Replay upstream GitHub integration changes at the fork identity seam.
-- Override upstream behavior that silently redirects user facing GitHub actions to upstream by default.
+- Rebuild source control behavior only from origin owned changes.
+- Reject integration behavior that selects upstream as a GitHub repository, base, head, or write target.
 
 ## Verification
 
-- Repo context, issue flows, and GitHub panel actions target the fork repository by default.
-- Pull request prep preserves fork first remote identity while still supporting cross repository heads.
-- Source control provider context does not overwrite the fork first default for GitHub.
+- Pull request actions target the origin repository explicitly.
+- A branch that tracks a non-origin remote cannot create a pull request until it is published to origin.
+- Source control provider context cannot overwrite the origin target for a mutation.
 
 ## Compatibility Checks
 
-- Added pull request head remotes must not mutate default repository identity.
-- GitHub issue links remain attached to the intended fork repository.
+- Read-only head remote inspection must not mutate the origin target.
+- GitHub pull request commands keep the selected origin repository explicit.

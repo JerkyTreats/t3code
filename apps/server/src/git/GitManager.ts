@@ -53,12 +53,15 @@ import * as ServerSettings from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
+import type * as SourceControlProvider from "../sourceControl/SourceControlProvider.ts";
 import type { ChangeRequest } from "@t3tools/contracts";
 import {
   choosePromotePushRemoteName,
   createPromoteBackupBranchName,
   parseRemoteNames,
+  parseRemoteRefWithRemoteNames,
 } from "../fork/gitPromotionPolicy.ts";
+import { isOriginRemoteRef } from "../fork/originOnlySourceControlPolicy.ts";
 
 export interface GitActionProgressReporter {
   readonly publish: (event: GitActionProgressEvent) => Effect.Effect<void, never>;
@@ -961,9 +964,11 @@ export const make = Effect.gen(function* () {
       | "headRepositoryOwnerLogin"
       | "isCrossRepository"
     >,
+    provider?: SourceControlProvider.SourceControlProvider["Service"],
   ) {
+    const resolvedProvider = provider ?? (yield* sourceControlProvider(cwd));
     for (const headSelector of headContext.headSelectors) {
-      const pullRequests = yield* (yield* sourceControlProvider(cwd)).listChangeRequests({
+      const pullRequests = yield* resolvedProvider.listChangeRequests({
         cwd,
         headSelector,
         state: "open",
@@ -1124,6 +1129,7 @@ export const make = Effect.gen(function* () {
     branch: string,
     upstreamRef: string | null,
     headContext: Pick<BranchHeadContext, "isCrossRepository" | "remoteName">,
+    provider?: SourceControlProvider.SourceControlProvider["Service"],
   ) {
     const configured = yield* gitCore.readConfigValue(cwd, `branch.${branch}.gh-merge-base`);
     if (configured) return configured;
@@ -1137,10 +1143,13 @@ export const make = Effect.gen(function* () {
       }
     }
 
-    const defaultFromProvider = yield* sourceControlProvider(cwd).pipe(
-      Effect.flatMap((provider) => provider.getDefaultBranch({ cwd })),
-      Effect.orElseSucceed(() => null),
-    );
+    const defaultFromProvider = yield* (
+      provider
+        ? provider.getDefaultBranch({ cwd })
+        : sourceControlProvider(cwd).pipe(
+            Effect.flatMap((resolvedProvider) => resolvedProvider.getDefaultBranch({ cwd })),
+          )
+    ).pipe(Effect.orElseSucceed(() => null));
     if (defaultFromProvider) {
       return defaultFromProvider;
     }
@@ -1334,8 +1343,8 @@ export const make = Effect.gen(function* () {
     cwd: string,
     fallbackBranch: string | null,
     emit: GitActionProgressEmitter,
+    provider: SourceControlProvider.SourceControlProvider["Service"],
   ) {
-    const provider = yield* sourceControlProvider(cwd);
     const terms = getChangeRequestTerminologyForKind(provider.kind);
     const details = yield* gitCore.statusDetails(cwd);
     const branch = details.branch ?? fallbackBranch;
@@ -1353,13 +1362,21 @@ export const make = Effect.gen(function* () {
         detail: "Current branch has not been pushed. Push before creating a PR.",
       });
     }
+    if (!isOriginRemoteRef(details.upstreamRef)) {
+      return yield* new GitManagerError({
+        operation: "runPrStep",
+        cwd,
+        detail:
+          "Origin-only policy requires the current branch to track origin before creating a PR.",
+      });
+    }
 
     const headContext = yield* resolveBranchHeadContext(cwd, {
       branch,
       upstreamRef: details.upstreamRef,
     });
 
-    const existing = yield* findOpenPr(cwd, headContext);
+    const existing = yield* findOpenPr(cwd, headContext, provider);
     if (existing) {
       return {
         status: "opened_existing" as const,
@@ -1371,7 +1388,13 @@ export const make = Effect.gen(function* () {
       };
     }
 
-    const baseBranch = yield* resolveBaseBranch(cwd, branch, details.upstreamRef, headContext);
+    const baseBranch = yield* resolveBaseBranch(
+      cwd,
+      branch,
+      details.upstreamRef,
+      headContext,
+      provider,
+    );
     yield* emit({
       kind: "phase_started",
       phase: "pr",
@@ -1420,7 +1443,7 @@ export const make = Effect.gen(function* () {
       })
       .pipe(Effect.ensuring(fileSystem.remove(bodyFile).pipe(Effect.catch(() => Effect.void))));
 
-    const created = yield* findOpenPr(cwd, headContext);
+    const created = yield* findOpenPr(cwd, headContext, provider);
     if (!created) {
       return {
         status: "created" as const,
@@ -1517,14 +1540,25 @@ export const make = Effect.gen(function* () {
     return yield* Effect.gen(function* () {
       const normalizedReference = normalizePullRequestReference(input.reference);
       const rootWorktreePath = yield* canonicalizeExistingPath(input.cwd);
-      const pullRequestSummary = yield* (yield* sourceControlProvider(input.cwd)).getChangeRequest({
+      const changeRequestHandle = yield* sourceControlProviders.resolveChangeRequestHandle({
+        cwd: input.cwd,
+      });
+      const pullRequestSummary = yield* changeRequestHandle.provider.getChangeRequest({
         cwd: input.cwd,
         reference: normalizedReference,
       });
+      if (pullRequestSummary.isCrossRepository === true) {
+        return yield* new GitManagerError({
+          operation: "preparePullRequestThread",
+          cwd: input.cwd,
+          detail:
+            "Origin-only policy does not allow materializing a pull request from another repository.",
+        });
+      }
       const pullRequest = toResolvedPullRequest(pullRequestSummary);
 
       if (input.mode === "local") {
-        yield* (yield* sourceControlProvider(input.cwd)).checkoutChangeRequest({
+        yield* changeRequestHandle.provider.checkoutChangeRequest({
           cwd: input.cwd,
           reference: normalizedReference,
           force: true,
@@ -1738,6 +1772,43 @@ export const make = Effect.gen(function* () {
     });
   });
 
+  const requireOriginPromoteTarget = Effect.fn("requireOriginPromoteTarget")(function* (
+    cwd: string,
+  ) {
+    const [fetchUrl, pushUrls] = yield* Effect.all([
+      gitCore.execute({
+        operation: "GitManager.requireOriginPromoteTarget.fetchUrl",
+        cwd,
+        args: ["remote", "get-url", "origin"],
+      }),
+      gitCore.execute({
+        operation: "GitManager.requireOriginPromoteTarget.pushUrl",
+        cwd,
+        args: ["remote", "get-url", "--push", "--all", "origin"],
+      }),
+    ]);
+    const normalizeUrl = (url: string) =>
+      url
+        .trim()
+        .replace(/\/+$/u, "")
+        .replace(/\.git$/iu, "");
+    const normalizedFetchUrl = normalizeUrl(fetchUrl.stdout);
+    const hasNonOriginPushUrl = pushUrls.stdout
+      .split(/\r?\n/u)
+      .map((url) => url.trim())
+      .filter((url) => url.length > 0)
+      .some((pushUrl) => normalizeUrl(pushUrl) !== normalizedFetchUrl);
+    if (hasNonOriginPushUrl) {
+      return yield* new GitManagerError({
+        operation: "runPromoteStep",
+        cwd,
+        detail: "Origin-only policy rejected promotion because origin has a different push URL.",
+      });
+    }
+
+    return "origin" as const;
+  });
+
   const deleteLocalBranch = Effect.fn("deleteLocalBranch")(function* (cwd: string, branch: string) {
     const result = yield* gitCore
       .execute({
@@ -1779,6 +1850,14 @@ export const make = Effect.gen(function* () {
     sourceBranch: string,
     targetBranch: string,
   ) {
+    const remoteRef = parseRemoteRefWithRemoteNames(sourceBranch, yield* listRemoteNames(cwd));
+    if (remoteRef && remoteRef.remoteName !== "origin") {
+      return yield* new GitManagerError({
+        operation: "mergeBranches",
+        cwd,
+        detail: "Origin-only policy permits merging a remote ref only from origin.",
+      });
+    }
     yield* Effect.scoped(gitCore.switchRef({ cwd, refName: targetBranch }));
     const result = yield* gitCore.execute({
       operation: "GitManager.mergeSourceIntoTarget",
@@ -1862,11 +1941,8 @@ export const make = Effect.gen(function* () {
     upstreamRef: string | null;
     emit: GitActionProgressEmitter;
   }) {
-    const backupRemoteName = yield* resolvePromotePushRemoteName(
-      input.cwd,
-      input.sourceBranch,
-      input.upstreamRef,
-    );
+    yield* resolvePromotePushRemoteName(input.cwd, input.sourceBranch, input.upstreamRef);
+    const backupRemoteName = yield* requireOriginPromoteTarget(input.cwd);
     const backupBranch = createPromoteBackupBranchName(input.sourceBranch);
 
     yield* input.emit({
@@ -2035,6 +2111,9 @@ export const make = Effect.gen(function* () {
               }),
           ),
         );
+        const changeRequestHandle = wantsPr
+          ? yield* sourceControlProviders.resolveChangeRequestHandle({ cwd: input.cwd })
+          : null;
 
         if (input.featureBranch) {
           yield* Ref.set(currentPhase, Option.some("branch"));
@@ -2066,11 +2145,8 @@ export const make = Effect.gen(function* () {
             : isCommitAction(input.action)
               ? input.action
               : null;
-        const changeRequestTerms = wantsPr
-          ? yield* sourceControlProvider(input.cwd).pipe(
-              Effect.map((provider) => getChangeRequestTerminologyForKind(provider.kind)),
-              Effect.orElseSucceed(() => getChangeRequestTerminologyForKind("unknown")),
-            )
+        const changeRequestTerms = changeRequestHandle
+          ? getChangeRequestTerminologyForKind(changeRequestHandle.provider.kind)
           : null;
 
         const commit = commitAction
@@ -2138,7 +2214,13 @@ export const make = Effect.gen(function* () {
               })
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("push"))),
-                Effect.flatMap(() => gitCore.pushCurrentBranch(input.cwd, currentBranch)),
+                Effect.flatMap(() =>
+                  gitCore.pushCurrentBranch(
+                    input.cwd,
+                    currentBranch,
+                    changeRequestHandle ? { remoteName: "origin" } : undefined,
+                  ),
+                ),
               )
           : { status: "skipped_not_requested" as const };
 
@@ -2152,7 +2234,13 @@ export const make = Effect.gen(function* () {
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("pr"))),
                 Effect.flatMap(() =>
-                  runPrStep(modelSelection, input.cwd, currentBranch, progress.emit),
+                  runPrStep(
+                    modelSelection,
+                    input.cwd,
+                    currentBranch,
+                    progress.emit,
+                    changeRequestHandle!.provider,
+                  ),
                 ),
               )
           : { status: "skipped_not_requested" as const };

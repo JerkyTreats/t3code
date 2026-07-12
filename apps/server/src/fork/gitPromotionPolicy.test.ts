@@ -18,7 +18,7 @@ describe("gitPromotionPolicy", () => {
     });
   });
 
-  it("prefers the upstream remote for backup pushes", () => {
+  it("uses origin for backup pushes even when another remote is configured", () => {
     expect(
       choosePromotePushRemoteName({
         remoteNames: ["origin", "upstream"],
@@ -26,35 +26,26 @@ describe("gitPromotionPolicy", () => {
         branchPushRemote: "branch-push",
         pushDefaultRemote: "push-default",
       }),
-    ).toBe("upstream");
+    ).toBe("origin");
   });
 
-  it("falls back through push config and origin", () => {
+  it("ignores push config and rejects repositories without origin", () => {
     expect(
       choosePromotePushRemoteName({
         remoteNames: ["origin", "upstream"],
         upstreamRef: null,
-        branchPushRemote: "origin",
+        branchPushRemote: "upstream",
         pushDefaultRemote: "upstream",
       }),
     ).toBe("origin");
 
     expect(
       choosePromotePushRemoteName({
-        remoteNames: ["origin", "upstream"],
-        upstreamRef: null,
-        branchPushRemote: null,
-        pushDefaultRemote: "upstream",
-      }),
-    ).toBe("upstream");
-
-    expect(
-      choosePromotePushRemoteName({
-        remoteNames: ["origin", "upstream"],
-        upstreamRef: null,
-        branchPushRemote: null,
+        remoteNames: ["upstream"],
+        upstreamRef: "upstream/main",
+        branchPushRemote: "upstream",
         pushDefaultRemote: null,
       }),
-    ).toBe("origin");
+    ).toBeNull();
   });
 });

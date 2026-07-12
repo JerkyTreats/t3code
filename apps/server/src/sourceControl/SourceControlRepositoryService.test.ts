@@ -295,22 +295,27 @@ it.effect("publishes by creating the repository, adding a remote, and pushing up
   );
 });
 
-it.effect("publishes to the remote name returned by ensureRemote", () => {
+it.effect("rejects a non-origin remote returned by ensureRemote", () => {
   const pushCalls: Array<{ cwd: string; remoteName: string | null | undefined }> = [];
 
   return Effect.gen(function* () {
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
-    const result = yield* service.publishRepository({
-      cwd: "/workspace",
-      provider: "github",
-      repository: "octocat/t3code",
-      visibility: "private",
-      remoteName: "origin",
-      protocol: "ssh",
-    });
+    const error = yield* service
+      .publishRepository({
+        cwd: "/workspace",
+        provider: "github",
+        repository: "octocat/t3code",
+        visibility: "private",
+        remoteName: "origin",
+        protocol: "ssh",
+      })
+      .pipe(Effect.flip);
 
-    assert.equal(result.remoteName, "origin-1");
-    assert.deepStrictEqual(pushCalls, [{ cwd: "/workspace", remoteName: "origin-1" }]);
+    assert.equal(
+      error.detail,
+      "Origin-only policy rejected a non-origin remote returned during publication.",
+    );
+    assert.deepStrictEqual(pushCalls, []);
   }).pipe(
     Effect.provide(
       makeLayer({

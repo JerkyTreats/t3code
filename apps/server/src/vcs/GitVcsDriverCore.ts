@@ -36,6 +36,7 @@ import {
   parseRemoteRefWithRemoteNames,
 } from "../git/remoteRefs.ts";
 import { ServerConfig } from "../config.ts";
+import { isOriginRemoteName, ORIGIN_REMOTE_NAME } from "../fork/originOnlySourceControlPolicy.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
@@ -1014,10 +1015,76 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       allowNonZeroExit: true,
     }).pipe(Effect.map((result) => result.exitCode === 0));
 
+  const requireOriginWriteRemote = Effect.fn("requireOriginWriteRemote")(function* (
+    cwd: string,
+    operation: string,
+    args: readonly string[],
+  ) {
+    if (!(yield* originRemoteExists(cwd))) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({ operation, cwd, args }),
+        detail: "Origin-only policy requires an origin remote before Git can publish changes.",
+      });
+    }
+
+    const [fetchUrl, pushUrls] = yield* Effect.all([
+      runGitStdout("GitVcsDriver.requireOriginWriteRemote.fetchUrl", cwd, [
+        "remote",
+        "get-url",
+        ORIGIN_REMOTE_NAME,
+      ]),
+      runGitStdout("GitVcsDriver.requireOriginWriteRemote.pushUrl", cwd, [
+        "remote",
+        "get-url",
+        "--push",
+        "--all",
+        ORIGIN_REMOTE_NAME,
+      ]),
+    ]);
+    const normalizedFetchUrl = normalizeRemoteUrl(fetchUrl);
+    const hasNonOriginPushUrl = pushUrls
+      .split(/\r?\n/u)
+      .map((url) => url.trim())
+      .filter((url) => url.length > 0)
+      .some((pushUrl) => normalizeRemoteUrl(pushUrl) !== normalizedFetchUrl);
+    if (hasNonOriginPushUrl) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({ operation, cwd, args }),
+        detail:
+          "Origin-only policy rejected origin because its push URL differs from its fetch URL.",
+      });
+    }
+
+    return ORIGIN_REMOTE_NAME;
+  });
+
   const listRemoteNames = (cwd: string): Effect.Effect<ReadonlyArray<string>, GitCommandError> =>
     runGitStdout("GitVcsDriver.listRemoteNames", cwd, ["remote"]).pipe(
       Effect.map(parseRemoteNamesInGitOrder),
     );
+
+  const requireOriginOrLocalRef = Effect.fn("requireOriginOrLocalRef")(function* (input: {
+    readonly cwd: string;
+    readonly refName: string;
+    readonly operation: string;
+    readonly args: readonly string[];
+  }) {
+    const remoteNames = yield* listRemoteNames(input.cwd).pipe(Effect.orElseSucceed(() => []));
+    const remoteRef = parseRemoteRefWithRemoteNames(
+      input.refName,
+      remoteNames.toSorted((left, right) => right.length - left.length),
+    );
+    if (remoteRef && !isOriginRemoteName(remoteRef.remoteName)) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({
+          operation: input.operation,
+          cwd: input.cwd,
+          args: input.args,
+        }),
+        detail: "Origin-only policy permits accepting a remote ref only from origin.",
+      });
+    }
+  });
 
   const resolvePublishBranchName = Effect.fn("resolvePublishBranchName")(function* (
     cwd: string,
@@ -1051,27 +1118,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     cwd: string,
     refName: string,
   ) {
-    const branchPushRemote = yield* runGitStdout(
-      "GitVcsDriver.resolvePushRemoteName.branchPushRemote",
-      cwd,
-      ["config", "--get", `branch.${refName}.pushRemote`],
-      true,
-    ).pipe(Effect.map((stdout) => stdout.trim()));
-    if (branchPushRemote.length > 0) {
-      return branchPushRemote;
-    }
-
-    const pushDefaultRemote = yield* runGitStdout(
-      "GitVcsDriver.resolvePushRemoteName.remotePushDefault",
-      cwd,
-      ["config", "--get", "remote.pushDefault"],
-      true,
-    ).pipe(Effect.map((stdout) => stdout.trim()));
-    if (pushDefaultRemote.length > 0) {
-      return pushDefaultRemote;
-    }
-
-    return yield* resolvePrimaryRemoteName(cwd).pipe(Effect.orElseSucceed(() => null));
+    return yield* requireOriginWriteRemote(cwd, "GitVcsDriver.resolvePushRemoteName", [
+      "push",
+      refName,
+    ]);
   });
 
   const ensureRemote: GitVcsDriver.GitVcsDriver["Service"]["ensureRemote"] = Effect.fn(
@@ -1608,18 +1658,39 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     const requestedRemoteName = options?.remoteName?.trim() || null;
+    if (requestedRemoteName && !isOriginRemoteName(requestedRemoteName)) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({
+          operation: "GitVcsDriver.pushCurrentBranch",
+          cwd,
+          args: ["push", "-u", requestedRemoteName],
+        }),
+        detail: "Origin-only policy permits publishing only through the origin remote.",
+      });
+    }
     if (requestedRemoteName) {
-      const publishBranch = yield* resolvePublishBranchName(cwd, branch);
+      const originRemoteName = yield* requireOriginWriteRemote(
+        cwd,
+        "GitVcsDriver.pushCurrentBranch",
+        ["push", "-u", ORIGIN_REMOTE_NAME],
+      );
+      const currentUpstream = yield* resolveCurrentUpstream(cwd).pipe(
+        Effect.orElseSucceed(() => null),
+      );
+      const publishBranch =
+        currentUpstream && !isOriginRemoteName(currentUpstream.remoteName)
+          ? currentUpstream.branchName
+          : yield* resolvePublishBranchName(cwd, branch);
       yield* runGit("GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote", cwd, [
         "push",
         "-u",
-        requestedRemoteName,
+        originRemoteName,
         `HEAD:refs/heads/${publishBranch}`,
       ]);
       return {
         status: "pushed" as const,
         branch,
-        upstreamBranch: `${requestedRemoteName}/${publishBranch}`,
+        upstreamBranch: `${originRemoteName}/${publishBranch}`,
         setUpstream: true,
       };
     }
@@ -1662,16 +1733,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     if (!details.hasUpstream) {
       const publishRemoteName = yield* resolvePushRemoteName(cwd, branch);
-      if (!publishRemoteName) {
-        return yield* new GitCommandError({
-          ...gitCommandContext({
-            operation: "GitVcsDriver.pushCurrentBranch",
-            cwd,
-            args: ["push"],
-          }),
-          detail: "Cannot push because no git remote is configured for this repository.",
-        });
-      }
       const publishBranch = yield* resolvePublishBranchName(cwd, branch);
       yield* runGit("GitVcsDriver.pushCurrentBranch.pushWithUpstream", cwd, [
         "push",
@@ -1691,9 +1752,24 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       Effect.orElseSucceed(() => null),
     );
     if (currentUpstream) {
+      if (!isOriginRemoteName(currentUpstream.remoteName)) {
+        return yield* new GitCommandError({
+          ...gitCommandContext({
+            operation: "GitVcsDriver.pushCurrentBranch",
+            cwd,
+            args: ["push", currentUpstream.remoteName],
+          }),
+          detail: "Origin-only policy rejected the configured upstream because it is not origin.",
+        });
+      }
+      const originRemoteName = yield* requireOriginWriteRemote(
+        cwd,
+        "GitVcsDriver.pushCurrentBranch",
+        ["push", ORIGIN_REMOTE_NAME],
+      );
       yield* runGit("GitVcsDriver.pushCurrentBranch.pushUpstream", cwd, [
         "push",
-        currentUpstream.remoteName,
+        originRemoteName,
         `HEAD:refs/heads/${currentUpstream.branchName}`,
       ]);
       return {
@@ -1704,13 +1780,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       };
     }
 
-    yield* runGit("GitVcsDriver.pushCurrentBranch.push", cwd, ["push"]);
-    return {
-      status: "pushed" as const,
-      branch,
-      ...(details.upstreamRef ? { upstreamBranch: details.upstreamRef } : {}),
-      setUpstream: false,
-    };
+    return yield* new GitCommandError({
+      ...gitCommandContext({
+        operation: "GitVcsDriver.pushCurrentBranch",
+        cwd,
+        args: ["push"],
+      }),
+      detail: "Origin-only policy requires an origin tracking branch before pushing.",
+    });
   });
 
   const pullCurrentBranch: GitVcsDriver.GitVcsDriver["Service"]["pullCurrentBranch"] = Effect.fn(
@@ -1738,16 +1815,34 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         detail: "Current branch has no upstream configured. Push with upstream first.",
       });
     }
+    const currentUpstream = yield* resolveCurrentUpstream(cwd).pipe(
+      Effect.orElseSucceed(() => null),
+    );
+    if (!currentUpstream || !isOriginRemoteName(currentUpstream.remoteName)) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({
+          operation: "GitVcsDriver.pullCurrentBranch",
+          cwd,
+          args: ["pull", "--ff-only"],
+        }),
+        detail: "Origin-only policy permits accepting remote changes only from origin.",
+      });
+    }
     const beforeSha = yield* runGitStdout(
       "GitVcsDriver.pullCurrentBranch.beforeSha",
       cwd,
       ["rev-parse", "HEAD"],
       true,
     ).pipe(Effect.map((stdout) => stdout.trim()));
-    yield* executeGit("GitVcsDriver.pullCurrentBranch.pull", cwd, ["pull", "--ff-only"], {
-      timeoutMs: 30_000,
-      fallbackErrorDetail: "git pull failed",
-    });
+    yield* executeGit(
+      "GitVcsDriver.pullCurrentBranch.pull",
+      cwd,
+      ["pull", "--ff-only", ORIGIN_REMOTE_NAME, currentUpstream.branchName],
+      {
+        timeoutMs: 30_000,
+        fallbackErrorDetail: "git pull failed",
+      },
+    );
     const afterSha = yield* runGitStdout(
       "GitVcsDriver.pullCurrentBranch.afterSha",
       cwd,
@@ -2245,6 +2340,20 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const createWorktree: GitVcsDriver.GitVcsDriver["Service"]["createWorktree"] = Effect.fn(
     "createWorktree",
   )(function* (input) {
+    yield* requireOriginOrLocalRef({
+      cwd: input.cwd,
+      refName: input.refName,
+      operation: "GitVcsDriver.createWorktree",
+      args: ["worktree", "add", input.refName],
+    });
+    if (input.baseRefName) {
+      yield* requireOriginOrLocalRef({
+        cwd: input.cwd,
+        refName: input.baseRefName,
+        operation: "GitVcsDriver.createWorktree",
+        args: ["worktree", "add", input.baseRefName],
+      });
+    }
     const targetBranch = input.newRefName ?? input.refName;
     const sanitizedBranch = targetBranch.replace(/\//g, "-");
     const repoName = path.basename(input.cwd);
@@ -2281,7 +2390,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
   const fetchPullRequestBranch: GitVcsDriver.GitVcsDriver["Service"]["fetchPullRequestBranch"] =
     Effect.fn("fetchPullRequestBranch")(function* (input) {
-      const remoteName = yield* resolvePrimaryRemoteName(input.cwd);
+      if (!(yield* originRemoteExists(input.cwd))) {
+        return yield* new GitCommandError({
+          ...gitCommandContext({
+            operation: "GitVcsDriver.fetchPullRequestBranch",
+            cwd: input.cwd,
+            args: ["fetch", "origin"],
+          }),
+          detail:
+            "Origin-only policy requires an origin remote before materializing a pull request branch.",
+        });
+      }
       yield* executeGit(
         "GitVcsDriver.fetchPullRequestBranch",
         input.cwd,
@@ -2289,7 +2408,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           "fetch",
           "--quiet",
           "--no-tags",
-          remoteName,
+          ORIGIN_REMOTE_NAME,
           `+refs/pull/${input.prNumber}/head:refs/heads/${input.branch}`,
         ],
         {
@@ -2333,6 +2452,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const fetchRemoteBranch: GitVcsDriver.GitVcsDriver["Service"]["fetchRemoteBranch"] = Effect.fn(
     "fetchRemoteBranch",
   )(function* (input) {
+    if (!isOriginRemoteName(input.remoteName)) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({
+          operation: "GitVcsDriver.fetchRemoteBranch",
+          cwd: input.cwd,
+          args: ["fetch", input.remoteName],
+        }),
+        detail: "Origin-only policy permits materializing a remote branch only from origin.",
+      });
+    }
     yield* runGit("GitVcsDriver.fetchRemoteBranch.fetch", input.cwd, [
       "fetch",
       "--quiet",
@@ -2364,12 +2493,23 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     });
 
   const setBranchUpstream: GitVcsDriver.GitVcsDriver["Service"]["setBranchUpstream"] = (input) =>
-    runGit("GitVcsDriver.setBranchUpstream", input.cwd, [
-      "branch",
-      "--set-upstream-to",
-      `${input.remoteName}/${input.remoteBranch}`,
-      input.branch,
-    ]);
+    isOriginRemoteName(input.remoteName)
+      ? runGit("GitVcsDriver.setBranchUpstream", input.cwd, [
+          "branch",
+          "--set-upstream-to",
+          `${input.remoteName}/${input.remoteBranch}`,
+          input.branch,
+        ])
+      : Effect.fail(
+          new GitCommandError({
+            ...gitCommandContext({
+              operation: "GitVcsDriver.setBranchUpstream",
+              cwd: input.cwd,
+              args: ["branch", "--set-upstream-to", `${input.remoteName}/${input.remoteBranch}`],
+            }),
+            detail: "Origin-only policy permits branch tracking only through origin.",
+          }),
+        );
 
   const removeWorktree: GitVcsDriver.GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "removeWorktree",
@@ -2408,6 +2548,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
   const switchRef: GitVcsDriver.GitVcsDriver["Service"]["switchRef"] = Effect.fn("switchRef")(
     function* (input) {
+      yield* requireOriginOrLocalRef({
+        cwd: input.cwd,
+        refName: input.refName,
+        operation: "GitVcsDriver.switchRef",
+        args: ["checkout", input.refName],
+      });
       const [localInputExists, remoteExists] = yield* Effect.all(
         [
           executeGit(

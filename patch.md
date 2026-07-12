@@ -7,23 +7,22 @@ Status: active
 
 `patch.md` is the authoritative fork delta guide for this repository.
 
-It defines the current expected behavior of fork owned features and the reconciliation rules to use when reviewing upstream changes.
+It defines the current expected behavior of fork owned features and the reconciliation rules to use for origin changes.
 
 This fork is an opinionated T3 Code product, not an Omarchy edition.
 
 Omarchy remains a supported local desktop integration where it provides real host capability. It is not the product boundary.
 
-Other upstream product lanes should enter the fork by default unless they conflict with a documented fork owned product outcome.
+Only origin changes may enter the fork. Upstream may be read for reference but must never be accepted, replayed, or integrated.
 
-Use it together with [Upstream Merge Policy](governance/upstream_merge_policy.md).
+Use it together with the [Origin Only Source Control Policy](governance/upstream_merge_policy.md).
 
 ## Required Use
 
-- Review this file before upstream sync, merge, or divergence work.
+- Review this file before changes that modify fork owned behavior.
 - Review the linked feature specs under `fork/` for every affected feature.
 - Update this file in the same change whenever fork owned behavior changes.
 - Keep each feature spec current for intent, owner modules, fork seams, required behavior, replay notes, and verification.
-- Classify upstream behavior against the relevant feature spec as `accept`, `replay`, or `override`.
 - Use the pnpm verification gate: `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test`.
 - If code and this file drift, fix the drift before merge.
 - Treat this file as a current state guide, not a release log.
@@ -31,10 +30,9 @@ Use it together with [Upstream Merge Policy](governance/upstream_merge_policy.md
 ## Authority
 
 - User request wins over this file.
-- Repository governance wins over routine upstream defaults.
+- Repository governance requires origin-only code acceptance.
 - This file defines authoritative expected behavior for fork owned features.
-- When upstream differs from this file, replay the documented product outcome on upstream primitives until the fork intentionally changes direction.
-- This file does not authorize removing upstream product lanes only because they are not tied to one local desktop integration.
+- This file does not authorize accepting or integrating upstream code.
 
 ## Architectural Preference
 
@@ -46,7 +44,7 @@ Prefer thin UI components that render product view models and call adapter callb
 
 This is a preference, not a hard rule. Direct edits to existing modules are acceptable when the behavior is narrow, the branch shape is stable, or an adapter would add more complexity than it removes.
 
-When a feature is likely to be rebuilt onto future upstream `main` snapshots, bias toward pure product logic plus adapters so future rebuilds can replay product behavior first and branch integration second.
+When a feature is likely to be rebuilt onto future origin `main` snapshots, bias toward pure product logic plus adapters so future rebuilds can preserve product behavior first and branch integration second.
 
 ## Feature Index
 
@@ -55,7 +53,7 @@ When a feature is likely to be rebuilt onto future upstream `main` snapshots, bi
 - [`F3` desktop screenshot capture and attach flow](fork/F03-desktop-screenshot-capture-and-attach-flow.md)
 - [`F4` composer draft autonomy and composer chrome](fork/F04-composer-draft-autonomy-and-composer-chrome.md)
 - [`F5` Git surface isolation from draft ownership](fork/F05-git-panel-isolation-from-draft-ownership.md)
-- [`F6` fork first GitHub identity resolution](fork/F06-fork-first-github-identity-resolution.md)
+- [`F6` origin only GitHub target resolution](fork/F06-fork-first-github-identity-resolution.md)
 - [`F7` local branch, worktree, and promotion workflow](fork/F07-local-branch-worktree-and-promotion-workflow.md)
 - [`F8` plan aware sidebar and activity status cues](fork/F08-plan-aware-sidebar-and-activity-status-cues.md)
 - [`F9` plan markdown preview and markdown rendering behavior](fork/F09-plan-markdown-preview-and-document-markdown-rendering.md)
@@ -65,17 +63,17 @@ When a feature is likely to be rebuilt onto future upstream `main` snapshots, bi
 - [`F13` auth access management](fork/F13-auth-access-management.md)
 - [`F14` unified project context and inference dashboard](fork/F14-project-management-and-inference-dashboard.md)
 
-## One Shot Rebuild Packet
+## Origin Rebuild Packet
 
-When rebuilding on a fresh `upstream/main`, use this file as the index and the linked `fork/` specs as the executable product contract.
+When rebuilding on a fresh `origin/main`, use this file as the index and the linked `fork/` specs as the executable product contract.
 
 The rebuild packet must include:
 
-- upstream base commit
+- origin base commit
 - target fork branch
 - affected feature ids
 - feature replay order
-- per feature upstream outcome of `accept`, `replay`, or `override`
+- per feature origin implementation decision
 - fork seam or owner module used for each feature
 - automated or manual verification evidence for each restored behavior
 - compatibility notes for desktop IPC, WebSocket contracts, persisted browser state, server state, routes, and visible workflow
@@ -91,11 +89,10 @@ Every spec under `fork/` must include:
 - owner modules
 - fork seams
 - one shot rebuild notes
-- upstream replay rule
 - verification
 - compatibility checks when the feature affects contracts, routes, persistence, desktop, or runtime state
 
-Spec files should describe outcome behavior first and current implementation shape second. This lets future rebuilds replay product behavior even when upstream files have moved.
+Spec files should describe outcome behavior first and current implementation shape second. This lets future origin rebuilds preserve product behavior even when files have moved.
 
 ## Rebuild Replay Order
 
@@ -106,7 +103,7 @@ Use this order unless a rebuild note records a concrete dependency that requires
 - `F3` desktop screenshot capture and attach flow
 - `F4` composer draft autonomy and composer chrome
 - `F5` Git surface isolation from draft ownership
-- `F6` fork first GitHub identity resolution
+- `F6` origin only GitHub target resolution
 - `F7` local branch, worktree, and promotion workflow
 - `F8` plan aware sidebar and activity status cues
 - `F9` plan markdown preview and markdown rendering behavior
