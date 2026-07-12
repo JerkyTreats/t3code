@@ -559,6 +559,10 @@ export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
 
   const sourceControlProvider = (cwd: string) => sourceControlProviders.resolve({ cwd });
+  const changeRequestProvider = (cwd: string) =>
+    sourceControlProviders
+      .resolveChangeRequestHandle({ cwd })
+      .pipe(Effect.map((handle) => handle.provider));
   const serverSettingsService = yield* ServerSettings.ServerSettingsService;
   const randomUUIDv4 = (cwd: string) =>
     crypto.randomUUIDv4.pipe(
@@ -966,7 +970,7 @@ export const make = Effect.gen(function* () {
     >,
     provider?: SourceControlProvider.SourceControlProvider["Service"],
   ) {
-    const resolvedProvider = provider ?? (yield* sourceControlProvider(cwd));
+    const resolvedProvider = provider ?? (yield* changeRequestProvider(cwd));
     for (const headSelector of headContext.headSelectors) {
       const pullRequests = yield* resolvedProvider.listChangeRequests({
         cwd,
@@ -1000,10 +1004,11 @@ export const make = Effect.gen(function* () {
     details: { branch: string; upstreamRef: string | null },
   ) {
     const headContext = yield* resolveBranchHeadContext(cwd, details);
+    const provider = yield* changeRequestProvider(cwd);
     const parsedByNumber = new Map<number, PullRequestInfo>();
 
     for (const headSelector of headContext.headSelectors) {
-      const pullRequests = yield* (yield* sourceControlProvider(cwd)).listChangeRequests({
+      const pullRequests = yield* provider.listChangeRequests({
         cwd,
         headSelector,
         state: "all",
@@ -1146,7 +1151,7 @@ export const make = Effect.gen(function* () {
     const defaultFromProvider = yield* (
       provider
         ? provider.getDefaultBranch({ cwd })
-        : sourceControlProvider(cwd).pipe(
+        : changeRequestProvider(cwd).pipe(
             Effect.flatMap((resolvedProvider) => resolvedProvider.getDefaultBranch({ cwd })),
           )
     ).pipe(Effect.orElseSucceed(() => null));
@@ -1504,7 +1509,7 @@ export const make = Effect.gen(function* () {
   const resolvePullRequest: GitManager["Service"]["resolvePullRequest"] = Effect.fn(
     "resolvePullRequest",
   )(function* (input) {
-    const pullRequest = yield* (yield* sourceControlProvider(input.cwd))
+    const pullRequest = yield* (yield* changeRequestProvider(input.cwd))
       .getChangeRequest({
         cwd: input.cwd,
         reference: normalizePullRequestReference(input.reference),
