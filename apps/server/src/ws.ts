@@ -737,9 +737,19 @@ const makeWsRpcLayer = (
       const enrichOrchestrationEvents = (events: ReadonlyArray<OrchestrationEvent>) =>
         Effect.forEach(events, enrichProjectEvent, { concurrency: 4 });
 
+      const mapShellProjectionQueryError = (operation: string) => (cause: unknown) =>
+        new OrchestrationGetSnapshotError({
+          message: `Failed to materialize orchestration shell event during ${operation}`,
+          cause,
+        });
+
       const toShellStreamEvent = (
         event: OrchestrationEvent,
-      ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> => {
+      ): Effect.Effect<
+        Option.Option<OrchestrationShellStreamEvent>,
+        OrchestrationGetSnapshotError,
+        never
+      > => {
         switch (event.type) {
           case "project.created":
           case "project.meta-updated":
@@ -751,7 +761,7 @@ const makeWsRpcLayer = (
                   project: nextProject,
                 })),
               ),
-              Effect.orElseSucceed(() => Option.none()),
+              Effect.mapError(mapShellProjectionQueryError(event.type)),
             );
           case "project.deleted":
             return Effect.succeed(
@@ -779,7 +789,7 @@ const makeWsRpcLayer = (
                   thread: nextThread,
                 })),
               ),
-              Effect.orElseSucceed(() => Option.none()),
+              Effect.mapError(mapShellProjectionQueryError(event.type)),
             );
           default:
             if (event.aggregateKind !== "thread") {
@@ -795,7 +805,7 @@ const makeWsRpcLayer = (
                     thread: nextThread,
                   })),
                 ),
-                Effect.orElseSucceed(() => Option.none()),
+                Effect.mapError(mapShellProjectionQueryError(event.type)),
               );
         }
       };
@@ -806,7 +816,11 @@ const makeWsRpcLayer = (
 
       const materializeShellStreamItem = (
         item: ShellSnapshotReplayItem,
-      ): Effect.Effect<Option.Option<OrchestrationShellStreamItem>, never, never> =>
+      ): Effect.Effect<
+        Option.Option<OrchestrationShellStreamItem>,
+        OrchestrationGetSnapshotError,
+        never
+      > =>
         item.kind === "snapshot"
           ? Effect.succeed(Option.some(item))
           : toShellStreamEvent(item.event);

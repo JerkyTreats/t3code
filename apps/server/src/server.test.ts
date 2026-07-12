@@ -5787,6 +5787,55 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("fails shell subscriptions when an upsert projection cannot be read", () =>
+    Effect.gen(function* () {
+      const projectionError = new PersistenceSqlError({
+        operation: "ProjectionSnapshotQuery.getThreadShellById:test",
+        detail: "failed to materialize shell upsert",
+      });
+      const occurredAt = "2026-04-05T00:00:01.000Z";
+      const replayedEvent: Extract<OrchestrationEvent, { type: "thread.unarchived" }> = {
+        sequence: 1,
+        eventId: EventId.make("event-shell-thread-unarchived-1"),
+        aggregateKind: "thread",
+        aggregateId: defaultThreadId,
+        occurredAt,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.unarchived",
+        payload: {
+          threadId: defaultThreadId,
+          updatedAt: occurredAt,
+        },
+      };
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            readEvents: () => Stream.make(replayedEvent),
+          },
+          projectionSnapshotQuery: {
+            getThreadShellById: () => Effect.fail(projectionError),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeShell]({}).pipe(Stream.runCollect),
+        ).pipe(Effect.result),
+      );
+
+      assertTrue(result._tag === "Failure");
+      assertTrue(result.failure._tag === "OrchestrationGetSnapshotError");
+      assert.include(result.failure.message, "thread.unarchived");
+      assertTrue(result.failure.cause instanceof Error);
+      assert.include(result.failure.cause.message, projectionError.message);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("closes the shell snapshot replay and live transition window", () =>
     Effect.gen(function* () {
       const liveEvents = yield* PubSub.unbounded<OrchestrationEvent>();
