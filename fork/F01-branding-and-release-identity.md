@@ -13,6 +13,7 @@ The product must not present itself as an Omarchy edition. Omarchy may appear on
 
 - Electron desktop naming uses the fork product identity across packaged and development surfaces.
 - Web branding used by the Electron desktop shell keeps the same fork base identity where it represents the desktop product.
+- Unconfigured web branding uses the `Alpha` stage label in development and production.
 - Mobile and hosted lanes may keep upstream naming unless a separate fork product decision changes them.
 - Omarchy is not a product qualifier outside Omarchy specific integration surfaces.
 - Electron desktop release identity keeps fork naming visible and must not silently fall back to upstream naming.

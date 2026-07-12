@@ -23,9 +23,7 @@ export const HOSTED_APP_CHANNEL_LABEL =
   HOSTED_APP_CHANNEL === "nightly" ? "Nightly" : HOSTED_APP_CHANNEL === "latest" ? "Latest" : null;
 export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? PRODUCT_BASE_NAME;
 export const APP_STAGE_LABEL =
-  injectedDesktopAppBranding?.stageLabel ??
-  HOSTED_APP_CHANNEL_LABEL ??
-  (import.meta.env.DEV ? "Dev" : "Alpha");
+  injectedDesktopAppBranding?.stageLabel ?? HOSTED_APP_CHANNEL_LABEL ?? "Alpha";
 export const APP_DISPLAY_NAME =
   injectedDesktopAppBranding?.displayName ??
   (APP_STAGE_LABEL === "Latest"
