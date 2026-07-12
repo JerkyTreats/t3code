@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 interface ComposerPendingApprovalActionsProps {
   requestId: ApprovalRequestId;
   isResponding: boolean;
+  isUnavailable: boolean;
   onRespondToApproval: (
     requestId: ApprovalRequestId,
     decision: ProviderApprovalDecision,
@@ -14,14 +15,16 @@ interface ComposerPendingApprovalActionsProps {
 export const ComposerPendingApprovalActions = memo(function ComposerPendingApprovalActions({
   requestId,
   isResponding,
+  isUnavailable,
   onRespondToApproval,
 }: ComposerPendingApprovalActionsProps) {
+  const disabled = isResponding || isUnavailable;
   return (
     <>
       <Button
         size="sm"
         variant="ghost"
-        disabled={isResponding}
+        disabled={disabled}
         onClick={() => void onRespondToApproval(requestId, "cancel")}
       >
         Cancel turn
@@ -29,7 +32,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
       <Button
         size="sm"
         variant="destructive-outline"
-        disabled={isResponding}
+        disabled={disabled}
         onClick={() => void onRespondToApproval(requestId, "decline")}
       >
         Decline
@@ -37,7 +40,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
       <Button
         size="sm"
         variant="outline"
-        disabled={isResponding}
+        disabled={disabled}
         onClick={() => void onRespondToApproval(requestId, "acceptForSession")}
       >
         Always allow this session
@@ -45,7 +48,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
       <Button
         size="sm"
         variant="default"
-        disabled={isResponding}
+        disabled={disabled}
         onClick={() => void onRespondToApproval(requestId, "accept")}
       >
         Approve once

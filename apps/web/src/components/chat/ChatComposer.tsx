@@ -383,6 +383,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isSendBusy: boolean;
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
+  canQueueOffline: boolean;
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   onPreviousPendingQuestion: () => void;
@@ -409,6 +410,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         isSendBusy={props.isSendBusy}
         isConnecting={props.isConnecting}
         isEnvironmentUnavailable={props.isEnvironmentUnavailable}
+        canQueueOffline={props.canQueueOffline}
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
@@ -489,6 +491,15 @@ export interface ChatComposerProps {
     readonly label: string;
     readonly connection: EnvironmentConnectionPresentation;
   } | null;
+  canQueueOffline: boolean;
+  outboxStatus: {
+    readonly queued: number;
+    readonly sending: number;
+    readonly retrying: number;
+    readonly acknowledged: number;
+    readonly terminalFailures: number;
+    readonly terminalFailureMessage: string | null;
+  };
 
   // Pending approvals / inputs
   activePendingApproval: PendingApproval | null;
@@ -595,6 +606,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isSendBusy,
     isPreparingWorktree,
     environmentUnavailable,
+    canQueueOffline,
+    outboxStatus,
     activePendingApproval,
     pendingApprovals,
     pendingUserInputs,
@@ -1179,7 +1192,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [activePendingIsResponding, activePendingProgress, activePendingResolvedAnswers],
   );
   const collapsedComposerPrimaryActionDisabled =
-    phase === "running" || isSendBusy || isConnecting || !composerSendState.hasSendableContent;
+    phase === "running" ||
+    isSendBusy ||
+    (!canQueueOffline && (isConnecting || environmentUnavailable !== null)) ||
+    !composerSendState.hasSendableContent;
   const collapsedComposerPrimaryActionLabel = "Send message";
   const showMobilePendingAnswerActions =
     isMobileViewport && !isComposerCollapsedMobile && pendingPrimaryAction !== null;
@@ -1757,6 +1773,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const shouldBlurMobileComposerOnSubmit = useCallback(() => {
     if (!isMobileViewport) return false;
     if (isSendBusy || isConnecting || phase === "running") return false;
+    if (!canQueueOffline && environmentUnavailable !== null) return false;
     if (activePendingProgress) {
       return activePendingProgress.isLastQuestion && Boolean(activePendingResolvedAnswers);
     }
@@ -1765,6 +1782,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activePendingProgress,
     activePendingResolvedAnswers,
     composerSendState.hasSendableContent,
+    canQueueOffline,
+    environmentUnavailable,
     isConnecting,
     isMobileViewport,
     isSendBusy,
@@ -2082,13 +2101,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         composerEditorRef.current?.focusAt(cursor);
       },
       insertTextAtEnd: (text: string) => {
-        if (
-          text.length === 0 ||
-          isConnecting ||
-          isComposerApprovalState ||
-          pendingUserInputs.length > 0 ||
-          (environmentUnavailable !== null && activePendingProgress === null)
-        ) {
+        if (text.length === 0 || isComposerApprovalState || pendingUserInputs.length > 0) {
           return false;
         }
         const rangeEnd = promptRef.current.length;
@@ -2276,6 +2289,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               </div>
             ) : null)}
 
+          {outboxStatus.terminalFailures > 0 ? (
+            <div className="border-b border-destructive/25 bg-destructive/8 px-3 py-1.5 text-xs text-destructive">
+              {outboxStatus.terminalFailures === 1
+                ? "1 queued message needs attention"
+                : `${outboxStatus.terminalFailures} queued messages need attention`}
+              {outboxStatus.terminalFailureMessage
+                ? `: ${outboxStatus.terminalFailureMessage}`
+                : null}
+            </div>
+          ) : outboxStatus.retrying > 0 ? (
+            <div className="border-b border-amber-500/20 bg-amber-500/8 px-3 py-1.5 text-xs text-amber-300">
+              Connection interrupted. Your message is saved and will retry automatically.
+            </div>
+          ) : outboxStatus.sending > 0 ? (
+            <div className="border-b border-border/50 bg-muted/15 px-3 py-1.5 text-xs text-muted-foreground">
+              Sending saved message...
+            </div>
+          ) : outboxStatus.queued > 0 ? (
+            <div className="border-b border-border/50 bg-muted/15 px-3 py-1.5 text-xs text-muted-foreground">
+              {outboxStatus.queued === 1
+                ? "1 message saved and queued"
+                : `${outboxStatus.queued} messages saved and queued`}
+            </div>
+          ) : outboxStatus.acknowledged > 0 ? (
+            <div className="border-b border-border/50 bg-muted/15 px-3 py-1.5 text-xs text-muted-foreground">
+              Message acknowledged
+            </div>
+          ) : null}
+
           {isComposerCollapsedMobile && activePendingApproval ? (
             <div
               className="rounded-t-[19px] border-b border-border/65 bg-muted/20"
@@ -2289,6 +2331,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <ComposerPendingApprovalActions
                   requestId={activePendingApproval.requestId}
                   isResponding={respondingRequestIds.includes(activePendingApproval.requestId)}
+                  isUnavailable={isConnecting || environmentUnavailable !== null}
                   onRespondToApproval={onRespondToApproval}
                 />
               </div>
@@ -2339,6 +2382,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       isSendBusy={isSendBusy}
                       isConnecting={isConnecting}
                       isEnvironmentUnavailable={environmentUnavailable !== null}
+                      canQueueOffline={false}
                       isPreparingWorktree={false}
                       hasSendableContent={false}
                       preserveComposerFocusOnPointerDown
@@ -2619,6 +2663,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isSendBusy={isSendBusy}
                     isConnecting={isConnecting}
                     isEnvironmentUnavailable={environmentUnavailable !== null}
+                    canQueueOffline={false}
                     isPreparingWorktree={false}
                     hasSendableContent={false}
                     preserveComposerFocusOnPointerDown
@@ -2637,6 +2682,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <ComposerPendingApprovalActions
                 requestId={activePendingApproval.requestId}
                 isResponding={respondingRequestIds.includes(activePendingApproval.requestId)}
+                isUnavailable={isConnecting || environmentUnavailable !== null}
                 onRespondToApproval={onRespondToApproval}
               />
             </div>
@@ -2749,6 +2795,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   isSendBusy={isSendBusy}
                   isConnecting={isConnecting}
                   isEnvironmentUnavailable={environmentUnavailable !== null}
+                  canQueueOffline={canQueueOffline}
                   isPreparingWorktree={isPreparingWorktree}
                   hasSendableContent={composerSendState.hasSendableContent}
                   preserveComposerFocusOnPointerDown={isMobileViewport}

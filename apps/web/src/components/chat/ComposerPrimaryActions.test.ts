@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { formatPendingPrimaryActionLabel } from "./ComposerPrimaryActions";
+import {
+  formatPendingPrimaryActionLabel,
+  isComposerSendDisabled,
+  isRemoteComposerActionDisabled,
+} from "./ComposerPrimaryActions";
 
 describe("formatPendingPrimaryActionLabel", () => {
   it("returns 'Submitting...' while responding", () => {
@@ -89,5 +93,48 @@ describe("formatPendingPrimaryActionLabel", () => {
         questionIndex: 5,
       }),
     ).toBe("Submit answers");
+  });
+});
+
+describe("isComposerSendDisabled", () => {
+  it("allows a normal message to be durably queued while disconnected", () => {
+    expect(
+      isComposerSendDisabled({
+        isSendBusy: false,
+        isConnecting: true,
+        isEnvironmentUnavailable: true,
+        canQueueOffline: true,
+        hasSendableContent: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps connection-gated actions disabled", () => {
+    expect(
+      isComposerSendDisabled({
+        isSendBusy: false,
+        isConnecting: true,
+        isEnvironmentUnavailable: true,
+        canQueueOffline: false,
+        hasSendableContent: true,
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("isRemoteComposerActionDisabled", () => {
+  it("gates approval, answer, and interrupt commands during reconnect", () => {
+    expect(
+      isRemoteComposerActionDisabled({
+        isConnecting: true,
+        isEnvironmentUnavailable: false,
+      }),
+    ).toBe(true);
+    expect(
+      isRemoteComposerActionDisabled({
+        isConnecting: false,
+        isEnvironmentUnavailable: false,
+      }),
+    ).toBe(false);
   });
 });

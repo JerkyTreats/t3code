@@ -153,7 +153,9 @@ import {
   nextProjectScriptId,
   projectScriptIdFromCommand,
 } from "~/projectScripts";
-import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
+import { newCommandId, newDraftId, newMessageId, newThreadId } from "~/lib/utils";
+import { webThreadOutboxManager } from "../threadOutbox";
+import { useWebThreadOutboxEntries } from "./ThreadOutboxCoordinator";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
@@ -1083,6 +1085,23 @@ function ChatViewContent(props: ChatViewProps) {
   const serverThreadState = useEnvironmentThread(
     routeKind === "server" ? routeThreadRef.environmentId : null,
     routeKind === "server" ? routeThreadRef.threadId : null,
+  );
+  const activeThreadOutboxEntries = useWebThreadOutboxEntries(environmentId, threadId);
+  const activeThreadOutboxStatus = useMemo(
+    () => ({
+      queued: activeThreadOutboxEntries.filter((entry) => entry.status === "queued").length,
+      sending: activeThreadOutboxEntries.filter((entry) => entry.status === "sending").length,
+      retrying: activeThreadOutboxEntries.filter((entry) => entry.status === "retrying").length,
+      acknowledged: activeThreadOutboxEntries.filter((entry) => entry.status === "acknowledged")
+        .length,
+      terminalFailures: activeThreadOutboxEntries.filter(
+        (entry) => entry.status === "terminal-failure",
+      ).length,
+      terminalFailureMessage:
+        activeThreadOutboxEntries.find((entry) => entry.status === "terminal-failure")?.lastError ??
+        null,
+    }),
+    [activeThreadOutboxEntries],
   );
   const serverThread = useThread(routeKind === "server" ? routeThreadRef : null);
   const threadSyncStatus = routeKind === "server" ? (serverThreadState.syncStatus ?? null) : null;
@@ -2133,16 +2152,42 @@ function ChatViewContent(props: ChatViewProps) {
             return changed ? { ...message, attachments } : message;
           });
 
-    if (optimisticUserMessages.length === 0) {
+    const outboxMessages: ChatMessage[] = activeThreadOutboxEntries.map(({ message }) => ({
+      id: message.messageId,
+      role: "user",
+      text: message.text,
+      attachments: message.attachments.map((attachment) => ({
+        type: "image" as const,
+        id: attachment.id ?? `${message.messageId}:${attachment.name}`,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        previewUrl: attachment.dataUrl,
+      })),
+      turnId: null,
+      createdAt: message.createdAt,
+      updatedAt: message.createdAt,
+      streaming: false,
+    }));
+    if (optimisticUserMessages.length === 0 && outboxMessages.length === 0) {
       return serverMessagesWithPreviewHandoff;
     }
     const serverIds = new Set(serverMessagesWithPreviewHandoff.map((message) => message.id));
-    const pendingMessages = optimisticUserMessages.filter((message) => !serverIds.has(message.id));
+    const pendingMessages = [...optimisticUserMessages, ...outboxMessages].filter(
+      (message, index, all) =>
+        !serverIds.has(message.id) &&
+        all.findIndex((candidate) => candidate.id === message.id) === index,
+    );
     if (pendingMessages.length === 0) {
       return serverMessagesWithPreviewHandoff;
     }
     return [...serverMessagesWithPreviewHandoff, ...pendingMessages];
-  }, [attachmentPreviewHandoffByMessageId, displayServerMessages, optimisticUserMessages]);
+  }, [
+    activeThreadOutboxEntries,
+    attachmentPreviewHandoffByMessageId,
+    displayServerMessages,
+    optimisticUserMessages,
+  ]);
   const timelineEntries = useMemo(
     () =>
       deriveTimelineEntries(timelineMessages, activeThread?.proposedPlans ?? [], workLogEntries),
@@ -4037,11 +4082,12 @@ function ChatViewContent(props: ChatViewProps) {
 
   const onSend = async (e?: { preventDefault: () => void }) => {
     e?.preventDefault();
+    const canQueueNormalServerMessage =
+      isServerThread && activePendingProgress === null && !showPlanFollowUpPrompt;
     if (
       !activeThread ||
       isSendBusy ||
-      isConnecting ||
-      activeEnvironmentUnavailable ||
+      ((isConnecting || activeEnvironmentUnavailable) && !canQueueNormalServerMessage) ||
       sendInFlightRef.current
     )
       return;
@@ -4139,9 +4185,15 @@ function ChatViewContent(props: ChatViewProps) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
       return;
     }
+    if (shouldCreateWorktree && (isConnecting || activeEnvironmentUnavailable)) {
+      setThreadError(
+        threadIdForSend,
+        "Reconnect before starting a new worktree. Your draft remains saved.",
+      );
+      return;
+    }
 
     sendInFlightRef.current = true;
-    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
 
     const composerImagesSnapshot = [...composerImages];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
@@ -4186,6 +4238,91 @@ function ChatViewContent(props: ChatViewProps) {
       sizeBytes: image.sizeBytes,
       previewUrl: image.previewUrl,
     }));
+
+    if (isServerThread && !shouldCreateWorktree) {
+      const turnAttachmentsResult = await settlePromise(() => turnAttachmentsPromise);
+      if (turnAttachmentsResult._tag === "Failure") {
+        const error = Cause.squash(turnAttachmentsResult.cause);
+        setThreadError(
+          threadIdForSend,
+          error instanceof Error ? error.message : "Failed to save message attachments.",
+        );
+        sendInFlightRef.current = false;
+        return;
+      }
+
+      const firstImageName = composerImagesSnapshot[0]?.name;
+      const titleSeed = truncate(
+        trimmed ||
+          (firstImageName
+            ? `Image: ${firstImageName}`
+            : composerTerminalContextsSnapshot.length > 0
+              ? formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!)
+              : composerElementContextsSnapshot.length > 0
+                ? formatElementContextLabel(composerElementContextsSnapshot[0]!)
+                : "New thread"),
+      );
+      try {
+        // Persist text, attachment data URLs, and command identity before any
+        // composer state is cleared.
+        await webThreadOutboxManager.enqueue({
+          environmentId,
+          threadId: threadIdForSend,
+          messageId: messageIdForSend,
+          commandId: newCommandId(),
+          text: outgoingMessageText,
+          attachments: turnAttachmentsResult.value.map((attachment, index) => ({
+            ...attachment,
+            id: composerImagesSnapshot[index]?.id,
+          })),
+          modelSelection: ctxSelectedModelSelection,
+          runtimeMode,
+          interactionMode,
+          titleSeed,
+          createdAt: messageCreatedAt,
+        });
+      } catch (error) {
+        setThreadError(
+          threadIdForSend,
+          error instanceof Error ? error.message : "Failed to save the queued message.",
+        );
+        sendInFlightRef.current = false;
+        return;
+      }
+
+      isAtEndRef.current = true;
+      timelineScrollModeRef.current = "anchoring-new-turn";
+      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+      pendingTimelineAnchorRef.current = messageIdForSend;
+      activeTimelineAnchorIndexRef.current = null;
+      showScrollDebouncer.current.cancel();
+      setShowScrollToBottom(false);
+      setTimelineAnchor({
+        threadKey: scopedThreadKey(scopeThreadRef(activeThread.environmentId, threadIdForSend)),
+        messageId: messageIdForSend,
+      });
+      setThreadError(threadIdForSend, null);
+      if (expiredTerminalContextCount > 0) {
+        const toastCopy = buildExpiredTerminalContextToastCopy(
+          expiredTerminalContextCount,
+          "omitted",
+        );
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: toastCopy.title,
+            description: toastCopy.description,
+          }),
+        );
+      }
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      sendInFlightRef.current = false;
+      return;
+    }
+
+    beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
     // Sending always returns to the live edge. The new row becomes the
     // anchored end-space target so it lands near the top while the response
     // streams into the reserved space below it.
@@ -5372,6 +5509,10 @@ function ChatViewContent(props: ChatViewProps) {
                       isSendBusy={isSendBusy}
                       isPreparingWorktree={isPreparingWorktree}
                       environmentUnavailable={activeEnvironmentUnavailableState}
+                      canQueueOffline={
+                        isServerThread && activePendingProgress === null && !showPlanFollowUpPrompt
+                      }
+                      outboxStatus={activeThreadOutboxStatus}
                       activePendingApproval={activePendingApproval}
                       pendingApprovals={pendingApprovals}
                       pendingUserInputs={pendingUserInputs}
