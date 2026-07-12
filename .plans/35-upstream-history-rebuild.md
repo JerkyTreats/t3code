@@ -1,7 +1,7 @@
 # Upstream History Rebuild
 
 Date: 2026-07-12
-Status: review in progress
+Status: complete
 
 ## Objective
 
@@ -38,8 +38,8 @@ Rebuild the fork so current fork-owned behavior sits on current upstream Git his
 | P2 | Resolve upstream overlap conflicts | complete | P1 | all 22 overlap paths resolved with no unmerged entries |
 | P3 | Validate `F1` through `F14` behavior and update stale contracts | complete | P2 | contracts mapped to rebuilt owner modules below |
 | P4 | Run repository gates | complete | P3 | all required gates passed |
-| P5 | Run fresh program review and close findings | in progress | P4 | first review packet repaired, central closeout pending |
-| P6 | Prepare local main replacement | pending | P5 | final commit and local main decision remain pending |
+| P5 | Run fresh program review and close findings | complete | P4 | all runtime, history, requirement, documentation, and architecture findings closed or recorded below |
+| P6 | Prepare local main replacement | complete | P5 | replay committed as `8c691cc9c` and old tip preserved on the archive branch |
 
 ## Dependency Graph
 
@@ -96,6 +96,8 @@ Rebuild the fork so current fork-owned behavior sits on current upstream Git his
 | Test | `pnpm test` | passed | full reconstructed tree |
 | Mobile lint | `pnpm lint:mobile` | passed | required because native mobile differs |
 
+Final focused totals include 294 client runtime tests, 1399 web tests, and 1450 server tests. SwiftLint, ktlint, and detekt were unavailable and were skipped by the repository mobile gate.
+
 ## Feature Reconciliation Evidence
 
 | Feature | Origin implementation decision | Rebuilt owner seam | Verification evidence | Compatibility evidence |
@@ -122,15 +124,19 @@ Rebuild the fork so current fork-owned behavior sits on current upstream Git his
 - `DOC-3` updated phase, gate, feature, workflow, and risk evidence in this ledger.
 - `DOC-4` remains deferred because `AGENTS.md` architecture guidance requires policy confirmation before editing.
 - `DOC-5` replaced Bun operator commands with pnpm and aligned retained workflows to pnpm `11.10.0`.
-- Fresh review closeout remains pending.
+- `RUNTIME-1` restored capability-selected V2 thread sync, bounded paging, deferred hydration, V1 fallback, atomic HTTP bootstrap, cached sequence resume, and retry visibility.
+- `RUNTIME-2` validates hydration response membership, uniqueness, and complete request coverage before publishing or persisting payloads.
+- Fresh runtime reviewers withdrew both findings after fixes and regression tests.
+- Fresh documentation review withdrew its manual CI dispatch finding after the operator guide was corrected.
+- History and requirement review confirmed direct upstream ancestry, all 328 fork-only path outcomes, and the declared integration adaptations.
 
 ## Phase Completion Matrix
 
 | Feature group | Implementation | Tests | Review | Status |
 | --- | --- | --- | --- | --- |
-| `F1` through `F7` | complete | passed | pending central closeout | review in progress |
-| `F8` through `F14` | complete | passed | pending central closeout | review in progress |
-| Later upstream changes | accepted as base | passed | pending central closeout | review in progress |
+| `F1` through `F7` | complete | passed | passed | complete |
+| `F8` through `F14` | complete | passed | passed | complete |
+| Later upstream changes | accepted as base | passed | passed | complete |
 
 ## Risks And Exceptions
 
@@ -143,4 +149,4 @@ Rebuild the fork so current fork-owned behavior sits on current upstream Git his
 
 ## Final Reconciliation
 
-Replay, feature reconciliation, and required gates are complete. Fresh review closeout, the final reconstruction commit, and local main preparation remain pending.
+Replay, feature reconciliation, required gates, fresh reviews, and the reconstruction commit are complete. The accepted ancestry is `c1ec1915f`, `9e39e48ad`, then `8c691cc9c`. The old fork tip remains preserved on `archive/pre-upstream-rebuild-20260712`. Remote `origin/main` remains unchanged pending a separate explicit push decision.
