@@ -45,10 +45,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import {
-  type ConnectionDiagnosticsEntry,
-  resolveConnectionControlAction,
-} from "@t3tools/client-runtime/state/connections";
+import { resolveConnectionControlAction } from "@t3tools/client-runtime/state/connections";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";

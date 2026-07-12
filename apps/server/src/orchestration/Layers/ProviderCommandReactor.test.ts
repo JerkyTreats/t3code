@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
+// oxlint-disable t3code/no-manual-effect-runtime-in-tests -- Legacy managed runtime harness requires imperative lifecycle control.
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
