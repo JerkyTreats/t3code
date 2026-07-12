@@ -83,9 +83,21 @@
       "types": "./src/projectScripts.ts",
       "import": "./src/projectScripts.ts"
     },
+    "./forkVerification": {
+      "types": "./src/forkVerification.ts",
+      "import": "./src/forkVerification.ts"
+    },
+    "./productIdentity": {
+      "types": "./src/productIdentity.ts",
+      "import": "./src/productIdentity.ts"
+    },
     "./orchestrationTiming": {
       "types": "./src/orchestrationTiming.ts",
       "import": "./src/orchestrationTiming.ts"
+    },
+    "./planProgress": {
+      "types": "./src/planProgress.ts",
+      "import": "./src/planProgress.ts"
     },
     "./remote": {
       "types": "./src/remote.ts",

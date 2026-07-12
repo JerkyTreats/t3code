@@ -3,6 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   dedupeRemoteBranchesWithLocalMatches,
   deriveLocalBranchNameFromRemoteRef,
+  isCurrentBranchPickerRef,
+  resolveDisplayedGitBranch,
   resolveEnvironmentOptionLabel,
   resolveBranchSelectionTarget,
   resolveCurrentWorkspaceLabel,
@@ -81,6 +83,52 @@ describe("resolveBranchToolbarValue", () => {
         currentGitBranch: "main",
       }),
     ).toBe("main");
+  });
+});
+
+describe("resolveDisplayedGitBranch", () => {
+  it("keeps a confirmed checkout visible until the status query catches up", () => {
+    expect(
+      resolveDisplayedGitBranch({
+        currentGitBranch: "event-foundation-closeout",
+        confirmedCheckoutBranch: "runtime-operator-visibility",
+      }),
+    ).toBe("runtime-operator-visibility");
+  });
+
+  it("uses the server-reported branch when no checkout is pending confirmation", () => {
+    expect(
+      resolveDisplayedGitBranch({
+        currentGitBranch: "runtime-operator-visibility",
+        confirmedCheckoutBranch: null,
+      }),
+    ).toBe("runtime-operator-visibility");
+  });
+});
+
+describe("isCurrentBranchPickerRef", () => {
+  it("uses the reconciled checkout branch instead of stale list metadata", () => {
+    const oldRef = {
+      name: "event-foundation-closeout",
+      current: true,
+    };
+    const selectedRef = {
+      name: "runtime-operator-visibility",
+      current: false,
+    };
+
+    expect(
+      isCurrentBranchPickerRef({
+        refName: oldRef,
+        displayedGitBranch: "runtime-operator-visibility",
+      }),
+    ).toBe(false);
+    expect(
+      isCurrentBranchPickerRef({
+        refName: selectedRef,
+        displayedGitBranch: "runtime-operator-visibility",
+      }),
+    ).toBe(true);
   });
 });
 

@@ -191,6 +191,15 @@ it.effect("creates GitHub PRs through provider-neutral input names", () =>
 
     yield* provider.createChangeRequest({
       cwd: "/repo",
+      context: {
+        provider: {
+          kind: "github",
+          name: "GitHub",
+          baseUrl: "https://github.com",
+        },
+        remoteName: "origin",
+        remoteUrl: "git@github.com:jerkytreats/t3code-omarchy.git",
+      },
       baseRefName: "main",
       headSelector: "owner:feature/provider",
       title: "Provider PR",
@@ -199,11 +208,79 @@ it.effect("creates GitHub PRs through provider-neutral input names", () =>
 
     assert.deepStrictEqual(createInput, {
       cwd: "/repo",
+      repository: "jerkytreats/t3code-omarchy",
       baseBranch: "main",
       headSelector: "owner:feature/provider",
       title: "Provider PR",
       bodyFile: "/tmp/body.md",
     });
+  }),
+);
+
+it.effect("rejects change request creation without an origin context", () =>
+  Effect.gen(function* () {
+    const provider = yield* makeProvider({
+      createPullRequest: () => Effect.die("createPullRequest must not run"),
+    });
+
+    const error = yield* provider
+      .createChangeRequest({
+        cwd: "/repo",
+        context: {
+          provider: {
+            kind: "github",
+            name: "GitHub",
+            baseUrl: "https://github.com",
+          },
+          remoteName: "upstream",
+          remoteUrl: "git@github.com:pingdotgg/t3code.git",
+        },
+        baseRefName: "main",
+        headSelector: "feature/blocked",
+        title: "Blocked PR",
+        bodyFile: "/tmp/body.md",
+      })
+      .pipe(Effect.flip);
+
+    assert.equal(
+      error.detail,
+      "Origin-only policy requires a GitHub origin remote before this operation can run.",
+    );
+  }),
+);
+
+it.effect("preserves the GitHub Enterprise host in the pull request repository target", () =>
+  Effect.gen(function* () {
+    let createInput: Parameters<GitHubCli.GitHubCli["Service"]["createPullRequest"]>[0] | null =
+      null;
+    const provider = yield* makeProvider({
+      createPullRequest: (input) => {
+        createInput = input;
+        return Effect.void;
+      },
+    });
+
+    yield* provider.createChangeRequest({
+      cwd: "/repo",
+      context: {
+        provider: {
+          kind: "github",
+          name: "GitHub Enterprise",
+          baseUrl: "https://github.example.test",
+        },
+        remoteName: "origin",
+        remoteUrl: "git@github.example.test:platform/t3code.git",
+      },
+      baseRefName: "trunk",
+      headSelector: "fix/origin-policy",
+      title: "Origin policy",
+      bodyFile: "/tmp/body.md",
+    });
+
+    assert.equal(
+      (createInput as { readonly repository: string } | null)?.repository,
+      "github.example.test/platform/t3code",
+    );
   }),
 );
 

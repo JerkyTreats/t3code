@@ -59,6 +59,18 @@ describe("resolveMarkdownFileLinkTarget", () => {
     );
   });
 
+  it("resolves angle-wrapped relative file paths with spaces", () => {
+    expect(resolveMarkdownFileLinkTarget("<docs/release notes.md>", "/Users/julius/project")).toBe(
+      "/Users/julius/project/docs/release notes.md",
+    );
+  });
+
+  it("resolves encoded relative file paths with spaces", () => {
+    expect(resolveMarkdownFileLinkTarget("docs/release%20notes.md", "/Users/julius/project")).toBe(
+      "/Users/julius/project/docs/release notes.md",
+    );
+  });
+
   it("maps #L line anchors to editor line suffixes", () => {
     expect(resolveMarkdownFileLinkTarget("/Users/julius/project/src/main.ts#L42C7")).toBe(
       "/Users/julius/project/src/main.ts:42:7",
@@ -104,6 +116,16 @@ describe("resolveMarkdownFileLinkTarget", () => {
   it("does not create a preview path for files outside the workspace", () => {
     expect(resolveMarkdownFileLinkMeta("/tmp/report.ts", "/repo/project")).toMatchObject({
       workspaceRelativePath: null,
+    });
+  });
+
+  it("keeps nested document links relative to the workspace root", () => {
+    expect(
+      resolveMarkdownFileLinkMeta("sibling.md", "/repo/project/docs/guides", "/repo/project"),
+    ).toMatchObject({
+      targetPath: "/repo/project/docs/guides/sibling.md",
+      displayPath: "project/docs/guides/sibling.md",
+      workspaceRelativePath: "docs/guides/sibling.md",
     });
   });
 

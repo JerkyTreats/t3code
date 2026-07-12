@@ -96,6 +96,7 @@ describe("hasUnseenCompletion", () => {
         hasActionableProposedPlan: false,
         hasPendingApprovals: false,
         hasPendingUserInput: false,
+        activePlanProgress: null,
         interactionMode: "default",
         latestTurn: makeLatestTurn(),
         lastVisitedAt: "2026-03-09T10:04:00.000Z",
@@ -110,6 +111,7 @@ describe("hasUnseenCompletion", () => {
         hasActionableProposedPlan: false,
         hasPendingApprovals: false,
         hasPendingUserInput: false,
+        activePlanProgress: null,
         interactionMode: "default",
         latestTurn: makeLatestTurn(),
         lastVisitedAt: undefined,
@@ -569,6 +571,7 @@ describe("resolveThreadStatusPill", () => {
     hasActionableProposedPlan: false,
     hasPendingApprovals: false,
     hasPendingUserInput: false,
+    activePlanProgress: null,
     interactionMode: "plan" as const,
     latestTurn: null,
     lastVisitedAt: undefined,
@@ -613,6 +616,71 @@ describe("resolveThreadStatusPill", () => {
         thread: baseThread,
       }),
     ).toMatchObject({ label: "Working", pulse: true });
+  });
+
+  it("shows active plan progress before generic working state", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          activePlanProgress: {
+            completedAllSteps: false,
+            currentStepNumber: 2,
+            totalSteps: 5,
+            turnId: "turn-1" as never,
+            activityId: "event-1" as never,
+            updatedAt: "2026-03-09T10:01:00.000Z",
+          },
+        },
+      }),
+    ).toMatchObject({ label: "2/5", pulse: true });
+  });
+
+  it("falls back to working when plan progress belongs to an older running turn", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          activePlanProgress: {
+            completedAllSteps: false,
+            currentStepNumber: 2,
+            totalSteps: 5,
+            turnId: "turn-1" as never,
+            activityId: "event-1" as never,
+            updatedAt: "2026-03-09T10:01:00.000Z",
+          },
+          session: {
+            ...baseThread.session,
+            activeTurnId: "turn-2" as never,
+          },
+        },
+      }),
+    ).toMatchObject({ label: "Working", pulse: true });
+  });
+
+  it("does not show stale plan progress for a settled thread", () => {
+    expect(
+      resolveThreadStatusPill({
+        thread: {
+          ...baseThread,
+          activePlanProgress: {
+            completedAllSteps: true,
+            currentStepNumber: 5,
+            totalSteps: 5,
+            turnId: "turn-1" as never,
+            activityId: "event-1" as never,
+            updatedAt: "2026-03-09T10:04:00.000Z",
+          },
+          latestTurn: makeLatestTurn(),
+          lastVisitedAt: "2026-03-09T10:04:00.000Z",
+          session: {
+            ...baseThread.session,
+            status: "ready",
+            activeTurnId: null,
+          },
+        },
+      }),
+    ).toMatchObject({ label: "Completed", pulse: false });
   });
 
   it("shows plan ready when a settled plan turn has a proposed plan ready for follow-up", () => {

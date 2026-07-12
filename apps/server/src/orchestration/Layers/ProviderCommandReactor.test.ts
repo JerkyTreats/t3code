@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
+// oxlint-disable t3code/no-manual-effect-runtime-in-tests -- Legacy managed runtime harness requires imperative lifecycle control.
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -145,6 +146,7 @@ describe("ProviderCommandReactor", () => {
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
     readonly requiresNewThreadForModelChange?: boolean;
+    readonly startReactor?: boolean;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -337,11 +339,9 @@ describe("ProviderCommandReactor", () => {
       Layer.provide(OrchestrationEventStoreLive),
       Layer.provide(OrchestrationCommandReceiptRepositoryLive),
       Layer.provide(RepositoryIdentityResolver.layer),
-      Layer.provide(SqlitePersistenceMemory),
     );
     const projectionSnapshotLayer = OrchestrationProjectionSnapshotQueryLive.pipe(
       Layer.provide(RepositoryIdentityResolver.layer),
-      Layer.provide(SqlitePersistenceMemory),
     );
     const layer = ProviderCommandReactorLive.pipe(
       Layer.provideMerge(orchestrationLayer),
@@ -371,6 +371,7 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
+      Layer.provide(SqlitePersistenceMemory),
     );
     runtime = ManagedRuntime.make(layer);
 
@@ -378,8 +379,8 @@ describe("ProviderCommandReactor", () => {
     const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
     const reactor = await runtime.runPromise(Effect.service(ProviderCommandReactor));
     scope = await Effect.runPromise(Scope.make("sequential"));
-    await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
     const drain = () => Effect.runPromise(reactor.drain);
+    const startReactor = () => Effect.runPromise(reactor.start().pipe(Scope.provide(scope!)));
 
     await Effect.runPromise(
       engine.dispatch({
@@ -407,6 +408,9 @@ describe("ProviderCommandReactor", () => {
         createdAt: now,
       }),
     );
+    if (input?.startReactor !== false) {
+      await startReactor();
+    }
 
     return {
       engine,
@@ -424,6 +428,7 @@ describe("ProviderCommandReactor", () => {
       runtimeSessions,
       stateDir,
       drain,
+      startReactor,
     };
   }
 
@@ -464,6 +469,86 @@ describe("ProviderCommandReactor", () => {
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("recovers a durable pending turn start accepted before reactor startup", async () => {
+    const harness = await createHarness({ startReactor: false });
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-before-reactor"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-before-reactor"),
+          role: "user",
+          text: "accepted before provider reactor startup",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+    await harness.startReactor();
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await harness.drain();
+
+    expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      threadId: ThreadId.make("thread-1"),
+      input: "accepted before provider reactor startup",
+    });
+  });
+
+  it("recovers every pending turn start in acceptance order", async () => {
+    const harness = await createHarness({ startReactor: false });
+    const messages = [
+      {
+        commandId: CommandId.make("cmd-pending-turn-one"),
+        messageId: asMessageId("user-message-pending-one"),
+        text: "first accepted pending turn",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        commandId: CommandId.make("cmd-pending-turn-two"),
+        messageId: asMessageId("user-message-pending-two"),
+        text: "second accepted pending turn",
+        createdAt: "2026-01-01T00:00:01.000Z",
+      },
+    ] as const;
+
+    for (const message of messages) {
+      await Effect.runPromise(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: message.commandId,
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: message.messageId,
+            role: "user",
+            text: message.text,
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: message.createdAt,
+        }),
+      );
+    }
+
+    expect(harness.sendTurn).not.toHaveBeenCalled();
+    await harness.startReactor();
+    await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+    await harness.drain();
+
+    expect(harness.sendTurn.mock.calls.map(([input]) => input)).toMatchObject([
+      { input: "first accepted pending turn" },
+      { input: "second accepted pending turn" },
+    ]);
   });
 
   it("generates a thread title on the first turn", async () => {

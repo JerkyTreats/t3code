@@ -32,8 +32,10 @@ import { parsePullRequestReference } from "../pullRequestReference";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
 import {
   deriveLocalBranchNameFromRemoteRef,
+  isCurrentBranchPickerRef,
   resolveBranchSelectionTarget,
   resolveBranchToolbarValue,
+  resolveDisplayedGitBranch,
   resolveDraftEnvModeAfterBranchChange,
   resolveEffectiveEnvMode,
   shouldIncludeBranchPickerItem,
@@ -244,6 +246,19 @@ export function BranchToolbarBranchSelector({
   const isInitialBranchesLoadPending = branchRefState.isPending && branchRefState.data === null;
   const currentGitBranch =
     branchStatusQuery.data?.refName ?? refs.find((refName) => refName.current)?.name ?? null;
+  const [confirmedCheckoutBranch, setConfirmedCheckoutBranch] = useState<string | null>(null);
+  const displayedGitBranch = resolveDisplayedGitBranch({
+    currentGitBranch,
+    confirmedCheckoutBranch,
+  });
+  useEffect(() => {
+    if (confirmedCheckoutBranch === currentGitBranch) {
+      setConfirmedCheckoutBranch(null);
+    }
+  }, [confirmedCheckoutBranch, currentGitBranch]);
+  useEffect(() => {
+    setConfirmedCheckoutBranch(null);
+  }, [branchCwd, environmentId]);
   const sourceControlPresentation = useMemo(
     () => getSourceControlPresentation(branchStatusQuery.data?.sourceControlProvider),
     [branchStatusQuery.data?.sourceControlProvider],
@@ -253,7 +268,7 @@ export function BranchToolbarBranchSelector({
     envMode: effectiveEnvMode,
     activeWorktreePath,
     activeThreadBranch,
-    currentGitBranch,
+    currentGitBranch: displayedGitBranch,
   });
   const branchNames = useMemo(() => refs.map((refName) => refName.name), [refs]);
   const branchByName = useMemo(
@@ -357,6 +372,7 @@ export function BranchToolbarBranchSelector({
 
     runBranchAction(async () => {
       const previousBranch = resolvedActiveBranch;
+      const previousConfirmedCheckoutBranch = confirmedCheckoutBranch;
       setOptimisticBranch(selectedBranchName);
       const checkoutResult = await switchRef({
         environmentId,
@@ -369,10 +385,12 @@ export function BranchToolbarBranchSelector({
         const nextBranchName = refName.isRemote
           ? (checkoutResult.value.refName ?? selectedBranchName)
           : selectedBranchName;
+        setConfirmedCheckoutBranch(nextBranchName);
         setOptimisticBranch(nextBranchName);
         setThreadBranch(nextBranchName, selectionTarget.nextWorktreePath);
         return;
       }
+      setConfirmedCheckoutBranch(previousConfirmedCheckoutBranch);
       setOptimisticBranch(previousBranch);
       if (!isAtomCommandInterrupted(checkoutResult)) {
         toastManager.add(
@@ -395,6 +413,7 @@ export function BranchToolbarBranchSelector({
 
     runBranchAction(async () => {
       const previousBranch = resolvedActiveBranch;
+      const previousConfirmedCheckoutBranch = confirmedCheckoutBranch;
       setOptimisticBranch(name);
       const createBranchResult = await createRefMutation({
         environmentId,
@@ -405,10 +424,12 @@ export function BranchToolbarBranchSelector({
         },
       });
       if (createBranchResult._tag === "Success") {
+        setConfirmedCheckoutBranch(createBranchResult.value.refName);
         setOptimisticBranch(createBranchResult.value.refName);
         setThreadBranch(createBranchResult.value.refName, activeWorktreePath);
         return;
       }
+      setConfirmedCheckoutBranch(previousConfirmedCheckoutBranch);
       setOptimisticBranch(previousBranch);
       if (!isAtomCommandInterrupted(createBranchResult)) {
         toastManager.add(
@@ -592,7 +613,10 @@ export function BranchToolbarBranchSelector({
 
     const hasSecondaryWorktree =
       refName.worktreePath && activeProjectCwd && refName.worktreePath !== activeProjectCwd;
-    const badge = refName.current
+    const badge = isCurrentBranchPickerRef({
+      refName,
+      displayedGitBranch,
+    })
       ? "current"
       : hasSecondaryWorktree
         ? "worktree"

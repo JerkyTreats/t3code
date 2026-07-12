@@ -466,7 +466,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             status.message,
             "Timed out while checking Codex app-server provider status.",
           );
-          assert.strictEqual(yield* Ref.get(killCalls), 1);
+          assert.strictEqual(yield* Ref.get(killCalls), 2);
         }),
       );
     });
@@ -737,6 +737,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           const cursorDriver = ProviderDriverKind.make("cursor");
           const cursorInstanceId = ProviderInstanceId.make("cursor");
           const initialProvider = {
+            provider: cursorDriver,
             instanceId: cursorInstanceId,
             driver: cursorDriver,
             status: "ready",
@@ -1246,7 +1247,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             );
             assert.strictEqual(initialCodex?.status, "error");
             assert.strictEqual(initialCodex?.installed, false);
-            assert.deepStrictEqual(spawnedCommands, [firstMissing]);
+            assert.deepStrictEqual(spawnedCommands, [firstMissing, firstMissing]);
 
             // Drive a settings change. The Hydration layer's
             // `SettingsWatcherLive` consumes this via `streamChanges`,
@@ -1283,7 +1284,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             });
 
             const reprobedCodex = refreshed.find((provider) => provider.instanceId === "codex");
-            assert.deepStrictEqual(spawnedCommands, [firstMissing, secondMissing]);
+            assert.deepStrictEqual(spawnedCommands, [
+              firstMissing,
+              firstMissing,
+              secondMissing,
+              secondMissing,
+            ]);
             assert.strictEqual(reprobedCodex?.status, "error");
             assert.strictEqual(reprobedCodex?.installed, false);
           }).pipe(Effect.provide(runtimeServices));

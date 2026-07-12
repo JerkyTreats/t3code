@@ -2,13 +2,13 @@
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { isCommandAvailable, resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Console from "effect/Console";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
-import * as Schema from "effect/Schema";
+import * as PlatformError from "effect/PlatformError";
 import { Command } from "effect/unstable/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
@@ -17,51 +17,9 @@ interface NativeStaticTool {
   readonly installHint: string;
 }
 
-const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
-
-export class NativeStaticCheckSourceDiscoveryError extends Schema.TaggedErrorClass<NativeStaticCheckSourceDiscoveryError>()(
-  "NativeStaticCheckSourceDiscoveryError",
-  {
-    operation: Schema.Literals(["resolve-root", "read-directory", "stat-entry"]),
-    path: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Native source discovery operation '${this.operation}' failed.`;
-  }
-}
-
-export class NativeStaticCheckProcessError extends Schema.TaggedErrorClass<NativeStaticCheckProcessError>()(
-  "NativeStaticCheckProcessError",
-  {
-    operation: Schema.Literals(["spawn", "wait-for-exit"]),
-    command: Schema.String,
-    argumentCount: NonNegativeInt,
-    cwd: Schema.String,
-    shell: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Native static check process operation '${this.operation}' failed for command '${this.command}'.`;
-  }
-}
-
-export class NativeStaticCheckCommandError extends Schema.TaggedErrorClass<NativeStaticCheckCommandError>()(
-  "NativeStaticCheckCommandError",
-  {
-    command: Schema.String,
-    argumentCount: NonNegativeInt,
-    cwd: Schema.String,
-    shell: Schema.Boolean,
-    exitCode: Schema.Int,
-  },
-) {
-  override get message(): string {
-    return `Native static check command '${this.command}' exited with code ${this.exitCode}.`;
-  }
-}
+class NativeStaticCheckError extends Data.TaggedError("NativeStaticCheckError")<{
+  readonly message: string;
+}> {}
 
 const tools = [
   {
@@ -90,17 +48,8 @@ const excludedDirectories = new Set([
 ]);
 const generatedNativeProjectDirectories = new Set(["android", "ios"]);
 
-const mobileAppRootUrl = new URL("../apps/mobile", import.meta.url);
 const appRoot = Effect.service(Path.Path).pipe(
-  Effect.flatMap((path) => path.fromFileUrl(mobileAppRootUrl)),
-  Effect.mapError(
-    (cause) =>
-      new NativeStaticCheckSourceDiscoveryError({
-        operation: "resolve-root",
-        path: mobileAppRootUrl.pathname,
-        cause,
-      }),
-  ),
+  Effect.flatMap((path) => path.fromFileUrl(new URL("../apps/mobile", import.meta.url))),
 );
 
 const commandOutputOptions = {
@@ -109,7 +58,23 @@ const commandOutputOptions = {
 } as const;
 
 const commandExists = Effect.fn("commandExists")(function* (command: string) {
-  return yield* isCommandAvailable(command);
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const lookupCommand =
+    process.platform === "win32"
+      ? ChildProcess.make("where", [command], {
+          stdout: "ignore",
+          stderr: "ignore",
+        })
+      : ChildProcess.make("/bin/sh", ["-c", `command -v ${command}`], {
+          stdout: "ignore",
+          stderr: "ignore",
+        });
+
+  return yield* spawner.spawn(lookupCommand).pipe(
+    Effect.flatMap((child) => child.exitCode),
+    Effect.map((exitCode) => exitCode === 0),
+    Effect.orElseSucceed(() => false),
+  );
 });
 
 const warnMissingTool = (tool: NativeStaticTool, checkName: string) =>
@@ -117,94 +82,46 @@ const warnMissingTool = (tool: NativeStaticTool, checkName: string) =>
     `${tool.command} is not installed; skipping ${checkName}. Install it with '${tool.installHint}' or run 'brew bundle install --file apps/mobile/Brewfile'.`,
   );
 
-export const runCommand = Effect.fn("runCommand")(function* (
+const runCommand = Effect.fn("runCommand")(function* (
   command: string,
   args: ReadonlyArray<string>,
   cwd: string,
 ) {
   yield* Console.log(`$ ${[command, ...args].join(" ")}`);
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const spawnCommand = yield* resolveSpawnCommand(command, args);
-  const processContext = {
-    command,
-    argumentCount: spawnCommand.args.length,
-    cwd,
-    shell: spawnCommand.shell,
-  } as const;
-  const child = yield* spawner
-    .spawn(
-      ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        cwd,
-        ...commandOutputOptions,
-        shell: spawnCommand.shell,
-      }),
-    )
-    .pipe(
-      Effect.mapError(
-        (cause) =>
-          new NativeStaticCheckProcessError({
-            ...processContext,
-            operation: "spawn",
-            cause,
-          }),
-      ),
-    );
-  const exitCode = Number(
-    yield* child.exitCode.pipe(
-      Effect.mapError(
-        (cause) =>
-          new NativeStaticCheckProcessError({
-            ...processContext,
-            operation: "wait-for-exit",
-            cause,
-          }),
-      ),
-    ),
+  const child = yield* spawner.spawn(
+    ChildProcess.make(command, [...args], {
+      cwd,
+      ...commandOutputOptions,
+      shell: process.platform === "win32",
+    }),
   );
+  const exitCode = Number(yield* child.exitCode);
 
   if (exitCode !== 0) {
-    return yield* new NativeStaticCheckCommandError({
-      ...processContext,
-      exitCode,
+    return yield* new NativeStaticCheckError({
+      message: `Command exited with non-zero exit code (${exitCode})`,
     });
   }
 });
 
-export function collectSources(
+function collectSources(
   directory: string,
   root: string,
 ): Effect.Effect<
   ReadonlyArray<string>,
-  NativeStaticCheckSourceDiscoveryError,
+  PlatformError.PlatformError,
   FileSystem.FileSystem | Path.Path
 > {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const entries = yield* fs.readDirectory(directory).pipe(
-      Effect.mapError(
-        (cause) =>
-          new NativeStaticCheckSourceDiscoveryError({
-            operation: "read-directory",
-            path: directory,
-            cause,
-          }),
-      ),
-    );
+    const entries = yield* fs.readDirectory(directory);
     const sources: Array<string> = [];
 
     for (const entry of entries) {
       const entryPath = path.join(directory, entry);
-      const stat = yield* fs.stat(entryPath).pipe(
-        Effect.mapError(
-          (cause) =>
-            new NativeStaticCheckSourceDiscoveryError({
-              operation: "stat-entry",
-              path: entryPath,
-              cause,
-            }),
-        ),
-      );
+      const stat = yield* fs.stat(entryPath);
 
       if (stat.type === "Directory") {
         const isGeneratedNativeProjectDirectory =

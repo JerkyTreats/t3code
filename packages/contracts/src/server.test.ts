@@ -6,6 +6,45 @@ import { ServerProvider } from "./server.ts";
 const decodeServerProvider = Schema.decodeUnknownSync(ServerProvider);
 
 describe("ServerProvider", () => {
+  it("decodes legacy provider snapshots without instance identity", () => {
+    const parsed = decodeServerProvider({
+      provider: "codex",
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: {
+        status: "authenticated",
+      },
+      checkedAt: "2026-04-10T00:00:00.000Z",
+      models: [],
+    });
+
+    expect(parsed.provider).toBe("codex");
+    expect(parsed.instanceId).toBe("codex");
+    expect(parsed.driver).toBe("codex");
+  });
+
+  it("preserves legacy provider on instance-aware snapshots", () => {
+    const parsed = decodeServerProvider({
+      instanceId: "codex_personal",
+      driver: "codex",
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: {
+        status: "authenticated",
+      },
+      checkedAt: "2026-04-10T00:00:00.000Z",
+      models: [],
+    });
+
+    expect(parsed.provider).toBe("codex");
+    expect(parsed.instanceId).toBe("codex_personal");
+    expect(parsed.driver).toBe("codex");
+  });
+
   it("defaults capability arrays when decoding provider snapshots", () => {
     const parsed = decodeServerProvider({
       instanceId: "codex",

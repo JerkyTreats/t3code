@@ -68,6 +68,53 @@ function currentNetworkStatus(): "unknown" | "offline" | "online" {
   return navigator.onLine ? "online" : "offline";
 }
 
+interface ApplicationActiveEventSources {
+  readonly window: EventTarget;
+  readonly document: EventTarget & {
+    readonly visibilityState: DocumentVisibilityState;
+  };
+}
+
+export function subscribeApplicationActiveEvents(
+  emit: () => void,
+  sources: ApplicationActiveEventSources = { window, document },
+): () => void {
+  let wasHidden = sources.document.visibilityState === "hidden";
+  const emitIfVisible = () => {
+    if (sources.document.visibilityState !== "visible") {
+      wasHidden = true;
+      return;
+    }
+    wasHidden = false;
+    emit();
+  };
+  const handleFocus: EventListener = () => {
+    emitIfVisible();
+  };
+  const handlePageShow: EventListener = () => {
+    emitIfVisible();
+  };
+  const handleVisibilityChange: EventListener = () => {
+    if (sources.document.visibilityState === "hidden") {
+      wasHidden = true;
+      return;
+    }
+    if (wasHidden) {
+      wasHidden = false;
+      emit();
+    }
+  };
+
+  sources.window.addEventListener("focus", handleFocus);
+  sources.window.addEventListener("pageshow", handlePageShow);
+  sources.document.addEventListener("visibilitychange", handleVisibilityChange);
+  return () => {
+    sources.window.removeEventListener("focus", handleFocus);
+    sources.window.removeEventListener("pageshow", handlePageShow);
+    sources.document.removeEventListener("visibilitychange", handleVisibilityChange);
+  };
+}
+
 const connectivityLayer = Connectivity.layer({
   status: Effect.sync(currentNetworkStatus),
   changes: Stream.callback((queue) =>
@@ -92,19 +139,12 @@ const wakeupsLayer = Wakeups.layer({
   changes: Stream.merge(
     Stream.callback<"application-active">((queue) =>
       Effect.acquireRelease(
-        Effect.sync(() => {
-          const listener = () => {
-            if (document.visibilityState === "visible") {
-              Queue.offerUnsafe(queue, "application-active");
-            }
-          };
-          document.addEventListener("visibilitychange", listener);
-          return listener;
-        }),
-        (listener) =>
-          Effect.sync(() => {
-            document.removeEventListener("visibilitychange", listener);
+        Effect.sync(() =>
+          subscribeApplicationActiveEvents(() => {
+            Queue.offerUnsafe(queue, "application-active");
           }),
+        ),
+        (unsubscribe) => Effect.sync(unsubscribe),
       ).pipe(Effect.asVoid),
     ),
     managedRelayAccountChanges(appAtomRegistry).pipe(

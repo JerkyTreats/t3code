@@ -28,6 +28,7 @@ const makeProvider = (
   provider: ProviderDriverKind,
   overrides?: Partial<ServerProvider>,
 ): ServerProvider => ({
+  provider,
   instanceId: defaultInstanceIdForDriver(provider),
   driver: provider,
   enabled: true,

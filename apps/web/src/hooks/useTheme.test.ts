@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import type { DesktopSystemTheme } from "@t3tools/contracts";
 
 function createStorage(overrides: Partial<Storage> = {}): Storage {
   const store = new Map<string, string>();
@@ -17,6 +18,45 @@ function createStorage(overrides: Partial<Storage> = {}): Storage {
     },
     ...overrides,
   };
+}
+
+function createStyleDeclaration(): CSSStyleDeclaration {
+  const values = new Map<string, string>();
+  return {
+    setProperty: (key: string, value: string) => {
+      values.set(key, value);
+    },
+    removeProperty: (key: string) => {
+      values.delete(key);
+    },
+    getPropertyValue: (key: string) => values.get(key) ?? "",
+  } as CSSStyleDeclaration;
+}
+
+function stubThemeDocument(): CSSStyleDeclaration {
+  const rootStyle = createStyleDeclaration();
+  vi.stubGlobal("document", {
+    body: { style: createStyleDeclaration() },
+    createElement: () => ({
+      name: "",
+      setAttribute: () => undefined,
+    }),
+    documentElement: {
+      classList: {
+        add: () => undefined,
+        remove: () => undefined,
+        toggle: () => undefined,
+      },
+      style: rootStyle,
+    },
+    head: { append: () => undefined },
+    querySelector: () => null,
+  });
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    callback(0);
+    return 0;
+  });
+  return rootStyle;
 }
 
 afterEach(() => {
@@ -189,5 +229,104 @@ describe("theme failure handling", () => {
       expect(attributes).not.toHaveProperty("cause");
       expect(JSON.stringify(attributes)).not.toContain(cause.message);
     }
+  });
+
+  it("projects desktop system theme colors into CSS variables", async () => {
+    const style = stubThemeDocument();
+    vi.stubGlobal("window", {
+      localStorage: createStorage(),
+      matchMedia: () => ({ matches: false }),
+    });
+
+    const { applyDesktopSystemTheme } = await import("./useTheme");
+    applyDesktopSystemTheme({
+      source: "omarchy",
+      name: "nord",
+      mode: "dark",
+      colors: {
+        background: "#2e3440",
+        foreground: "#d8dee9",
+        accent: "#81a1c1",
+        cursor: "#d8dee9",
+        selection_background: "#4c566a",
+        selection_foreground: "#d8dee9",
+        color0: "#3b4252",
+        color15: "#eceff4",
+      },
+    });
+
+    expect(style.getPropertyValue("--background")).toBe("#2e3440");
+    expect(style.getPropertyValue("--foreground")).toBe("#d8dee9");
+    expect(style.getPropertyValue("--primary")).toBe("#81a1c1");
+    expect(style.getPropertyValue("--omarchy-selection-background")).toBe("#4c566a");
+    expect(style.getPropertyValue("--terminal-color-0")).toBe("#3b4252");
+    expect(style.getPropertyValue("--terminal-color-15")).toBe("#eceff4");
+
+    applyDesktopSystemTheme(null);
+    expect(style.getPropertyValue("--background")).toBe("");
+    expect(style.getPropertyValue("--terminal-color-15")).toBe("");
+  });
+
+  it("subscribes to desktop system theme bridge updates", async () => {
+    const style = stubThemeDocument();
+    let unsubscribeTheme: (() => void) | undefined;
+    let bridgeListener: ((theme: DesktopSystemTheme | null) => void) | undefined;
+    vi.doMock("react", () => ({
+      useCallback: <A>(callback: A) => callback,
+      useEffect: () => undefined,
+      useSyncExternalStore: (
+        subscribe: (listener: () => void) => () => void,
+        getSnapshot: () => unknown,
+      ) => {
+        unsubscribeTheme = subscribe(() => undefined);
+        return getSnapshot();
+      },
+    }));
+    vi.stubGlobal("window", {
+      addEventListener: () => undefined,
+      desktopBridge: {
+        getSystemTheme: vi.fn().mockResolvedValue({
+          source: "omarchy",
+          name: "nord",
+          mode: "dark",
+          colors: {
+            background: "#2e3440",
+            foreground: "#d8dee9",
+            accent: "#81a1c1",
+          },
+        }),
+        onSystemTheme: vi.fn((listener) => {
+          bridgeListener = listener;
+          return () => undefined;
+        }),
+      },
+      localStorage: createStorage(),
+      matchMedia: () => ({
+        matches: false,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined,
+      }),
+      removeEventListener: () => undefined,
+    });
+
+    const { useTheme } = await import("./useTheme");
+    useTheme();
+    await Promise.resolve();
+
+    expect(style.getPropertyValue("--background")).toBe("#2e3440");
+
+    bridgeListener?.({
+      source: "omarchy",
+      name: "catppuccin",
+      mode: "light",
+      colors: {
+        background: "#eff1f5",
+        foreground: "#4c4f69",
+        accent: "#1e66f5",
+      },
+    });
+
+    expect(style.getPropertyValue("--background")).toBe("#eff1f5");
+    unsubscribeTheme?.();
   });
 });

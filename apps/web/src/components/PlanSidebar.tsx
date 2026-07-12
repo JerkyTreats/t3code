@@ -15,6 +15,7 @@ import {
   ChevronRightIcon,
   EllipsisIcon,
   LoaderIcon,
+  Maximize2Icon,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
 import type { ActivePlanState } from "../session-logic";
@@ -64,6 +65,7 @@ interface PlanSidebarProps {
   markdownCwd: string | undefined;
   workspaceRoot: string | undefined;
   timestampFormat: TimestampFormat;
+  onOpenProposedPlanPreview?: (() => void) | undefined;
   mode?: "sheet" | "sidebar" | "embedded";
 }
 
@@ -76,6 +78,7 @@ const PlanSidebar = memo(function PlanSidebar({
   markdownCwd,
   workspaceRoot,
   timestampFormat,
+  onOpenProposedPlanPreview,
   mode = "sidebar",
 }: PlanSidebarProps) {
   const [proposedPlanExpanded, setProposedPlanExpanded] = useState(false);
@@ -162,32 +165,49 @@ const PlanSidebar = memo(function PlanSidebar({
         </div>
         <div className="flex items-center gap-1">
           {planMarkdown ? (
-            <Menu>
-              <MenuTrigger
-                render={
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    className="text-muted-foreground/50 hover:text-foreground/70"
-                    aria-label="Plan actions"
-                  />
-                }
-              >
-                <EllipsisIcon className="size-3.5" />
-              </MenuTrigger>
-              <MenuPopup align="end">
-                <MenuItem onClick={handleCopyPlan}>
-                  {isCopied ? "Copied!" : "Copy to clipboard"}
-                </MenuItem>
-                <MenuItem onClick={handleDownload}>Download as markdown</MenuItem>
-                <MenuItem
-                  onClick={handleSaveToWorkspace}
-                  disabled={!workspaceRoot || isSavingToWorkspace}
+            <>
+              {onOpenProposedPlanPreview ? (
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  className="text-muted-foreground/50 hover:text-foreground/70"
+                  onClick={onOpenProposedPlanPreview}
+                  aria-label="Open plan preview"
                 >
-                  Save to workspace
-                </MenuItem>
-              </MenuPopup>
-            </Menu>
+                  <Maximize2Icon className="size-3.5" />
+                </Button>
+              ) : null}
+              <Menu>
+                <MenuTrigger
+                  render={
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      className="text-muted-foreground/50 hover:text-foreground/70"
+                      aria-label="Plan actions"
+                    />
+                  }
+                >
+                  <EllipsisIcon className="size-3.5" />
+                </MenuTrigger>
+                <MenuPopup align="end">
+                  {onOpenProposedPlanPreview ? (
+                    <MenuItem onClick={onOpenProposedPlanPreview}>Open fullscreen preview</MenuItem>
+                  ) : null}
+                  <MenuItem onClick={handleCopyPlan}>
+                    {isCopied ? "Copied!" : "Copy to clipboard"}
+                  </MenuItem>
+                  <MenuItem onClick={handleDownload}>Download as markdown</MenuItem>
+                  <MenuItem
+                    onClick={handleSaveToWorkspace}
+                    disabled={!workspaceRoot || isSavingToWorkspace}
+                  >
+                    Save to workspace
+                  </MenuItem>
+                </MenuPopup>
+              </Menu>
+            </>
           ) : null}
         </div>
       </div>

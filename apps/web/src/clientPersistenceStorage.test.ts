@@ -70,7 +70,7 @@ describe("clientPersistenceStorage", () => {
     );
   });
 
-  it("defaults word wrap on and discards obsolete wrapping preferences", async () => {
+  it("defaults word wrap on while preserving diff word wrap", async () => {
     const testWindow = getTestWindow();
     testWindow.localStorage.setItem(
       "t3code:client-settings:v1",
@@ -85,9 +85,9 @@ describe("clientPersistenceStorage", () => {
     expect(settings).toEqual(
       expect.objectContaining({
         wordWrap: true,
+        diffWordWrap: false,
       }),
     );
     expect(settings).not.toHaveProperty("chatWordWrap");
-    expect(settings).not.toHaveProperty("diffWordWrap");
   });
 });

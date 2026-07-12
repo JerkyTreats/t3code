@@ -8,6 +8,14 @@
  */
 import type {
   CheckpointRef,
+  EventId,
+  OrchestrationHydrateThreadActivityPayloadsResult,
+  OrchestrationThreadContentChunkInput,
+  OrchestrationThreadContentChunkResult,
+  OrchestrationThreadActivityPageInput,
+  OrchestrationThreadActivityPageResult,
+  OrchestrationThreadCheckpointPageInput,
+  OrchestrationThreadCheckpointPageResult,
   OrchestrationCheckpointSummary,
   OrchestrationProject,
   OrchestrationProjectShell,
@@ -15,7 +23,13 @@ import type {
   OrchestrationShellSnapshot,
   OrchestrationThread,
   OrchestrationThreadDetailSnapshot,
+  OrchestrationThreadDetailV2Snapshot,
+  OrchestrationThreadMessagePageInput,
+  OrchestrationThreadMessagePageResult,
+  OrchestrationThreadProposedPlanPageInput,
+  OrchestrationThreadProposedPlanPageResult,
   OrchestrationThreadShell,
+  OrchestrationThreadSyncV2Limits,
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -32,6 +46,11 @@ export interface ProjectionSnapshotCounts {
 
 export interface ProjectionSnapshotSequence {
   readonly snapshotSequence: number;
+}
+
+export interface ProjectionThreadDetailSnapshot {
+  readonly snapshotSequence: number;
+  readonly thread: OrchestrationThread;
 }
 
 export interface ProjectionThreadCheckpointContext {
@@ -168,6 +187,57 @@ export interface ProjectionSnapshotQueryShape {
   readonly getThreadDetailSnapshot: (
     threadId: ThreadId,
   ) => Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>, ProjectionRepositoryError>;
+
+  /**
+   * Read a single active thread detail snapshot and its replay watermark from
+   * the same SQLite transaction.
+   */
+  readonly getThreadDetailSnapshotById: (
+    threadId: ThreadId,
+  ) => Effect.Effect<Option.Option<ProjectionThreadDetailSnapshot>, ProjectionRepositoryError>;
+
+  /**
+   * Read a bounded active thread detail snapshot for remote WebSocket sync.
+   */
+  readonly getThreadDetailV2ById: (
+    threadId: ThreadId,
+    limits?: OrchestrationThreadSyncV2Limits,
+  ) => Effect.Effect<Option.Option<OrchestrationThreadDetailV2Snapshot>, ProjectionRepositoryError>;
+
+  readonly getThreadMessagePage: (
+    input: OrchestrationThreadMessagePageInput,
+  ) => Effect.Effect<OrchestrationThreadMessagePageResult, ProjectionRepositoryError>;
+
+  readonly getThreadProposedPlanPage: (
+    input: OrchestrationThreadProposedPlanPageInput,
+  ) => Effect.Effect<OrchestrationThreadProposedPlanPageResult, ProjectionRepositoryError>;
+
+  /**
+   * Read one bounded deferred message or proposed plan content chunk.
+   */
+  readonly getThreadContentChunk: (
+    input: OrchestrationThreadContentChunkInput,
+  ) => Effect.Effect<OrchestrationThreadContentChunkResult, ProjectionRepositoryError>;
+
+  /**
+   * Page projected thread activity around the stable activity cursor used by
+   * thread detail v2.
+   */
+  readonly getThreadActivityPage: (
+    input: OrchestrationThreadActivityPageInput,
+  ) => Effect.Effect<OrchestrationThreadActivityPageResult, ProjectionRepositoryError>;
+
+  readonly getThreadCheckpointPage: (
+    input: OrchestrationThreadCheckpointPageInput,
+  ) => Effect.Effect<OrchestrationThreadCheckpointPageResult, ProjectionRepositoryError>;
+
+  /**
+   * Hydrate deferred v2 activity payloads on explicit demand.
+   */
+  readonly hydrateThreadActivityPayloads: (
+    threadId: ThreadId,
+    activityIds: ReadonlyArray<EventId>,
+  ) => Effect.Effect<OrchestrationHydrateThreadActivityPayloadsResult, ProjectionRepositoryError>;
 }
 
 /**

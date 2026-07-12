@@ -13,7 +13,11 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import type { EnvironmentThread, EnvironmentThreadShell } from "./models.ts";
 import { scopeThread } from "./models.ts";
-import { EMPTY_ENVIRONMENT_THREAD_STATE, type EnvironmentThreadState } from "./threadState.ts";
+import {
+  EMPTY_ENVIRONMENT_THREAD_STATE,
+  WAITING_ENVIRONMENT_THREAD_SYNC_STATUS,
+  type EnvironmentThreadState,
+} from "./threads.ts";
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { THREAD_STATE_IDLE_TTL_MS } from "./threadRetention.ts";
 
@@ -112,6 +116,16 @@ export function createEnvironmentThreadDetailAtoms<E>(
     ),
   );
 
+  const threadSyncStatusAtomFamily = Atom.family((key: string) =>
+    Atom.make(
+      (get) =>
+        get(threadStateValueAtomFamily(key)).syncStatus ?? WAITING_ENVIRONMENT_THREAD_SYNC_STATUS,
+    ).pipe(
+      Atom.setIdleTTL(THREAD_STATE_IDLE_TTL_MS),
+      Atom.withLabel(`environment-thread-sync-status:${key}`),
+    ),
+  );
+
   const threadMessagesAtomFamily = Atom.family((key: string) =>
     Atom.make(
       (get): ReadonlyArray<OrchestrationMessage> =>
@@ -175,6 +189,7 @@ export function createEnvironmentThreadDetailAtoms<E>(
     detailAtom: (ref: ScopedThreadRef) => threadDetailAtomFamily(threadKey(ref)),
     statusAtom: (ref: ScopedThreadRef) => threadStatusAtomFamily(threadKey(ref)),
     errorAtom: (ref: ScopedThreadRef) => threadErrorAtomFamily(threadKey(ref)),
+    syncStatusAtom: (ref: ScopedThreadRef) => threadSyncStatusAtomFamily(threadKey(ref)),
     messagesAtom: (ref: ScopedThreadRef) => threadMessagesAtomFamily(threadKey(ref)),
     activitiesAtom: (ref: ScopedThreadRef) => threadActivitiesAtomFamily(threadKey(ref)),
     proposedPlansAtom: (ref: ScopedThreadRef) => threadProposedPlansAtomFamily(threadKey(ref)),

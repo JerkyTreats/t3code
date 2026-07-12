@@ -37,6 +37,7 @@ function makeRegistry(input: {
   readonly remotes: ReadonlyArray<{
     readonly name: string;
     readonly url: string;
+    readonly pushUrl?: string;
   }>;
   readonly process?: Partial<VcsProcess.VcsProcess["Service"]>;
   readonly resolve?: VcsDriverRegistry.VcsDriverRegistry["Service"]["resolve"];
@@ -46,7 +47,7 @@ function makeRegistry(input: {
       Effect.succeed({
         remotes: input.remotes.map((remote) => ({
           ...remote,
-          pushUrl: Option.none(),
+          pushUrl: remote.pushUrl ? Option.some(remote.pushUrl) : Option.none(),
           isPrimary: remote.name === "origin",
         })),
         freshness: {
@@ -109,6 +110,67 @@ it.effect("routes GitHub remotes to the GitHub provider", () =>
     const provider = yield* registry.resolve({ cwd: "/repo" });
 
     assert.strictEqual(provider.kind, "github");
+  }),
+);
+
+it.effect("pins change request operations to the GitHub origin remote", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [
+        { name: "origin", url: "git@github.com:jerkytreats/t3code-omarchy.git" },
+        { name: "upstream", url: "git@github.com:pingdotgg/t3code.git" },
+      ],
+    });
+
+    const handle = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" });
+
+    assert.strictEqual(handle.provider.kind, "github");
+    assert.deepStrictEqual(handle.context, {
+      provider: {
+        kind: "github",
+        name: "GitHub",
+        baseUrl: "https://github.com",
+      },
+      remoteName: "origin",
+      remoteUrl: "git@github.com:jerkytreats/t3code-omarchy.git",
+    });
+  }),
+);
+
+it.effect("rejects change request operations when origin is absent", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "upstream", url: "git@github.com:pingdotgg/t3code.git" }],
+    });
+
+    const error = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" }).pipe(Effect.flip);
+
+    assert.strictEqual(error.operation, "resolveChangeRequestHandle");
+    assert.equal(
+      error.detail,
+      "Origin-only policy requires an origin remote before creating a change request.",
+    );
+  }),
+);
+
+it.effect("rejects change request operations when origin has a different push URL", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [
+        {
+          name: "origin",
+          url: "git@github.com:jerkytreats/t3code-omarchy.git",
+          pushUrl: "git@github.com:pingdotgg/t3code.git",
+        },
+      ],
+    });
+
+    const error = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" }).pipe(Effect.flip);
+
+    assert.equal(
+      error.detail,
+      "Origin-only policy rejected origin because its push URL differs from its fetch URL.",
+    );
   }),
 );
 

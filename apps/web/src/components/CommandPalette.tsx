@@ -25,6 +25,7 @@ import {
   ArrowLeftIcon,
   ArrowUpIcon,
   CornerLeftUpIcon,
+  FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
   LinkIcon,
@@ -84,6 +85,7 @@ import { getLatestThreadForProject } from "../lib/threadSort";
 import { cn, isMacPlatform, isWindowsPlatform, newProjectId } from "../lib/utils";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
+import { useRightPanelStore } from "../rightPanelStore";
 import {
   applyWslEnvironmentConfiguration,
   parseWslUncPath,
@@ -695,6 +697,46 @@ function OpenCommandPaletteDialog(props: {
     [activeDraftThread, activeThread, defaultProjectRef, handleNewThread, projects],
   );
 
+  const projectManagementItems = useMemo(
+    () =>
+      buildProjectActionItems({
+        projects,
+        valuePrefix: "open-project-panel",
+        icon: (project) => (
+          <ProjectFavicon
+            environmentId={project.environmentId}
+            cwd={project.workspaceRoot}
+            className={ITEM_ICON_CLASS}
+          />
+        ),
+        runProject: async (project) => {
+          const latestThread = getLatestThreadForProject(
+            threads.filter((thread) => thread.environmentId === project.environmentId),
+            project.id,
+            clientSettings.sidebarThreadSortOrder,
+          );
+          if (latestThread) {
+            const threadRef = scopeThreadRef(latestThread.environmentId, latestThread.id);
+            useRightPanelStore.getState().showLauncher(threadRef);
+            await navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(threadRef),
+            });
+            return;
+          }
+
+          await handleNewThread(scopeProjectRef(project.environmentId, project.id), {
+            beforeNavigate: (threadId) => {
+              useRightPanelStore
+                .getState()
+                .showLauncher(scopeThreadRef(project.environmentId, threadId));
+            },
+          });
+        },
+      }),
+    [clientSettings.sidebarThreadSortOrder, handleNewThread, navigate, projects, threads],
+  );
+
   const allThreadItems = useMemo(
     () =>
       buildThreadActionItems({
@@ -998,6 +1040,16 @@ function OpenCommandPaletteDialog(props: {
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
+    });
+
+    actionItems.push({
+      kind: "submenu",
+      value: "action:open-project-panel",
+      searchTerms: ["project panel", "project dashboard", "project inference", "git"],
+      title: "Project panel...",
+      icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
+      addonIcon: <FolderGit2Icon className={ADDON_ICON_CLASS} />,
+      groups: [{ value: "projects", label: "Projects", items: projectManagementItems }],
     });
   }
 

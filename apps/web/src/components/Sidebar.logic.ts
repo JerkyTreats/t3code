@@ -33,13 +33,14 @@ export interface ThreadStatusPill {
     | "Completed"
     | "Pending Approval"
     | "Awaiting Input"
-    | "Plan Ready";
+    | "Plan Ready"
+    | `${number}/${number}`;
   colorClass: string;
   dotClass: string;
   pulse: boolean;
 }
 
-const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
+const THREAD_STATUS_PRIORITY: Record<string, number> = {
   "Pending Approval": 5,
   "Awaiting Input": 4,
   Working: 3,
@@ -48,6 +49,10 @@ const THREAD_STATUS_PRIORITY: Record<ThreadStatusPill["label"], number> = {
   Completed: 1,
 };
 
+function threadStatusPriority(status: ThreadStatusPill): number {
+  return THREAD_STATUS_PRIORITY[status.label] ?? 3;
+}
+
 type ThreadStatusInput = Pick<
   SidebarThreadSummary,
   | "hasActionableProposedPlan"
@@ -55,10 +60,20 @@ type ThreadStatusInput = Pick<
   | "hasPendingUserInput"
   | "interactionMode"
   | "latestTurn"
+  | "activePlanProgress"
   | "session"
 > & {
   lastVisitedAt?: string | undefined;
 };
+
+function isPlanProgressCurrent(thread: ThreadStatusInput): boolean {
+  const progress = thread.activePlanProgress;
+  const session = thread.session;
+  if (!progress || session?.status !== "running" || session.activeTurnId === null) {
+    return false;
+  }
+  return progress.turnId === null || progress.turnId === session.activeTurnId;
+}
 
 export interface ThreadJumpHintVisibilityController {
   sync: (shouldShow: boolean) => void;
@@ -380,6 +395,16 @@ export function resolveThreadStatusPill(input: {
     };
   }
 
+  const activePlanProgress = thread.activePlanProgress;
+  if (activePlanProgress && isPlanProgressCurrent(thread)) {
+    return {
+      label: `${activePlanProgress.currentStepNumber}/${activePlanProgress.totalSteps}`,
+      colorClass: "text-sky-600 dark:text-sky-300/80",
+      dotClass: "bg-sky-500 dark:bg-sky-300/80",
+      pulse: !activePlanProgress.completedAllSteps,
+    };
+  }
+
   if (thread.session?.status === "running") {
     return {
       label: "Working",
@@ -433,7 +458,7 @@ export function resolveProjectStatusIndicator(
     if (status === null) continue;
     if (
       highestPriorityStatus === null ||
-      THREAD_STATUS_PRIORITY[status.label] > THREAD_STATUS_PRIORITY[highestPriorityStatus.label]
+      threadStatusPriority(status) > threadStatusPriority(highestPriorityStatus)
     ) {
       highestPriorityStatus = status;
     }

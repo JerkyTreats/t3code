@@ -97,6 +97,22 @@ export function resolveBranchToolbarValue(input: {
   return currentGitBranch ?? activeThreadBranch;
 }
 
+export function resolveDisplayedGitBranch(input: {
+  currentGitBranch: string | null;
+  confirmedCheckoutBranch: string | null;
+}): string | null {
+  return input.confirmedCheckoutBranch ?? input.currentGitBranch;
+}
+
+export function isCurrentBranchPickerRef(input: {
+  refName: Pick<VcsRef, "name" | "current">;
+  displayedGitBranch: string | null;
+}): boolean {
+  return input.displayedGitBranch === null
+    ? input.refName.current
+    : input.refName.name === input.displayedGitBranch;
+}
+
 export function resolveBranchSelectionTarget(input: {
   activeProjectCwd: string;
   activeWorktreePath: string | null;

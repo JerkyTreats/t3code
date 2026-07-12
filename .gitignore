@@ -1,4 +1,5 @@
 node_modules
+.tmp/
 .bun
 .turbo
 .DS_Store

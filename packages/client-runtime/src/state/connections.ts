@@ -7,6 +7,13 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
+import {
+  type ConnectionDiagnosticsEntry,
+  type ConnectionDiagnosticsEvent,
+  type ConnectionDiagnosticsPhase,
+  getConnectionDiagnosticsDurations,
+  selectConnectionDiagnosticsEntries,
+} from "../connection/diagnostics.ts";
 import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import {
@@ -24,6 +31,18 @@ export const EMPTY_ENVIRONMENT_CATALOG_STATE: EnvironmentCatalogState = Object.f
   isReady: false,
   entries: new Map(),
 });
+
+const EMPTY_CONNECTION_DIAGNOSTICS: ReadonlyMap<EnvironmentIdType, ConnectionDiagnosticsEntry> =
+  new Map();
+
+export type { ConnectionDiagnosticsEntry, ConnectionDiagnosticsEvent, ConnectionDiagnosticsPhase };
+export { getConnectionDiagnosticsDurations };
+
+export type ConnectionControlAction = "connect" | "disconnect";
+
+export function resolveConnectionControlAction(desired: boolean): ConnectionControlAction {
+  return desired ? "disconnect" : "connect";
+}
 
 export function createEnvironmentCatalogAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,
@@ -63,6 +82,21 @@ export function createEnvironmentCatalogAtoms<R, E>(
     Option.getOrElse(AsyncResult.value(get(networkStatusAtom)), () => "unknown" as const),
   ).pipe(Atom.withLabel("environment-network-status-value"));
 
+  const diagnosticsAtom = runtime.atom(
+    Stream.unwrap(
+      EnvironmentRegistry.EnvironmentRegistry.pipe(
+        Effect.map((registry) => SubscriptionRef.changes(registry.diagnostics)),
+      ),
+    ),
+    { initialValue: EMPTY_CONNECTION_DIAGNOSTICS },
+  );
+
+  const diagnosticsValueAtom = Atom.make((get) =>
+    selectConnectionDiagnosticsEntries(
+      Option.getOrElse(AsyncResult.value(get(diagnosticsAtom)), () => EMPTY_CONNECTION_DIAGNOSTICS),
+    ),
+  ).pipe(Atom.withLabel("environment-connection-diagnostics-value"));
+
   const stateAtom = Atom.family((environmentId: EnvironmentIdType) =>
     runtime.atom(
       followStreamInEnvironment(
@@ -88,15 +122,34 @@ export function createEnvironmentCatalogAtoms<R, E>(
         Effect.flatMap((registry) => registry.register(target)),
       ),
   });
-  const remove = createRuntimeCommand(runtime, {
-    label: "environment-catalog:remove",
+  const connect = createRuntimeCommand(runtime, {
+    label: "environment-catalog:connect",
     scheduler: commandScheduler,
     concurrency: serial,
     execute: (environmentId: EnvironmentIdType) =>
       EnvironmentRegistry.EnvironmentRegistry.pipe(
-        Effect.flatMap((registry) => registry.remove(environmentId)),
+        Effect.flatMap((registry) => registry.connect(environmentId)),
       ),
   });
+  const disconnect = createRuntimeCommand(runtime, {
+    label: "environment-catalog:disconnect",
+    scheduler: commandScheduler,
+    concurrency: serial,
+    execute: (environmentId: EnvironmentIdType) =>
+      EnvironmentRegistry.EnvironmentRegistry.pipe(
+        Effect.flatMap((registry) => registry.disconnect(environmentId)),
+      ),
+  });
+  const forget = createRuntimeCommand(runtime, {
+    label: "environment-catalog:forget",
+    scheduler: commandScheduler,
+    concurrency: serial,
+    execute: (environmentId: EnvironmentIdType) =>
+      EnvironmentRegistry.EnvironmentRegistry.pipe(
+        Effect.flatMap((registry) => registry.forget(environmentId)),
+      ),
+  });
+  const remove = forget;
   const removeRelayEnvironments = createRuntimeCommand(runtime, {
     label: "environment-catalog:remove-relay-environments",
     scheduler: commandScheduler,
@@ -121,8 +174,13 @@ export function createEnvironmentCatalogAtoms<R, E>(
     catalogValueAtom,
     networkStatusAtom,
     networkStatusValueAtom,
+    diagnosticsAtom,
+    diagnosticsValueAtom,
     stateAtom,
     register,
+    connect,
+    disconnect,
+    forget,
     remove,
     removeRelayEnvironments,
     retryNow,

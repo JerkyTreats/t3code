@@ -5,6 +5,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
 import * as NetService from "@t3tools/shared/Net";
+import { PRODUCT_BASE_NAME } from "@t3tools/shared/productIdentity";
 import * as Crypto from "effect/Crypto";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
@@ -25,6 +26,7 @@ import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
+import * as DesktopSystemThemeService from "../fork/DesktopSystemThemeService.ts";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
 const MAX_TCP_PORT = 65_535;
@@ -125,7 +127,7 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
   if (!wasQuitting) {
     yield* electronDialog.showErrorBox(
-      "T3 Code failed to start",
+      `${PRODUCT_BASE_NAME} failed to start`,
       `Stage: ${stage}\n${message}${detail}`,
     );
   }
@@ -225,6 +227,7 @@ const startup = Effect.gen(function* () {
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  const systemTheme = yield* DesktopSystemThemeService.DesktopSystemThemeService;
 
   yield* shellEnvironment.installIntoProcess;
   const userDataPath = yield* appIdentity.resolveUserDataPath;
@@ -234,10 +237,12 @@ const startup = Effect.gen(function* () {
 
   if (environment.platform === "linux") {
     yield* electronApp.appendCommandLineSwitch("class", environment.linuxWmClass);
+    yield* electronApp.appendCommandLineSwitch("password-store", "gnome-libsecret");
   }
 
   yield* appIdentity.configure;
   yield* lifecycle.register;
+  yield* systemTheme.register;
   yield* clerk.configure;
 
   yield* electronApp.whenReady.pipe(

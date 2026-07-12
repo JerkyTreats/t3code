@@ -35,7 +35,10 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
-import { buildCodexInitializeParams } from "./CodexProvider.ts";
+import {
+  buildCodexInitializeParams,
+  resolveCodexCliInitializeClientVersion,
+} from "./CodexProvider.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import {
   CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS,
@@ -719,6 +722,11 @@ export const makeCodexSessionRuntime = (
       ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
     };
     const extendEnv = options.environment === undefined;
+    const initializeClientVersion = yield* resolveCodexCliInitializeClientVersion({
+      binaryPath: options.binaryPath,
+      cwd: options.cwd,
+      environment: env,
+    });
     const spawnCommand = yield* resolveSpawnCommand(
       options.binaryPath,
       ["app-server", ...(options.appServerArgs ?? [])],
@@ -1199,7 +1207,7 @@ export const makeCodexSessionRuntime = (
 
     const start = Effect.fn("CodexSessionRuntime.start")(function* () {
       yield* emitSessionEvent("session/connecting", "Starting Codex App Server session.");
-      yield* client.request("initialize", buildCodexInitializeParams());
+      yield* client.request("initialize", buildCodexInitializeParams(initializeClientVersion));
       yield* client.notify("initialized", undefined);
 
       const requestedModel = normalizeCodexModelSlug(options.model);

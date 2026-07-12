@@ -2,6 +2,8 @@ import {
   ContextMenuItemSchema,
   DesktopAppBrandingSchema,
   DesktopEnvironmentBootstrapSchema,
+  DesktopScreenshotCaptureSchema,
+  DesktopSystemThemeSchema,
   DesktopThemeSchema,
   PickFolderOptionsSchema,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
@@ -22,6 +24,8 @@ import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import * as DesktopSystemThemeService from "../../fork/DesktopSystemThemeService.ts";
+import { captureDesktopScreenshot } from "../../fork/OmarchyScreenshotCapture.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import {
@@ -39,6 +43,17 @@ const ContextMenuInput = Schema.Struct({
   items: Schema.Array(ContextMenuItemSchema),
   position: Schema.optionalKey(ContextMenuPosition),
 });
+
+class DesktopScreenshotCaptureError extends Schema.TaggedErrorClass<DesktopScreenshotCaptureError>()(
+  "DesktopScreenshotCaptureError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return "Desktop screenshot capture failed.";
+  }
+}
 
 function toWebSocketBaseUrl(httpBaseUrl: URL): string {
   const url = new URL(httpBaseUrl.href);
@@ -225,6 +240,28 @@ export const setTheme = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.window.setTheme")(function* (theme) {
     const electronTheme = yield* ElectronTheme.ElectronTheme;
     yield* electronTheme.setSource(theme);
+  }),
+});
+
+export const captureScreenshot = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.CAPTURE_SCREENSHOT_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.NullOr(DesktopScreenshotCaptureSchema),
+  handler: Effect.fn("desktop.ipc.window.captureScreenshot")(function* () {
+    return yield* Effect.tryPromise({
+      try: () => captureDesktopScreenshot(),
+      catch: (cause) => new DesktopScreenshotCaptureError({ cause }),
+    });
+  }),
+});
+
+export const getSystemTheme = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GET_SYSTEM_THEME_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.NullOr(DesktopSystemThemeSchema),
+  handler: Effect.fn("desktop.ipc.window.getSystemTheme")(function* () {
+    const systemTheme = yield* DesktopSystemThemeService.DesktopSystemThemeService;
+    return yield* systemTheme.get;
   }),
 });
 

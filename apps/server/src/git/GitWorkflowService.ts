@@ -5,6 +5,10 @@ import * as Layer from "effect/Layer";
 import {
   GitManagerError,
   GitCommandError,
+  type GitAbortMergeInput,
+  type GitAbortMergeResult,
+  type GitMergeBranchesInput,
+  type GitMergeBranchesResult,
   type VcsSwitchRefInput,
   type VcsSwitchRefResult,
   type VcsCreateRefInput,
@@ -53,6 +57,12 @@ export class GitWorkflowService extends Context.Service<
       input: GitRunStackedActionInput,
       options?: GitManager.GitRunStackedActionOptions,
     ) => Effect.Effect<GitRunStackedActionResult, GitManagerServiceError>;
+    readonly mergeBranches: (
+      input: GitMergeBranchesInput,
+    ) => Effect.Effect<GitMergeBranchesResult, GitManagerServiceError>;
+    readonly abortMerge: (
+      input: GitAbortMergeInput,
+    ) => Effect.Effect<GitAbortMergeResult, GitManagerServiceError>;
     readonly resolvePullRequest: (
       input: GitPullRequestRefInput,
     ) => Effect.Effect<GitResolvePullRequestResult, GitManagerServiceError>;
@@ -281,6 +291,8 @@ export const make = Effect.gen(function* () {
       ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
         Effect.andThen(gitManager.runStackedAction(input, options)),
       ),
+    mergeBranches: routeGitManager("GitWorkflowService.mergeBranches", gitManager.mergeBranches),
+    abortMerge: routeGitManager("GitWorkflowService.abortMerge", gitManager.abortMerge),
     resolvePullRequest: routeGitManager(
       "GitWorkflowService.resolvePullRequest",
       gitManager.resolvePullRequest,

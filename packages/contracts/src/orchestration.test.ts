@@ -49,6 +49,13 @@ const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPaylo
 const decodeOrchestrationCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 const decodeOrchestrationEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const decodeThreadMetaUpdatedPayload = Schema.decodeUnknownEffect(ThreadMetaUpdatedPayload);
+const linkedIssue = {
+  repoNameWithOwner: "t3tools/t3code",
+  number: 42,
+  title: "Replay upstream release",
+  url: "https://github.com/t3tools/t3code/issues/42",
+  state: "open" as const,
+};
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -271,6 +278,7 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
           interactionMode: "default",
           branch: null,
           worktreePath: null,
+          issueLink: linkedIssue,
           createdAt: "2026-01-01T00:00:00.000Z",
         },
         prepareWorktree: {
@@ -284,9 +292,44 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.bootstrap?.createThread?.projectId, "project-1");
+    assert.deepStrictEqual(parsed.bootstrap?.createThread?.issueLink, linkedIssue);
     assert.strictEqual(parsed.bootstrap?.prepareWorktree?.baseBranch, "main");
     assert.strictEqual(parsed.bootstrap?.prepareWorktree?.startFromOrigin, true);
     assert.strictEqual(parsed.bootstrap?.runSetupScript, true);
+  }),
+);
+
+it.effect("preserves issue links through thread command payloads", () =>
+  Effect.gen(function* () {
+    const created = yield* decodeOrchestrationCommand({
+      type: "thread.create",
+      commandId: "cmd-thread-create-issue",
+      threadId: "thread-1",
+      projectId: "project-1",
+      title: "Issue linked thread",
+      modelSelection: {
+        provider: "codex",
+        model: "gpt-5.4",
+      },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      issueLink: linkedIssue,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const updated = yield* decodeOrchestrationCommand({
+      type: "thread.meta.update",
+      commandId: "cmd-thread-meta-issue",
+      threadId: "thread-1",
+      issueLink: linkedIssue,
+    });
+
+    if (created.type !== "thread.create" || updated.type !== "thread.meta.update") {
+      assert.fail("Expected thread issue link commands.");
+    }
+    assert.deepStrictEqual(created.issueLink, linkedIssue);
+    assert.deepStrictEqual(updated.issueLink, linkedIssue);
   }),
 );
 
@@ -323,6 +366,62 @@ it.effect("decodes thread.meta-updated payloads with explicit provider", () =>
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.modelSelection?.instanceId, "claudeAgent");
+  }),
+);
+
+it.effect("preserves issue links through thread events", () =>
+  Effect.gen(function* () {
+    const created = yield* decodeOrchestrationEvent({
+      eventId: "event-thread-created-issue",
+      type: "thread.created",
+      sequence: 1,
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-thread-create-issue",
+      causationEventId: null,
+      correlationId: "cmd-thread-create-issue",
+      metadata: {},
+      payload: {
+        threadId: "thread-1",
+        projectId: "project-1",
+        title: "Issue linked thread",
+        modelSelection: {
+          provider: "codex",
+          model: "gpt-5.4",
+        },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        issueLink: linkedIssue,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const updated = yield* decodeOrchestrationEvent({
+      eventId: "event-thread-meta-issue",
+      type: "thread.meta-updated",
+      sequence: 2,
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      occurredAt: "2026-01-01T00:00:01.000Z",
+      commandId: "cmd-thread-meta-issue",
+      causationEventId: null,
+      correlationId: "cmd-thread-meta-issue",
+      metadata: {},
+      payload: {
+        threadId: "thread-1",
+        issueLink: linkedIssue,
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      },
+    });
+
+    if (created.type !== "thread.created" || updated.type !== "thread.meta-updated") {
+      assert.fail("Expected thread issue link events.");
+    }
+    assert.deepStrictEqual(created.payload.issueLink, linkedIssue);
+    assert.deepStrictEqual(updated.payload.issueLink, linkedIssue);
   }),
 );
 

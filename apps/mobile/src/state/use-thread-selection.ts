@@ -63,6 +63,9 @@ function threadDetailToShell(
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
+    activePlanProgress: null,
+    latestRuntimeActivityAt: null,
+    statusSummaryUpdatedAt: null,
   };
 }
 

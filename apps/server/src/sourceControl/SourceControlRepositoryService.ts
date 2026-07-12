@@ -22,6 +22,7 @@ import {
 import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
+import { isOriginRemoteName, ORIGIN_REMOTE_NAME } from "../fork/originOnlySourceControlPolicy.ts";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 
 export class SourceControlRepositoryService extends Context.Service<
@@ -225,6 +226,14 @@ export const make = Effect.gen(function* () {
         provider: input.provider,
       });
       const provider = yield* providers.get(providerKind);
+      const requestedRemoteName = input.remoteName?.trim() || ORIGIN_REMOTE_NAME;
+      if (!isOriginRemoteName(requestedRemoteName)) {
+        return yield* new SourceControlRepositoryError({
+          operation: "publishRepository",
+          provider: providerKind,
+          detail: "Origin-only policy permits publishing only through the origin remote.",
+        });
+      }
       const urls = yield* provider.createRepository({
         cwd: input.cwd,
         repository: input.repository.trim(),
@@ -233,9 +242,16 @@ export const make = Effect.gen(function* () {
       const remoteUrl = selectRemoteUrl(urls, input.protocol);
       const remoteName = yield* git.ensureRemote({
         cwd: input.cwd,
-        preferredName: input.remoteName?.trim() || "origin",
+        preferredName: ORIGIN_REMOTE_NAME,
         url: remoteUrl,
       });
+      if (!isOriginRemoteName(remoteName)) {
+        return yield* new SourceControlRepositoryError({
+          operation: "publishRepository",
+          provider: providerKind,
+          detail: "Origin-only policy rejected a non-origin remote returned during publication.",
+        });
+      }
 
       // An empty local repo (no commits) would make `git push HEAD:...` fail
       // with an opaque "src refspec HEAD does not match any". Treat this as a
@@ -262,7 +278,9 @@ export const make = Effect.gen(function* () {
         };
       }
 
-      const pushResult = yield* git.pushCurrentBranch(input.cwd, null, { remoteName });
+      const pushResult = yield* git.pushCurrentBranch(input.cwd, null, {
+        remoteName: ORIGIN_REMOTE_NAME,
+      });
 
       return {
         repository: toRepositoryInfo(providerKind, urls),

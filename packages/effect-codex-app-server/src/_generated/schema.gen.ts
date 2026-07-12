@@ -32451,24 +32451,30 @@ export const V1InitializeParams = Schema.Struct({
 }).annotate({ title: "InitializeParams" });
 
 export type V1InitializeResponse = {
-  readonly codexHome: string;
-  readonly platformFamily: string;
-  readonly platformOs: string;
+  readonly codexHome?: string;
+  readonly platformFamily?: string;
+  readonly platformOs?: string;
   readonly userAgent: string;
 };
 export const V1InitializeResponse = Schema.Struct({
-  codexHome: Schema.String.annotate({
-    description:
-      "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
-  }),
-  platformFamily: Schema.String.annotate({
-    description:
-      'Platform family for the running app-server target, for example `"unix"` or `"windows"`.',
-  }),
-  platformOs: Schema.String.annotate({
-    description:
-      'Operating system for the running app-server target, for example `"macos"`, `"linux"`, or `"windows"`.',
-  }),
+  codexHome: Schema.optionalKey(
+    Schema.String.annotate({
+      description:
+        "A path that is guaranteed to be absolute and normalized (though it is not guaranteed to be canonicalized or exist on the filesystem).\n\nIMPORTANT: When deserializing an `AbsolutePathBuf`, a base path must be set using [AbsolutePathBufGuard::new]. If no base path is set, the deserialization will fail unless the path being deserialized is already absolute.",
+    }),
+  ),
+  platformFamily: Schema.optionalKey(
+    Schema.String.annotate({
+      description:
+        'Platform family for the running app-server target, for example `"unix"` or `"windows"`.',
+    }),
+  ),
+  platformOs: Schema.optionalKey(
+    Schema.String.annotate({
+      description:
+        'Operating system for the running app-server target, for example `"macos"`, `"linux"`, or `"windows"`.',
+    }),
+  ),
   userAgent: Schema.String,
 }).annotate({ title: "InitializeResponse" });
 

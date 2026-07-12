@@ -305,6 +305,24 @@ export function createEnvironmentShellSummaryAtom(input: {
   }).pipe(Atom.withLabel("environment-shell-summary"));
 }
 
+export function createEnvironmentShellStatusMapAtom(input: {
+  readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
+  readonly shellStateValueAtom: (environmentId: EnvironmentId) => Atom.Atom<EnvironmentShellState>;
+}) {
+  let previousStatuses: ReadonlyMap<EnvironmentId, EnvironmentShellStatus> = new Map();
+  return Atom.make((get) => {
+    const nextStatuses = new Map<EnvironmentId, EnvironmentShellStatus>();
+    for (const environmentId of get(input.catalogValueAtom).entries.keys()) {
+      nextStatuses.set(environmentId, get(input.shellStateValueAtom(environmentId)).status);
+    }
+    if (mapsEqual(previousStatuses, nextStatuses)) {
+      return previousStatuses;
+    }
+    previousStatuses = nextStatuses;
+    return previousStatuses;
+  }).pipe(Atom.withLabel("environment-shell-status-map"));
+}
+
 export function createEnvironmentServerConfigsAtom(input: {
   readonly catalogValueAtom: Atom.Atom<EnvironmentCatalogState>;
   readonly serverConfigValueAtom: (environmentId: EnvironmentId) => Atom.Atom<ServerConfig | null>;

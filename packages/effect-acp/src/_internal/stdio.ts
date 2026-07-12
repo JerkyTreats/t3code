@@ -44,20 +44,14 @@ export const makeInMemoryStdio = Effect.fn("makeInMemoryStdio")(function* () {
   };
 });
 
-type ChildProcessTerminationHandle = Pick<
-  ChildProcessSpawner.ChildProcessHandle,
-  "exitCode" | "pid"
->;
-
 export const makeTerminationError = (
-  handle: ChildProcessTerminationHandle,
+  handle: ChildProcessSpawner.ChildProcessHandle,
 ): Effect.Effect<AcpError.AcpError> =>
   Effect.match(handle.exitCode, {
     onFailure: (cause) =>
       new AcpError.AcpTransportError({
-        operation: "read-process-exit-status",
-        pid: handle.pid,
+        detail: "Failed to determine ACP process exit status",
         cause,
       }),
-    onSuccess: (code) => new AcpError.AcpProcessExitedError({ code, pid: handle.pid }),
+    onSuccess: (code) => new AcpError.AcpProcessExitedError({ code }),
   });

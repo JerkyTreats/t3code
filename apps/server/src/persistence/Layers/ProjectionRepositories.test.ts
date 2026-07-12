@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
+import { EventId, ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -95,13 +95,30 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         pendingApprovalCount: 0,
         pendingUserInputCount: 0,
         hasActionableProposedPlan: 0,
+        activePlanProgress: {
+          completedAllSteps: false,
+          currentStepNumber: 2,
+          totalSteps: 3,
+          turnId: null,
+          activityId: EventId.make("activity-null-options-plan"),
+          updatedAt: "2026-03-24T00:00:01.000Z",
+        },
+        latestRuntimeActivityAt: "2026-03-24T00:00:02.000Z",
+        statusSummaryUpdatedAt: "2026-03-24T00:00:03.000Z",
         deletedAt: null,
       });
 
       const rows = yield* sql<{
         readonly modelSelection: string | null;
+        readonly activePlanProgress: string | null;
+        readonly latestRuntimeActivityAt: string | null;
+        readonly statusSummaryUpdatedAt: string | null;
       }>`
-        SELECT model_selection_json AS "modelSelection"
+        SELECT
+          model_selection_json AS "modelSelection",
+          active_plan_progress_json AS "activePlanProgress",
+          latest_runtime_activity_at AS "latestRuntimeActivityAt",
+          status_summary_updated_at AS "statusSummaryUpdatedAt"
         FROM projection_threads
         WHERE thread_id = 'thread-null-options'
       `;
@@ -118,6 +135,12 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
           model: "claude-opus-4-6",
         }),
       );
+      assert.strictEqual(
+        row.activePlanProgress,
+        '{"completedAllSteps":false,"currentStepNumber":2,"totalSteps":3,"turnId":null,"activityId":"activity-null-options-plan","updatedAt":"2026-03-24T00:00:01.000Z"}',
+      );
+      assert.strictEqual(row.latestRuntimeActivityAt, "2026-03-24T00:00:02.000Z");
+      assert.strictEqual(row.statusSummaryUpdatedAt, "2026-03-24T00:00:03.000Z");
 
       const persisted = yield* threads.getById({
         threadId: ThreadId.make("thread-null-options"),
@@ -126,6 +149,22 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         instanceId: ProviderInstanceId.make("claudeAgent"),
         model: "claude-opus-4-6",
       });
+      assert.deepStrictEqual(Option.getOrNull(persisted)?.activePlanProgress, {
+        completedAllSteps: false,
+        currentStepNumber: 2,
+        totalSteps: 3,
+        turnId: null,
+        activityId: EventId.make("activity-null-options-plan"),
+        updatedAt: "2026-03-24T00:00:01.000Z",
+      });
+      assert.strictEqual(
+        Option.getOrNull(persisted)?.latestRuntimeActivityAt,
+        "2026-03-24T00:00:02.000Z",
+      );
+      assert.strictEqual(
+        Option.getOrNull(persisted)?.statusSummaryUpdatedAt,
+        "2026-03-24T00:00:03.000Z",
+      );
     }),
   );
 });

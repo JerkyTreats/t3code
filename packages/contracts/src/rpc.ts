@@ -16,6 +16,8 @@ import {
 import { AssetAccessError, AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
 import {
   GitActionProgressEvent,
+  GitAbortMergeInput,
+  GitAbortMergeResult,
   VcsSwitchRefInput,
   VcsSwitchRefResult,
   GitCommandError,
@@ -23,6 +25,8 @@ import {
   VcsCreateRefResult,
   VcsCreateWorktreeInput,
   VcsCreateWorktreeResult,
+  GitMergeBranchesInput,
+  GitMergeBranchesResult,
   VcsInitInput,
   VcsListRefsInput,
   VcsListRefsResult,
@@ -39,6 +43,17 @@ import {
   VcsStatusResult,
   VcsStatusStreamEvent,
 } from "./git.ts";
+import {
+  GitHubCreateIssueInput,
+  GitHubCreateIssueResult,
+  GitHubIssueMutationInput,
+  GitHubIssueMutationResult,
+  GitHubListIssuesInput,
+  GitHubListIssuesResult,
+  GitHubLoginInput,
+  GitHubStatusInput,
+  GitHubStatusResult,
+} from "./github.ts";
 import {
   ReviewDiffPreviewError,
   ReviewDiffPreviewInput,
@@ -175,6 +190,16 @@ export const WS_METHODS = {
   gitRunStackedAction: "git.runStackedAction",
   gitResolvePullRequest: "git.resolvePullRequest",
   gitPreparePullRequestThread: "git.preparePullRequestThread",
+  gitMergeBranches: "git.mergeBranches",
+  gitAbortMerge: "git.abortMerge",
+
+  // GitHub methods
+  githubStatus: "github.status",
+  githubLogin: "github.login",
+  githubListIssues: "github.listIssues",
+  githubCreateIssue: "github.createIssue",
+  githubCloseIssue: "github.closeIssue",
+  githubReopenIssue: "github.reopenIssue",
 
   // Review methods
   reviewGetDiffPreview: "review.getDiffPreview",
@@ -433,6 +458,54 @@ export const WsGitPreparePullRequestThreadRpc = Rpc.make(WS_METHODS.gitPreparePu
   error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
 });
 
+export const WsGitMergeBranchesRpc = Rpc.make(WS_METHODS.gitMergeBranches, {
+  payload: GitMergeBranchesInput,
+  success: GitMergeBranchesResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+export const WsGitAbortMergeRpc = Rpc.make(WS_METHODS.gitAbortMerge, {
+  payload: GitAbortMergeInput,
+  success: GitAbortMergeResult,
+  error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
+});
+
+export const WsGitHubStatusRpc = Rpc.make(WS_METHODS.githubStatus, {
+  payload: GitHubStatusInput,
+  success: GitHubStatusResult,
+  error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+});
+
+export const WsGitHubLoginRpc = Rpc.make(WS_METHODS.githubLogin, {
+  payload: GitHubLoginInput,
+  success: GitHubStatusResult,
+  error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+});
+
+export const WsGitHubListIssuesRpc = Rpc.make(WS_METHODS.githubListIssues, {
+  payload: GitHubListIssuesInput,
+  success: GitHubListIssuesResult,
+  error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+});
+
+export const WsGitHubCreateIssueRpc = Rpc.make(WS_METHODS.githubCreateIssue, {
+  payload: GitHubCreateIssueInput,
+  success: GitHubCreateIssueResult,
+  error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+});
+
+export const WsGitHubCloseIssueRpc = Rpc.make(WS_METHODS.githubCloseIssue, {
+  payload: GitHubIssueMutationInput,
+  success: GitHubIssueMutationResult,
+  error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+});
+
+export const WsGitHubReopenIssueRpc = Rpc.make(WS_METHODS.githubReopenIssue, {
+  payload: GitHubIssueMutationInput,
+  success: GitHubIssueMutationResult,
+  error: Schema.Union([SourceControlRepositoryError, EnvironmentAuthorizationError]),
+});
+
 export const WsVcsListRefsRpc = Rpc.make(WS_METHODS.vcsListRefs, {
   payload: VcsListRefsInput,
   success: VcsListRefsResult,
@@ -646,6 +719,70 @@ export const WsOrchestrationSubscribeThreadRpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationSubscribeThreadV2Rpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.subscribeThreadV2,
+  {
+    payload: OrchestrationRpcSchemas.subscribeThreadV2.input,
+    success: OrchestrationRpcSchemas.subscribeThreadV2.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+    stream: true,
+  },
+);
+
+export const WsOrchestrationGetThreadMessagePageRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadMessagePage,
+  {
+    payload: OrchestrationRpcSchemas.getThreadMessagePage.input,
+    success: OrchestrationRpcSchemas.getThreadMessagePage.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsOrchestrationGetThreadProposedPlanPageRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage,
+  {
+    payload: OrchestrationRpcSchemas.getThreadProposedPlanPage.input,
+    success: OrchestrationRpcSchemas.getThreadProposedPlanPage.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsOrchestrationGetThreadContentChunkRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadContentChunk,
+  {
+    payload: OrchestrationRpcSchemas.getThreadContentChunk.input,
+    success: OrchestrationRpcSchemas.getThreadContentChunk.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsOrchestrationGetThreadActivityPageRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadActivityPage,
+  {
+    payload: OrchestrationRpcSchemas.getThreadActivityPage.input,
+    success: OrchestrationRpcSchemas.getThreadActivityPage.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsOrchestrationGetThreadCheckpointPageRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getThreadCheckpointPage,
+  {
+    payload: OrchestrationRpcSchemas.getThreadCheckpointPage.input,
+    success: OrchestrationRpcSchemas.getThreadCheckpointPage.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsOrchestrationHydrateThreadActivityPayloadsRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.hydrateThreadActivityPayloads,
+  {
+    payload: OrchestrationRpcSchemas.hydrateThreadActivityPayloads.input,
+    success: OrchestrationRpcSchemas.hydrateThreadActivityPayloads.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -712,6 +849,14 @@ export const WsRpcGroup = RpcGroup.make(
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,
   WsGitPreparePullRequestThreadRpc,
+  WsGitMergeBranchesRpc,
+  WsGitAbortMergeRpc,
+  WsGitHubStatusRpc,
+  WsGitHubLoginRpc,
+  WsGitHubListIssuesRpc,
+  WsGitHubCreateIssueRpc,
+  WsGitHubCloseIssueRpc,
+  WsGitHubReopenIssueRpc,
   WsVcsListRefsRpc,
   WsVcsCreateWorktreeRpc,
   WsVcsRemoveWorktreeRpc,
@@ -750,4 +895,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsOrchestrationSubscribeThreadV2Rpc,
+  WsOrchestrationGetThreadMessagePageRpc,
+  WsOrchestrationGetThreadProposedPlanPageRpc,
+  WsOrchestrationGetThreadContentChunkRpc,
+  WsOrchestrationGetThreadActivityPageRpc,
+  WsOrchestrationGetThreadCheckpointPageRpc,
+  WsOrchestrationHydrateThreadActivityPayloadsRpc,
 );

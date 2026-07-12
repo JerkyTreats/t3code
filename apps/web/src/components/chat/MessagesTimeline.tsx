@@ -1,10 +1,13 @@
 import {
   type EnvironmentId,
   type MessageId,
+  type OrchestrationProposedPlanId,
   type ScopedThreadRef,
   type ServerProviderSkill,
+  type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
+import type { EnvironmentThreadSyncStatus } from "@t3tools/client-runtime/state/threads";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
@@ -48,6 +51,7 @@ import {
   EyeIcon,
   GlobeIcon,
   HammerIcon,
+  LoaderCircleIcon,
   MessageCircleIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
@@ -134,6 +138,9 @@ interface TimelineRowSharedState {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
   onToggleWorkGroup: (groupId: string, anchorElement?: HTMLElement) => void;
+  onOpenProposedPlanPreview:
+    | ((input: { planThreadId: ThreadId; planId: OrchestrationProposedPlanId }) => void)
+    | undefined;
 }
 
 interface TimelineRowActivityState {
@@ -163,6 +170,10 @@ interface MessagesTimelineProps {
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
   routeThreadKey: string;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onOpenProposedPlanPreview?: (input: {
+    planThreadId: ThreadId;
+    planId: OrchestrationProposedPlanId;
+  }) => void;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
   isRevertingCheckpoint: boolean;
@@ -179,6 +190,7 @@ interface MessagesTimelineProps {
   contentInsetEndAdjustment: number;
   onIsAtEndChange: (isAtEnd: boolean) => void;
   onManualNavigation: () => void;
+  syncStatus?: EnvironmentThreadSyncStatus | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +208,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   turnDiffSummaryByAssistantMessageId,
   routeThreadKey,
   onOpenTurnDiff,
+  onOpenProposedPlanPreview,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
   isRevertingCheckpoint,
@@ -212,6 +225,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   contentInsetEndAdjustment,
   onIsAtEndChange,
   onManualNavigation,
+  syncStatus = null,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
@@ -419,6 +433,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
+      onOpenProposedPlanPreview,
       onToggleTurnFold,
       onToggleWorkGroup,
     }),
@@ -433,6 +448,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onRevertUserMessage,
       onImageExpand,
       onOpenTurnDiff,
+      onOpenProposedPlanPreview,
       onToggleTurnFold,
       onToggleWorkGroup,
     ],
@@ -456,6 +472,48 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ),
     [],
   );
+  const syncErrorContent =
+    syncStatus?.phase === "error" ? resolveThreadSyncStatusContent(syncStatus) : null;
+  const listHeader =
+    syncErrorContent === null ? (
+      TIMELINE_LIST_HEADER
+    ) : (
+      <div
+        className="mx-auto flex w-full max-w-3xl items-start gap-2 border-b border-destructive/20 py-3 text-xs"
+        data-thread-sync-error="true"
+        role="alert"
+        aria-live="polite"
+      >
+        <CircleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+        <p className="min-w-0 break-words leading-5 text-muted-foreground">
+          <span className="font-medium text-destructive">{syncErrorContent.title}.</span>{" "}
+          {syncErrorContent.detail}
+        </p>
+      </div>
+    );
+
+  if (rows.length === 0 && syncStatus !== null && syncStatus.phase !== "live") {
+    const content = resolveThreadSyncStatusContent(syncStatus);
+    return (
+      <div className="flex h-full items-center justify-center px-5">
+        <div
+          className="flex max-w-sm items-start gap-3 text-left"
+          role={syncStatus.phase === "error" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          {syncStatus.phase === "error" ? (
+            <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
+          ) : (
+            <LoaderCircleIcon className="mt-0.5 size-4 shrink-0 animate-spin text-muted-foreground" />
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">{content.title}</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{content.detail}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (rows.length === 0 && !isWorking) {
     return (
@@ -499,7 +557,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             }}
             onScroll={handleScroll}
             className="scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] sm:px-5"
-            ListHeaderComponent={TIMELINE_LIST_HEADER}
+            ListHeaderComponent={listHeader}
             ListFooterComponent={TIMELINE_LIST_FOOTER}
           />
           <TimelineMinimap
@@ -521,6 +579,41 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     </TimelineRowCtx>
   );
 });
+
+function resolveThreadSyncStatusContent(syncStatus: EnvironmentThreadSyncStatus): {
+  readonly title: string;
+  readonly detail: string;
+} {
+  switch (syncStatus.phase) {
+    case "waiting":
+      return {
+        title: "Waiting for connection",
+        detail: "Thread history will load when the environment is connected.",
+      };
+    case "subscribing":
+      return {
+        title: "Loading thread history",
+        detail: "Waiting for the thread snapshot.",
+      };
+    case "hydrating": {
+      const count = syncStatus.deferredPayloadCount;
+      return {
+        title: "Hydrating thread history",
+        detail: `${count} deferred activity ${count === 1 ? "payload is" : "payloads are"} loading.`,
+      };
+    }
+    case "error":
+      return {
+        title: "Could not load thread history",
+        detail: syncStatus.error ?? "The thread subscription failed.",
+      };
+    case "live":
+      return {
+        title: "Thread history loaded",
+        detail: "The thread is synchronized.",
+      };
+  }
+}
 
 function keyExtractor(item: MessagesTimelineRow) {
   return item.id;
@@ -1036,15 +1129,26 @@ function ProposedPlanTimelineRow({
   row: Extract<TimelineRow, { kind: "proposed-plan" }>;
 }) {
   const ctx = use(TimelineRowCtx);
+  const threadRef = ctx.threadRef;
+  const openProposedPlanPreview = ctx.onOpenProposedPlanPreview;
 
   return (
     <div className="min-w-0 px-1 py-0.5">
       <ProposedPlanCard
         planMarkdown={row.proposedPlan.planMarkdown}
         environmentId={ctx.activeThreadEnvironmentId}
-        threadRef={ctx.threadRef ?? undefined}
+        threadRef={threadRef ?? undefined}
         cwd={ctx.markdownCwd}
         workspaceRoot={ctx.workspaceRoot}
+        onOpenPreview={
+          threadRef && openProposedPlanPreview
+            ? () =>
+                openProposedPlanPreview({
+                  planThreadId: threadRef.threadId,
+                  planId: row.proposedPlan.id,
+                })
+            : undefined
+        }
       />
     </div>
   );

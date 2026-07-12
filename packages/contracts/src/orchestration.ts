@@ -14,12 +14,14 @@ import {
   IsoDateTime,
   MessageId,
   NonNegativeInt,
+  PositiveInt,
   ProjectId,
   ProviderItemId,
   ThreadId,
   TrimmedNonEmptyString,
   TurnId,
 } from "./baseSchemas.ts";
+import { GitHubIssueLink } from "./github.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
@@ -30,7 +32,21 @@ export const ORCHESTRATION_WS_METHODS = {
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
+  subscribeThreadV2: "orchestration.subscribeThreadV2",
+  getThreadMessagePage: "orchestration.getThreadMessagePage",
+  getThreadProposedPlanPage: "orchestration.getThreadProposedPlanPage",
+  getThreadContentChunk: "orchestration.getThreadContentChunk",
+  getThreadActivityPage: "orchestration.getThreadActivityPage",
+  getThreadCheckpointPage: "orchestration.getThreadCheckpointPage",
+  hydrateThreadActivityPayloads: "orchestration.hydrateThreadActivityPayloads",
 } as const;
+export const ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS = 50;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES = 8 * 1024 * 1024;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES = 1024 * 1024;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS = 200;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS = 100;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS = 300;
+export const ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS = 200;
 
 export const ProviderApprovalPolicy = Schema.Literals([
   "untrusted",
@@ -352,6 +368,7 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  issueLink: Schema.optional(Schema.NullOr(GitHubIssueLink)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -387,6 +404,16 @@ export const OrchestrationProjectShell = Schema.Struct({
 });
 export type OrchestrationProjectShell = typeof OrchestrationProjectShell.Type;
 
+export const OrchestrationThreadPlanProgress = Schema.Struct({
+  completedAllSteps: Schema.Boolean,
+  currentStepNumber: PositiveInt,
+  totalSteps: PositiveInt,
+  turnId: Schema.NullOr(TurnId),
+  activityId: EventId,
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationThreadPlanProgress = typeof OrchestrationThreadPlanProgress.Type;
+
 export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -398,6 +425,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  issueLink: Schema.optional(Schema.NullOr(GitHubIssueLink)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -407,6 +435,15 @@ export const OrchestrationThreadShell = Schema.Struct({
   hasPendingApprovals: Schema.Boolean,
   hasPendingUserInput: Schema.Boolean,
   hasActionableProposedPlan: Schema.Boolean,
+  activePlanProgress: Schema.NullOr(OrchestrationThreadPlanProgress).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  latestRuntimeActivityAt: Schema.NullOr(IsoDateTime).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  statusSummaryUpdatedAt: Schema.NullOr(IsoDateTime).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
 });
 export type OrchestrationThreadShell = typeof OrchestrationThreadShell.Type;
 
@@ -483,6 +520,313 @@ export const OrchestrationThreadDetailSnapshot = Schema.Struct({
 });
 export type OrchestrationThreadDetailSnapshot = typeof OrchestrationThreadDetailSnapshot.Type;
 
+export const OrchestrationThreadSyncV2Limits = Schema.Struct({
+  messages: Schema.optional(
+    PositiveInt.check(Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS)),
+  ),
+  proposedPlans: Schema.optional(
+    PositiveInt.check(
+      Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS),
+    ),
+  ),
+  activities: Schema.optional(
+    PositiveInt.check(Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS)),
+  ),
+  checkpoints: Schema.optional(
+    PositiveInt.check(
+      Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS),
+    ),
+  ),
+});
+export type OrchestrationThreadSyncV2Limits = typeof OrchestrationThreadSyncV2Limits.Type;
+
+export const OrchestrationSubscribeThreadV2Input = Schema.Struct({
+  threadId: ThreadId,
+  limits: Schema.optional(OrchestrationThreadSyncV2Limits),
+});
+export type OrchestrationSubscribeThreadV2Input = typeof OrchestrationSubscribeThreadV2Input.Type;
+
+export const OrchestrationThreadSyncV2Window = Schema.Struct({
+  returned: NonNegativeInt,
+  limit: PositiveInt,
+  hasMoreBefore: Schema.Boolean,
+  hasMoreAfter: Schema.Boolean,
+});
+export type OrchestrationThreadSyncV2Window = typeof OrchestrationThreadSyncV2Window.Type;
+
+export const OrchestrationThreadSyncV2Windows = Schema.Struct({
+  messages: OrchestrationThreadSyncV2Window,
+  proposedPlans: OrchestrationThreadSyncV2Window,
+  activities: OrchestrationThreadSyncV2Window,
+  checkpoints: OrchestrationThreadSyncV2Window,
+});
+export type OrchestrationThreadSyncV2Windows = typeof OrchestrationThreadSyncV2Windows.Type;
+
+export const OrchestrationDeferredActivityPayload = Schema.Struct({
+  __t3Deferred: Schema.Literal("thread-activity-payload"),
+  byteLength: NonNegativeInt,
+});
+export type OrchestrationDeferredActivityPayload = typeof OrchestrationDeferredActivityPayload.Type;
+
+export const OrchestrationThreadContentKind = Schema.Literals([
+  "message-text",
+  "message-text-delta",
+  "proposed-plan-markdown",
+]);
+export type OrchestrationThreadContentKind = typeof OrchestrationThreadContentKind.Type;
+
+const OrchestrationDeferredThreadContentFields = {
+  __t3Deferred: Schema.Literal("thread-content"),
+  byteLength: NonNegativeInt,
+  characterLength: NonNegativeInt,
+};
+export const OrchestrationDeferredThreadContent = Schema.Union([
+  Schema.Struct({
+    ...OrchestrationDeferredThreadContentFields,
+    kind: Schema.Literals(["message-text", "proposed-plan-markdown"]),
+  }),
+  Schema.Struct({
+    ...OrchestrationDeferredThreadContentFields,
+    kind: Schema.Literal("message-text-delta"),
+    eventId: EventId,
+  }),
+]);
+export type OrchestrationDeferredThreadContent = typeof OrchestrationDeferredThreadContent.Type;
+
+export const OrchestrationThreadMessageV2 = OrchestrationMessage.mapFields((fields) =>
+  Struct.assign(fields, {
+    text: Schema.Union([Schema.String, OrchestrationDeferredThreadContent]),
+  }),
+);
+export type OrchestrationThreadMessageV2 = typeof OrchestrationThreadMessageV2.Type;
+
+export const OrchestrationProposedPlanV2 = OrchestrationProposedPlan.mapFields((fields) =>
+  Struct.assign(fields, {
+    planMarkdown: Schema.Union([TrimmedNonEmptyString, OrchestrationDeferredThreadContent]),
+  }),
+);
+export type OrchestrationProposedPlanV2 = typeof OrchestrationProposedPlanV2.Type;
+
+export const OrchestrationThreadV2 = OrchestrationThread.mapFields((fields) =>
+  Struct.assign(fields, {
+    messages: Schema.Array(OrchestrationThreadMessageV2),
+    proposedPlans: Schema.Array(OrchestrationProposedPlanV2),
+  }),
+);
+export type OrchestrationThreadV2 = typeof OrchestrationThreadV2.Type;
+
+export const OrchestrationActivityCursor = Schema.Struct({
+  activityId: EventId,
+  createdAt: IsoDateTime,
+  sequence: Schema.NullOr(NonNegativeInt),
+});
+export type OrchestrationActivityCursor = typeof OrchestrationActivityCursor.Type;
+
+export const OrchestrationMessageCursor = Schema.Struct({
+  messageId: MessageId,
+  createdAt: IsoDateTime,
+});
+export type OrchestrationMessageCursor = typeof OrchestrationMessageCursor.Type;
+
+export const OrchestrationProposedPlanCursor = Schema.Struct({
+  planId: OrchestrationProposedPlanId,
+  createdAt: IsoDateTime,
+});
+export type OrchestrationProposedPlanCursor = typeof OrchestrationProposedPlanCursor.Type;
+
+export const OrchestrationCheckpointCursor = Schema.Struct({
+  checkpointTurnCount: NonNegativeInt,
+});
+export type OrchestrationCheckpointCursor = typeof OrchestrationCheckpointCursor.Type;
+
+export const OrchestrationThreadDetailV2Snapshot = Schema.Struct({
+  snapshotSequence: NonNegativeInt,
+  thread: OrchestrationThreadV2,
+  windows: OrchestrationThreadSyncV2Windows,
+  deferredActivityPayloads: NonNegativeInt,
+  deferredThreadContents: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
+});
+export type OrchestrationThreadDetailV2Snapshot = typeof OrchestrationThreadDetailV2Snapshot.Type;
+
+export const OrchestrationThreadMessagePageInput = Schema.Struct({
+  threadId: ThreadId,
+  limit: Schema.optional(
+    PositiveInt.check(Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS)),
+  ),
+  before: Schema.optional(OrchestrationMessageCursor),
+});
+export type OrchestrationThreadMessagePageInput = typeof OrchestrationThreadMessagePageInput.Type;
+
+export const OrchestrationThreadMessagePageResult = Schema.Struct({
+  items: Schema.Array(OrchestrationThreadMessageV2).check(
+    Schema.isMaxLength(ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS),
+  ),
+  startCursor: Schema.NullOr(OrchestrationMessageCursor),
+  hasMoreBefore: Schema.Boolean,
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
+});
+export type OrchestrationThreadMessagePageResult = typeof OrchestrationThreadMessagePageResult.Type;
+
+export const OrchestrationThreadProposedPlanPageInput = Schema.Struct({
+  threadId: ThreadId,
+  limit: Schema.optional(
+    PositiveInt.check(
+      Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS),
+    ),
+  ),
+  before: Schema.optional(OrchestrationProposedPlanCursor),
+});
+export type OrchestrationThreadProposedPlanPageInput =
+  typeof OrchestrationThreadProposedPlanPageInput.Type;
+
+export const OrchestrationThreadProposedPlanPageResult = Schema.Struct({
+  items: Schema.Array(OrchestrationProposedPlanV2).check(
+    Schema.isMaxLength(ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS),
+  ),
+  startCursor: Schema.NullOr(OrchestrationProposedPlanCursor),
+  hasMoreBefore: Schema.Boolean,
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
+});
+export type OrchestrationThreadProposedPlanPageResult =
+  typeof OrchestrationThreadProposedPlanPageResult.Type;
+
+export const OrchestrationThreadContentReference = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("message-text"),
+    messageId: MessageId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("message-text-delta"),
+    eventId: EventId,
+    messageId: MessageId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("proposed-plan-markdown"),
+    planId: OrchestrationProposedPlanId,
+  }),
+]);
+export type OrchestrationThreadContentReference = typeof OrchestrationThreadContentReference.Type;
+
+export const OrchestrationThreadContentChunkInput = Schema.Struct({
+  threadId: ThreadId,
+  content: OrchestrationThreadContentReference,
+  offset: NonNegativeInt,
+});
+export type OrchestrationThreadContentChunkInput = typeof OrchestrationThreadContentChunkInput.Type;
+
+export const OrchestrationThreadContentChunkResult = Schema.Struct({
+  threadId: ThreadId,
+  content: OrchestrationThreadContentReference,
+  contentVersion: IsoDateTime,
+  offset: NonNegativeInt,
+  chunk: Schema.String,
+  chunkByteLength: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES),
+  ),
+  nextOffset: Schema.NullOr(NonNegativeInt),
+  totalByteLength: NonNegativeInt,
+  totalCharacterLength: NonNegativeInt,
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
+});
+export type OrchestrationThreadContentChunkResult =
+  typeof OrchestrationThreadContentChunkResult.Type;
+
+export const OrchestrationThreadCheckpointPageInput = Schema.Struct({
+  threadId: ThreadId,
+  limit: Schema.optional(
+    PositiveInt.check(
+      Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS),
+    ),
+  ),
+  before: Schema.optional(OrchestrationCheckpointCursor),
+});
+export type OrchestrationThreadCheckpointPageInput =
+  typeof OrchestrationThreadCheckpointPageInput.Type;
+
+export const OrchestrationThreadCheckpointPageResult = Schema.Struct({
+  items: Schema.Array(OrchestrationCheckpointSummary).check(
+    Schema.isMaxLength(ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS),
+  ),
+  startCursor: Schema.NullOr(OrchestrationCheckpointCursor),
+  hasMoreBefore: Schema.Boolean,
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
+});
+export type OrchestrationThreadCheckpointPageResult =
+  typeof OrchestrationThreadCheckpointPageResult.Type;
+
+export const OrchestrationThreadActivityPageInput = Schema.Struct({
+  threadId: ThreadId,
+  limit: Schema.optional(
+    PositiveInt.check(Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS)),
+  ),
+  cursor: Schema.optional(
+    Schema.Struct({
+      direction: Schema.Literals(["before", "after"]),
+      position: OrchestrationActivityCursor,
+    }),
+  ),
+});
+export type OrchestrationThreadActivityPageInput = typeof OrchestrationThreadActivityPageInput.Type;
+
+export const OrchestrationThreadActivityPageResult = Schema.Struct({
+  items: Schema.Array(OrchestrationThreadActivity).check(
+    Schema.isMaxLength(ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS),
+  ),
+  startCursor: Schema.NullOr(OrchestrationActivityCursor),
+  endCursor: Schema.NullOr(OrchestrationActivityCursor),
+  hasMoreBefore: Schema.Boolean,
+  hasMoreAfter: Schema.Boolean,
+  deferredActivityPayloads: NonNegativeInt,
+  estimatedSerializedBytes: NonNegativeInt.check(
+    Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+  ),
+});
+export type OrchestrationThreadActivityPageResult =
+  typeof OrchestrationThreadActivityPageResult.Type;
+
+export const OrchestrationHydrateThreadActivityPayloadsInput = Schema.Struct({
+  threadId: ThreadId,
+  activityIds: Schema.Array(EventId).check(
+    Schema.isMaxLength(ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS),
+  ),
+});
+export type OrchestrationHydrateThreadActivityPayloadsInput =
+  typeof OrchestrationHydrateThreadActivityPayloadsInput.Type;
+
+export const OrchestrationHydratedThreadActivityPayload = Schema.Struct({
+  activityId: EventId,
+  payload: Schema.Unknown,
+  byteLength: NonNegativeInt,
+});
+export type OrchestrationHydratedThreadActivityPayload =
+  typeof OrchestrationHydratedThreadActivityPayload.Type;
+
+export const OrchestrationOmittedThreadActivityPayload = Schema.Struct({
+  activityId: EventId,
+  reason: Schema.Literals(["missing", "too-large", "too-many"]),
+  byteLength: Schema.NullOr(NonNegativeInt),
+});
+export type OrchestrationOmittedThreadActivityPayload =
+  typeof OrchestrationOmittedThreadActivityPayload.Type;
+
+export const OrchestrationHydrateThreadActivityPayloadsResult = Schema.Struct({
+  payloads: Schema.Array(OrchestrationHydratedThreadActivityPayload),
+  omitted: Schema.Array(OrchestrationOmittedThreadActivityPayload),
+});
+export type OrchestrationHydrateThreadActivityPayloadsResult =
+  typeof OrchestrationHydrateThreadActivityPayloadsResult.Type;
+
 export const ProjectCreateCommand = Schema.Struct({
   type: Schema.Literal("project.create"),
   commandId: CommandId,
@@ -524,6 +868,7 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  issueLink: Schema.optional(Schema.NullOr(GitHubIssueLink)),
   createdAt: IsoDateTime,
 });
 
@@ -554,6 +899,7 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   expectedBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  issueLink: Schema.optional(Schema.NullOr(GitHubIssueLink)),
 });
 
 const ThreadRuntimeModeSetCommand = Schema.Struct({
@@ -580,6 +926,7 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  issueLink: Schema.optional(Schema.NullOr(GitHubIssueLink)),
   createdAt: IsoDateTime,
 });
 
@@ -869,6 +1216,7 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  issueLink: Schema.optional(Schema.NullOr(GitHubIssueLink)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -895,6 +1243,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  issueLink: Schema.optional(Schema.NullOr(GitHubIssueLink)),
   updatedAt: IsoDateTime,
 });
 
@@ -1134,6 +1483,32 @@ export const OrchestrationEvent = Schema.Union([
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
 
+const ThreadMessageSentV2Payload = ThreadMessageSentPayload.mapFields((fields) =>
+  Struct.assign(fields, {
+    text: Schema.Union([Schema.String, OrchestrationDeferredThreadContent]),
+  }),
+);
+const ThreadProposedPlanUpsertedV2Payload = ThreadProposedPlanUpsertedPayload.mapFields((fields) =>
+  Struct.assign(fields, {
+    proposedPlan: OrchestrationProposedPlanV2,
+  }),
+);
+
+export const OrchestrationThreadSyncV2Event = Schema.Union([
+  OrchestrationEvent,
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.message-sent"),
+    payload: ThreadMessageSentV2Payload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.proposed-plan-upserted"),
+    payload: ThreadProposedPlanUpsertedV2Payload,
+  }),
+]);
+export type OrchestrationThreadSyncV2Event = typeof OrchestrationThreadSyncV2Event.Type;
+
 export const OrchestrationThreadStreamItem = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("snapshot"),
@@ -1145,6 +1520,23 @@ export const OrchestrationThreadStreamItem = Schema.Union([
   }),
 ]);
 export type OrchestrationThreadStreamItem = typeof OrchestrationThreadStreamItem.Type;
+
+export const OrchestrationThreadStreamV2Item = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("snapshot"),
+    snapshot: OrchestrationThreadDetailV2Snapshot,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("event"),
+    event: OrchestrationThreadSyncV2Event,
+    deferredActivityPayloads: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+    deferredThreadContents: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+    estimatedSerializedBytes: NonNegativeInt.check(
+      Schema.isLessThanOrEqualTo(ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES),
+    ).pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+  }),
+]);
+export type OrchestrationThreadStreamV2Item = typeof OrchestrationThreadStreamV2Item.Type;
 
 export const OrchestrationCommandReceiptStatus = Schema.Literals(["accepted", "rejected"]);
 export type OrchestrationCommandReceiptStatus = typeof OrchestrationCommandReceiptStatus.Type;
@@ -1264,6 +1656,34 @@ export const OrchestrationRpcSchemas = {
   subscribeThread: {
     input: OrchestrationSubscribeThreadInput,
     output: OrchestrationThreadStreamItem,
+  },
+  subscribeThreadV2: {
+    input: OrchestrationSubscribeThreadV2Input,
+    output: OrchestrationThreadStreamV2Item,
+  },
+  getThreadMessagePage: {
+    input: OrchestrationThreadMessagePageInput,
+    output: OrchestrationThreadMessagePageResult,
+  },
+  getThreadProposedPlanPage: {
+    input: OrchestrationThreadProposedPlanPageInput,
+    output: OrchestrationThreadProposedPlanPageResult,
+  },
+  getThreadContentChunk: {
+    input: OrchestrationThreadContentChunkInput,
+    output: OrchestrationThreadContentChunkResult,
+  },
+  getThreadActivityPage: {
+    input: OrchestrationThreadActivityPageInput,
+    output: OrchestrationThreadActivityPageResult,
+  },
+  getThreadCheckpointPage: {
+    input: OrchestrationThreadCheckpointPageInput,
+    output: OrchestrationThreadCheckpointPageResult,
+  },
+  hydrateThreadActivityPayloads: {
+    input: OrchestrationHydrateThreadActivityPayloadsInput,
+    output: OrchestrationHydrateThreadActivityPayloadsResult,
   },
   subscribeShell: {
     input: OrchestrationSubscribeShellInput,

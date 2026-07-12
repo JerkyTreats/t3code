@@ -129,6 +129,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   initialCredentials: ReadonlyArray<readonly [string, ConnectionCredential]> = [],
   options?: {
     readonly beforeSessionConnect?: (environmentId: EnvironmentId) => Effect.Effect<void>;
+    readonly sessionReady?: (attempt: number) => Effect.Effect<void, ConnectionTransientError>;
     readonly beforeRegistrationRegister?: (
       registration: ConnectionRegistration,
     ) => Effect.Effect<void, Persistence.ConnectionPersistenceError>;
@@ -344,19 +345,31 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
         yield* reportProgress({ stage: "preparing" });
         yield* reportProgress({ stage: "opening", prepared });
         yield* options?.beforeSessionConnect?.(target.environmentId) ?? Effect.void;
+        const attempt = (yield* Ref.get(sessions)).length + 1;
         const closed = yield* Deferred.make<never, ConnectionTransientError>();
+        const diagnosticEvents = yield* SubscriptionRef.make<
+          ReadonlyArray<import("./diagnostics.ts").RpcSessionDiagnosticEvent>
+        >([
+          {
+            id: `test-session:${attempt}:1`,
+            type: "attempt",
+            observedAtMs: attempt,
+            socketUrl: `${prepared.socketUrl}?wsTicket=registry-secret-${attempt}`,
+          },
+        ]);
         yield* Ref.update(sessions, (current) => [...current, { closed }]);
         const session = yield* Effect.acquireRelease(
           Effect.succeed({
             client: {} as RpcSession.RpcSession["client"],
             initialConfig: Effect.die(new Error("Config is not used by registry tests.")),
-            ready: Effect.void,
+            ready: options?.sessionReady?.(attempt) ?? Effect.void,
             probe: Effect.void,
             closed: Deferred.await(closed),
+            diagnosticEvents,
           } satisfies RpcSession.RpcSession),
           () => Ref.update(releasedSessions, (count) => count + 1),
         );
-        yield* reportProgress({ stage: "synchronizing", prepared });
+        yield* reportProgress({ stage: "synchronizing", prepared, session });
         yield* session.ready;
         return { prepared, session };
       }),
@@ -484,6 +497,60 @@ describe("EnvironmentRegistry", () => {
     }),
   );
 
+  it.effect("records a socket attempt before a failed handshake becomes ready", () =>
+    Effect.gen(function* () {
+      const handshake = yield* Deferred.make<void, ConnectionTransientError>();
+      const harness = yield* makeHarness([TARGET], [], [], {
+        sessionReady: () => Deferred.await(handshake),
+      });
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        const observed = yield* Stream.concat(
+          Stream.fromEffect(SubscriptionRef.get(registry.diagnostics)),
+          SubscriptionRef.changes(registry.diagnostics),
+        ).pipe(
+          Stream.filterMap((entries) => {
+            const entry = entries.get(TARGET.environmentId);
+            return entry?.counters.socketAttemptCount === 1
+              ? Result.succeed(entry)
+              : Result.failVoid;
+          }),
+          Stream.runHead,
+          Effect.map(Option.getOrThrow),
+          Effect.timeout("1 second"),
+        );
+
+        expect(observed.lastSocketUrl).toBe(PREPARED.socketUrl);
+        expect(observed.recentEvents[0]?.socketUrl).not.toContain("registry-secret-1");
+        expect(
+          (yield* SubscriptionRef.get(registry.diagnostics)).get(TARGET.environmentId),
+        ).toMatchObject({
+          counters: { socketAttemptCount: 1 },
+        });
+
+        yield* Deferred.fail(
+          handshake,
+          new ConnectionTransientError({
+            reason: "transport",
+            detail: "Handshake failed.",
+          }),
+        );
+        yield* awaitConnectionState(
+          registry,
+          TARGET.environmentId,
+          (state) => state.phase === "backoff",
+        );
+        expect(
+          (yield* SubscriptionRef.get(registry.diagnostics)).get(TARGET.environmentId),
+        ).toMatchObject({
+          counters: { socketAttemptCount: 1 },
+        });
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
   it.effect("exposes the current RPC generation to late query subscribers", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness([TARGET]);
@@ -571,6 +638,102 @@ describe("EnvironmentRegistry", () => {
           false,
         );
       }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("disconnects without deleting owned data and reconnects the registration", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [BEARER_TARGET],
+        [BEARER_PROFILE],
+        [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+      yield* Ref.update(harness.shellCache, (current) =>
+        new Map(current).set(BEARER_TARGET.environmentId, CACHED_SNAPSHOT),
+      );
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* awaitConnectionState(
+          registry,
+          BEARER_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+
+        yield* registry.disconnect(BEARER_TARGET.environmentId);
+        yield* awaitConnectionState(
+          registry,
+          BEARER_TARGET.environmentId,
+          (state) => state.phase === "available",
+        );
+
+        expect((yield* Ref.get(harness.storedTargets)).get(BEARER_TARGET.environmentId)).toEqual(
+          BEARER_TARGET,
+        );
+        expect((yield* Ref.get(harness.storedProfiles)).get(BEARER_TARGET.connectionId)).toEqual(
+          BEARER_PROFILE,
+        );
+        expect((yield* Ref.get(harness.storedCredentials)).get(BEARER_TARGET.connectionId)).toEqual(
+          BEARER_CREDENTIAL,
+        );
+        expect((yield* Ref.get(harness.shellCache)).get(BEARER_TARGET.environmentId)).toEqual(
+          CACHED_SNAPSHOT,
+        );
+        expect(yield* Ref.get(harness.cacheClears)).toEqual([]);
+        expect(yield* Ref.get(harness.ownedDataClears)).toEqual([]);
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).has(BEARER_TARGET.environmentId),
+        ).toBe(true);
+
+        yield* registry.connect(BEARER_TARGET.environmentId);
+        yield* awaitConnectionState(
+          registry,
+          BEARER_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(2);
+
+        yield* registry.forget(BEARER_TARGET.environmentId);
+        expect((yield* Ref.get(harness.storedTargets)).has(BEARER_TARGET.environmentId)).toBe(
+          false,
+        );
+        expect((yield* Ref.get(harness.storedProfiles)).has(BEARER_TARGET.connectionId)).toBe(
+          false,
+        );
+        expect((yield* Ref.get(harness.storedCredentials)).has(BEARER_TARGET.connectionId)).toBe(
+          false,
+        );
+        expect((yield* Ref.get(harness.shellCache)).has(BEARER_TARGET.environmentId)).toBe(false);
+        expect(yield* Ref.get(harness.cacheClears)).toEqual([BEARER_TARGET.environmentId]);
+        expect(yield* Ref.get(harness.ownedDataClears)).toEqual([BEARER_TARGET.environmentId]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("stops an SSH tunnel on disconnect without forgetting its profile", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([SSH_CONNECTION], [SSH_PROFILE]);
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* awaitConnectionState(
+          registry,
+          SSH_CONNECTION.environmentId,
+          (state) => state.phase === "connected",
+        );
+
+        yield* registry.disconnect(SSH_CONNECTION.environmentId);
+
+        expect((yield* Ref.get(harness.storedTargets)).get(SSH_CONNECTION.environmentId)).toEqual(
+          SSH_CONNECTION,
+        );
+        expect((yield* Ref.get(harness.storedProfiles)).get(SSH_CONNECTION.connectionId)).toEqual(
+          SSH_PROFILE,
+        );
+        expect(yield* Ref.get(harness.disconnectedSshTargets)).toEqual([SSH_TARGET]);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );
 

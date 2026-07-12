@@ -94,6 +94,13 @@ export const GetProjectionPendingTurnStartInput = Schema.Struct({
 });
 export type GetProjectionPendingTurnStartInput = typeof GetProjectionPendingTurnStartInput.Type;
 
+export const DeleteProjectionPendingTurnStartInput = Schema.Struct({
+  threadId: ThreadId,
+  messageId: MessageId,
+});
+export type DeleteProjectionPendingTurnStartInput =
+  typeof DeleteProjectionPendingTurnStartInput.Type;
+
 export const DeleteProjectionTurnsByThreadInput = Schema.Struct({
   threadId: ThreadId,
 });
@@ -114,25 +121,19 @@ export interface ProjectionTurnRepositoryShape {
     row: ProjectionTurnById,
   ) => Effect.Effect<void, ProjectionRepositoryError>;
 
-  /**
-   * Replaces any existing pending-start placeholder rows for a thread with exactly one latest pending-start row.
-   */
-  readonly replacePendingTurnStart: (
+  /** Inserts a pending start unless that message is already pending or materialized. */
+  readonly upsertPendingTurnStart: (
     row: ProjectionPendingTurnStart,
   ) => Effect.Effect<void, ProjectionRepositoryError>;
 
-  /**
-   * Returns the newest pending-start placeholder for a thread; this is expected to be at most one row after replacement writes.
-   */
+  /** Returns the oldest pending start so provider materialization remains FIFO. */
   readonly getPendingTurnStartByThreadId: (
     input: GetProjectionPendingTurnStartInput,
   ) => Effect.Effect<Option.Option<ProjectionPendingTurnStart>, ProjectionRepositoryError>;
 
-  /**
-   * Deletes only pending-start placeholder rows (`turnId = null`) for a thread and leaves concrete turn rows untouched.
-   */
-  readonly deletePendingTurnStartByThreadId: (
-    input: GetProjectionPendingTurnStartInput,
+  /** Deletes one materialized pending start and leaves later queued starts untouched. */
+  readonly deletePendingTurnStart: (
+    input: DeleteProjectionPendingTurnStartInput,
   ) => Effect.Effect<void, ProjectionRepositoryError>;
 
   /**

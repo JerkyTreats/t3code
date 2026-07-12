@@ -1,4 +1,8 @@
 import type {
+  GitAbortMergeInput,
+  GitAbortMergeResult,
+  GitMergeBranchesInput,
+  GitMergeBranchesResult,
   VcsCreateRefInput,
   VcsCreateRefResult,
   VcsCreateWorktreeInput,
@@ -18,6 +22,17 @@ import type {
   VcsStatusInput,
   VcsStatusResult,
 } from "./git.ts";
+import type {
+  GitHubCreateIssueInput,
+  GitHubCreateIssueResult,
+  GitHubIssueMutationInput,
+  GitHubIssueMutationResult,
+  GitHubListIssuesInput,
+  GitHubListIssuesResult,
+  GitHubLoginInput,
+  GitHubStatusInput,
+  GitHubStatusResult,
+} from "./github.ts";
 import type { ReviewDiffPreviewInput, ReviewDiffPreviewResult } from "./review.ts";
 import type { FilesystemBrowseInput, FilesystemBrowseResult } from "./filesystem.ts";
 import type { AssetCreateUrlInput, AssetCreateUrlResult } from "./assets.ts";
@@ -90,12 +105,26 @@ import type {
   ClientOrchestrationCommand,
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetFullThreadDiffResult,
+  OrchestrationHydrateThreadActivityPayloadsInput,
+  OrchestrationHydrateThreadActivityPayloadsResult,
+  OrchestrationThreadActivityPageInput,
+  OrchestrationThreadActivityPageResult,
+  OrchestrationThreadCheckpointPageInput,
+  OrchestrationThreadCheckpointPageResult,
+  OrchestrationThreadContentChunkInput,
+  OrchestrationThreadContentChunkResult,
+  OrchestrationThreadMessagePageInput,
+  OrchestrationThreadMessagePageResult,
+  OrchestrationThreadProposedPlanPageInput,
+  OrchestrationThreadProposedPlanPageResult,
   OrchestrationGetTurnDiffInput,
   OrchestrationGetTurnDiffResult,
   OrchestrationShellSnapshot,
   OrchestrationShellStreamItem,
   OrchestrationSubscribeThreadInput,
+  OrchestrationSubscribeThreadV2Input,
   OrchestrationThreadStreamItem,
+  OrchestrationThreadStreamV2Item,
 } from "./orchestration.ts";
 import { EnvironmentId } from "./baseSchemas.ts";
 import { AuthAccessTokenResult, AuthSessionState, AuthWebSocketTicketResult } from "./auth.ts";
@@ -351,6 +380,34 @@ export const DesktopSshPasswordPromptCancelledType = "ssh-password-prompt-cancel
 export const DesktopSshPasswordPromptCancelledResultSchema = Schema.Struct({
   type: Schema.Literal(DesktopSshPasswordPromptCancelledType),
   message: Schema.String,
+});
+
+export interface DesktopScreenshotCapture {
+  name: string;
+  mimeType: "image/png";
+  sizeBytes: number;
+  dataUrl: string;
+}
+
+export const DesktopScreenshotCaptureSchema = Schema.Struct({
+  name: Schema.String,
+  mimeType: Schema.Literal("image/png"),
+  sizeBytes: Schema.Number,
+  dataUrl: Schema.String,
+});
+
+export interface DesktopSystemTheme {
+  source: "omarchy";
+  name: string;
+  mode: "light" | "dark";
+  colors: Record<string, string>;
+}
+
+export const DesktopSystemThemeSchema = Schema.Struct({
+  source: Schema.Literal("omarchy"),
+  name: Schema.String,
+  mode: Schema.Literals(["light", "dark"]),
+  colors: Schema.Record(Schema.String, Schema.String),
 });
 
 export const DesktopSshEnvironmentEnsureOptionsSchema = Schema.Struct({
@@ -1000,6 +1057,9 @@ export interface DesktopBridge {
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
+  captureScreenshot?: () => Promise<DesktopScreenshotCapture | null>;
+  getSystemTheme?: () => Promise<DesktopSystemTheme | null>;
+  onSystemTheme?: (listener: (theme: DesktopSystemTheme | null) => void) => () => void;
   /**
    * Desktop-only preview surface. Present iff the renderer is hosted by the
    * Electron desktop build; web builds have `preview === undefined`.
@@ -1199,6 +1259,16 @@ export interface EnvironmentApi {
     preparePullRequestThread: (
       input: GitPreparePullRequestThreadInput,
     ) => Promise<GitPreparePullRequestThreadResult>;
+    mergeBranches: (input: GitMergeBranchesInput) => Promise<GitMergeBranchesResult>;
+    abortMerge: (input: GitAbortMergeInput) => Promise<GitAbortMergeResult>;
+  };
+  github: {
+    status: (input: GitHubStatusInput) => Promise<GitHubStatusResult>;
+    login: (input: GitHubLoginInput) => Promise<GitHubStatusResult>;
+    listIssues: (input: GitHubListIssuesInput) => Promise<GitHubListIssuesResult>;
+    createIssue: (input: GitHubCreateIssueInput) => Promise<GitHubCreateIssueResult>;
+    closeIssue: (input: GitHubIssueMutationInput) => Promise<GitHubIssueMutationResult>;
+    reopenIssue: (input: GitHubIssueMutationInput) => Promise<GitHubIssueMutationResult>;
   };
   review: {
     getDiffPreview: (input: ReviewDiffPreviewInput) => Promise<ReviewDiffPreviewResult>;
@@ -1223,6 +1293,31 @@ export interface EnvironmentApi {
         onResubscribe?: () => void;
       },
     ) => () => void;
+    subscribeThreadV2: (
+      input: OrchestrationSubscribeThreadV2Input,
+      callback: (event: OrchestrationThreadStreamV2Item) => void,
+      options?: {
+        onResubscribe?: () => void;
+      },
+    ) => () => void;
+    getThreadActivityPage: (
+      input: OrchestrationThreadActivityPageInput,
+    ) => Promise<OrchestrationThreadActivityPageResult>;
+    getThreadMessagePage: (
+      input: OrchestrationThreadMessagePageInput,
+    ) => Promise<OrchestrationThreadMessagePageResult>;
+    getThreadProposedPlanPage: (
+      input: OrchestrationThreadProposedPlanPageInput,
+    ) => Promise<OrchestrationThreadProposedPlanPageResult>;
+    getThreadContentChunk: (
+      input: OrchestrationThreadContentChunkInput,
+    ) => Promise<OrchestrationThreadContentChunkResult>;
+    getThreadCheckpointPage: (
+      input: OrchestrationThreadCheckpointPageInput,
+    ) => Promise<OrchestrationThreadCheckpointPageResult>;
+    hydrateThreadActivityPayloads: (
+      input: OrchestrationHydrateThreadActivityPayloadsInput,
+    ) => Promise<OrchestrationHydrateThreadActivityPayloadsResult>;
   };
   preview: {
     open: (input: typeof PreviewOpenInput.Encoded) => Promise<PreviewSessionSnapshot>;

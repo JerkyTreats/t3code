@@ -14,11 +14,12 @@ import {
   ProjectionThreadRepository,
   type ProjectionThreadRepositoryShape,
 } from "../Services/ProjectionThreads.ts";
-import { ModelSelection } from "@t3tools/contracts";
+import { ModelSelection, OrchestrationThreadPlanProgress } from "@t3tools/contracts";
 
 const ProjectionThreadDbRow = ProjectionThread.mapFields(
   Struct.assign({
     modelSelection: Schema.fromJsonString(ModelSelection),
+    activePlanProgress: Schema.NullOr(Schema.fromJsonString(OrchestrationThreadPlanProgress)),
   }),
 );
 type ProjectionThreadDbRow = typeof ProjectionThreadDbRow.Type;
@@ -47,6 +48,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_approval_count,
           pending_user_input_count,
           has_actionable_proposed_plan,
+          active_plan_progress_json,
+          latest_runtime_activity_at,
+          status_summary_updated_at,
           deleted_at
         )
         VALUES (
@@ -66,6 +70,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           ${row.pendingApprovalCount},
           ${row.pendingUserInputCount},
           ${row.hasActionableProposedPlan},
+          ${row.activePlanProgress == null ? null : JSON.stringify(row.activePlanProgress)},
+          ${row.latestRuntimeActivityAt},
+          ${row.statusSummaryUpdatedAt},
           ${row.deletedAt}
         )
         ON CONFLICT (thread_id)
@@ -85,6 +92,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_approval_count = excluded.pending_approval_count,
           pending_user_input_count = excluded.pending_user_input_count,
           has_actionable_proposed_plan = excluded.has_actionable_proposed_plan,
+          active_plan_progress_json = excluded.active_plan_progress_json,
+          latest_runtime_activity_at = excluded.latest_runtime_activity_at,
+          status_summary_updated_at = excluded.status_summary_updated_at,
           deleted_at = excluded.deleted_at
       `,
   });
@@ -111,6 +121,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          active_plan_progress_json AS "activePlanProgress",
+          latest_runtime_activity_at AS "latestRuntimeActivityAt",
+          status_summary_updated_at AS "statusSummaryUpdatedAt",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE thread_id = ${threadId}
@@ -139,6 +152,9 @@ const makeProjectionThreadRepository = Effect.gen(function* () {
           pending_approval_count AS "pendingApprovalCount",
           pending_user_input_count AS "pendingUserInputCount",
           has_actionable_proposed_plan AS "hasActionableProposedPlan",
+          active_plan_progress_json AS "activePlanProgress",
+          latest_runtime_activity_at AS "latestRuntimeActivityAt",
+          status_summary_updated_at AS "statusSummaryUpdatedAt",
           deleted_at AS "deletedAt"
         FROM projection_threads
         WHERE project_id = ${projectId}

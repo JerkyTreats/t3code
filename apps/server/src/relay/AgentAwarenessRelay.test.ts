@@ -301,6 +301,9 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
       hasPendingApprovals: false,
       hasPendingUserInput: false,
       hasActionableProposedPlan: false,
+      activePlanProgress: null,
+      latestRuntimeActivityAt: null,
+      statusSummaryUpdatedAt: null,
     } satisfies Omit<OrchestrationThreadShell, "id">;
 
     expect(
@@ -455,12 +458,16 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
           hasPendingApprovals: false,
           hasPendingUserInput: false,
           hasActionableProposedPlan: false,
+          activePlanProgress: null,
+          latestRuntimeActivityAt: null,
+          statusSummaryUpdatedAt: null,
         } satisfies OrchestrationThreadShell;
 
         const orchestrationEngine = {
           readEvents: () => Stream.empty,
           dispatch: () => Effect.succeed({ sequence: 1 }),
           streamDomainEvents: Stream.fromQueue(events),
+          subscribeDomainEvents: Effect.succeed(Stream.empty),
         } satisfies OrchestrationEngineShape;
 
         const snapshotQuery = {
@@ -610,6 +617,9 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
           hasPendingApprovals: false,
           hasPendingUserInput: false,
           hasActionableProposedPlan: false,
+          activePlanProgress: null,
+          latestRuntimeActivityAt: null,
+          statusSummaryUpdatedAt: null,
         } satisfies OrchestrationThreadShell;
 
         const descriptor = {
@@ -650,6 +660,7 @@ describe.sequential("signRelayAgentActivityPublishProof", () => {
             readEvents: () => Stream.empty,
             dispatch: () => Effect.succeed({ sequence: 1 }),
             streamDomainEvents: Stream.fromQueue(events),
+            subscribeDomainEvents: Effect.succeed(Stream.empty),
           } satisfies OrchestrationEngineShape),
           Layer.succeed(ProjectionSnapshotQuery, {
             getShellSnapshot: () =>

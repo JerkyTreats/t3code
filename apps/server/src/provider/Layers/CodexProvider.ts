@@ -1,4 +1,5 @@
 import * as DateTime from "effect/DateTime";
+import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -6,6 +7,7 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
 import * as Types from "effect/Types";
 import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
@@ -36,6 +38,12 @@ import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 
 const CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
+const CODEX_VERSION_PROBE_TIMEOUT_MS = 2_000;
+const CODEX_VERSION_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
+
+class CodexVersionProbeTextError extends Data.TaggedError("CodexVersionProbeTextError")<{
+  readonly cause: unknown;
+}> {}
 
 const CODEX_PRESENTATION = {
   displayName: "Codex",
@@ -273,12 +281,83 @@ const requestAllCodexModels = Effect.fn("requestAllCodexModels")(function* (
   return models;
 });
 
-export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
+export function parseCodexCliVersionOutput(output: string): string | undefined {
+  const line = output
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => entry.length > 0);
+  if (!line) return undefined;
+
+  const match = line.match(/\bv?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/);
+  return match?.[1];
+}
+
+function collectProcessText(
+  stream: Stream.Stream<Uint8Array, unknown>,
+): Effect.Effect<string, CodexVersionProbeTextError> {
+  return stream.pipe(
+    Stream.decodeText(),
+    Stream.runFold(
+      () => "",
+      (acc, chunk) => acc + chunk,
+    ),
+    Effect.mapError((cause) => new CodexVersionProbeTextError({ cause })),
+  );
+}
+
+export const resolveCodexCliInitializeClientVersion = Effect.fn(
+  "resolveCodexCliInitializeClientVersion",
+)(function* (input: {
+  readonly binaryPath: string;
+  readonly cwd: string;
+  readonly environment?: NodeJS.ProcessEnv;
+}) {
+  const resolveVersion = Effect.gen(function* () {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const spawnCommand = yield* resolveSpawnCommand(
+      input.binaryPath,
+      ["--version"],
+      input.environment ? { env: input.environment, extendEnv: true } : {},
+    );
+    const child = yield* spawner.spawn(
+      ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+        cwd: input.cwd,
+        extendEnv: true,
+        forceKillAfter: CODEX_VERSION_PROBE_FORCE_KILL_AFTER,
+        ...(input.environment ? { env: input.environment } : {}),
+        shell: spawnCommand.shell,
+      }),
+    );
+    const [stdout, stderr, exitCode] = yield* Effect.all(
+      [collectProcessText(child.stdout), collectProcessText(child.stderr), child.exitCode],
+      { concurrency: "unbounded" },
+    );
+
+    if (exitCode !== 0) {
+      return packageJson.version;
+    }
+    return (
+      parseCodexCliVersionOutput(stdout) ??
+      parseCodexCliVersionOutput(stderr) ??
+      packageJson.version
+    );
+  }).pipe(
+    Effect.timeoutOption(Duration.millis(CODEX_VERSION_PROBE_TIMEOUT_MS)),
+    Effect.map(Option.getOrElse(() => packageJson.version)),
+    Effect.orElseSucceed(() => packageJson.version),
+  );
+
+  return yield* resolveVersion;
+});
+
+export function buildCodexInitializeParams(
+  clientVersion = packageJson.version,
+): CodexSchema.V1InitializeParams {
   return {
     clientInfo: {
       name: "t3code_desktop",
       title: "T3 Code Desktop",
-      version: packageJson.version,
+      version: clientVersion,
     },
     capabilities: {
       experimentalApi: true,
@@ -303,6 +382,11 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     ...input.environment,
     ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
   };
+  const initializeClientVersion = yield* resolveCodexCliInitializeClientVersion({
+    binaryPath: input.binaryPath,
+    cwd: input.cwd,
+    environment,
+  });
   const spawnCommand = yield* resolveSpawnCommand(input.binaryPath, ["app-server"], {
     env: environment,
     extendEnv: true,
@@ -331,16 +415,10 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     Effect.provide(clientContext),
   );
 
-  const initialize = yield* client.request("initialize", {
-    clientInfo: {
-      name: "t3code_desktop",
-      title: "T3 Code Desktop",
-      version: "0.1.0",
-    },
-    capabilities: {
-      experimentalApi: true,
-    },
-  });
+  const initialize = yield* client.request(
+    "initialize",
+    buildCodexInitializeParams(initializeClientVersion),
+  );
   yield* client.notify("initialized", undefined);
 
   // Extract the version string after the first '/' in userAgent, up to the next space or the end

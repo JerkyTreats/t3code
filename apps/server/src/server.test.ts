@@ -13,6 +13,7 @@ import {
   EnvironmentId,
   EventId,
   GitCommandError,
+  type GitActionProgressEvent,
   KeybindingRule,
   MessageId,
   ExternalLauncherCommandNotFoundError,
@@ -169,6 +170,9 @@ const makeDefaultOrchestrationReadModel = () => {
         activities: [],
         proposedPlans: [],
         checkpoints: [],
+        activePlanProgress: null,
+        latestRuntimeActivityAt: null,
+        statusSummaryUpdatedAt: null,
         deletedAt: null,
       },
     ],
@@ -197,6 +201,9 @@ const makeDefaultOrchestrationThreadShell = (
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
+    activePlanProgress: null,
+    latestRuntimeActivityAt: null,
+    statusSummaryUpdatedAt: null,
     ...overrides,
   };
 };
@@ -675,6 +682,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(
         Layer.mock(OrchestrationEngine.OrchestrationEngineService)({
           readEvents: () => Stream.empty,
+          subscribeDomainEvents: Effect.succeed(Stream.empty),
           dispatch: () => Effect.succeed({ sequence: 0 }),
           streamDomainEvents: Stream.empty,
           ...options?.layers?.orchestrationEngine,
@@ -703,6 +711,7 @@ const buildAppUnderTest = (options?: {
           getThreadShellById: () => Effect.succeed(Option.none()),
           getThreadDetailById: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+          getThreadDetailSnapshotById: () => Effect.succeed(Option.none()),
           getCounts: () => Effect.succeed({ projectCount: 0, threadCount: 0 }),
           getActiveProjectByWorkspaceRoot: () => Effect.succeed(Option.none()),
           getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
@@ -922,7 +931,7 @@ const exchangeAccessToken = (
         requested_token_type: AuthAccessTokenType,
         scope:
           options?.scope ??
-          "orchestration:read orchestration:operate terminal:operate review:write relay:read access:read access:write relay:write",
+          "orchestration:read orchestration:operate terminal:operate review:write relay:read relay:write access:read access:write",
         ...(options?.clientMetadata?.label ? { client_label: options.clientMetadata.label } : {}),
         ...(options?.clientMetadata?.deviceType
           ? { client_device_type: options.clientMetadata.deviceType }
@@ -1231,6 +1240,20 @@ const getWsServerUrl = (
     );
   });
 
+const getWsTicketUrl = (accessToken: string) =>
+  Effect.gen(function* () {
+    const ticketUrl = yield* getHttpServerUrl("/api/auth/websocket-ticket");
+    const response = yield* fetchEffect(ticketUrl, {
+      method: "POST",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    const body = yield* responseJsonEffect<{ readonly ticket?: string }>(response);
+    if (!responseOk(response) || !body.ticket) {
+      return yield* Effect.die("Expected scoped access token to receive a websocket ticket.");
+    }
+    return `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(body.ticket)}`;
+  });
+
 it.layer(NodeServices.layer)("server router seam", (it) => {
   it.effect("serves static index content for GET / when staticDir is configured", () =>
     Effect.gen(function* () {
@@ -1366,7 +1389,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(tokenBody.token_type, "Bearer");
       assert.equal(
         tokenBody.scope,
-        "orchestration:read orchestration:operate terminal:operate review:write relay:read access:read access:write relay:write",
+        "orchestration:read orchestration:operate terminal:operate review:write relay:read relay:write access:read access:write",
       );
       assert.equal(typeof tokenBody.access_token, "string");
 
@@ -1391,9 +1414,9 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "terminal:operate",
         "review:write",
         "relay:read",
+        "relay:write",
         "access:read",
         "access:write",
-        "relay:write",
       ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
@@ -1914,7 +1937,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const ownerCookie = yield* getAuthenticatedSessionCookieHeader();
       const credentialResponse = yield* HttpClient.post("/api/auth/pairing-token", {
         headers: { cookie: ownerCookie },
-        body: yield* HttpBody.json({}),
+        body: yield* HttpBody.json({
+          scopes: [
+            "orchestration:read",
+            "orchestration:operate",
+            "terminal:operate",
+            "review:write",
+            "relay:read",
+          ],
+        }),
       });
       const credential = (yield* credentialResponse.json) as { readonly credential: string };
       const pairedCookie = yield* getAuthenticatedSessionCookieHeader(credential.credential);
@@ -2001,7 +2032,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       const credentialResponse = yield* HttpClient.post("/api/auth/pairing-token", {
         headers: { cookie: ownerCookie },
-        body: yield* HttpBody.json({}),
+        body: yield* HttpBody.json({
+          scopes: [
+            "orchestration:read",
+            "orchestration:operate",
+            "terminal:operate",
+            "review:write",
+            "relay:read",
+          ],
+        }),
       });
       const credential = (yield* credentialResponse.json) as { readonly credential: string };
       const pairedCookie = yield* getAuthenticatedSessionCookieHeader(credential.credential);
@@ -4208,6 +4247,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const providers = [
         {
+          provider: ProviderDriverKind.make("codex"),
           instanceId: ProviderInstanceId.make("codex"),
           driver: ProviderDriverKind.make("codex"),
           enabled: true,
@@ -4279,6 +4319,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     Effect.gen(function* () {
       const nextProviders = [
         {
+          provider: ProviderDriverKind.make("codex"),
           instanceId: ProviderInstanceId.make("codex"),
           driver: ProviderDriverKind.make("codex"),
           enabled: true,
@@ -5180,7 +5221,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
-  it.effect("routes websocket rpc git.runStackedAction errors after refreshing git status", () =>
+  it.effect("delivers terminal git.runStackedAction failures to websocket clients", () =>
     Effect.gen(function* () {
       const gitError = new GitCommandError({
         operation: "commit",
@@ -5188,77 +5229,44 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         cwd: "/tmp/repo",
         detail: "nothing to commit",
       });
-      let invalidationCalls = 0;
-      let statusCalls = 0;
       yield* buildAppUnderTest({
         layers: {
           gitManager: {
-            invalidateLocalStatus: () =>
-              Effect.sync(() => {
-                invalidationCalls += 1;
-              }),
-            invalidateRemoteStatus: () =>
-              Effect.sync(() => {
-                invalidationCalls += 1;
-              }),
-            invalidateStatus: () =>
-              Effect.sync(() => {
-                invalidationCalls += 1;
-              }),
-            localStatus: () =>
-              Effect.succeed({
-                isRepo: true,
-                hasPrimaryRemote: true,
-                isDefaultRef: false,
-                refName: "feature/demo",
-                hasWorkingTreeChanges: true,
-                workingTree: { files: [], insertions: 0, deletions: 0 },
-              }),
-            remoteStatus: () =>
-              Effect.sync(() => {
-                statusCalls += 1;
-                return {
-                  hasUpstream: true,
-                  aheadCount: 0,
-                  behindCount: 0,
-                  pr: null,
-                };
-              }),
-            status: () =>
-              Effect.sync(() => {
-                statusCalls += 1;
-                return {
-                  isRepo: true,
-                  hasPrimaryRemote: true,
-                  isDefaultRef: false,
-                  refName: "feature/demo",
-                  hasWorkingTreeChanges: true,
-                  workingTree: { files: [], insertions: 0, deletions: 0 },
-                  hasUpstream: true,
-                  aheadCount: 0,
-                  behindCount: 0,
-                  pr: null,
-                };
-              }),
-            runStackedAction: () => Effect.fail(gitError),
+            runStackedAction: (input, options) =>
+              (
+                options?.progressReporter?.publish({
+                  actionId: options.actionId ?? input.actionId,
+                  cwd: input.cwd,
+                  action: input.action,
+                  kind: "action_failed",
+                  phase: "commit",
+                  message: gitError.message,
+                }) ?? Effect.void
+              ).pipe(Effect.andThen(Effect.fail(gitError))),
           },
         },
       });
 
       const wsUrl = yield* getWsServerUrl("/ws");
-      const result = yield* Effect.scoped(
+      const events = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
           client[WS_METHODS.gitRunStackedAction]({
             actionId: "action-1",
             cwd: "/tmp/repo",
             action: "commit",
-          }).pipe(Stream.runCollect, Effect.result),
+          }).pipe(
+            Stream.runCollect,
+            Effect.map((events) => Array.from(events) as GitActionProgressEvent[]),
+          ),
         ),
       );
 
-      assertFailure(result, gitError);
-      assert.equal(invalidationCalls, 0);
-      assert.equal(statusCalls, 0);
+      const terminalEvent = events.at(-1);
+      assert.equal(terminalEvent?.kind, "action_failed");
+      if (terminalEvent?.kind === "action_failed") {
+        assert.equal(terminalEvent.phase, "commit");
+        assert.equal(terminalEvent.message, gitError.message);
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -5579,6 +5587,180 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("authorizes all thread history pages with orchestration read scope", () =>
+    Effect.gen(function* () {
+      const calls: string[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          projectionSnapshotQuery: {
+            getThreadMessagePage: () =>
+              Effect.sync(() => {
+                calls.push("messages");
+                return {
+                  items: [],
+                  startCursor: null,
+                  hasMoreBefore: false,
+                  estimatedSerializedBytes: 0,
+                };
+              }),
+            getThreadProposedPlanPage: () =>
+              Effect.sync(() => {
+                calls.push("proposed-plans");
+                return {
+                  items: [],
+                  startCursor: null,
+                  hasMoreBefore: false,
+                  estimatedSerializedBytes: 0,
+                };
+              }),
+            getThreadContentChunk: () =>
+              Effect.sync(() => {
+                calls.push("content");
+                return {
+                  threadId: defaultThreadId,
+                  content: {
+                    kind: "message-text" as const,
+                    messageId: MessageId.make("message-1"),
+                  },
+                  contentVersion: "2026-01-01T00:00:00.000Z",
+                  offset: 0,
+                  chunk: "content",
+                  chunkByteLength: 7,
+                  nextOffset: null,
+                  totalByteLength: 7,
+                  totalCharacterLength: 7,
+                  estimatedSerializedBytes: 256,
+                };
+              }),
+            getThreadActivityPage: () =>
+              Effect.sync(() => {
+                calls.push("activities");
+                return {
+                  items: [],
+                  startCursor: null,
+                  endCursor: null,
+                  hasMoreBefore: false,
+                  hasMoreAfter: false,
+                  deferredActivityPayloads: 0,
+                  estimatedSerializedBytes: 0,
+                };
+              }),
+            getThreadCheckpointPage: () =>
+              Effect.sync(() => {
+                calls.push("checkpoints");
+                return {
+                  items: [],
+                  startCursor: null,
+                  hasMoreBefore: false,
+                  estimatedSerializedBytes: 0,
+                };
+              }),
+          },
+        },
+      });
+      const { body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        scope: "orchestration:read",
+      });
+      const accessToken = body.access_token;
+      if (!accessToken) {
+        return yield* Effect.die("Expected orchestration read access token.");
+      }
+
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+          client[ORCHESTRATION_WS_METHODS.getThreadMessagePage]({ threadId: defaultThreadId }),
+        ),
+      );
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+          client[ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage]({ threadId: defaultThreadId }),
+        ),
+      );
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+          client[ORCHESTRATION_WS_METHODS.getThreadContentChunk]({
+            threadId: defaultThreadId,
+            content: { kind: "message-text", messageId: MessageId.make("message-1") },
+            offset: 0,
+          }),
+        ),
+      );
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+          client[ORCHESTRATION_WS_METHODS.getThreadActivityPage]({ threadId: defaultThreadId }),
+        ),
+      );
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+          client[ORCHESTRATION_WS_METHODS.getThreadCheckpointPage]({ threadId: defaultThreadId }),
+        ),
+      );
+
+      assert.deepEqual(calls, [
+        "messages",
+        "proposed-plans",
+        "content",
+        "activities",
+        "checkpoints",
+      ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects thread history pages without orchestration read scope", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const { body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        scope: "access:write",
+      });
+      const accessToken = body.access_token;
+      if (!accessToken) {
+        return yield* Effect.die("Expected access management token.");
+      }
+
+      const results = yield* Effect.all([
+        Effect.scoped(
+          withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+            client[ORCHESTRATION_WS_METHODS.getThreadMessagePage]({ threadId: defaultThreadId }),
+          ).pipe(Effect.result),
+        ),
+        Effect.scoped(
+          withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+            client[ORCHESTRATION_WS_METHODS.getThreadProposedPlanPage]({
+              threadId: defaultThreadId,
+            }),
+          ).pipe(Effect.result),
+        ),
+        Effect.scoped(
+          withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+            client[ORCHESTRATION_WS_METHODS.getThreadContentChunk]({
+              threadId: defaultThreadId,
+              content: { kind: "message-text", messageId: MessageId.make("message-1") },
+              offset: 0,
+            }),
+          ).pipe(Effect.result),
+        ),
+        Effect.scoped(
+          withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+            client[ORCHESTRATION_WS_METHODS.getThreadActivityPage]({ threadId: defaultThreadId }),
+          ).pipe(Effect.result),
+        ),
+        Effect.scoped(
+          withWsRpcClient(yield* getWsTicketUrl(accessToken), (client) =>
+            client[ORCHESTRATION_WS_METHODS.getThreadCheckpointPage]({ threadId: defaultThreadId }),
+          ).pipe(Effect.result),
+        ),
+      ]);
+
+      for (const result of results) {
+        assertTrue(result._tag === "Failure");
+        assert.equal(result.failure._tag, "EnvironmentAuthorizationError");
+        if (result.failure._tag === "EnvironmentAuthorizationError") {
+          assert.equal(result.failure.requiredScope, "orchestration:read");
+        }
+      }
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc orchestration shell snapshot errors", () =>
     Effect.gen(function* () {
       const projectionError = new PersistenceSqlError({
@@ -5604,6 +5786,129 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assertTrue(result.failure._tag === "OrchestrationGetSnapshotError");
       assertTrue(result.failure.cause instanceof Error);
       assert.include(result.failure.cause.message, projectionError.message);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("fails shell subscriptions when an upsert projection cannot be read", () =>
+    Effect.gen(function* () {
+      const projectionError = new PersistenceSqlError({
+        operation: "ProjectionSnapshotQuery.getThreadShellById:test",
+        detail: "failed to materialize shell upsert",
+      });
+      const occurredAt = "2026-04-05T00:00:01.000Z";
+      const replayedEvent: Extract<OrchestrationEvent, { type: "thread.unarchived" }> = {
+        sequence: 1,
+        eventId: EventId.make("event-shell-thread-unarchived-1"),
+        aggregateKind: "thread",
+        aggregateId: defaultThreadId,
+        occurredAt,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.unarchived",
+        payload: {
+          threadId: defaultThreadId,
+          updatedAt: occurredAt,
+        },
+      };
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            readEvents: () => Stream.make(replayedEvent),
+          },
+          projectionSnapshotQuery: {
+            getThreadShellById: () => Effect.fail(projectionError),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeShell]({}).pipe(Stream.runCollect),
+        ).pipe(Effect.result),
+      );
+
+      assertTrue(result._tag === "Failure");
+      assertTrue(result.failure._tag === "OrchestrationGetSnapshotError");
+      assert.include(result.failure.message, "thread.unarchived");
+      assertTrue(result.failure.cause instanceof Error);
+      assert.include(result.failure.cause.message, projectionError.message);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("closes the shell snapshot replay and live transition window", () =>
+    Effect.gen(function* () {
+      const liveEvents = yield* PubSub.unbounded<OrchestrationEvent>();
+      const snapshotSubscriptionCounts: number[] = [];
+      let subscriptionsAcquired = 0;
+      const makeDeletedEvent = (
+        sequence: number,
+      ): Extract<OrchestrationEvent, { type: "thread.deleted" }> => ({
+        sequence,
+        eventId: EventId.make(`event-shell-thread-deleted-${sequence}`),
+        aggregateKind: "thread",
+        aggregateId: defaultThreadId,
+        occurredAt: `2026-04-05T00:00:0${sequence}.000Z`,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.deleted",
+        payload: {
+          threadId: defaultThreadId,
+          deletedAt: `2026-04-05T00:00:0${sequence}.000Z`,
+        },
+      });
+      const replayedEvent = makeDeletedEvent(1);
+      const nextLiveEvent = makeDeletedEvent(2);
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            subscribeDomainEvents: PubSub.subscribe(liveEvents).pipe(
+              Effect.map((queue) => {
+                subscriptionsAcquired += 1;
+                return Stream.fromEffectRepeat(PubSub.take(queue));
+              }),
+            ),
+            readEvents: () => Stream.make(replayedEvent),
+          },
+          projectionSnapshotQuery: {
+            getShellSnapshot: () =>
+              Effect.gen(function* () {
+                snapshotSubscriptionCounts.push(subscriptionsAcquired);
+                yield* PubSub.publish(liveEvents, replayedEvent);
+                yield* PubSub.publish(liveEvents, nextLiveEvent);
+                return {
+                  snapshotSequence: 0,
+                  projects: [],
+                  threads: [],
+                  updatedAt: "2026-04-05T00:00:00.000Z",
+                };
+              }),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeShell]({}).pipe(
+            Stream.take(3),
+            Stream.runCollect,
+          ),
+        ),
+      );
+
+      assert.deepEqual(snapshotSubscriptionCounts, [1]);
+      assert.deepEqual(
+        Array.from(items).map((item) =>
+          item.kind === "snapshot" ? item.kind : [item.kind, item.sequence],
+        ),
+        ["snapshot", ["thread-removed", 1], ["thread-removed", 2]],
+      );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

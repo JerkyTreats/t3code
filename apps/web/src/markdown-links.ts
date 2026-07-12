@@ -100,6 +100,20 @@ function looksLikePosixFilesystemPath(path: string): boolean {
   return /\.[A-Za-z0-9_-]+$/.test(basename);
 }
 
+function looksLikeBroadRelativeFilePath(path: string): boolean {
+  if (!/[\s%]/.test(path)) return false;
+  if (path.includes("\u0000") || path.includes("<") || path.includes(">")) return false;
+
+  const pathWithoutPosition = path.replace(POSITION_SUFFIX_PATTERN, "");
+  const separatorIndex = Math.max(
+    pathWithoutPosition.lastIndexOf("/"),
+    pathWithoutPosition.lastIndexOf("\\"),
+  );
+  const basename =
+    separatorIndex >= 0 ? pathWithoutPosition.slice(separatorIndex + 1) : pathWithoutPosition;
+  return /\.[A-Za-z0-9_-]+$/.test(basename);
+}
+
 function appendLineColumnFromHash(path: string, hash: string): string {
   if (!hash || POSITION_SUFFIX_PATTERN.test(path)) return path;
   const match = hash.match(/^#L(\d+)(?:C(\d+))?$/i);
@@ -113,7 +127,11 @@ function isLikelyPathCandidate(path: string): boolean {
   if (WINDOWS_DRIVE_PATH_PATTERN.test(path) || WINDOWS_UNC_PATH_PATTERN.test(path)) return true;
   if (RELATIVE_PATH_PREFIX_PATTERN.test(path)) return true;
   if (path.startsWith("/")) return looksLikePosixFilesystemPath(path);
-  return RELATIVE_FILE_PATH_PATTERN.test(path) || RELATIVE_FILE_NAME_PATTERN.test(path);
+  return (
+    RELATIVE_FILE_PATH_PATTERN.test(path) ||
+    RELATIVE_FILE_NAME_PATTERN.test(path) ||
+    looksLikeBroadRelativeFilePath(path)
+  );
 }
 
 function isRelativePath(path: string): boolean {
@@ -191,6 +209,7 @@ function workspaceRelativePath(path: string, workspaceRoot: string | undefined):
 export function resolveMarkdownFileLinkMeta(
   href: string | undefined,
   cwd?: string,
+  workspaceRoot?: string,
 ): MarkdownFileLinkMeta | null {
   const targetPath = resolveMarkdownFileLinkTarget(href, cwd);
   if (!targetPath) return null;
@@ -201,11 +220,13 @@ export function resolveMarkdownFileLinkMeta(
   const lineNumber = Number.isFinite(parsedLine) ? parsedLine : undefined;
   const columnNumber = Number.isFinite(parsedColumn) ? parsedColumn : undefined;
 
+  const displayRoot = workspaceRoot ?? cwd;
+
   return {
     filePath: path,
     targetPath,
-    displayPath: formatWorkspaceRelativePath(targetPath, cwd),
-    workspaceRelativePath: workspaceRelativePath(path, cwd),
+    displayPath: formatWorkspaceRelativePath(targetPath, displayRoot),
+    workspaceRelativePath: workspaceRelativePath(path, displayRoot),
     basename: basenameOfPath(path),
     ...(lineNumber !== undefined ? { line: lineNumber } : {}),
     ...(columnNumber !== undefined ? { column: columnNumber } : {}),

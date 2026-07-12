@@ -7,6 +7,10 @@
       "types": "./src/connection/index.ts",
       "default": "./src/connection/index.ts"
     },
+    "./connection/diagnostics": {
+      "types": "./src/connection/diagnostics.ts",
+      "default": "./src/connection/diagnostics.ts"
+    },
     "./authorization": {
       "types": "./src/authorization/index.ts",
       "default": "./src/authorization/index.ts"
@@ -123,9 +127,17 @@
       "types": "./src/state/threads.ts",
       "default": "./src/state/threads.ts"
     },
+    "./state/thread-sync-diagnostics": {
+      "types": "./src/state/threadSyncDiagnostics.ts",
+      "default": "./src/state/threadSyncDiagnostics.ts"
+    },
     "./state/thread-sort": {
       "types": "./src/state/threadSort.ts",
       "default": "./src/state/threadSort.ts"
+    },
+    "./state/thread-outbox": {
+      "types": "./src/state/threadOutbox.ts",
+      "default": "./src/state/threadOutbox.ts"
     },
     "./state/vcs": {
       "types": "./src/state/vcs.ts",

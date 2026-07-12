@@ -9,7 +9,7 @@ import {
   Minimize2Icon,
   WrapTextIcon,
 } from "lucide-react";
-import type { ScopedThreadRef, ServerProviderSkill } from "@t3tools/contracts";
+import type { AssetResource, ScopedThreadRef, ServerProviderSkill } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -25,6 +25,7 @@ import React, {
   isValidElement,
   use,
   useCallback,
+  useId,
   memo,
   useEffect,
   useMemo,
@@ -32,6 +33,7 @@ import React, {
   useState,
   type ReactNode,
 } from "react";
+import type { MermaidConfig, RenderResult } from "mermaid";
 import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import { defaultUrlTransform } from "react-markdown";
@@ -40,9 +42,12 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
+import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
+import type { ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { hasSpecificPierreIconForFileName, syntheticFileNameForLanguageId } from "../pierre-icons";
+import { uniqueDocumentMarkdownHeadingId } from "../documentMarkdown";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { Button } from "./ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "./ui/collapsible";
@@ -67,6 +72,7 @@ import {
 } from "../markdown-links";
 import { readLocalApi } from "../localApi";
 import { cn } from "../lib/utils";
+import { resolveAssetUrl } from "../assets/assetUrls";
 import { useRightPanelStore } from "../rightPanelStore";
 import { useActiveEnvironmentId } from "../state/entities";
 import { serverEnvironment } from "../state/server";
@@ -107,6 +113,7 @@ class CodeHighlightErrorBoundary extends React.Component<
 interface ChatMarkdownProps {
   text: string;
   cwd: string | undefined;
+  workspaceRoot?: string | undefined;
   threadRef?: ScopedThreadRef | undefined;
   onTaskListChange?: ((input: { markerOffset: number; checked: boolean }) => void) | undefined;
   isStreaming?: boolean;
@@ -114,11 +121,15 @@ interface ChatMarkdownProps {
   className?: string;
   /** Treat single newlines as hard breaks — chat-style user input. */
   lineBreaks?: boolean;
+  /** Adds document-specific affordances such as stable heading ids and image preview. */
+  documentMode?: boolean;
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
 
 const CODE_FENCE_LANGUAGE_REGEX = /(?:^|\s)language-([^\s]+)/;
+const MERMAID_FENCE_LANGUAGES = new Set(["mermaid", "mmd"]);
+const MARKDOWN_IMAGE_FILE_PATTERN = /\.(?:apng|avif|bmp|gif|jpe?g|png|svg|webp)$/i;
 const MAX_HIGHLIGHT_CACHE_ENTRIES = 500;
 const MAX_HIGHLIGHT_CACHE_MEMORY_BYTES = 50 * 1024 * 1024;
 
@@ -140,6 +151,7 @@ const highlightedCodeCache = new LRUCache<string>(
   MAX_HIGHLIGHT_CACHE_MEMORY_BYTES,
 );
 const highlighterPromiseCache = new Map<string, Promise<DiffsHighlighter>>();
+let mermaidImportPromise: Promise<typeof import("mermaid").default> | null = null;
 
 function findTaskListMarkerOffset(markdown: string, listItemStart: number): number | null {
   const firstLineEnd = markdown.indexOf("\n", listItemStart);
@@ -155,7 +167,10 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
   ...defaultSchema,
   attributes: {
     ...defaultSchema.attributes,
-    "*": (defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
+    "*": [
+      ...(defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
+      "id",
+    ],
     code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta"],
   },
   protocols: {
@@ -169,6 +184,10 @@ function extractFenceLanguage(className: string | undefined): string {
   const raw = match?.[1] ?? "text";
   // Shiki doesn't bundle a gitignore grammar; ini is a close match (#685)
   return raw === "gitignore" ? "ini" : raw;
+}
+
+function isMermaidLanguage(language: string): boolean {
+  return MERMAID_FENCE_LANGUAGES.has(language.toLowerCase());
 }
 
 const FENCE_TITLE_ATTR_REGEX = /(?:^|\s)(?:title|file(?:name)?)=(?:"([^"]+)"|'([^']+)'|(\S+))/i;
@@ -203,12 +222,23 @@ function extractPreCodeMeta(node: unknown): string | undefined {
 
 type MarkdownAstNode = {
   type?: string;
+  value?: unknown;
   meta?: unknown;
   data?: {
     hProperties?: Record<string, unknown>;
   };
   children?: MarkdownAstNode[];
 };
+
+function markdownAstNodePlainText(node: MarkdownAstNode): string {
+  if (
+    (node.type === "text" || node.type === "inlineCode" || node.type === "html") &&
+    typeof node.value === "string"
+  ) {
+    return node.value;
+  }
+  return node.children?.map(markdownAstNodePlainText).join("") ?? "";
+}
 
 function remarkPreserveCodeMeta() {
   return (tree: MarkdownAstNode) => {
@@ -219,6 +249,27 @@ function remarkPreserveCodeMeta() {
           hProperties: {
             ...node.data?.hProperties,
             dataCodeMeta: node.meta.trim(),
+          },
+        };
+      }
+      node.children?.forEach(visit);
+    };
+
+    visit(tree);
+  };
+}
+
+function remarkDocumentHeadingIds() {
+  return (tree: MarkdownAstNode) => {
+    const seen = new Map<string, number>();
+    const visit = (node: MarkdownAstNode) => {
+      if (node.type === "heading") {
+        const headingText = markdownAstNodePlainText(node);
+        node.data = {
+          ...node.data,
+          hProperties: {
+            ...node.data?.hProperties,
+            id: uniqueDocumentMarkdownHeadingId(headingText, seen),
           },
         };
       }
@@ -270,6 +321,88 @@ function createHighlightCacheKey(code: string, language: string, themeName: Diff
 
 function estimateHighlightedSize(html: string, code: string): number {
   return Math.max(html.length * 2, code.length * 3);
+}
+
+function loadMermaid() {
+  mermaidImportPromise ??= import("mermaid").then((module) => module.default);
+  return mermaidImportPromise;
+}
+
+function createMermaidConfig(theme: "light" | "dark"): MermaidConfig {
+  const dark = theme === "dark";
+
+  return {
+    startOnLoad: false,
+    securityLevel: "strict",
+    secure: ["securityLevel", "startOnLoad", "maxTextSize", "suppressErrorRendering"],
+    suppressErrorRendering: true,
+    theme: "base",
+    look: "neo",
+    htmlLabels: false,
+    fontFamily: "var(--font-sans, ui-sans-serif, system-ui, sans-serif)",
+    themeVariables: {
+      background: dark ? "#111318" : "#ffffff",
+      mainBkg: dark ? "#1a1f2a" : "#f8fafc",
+      primaryColor: dark ? "#1f2937" : "#f8fafc",
+      primaryBorderColor: dark ? "#475569" : "#cbd5e1",
+      primaryTextColor: dark ? "#f8fafc" : "#1f2937",
+      secondaryColor: dark ? "#12333c" : "#ecfeff",
+      secondaryBorderColor: dark ? "#0891b2" : "#67e8f9",
+      secondaryTextColor: dark ? "#e0f2fe" : "#164e63",
+      tertiaryColor: dark ? "#252047" : "#eef2ff",
+      tertiaryBorderColor: dark ? "#6366f1" : "#a5b4fc",
+      tertiaryTextColor: dark ? "#e0e7ff" : "#312e81",
+      lineColor: dark ? "#94a3b8" : "#64748b",
+      textColor: dark ? "#e5e7eb" : "#1f2937",
+      titleColor: dark ? "#f8fafc" : "#111827",
+      nodeTextColor: dark ? "#f8fafc" : "#1f2937",
+      edgeLabelBackground: dark ? "#151922" : "#ffffff",
+      clusterBkg: dark ? "#151922" : "#f8fafc",
+      clusterBorder: dark ? "#334155" : "#cbd5e1",
+      noteBkgColor: dark ? "#2a2414" : "#fffbeb",
+      noteTextColor: dark ? "#fef3c7" : "#78350f",
+      noteBorderColor: dark ? "#a16207" : "#f59e0b",
+    },
+    flowchart: {
+      htmlLabels: false,
+      useMaxWidth: true,
+    },
+    sequence: {
+      useMaxWidth: true,
+    },
+    gantt: {
+      useMaxWidth: true,
+    },
+    journey: {
+      useMaxWidth: true,
+    },
+    timeline: {
+      useMaxWidth: true,
+    },
+    mindmap: {
+      useMaxWidth: true,
+    },
+  };
+}
+
+async function renderMermaidDiagram(input: {
+  id: string;
+  code: string;
+  theme: "light" | "dark";
+}): Promise<RenderResult> {
+  const mermaid = await loadMermaid();
+  mermaid.initialize(createMermaidConfig(input.theme));
+  return mermaid.render(input.id, input.code);
+}
+
+function formatRenderErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error;
+  }
+  return "The diagram could not be rendered.";
 }
 
 function getHighlighterPromise(language: string): Promise<DiffsHighlighter> {
@@ -516,17 +649,110 @@ function MarkdownCodeBlockTitleContent({
   );
 }
 
+type MermaidRenderState =
+  | { status: "loading" }
+  | { status: "rendered"; svg: string; bindFunctions: RenderResult["bindFunctions"] }
+  | { status: "error"; message: string };
+
+function MermaidDiagramBlock({
+  code,
+  fallback,
+  theme,
+}: {
+  code: string;
+  fallback: ReactNode;
+  theme: "light" | "dark";
+}) {
+  const reactId = useId();
+  const renderSequenceRef = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mermaidIdPrefix = useMemo(
+    () => `chat-mermaid-${reactId.replaceAll(/[^a-zA-Z0-9_-]/g, "")}`,
+    [reactId],
+  );
+  const [renderState, setRenderState] = useState<MermaidRenderState>({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    const renderId = `${mermaidIdPrefix}-${renderSequenceRef.current}`;
+    renderSequenceRef.current += 1;
+    setRenderState({ status: "loading" });
+
+    void renderMermaidDiagram({ id: renderId, code, theme }).then(
+      (result) => {
+        if (cancelled) return;
+        setRenderState({
+          status: "rendered",
+          svg: result.svg,
+          bindFunctions: result.bindFunctions,
+        });
+      },
+      (error) => {
+        if (cancelled) return;
+        setRenderState({
+          status: "error",
+          message: formatRenderErrorMessage(error),
+        });
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code, mermaidIdPrefix, theme]);
+
+  useEffect(() => {
+    if (renderState.status !== "rendered") return;
+    const container = containerRef.current;
+    if (!container) return;
+    renderState.bindFunctions?.(container);
+  }, [renderState]);
+
+  if (renderState.status === "error") {
+    return (
+      <div className="chat-markdown-mermaid-error">
+        <div className="chat-markdown-mermaid-error-copy">
+          <strong>Diagram render failed</strong>
+          <span>{renderState.message}</span>
+        </div>
+        {fallback}
+      </div>
+    );
+  }
+
+  return (
+    <figure className="chat-markdown-mermaid" aria-label="Rendered Mermaid diagram">
+      <div
+        ref={containerRef}
+        className="chat-markdown-mermaid-viewport"
+        dangerouslySetInnerHTML={
+          renderState.status === "rendered" ? { __html: renderState.svg } : undefined
+        }
+      />
+      {renderState.status === "loading" ? (
+        <div className="chat-markdown-mermaid-loading" role="status">
+          Rendering diagram...
+        </div>
+      ) : null}
+    </figure>
+  );
+}
+
 function MarkdownCodeBlock({
   code,
   language,
   fenceTitle,
   theme,
+  documentMode,
+  isStreaming,
   children,
 }: {
   code: string;
   language: string;
   fenceTitle: string | null;
   theme: "light" | "dark";
+  documentMode: boolean;
+  isStreaming: boolean;
   children: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
@@ -534,6 +760,11 @@ function MarkdownCodeBlock({
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wrapLabel = wrapped ? "Disable line wrap" : "Wrap lines";
   const copyLabel = copied ? "Copied" : "Copy code";
+  const mermaidFallback = (
+    <pre>
+      <code>{code}</code>
+    </pre>
+  );
 
   const handleCopy = useCallback(() => {
     if (typeof navigator === "undefined" || navigator.clipboard == null) {
@@ -625,7 +856,11 @@ function MarkdownCodeBlock({
           </Tooltip>
         </span>
       </div>
-      {children}
+      {documentMode && isMermaidLanguage(language) && !isStreaming ? (
+        <MermaidDiagramBlock code={code} fallback={mermaidFallback} theme={theme} />
+      ) : (
+        children
+      )}
     </div>
   );
 }
@@ -1228,15 +1463,137 @@ function areMarkdownFileLinkPropsEqual(
   );
 }
 
+function basenameForImageName(path: string): string {
+  const stripped = path.split(/[?#]/, 1)[0] ?? path;
+  const separatorIndex = Math.max(stripped.lastIndexOf("/"), stripped.lastIndexOf("\\"));
+  return separatorIndex >= 0 ? stripped.slice(separatorIndex + 1) : stripped;
+}
+
+function isPreviewableMarkdownImageFile(path: string): boolean {
+  return MARKDOWN_IMAGE_FILE_PATTERN.test(path);
+}
+
+function DocumentMarkdownImageButton({
+  displaySrc,
+  rawSrc,
+  alt,
+  onExpand,
+  ...props
+}: Omit<React.ComponentPropsWithoutRef<"img">, "src" | "alt"> & {
+  displaySrc: string;
+  rawSrc: string;
+  alt: string;
+  onExpand: (preview: ExpandedImagePreview) => void;
+}) {
+  const imageName = alt.length > 0 ? alt : basenameForImageName(rawSrc);
+
+  return (
+    <button
+      type="button"
+      className="chat-markdown-document-image"
+      onClick={() =>
+        onExpand({
+          images: [{ src: displaySrc, name: imageName }],
+          index: 0,
+        })
+      }
+    >
+      <img {...props} src={displaySrc} alt={alt} />
+    </button>
+  );
+}
+
+function DocumentMarkdownAssetImage({
+  filePath,
+  rawSrc,
+  threadRef,
+  ...props
+}: Omit<React.ComponentPropsWithoutRef<typeof DocumentMarkdownImageButton>, "displaySrc"> & {
+  filePath: string;
+  threadRef: ScopedThreadRef;
+}) {
+  const preparedConnection = usePreparedConnection(threadRef.environmentId);
+  const resource = useMemo<AssetResource>(
+    () => ({
+      _tag: "workspace-file",
+      threadId: threadRef.threadId,
+      path: filePath,
+    }),
+    [filePath, threadRef.threadId],
+  );
+  const assetResult = useAtomValue(
+    assetEnvironment.createUrl({
+      environmentId: threadRef.environmentId,
+      input: { resource },
+    }),
+  );
+  const displaySrc =
+    preparedConnection._tag === "Some" && assetResult._tag === "Success"
+      ? (resolveAssetUrl(preparedConnection.value.httpBaseUrl, assetResult.value.relativeUrl) ??
+        rawSrc)
+      : rawSrc;
+
+  return <DocumentMarkdownImageButton {...props} rawSrc={rawSrc} displaySrc={displaySrc} />;
+}
+
+function DocumentMarkdownImage({
+  src,
+  alt,
+  cwd,
+  workspaceRoot,
+  threadRef,
+  onExpand,
+  ...props
+}: React.ComponentPropsWithoutRef<"img"> & {
+  cwd: string | undefined;
+  workspaceRoot: string | undefined;
+  threadRef: ScopedThreadRef | undefined;
+  onExpand: (preview: ExpandedImagePreview) => void;
+}) {
+  const rawSrc = src ?? "";
+  const resolvedImagePath = useMemo(() => {
+    if (!rawSrc) return null;
+    const normalizedSrc = normalizeMarkdownLinkHrefKey(rawSrc);
+    const meta = resolveMarkdownFileLinkMeta(normalizedSrc, cwd, workspaceRoot);
+    return meta && isPreviewableMarkdownImageFile(meta.filePath) ? meta.filePath : null;
+  }, [cwd, rawSrc, workspaceRoot]);
+  const imageAlt = alt ?? "";
+
+  if (threadRef && resolvedImagePath) {
+    return (
+      <DocumentMarkdownAssetImage
+        {...props}
+        rawSrc={rawSrc}
+        alt={imageAlt}
+        filePath={resolvedImagePath}
+        threadRef={threadRef}
+        onExpand={onExpand}
+      />
+    );
+  }
+
+  return (
+    <DocumentMarkdownImageButton
+      {...props}
+      rawSrc={rawSrc}
+      displaySrc={rawSrc}
+      alt={imageAlt}
+      onExpand={onExpand}
+    />
+  );
+}
+
 function ChatMarkdown({
   text,
   cwd,
+  workspaceRoot,
   threadRef,
   onTaskListChange,
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
   className,
   lineBreaks = false,
+  documentMode = false,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
@@ -1253,6 +1610,9 @@ function ChatMarkdown({
     serverConfig?.availableEditors ?? [],
   );
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
+  const [expandedDocumentImage, setExpandedDocumentImage] = useState<ExpandedImagePreview | null>(
+    null,
+  );
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<
       string,
@@ -1261,13 +1621,13 @@ function ChatMarkdown({
     for (const href of extractMarkdownLinkHrefs(text)) {
       const normalizedHref = normalizeMarkdownLinkHrefKey(href);
       if (metaByHref.has(normalizedHref)) continue;
-      const meta = resolveMarkdownFileLinkMeta(normalizedHref, cwd);
+      const meta = resolveMarkdownFileLinkMeta(normalizedHref, cwd, workspaceRoot);
       if (meta) {
         metaByHref.set(normalizedHref, meta);
       }
     }
     return metaByHref;
-  }, [cwd, text]);
+  }, [cwd, text, workspaceRoot]);
   const fileLinkParentSuffixByPath = useMemo(() => {
     const filePaths = [...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath);
     return buildFileLinkParentSuffixByPath(filePaths);
@@ -1372,7 +1732,10 @@ function ChatMarkdown({
       },
       a({ node, href, children, ...props }) {
         const normalizedHref = href ? normalizeMarkdownLinkHrefKey(href) : "";
-        const fileLinkMeta = normalizedHref ? markdownFileLinkMetaByHref.get(normalizedHref) : null;
+        const fileLinkMeta = normalizedHref
+          ? (markdownFileLinkMetaByHref.get(normalizedHref) ??
+            resolveMarkdownFileLinkMeta(normalizedHref, cwd, workspaceRoot))
+          : null;
         if (!fileLinkMeta) {
           const faviconHost = resolveExternalLinkHost(href);
           const isSameDocumentLink = href?.startsWith("#") ?? false;
@@ -1487,6 +1850,22 @@ function ChatMarkdown({
       table({ node: _node, ...props }) {
         return <MarkdownTable {...props} />;
       },
+      img({ node: _node, src, alt, ...props }) {
+        if (!documentMode || !src) {
+          return <img {...props} src={src} alt={alt ?? ""} />;
+        }
+        return (
+          <DocumentMarkdownImage
+            {...props}
+            src={src}
+            alt={alt ?? ""}
+            cwd={cwd}
+            workspaceRoot={workspaceRoot}
+            threadRef={threadRef}
+            onExpand={setExpandedDocumentImage}
+          />
+        );
+      },
       details({ node: _node, children, open: detailsOpen }) {
         return <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>;
       },
@@ -1504,6 +1883,8 @@ function ChatMarkdown({
             language={language}
             fenceTitle={fenceTitle}
             theme={resolvedTheme}
+            documentMode={documentMode}
+            isStreaming={isStreaming}
           >
             <CodeHighlightErrorBoundary fallback={<pre {...props}>{children}</pre>}>
               <Suspense fallback={<pre {...props}>{children}</pre>}>
@@ -1520,6 +1901,8 @@ function ChatMarkdown({
       },
     }),
     [
+      cwd,
+      documentMode,
       diffThemeName,
       fileLinkParentSuffixByPath,
       isStreaming,
@@ -1532,29 +1915,39 @@ function ChatMarkdown({
       skills,
       text,
       threadRef,
+      workspaceRoot,
     ],
   );
+  const remarkPlugins = useMemo(() => {
+    const plugins = lineBreaks
+      ? [remarkGfm, remarkBreaks, remarkPreserveCodeMeta]
+      : [remarkGfm, remarkPreserveCodeMeta];
+    return documentMode ? [...plugins, remarkDocumentHeadingIds] : plugins;
+  }, [documentMode, lineBreaks]);
 
   return (
     <div
       className={cn(
         "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/80",
+        documentMode && "document-markdown",
         className,
       )}
       onCopy={handleCopy}
     >
       <ReactMarkdown
-        remarkPlugins={
-          lineBreaks
-            ? [remarkGfm, remarkBreaks, remarkPreserveCodeMeta]
-            : [remarkGfm, remarkPreserveCodeMeta]
-        }
+        remarkPlugins={remarkPlugins}
         rehypePlugins={[rehypeRaw, [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA]]}
         components={markdownComponents}
         urlTransform={markdownUrlTransform}
       >
         {text}
       </ReactMarkdown>
+      {expandedDocumentImage ? (
+        <ExpandedImageDialog
+          preview={expandedDocumentImage}
+          onClose={() => setExpandedDocumentImage(null)}
+        />
+      ) : null}
     </div>
   );
 }

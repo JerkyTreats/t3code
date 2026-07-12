@@ -1,4 +1,9 @@
 import type { DesktopAppBranding } from "@t3tools/contracts";
+import {
+  formatProductDisplayName,
+  PRODUCT_BASE_NAME,
+  type ProductStageLabel,
+} from "@t3tools/shared/productIdentity";
 import { formatAppDisplayName } from "./branding.logic";
 
 function readInjectedDesktopAppBranding(): DesktopAppBranding | null {
@@ -16,12 +21,14 @@ export const HOSTED_APP_CHANNEL =
   hostedAppChannel === "latest" || hostedAppChannel === "nightly" ? hostedAppChannel : null;
 export const HOSTED_APP_CHANNEL_LABEL =
   HOSTED_APP_CHANNEL === "nightly" ? "Nightly" : HOSTED_APP_CHANNEL === "latest" ? "Latest" : null;
-export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? "T3 Code";
+export const APP_BASE_NAME = injectedDesktopAppBranding?.baseName ?? PRODUCT_BASE_NAME;
 export const APP_STAGE_LABEL =
-  injectedDesktopAppBranding?.stageLabel ??
-  HOSTED_APP_CHANNEL_LABEL ??
-  (import.meta.env.DEV ? "Dev" : "Alpha");
+  injectedDesktopAppBranding?.stageLabel ?? HOSTED_APP_CHANNEL_LABEL ?? "Alpha";
 export const APP_DISPLAY_NAME =
   injectedDesktopAppBranding?.displayName ??
-  formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });
+  (APP_STAGE_LABEL === "Latest"
+    ? APP_BASE_NAME
+    : APP_BASE_NAME === PRODUCT_BASE_NAME
+      ? formatProductDisplayName(APP_STAGE_LABEL as ProductStageLabel)
+      : formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL }));
 export const APP_VERSION = import.meta.env.APP_VERSION || "0.0.0";

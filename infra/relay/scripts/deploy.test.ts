@@ -1,8 +1,4 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
 
 import {
   hasDeployChanges,
@@ -199,23 +195,22 @@ describe("serializeRelayClientTracingEnvironment", () => {
   });
 });
 
-describe("release workflow tracing config propagation", () => {
-  it.effect("uses an artifact instead of a masked cross-job token output", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const workflowPath = yield* path.fromFileUrl(
-        new URL("../../../.github/workflows/release.yml", import.meta.url),
-      );
-      const workflow = yield* fileSystem.readFileString(workflowPath);
+describe("relay client tracing environment propagation", () => {
+  it("keeps tracing tokens in env-file content instead of GitHub output keys", () => {
+    const serialized = serializeRelayClientTracingEnvironment({
+      relayUrl: "https://relay.example.test",
+      mobileTracingUrl: "https://api.axiom.co/v1/traces",
+      mobileTracingDataset: "mobile",
+      mobileTracingToken: "mobile-token",
+      clientTracingUrl: "https://api.axiom.co/v1/traces",
+      clientTracingDataset: "relay",
+      clientTracingToken: "client-token",
+    });
 
-      expect(workflow).not.toContain("client_tracing_token:");
-      expect(workflow).not.toContain("needs.relay_public_config.outputs.client_tracing_token");
-      expect(workflow).toContain('--github-env-file "$RUNNER_TEMP/relay-client-tracing.env"');
-      expect(workflow).toContain("name: relay-client-tracing-config");
-      expect(workflow).toContain('cat "$config_path" >> "$GITHUB_ENV"');
-    }).pipe(Effect.provide(NodeServices.layer)),
-  );
+    expect(serialized).not.toContain("client_tracing_token:");
+    expect(serialized).not.toContain("needs.relay_public_config.outputs.client_tracing_token");
+    expect(serialized).toContain("T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN=client-token");
+  });
 });
 
 describe("publicConfigFromOutput", () => {

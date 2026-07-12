@@ -1,8 +1,19 @@
 import { assert, describe, it } from "vite-plus/test";
 
-import { makeDevelopmentLauncherScript, resolveElectronBinaryPath } from "./electron-launcher.mjs";
+import {
+  APP_DISPLAY_NAME,
+  makeDevelopmentLauncherScript,
+  resolveElectronBinaryPath,
+  resolveLauncherDisplayName,
+} from "./electron-launcher.mjs";
 
 describe("electron development launcher", () => {
+  it("uses the fork identity for launcher display names", () => {
+    assert.equal(APP_DISPLAY_NAME, "T3 Code (Alpha)");
+    assert.equal(resolveLauncherDisplayName(false), "T3 Code (Alpha)");
+    assert.equal(resolveLauncherDisplayName(true), "T3 Code (Dev)");
+  });
+
   it("uses captured values only as fallbacks for a live runner environment", () => {
     const script = makeDevelopmentLauncherScript({
       electronBinaryPath: "/repo/node_modules/electron/Electron",

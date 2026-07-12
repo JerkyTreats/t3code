@@ -589,8 +589,6 @@ export const make = (
                 onNone: () =>
                   Effect.fail(
                     new EffectAcpErrors.AcpTransportError({
-                      operation: "call-rpc",
-                      method: "session/load",
                       detail: "session/load timed out waiting for RPC response or replay idle gap",
                       cause: undefined,
                     }),

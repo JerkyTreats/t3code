@@ -24,7 +24,7 @@ export interface WslProjectSelection<TEnvironmentId extends string = string> ext
 }
 
 const WSL_UNC_PREFIXES = ["\\\\wsl.localhost\\", "\\\\wsl$\\"] as const;
-const WSL_DISTRO_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+const WSL_DISTRO_NAME_PATTERN = /^\w(?:[\w .-]*\w)?$/;
 const WSL_DEFAULT_BACKEND_ID = "wsl:default";
 
 export function parseWslUncPath(input: string): WslUncPath | null {

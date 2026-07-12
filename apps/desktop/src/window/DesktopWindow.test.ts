@@ -47,6 +47,7 @@ const environmentInput = {
 
 function makeFakeBrowserWindow() {
   const webContentsListeners = new Map<string, (...args: readonly unknown[]) => void>();
+  const windowListeners = new Map<string, (...args: readonly unknown[]) => void>();
   const webContents = {
     copyImageAt: vi.fn(),
     getURL: vi.fn(() => "t3code-dev://app/"),
@@ -69,7 +70,9 @@ function makeFakeBrowserWindow() {
     isMinimized: vi.fn(() => false),
     isVisible: vi.fn(() => true),
     loadURL: vi.fn(() => Promise.resolve()),
-    on: vi.fn(),
+    on: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {
+      windowListeners.set(eventName, listener);
+    }),
     once: vi.fn(),
     restore: vi.fn(),
     setBackgroundColor: vi.fn(),
@@ -88,6 +91,7 @@ function makeFakeBrowserWindow() {
     send: webContents.send,
     setAutoHideCursor: window.setAutoHideCursor,
     webContentsListeners,
+    windowListeners,
   };
 }
 
@@ -404,6 +408,97 @@ describe("DesktopWindow", () => {
       }),
     );
   });
+
+  it("recovers every abnormal renderer exit while leaving a clean exit alone", () => {
+    assert.isTrue(DesktopWindow.shouldRecoverRendererProcess("crashed"));
+    assert.isTrue(DesktopWindow.shouldRecoverRendererProcess("oom"));
+    assert.isTrue(DesktopWindow.shouldRecoverRendererProcess("killed"));
+    assert.isFalse(DesktopWindow.shouldRecoverRendererProcess("clean-exit"));
+  });
+
+  it.effect("reloads the application after the renderer crashes", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const renderProcessGone = fakeWindow.webContentsListeners.get("render-process-gone");
+        if (!renderProcessGone) {
+          return yield* Effect.die("renderer process listener was not registered");
+        }
+
+        renderProcessGone({}, { reason: "oom", exitCode: 133 });
+        renderProcessGone({}, { reason: "oom", exitCode: 133 });
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 1);
+
+        yield* TestClock.adjust(250);
+        assert.deepEqual(fakeWindow.loadURL.mock.calls, [
+          ["t3code-dev://app/"],
+          ["t3code-dev://app/"],
+        ]);
+
+        renderProcessGone({}, { reason: "crashed", exitCode: 1 });
+        yield* TestClock.adjust(999);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 2);
+        yield* TestClock.adjust(1);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 3);
+
+        renderProcessGone({}, { reason: "clean-exit", exitCode: 0 });
+        yield* TestClock.adjust(4_000);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 3);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("cancels crash recovery after a successful renderer load", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const renderProcessGone = fakeWindow.webContentsListeners.get("render-process-gone");
+        const didFinishLoad = fakeWindow.webContentsListeners.get("did-finish-load");
+        if (!renderProcessGone || !didFinishLoad) {
+          return yield* Effect.die("renderer recovery listeners were not registered");
+        }
+
+        renderProcessGone({}, { reason: "oom", exitCode: 133 });
+        didFinishLoad();
+        yield* TestClock.adjust(250);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 1);
+
+        renderProcessGone({}, { reason: "crashed", exitCode: 1 });
+        yield* TestClock.adjust(250);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 1);
+        yield* TestClock.adjust(750);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 2);
+
+        didFinishLoad();
+        yield* TestClock.adjust(60_000);
+        renderProcessGone({}, { reason: "crashed", exitCode: 1 });
+        yield* TestClock.adjust(250);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 3);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
 
   it.effect("opens safe off-origin renderer navigations in the system browser", () =>
     Effect.gen(function* () {

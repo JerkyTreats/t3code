@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@t3tools/contracts";
+import type { DesktopBridge, DesktopSystemTheme } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
@@ -11,6 +11,7 @@ type ThemeSnapshot = {
 };
 
 type DesktopThemeBridge = Pick<DesktopBridge, "setTheme">;
+type DesktopSystemThemeBridge = Pick<DesktopBridge, "getSystemTheme" | "onSystemTheme">;
 
 const STORAGE_KEY = "t3code:theme";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
@@ -20,6 +21,50 @@ const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
 };
 const THEME_COLOR_META_NAME = "theme-color";
 const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data-dynamic-theme-color="true"]`;
+const PROJECTED_SYSTEM_THEME_VARIABLES = [
+  "--omarchy-background",
+  "--omarchy-foreground",
+  "--omarchy-accent",
+  "--omarchy-selection-background",
+  "--omarchy-selection-foreground",
+  "--background",
+  "--app-chrome-background",
+  "--foreground",
+  "--card",
+  "--card-foreground",
+  "--popover",
+  "--popover-foreground",
+  "--primary",
+  "--primary-foreground",
+  "--ring",
+  "--accent",
+  "--accent-foreground",
+  "--muted",
+  "--muted-foreground",
+  "--border",
+  "--input",
+  "--terminal-background",
+  "--terminal-foreground",
+  "--terminal-cursor",
+  "--terminal-selection-background",
+  "--terminal-selection-foreground",
+  "--terminal-color-0",
+  "--terminal-color-1",
+  "--terminal-color-2",
+  "--terminal-color-3",
+  "--terminal-color-4",
+  "--terminal-color-5",
+  "--terminal-color-6",
+  "--terminal-color-7",
+  "--terminal-color-8",
+  "--terminal-color-9",
+  "--terminal-color-10",
+  "--terminal-color-11",
+  "--terminal-color-12",
+  "--terminal-color-13",
+  "--terminal-color-14",
+  "--terminal-color-15",
+] as const;
 
 export class ThemeStorageError extends Schema.TaggedErrorClass<ThemeStorageError>()(
   "ThemeStorageError",
@@ -56,17 +101,128 @@ let lastSnapshot: ThemeSnapshot | null = null;
 let lastDesktopTheme: Theme | null = null;
 let lastAppliedTheme: ThemeSnapshot | null = null;
 let themeStorageReadFailure: ThemeStorageError | null = null;
+let desktopSystemTheme: DesktopSystemTheme | null = null;
 
 function emitChange() {
   for (const listener of listeners) listener();
 }
 
 function getSystemDark() {
+  if (desktopSystemTheme) {
+    return desktopSystemTheme.mode === "dark";
+  }
   return (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
     window.matchMedia(MEDIA_QUERY).matches
   );
+}
+
+function normalizeThemeCssColor(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  if (!normalized) return null;
+  if (typeof CSS !== "undefined" && CSS.supports?.("color", normalized)) {
+    return normalized;
+  }
+  if (
+    /^#[0-9a-f]{3,8}$/i.test(normalized) ||
+    /^rgba?\([^)]+\)$/i.test(normalized) ||
+    /^hsla?\([^)]+\)$/i.test(normalized) ||
+    /^oklch\([^)]+\)$/i.test(normalized) ||
+    /^color-mix\([^)]+\)$/i.test(normalized)
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
+function systemThemeColor(colors: DesktopSystemTheme["colors"], key: string): string | null {
+  return normalizeThemeCssColor(colors[key]);
+}
+
+function setThemeVariable(rootStyle: CSSStyleDeclaration, name: string, value: string | null) {
+  if (value) {
+    rootStyle.setProperty(name, value);
+  } else {
+    rootStyle.removeProperty(name);
+  }
+}
+
+export function applyDesktopSystemTheme(theme: DesktopSystemTheme | null): void {
+  desktopSystemTheme = theme;
+  lastSnapshot = null;
+
+  if (typeof document === "undefined") return;
+  const rootStyle = document.documentElement.style;
+
+  if (!theme) {
+    for (const variableName of PROJECTED_SYSTEM_THEME_VARIABLES) {
+      rootStyle.removeProperty(variableName);
+    }
+    syncBrowserChromeTheme();
+    return;
+  }
+
+  const background = systemThemeColor(theme.colors, "background");
+  const foreground = systemThemeColor(theme.colors, "foreground");
+  const accent = systemThemeColor(theme.colors, "accent");
+  if (!background || !foreground || !accent) {
+    return;
+  }
+
+  const selectionBackground = systemThemeColor(theme.colors, "selection_background");
+  const selectionForeground = systemThemeColor(theme.colors, "selection_foreground");
+
+  setThemeVariable(rootStyle, "--omarchy-background", background);
+  setThemeVariable(rootStyle, "--omarchy-foreground", foreground);
+  setThemeVariable(rootStyle, "--omarchy-accent", accent);
+  setThemeVariable(rootStyle, "--omarchy-selection-background", selectionBackground);
+  setThemeVariable(rootStyle, "--omarchy-selection-foreground", selectionForeground);
+  setThemeVariable(rootStyle, "--background", background);
+  setThemeVariable(rootStyle, "--app-chrome-background", background);
+  setThemeVariable(rootStyle, "--foreground", foreground);
+  setThemeVariable(rootStyle, "--card", `color-mix(in srgb, ${background} 96%, ${foreground})`);
+  setThemeVariable(rootStyle, "--card-foreground", foreground);
+  setThemeVariable(rootStyle, "--popover", `color-mix(in srgb, ${background} 96%, ${foreground})`);
+  setThemeVariable(rootStyle, "--popover-foreground", foreground);
+  setThemeVariable(rootStyle, "--primary", accent);
+  setThemeVariable(rootStyle, "--primary-foreground", background);
+  setThemeVariable(rootStyle, "--ring", accent);
+  setThemeVariable(rootStyle, "--accent", `color-mix(in srgb, ${accent} 18%, transparent)`);
+  setThemeVariable(rootStyle, "--accent-foreground", foreground);
+  setThemeVariable(rootStyle, "--muted", `color-mix(in srgb, ${foreground} 8%, transparent)`);
+  setThemeVariable(
+    rootStyle,
+    "--muted-foreground",
+    `color-mix(in srgb, ${foreground} 68%, ${background})`,
+  );
+  setThemeVariable(rootStyle, "--border", `color-mix(in srgb, ${foreground} 16%, transparent)`);
+  setThemeVariable(rootStyle, "--input", `color-mix(in srgb, ${foreground} 12%, transparent)`);
+  setThemeVariable(rootStyle, "--terminal-background", background);
+  setThemeVariable(rootStyle, "--terminal-foreground", foreground);
+  setThemeVariable(rootStyle, "--terminal-cursor", systemThemeColor(theme.colors, "cursor"));
+  setThemeVariable(rootStyle, "--terminal-selection-background", selectionBackground);
+  setThemeVariable(rootStyle, "--terminal-selection-foreground", selectionForeground);
+
+  for (let index = 0; index <= 15; index += 1) {
+    setThemeVariable(
+      rootStyle,
+      `--terminal-color-${index}`,
+      systemThemeColor(theme.colors, `color${index}`),
+    );
+  }
+
+  syncBrowserChromeTheme();
+}
+
+function getDesktopSystemThemeBridge(): DesktopSystemThemeBridge | null {
+  if (typeof window === "undefined") return null;
+  const bridge = window.desktopBridge;
+  if (!bridge) return null;
+  if (typeof bridge.getSystemTheme !== "function" && typeof bridge.onSystemTheme !== "function") {
+    return null;
+  }
+  return bridge;
 }
 
 export function readThemePreference(): Theme {
@@ -258,6 +414,30 @@ function subscribe(listener: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   listeners.push(listener);
 
+  const applyDesktopThemeChange = (theme: DesktopSystemTheme | null) => {
+    applyDesktopSystemTheme(theme);
+    if (getStored() === "system") {
+      applyTheme("system", true);
+    } else {
+      syncBrowserChromeTheme();
+    }
+    emitChange();
+  };
+
+  const desktopBridge = getDesktopSystemThemeBridge();
+  if (typeof desktopBridge?.getSystemTheme === "function") {
+    void desktopBridge
+      .getSystemTheme()
+      .then(applyDesktopThemeChange)
+      .catch((cause: unknown) => {
+        console.error("Failed to read desktop system theme.", safeErrorLogAttributes(cause));
+      });
+  }
+  const unsubscribeDesktopSystemTheme =
+    typeof desktopBridge?.onSystemTheme === "function"
+      ? desktopBridge.onSystemTheme(applyDesktopThemeChange)
+      : undefined;
+
   // Listen for system preference changes
   const mq = typeof window.matchMedia === "function" ? window.matchMedia(MEDIA_QUERY) : null;
   const handleChange = () => {
@@ -278,6 +458,7 @@ function subscribe(listener: () => void): () => void {
 
   return () => {
     listeners = listeners.filter((l) => l !== listener);
+    unsubscribeDesktopSystemTheme?.();
     mq?.removeEventListener("change", handleChange);
     window.removeEventListener("storage", handleStorage);
   };

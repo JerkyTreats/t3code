@@ -19,15 +19,15 @@ describe("ClientSettings word wrap", () => {
     expect(decodeClientSettings({}).wordWrap).toBe(true);
   });
 
-  it("ignores obsolete wrapping preferences", () => {
+  it("keeps diff word wrap as a fork-owned preference", () => {
     const decoded = decodeClientSettings({
       chatWordWrap: false,
-      diffWordWrap: false,
+      diffWordWrap: true,
     });
 
     expect(decoded.wordWrap).toBe(true);
+    expect(decoded.diffWordWrap).toBe(true);
     expect(decoded).not.toHaveProperty("chatWordWrap");
-    expect(decoded).not.toHaveProperty("diffWordWrap");
   });
 });
 

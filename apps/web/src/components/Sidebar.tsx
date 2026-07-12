@@ -44,6 +44,7 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   type ContextMenuItem,
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
   ProjectId,
   type ScopedThreadRef,
   type ResolvedKeybindingsConfig,
@@ -111,6 +112,7 @@ import { readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
+import { useRightPanelStore } from "../rightPanelStore";
 
 import { useThreadActions } from "../hooks/useThreadActions";
 import { projectEnvironment } from "../state/projects";
@@ -1586,6 +1588,41 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [memberThreadCountByPhysicalKey, removeProject],
   );
 
+  const openProjectPanel = useCallback(
+    async (member: SidebarProjectGroupMember) => {
+      if (isMobile) {
+        setOpenMobile(false);
+      }
+      const latestThread = sortThreads(
+        projectThreads.filter(
+          (thread) =>
+            thread.environmentId === member.environmentId &&
+            thread.projectId === member.id &&
+            thread.archivedAt === null,
+        ),
+        threadSortOrder,
+      )[0];
+      if (latestThread) {
+        const threadRef = scopeThreadRef(latestThread.environmentId, latestThread.id);
+        useRightPanelStore.getState().showLauncher(threadRef);
+        await router.navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams(threadRef),
+        });
+        return;
+      }
+
+      await handleNewThread(scopeProjectRef(member.environmentId, member.id), {
+        beforeNavigate: (threadId) => {
+          useRightPanelStore
+            .getState()
+            .showLauncher(scopeThreadRef(member.environmentId, threadId));
+        },
+      });
+    },
+    [handleNewThread, isMobile, projectThreads, router, setOpenMobile, threadSortOrder],
+  );
+
   const handleProjectButtonContextMenu = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.preventDefault();
@@ -1596,7 +1633,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
         const actionHandlers = new Map<string, () => Promise<void> | void>();
         const makeLeaf = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: "manage" | "rename" | "grouping" | "copy-path" | "delete",
           member: SidebarProjectGroupMember,
           options?: {
             destructive?: boolean;
@@ -1606,6 +1643,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           const id = `${action}:${member.physicalProjectKey}`;
           actionHandlers.set(id, () => {
             switch (action) {
+              case "manage":
+                return openProjectPanel(member);
               case "rename":
                 openProjectRenameDialog(member);
                 return;
@@ -1629,7 +1668,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         };
 
         const buildTargetedItem = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: "manage" | "rename" | "grouping" | "copy-path" | "delete",
           label: string,
           options?: {
             destructive?: boolean;
@@ -1663,6 +1702,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
         const clicked = await api.contextMenu.show(
           [
+            buildTargetedItem("manage", "Project panel"),
             buildTargetedItem("rename", "Rename"),
             buildTargetedItem("grouping", "Group into..."),
             buildTargetedItem("copy-path", "Copy Path"),
@@ -1687,9 +1727,13 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       copyPathToClipboard,
       handleRemoveProject,
       openProjectGroupingDialog,
+      openProjectPanel,
       openProjectRenameDialog,
       project.groupedProjectCount,
       project.memberProjects,
+      isMobile,
+      router,
+      setOpenMobile,
       suppressProjectClickForContextMenuRef,
     ],
   );
@@ -3124,6 +3168,16 @@ export default function Sidebar() {
     strict: false,
     select: (params) => resolveThreadRouteRef(params),
   });
+  const routeProjectRef = useParams({
+    strict: false,
+    select: (params) =>
+      typeof params.environmentId === "string" && typeof params.projectId === "string"
+        ? scopeProjectRef(
+            EnvironmentId.make(params.environmentId),
+            ProjectId.make(params.projectId),
+          )
+        : null,
+  });
   const routeThreadKey = routeThreadRef ? scopedThreadKey(routeThreadRef) : null;
   const routeTerminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
@@ -3227,6 +3281,12 @@ export default function Sidebar() {
   // Resolve the active route's project key to a logical key so it matches the
   // sidebar's grouped project entries.
   const activeRouteProjectKey = useMemo(() => {
+    if (routeProjectRef) {
+      const routePhysicalKey =
+        projectPhysicalKeyByScopedRef.get(scopedProjectKey(routeProjectRef)) ??
+        scopedProjectKey(routeProjectRef);
+      return physicalToLogicalKey.get(routePhysicalKey) ?? routePhysicalKey;
+    }
     if (!routeThreadKey) {
       return null;
     }
@@ -3237,7 +3297,13 @@ export default function Sidebar() {
         scopedProjectKey(scopeProjectRef(activeThread.environmentId, activeThread.projectId)),
       ) ?? scopedProjectKey(scopeProjectRef(activeThread.environmentId, activeThread.projectId));
     return physicalToLogicalKey.get(physicalKey) ?? physicalKey;
-  }, [routeThreadKey, sidebarThreadByKey, physicalToLogicalKey, projectPhysicalKeyByScopedRef]);
+  }, [
+    routeProjectRef,
+    routeThreadKey,
+    sidebarThreadByKey,
+    physicalToLogicalKey,
+    projectPhysicalKeyByScopedRef,
+  ]);
 
   // Group threads by logical project key so all threads from grouped projects
   // are displayed together.

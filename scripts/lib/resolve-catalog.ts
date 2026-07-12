@@ -1,19 +1,3 @@
-import * as Schema from "effect/Schema";
-
-export class CatalogDependencyResolutionError extends Schema.TaggedErrorClass<CatalogDependencyResolutionError>()(
-  "CatalogDependencyResolutionError",
-  {
-    workspacePackage: Schema.String,
-    dependencyName: Schema.String,
-    catalogSpec: Schema.String,
-    catalogKey: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `Unable to resolve '${this.catalogSpec}' for ${this.workspacePackage} dependency '${this.dependencyName}'. Expected key '${this.catalogKey}' in root workspace catalog.`;
-  }
-}
-
 /**
  * Resolve `catalog:` dependency specs using the workspace catalog.
  *
@@ -23,7 +7,7 @@ export class CatalogDependencyResolutionError extends Schema.TaggedErrorClass<Ca
 export function resolveCatalogDependencies(
   dependencies: Record<string, string>,
   catalog: Record<string, string>,
-  workspacePackage: string,
+  label: string,
 ): Record<string, string> {
   return Object.fromEntries(
     Object.entries(dependencies).map(([name, spec]) => {
@@ -36,12 +20,9 @@ export function resolveCatalogDependencies(
       const resolved = catalog[lookupKey];
 
       if (typeof resolved !== "string" || resolved.length === 0) {
-        throw new CatalogDependencyResolutionError({
-          workspacePackage,
-          dependencyName: name,
-          catalogSpec: spec,
-          catalogKey: lookupKey,
-        });
+        throw new Error(
+          `Unable to resolve '${spec}' for ${label} dependency '${name}'. Expected key '${lookupKey}' in root workspace catalog.`,
+        );
       }
 
       return [name, resolved];

@@ -99,14 +99,21 @@ export function formatContextWindowTokens(value: number | null): string {
   if (value === null || !Number.isFinite(value)) {
     return "0";
   }
-  if (value < 1_000) {
+  const absoluteValue = Math.abs(value);
+  if (absoluteValue < 1_000) {
     return `${Math.round(value)}`;
   }
-  if (value < 10_000) {
-    return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+
+  const suffixes = ["", "K", "M", "B", "T", "Q"] as const;
+  let magnitude = Math.min(Math.floor(Math.log10(absoluteValue) / 3), suffixes.length - 1);
+  let scaledValue = value / 1_000 ** magnitude;
+  let roundedValue = Math.round(scaledValue * 10) / 10;
+
+  if (Math.abs(roundedValue) >= 1_000 && magnitude < suffixes.length - 1) {
+    magnitude += 1;
+    scaledValue = value / 1_000 ** magnitude;
+    roundedValue = Math.round(scaledValue * 10) / 10;
   }
-  if (value < 1_000_000) {
-    return `${Math.round(value / 1_000)}k`;
-  }
-  return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+
+  return `${roundedValue.toFixed(1).replace(/\.0$/, "")}${suffixes[magnitude]}`;
 }

@@ -1,15 +1,30 @@
 import {
-  ORCHESTRATION_WS_METHODS,
+  type EventId,
+  ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS,
+  ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS,
   type EnvironmentId as EnvironmentIdType,
+  type OrchestrationEvent,
+  type OrchestrationDeferredThreadContent,
+  type OrchestrationSubscribeThreadInput,
   type OrchestrationThread,
+  type OrchestrationThreadActivity,
+  type OrchestrationThreadContentReference,
   type OrchestrationThreadDetailSnapshot,
-  type OrchestrationThreadStreamItem,
+  type OrchestrationThreadDetailV2Snapshot,
+  type OrchestrationThreadSyncV2Event,
+  type OrchestrationThreadSyncV2Window,
   type ThreadId as ThreadIdType,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { Atom } from "effect/unstable/reactivity";
@@ -18,17 +33,75 @@ import { EnvironmentRegistry } from "../connection/registry.ts";
 import { connectionProjectionPhase } from "../connection/model.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import { EnvironmentCacheStore } from "../platform/persistence.ts";
-import { subscribe } from "../rpc/client.ts";
-import { ThreadSnapshotLoader } from "./threadSnapshotHttp.ts";
+import {
+  subscribeThread,
+  type EnvironmentThreadContentHydrator,
+  type EnvironmentThreadHistoryPager,
+  type EnvironmentThreadPayloadHydrator,
+  type EnvironmentThreadSubscriptionItem,
+  type EnvironmentThreadSyncVersion,
+} from "../rpc/client.ts";
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { applyThreadDetailEvent } from "./threadReducer.ts";
 import { THREAD_STATE_IDLE_TTL_MS } from "./threadRetention.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
+import { ThreadSnapshotLoader } from "./threadSnapshotHttp.ts";
 import {
-  EMPTY_ENVIRONMENT_THREAD_STATE,
-  type EnvironmentThreadState,
+  EMPTY_ENVIRONMENT_THREAD_STATE as BASE_EMPTY_ENVIRONMENT_THREAD_STATE,
+  type EnvironmentThreadState as BaseEnvironmentThreadState,
   type EnvironmentThreadStatus,
 } from "./threadState.ts";
+import {
+  recordThreadSyncDisposed,
+  recordThreadSyncError,
+  recordThreadSyncEvent,
+  recordThreadSyncHydration,
+  recordThreadSyncLive,
+  recordThreadSyncSnapshot,
+  recordThreadSyncSubscription,
+  recordThreadSyncWaiting,
+} from "./threadSyncDiagnostics.ts";
+
+export type EnvironmentThreadSyncPhase = "waiting" | "subscribing" | "hydrating" | "live" | "error";
+
+export interface EnvironmentThreadSyncStatus {
+  readonly phase: EnvironmentThreadSyncPhase;
+  readonly version: EnvironmentThreadSyncVersion | null;
+  readonly deferredPayloadCount: number;
+  readonly estimatedBytes: number | null;
+  readonly error: string | null;
+}
+
+export interface EnvironmentThreadState extends BaseEnvironmentThreadState {
+  readonly syncStatus?: EnvironmentThreadSyncStatus;
+}
+
+export const WAITING_ENVIRONMENT_THREAD_SYNC_STATUS: EnvironmentThreadSyncStatus = {
+  phase: "waiting",
+  version: null,
+  deferredPayloadCount: 0,
+  estimatedBytes: null,
+  error: null,
+};
+
+export const EMPTY_ENVIRONMENT_THREAD_STATE: EnvironmentThreadState = {
+  ...BASE_EMPTY_ENVIRONMENT_THREAD_STATE,
+  syncStatus: WAITING_ENVIRONMENT_THREAD_SYNC_STATUS,
+};
+
+const THREAD_SYNC_V2_HYDRATE_CHUNK_SIZE = Math.min(
+  50,
+  ORCHESTRATION_HYDRATE_THREAD_ACTIVITY_PAYLOADS_MAX_IDS,
+);
+const THREAD_SYNC_V2_MAX_HISTORY_PAGE_REQUESTS = 1_000;
+const THREAD_SYNC_V2_MAX_CONTENT_CHUNK_REQUESTS = 2_048;
+const threadSyncV2TextEncoder = new TextEncoder();
+class ThreadSyncV2FallbackError extends Error {
+  readonly _tag = "ThreadSyncV2FallbackError";
+}
+class ThreadSyncV2PagingError extends Error {
+  readonly _tag = "ThreadSyncV2PagingError";
+}
 
 function statusWithoutLiveData(data: Option.Option<OrchestrationThread>): EnvironmentThreadStatus {
   return Option.isSome(data) ? "cached" : "empty";
@@ -39,6 +112,636 @@ function formatThreadError(cause: Cause.Cause<unknown>): string {
   return error instanceof Error && error.message.trim().length > 0
     ? error.message
     : "Could not synchronize the thread.";
+}
+
+function isDeferredThreadActivityPayload(payload: unknown): boolean {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    (payload as { readonly __t3Deferred?: unknown }).__t3Deferred === "thread-activity-payload"
+  );
+}
+
+function isDeferredThreadContent(content: unknown): content is OrchestrationDeferredThreadContent {
+  return (
+    typeof content === "object" &&
+    content !== null &&
+    (content as { readonly __t3Deferred?: unknown }).__t3Deferred === "thread-content"
+  );
+}
+
+function threadContentReferenceKey(content: OrchestrationThreadContentReference): string {
+  if (content.kind === "message-text" || content.kind === "message-text-delta") {
+    return content.kind === "message-text"
+      ? `${content.kind}:${content.messageId}`
+      : `${content.kind}:${content.eventId}:${content.messageId}`;
+  }
+  return `${content.kind}:${content.planId}`;
+}
+
+function assertThreadContentChunk(
+  condition: boolean,
+  message: string,
+): Effect.Effect<void, ThreadSyncV2PagingError> {
+  return condition ? Effect.void : Effect.fail(new ThreadSyncV2PagingError(message));
+}
+
+const hydrateDeferredThreadContent = Effect.fn(
+  "EnvironmentThreadState.hydrateDeferredThreadContent",
+)(function* (
+  threadId: ThreadIdType,
+  content: OrchestrationThreadContentReference,
+  marker: OrchestrationDeferredThreadContent,
+  expectedContentVersion: string,
+  hydrateThreadContent: EnvironmentThreadContentHydrator,
+) {
+  if (content.kind !== marker.kind) {
+    return yield* Effect.fail(
+      new ThreadSyncV2PagingError("Thread sync v2 deferred content kind mismatched."),
+    );
+  }
+
+  const chunks: string[] = [];
+  let offset = 0;
+  for (
+    let requestCount = 0;
+    requestCount < THREAD_SYNC_V2_MAX_CONTENT_CHUNK_REQUESTS;
+    requestCount += 1
+  ) {
+    const result = yield* hydrateThreadContent({ threadId, content, offset });
+    const nextOffset = offset + result.chunk.length;
+    yield* assertThreadContentChunk(
+      result.threadId === threadId &&
+        threadContentReferenceKey(result.content) === threadContentReferenceKey(content),
+      "Thread sync v2 deferred content identity mismatched.",
+    );
+    yield* assertThreadContentChunk(
+      result.contentVersion === expectedContentVersion,
+      "Thread sync v2 deferred content version mismatched.",
+    );
+    yield* assertThreadContentChunk(
+      result.offset === offset &&
+        result.totalByteLength === marker.byteLength &&
+        result.totalCharacterLength === marker.characterLength,
+      "Thread sync v2 deferred content progress mismatched.",
+    );
+    yield* assertThreadContentChunk(
+      result.chunkByteLength === threadSyncV2TextEncoder.encode(result.chunk).byteLength &&
+        result.chunkByteLength <= ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES,
+      "Thread sync v2 deferred content chunk bounds mismatched.",
+    );
+    yield* assertThreadContentChunk(
+      result.chunk.length > 0 || offset === marker.characterLength,
+      "Thread sync v2 deferred content did not advance.",
+    );
+
+    chunks.push(result.chunk);
+    if (nextOffset === marker.characterLength) {
+      yield* assertThreadContentChunk(
+        result.nextOffset === null,
+        "Thread sync v2 deferred content completed at an unexpected offset.",
+      );
+      const hydrated = chunks.join("");
+      yield* assertThreadContentChunk(
+        hydrated.length === marker.characterLength &&
+          threadSyncV2TextEncoder.encode(hydrated).byteLength === marker.byteLength,
+        "Thread sync v2 deferred content length mismatched.",
+      );
+      return hydrated;
+    }
+    yield* assertThreadContentChunk(
+      nextOffset < marker.characterLength && result.nextOffset === nextOffset,
+      "Thread sync v2 deferred content did not advance.",
+    );
+    offset = nextOffset;
+  }
+
+  return yield* Effect.fail(
+    new ThreadSyncV2PagingError(
+      `Thread sync v2 exceeded ${THREAD_SYNC_V2_MAX_CONTENT_CHUNK_REQUESTS} content chunk requests.`,
+    ),
+  );
+});
+
+function collectDeferredThreadActivityIds(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): ReadonlyArray<EventId> {
+  const seen = new Set<EventId>();
+  const activityIds: EventId[] = [];
+  for (const activity of activities) {
+    if (!isDeferredThreadActivityPayload(activity.payload) || seen.has(activity.id)) {
+      continue;
+    }
+    seen.add(activity.id);
+    activityIds.push(activity.id);
+  }
+  return activityIds;
+}
+
+interface ThreadSyncV2HistoryPage<T, Cursor> {
+  readonly items: ReadonlyArray<T>;
+  readonly startCursor: Cursor | null;
+  readonly hasMoreBefore: boolean;
+  readonly estimatedSerializedBytes: number;
+}
+
+interface ThreadSyncV2HistoryPageBudget {
+  requests: number;
+}
+
+function loadThreadSyncV2HistoryPages<T, Cursor, E, R>(options: {
+  readonly items: ReadonlyArray<T>;
+  readonly hasMoreBefore: boolean;
+  readonly initialCursor: (item: T | undefined) => Cursor | null;
+  readonly loadPage: (
+    cursor: Cursor | null,
+  ) => Effect.Effect<ThreadSyncV2HistoryPage<T, Cursor>, E, R>;
+  readonly itemKey: (item: T) => string | number;
+  readonly cursorKey: (cursor: Cursor) => string | number;
+  readonly budget: ThreadSyncV2HistoryPageBudget;
+}) {
+  return Effect.gen(function* () {
+    const historyPages: Array<ReadonlyArray<T>> = [];
+    const existingKeys = new Set(options.items.map(options.itemKey));
+    let estimatedSerializedBytes = 0;
+    let hasMoreBefore = options.hasMoreBefore;
+    let cursor = options.initialCursor(options.items[0]);
+
+    while (hasMoreBefore) {
+      if (options.budget.requests >= THREAD_SYNC_V2_MAX_HISTORY_PAGE_REQUESTS) {
+        return yield* Effect.fail(
+          new ThreadSyncV2PagingError(
+            `Thread sync v2 exceeded ${THREAD_SYNC_V2_MAX_HISTORY_PAGE_REQUESTS} history page requests.`,
+          ),
+        );
+      }
+
+      options.budget.requests += 1;
+      const page = yield* options.loadPage(cursor);
+      estimatedSerializedBytes += page.estimatedSerializedBytes;
+      const uniquePageItems = page.items.filter((item) => {
+        const key = options.itemKey(item);
+        if (existingKeys.has(key)) {
+          return false;
+        }
+        existingKeys.add(key);
+        return true;
+      });
+      historyPages.push(uniquePageItems);
+      hasMoreBefore = page.hasMoreBefore;
+      if (!hasMoreBefore) {
+        continue;
+      }
+      if (
+        page.startCursor === null ||
+        (cursor !== null && options.cursorKey(page.startCursor) === options.cursorKey(cursor))
+      ) {
+        return yield* Effect.fail(
+          new ThreadSyncV2PagingError("Thread sync v2 history paging did not advance."),
+        );
+      }
+      cursor = page.startCursor;
+    }
+
+    historyPages.reverse();
+    return {
+      items: historyPages.flat().concat(options.items),
+      estimatedSerializedBytes,
+    };
+  });
+}
+
+const hydrateThreadSyncV2History = Effect.fn("EnvironmentThreadState.hydrateThreadSyncV2History")(
+  function* (
+    snapshot: OrchestrationThreadDetailV2Snapshot,
+    historyPager: EnvironmentThreadHistoryPager,
+  ) {
+    if (Object.values(snapshot.windows).some((window) => window.hasMoreAfter)) {
+      return yield* Effect.fail(
+        new ThreadSyncV2FallbackError(
+          "Thread sync v2 returned a non-tail history window without forward paging support.",
+        ),
+      );
+    }
+
+    const budget: ThreadSyncV2HistoryPageBudget = { requests: 0 };
+    const messages = yield* loadThreadSyncV2HistoryPages({
+      items: snapshot.thread.messages,
+      hasMoreBefore: snapshot.windows.messages.hasMoreBefore,
+      initialCursor: (message) =>
+        message === undefined ? null : { messageId: message.id, createdAt: message.createdAt },
+      loadPage: (before) =>
+        historyPager.getMessagePage({
+          threadId: snapshot.thread.id,
+          limit: ORCHESTRATION_THREAD_SYNC_V2_MAX_MESSAGE_ITEMS,
+          ...(before === null ? {} : { before }),
+        }),
+      itemKey: (message) => message.id,
+      cursorKey: (cursor) => `${cursor.createdAt}:${cursor.messageId}`,
+      budget,
+    });
+    const proposedPlans = yield* loadThreadSyncV2HistoryPages({
+      items: snapshot.thread.proposedPlans,
+      hasMoreBefore: snapshot.windows.proposedPlans.hasMoreBefore,
+      initialCursor: (plan) =>
+        plan === undefined ? null : { planId: plan.id, createdAt: plan.createdAt },
+      loadPage: (before) =>
+        historyPager.getProposedPlanPage({
+          threadId: snapshot.thread.id,
+          limit: ORCHESTRATION_THREAD_SYNC_V2_MAX_PROPOSED_PLAN_ITEMS,
+          ...(before === null ? {} : { before }),
+        }),
+      itemKey: (plan) => plan.id,
+      cursorKey: (cursor) => `${cursor.createdAt}:${cursor.planId}`,
+      budget,
+    });
+    const activities = yield* loadThreadSyncV2HistoryPages({
+      items: snapshot.thread.activities,
+      hasMoreBefore: snapshot.windows.activities.hasMoreBefore,
+      initialCursor: (activity) =>
+        activity === undefined
+          ? null
+          : {
+              activityId: activity.id,
+              createdAt: activity.createdAt,
+              sequence: activity.sequence ?? null,
+            },
+      loadPage: (position) =>
+        historyPager.getActivityPage({
+          threadId: snapshot.thread.id,
+          limit: ORCHESTRATION_THREAD_SYNC_V2_MAX_ACTIVITY_ITEMS,
+          ...(position === null ? {} : { cursor: { direction: "before" as const, position } }),
+        }),
+      itemKey: (activity) => activity.id,
+      cursorKey: (cursor) => `${cursor.createdAt}:${cursor.sequence ?? ""}:${cursor.activityId}`,
+      budget,
+    });
+    const checkpoints = yield* loadThreadSyncV2HistoryPages({
+      items: snapshot.thread.checkpoints,
+      hasMoreBefore: snapshot.windows.checkpoints.hasMoreBefore,
+      initialCursor: (checkpoint) =>
+        checkpoint === undefined ? null : { checkpointTurnCount: checkpoint.checkpointTurnCount },
+      loadPage: (before) =>
+        historyPager.getCheckpointPage({
+          threadId: snapshot.thread.id,
+          limit: ORCHESTRATION_THREAD_SYNC_V2_MAX_CHECKPOINT_ITEMS,
+          ...(before === null ? {} : { before }),
+        }),
+      itemKey: (checkpoint) => checkpoint.checkpointRef,
+      cursorKey: (cursor) => cursor.checkpointTurnCount,
+      budget,
+    });
+    const thread = {
+      ...snapshot.thread,
+      messages: messages.items,
+      proposedPlans: proposedPlans.items,
+      activities: activities.items,
+      checkpoints: checkpoints.items,
+    };
+
+    return {
+      ...snapshot,
+      thread,
+      windows: {
+        messages: {
+          ...snapshot.windows.messages,
+          returned: thread.messages.length,
+          hasMoreBefore: false,
+        },
+        proposedPlans: {
+          ...snapshot.windows.proposedPlans,
+          returned: thread.proposedPlans.length,
+          hasMoreBefore: false,
+        },
+        activities: {
+          ...snapshot.windows.activities,
+          returned: thread.activities.length,
+          hasMoreBefore: false,
+        },
+        checkpoints: {
+          ...snapshot.windows.checkpoints,
+          returned: thread.checkpoints.length,
+          hasMoreBefore: false,
+        },
+      },
+      deferredActivityPayloads: collectDeferredThreadActivityIds(thread.activities).length,
+      estimatedSerializedBytes:
+        snapshot.estimatedSerializedBytes +
+        messages.estimatedSerializedBytes +
+        proposedPlans.estimatedSerializedBytes +
+        activities.estimatedSerializedBytes +
+        checkpoints.estimatedSerializedBytes,
+    };
+  },
+);
+
+const hydrateDeferredThreadContents = Effect.fn(
+  "EnvironmentThreadState.hydrateDeferredThreadContents",
+)(function* (
+  thread: OrchestrationThreadDetailV2Snapshot["thread"],
+  hydrateThreadContent: EnvironmentThreadContentHydrator,
+) {
+  const messages: OrchestrationThread["messages"][number][] = [];
+  for (const message of thread.messages) {
+    const text = isDeferredThreadContent(message.text)
+      ? yield* hydrateDeferredThreadContent(
+          thread.id,
+          { kind: "message-text", messageId: message.id },
+          message.text,
+          message.updatedAt,
+          hydrateThreadContent,
+        )
+      : message.text;
+    messages.push({ ...message, text });
+  }
+
+  const proposedPlans: OrchestrationThread["proposedPlans"][number][] = [];
+  for (const proposedPlan of thread.proposedPlans) {
+    const planMarkdown = isDeferredThreadContent(proposedPlan.planMarkdown)
+      ? yield* hydrateDeferredThreadContent(
+          thread.id,
+          { kind: "proposed-plan-markdown", planId: proposedPlan.id },
+          proposedPlan.planMarkdown,
+          proposedPlan.updatedAt,
+          hydrateThreadContent,
+        )
+      : proposedPlan.planMarkdown;
+    proposedPlans.push({ ...proposedPlan, planMarkdown });
+  }
+
+  return {
+    ...thread,
+    messages,
+    proposedPlans,
+  } satisfies OrchestrationThread;
+});
+
+const hydrateDeferredThreadActivityPayloads = Effect.fn(
+  "EnvironmentThreadState.hydrateDeferredThreadActivityPayloads",
+)(function* (
+  environmentId: EnvironmentIdType,
+  threadId: ThreadIdType,
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  hydrateActivityPayloads: EnvironmentThreadPayloadHydrator,
+) {
+  const activityIds = collectDeferredThreadActivityIds(activities);
+  const requestCount = Math.ceil(activityIds.length / THREAD_SYNC_V2_HYDRATE_CHUNK_SIZE);
+  if (requestCount > 0) {
+    yield* Effect.sync(() =>
+      recordThreadSyncHydration({
+        environmentId,
+        threadId,
+        version: "v2",
+        requestCount,
+      }),
+    );
+  }
+
+  const payloadByActivityId = new Map<EventId, unknown>();
+  for (let index = 0; index < activityIds.length; index += THREAD_SYNC_V2_HYDRATE_CHUNK_SIZE) {
+    const activityIdChunk = activityIds.slice(index, index + THREAD_SYNC_V2_HYDRATE_CHUNK_SIZE);
+    const result = yield* hydrateActivityPayloads({
+      threadId,
+      activityIds: activityIdChunk,
+    });
+    const requestedActivityIds = new Set(activityIdChunk);
+    const returnedActivityIds = new Set<EventId>();
+    for (const activityId of [
+      ...result.payloads.map((payload) => payload.activityId),
+      ...result.omitted.map((omitted) => omitted.activityId),
+    ]) {
+      if (!requestedActivityIds.has(activityId)) {
+        return yield* Effect.fail(
+          new ThreadSyncV2PagingError(
+            "Thread sync v2 hydration returned an unrequested activity payload.",
+          ),
+        );
+      }
+      if (returnedActivityIds.has(activityId)) {
+        return yield* Effect.fail(
+          new ThreadSyncV2PagingError(
+            "Thread sync v2 hydration returned a duplicate activity payload.",
+          ),
+        );
+      }
+      returnedActivityIds.add(activityId);
+    }
+    if (returnedActivityIds.size !== requestedActivityIds.size) {
+      return yield* Effect.fail(
+        new ThreadSyncV2PagingError(
+          "Thread sync v2 hydration omitted a requested activity payload result.",
+        ),
+      );
+    }
+    for (const payload of result.payloads) {
+      payloadByActivityId.set(payload.activityId, payload.payload);
+    }
+    for (const omitted of result.omitted) {
+      payloadByActivityId.set(omitted.activityId, null);
+    }
+    if (result.omitted.length > 0) {
+      yield* Effect.logWarning("Thread sync v2 omitted deferred activity payloads.").pipe(
+        Effect.annotateLogs({
+          environmentId,
+          threadId,
+          omittedCount: result.omitted.length,
+          omittedReasons: [...new Set(result.omitted.map((omitted) => omitted.reason))].join(","),
+        }),
+      );
+    }
+  }
+  return payloadByActivityId;
+});
+
+function applyHydratedThreadActivityPayloads(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+  payloadByActivityId: ReadonlyMap<EventId, unknown>,
+): ReadonlyArray<OrchestrationThreadActivity> {
+  if (payloadByActivityId.size === 0) {
+    return activities;
+  }
+  return activities.map((activity) =>
+    payloadByActivityId.has(activity.id)
+      ? { ...activity, payload: payloadByActivityId.get(activity.id) }
+      : activity,
+  );
+}
+
+const hydrateThreadSyncV2Snapshot = Effect.fn("EnvironmentThreadState.hydrateThreadSyncV2Snapshot")(
+  function* (
+    environmentId: EnvironmentIdType,
+    snapshot: OrchestrationThreadDetailV2Snapshot,
+    hydrateActivityPayloads: EnvironmentThreadPayloadHydrator,
+    hydrateThreadContent: EnvironmentThreadContentHydrator,
+    historyPager: EnvironmentThreadHistoryPager,
+  ) {
+    const completeSnapshot = yield* hydrateThreadSyncV2History(snapshot, historyPager);
+    const completeThread = yield* hydrateDeferredThreadContents(
+      completeSnapshot.thread,
+      hydrateThreadContent,
+    );
+    const payloadByActivityId = yield* hydrateDeferredThreadActivityPayloads(
+      environmentId,
+      completeThread.id,
+      completeThread.activities,
+      hydrateActivityPayloads,
+    );
+    if (payloadByActivityId.size === 0) {
+      return { ...completeSnapshot, thread: completeThread };
+    }
+    return {
+      ...completeSnapshot,
+      thread: {
+        ...completeThread,
+        activities: applyHydratedThreadActivityPayloads(
+          completeThread.activities,
+          payloadByActivityId,
+        ),
+      },
+    };
+  },
+);
+
+const hydrateThreadSyncV2Event = Effect.fn("EnvironmentThreadState.hydrateThreadSyncV2Event")(
+  function* (
+    environmentId: EnvironmentIdType,
+    threadId: ThreadIdType,
+    event: OrchestrationThreadSyncV2Event,
+    hydrateActivityPayloads: EnvironmentThreadPayloadHydrator,
+    hydrateThreadContent: EnvironmentThreadContentHydrator,
+  ) {
+    let hydratedEvent: OrchestrationEvent;
+    if (event.type === "thread.message-sent" && isDeferredThreadContent(event.payload.text)) {
+      const content: OrchestrationThreadContentReference =
+        event.payload.text.kind === "message-text-delta"
+          ? {
+              kind: "message-text-delta",
+              eventId: event.payload.text.eventId,
+              messageId: event.payload.messageId,
+            }
+          : { kind: "message-text", messageId: event.payload.messageId };
+      hydratedEvent = {
+        ...event,
+        payload: {
+          ...event.payload,
+          text: yield* hydrateDeferredThreadContent(
+            threadId,
+            content,
+            event.payload.text,
+            event.payload.updatedAt,
+            hydrateThreadContent,
+          ),
+        },
+      };
+    } else if (
+      event.type === "thread.proposed-plan-upserted" &&
+      isDeferredThreadContent(event.payload.proposedPlan.planMarkdown)
+    ) {
+      hydratedEvent = {
+        ...event,
+        payload: {
+          ...event.payload,
+          proposedPlan: {
+            ...event.payload.proposedPlan,
+            planMarkdown: yield* hydrateDeferredThreadContent(
+              threadId,
+              { kind: "proposed-plan-markdown", planId: event.payload.proposedPlan.id },
+              event.payload.proposedPlan.planMarkdown,
+              event.payload.proposedPlan.updatedAt,
+              hydrateThreadContent,
+            ),
+          },
+        },
+      };
+    } else {
+      hydratedEvent = event as OrchestrationEvent;
+    }
+
+    if (hydratedEvent.type !== "thread.activity-appended") {
+      return hydratedEvent;
+    }
+    const payloadByActivityId = yield* hydrateDeferredThreadActivityPayloads(
+      environmentId,
+      threadId,
+      [hydratedEvent.payload.activity],
+      hydrateActivityPayloads,
+    );
+    if (!payloadByActivityId.has(hydratedEvent.payload.activity.id)) {
+      return hydratedEvent;
+    }
+    return {
+      ...hydratedEvent,
+      payload: {
+        ...hydratedEvent.payload,
+        activity: {
+          ...hydratedEvent.payload.activity,
+          payload: payloadByActivityId.get(hydratedEvent.payload.activity.id),
+        },
+      },
+    };
+  },
+);
+
+function mergeWindowedHistory<T>(
+  cached: ReadonlyArray<T>,
+  snapshot: ReadonlyArray<T>,
+  window: OrchestrationThreadSyncV2Window,
+  keyOf: (item: T) => string | number,
+): ReadonlyArray<T> {
+  if (!window.hasMoreBefore && !window.hasMoreAfter) {
+    return snapshot;
+  }
+
+  const snapshotKeys = new Set(snapshot.map(keyOf));
+  const retained = cached.filter((item) => !snapshotKeys.has(keyOf(item)));
+  if (window.hasMoreBefore && !window.hasMoreAfter) {
+    return [...retained, ...snapshot];
+  }
+  if (!window.hasMoreBefore && window.hasMoreAfter) {
+    return [...snapshot, ...retained];
+  }
+
+  const snapshotByKey = new Map(snapshot.map((item) => [keyOf(item), item] as const));
+  const cachedKeys = new Set(cached.map(keyOf));
+  return [
+    ...cached.map((item) => snapshotByKey.get(keyOf(item)) ?? item),
+    ...snapshot.filter((item) => !cachedKeys.has(keyOf(item))),
+  ];
+}
+
+function preserveCachedThreadHistory(
+  cached: OrchestrationThread,
+  snapshot: Pick<OrchestrationThreadDetailV2Snapshot, "windows"> & {
+    readonly thread: OrchestrationThread;
+  },
+): OrchestrationThread {
+  return {
+    ...snapshot.thread,
+    messages: mergeWindowedHistory(
+      cached.messages,
+      snapshot.thread.messages,
+      snapshot.windows.messages,
+      (message) => message.id,
+    ),
+    proposedPlans: mergeWindowedHistory(
+      cached.proposedPlans,
+      snapshot.thread.proposedPlans,
+      snapshot.windows.proposedPlans,
+      (plan) => plan.id,
+    ),
+    activities: mergeWindowedHistory(
+      cached.activities,
+      snapshot.thread.activities,
+      snapshot.windows.activities,
+      (activity) => activity.id,
+    ),
+    checkpoints: mergeWindowedHistory(
+      cached.checkpoints,
+      snapshot.thread.checkpoints,
+      snapshot.windows.checkpoints,
+      (checkpoint) => checkpoint.checkpointRef,
+    ),
+  };
 }
 
 export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make")(function* (
@@ -65,12 +768,17 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     data: cachedThread,
     status: statusWithoutLiveData(cachedThread),
     error: Option.none(),
+    syncStatus: WAITING_ENVIRONMENT_THREAD_SYNC_STATUS,
   });
-  // Seed the resume cursor from the cached snapshot so a warm cache can catch up
-  // via `afterSequence` instead of re-downloading the full thread body.
   const lastSequence = yield* SubscriptionRef.make(
     Option.match(cached, { onNone: () => 0, onSome: (snapshot) => snapshot.snapshotSequence }),
   );
+  const lastSyncError = yield* Ref.make<Option.Option<string>>(Option.none());
+  // Keep a terminal stream error visible through resubscription. Only an item
+  // from a later subscription proves recovery and may clear the error.
+  const subscriptionGeneration = yield* Ref.make(0);
+  const errorSubscriptionGeneration = yield* Ref.make<Option.Option<number>>(Option.none());
+  const useThreadSyncV2 = yield* Ref.make(true);
   const persistence = yield* Queue.sliding<OrchestrationThreadDetailSnapshot>(1);
 
   const persist = Effect.fn("EnvironmentThreadState.persist")(function* (
@@ -98,7 +806,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const setSynchronizing = SubscriptionRef.update(state, (current) => ({
     ...current,
     status: "synchronizing" as const,
-    error: Option.none(),
+    error: current.error,
+    syncStatus:
+      current.syncStatus?.phase === "live"
+        ? current.syncStatus
+        : WAITING_ENVIRONMENT_THREAD_SYNC_STATUS,
   }));
   const setReady = SubscriptionRef.update(state, (current) =>
     current.status === "live" || current.status === "deleted"
@@ -106,39 +818,135 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       : {
           ...current,
           status: "synchronizing" as const,
-          error: Option.none(),
+          error: current.error,
         },
   );
   const setDisconnected = SubscriptionRef.update(state, (current) => ({
     ...current,
     status: current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
+    syncStatus:
+      current.status === "deleted"
+        ? (current.syncStatus ?? WAITING_ENVIRONMENT_THREAD_SYNC_STATUS)
+        : WAITING_ENVIRONMENT_THREAD_SYNC_STATUS,
   }));
-  const setStreamError = (cause: Cause.Cause<unknown>) =>
-    SubscriptionRef.update(state, (current) => ({
+  const setStreamError = Effect.fn("EnvironmentThreadState.setStreamError")(function* (
+    cause: Cause.Cause<unknown>,
+  ) {
+    const message = formatThreadError(cause);
+    const current = yield* SubscriptionRef.get(state);
+    yield* Effect.sync(() =>
+      recordThreadSyncError({
+        environmentId,
+        threadId,
+        version: current.syncStatus?.version ?? null,
+        error: new Error(message),
+      }),
+    );
+    yield* Ref.set(lastSyncError, Option.some(message));
+    yield* Ref.get(subscriptionGeneration).pipe(
+      Effect.flatMap((generation) => Ref.set(errorSubscriptionGeneration, Option.some(generation))),
+    );
+    yield* SubscriptionRef.set(state, {
       ...current,
       status: current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
-      error: Option.some(formatThreadError(cause)),
-    }));
+      error: Option.some(message),
+      syncStatus: {
+        ...(current.syncStatus ?? WAITING_ENVIRONMENT_THREAD_SYNC_STATUS),
+        phase: "error",
+        error: message,
+      },
+    });
+  });
+
+  const setSubscribing = Effect.fn("EnvironmentThreadState.setSubscribing")(function* (
+    version: EnvironmentThreadSyncVersion,
+  ) {
+    yield* Ref.update(subscriptionGeneration, (generation) => generation + 1);
+    const currentState = yield* SubscriptionRef.get(state);
+    const syncError = Option.orElse(yield* Ref.get(lastSyncError), () => currentState.error);
+    yield* Effect.sync(() => recordThreadSyncSubscription({ environmentId, threadId, version }));
+    yield* SubscriptionRef.update(state, (current): EnvironmentThreadState => {
+      const syncStatus: EnvironmentThreadSyncStatus = Option.match(syncError, {
+        onNone: () => ({
+          phase: "subscribing" as const,
+          version,
+          deferredPayloadCount: 0,
+          estimatedBytes: null,
+          error: null,
+        }),
+        onSome: (error) => ({
+          ...(current.syncStatus ?? WAITING_ENVIRONMENT_THREAD_SYNC_STATUS),
+          phase: "error" as const,
+          version,
+          error,
+        }),
+      });
+      return {
+        ...current,
+        status: current.status === "deleted" ? current.status : "synchronizing",
+        error: syncError,
+        syncStatus,
+      };
+    });
+  });
+
+  const setHydrating = Effect.fn("EnvironmentThreadState.setHydrating")(function* (
+    deferredPayloadCount: number,
+    estimatedBytes: number | null,
+  ) {
+    yield* SubscriptionRef.update(
+      state,
+      (current): EnvironmentThreadState => ({
+        ...current,
+        syncStatus: {
+          phase: "hydrating",
+          version: "v2",
+          deferredPayloadCount,
+          estimatedBytes,
+          error: null,
+        },
+      }),
+    );
+  });
 
   const setThread = Effect.fn("EnvironmentThreadState.setThread")(function* (
     thread: OrchestrationThread,
+    syncStatus: EnvironmentThreadSyncStatus,
+    sourceGeneration: number | null,
   ) {
+    const errorGeneration = yield* Ref.get(errorSubscriptionGeneration);
+    if (
+      sourceGeneration !== null &&
+      Option.isSome(errorGeneration) &&
+      sourceGeneration > errorGeneration.value
+    ) {
+      yield* Ref.set(lastSyncError, Option.none());
+      yield* Ref.set(errorSubscriptionGeneration, Option.none());
+    }
     yield* SubscriptionRef.set(state, {
       data: Option.some(thread),
       status: "live",
       error: Option.none(),
+      syncStatus,
     });
-    // Persist the thread together with the sequence it reflects so the next warm
-    // cache can resume from exactly here.
     const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
     yield* Queue.offer(persistence, { snapshotSequence, thread });
   });
 
   const setDeleted = Effect.fn("EnvironmentThreadState.setDeleted")(function* () {
+    yield* Ref.set(lastSyncError, Option.none());
+    yield* Ref.set(errorSubscriptionGeneration, Option.none());
     yield* SubscriptionRef.set(state, {
       data: Option.none(),
       status: "deleted",
       error: Option.none(),
+      syncStatus: {
+        phase: "live",
+        version: null,
+        deferredPayloadCount: 0,
+        estimatedBytes: null,
+        error: null,
+      },
     });
     yield* cache.removeThread(environmentId, threadId).pipe(
       Effect.catch((error) =>
@@ -154,11 +962,70 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   });
 
   const applyItem = Effect.fn("EnvironmentThreadState.applyItem")(function* (
-    item: OrchestrationThreadStreamItem,
+    subscriptionItem: EnvironmentThreadSubscriptionItem,
+    isBootstrap = false,
   ) {
+    const sourceGeneration = isBootstrap ? null : yield* Ref.get(subscriptionGeneration);
+    const { item, version } = subscriptionItem;
     if (item.kind === "snapshot") {
+      if (version === "v2") {
+        yield* Effect.sync(() =>
+          recordThreadSyncSnapshot({
+            environmentId,
+            threadId,
+            version,
+            estimatedSerializedBytes: item.snapshot.estimatedSerializedBytes,
+            deferredActivityPayloads: item.snapshot.deferredActivityPayloads,
+            windows: item.snapshot.windows,
+          }),
+        );
+        if (
+          item.snapshot.deferredActivityPayloads + item.snapshot.deferredThreadContents > 0 ||
+          Object.values(item.snapshot.windows).some((window) => window.hasMoreBefore)
+        ) {
+          yield* setHydrating(
+            item.snapshot.deferredActivityPayloads + item.snapshot.deferredThreadContents,
+            item.snapshot.estimatedSerializedBytes,
+          );
+        }
+        const hydrated = yield* hydrateThreadSyncV2Snapshot(
+          environmentId,
+          item.snapshot,
+          subscriptionItem.hydrateActivityPayloads,
+          subscriptionItem.hydrateThreadContent,
+          subscriptionItem.historyPager,
+        );
+        const current = yield* SubscriptionRef.get(state);
+        const thread = Option.match(current.data, {
+          onNone: () => hydrated.thread,
+          onSome: (cachedThread) => preserveCachedThreadHistory(cachedThread, hydrated),
+        });
+        yield* SubscriptionRef.set(lastSequence, hydrated.snapshotSequence);
+        const syncStatus: EnvironmentThreadSyncStatus = {
+          phase: "live",
+          version,
+          deferredPayloadCount: hydrated.deferredActivityPayloads + hydrated.deferredThreadContents,
+          estimatedBytes: hydrated.estimatedSerializedBytes,
+          error: null,
+        };
+        yield* setThread(thread, syncStatus, sourceGeneration);
+        yield* Effect.sync(() => recordThreadSyncLive({ environmentId, threadId, version }));
+        return;
+      }
+
+      yield* Effect.sync(() => recordThreadSyncSnapshot({ environmentId, threadId, version }));
       yield* SubscriptionRef.set(lastSequence, item.snapshot.snapshotSequence);
-      yield* setThread(item.snapshot.thread);
+      yield* setThread(
+        item.snapshot.thread,
+        {
+          phase: "live",
+          version,
+          deferredPayloadCount: 0,
+          estimatedBytes: null,
+          error: null,
+        },
+        sourceGeneration,
+      );
       return;
     }
 
@@ -166,18 +1033,58 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     if (item.event.sequence <= sequence) {
       return;
     }
-    yield* SubscriptionRef.set(lastSequence, item.event.sequence);
+
+    let event: OrchestrationEvent = item.event as OrchestrationEvent;
+    let deferredPayloadCount = 0;
+    let estimatedBytes: number | null = null;
+    if (version === "v2") {
+      deferredPayloadCount = item.deferredActivityPayloads + item.deferredThreadContents;
+      estimatedBytes = item.estimatedSerializedBytes;
+      yield* Effect.sync(() =>
+        recordThreadSyncEvent({
+          environmentId,
+          threadId,
+          version,
+          deferredActivityPayloads: item.deferredActivityPayloads,
+          estimatedSerializedBytes: estimatedBytes,
+        }),
+      );
+      if (deferredPayloadCount > 0) {
+        yield* setHydrating(deferredPayloadCount, estimatedBytes);
+        event = yield* hydrateThreadSyncV2Event(
+          environmentId,
+          threadId,
+          event,
+          subscriptionItem.hydrateActivityPayloads,
+          subscriptionItem.hydrateThreadContent,
+        );
+      }
+    } else {
+      yield* Effect.sync(() => recordThreadSyncEvent({ environmentId, threadId, version }));
+    }
+    yield* SubscriptionRef.set(lastSequence, event.sequence);
 
     const current = yield* SubscriptionRef.get(state);
     if (Option.isNone(current.data)) {
-      if (item.event.type === "thread.deleted") {
+      if (event.type === "thread.deleted") {
         yield* setDeleted();
       }
       return;
     }
-    const result = applyThreadDetailEvent(current.data.value, item.event);
+    const result = applyThreadDetailEvent(current.data.value, event);
     if (result.kind === "updated") {
-      yield* setThread(result.thread);
+      yield* setThread(
+        result.thread,
+        {
+          phase: "live",
+          version,
+          deferredPayloadCount,
+          estimatedBytes,
+          error: null,
+        },
+        sourceGeneration,
+      );
+      yield* Effect.sync(() => recordThreadSyncLive({ environmentId, threadId, version }));
     } else if (result.kind === "deleted") {
       yield* setDeleted();
     }
@@ -197,59 +1104,85 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     Effect.forkScoped,
   );
 
+  yield* Effect.sync(() => recordThreadSyncWaiting({ environmentId, threadId }));
   yield* setSynchronizing;
-  yield* Effect.forkScoped(
-    Effect.gen(function* () {
-      // Establish the base snapshot to resume from, minimizing bytes over the
-      // wire:
-      // - Warm cache: reuse the cached snapshot (zero network) and resume via
-      //   `afterSequence` so we only receive events since the cached sequence.
-      // - Cold cache: load the full snapshot over HTTP (gzip-compressible, and
-      //   off the socket), then resume via `afterSequence`.
-      // If no base can be established we fall back to the socket-embedded
-      // snapshot so the thread still synchronizes. Overlapping/replayed events
-      // are deduped by sequence in applyItem.
-      const base = Option.isSome(cached)
-        ? cached
-        : yield* Effect.gen(function* () {
-            // Cold cache only: wait for a prepared connection so we can
-            // authenticate the HTTP request; this mirrors the socket path, which
-            // likewise waits for a live session.
-            const prepared = yield* SubscriptionRef.changes(supervisor.prepared).pipe(
-              Stream.filter(Option.isSome),
-              Stream.map((current) => current.value),
-              Stream.runHead,
-            );
-            return Option.isSome(prepared)
-              ? yield* snapshotLoader.load(prepared.value, threadId)
-              : Option.none<OrchestrationThreadDetailSnapshot>();
-          });
+  const runSubscription = Effect.fn("EnvironmentThreadState.runSubscription")(function* (
+    subscribeInput: OrchestrationSubscribeThreadInput,
+  ): Effect.fn.Return<void, never, EnvironmentSupervisor> {
+    const exit = yield* subscribeThread(subscribeInput, {
+      onSubscribe: setSubscribing,
+      onExpectedFailure: setStreamError,
+      retryExpectedFailureAfter: "250 millis",
+      useV2: Ref.get(useThreadSyncV2),
+    }).pipe(Stream.runForEach(applyItem), Effect.exit);
+    if (Exit.isSuccess(exit)) {
+      return;
+    }
 
-      if (Option.isSome(base)) {
-        yield* applyItem({ kind: "snapshot", snapshot: base.value });
-      }
+    const hasOnlyExpectedFailures =
+      exit.cause.reasons.length > 0 && exit.cause.reasons.every((reason) => reason._tag === "Fail");
+    const requestsV1Fallback =
+      hasOnlyExpectedFailures &&
+      exit.cause.reasons.every(
+        (reason) => reason._tag === "Fail" && reason.error instanceof ThreadSyncV2FallbackError,
+      );
+    if (requestsV1Fallback) {
+      yield* Ref.set(useThreadSyncV2, false);
+      return yield* runSubscription(subscribeInput);
+    }
+    if (!hasOnlyExpectedFailures) {
+      return yield* Effect.die(Cause.squash(exit.cause));
+    }
 
-      const subscribeInput = Option.match(base, {
-        onNone: () => ({ threadId }),
-        onSome: (snapshot) => ({ threadId, afterSequence: snapshot.snapshotSequence }),
-      });
+    yield* setStreamError(exit.cause);
+    yield* Effect.sleep("250 millis");
+    return yield* runSubscription(subscribeInput);
+  });
+  yield* Effect.gen(function* () {
+    // Reuse an atomic cached snapshot when present. A cold thread loads the same
+    // atomic shape over HTTP before opening the capability-selected stream.
+    const base = Option.isSome(cached)
+      ? cached
+      : yield* Effect.gen(function* () {
+          const prepared = yield* SubscriptionRef.changes(supervisor.prepared).pipe(
+            Stream.filter(Option.isSome),
+            Stream.map((current) => current.value),
+            Stream.runHead,
+          );
+          return Option.isSome(prepared)
+            ? yield* snapshotLoader.load(prepared.value, threadId)
+            : Option.none<OrchestrationThreadDetailSnapshot>();
+        });
 
-      yield* subscribe(ORCHESTRATION_WS_METHODS.subscribeThread, subscribeInput, {
-        onExpectedFailure: setStreamError,
-        retryExpectedFailureAfter: "250 millis",
-      }).pipe(Stream.runForEach(applyItem));
-    }),
-  );
+    if (Option.isSome(base)) {
+      yield* applyItem(
+        {
+          version: "v1",
+          item: { kind: "snapshot", snapshot: base.value },
+        },
+        true,
+      );
+    }
+
+    const subscribeInput = Option.match(base, {
+      onNone: () => ({ threadId }),
+      onSome: (snapshot) => ({ threadId, afterSequence: snapshot.snapshotSequence }),
+    });
+    yield* runSubscription(subscribeInput);
+  }).pipe(Effect.forkScoped);
 
   yield* Effect.addFinalizer(() =>
-    Effect.all([SubscriptionRef.get(state), SubscriptionRef.get(lastSequence)]).pipe(
-      Effect.flatMap(([current, snapshotSequence]) =>
-        Option.match(current.data, {
-          onNone: () => Effect.void,
-          onSome: (thread) => persist({ snapshotSequence, thread }),
-        }),
-      ),
-    ),
+    Effect.gen(function* () {
+      recordThreadSyncDisposed({ environmentId, threadId });
+      const [current, snapshotSequence] = yield* Effect.all([
+        SubscriptionRef.get(state),
+        SubscriptionRef.get(lastSequence),
+      ]);
+      yield* Option.match(current.data, {
+        onNone: () => Effect.void,
+        onSome: (thread) => persist({ snapshotSequence, thread }),
+      });
+    }),
   );
 
   return state;
@@ -295,3 +1228,4 @@ export * from "./threadDetail.ts";
 export * from "./threadReducer.ts";
 export * from "./threadShell.ts";
 export * from "./threadState.ts";
+export * from "./threadSyncDiagnostics.ts";

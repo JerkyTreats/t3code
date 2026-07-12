@@ -16,7 +16,7 @@ import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
-import ChatMarkdown from "~/components/ChatMarkdown";
+import { DocumentMarkdownRenderer } from "~/components/DocumentMarkdownRenderer";
 import { OpenInPicker } from "~/components/chat/OpenInPicker";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
@@ -557,6 +557,7 @@ function RenderedMarkdownSurface({
   relativePath,
   contents,
   threadRef,
+  onOpenSource,
   onPendingChange,
 }: Omit<
   EditableFileSurfaceProps,
@@ -568,6 +569,7 @@ function RenderedMarkdownSurface({
   | "onPostRender"
 > & {
   threadRef: ScopedThreadRef;
+  onOpenSource: () => void;
 }) {
   const saveCoordinator = useFileSaveCoordinator({
     environmentId,
@@ -577,23 +579,21 @@ function RenderedMarkdownSurface({
   });
 
   return (
-    <ScrollArea className="min-h-0 flex-1">
-      <ChatMarkdown
-        text={contents}
-        cwd={cwd}
-        threadRef={threadRef}
-        className="mx-auto max-w-4xl px-6 py-5"
-        onTaskListChange={({ markerOffset, checked }) => {
-          const currentContents =
-            getOptimisticProjectFileQueryData(environmentId, cwd, relativePath)?.contents ??
-            contents;
-          const nextContents = setMarkdownTaskChecked(currentContents, markerOffset, checked);
-          if (nextContents === currentContents) return;
-          setProjectFileQueryData(environmentId, cwd, relativePath, nextContents);
-          saveCoordinator.change(nextContents);
-        }}
-      />
-    </ScrollArea>
+    <DocumentMarkdownRenderer
+      filePath={relativePath}
+      markdown={contents}
+      workspaceCwd={cwd}
+      threadRef={threadRef}
+      onOpenFileInEditor={onOpenSource}
+      onTaskListChange={({ markerOffset, checked }) => {
+        const currentContents =
+          getOptimisticProjectFileQueryData(environmentId, cwd, relativePath)?.contents ?? contents;
+        const nextContents = setMarkdownTaskChecked(currentContents, markerOffset, checked);
+        if (nextContents === currentContents) return;
+        setProjectFileQueryData(environmentId, cwd, relativePath, nextContents);
+        saveCoordinator.change(nextContents);
+      }}
+    />
   );
 }
 
@@ -632,16 +632,13 @@ export default function FilePreviewPanel({
   });
   const file = useProjectFileQuery(environmentId, cwd, relativePath);
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
-  const [markdownView, setMarkdownView] = useState<{
-    path: string | null;
-    revealRequestId: number | null;
-  }>({ path: null, revealRequestId: null });
+  const [compactExplorerOpen, setCompactExplorerOpen] = useState(false);
+  const [compactLayout, setCompactLayout] = useState(false);
+  const [markdownSourcePath, setMarkdownSourcePath] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const isMarkdown = relativePath ? isMarkdownPreviewFile(relativePath) : false;
-  const renderMarkdown =
-    isMarkdown &&
-    markdownView.path === relativePath &&
-    (revealLine === null || markdownView.revealRequestId === revealRequestId);
+  const renderMarkdown = isMarkdown && markdownSourcePath !== relativePath;
   const canOpenInBrowser =
     relativePath !== null && isPreviewSupportedInRuntime() && isBrowserPreviewFile(relativePath);
   const absolutePath = relativePath ? resolvePathLinkTarget(relativePath, cwd) : null;
@@ -658,7 +655,28 @@ export default function FilePreviewPanel({
     currentCrumb?.scrollIntoView({ block: "nearest", inline: "end" });
   }, [relativePath]);
 
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel || typeof ResizeObserver === "undefined") return;
+    const updateLayout = () => setCompactLayout(panel.clientWidth < 1180);
+    updateLayout();
+    const observer = new ResizeObserver(updateLayout);
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    setCompactExplorerOpen(false);
+  }, [relativePath]);
+
+  const showExplorer =
+    relativePath === null || (compactLayout ? compactExplorerOpen : explorerOpen);
+
   const toggleExplorer = () => {
+    if (compactLayout && relativePath !== null) {
+      setCompactExplorerOpen((current) => !current);
+      return;
+    }
     setExplorerOpen((current) => {
       const next = !current;
       try {
@@ -695,7 +713,11 @@ export default function FilePreviewPanel({
   }, [absolutePath, createAssetUrl, environmentHttpBaseUrl, openPreview, threadRef]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+    <div
+      ref={panelRef}
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background"
+      data-file-reader-layout={compactLayout ? "compact" : "wide"}
+    >
       {relativePath ? (
         <div className="surface-subheader gap-2 px-3" data-surface-subheader>
           <ScrollArea
@@ -748,10 +770,7 @@ export default function FilePreviewPanel({
                     className="shrink-0"
                     pressed={renderMarkdown}
                     onPressedChange={(pressed) => {
-                      setMarkdownView({
-                        path: pressed ? relativePath : null,
-                        revealRequestId: pressed ? revealRequestId : null,
-                      });
+                      setMarkdownSourcePath(pressed ? null : relativePath);
                     }}
                     aria-label={renderMarkdown ? "Show markdown source" : "Show rendered markdown"}
                     variant="ghost"
@@ -790,9 +809,9 @@ export default function FilePreviewPanel({
               render={
                 <Toggle
                   className="shrink-0"
-                  pressed={explorerOpen}
+                  pressed={showExplorer}
                   onPressedChange={toggleExplorer}
-                  aria-label={explorerOpen ? "Hide file explorer" : "Show file explorer"}
+                  aria-label={showExplorer ? "Hide file explorer" : "Show file explorer"}
                   variant="ghost"
                   size="sm"
                 >
@@ -801,7 +820,7 @@ export default function FilePreviewPanel({
               }
             />
             <TooltipPopup>
-              {explorerOpen ? "Hide file explorer" : "Show file explorer"}
+              {showExplorer ? "Hide file explorer" : "Show file explorer"}
             </TooltipPopup>
           </Tooltip>
         </div>
@@ -811,7 +830,7 @@ export default function FilePreviewPanel({
           Preview limited to the first 1 MB of a {file.data.byteLength.toLocaleString()} byte file.
         </div>
       ) : null}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <div
           className={cn(
             "min-w-0 flex-1 flex-col overflow-hidden",
@@ -834,6 +853,7 @@ export default function FilePreviewPanel({
                 relativePath={relativePath}
                 threadRef={threadRef}
                 contents={file.data.contents}
+                onOpenSource={() => setMarkdownSourcePath(relativePath)}
                 onPendingChange={onPendingChange}
               />
             ) : file.data.truncated ? (
@@ -879,12 +899,14 @@ export default function FilePreviewPanel({
             )
           ) : null}
         </div>
-        {explorerOpen || relativePath === null ? (
+        {showExplorer ? (
           <aside
             className={cn(
               "flex min-h-0 shrink-0 bg-background",
               relativePath
-                ? "w-[min(22rem,46%)] min-w-64 border-l border-border/60"
+                ? compactLayout
+                  ? "absolute inset-y-0 right-0 z-20 w-[min(22rem,88%)] border-l border-border/60 shadow-2xl"
+                  : "w-[min(22rem,46%)] min-w-64 border-l border-border/60"
                 : "min-w-0 flex-1",
             )}
           >

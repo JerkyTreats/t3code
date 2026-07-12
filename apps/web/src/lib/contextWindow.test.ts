@@ -63,9 +63,14 @@ describe("contextWindow", () => {
 
   it("formats compact token counts", () => {
     expect(formatContextWindowTokens(999)).toBe("999");
-    expect(formatContextWindowTokens(1400)).toBe("1.4k");
-    expect(formatContextWindowTokens(14_000)).toBe("14k");
-    expect(formatContextWindowTokens(258_000)).toBe("258k");
+    expect(formatContextWindowTokens(1400)).toBe("1.4K");
+    expect(formatContextWindowTokens(14_000)).toBe("14K");
+    expect(formatContextWindowTokens(258_000)).toBe("258K");
+    expect(formatContextWindowTokens(999_950)).toBe("1M");
+    expect(formatContextWindowTokens(2_309_437_122)).toBe("2.3B");
+    expect(formatContextWindowTokens(145_442_937_279)).toBe("145.4B");
+    expect(formatContextWindowTokens(1_000_000_000_000)).toBe("1T");
+    expect(formatContextWindowTokens(1_000_000_000_000_000)).toBe("1Q");
   });
 
   it("includes total processed tokens when available", () => {

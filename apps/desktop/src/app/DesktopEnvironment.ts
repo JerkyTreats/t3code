@@ -4,6 +4,11 @@ import type {
   DesktopRuntimeArch,
   DesktopRuntimeInfo,
 } from "@t3tools/contracts";
+import {
+  formatProductDisplayName,
+  PRODUCT_BASE_NAME,
+  PRODUCT_TECHNICAL_IDENTITY,
+} from "@t3tools/shared/productIdentity";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -76,8 +81,6 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "T3 Code";
-
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
   readonly appVersion: string;
@@ -95,9 +98,9 @@ function resolveDesktopAppBranding(input: {
 }): DesktopAppBranding {
   const stageLabel = resolveDesktopAppStageLabel(input);
   return {
-    baseName: APP_BASE_NAME,
+    baseName: PRODUCT_BASE_NAME,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
+    displayName: formatProductDisplayName(stageLabel),
   };
 }
 
@@ -156,7 +159,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
   });
   const displayName = branding.displayName;
   const stateDir = path.join(baseDir, isDevelopment ? "dev" : "userdata");
-  const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
+  const userDataDirName = isDevelopment
+    ? PRODUCT_TECHNICAL_IDENTITY.developmentUserDataDirName
+    : PRODUCT_TECHNICAL_IDENTITY.userDataDirName;
   const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
   const resourcesPath = input.resourcesPath;
 
@@ -197,10 +202,16 @@ const make = Effect.fn("desktop.environment.make")(function* (
     branding,
     displayName,
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
+      isDevelopment
+        ? PRODUCT_TECHNICAL_IDENTITY.developmentAppId
+        : PRODUCT_TECHNICAL_IDENTITY.appId,
     ),
-    linuxDesktopEntryName: isDevelopment ? "t3code-dev.desktop" : "t3code.desktop",
-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
+    linuxDesktopEntryName: isDevelopment
+      ? PRODUCT_TECHNICAL_IDENTITY.developmentLinuxDesktopEntryName
+      : PRODUCT_TECHNICAL_IDENTITY.linuxDesktopEntryName,
+    linuxWmClass: isDevelopment
+      ? PRODUCT_TECHNICAL_IDENTITY.developmentLinuxWmClass
+      : PRODUCT_TECHNICAL_IDENTITY.linuxWmClass,
     userDataDirName,
     legacyUserDataDirName,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),

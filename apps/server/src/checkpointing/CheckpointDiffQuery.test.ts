@@ -38,6 +38,27 @@ function makeThreadCheckpointContext(input: {
   };
 }
 
+const unusedThreadSyncV2ProjectionMethods = {
+  getThreadDetailSnapshotById: () => Effect.die("unused"),
+  getThreadDetailV2ById: () => Effect.die("unused"),
+  getThreadMessagePage: () => Effect.die("unused"),
+  getThreadProposedPlanPage: () => Effect.die("unused"),
+  getThreadContentChunk: () => Effect.die("unused"),
+  getThreadActivityPage: () => Effect.die("unused"),
+  getThreadCheckpointPage: () => Effect.die("unused"),
+  hydrateThreadActivityPayloads: () => Effect.die("unused"),
+} satisfies Pick<
+  ProjectionSnapshotQuery.ProjectionSnapshotQueryShape,
+  | "getThreadDetailSnapshotById"
+  | "getThreadDetailV2ById"
+  | "getThreadMessagePage"
+  | "getThreadProposedPlanPage"
+  | "getThreadContentChunk"
+  | "getThreadActivityPage"
+  | "getThreadCheckpointPage"
+  | "hydrateThreadActivityPayloads"
+>;
+
 describe("CheckpointDiffQuery.layer", () => {
   it.effect("uses the narrow full-thread context lookup for all-turns diffs", () =>
     Effect.gen(function* () {
@@ -108,6 +129,7 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            ...unusedThreadSyncV2ProjectionMethods,
           }),
         ),
       );
@@ -201,6 +223,7 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            ...unusedThreadSyncV2ProjectionMethods,
           }),
         ),
       );
@@ -284,6 +307,7 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            ...unusedThreadSyncV2ProjectionMethods,
           }),
         ),
       );
@@ -352,6 +376,7 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            ...unusedThreadSyncV2ProjectionMethods,
           }),
         ),
       );
@@ -405,6 +430,7 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            ...unusedThreadSyncV2ProjectionMethods,
           }),
         ),
       );

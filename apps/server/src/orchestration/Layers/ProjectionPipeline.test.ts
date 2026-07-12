@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
@@ -51,6 +52,7 @@ const exists = (filePath: string) =>
   });
 
 const BaseTestLayer = makeProjectionPipelinePrefixedTestLayer("t3-projection-pipeline-test-");
+const decodeUnknownJsonString = Schema.decodeUnknownSync(Schema.UnknownFromJsonString);
 
 it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
   it.effect("bootstraps all projection states and writes projection rows", () =>
@@ -2010,6 +2012,171 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         WHERE thread_id = 'thread-stale-user-input'
       `;
       assert.deepEqual(threadRows, [{ pendingUserInputCount: 0 }]);
+    }),
+  );
+
+  it.effect("updates projected shell plan progress from activity append events", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-plan-progress");
+      const projectId = ProjectId.make("project-plan-progress");
+      const turnId = TurnId.make("turn-plan-progress");
+      const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+        eventStore
+          .append(event)
+          .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+      yield* appendAndProject({
+        type: "project.created",
+        eventId: EventId.make("evt-plan-progress-1"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: "2026-02-26T13:00:00.000Z",
+        commandId: CommandId.make("cmd-plan-progress-1"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-plan-progress-1"),
+        metadata: {},
+        payload: {
+          projectId,
+          title: "Project Plan Progress",
+          workspaceRoot: "/tmp/project-plan-progress",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-02-26T13:00:00.000Z",
+          updatedAt: "2026-02-26T13:00:00.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.created",
+        eventId: EventId.make("evt-plan-progress-2"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T13:00:01.000Z",
+        commandId: CommandId.make("cmd-plan-progress-2"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-plan-progress-2"),
+        metadata: {},
+        payload: {
+          threadId,
+          projectId,
+          title: "Thread Plan Progress",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt: "2026-02-26T13:00:01.000Z",
+          updatedAt: "2026-02-26T13:00:01.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.session-set",
+        eventId: EventId.make("evt-plan-progress-3"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T13:00:02.000Z",
+        commandId: CommandId.make("cmd-plan-progress-3"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-plan-progress-3"),
+        metadata: {},
+        payload: {
+          threadId,
+          session: {
+            threadId,
+            status: "running",
+            providerName: "codex",
+            runtimeMode: "full-access",
+            activeTurnId: turnId,
+            lastError: null,
+            updatedAt: "2026-02-26T13:00:02.000Z",
+          },
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.activity-appended",
+        eventId: EventId.make("evt-plan-progress-4"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T13:00:03.000Z",
+        commandId: CommandId.make("cmd-plan-progress-4"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-plan-progress-4"),
+        metadata: {},
+        payload: {
+          threadId,
+          activity: {
+            id: EventId.make("activity-plan-progress"),
+            tone: "info",
+            kind: "turn.plan.updated",
+            summary: "Plan updated",
+            payload: {
+              plan: [
+                { step: "Inspect", status: "completed" },
+                { step: "Implement", status: "in_progress" },
+                { step: "Verify", status: "pending" },
+              ],
+            },
+            turnId,
+            createdAt: "2026-02-26T13:00:03.000Z",
+          },
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.activity-appended",
+        eventId: EventId.make("evt-plan-progress-5"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: "2026-02-26T13:00:04.000Z",
+        commandId: CommandId.make("cmd-plan-progress-5"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-plan-progress-5"),
+        metadata: {},
+        payload: {
+          threadId,
+          activity: {
+            id: EventId.make("activity-runtime-progress"),
+            tone: "tool",
+            kind: "tool.output",
+            summary: "Runtime output",
+            payload: { ok: true },
+            turnId,
+            createdAt: "2026-02-26T13:00:04.000Z",
+          },
+        },
+      });
+
+      const threadRows = yield* sql<{
+        readonly activePlanProgressJson: string | null;
+        readonly latestRuntimeActivityAt: string | null;
+        readonly statusSummaryUpdatedAt: string | null;
+      }>`
+        SELECT
+          active_plan_progress_json AS "activePlanProgressJson",
+          latest_runtime_activity_at AS "latestRuntimeActivityAt",
+          status_summary_updated_at AS "statusSummaryUpdatedAt"
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+      `;
+      assert.equal(threadRows.length, 1);
+      assert.deepEqual(decodeUnknownJsonString(threadRows[0]?.activePlanProgressJson ?? "null"), {
+        completedAllSteps: false,
+        currentStepNumber: 2,
+        totalSteps: 3,
+        turnId,
+        activityId: "activity-plan-progress",
+        updatedAt: "2026-02-26T13:00:03.000Z",
+      });
+      assert.equal(threadRows[0]?.latestRuntimeActivityAt, "2026-02-26T13:00:04.000Z");
+      assert.equal(threadRows[0]?.statusSummaryUpdatedAt, "2026-02-26T13:00:04.000Z");
     }),
   );
 

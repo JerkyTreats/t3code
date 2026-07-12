@@ -1,12 +1,16 @@
 import {
   ChevronDownIcon,
   ChevronsLeftRightEllipsisIcon,
+  PlugIcon,
   PlusIcon,
   QrCodeIcon,
   RefreshCwIcon,
   TerminalIcon,
+  Trash2Icon,
   TriangleAlertIcon,
+  UnplugIcon,
 } from "lucide-react";
+import { useAtomValue } from "@effect/atom-react";
 import { type ReactNode, memo, useCallback, useMemo, useState } from "react";
 import {
   AuthAccessReadScope,
@@ -34,6 +38,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { resolveConnectionControlAction } from "@t3tools/client-runtime/state/connections";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
@@ -82,6 +87,7 @@ import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { Group, GroupSeparator } from "../ui/group";
 import { AnimatedHeight } from "../AnimatedHeight";
+import { ConnectionFlightRecorder } from "./ConnectionFlightRecorder";
 import {
   Menu,
   MenuGroup,
@@ -124,6 +130,7 @@ import { desktopSshHostsStateAtom } from "~/state/desktopSshHosts";
 import { desktopWslStateAtom, refreshDesktopWslState } from "~/state/desktopWslState";
 import {
   type EnvironmentPresentation,
+  useEnvironmentConnectionState,
   useEnvironments,
   usePrimaryEnvironment,
 } from "~/state/environments";
@@ -1337,21 +1344,28 @@ function NetworkAccessDescription({
 
 type SavedBackendListRowProps = {
   environment: EnvironmentPresentation;
-  removingEnvironmentId: EnvironmentId | null;
+  disconnectingEnvironmentId: EnvironmentId | null;
+  forgettingEnvironmentId: EnvironmentId | null;
   onConnect: (environmentId: EnvironmentId) => void;
-  onRemove: (environmentId: EnvironmentId) => void;
+  onDisconnect: (environmentId: EnvironmentId) => void;
+  onForget: (environmentId: EnvironmentId) => void;
 };
 
 function SavedBackendListRow({
   environment,
-  removingEnvironmentId,
+  disconnectingEnvironmentId,
+  forgettingEnvironmentId,
   onConnect,
-  onRemove,
+  onDisconnect,
+  onForget,
 }: SavedBackendListRowProps) {
   const environmentId = environment.environmentId;
+  const supervisorState = useEnvironmentConnectionState(environmentId).data;
   const connectionState = environment.connection.phase;
-  const isConnected = connectionState === "connected";
-  const isConnecting = connectionState === "connecting" || connectionState === "reconnecting";
+  const isDisconnecting = disconnectingEnvironmentId === environmentId;
+  const isForgetting = forgettingEnvironmentId === environmentId;
+  const [forgetDialogOpen, setForgetDialogOpen] = useState(false);
+  const controlAction = resolveConnectionControlAction(supervisorState?.desired ?? false);
   const stateDotClassName =
     connectionState === "connected"
       ? "bg-success"
@@ -1461,22 +1475,72 @@ function SavedBackendListRow({
               </TooltipPopup>
             </Tooltip>
           ) : (
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={isConnecting || removingEnvironmentId === environmentId}
-              onClick={() =>
-                void (isConnected ? onRemove(environmentId) : onConnect(environmentId))
-              }
-            >
-              {isConnected
-                ? removingEnvironmentId === environmentId
-                  ? "Disconnecting…"
-                  : "Disconnect"
-                : isConnecting
-                  ? "Connecting…"
+            <>
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={isDisconnecting || isForgetting}
+                onClick={() =>
+                  void (controlAction === "disconnect"
+                    ? onDisconnect(environmentId)
+                    : onConnect(environmentId))
+                }
+              >
+                {controlAction === "disconnect" ? (
+                  <UnplugIcon aria-hidden className="size-3.5" />
+                ) : (
+                  <PlugIcon aria-hidden className="size-3.5" />
+                )}
+                {controlAction === "disconnect"
+                  ? isDisconnecting
+                    ? "Disconnecting…"
+                    : "Disconnect"
                   : "Connect"}
-            </Button>
+              </Button>
+              <Button
+                size="xs"
+                variant="destructive-outline"
+                disabled={isDisconnecting || isForgetting}
+                onClick={() => setForgetDialogOpen(true)}
+              >
+                <Trash2Icon aria-hidden className="size-3.5" />
+                {isForgetting ? "Forgetting…" : "Forget"}
+              </Button>
+              <AlertDialog
+                open={forgetDialogOpen}
+                onOpenChange={(open) => {
+                  if (!isForgetting) setForgetDialogOpen(open);
+                }}
+              >
+                <AlertDialogPopup>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Forget {environment.label}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This removes the saved registration, credentials, cached shell and thread
+                      data, and local drafts. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogClose
+                      disabled={isForgetting}
+                      render={<Button variant="outline" disabled={isForgetting} />}
+                    >
+                      Cancel
+                    </AlertDialogClose>
+                    <Button
+                      variant="destructive"
+                      disabled={isForgetting}
+                      onClick={() => {
+                        setForgetDialogOpen(false);
+                        onForget(environmentId);
+                      }}
+                    >
+                      {isForgetting ? "Forgetting…" : "Forget environment"}
+                    </Button>
+                  </AlertDialogFooter>
+                </AlertDialogPopup>
+              </AlertDialog>
+            </>
           )}
         </div>
       </div>
@@ -1691,13 +1755,17 @@ function CloudRemoteEnvironmentRows({
 export function ConnectionsSettings() {
   const desktopBridge = window.desktopBridge;
   const { environments } = useEnvironments();
+  const connectionDiagnostics = useAtomValue(environmentCatalog.diagnosticsValueAtom);
   const primaryEnvironment = usePrimaryEnvironment();
   const connectPairing = useAtomCommand(connectPairingAtom, { reportFailure: false });
   const connectSshEnvironment = useAtomCommand(connectSshEnvironmentAtom, {
     reportFailure: false,
   });
-  const removeEnvironment = useAtomCommand(environmentCatalog.remove, { reportFailure: false });
-  const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
+  const connectEnvironment = useAtomCommand(environmentCatalog.connect, { reportFailure: false });
+  const disconnectEnvironment = useAtomCommand(environmentCatalog.disconnect, {
+    reportFailure: false,
+  });
+  const forgetEnvironment = useAtomCommand(environmentCatalog.forget, { reportFailure: false });
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   const primarySessionState = usePrimarySessionState();
   const currentSessionScopes = desktopBridge
@@ -1777,7 +1845,9 @@ export function ConnectionsSettings() {
   const [savedBackendSshPort, setSavedBackendSshPort] = useState("");
   const [savedBackendError, setSavedBackendError] = useState<string | null>(null);
   const [isAddingSavedBackend, setIsAddingSavedBackend] = useState(false);
-  const [removingSavedEnvironmentId, setRemovingSavedEnvironmentId] =
+  const [disconnectingSavedEnvironmentId, setDisconnectingSavedEnvironmentId] =
+    useState<EnvironmentId | null>(null);
+  const [forgettingSavedEnvironmentId, setForgettingSavedEnvironmentId] =
     useState<EnvironmentId | null>(null);
   const [isUpdatingDesktopServerExposure, setIsUpdatingDesktopServerExposure] = useState(false);
   const [isDesktopServerExposureDialogOpen, setIsDesktopServerExposureDialogOpen] = useState(false);
@@ -2194,7 +2264,7 @@ export function ConnectionsSettings() {
   const handleConnectSavedBackend = useCallback(
     async (environmentId: EnvironmentId) => {
       setSavedBackendError(null);
-      const result = await retryEnvironment(environmentId);
+      const result = await connectEnvironment(environmentId);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         const message = error instanceof Error ? error.message : "Failed to connect backend.";
@@ -2208,29 +2278,59 @@ export function ConnectionsSettings() {
         );
       }
     },
-    [retryEnvironment],
+    [connectEnvironment],
   );
 
-  const handleRemoveSavedBackend = useCallback(
+  const handleDisconnectSavedBackend = useCallback(
     async (environmentId: EnvironmentId) => {
-      setRemovingSavedEnvironmentId(environmentId);
+      setDisconnectingSavedEnvironmentId(environmentId);
       setSavedBackendError(null);
-      const result = await removeEnvironment(environmentId);
-      setRemovingSavedEnvironmentId(null);
+      const result = await disconnectEnvironment(environmentId);
+      setDisconnectingSavedEnvironmentId(null);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        const message = error instanceof Error ? error.message : "Failed to remove backend.";
+        const message = error instanceof Error ? error.message : "Failed to disconnect backend.";
         setSavedBackendError(message);
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not remove backend",
+            title: "Could not disconnect backend",
             description: message,
           }),
         );
       }
     },
-    [removeEnvironment],
+    [disconnectEnvironment],
+  );
+
+  const handleForgetSavedBackend = useCallback(
+    async (environmentId: EnvironmentId) => {
+      setForgettingSavedEnvironmentId(environmentId);
+      setSavedBackendError(null);
+      const result = await forgetEnvironment(environmentId);
+      setForgettingSavedEnvironmentId(null);
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        const message = error instanceof Error ? error.message : "Failed to forget backend.";
+        setSavedBackendError(message);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not forget backend",
+            description: message,
+          }),
+        );
+        return;
+      }
+      if (result._tag === "Success") {
+        toastManager.add({
+          type: "success",
+          title: "Environment forgotten",
+          description: "Saved credentials and cached environment data were removed.",
+        });
+      }
+    },
+    [forgetEnvironment],
   );
 
   const handleConnectSshHost = useCallback(
@@ -2960,6 +3060,8 @@ export function ConnectionsSettings() {
 
   return (
     <SettingsPageContainer>
+      <ConnectionFlightRecorder entries={connectionDiagnostics} />
+
       {canManageLocalBackend ? (
         <>
           <SettingsSection title="This environment">
@@ -3356,9 +3458,11 @@ export function ConnectionsSettings() {
           <SavedBackendListRow
             key={environment.environmentId}
             environment={environment}
-            removingEnvironmentId={removingSavedEnvironmentId}
+            disconnectingEnvironmentId={disconnectingSavedEnvironmentId}
+            forgettingEnvironmentId={forgettingSavedEnvironmentId}
             onConnect={handleConnectSavedBackend}
-            onRemove={handleRemoveSavedBackend}
+            onDisconnect={handleDisconnectSavedBackend}
+            onForget={handleForgetSavedBackend}
           />
         ))}
         <CloudRemoteEnvironmentRows

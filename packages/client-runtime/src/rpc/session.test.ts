@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
 import * as Socket from "effect/unstable/socket/Socket";
 
@@ -109,6 +110,7 @@ const SERVER_CONFIG: ServerConfigType = {
     serverVersion: "0.0.0-test",
     capabilities: {
       repositoryIdentity: true,
+      threadSyncV2: false,
     },
   },
   auth: {
@@ -169,9 +171,10 @@ const awaitSocket = Effect.fn("TestRpcSessionFactory.awaitSocket")(function* (
 
 const awaitRequest = Effect.fn("TestRpcSessionFactory.awaitRequest")(function* (
   socket: TestWebSocket,
+  index = 0,
 ) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    const request = socket.sent[0];
+    const request = socket.sent[index];
     if (request) {
       return decodeRpcRequest(decodeJson(request));
     }
@@ -182,8 +185,9 @@ const awaitRequest = Effect.fn("TestRpcSessionFactory.awaitRequest")(function* (
 
 const completeInitialConfig = Effect.fn("TestRpcSessionFactory.completeInitialConfig")(function* (
   socket: TestWebSocket,
+  index = 0,
 ) {
-  const request = yield* awaitRequest(socket);
+  const request = yield* awaitRequest(socket, index);
   expect(request).toMatchObject({
     _tag: "Request",
     tag: WS_METHODS.serverGetConfig,
@@ -206,10 +210,23 @@ describe("RpcSessionFactory", () => {
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory();
       const session = yield* factory.connect(PREPARED);
+      if (session.diagnosticEvents === undefined) {
+        return yield* Effect.die(new Error("Expected RPC session diagnostics."));
+      }
+      const initialDiagnostics = yield* SubscriptionRef.get(session.diagnosticEvents);
+      const initialEvent = initialDiagnostics[0];
+      expect(initialEvent).toMatchObject({
+        type: "attempt",
+        socketUrl: "wss://environment.example.test/ws",
+      });
+      expect(initialEvent?.type === "attempt" ? initialEvent.socketUrl : null).not.toContain(
+        "wsTicket=test",
+      );
       const readyFiber = yield* Effect.forkChild(session.ready);
       const socket = yield* awaitSocket(sockets);
 
       expect(socket.url).toBe(PREPARED.socketUrl);
+      yield* TestClock.adjust("250 millis");
       socket.open();
       yield* completeInitialConfig(socket);
       yield* Fiber.join(readyFiber);
@@ -218,6 +235,7 @@ describe("RpcSessionFactory", () => {
       expect(config).toEqual(SERVER_CONFIG);
       expect(socket.sent).toHaveLength(1);
 
+      yield* TestClock.adjust("5 seconds");
       socket.close(1012, "service restart");
       const error = yield* Effect.flip(session.closed);
 
@@ -226,16 +244,78 @@ describe("RpcSessionFactory", () => {
         reason: "transport",
         message: "Test environment disconnected.",
       });
+      expect((yield* SubscriptionRef.get(session.diagnosticEvents))[0]).toMatchObject({
+        type: "disconnected",
+        closeCode: 1012,
+        closeReason: "service restart",
+        intentional: false,
+        wasConnected: true,
+        attemptDurationMs: 250,
+        connectionDurationMs: 5_000,
+      });
       yield* Effect.yieldNow;
       expect(sockets).toHaveLength(1);
-    }),
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("records foreground probe timing without exposing credentials", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory();
+      const session = yield* factory.connect(PREPARED);
+      const readyFiber = yield* Effect.forkChild(session.ready);
+      const socket = yield* awaitSocket(sockets);
+      socket.open();
+      yield* completeInitialConfig(socket);
+      yield* Fiber.join(readyFiber);
+
+      const probeFiber = yield* Effect.forkChild(session.probe);
+      yield* awaitRequest(socket, 1);
+      yield* TestClock.adjust("275 millis");
+      yield* completeInitialConfig(socket, 1);
+      yield* Fiber.join(probeFiber);
+
+      const probeDiagnosticEvents = session.probeDiagnosticEvents;
+      if (probeDiagnosticEvents === undefined) {
+        return yield* Effect.die(new Error("Expected RPC probe diagnostics."));
+      }
+      expect((yield* SubscriptionRef.get(probeDiagnosticEvents))[0]).toMatchObject({
+        durationMs: 275,
+        error: null,
+      });
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("records supervisor-enforced foreground probe timeouts", () =>
+    Effect.gen(function* () {
+      const { factory, sockets } = yield* makeFactory();
+      const session = yield* factory.connect(PREPARED);
+      const readyFiber = yield* Effect.forkChild(session.ready);
+      const socket = yield* awaitSocket(sockets);
+      socket.open();
+      yield* completeInitialConfig(socket);
+      yield* Fiber.join(readyFiber);
+
+      const probeFiber = yield* Effect.forkChild(session.probe);
+      yield* awaitRequest(socket, 1);
+      yield* TestClock.adjust("15 seconds");
+      yield* Fiber.interrupt(probeFiber);
+      if (session.recordProbeTimeout === undefined || session.probeDiagnosticEvents === undefined) {
+        return yield* Effect.die(new Error("Expected RPC probe timeout diagnostics."));
+      }
+      yield* session.recordProbeTimeout(15_000);
+
+      expect((yield* SubscriptionRef.get(session.probeDiagnosticEvents))[0]).toMatchObject({
+        durationMs: 15_000,
+        error: "Connection health check timed out.",
+      });
+    }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("closes the websocket when the session scope is released", () =>
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory();
 
-      yield* Effect.scoped(
+      const diagnosticEvents = yield* Effect.scoped(
         Effect.gen(function* () {
           const session = yield* factory.connect(PREPARED);
           const readyFiber = yield* Effect.forkChild(session.ready);
@@ -243,10 +323,21 @@ describe("RpcSessionFactory", () => {
           socket.open();
           yield* completeInitialConfig(socket);
           yield* Fiber.join(readyFiber);
+          if (session.diagnosticEvents === undefined) {
+            return yield* Effect.die(new Error("Expected RPC session diagnostics."));
+          }
+          return session.diagnosticEvents;
         }),
       );
 
       expect(sockets[0]?.readyState).toBe(TestWebSocket.CLOSED);
+      yield* Effect.yieldNow;
+      expect((yield* SubscriptionRef.get(diagnosticEvents))[0]).toMatchObject({
+        type: "disconnected",
+        closeCode: 1000,
+        intentional: true,
+        wasConnected: true,
+      });
     }),
   );
 
@@ -254,23 +345,39 @@ describe("RpcSessionFactory", () => {
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory();
 
-      const error = yield* Effect.scoped(
+      const result = yield* Effect.scoped(
         Effect.gen(function* () {
           const session = yield* factory.connect(PREPARED);
+          if (session.diagnosticEvents === undefined) {
+            return yield* Effect.die(new Error("Expected RPC session diagnostics."));
+          }
           const readyFiber = yield* Effect.forkChild(Effect.flip(session.ready));
           yield* awaitSocket(sockets);
 
           yield* TestClock.adjust("15 seconds");
-          return yield* Fiber.join(readyFiber);
+          return {
+            error: yield* Fiber.join(readyFiber),
+            diagnosticEvents: session.diagnosticEvents,
+          };
         }),
       );
 
-      expect(error).toBeInstanceOf(ConnectionTransientError);
-      expect(error).toMatchObject({
+      expect(result.error).toBeInstanceOf(ConnectionTransientError);
+      expect(result.error).toMatchObject({
         reason: "transport",
         message: "Test environment could not establish a WebSocket connection.",
       });
       expect(sockets[0]?.readyState).toBe(TestWebSocket.CLOSED);
+      yield* Effect.yieldNow;
+      expect((yield* SubscriptionRef.get(result.diagnosticEvents))[0]).toMatchObject({
+        type: "disconnected",
+        closeCode: 1000,
+        closeReason: null,
+        intentional: false,
+        wasConnected: false,
+        attemptDurationMs: 15_000,
+        connectionDurationMs: null,
+      });
     }).pipe(Effect.provide(TestClock.layer())),
   );
 });

@@ -47,6 +47,7 @@ export function useNewThreadHandler() {
         worktreePath?: string | null;
         envMode?: DraftThreadEnvMode;
         startFromOrigin?: boolean;
+        beforeNavigate?: (threadId: DraftThreadState["threadId"]) => void;
       },
     ): Promise<void> => {
       const {
@@ -111,6 +112,7 @@ export function useNewThreadHandler() {
               threadId: reusableStoredDraftThread.threadId,
             },
           );
+          options?.beforeNavigate?.(reusableStoredDraftThread.threadId);
           if (
             currentRouteTarget?.kind === "draft" &&
             currentRouteTarget.draftId === reusableStoredDraftThread.draftId
@@ -153,6 +155,7 @@ export function useNewThreadHandler() {
           ...(hasEnvModeOption ? { envMode: options?.envMode } : {}),
           ...(hasStartFromOriginOption ? { startFromOrigin: options?.startFromOrigin } : {}),
         });
+        options?.beforeNavigate?.(latestActiveDraftThread.threadId);
         return Promise.resolve();
       }
 
@@ -176,6 +179,7 @@ export function useNewThreadHandler() {
           runtimeMode: DEFAULT_RUNTIME_MODE,
         });
         applyStickyState(draftId);
+        options?.beforeNavigate?.(threadId);
 
         await router.navigate({
           to: "/draft/$draftId",

@@ -1,6 +1,10 @@
 import { assert, it } from "@effect/vitest";
 
-import { mapCodexModelCapabilities } from "./CodexProvider.ts";
+import {
+  buildCodexInitializeParams,
+  mapCodexModelCapabilities,
+  parseCodexCliVersionOutput,
+} from "./CodexProvider.ts";
 
 it("maps current Codex model capability fields", () => {
   const capabilities = mapCodexModelCapabilities({
@@ -101,4 +105,14 @@ it("uses standard routing when the catalog has no default service tier", () => {
       currentValue: "default",
     },
   ]);
+});
+
+it("parses Codex CLI version output", () => {
+  assert.strictEqual(parseCodexCliVersionOutput("codex-cli 0.28.0\n"), "0.28.0");
+  assert.strictEqual(parseCodexCliVersionOutput("codex 0.28.0-beta.1\n"), "0.28.0-beta.1");
+  assert.strictEqual(parseCodexCliVersionOutput("not a version"), undefined);
+});
+
+it("uses the selected Codex CLI version for initialize client info", () => {
+  assert.strictEqual(buildCodexInitializeParams("0.28.0").clientInfo.version, "0.28.0");
 });
