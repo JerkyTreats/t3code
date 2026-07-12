@@ -1,4 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off - This repository contract test verifies owner paths on disk.
 import { describe, expect, it } from "@effect/vitest";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 import {
   FORK_FEATURE_CONTRACTS,
   FORK_FEATURE_IDS,
@@ -34,6 +37,18 @@ describe("fork verification contracts", () => {
     );
 
     expect(new Set(scenarioIds).size).toBe(scenarioIds.length);
+  });
+
+  it("references owner modules that exist in the repository", () => {
+    const repositoryRoot = NodePath.resolve(import.meta.dirname, "../../..");
+
+    for (const feature of FORK_FEATURE_CONTRACTS) {
+      for (const ownerModule of feature.ownerModules) {
+        expect(NodeFS.existsSync(NodePath.join(repositoryRoot, ownerModule)), ownerModule).toBe(
+          true,
+        );
+      }
+    }
   });
 
   it("marks every feature with an automated verification path", () => {

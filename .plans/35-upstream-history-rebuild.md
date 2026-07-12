@@ -96,7 +96,7 @@ Rebuild the fork so current fork-owned behavior sits on current upstream Git his
 | Test | `pnpm test` | passed | full reconstructed tree |
 | Mobile lint | `pnpm lint:mobile` | passed | required because native mobile differs |
 
-Final focused totals include 294 client runtime tests, 1399 web tests, and 1450 server tests. SwiftLint, ktlint, and detekt were unavailable and were skipped by the repository mobile gate.
+Final focused totals include 274 shared tests, 294 client runtime tests, 1399 web tests, and 1450 server tests. SwiftLint, ktlint, and detekt were unavailable and were skipped by the repository mobile gate.
 
 ## Feature Reconciliation Evidence
 
@@ -126,7 +126,10 @@ Final focused totals include 294 client runtime tests, 1399 web tests, and 1450 
 - `DOC-5` replaced Bun operator commands with pnpm and aligned retained workflows to pnpm `11.10.0`.
 - `RUNTIME-1` restored capability-selected V2 thread sync, bounded paging, deferred hydration, V1 fallback, atomic HTTP bootstrap, cached sequence resume, and retry visibility.
 - `RUNTIME-2` validates hydration response membership, uniqueness, and complete request coverage before publishing or persisting payloads.
+- `SOURCE-1` binds pull request discovery, resolution, and default branch lookup to the origin-only change request handle.
+- `VERIFY-1` replaces stale fork verification owner paths with rebuilt modules and adds a repository-backed existence test.
 - Fresh runtime reviewers withdrew both findings after fixes and regression tests.
+- Fresh source control and fork verification review withdrew both final findings after focused and full regression tests.
 - Fresh documentation review withdrew its manual CI dispatch finding after the operator guide was corrected.
 - History and requirement review confirmed direct upstream ancestry, all 328 fork-only path outcomes, and the declared integration adaptations.
 
@@ -149,4 +152,4 @@ Final focused totals include 294 client runtime tests, 1399 web tests, and 1450 
 
 ## Final Reconciliation
 
-Replay, feature reconciliation, required gates, fresh reviews, and the reconstruction commit are complete. The accepted ancestry is `c1ec1915f`, `9e39e48ad`, then `8c691cc9c`. The old fork tip remains preserved on `archive/pre-upstream-rebuild-20260712`. Remote `origin/main` remains unchanged pending a separate explicit push decision.
+Replay, feature reconciliation, required gates, fresh reviews, and reconstruction are complete. The accepted ancestry begins at `c1ec1915f` and includes `9e39e48ad`, `8c691cc9c`, `94b33cd2c`, `3a6a810e3`, and this final verification follow-up. The old fork tip remains preserved on `archive/pre-upstream-rebuild-20260712`. Remote `origin/main` remains unchanged pending a separate explicit push decision.
