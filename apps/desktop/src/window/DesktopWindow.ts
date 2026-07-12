@@ -24,6 +24,7 @@ const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
 const RENDERER_CRASH_RECOVERY_DELAYS_MS = [250, 1_000, 4_000, 16_000] as const;
+const RENDERER_CRASH_STABILITY_RESET_MS = 60_000;
 const DEVELOPMENT_RETRYABLE_LOAD_ERROR_CODES = new Set([
   -2, // ERR_FAILED
   -7, // ERR_TIMED_OUT
@@ -376,6 +377,7 @@ export const make = Effect.gen(function* () {
     let developmentLoadRetryFiber: Fiber.Fiber<void, never> | undefined;
     let rendererCrashRecoveryIndex = 0;
     let rendererCrashRecoveryFiber: Fiber.Fiber<void, never> | undefined;
+    let rendererCrashStabilityFiber: Fiber.Fiber<void, never> | undefined;
     const clearDevelopmentLoadRetry = () => {
       if (developmentLoadRetryFiber === undefined) {
         return;
@@ -420,6 +422,25 @@ export const make = Effect.gen(function* () {
       );
       return recoveryInMs;
     };
+    const clearRendererCrashStability = () => {
+      if (rendererCrashStabilityFiber === undefined) return;
+      const stabilityFiber = rendererCrashStabilityFiber;
+      rendererCrashStabilityFiber = undefined;
+      runFork(Fiber.interrupt(stabilityFiber));
+    };
+    const scheduleRendererCrashStabilityReset = () => {
+      clearRendererCrashStability();
+      rendererCrashStabilityFiber = runFork(
+        Effect.sleep(RENDERER_CRASH_STABILITY_RESET_MS).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              rendererCrashStabilityFiber = undefined;
+              rendererCrashRecoveryIndex = 0;
+            }),
+          ),
+        ),
+      );
+    };
     const scheduleDevelopmentLoadRetry = () => {
       if (developmentLoadRetryFiber !== undefined || window.isDestroyed()) {
         return undefined;
@@ -459,7 +480,7 @@ export const make = Effect.gen(function* () {
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
       clearRendererCrashRecovery();
-      rendererCrashRecoveryIndex = 0;
+      scheduleRendererCrashStabilityReset();
       window.setTitle(environment.displayName);
     });
     window.webContents.on(
@@ -489,6 +510,7 @@ export const make = Effect.gen(function* () {
       },
     );
     window.webContents.on("render-process-gone", (_event, details) => {
+      clearRendererCrashStability();
       const recoveryInMs = shouldRecoverRendererProcess(details.reason)
         ? scheduleRendererCrashRecovery()
         : undefined;
@@ -535,6 +557,7 @@ export const make = Effect.gen(function* () {
     window.on("closed", () => {
       clearDevelopmentLoadRetry();
       clearRendererCrashRecovery();
+      clearRendererCrashStability();
       void runPromise(electronWindow.clearMain(Option.some(window)));
     });
 

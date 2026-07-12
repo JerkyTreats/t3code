@@ -487,7 +487,15 @@ describe("DesktopWindow", () => {
 
         renderProcessGone({}, { reason: "crashed", exitCode: 1 });
         yield* TestClock.adjust(250);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 1);
+        yield* TestClock.adjust(750);
         assert.equal(fakeWindow.loadURL.mock.calls.length, 2);
+
+        didFinishLoad();
+        yield* TestClock.adjust(60_000);
+        renderProcessGone({}, { reason: "crashed", exitCode: 1 });
+        yield* TestClock.adjust(250);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 3);
       }).pipe(Effect.provide(layer));
     }),
   );
