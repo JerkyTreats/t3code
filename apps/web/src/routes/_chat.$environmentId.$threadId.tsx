@@ -1,10 +1,15 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import {
+  type EnvironmentThreadSyncStatus,
+  WAITING_ENVIRONMENT_THREAD_SYNC_STATUS,
+} from "@t3tools/client-runtime/state/threads";
 import type { OrchestrationProposedPlanId, ThreadId } from "@t3tools/contracts";
 import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import { createFileRoute, retainSearchParams, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo } from "react";
 
 import ChatView from "../components/ChatView";
+import { NoActiveThreadState } from "../components/NoActiveThreadState";
 import { PlanConversationDocument } from "../components/PlanConversationDocument";
 import { threadHasStarted } from "../components/ChatView.logic";
 import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../composerDraftStore";
@@ -162,8 +167,21 @@ function ChatThreadRouteView() {
     finalizePromotedDraftThreadByRef(threadRef);
   }, [draftThread, serverThreadStarted, threadRef]);
 
-  if (!threadRef || !bootstrapComplete || !routeThreadExists) {
-    return null;
+  if (!threadRef) {
+    return <NoActiveThreadState />;
+  }
+  if (!bootstrapComplete) {
+    const syncStatus: EnvironmentThreadSyncStatus = shell.error
+      ? {
+          ...WAITING_ENVIRONMENT_THREAD_SYNC_STATUS,
+          phase: "error",
+          error: shell.error,
+        }
+      : WAITING_ENVIRONMENT_THREAD_SYNC_STATUS;
+    return <NoActiveThreadState syncStatus={syncStatus} />;
+  }
+  if (!routeThreadExists) {
+    return <NoActiveThreadState />;
   }
 
   return (
