@@ -51,8 +51,8 @@ Status: completed
 
 ## Worktrees
 
-| Slice                  | Worktree         | Branch                    | Status      | Integration Commit | Notes                                                                           |
-| ---------------------- | ---------------- | ------------------------- | ----------- | ------------------ | ------------------------------------------------------------------------------- |
+| Slice                  | Worktree         | Branch                    | Status    | Integration Commit | Notes                                                                      |
+| ---------------------- | ---------------- | ------------------------- | --------- | ------------------ | -------------------------------------------------------------------------- |
 | Central implementation | Primary worktree | fix/connection-resilience | completed | This commit        | No separate worktree was needed because the implementation remained atomic |
 
 ## Gate Evidence
@@ -66,8 +66,8 @@ Status: completed
 
 ## Commit Evidence
 
-| Scope                   | Commit | Status              | Notes                                                      |
-| ----------------------- | ------ | ------------------- | ---------------------------------------------------------- |
+| Scope                   | Commit      | Status   | Notes                                                 |
+| ----------------------- | ----------- | -------- | ----------------------------------------------------- |
 | Origin-only enforcement | This commit | recorded | User requested the implementation and commit together |
 
 ## Review Lanes
