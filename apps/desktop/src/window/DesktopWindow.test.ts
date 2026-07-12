@@ -446,7 +446,46 @@ describe("DesktopWindow", () => {
           ["t3code-dev://app/"],
         ]);
 
+        renderProcessGone({}, { reason: "crashed", exitCode: 1 });
+        yield* TestClock.adjust(999);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 2);
+        yield* TestClock.adjust(1);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 3);
+
         renderProcessGone({}, { reason: "clean-exit", exitCode: 0 });
+        yield* TestClock.adjust(4_000);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 3);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
+  it.effect("cancels crash recovery after a successful renderer load", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const renderProcessGone = fakeWindow.webContentsListeners.get("render-process-gone");
+        const didFinishLoad = fakeWindow.webContentsListeners.get("did-finish-load");
+        if (!renderProcessGone || !didFinishLoad) {
+          return yield* Effect.die("renderer recovery listeners were not registered");
+        }
+
+        renderProcessGone({}, { reason: "oom", exitCode: 133 });
+        didFinishLoad();
+        yield* TestClock.adjust(250);
+        assert.equal(fakeWindow.loadURL.mock.calls.length, 1);
+
+        renderProcessGone({}, { reason: "crashed", exitCode: 1 });
         yield* TestClock.adjust(250);
         assert.equal(fakeWindow.loadURL.mock.calls.length, 2);
       }).pipe(Effect.provide(layer));

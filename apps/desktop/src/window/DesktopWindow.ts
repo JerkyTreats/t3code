@@ -23,7 +23,7 @@ const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linu
 const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
-const RENDERER_CRASH_RECOVERY_DELAY_MS = 250;
+const RENDERER_CRASH_RECOVERY_DELAYS_MS = [250, 1_000, 4_000, 16_000] as const;
 const DEVELOPMENT_RETRYABLE_LOAD_ERROR_CODES = new Set([
   -2, // ERR_FAILED
   -7, // ERR_TIMED_OUT
@@ -374,6 +374,7 @@ export const make = Effect.gen(function* () {
 
     let developmentLoadRetryIndex = 0;
     let developmentLoadRetryFiber: Fiber.Fiber<void, never> | undefined;
+    let rendererCrashRecoveryIndex = 0;
     let rendererCrashRecoveryFiber: Fiber.Fiber<void, never> | undefined;
     const clearDevelopmentLoadRetry = () => {
       if (developmentLoadRetryFiber === undefined) {
@@ -399,10 +400,16 @@ export const make = Effect.gen(function* () {
     };
     const scheduleRendererCrashRecovery = () => {
       if (rendererCrashRecoveryFiber !== undefined || window.isDestroyed()) {
-        return false;
+        return undefined;
       }
+      const recoveryIndex = Math.min(
+        rendererCrashRecoveryIndex,
+        RENDERER_CRASH_RECOVERY_DELAYS_MS.length - 1,
+      );
+      const recoveryInMs = RENDERER_CRASH_RECOVERY_DELAYS_MS[recoveryIndex] ?? 16_000;
+      rendererCrashRecoveryIndex += 1;
       rendererCrashRecoveryFiber = runFork(
-        Effect.sleep(RENDERER_CRASH_RECOVERY_DELAY_MS).pipe(
+        Effect.sleep(recoveryInMs).pipe(
           Effect.andThen(
             Effect.sync(() => {
               rendererCrashRecoveryFiber = undefined;
@@ -411,7 +418,7 @@ export const make = Effect.gen(function* () {
           ),
         ),
       );
-      return true;
+      return recoveryInMs;
     };
     const scheduleDevelopmentLoadRetry = () => {
       if (developmentLoadRetryFiber !== undefined || window.isDestroyed()) {
@@ -451,6 +458,8 @@ export const make = Effect.gen(function* () {
       }
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
+      clearRendererCrashRecovery();
+      rendererCrashRecoveryIndex = 0;
       window.setTitle(environment.displayName);
     });
     window.webContents.on(
@@ -480,15 +489,15 @@ export const make = Effect.gen(function* () {
       },
     );
     window.webContents.on("render-process-gone", (_event, details) => {
-      const recoveryScheduled = shouldRecoverRendererProcess(details.reason)
+      const recoveryInMs = shouldRecoverRendererProcess(details.reason)
         ? scheduleRendererCrashRecovery()
-        : false;
+        : undefined;
       void runPromise(
         logWindowWarning("main window render process gone", {
           reason: details.reason,
           exitCode: details.exitCode,
-          recoveryScheduled,
-          ...(recoveryScheduled ? { recoveryInMs: RENDERER_CRASH_RECOVERY_DELAY_MS } : {}),
+          recoveryScheduled: recoveryInMs !== undefined,
+          ...(recoveryInMs === undefined ? {} : { recoveryInMs }),
         }),
       );
     });
