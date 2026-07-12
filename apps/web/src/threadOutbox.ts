@@ -264,6 +264,26 @@ export function createWebThreadOutboxManager(storage: WebThreadOutboxStorage) {
         await storage.write(failed);
         replace(messageId, () => failed);
       }),
+    retryTerminalFailure: (messageId: MessageId) =>
+      serialize(async () => {
+        const entry = snapshot.entries.find(
+          (candidate) => candidate.message.messageId === messageId,
+        );
+        if (!entry || entry.status !== "terminal-failure") return;
+        const queued: WebThreadOutboxEntry = {
+          ...entry,
+          status: "queued",
+          lastError: null,
+          retryAt: null,
+        };
+        await storage.write(queued);
+        replace(messageId, () => queued);
+      }),
+    discard: (messageId: MessageId) =>
+      serialize(async () => {
+        await storage.remove(messageId);
+        publish(snapshot.entries.filter((entry) => entry.message.messageId !== messageId));
+      }),
     acknowledge: (messageId: MessageId) =>
       serialize(async () => {
         // A successful receipt is the only point where crash recovery no longer

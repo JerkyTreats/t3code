@@ -1,11 +1,16 @@
+import { useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { threadOutboxKey } from "@t3tools/client-runtime/state/thread-outbox";
+import {
+  resolveThreadOutboxDeliveryAction,
+  threadOutboxKey,
+} from "@t3tools/client-runtime/state/thread-outbox";
 import type { MessageId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { useEnvironments } from "../state/environments";
 import { useThreadShells } from "../state/entities";
+import { environmentShellStatusMapAtom } from "../state/shell";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
@@ -47,6 +52,7 @@ export function ThreadOutboxCoordinator() {
   const snapshot = useWebThreadOutboxSnapshot();
   const { environments } = useEnvironments();
   const threads = useThreadShells();
+  const shellStatuses = useAtomValue(environmentShellStatusMapAtom);
   const dispatchingMessageIdRef = useRef<MessageId | null>(null);
   const [retryTick, setRetryTick] = useState(0);
 
@@ -78,23 +84,33 @@ export function ThreadOutboxCoordinator() {
 
     const queues = Object.values(queuedEntriesByThread(snapshot.entries));
     let nextEntry: WebThreadOutboxEntry | null = null;
+    let orphanedEntry: WebThreadOutboxEntry | null = null;
     let nextRetryAt: number | null = null;
     const now = Date.now();
     for (const queue of queues) {
       const entry = queue[0];
-      if (!entry || entry.status === "terminal-failure" || entry.status === "acknowledged") {
+      if (!entry || entry.status === "acknowledged") {
         continue;
       }
-      if (entry.retryAt !== null && entry.retryAt > now) {
-        nextRetryAt = nextRetryAt === null ? entry.retryAt : Math.min(nextRetryAt, entry.retryAt);
-        continue;
-      }
+      const environmentConnected = connectedEnvironmentIds.has(entry.message.environmentId);
       const thread = threadByKey.get(
         threadOutboxKey(entry.message.environmentId, entry.message.threadId),
       );
       const threadBusy =
         thread?.session?.status === "running" || thread?.session?.status === "starting";
-      if (!thread || threadBusy || !connectedEnvironmentIds.has(entry.message.environmentId)) {
+      const deliveryAction = resolveThreadOutboxDeliveryAction({
+        threadExists: thread !== undefined,
+        shellStatus: shellStatuses.get(entry.message.environmentId) ?? "empty",
+        environmentConnected,
+        threadBusy,
+      });
+      if (deliveryAction === "remove") {
+        orphanedEntry = entry;
+        break;
+      }
+      if (entry.status === "terminal-failure" || deliveryAction === "wait") continue;
+      if (entry.retryAt !== null && entry.retryAt > now) {
+        nextRetryAt = nextRetryAt === null ? entry.retryAt : Math.min(nextRetryAt, entry.retryAt);
         continue;
       }
       if (
@@ -103,6 +119,21 @@ export function ThreadOutboxCoordinator() {
       ) {
         nextEntry = entry;
       }
+    }
+
+    if (orphanedEntry !== null) {
+      const messageId = orphanedEntry.message.messageId;
+      dispatchingMessageIdRef.current = messageId;
+      void webThreadOutboxManager
+        .discard(messageId)
+        .catch((error) => {
+          console.error("[thread-outbox] failed to discard orphaned durable web message", error);
+        })
+        .finally(() => {
+          dispatchingMessageIdRef.current = null;
+          setRetryTick((current) => current + 1);
+        });
+      return;
     }
 
     if (nextEntry === null) {
@@ -158,6 +189,7 @@ export function ThreadOutboxCoordinator() {
     retryTick,
     snapshot.entries,
     snapshot.loaded,
+    shellStatuses,
     startThreadTurn,
     threadByKey,
   ]);

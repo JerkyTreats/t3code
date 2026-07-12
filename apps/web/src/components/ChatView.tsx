@@ -1100,9 +1100,28 @@ function ChatViewContent(props: ChatViewProps) {
       terminalFailureMessage:
         activeThreadOutboxEntries.find((entry) => entry.status === "terminal-failure")?.lastError ??
         null,
+      terminalFailureMessageId:
+        activeThreadOutboxEntries.find((entry) => entry.status === "terminal-failure")?.message
+          .messageId ?? null,
     }),
     [activeThreadOutboxEntries],
   );
+  const retryTerminalOutboxMessage = useCallback(() => {
+    const messageId = activeThreadOutboxStatus.terminalFailureMessageId;
+    if (messageId !== null) {
+      void webThreadOutboxManager.retryTerminalFailure(messageId).catch((error) => {
+        console.error("[thread-outbox] failed to retry durable web message", error);
+      });
+    }
+  }, [activeThreadOutboxStatus.terminalFailureMessageId]);
+  const discardTerminalOutboxMessage = useCallback(() => {
+    const messageId = activeThreadOutboxStatus.terminalFailureMessageId;
+    if (messageId !== null) {
+      void webThreadOutboxManager.discard(messageId).catch((error) => {
+        console.error("[thread-outbox] failed to discard durable web message", error);
+      });
+    }
+  }, [activeThreadOutboxStatus.terminalFailureMessageId]);
   const serverThread = useThread(routeKind === "server" ? routeThreadRef : null);
   const threadSyncStatus = routeKind === "server" ? (serverThreadState.syncStatus ?? null) : null;
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
@@ -5513,6 +5532,8 @@ function ChatViewContent(props: ChatViewProps) {
                         isServerThread && activePendingProgress === null && !showPlanFollowUpPrompt
                       }
                       outboxStatus={activeThreadOutboxStatus}
+                      onRetryOutboxFailure={retryTerminalOutboxMessage}
+                      onDiscardOutboxFailure={discardTerminalOutboxMessage}
                       activePendingApproval={activePendingApproval}
                       pendingApprovals={pendingApprovals}
                       pendingUserInputs={pendingUserInputs}

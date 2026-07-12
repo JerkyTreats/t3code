@@ -151,4 +151,23 @@ describe("web thread outbox", () => {
     expect(stored.has(queued.messageId)).toBe(false);
     expect(manager.getSnapshot().entries[0]?.status).toBe("acknowledged");
   });
+
+  it("allows terminal failures to be retried or discarded", async () => {
+    const { storage, stored } = memoryStorage();
+    const manager = createWebThreadOutboxManager(storage);
+    const queued = message({ messageId: "message-1", createdAt: "2026-07-11T10:00:00.000Z" });
+    await manager.enqueue(queued);
+    await manager.markTerminalFailure(queued.messageId, "Thread rejected the message");
+
+    await manager.retryTerminalFailure(queued.messageId);
+    expect(manager.getSnapshot().entries[0]).toMatchObject({
+      status: "queued",
+      lastError: null,
+    });
+    expect(stored.has(queued.messageId)).toBe(true);
+
+    await manager.discard(queued.messageId);
+    expect(manager.getSnapshot().entries).toEqual([]);
+    expect(stored.has(queued.messageId)).toBe(false);
+  });
 });

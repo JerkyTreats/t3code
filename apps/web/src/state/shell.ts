@@ -1,5 +1,6 @@
 import {
   createEnvironmentShellAtoms,
+  createEnvironmentShellStatusMapAtom,
   createEnvironmentShellSummaryAtom,
   createEnvironmentSnapshotAtom,
   createShellEnvironmentAtoms,
@@ -12,6 +13,10 @@ export const shellEnvironment = createShellEnvironmentAtoms(connectionAtomRuntim
 export const environmentShell = createEnvironmentShellAtoms(connectionAtomRuntime);
 export const environmentSnapshotAtom = createEnvironmentSnapshotAtom(environmentShell.stateAtom);
 export const environmentShellSummaryAtom = createEnvironmentShellSummaryAtom({
+  catalogValueAtom: environmentCatalog.catalogValueAtom,
+  shellStateValueAtom: environmentShell.stateValueAtom,
+});
+export const environmentShellStatusMapAtom = createEnvironmentShellStatusMapAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   shellStateValueAtom: environmentShell.stateValueAtom,
 });

@@ -1,6 +1,7 @@
 import type {
   ApprovalRequestId,
   EnvironmentId,
+  MessageId,
   ModelSelection,
   PreviewAnnotationPayload,
   ProviderApprovalDecision,
@@ -499,7 +500,10 @@ export interface ChatComposerProps {
     readonly acknowledged: number;
     readonly terminalFailures: number;
     readonly terminalFailureMessage: string | null;
+    readonly terminalFailureMessageId: MessageId | null;
   };
+  onRetryOutboxFailure: () => void;
+  onDiscardOutboxFailure: () => void;
 
   // Pending approvals / inputs
   activePendingApproval: PendingApproval | null;
@@ -608,6 +612,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentUnavailable,
     canQueueOffline,
     outboxStatus,
+    onRetryOutboxFailure,
+    onDiscardOutboxFailure,
     activePendingApproval,
     pendingApprovals,
     pendingUserInputs,
@@ -2290,13 +2296,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             ) : null)}
 
           {outboxStatus.terminalFailures > 0 ? (
-            <div className="border-b border-destructive/25 bg-destructive/8 px-3 py-1.5 text-xs text-destructive">
-              {outboxStatus.terminalFailures === 1
-                ? "1 queued message needs attention"
-                : `${outboxStatus.terminalFailures} queued messages need attention`}
-              {outboxStatus.terminalFailureMessage
-                ? `: ${outboxStatus.terminalFailureMessage}`
-                : null}
+            <div className="flex flex-wrap items-center gap-2 border-b border-destructive/25 bg-destructive/8 px-3 py-1.5 text-xs text-destructive">
+              <span className="min-w-0 flex-1">
+                {outboxStatus.terminalFailures === 1
+                  ? "1 queued message needs attention"
+                  : `${outboxStatus.terminalFailures} queued messages need attention`}
+                {outboxStatus.terminalFailureMessage
+                  ? `: ${outboxStatus.terminalFailureMessage}`
+                  : null}
+              </span>
+              <Button type="button" size="xs" variant="ghost" onClick={onDiscardOutboxFailure}>
+                Discard
+              </Button>
+              <Button type="button" size="xs" variant="outline" onClick={onRetryOutboxFailure}>
+                Retry
+              </Button>
             </div>
           ) : outboxStatus.retrying > 0 ? (
             <div className="border-b border-amber-500/20 bg-amber-500/8 px-3 py-1.5 text-xs text-amber-300">
