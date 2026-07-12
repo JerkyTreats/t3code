@@ -19,6 +19,7 @@ import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPrompt
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { ThreadOutboxCoordinator } from "../components/ThreadOutboxCoordinator";
+import { ConnectionDiagnosticsRecorder } from "../components/ConnectionDiagnosticsRecorder";
 import { Button } from "../components/ui/button";
 import {
   AnchoredToastProvider,
@@ -132,6 +133,7 @@ function RootRouteView() {
         <SshPasswordPromptDialog />
         <SlowRpcRequestToastCoordinator />
         <ThreadOutboxCoordinator />
+        <ConnectionDiagnosticsRecorder />
         <HostedStaticEnvironmentBootstrap />
         {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
         {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}

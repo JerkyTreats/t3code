@@ -47,9 +47,6 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   type ConnectionDiagnosticsEntry,
-  type ConnectionDiagnosticsEvent,
-  type ConnectionDiagnosticsPhase,
-  getConnectionDiagnosticsDurations,
   resolveConnectionControlAction,
 } from "@t3tools/client-runtime/state/connections";
 import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
@@ -103,6 +100,7 @@ import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { Group, GroupSeparator } from "../ui/group";
 import { AnimatedHeight } from "../AnimatedHeight";
+import { ConnectionFlightRecorder } from "./ConnectionFlightRecorder";
 import {
   Menu,
   MenuGroup,
@@ -1417,198 +1415,6 @@ function NetworkAccessDescription({
         <span className="inline-flex min-w-0 max-w-full items-baseline gap-2">{summary}</span>
       )}
     </span>
-  );
-}
-
-const MAX_CONNECTION_DASHBOARD_ROWS = 16;
-const MAX_CONNECTION_DASHBOARD_EVENTS = 8;
-
-function connectionDiagnosticsPhaseLabel(phase: ConnectionDiagnosticsPhase): string {
-  switch (phase) {
-    case "connected":
-      return "Connected";
-    case "connecting":
-      return "Connecting";
-    case "disconnected":
-      return "Disconnected";
-    case "error":
-      return "Error";
-    case "idle":
-      return "Idle";
-  }
-}
-
-function connectionDiagnosticsDotClassName(phase: ConnectionDiagnosticsPhase): string {
-  switch (phase) {
-    case "connected":
-      return "bg-success";
-    case "connecting":
-      return "bg-warning";
-    case "error":
-      return "bg-destructive";
-    case "disconnected":
-    case "idle":
-      return "bg-muted-foreground/40";
-  }
-}
-
-function formatConnectionDuration(valueMs: number): string {
-  const totalSeconds = Math.max(0, Math.floor(valueMs / 1_000));
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  if (totalMinutes < 60) return `${totalMinutes}m`;
-  const totalHours = Math.floor(totalMinutes / 60);
-  if (totalHours < 24) return `${totalHours}h`;
-  return `${Math.floor(totalHours / 24)}d`;
-}
-
-function describeConnectionDiagnosticsEvent(event: ConnectionDiagnosticsEvent): string {
-  switch (event.type) {
-    case "connecting":
-      return "Connection cycle started";
-    case "attempt":
-      return event.socketUrl ? `Socket attempt to ${event.socketUrl}` : "Socket attempt";
-    case "connected":
-      return "Connected";
-    case "disconnected": {
-      const label = event.intentional ? "Intentional disconnect" : "Unexpected disconnect";
-      const code = event.closeCode === null ? null : `code ${event.closeCode}`;
-      return [label, code, event.closeReason].filter(Boolean).join(" · ");
-    }
-    case "error":
-      return event.message ?? "Connection error";
-  }
-}
-
-function ConnectionDiagnosticsDashboard({
-  entries,
-}: {
-  readonly entries: ReadonlyArray<ConnectionDiagnosticsEntry>;
-}) {
-  const nowMs = useRelativeTimeTick(1_000);
-  const visibleEntries = useMemo(() => {
-    const primary = entries.filter((entry) => entry.kind === "PrimaryConnectionTarget");
-    const remote = entries
-      .filter((entry) => entry.kind !== "PrimaryConnectionTarget")
-      .toSorted(
-        (left, right) => Date.parse(right.lastObservedAt) - Date.parse(left.lastObservedAt),
-      );
-    return [...primary, ...remote].slice(0, MAX_CONNECTION_DASHBOARD_ROWS);
-  }, [entries]);
-  const totals = entries.reduce(
-    (result, entry) => ({
-      attempts: result.attempts + entry.counters.socketAttemptCount,
-      drops: result.drops + entry.counters.unexpectedDisconnectCount,
-      errors: result.errors + entry.counters.errorCount,
-      live: result.live + (entry.phase === "connected" ? 1 : 0),
-    }),
-    { attempts: 0, drops: 0, errors: 0, live: 0 },
-  );
-  const recentEvents = visibleEntries
-    .flatMap((entry) =>
-      entry.recentEvents.map((event) => ({
-        key: `${entry.environmentId}:${event.id}`,
-        label: entry.label,
-        event,
-      })),
-    )
-    .toSorted(
-      (left, right) => Date.parse(right.event.observedAt) - Date.parse(left.event.observedAt),
-    )
-    .slice(0, MAX_CONNECTION_DASHBOARD_EVENTS);
-
-  return (
-    <SettingsSection title="Connection diagnostics">
-      <div className="grid grid-cols-2 border-b border-border/60 md:grid-cols-4">
-        {[
-          ["Live", `${totals.live}/${entries.length}`],
-          ["Socket attempts", String(totals.attempts)],
-          ["Unexpected drops", String(totals.drops)],
-          ["Errors", String(totals.errors)],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="min-w-0 border-r border-border/60 px-4 py-3 last:border-r-0 sm:px-5"
-          >
-            <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
-            <p className="mt-1 truncate font-mono text-lg tabular-nums text-foreground">{value}</p>
-          </div>
-        ))}
-      </div>
-      {visibleEntries.map((entry) => {
-        const durations = getConnectionDiagnosticsDurations(entry, nowMs);
-        const phaseLabel = connectionDiagnosticsPhaseLabel(entry.phase);
-        const detail = entry.lastSocketUrl ?? entry.origin;
-        return (
-          <div key={entry.environmentId} className={ITEM_ROW_CLASSNAME}>
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(24rem,auto)] lg:items-center">
-              <div className="min-w-0 space-y-1">
-                <div className="flex min-h-5 items-center gap-1.5">
-                  <ConnectionStatusDot
-                    tooltipText={phaseLabel}
-                    dotClassName={connectionDiagnosticsDotClassName(entry.phase)}
-                    pingClassName={
-                      entry.phase === "connecting" ? "bg-warning/60 duration-2000" : null
-                    }
-                  />
-                  <h3 className="truncate text-sm font-medium text-foreground">{entry.label}</h3>
-                  <span className="text-[11px] text-muted-foreground">{phaseLabel}</span>
-                </div>
-                {detail ? (
-                  <p className="truncate text-xs text-muted-foreground" title={detail}>
-                    {detail}
-                  </p>
-                ) : null}
-                {entry.lastError ? (
-                  <p className="truncate text-xs text-destructive" title={entry.lastError}>
-                    {entry.lastError}
-                  </p>
-                ) : null}
-              </div>
-              <div className="grid grid-cols-3 gap-3 text-xs sm:grid-cols-6 lg:min-w-96">
-                {[
-                  ["Attempts", entry.counters.socketAttemptCount],
-                  ["Drops", entry.counters.unexpectedDisconnectCount],
-                  ["Errors", entry.counters.errorCount],
-                  ["Close", entry.lastCloseCode ?? "-"],
-                  ["Up", formatConnectionDuration(durations.connectedMs)],
-                  ["Down", formatConnectionDuration(durations.disconnectedMs)],
-                ].map(([label, value]) => (
-                  <div key={label} className="min-w-0">
-                    <p className="text-muted-foreground/70">{label}</p>
-                    <p className="truncate font-mono tabular-nums">{value}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        );
-      })}
-      {recentEvents.length > 0 ? (
-        <div className="border-t border-border/60 px-4 py-3 sm:px-5">
-          <h3 className="mb-2 text-xs font-medium text-foreground">Recent events</h3>
-          <div className="space-y-1.5">
-            {recentEvents.map(({ key, label, event }) => (
-              <div key={key} className="grid gap-1 text-xs sm:grid-cols-[7rem_minmax(0,1fr)]">
-                <p className="font-mono tabular-nums text-muted-foreground/70">
-                  {formatElapsedDurationLabel(event.observedAt, nowMs)} ago
-                </p>
-                <p className="min-w-0 truncate text-muted-foreground">
-                  <span className="font-medium text-foreground">{label}</span>
-                  <span aria-hidden> · </span>
-                  {describeConnectionDiagnosticsEvent(event)}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-      {entries.length > visibleEntries.length ? (
-        <p className="border-t border-border/60 px-4 py-2 text-xs text-muted-foreground sm:px-5">
-          Showing the {MAX_CONNECTION_DASHBOARD_ROWS} most recently active connections.
-        </p>
-      ) : null}
-    </SettingsSection>
   );
 }
 
@@ -3575,7 +3381,7 @@ export function ConnectionsSettings() {
 
   return (
     <SettingsPageContainer>
-      <ConnectionDiagnosticsDashboard entries={connectionDiagnostics} />
+      <ConnectionFlightRecorder entries={connectionDiagnostics} />
 
       {canManageLocalBackend ? (
         <>
