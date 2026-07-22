@@ -58,7 +58,7 @@ describe("ChangedFilesTree", () => {
           files={files}
           allDirectoriesExpanded={false}
           resolvedTheme="light"
-          onOpenTurnDiff={() => {}}
+          onOpenFilePreview={() => {}}
         />,
       );
 
@@ -134,7 +134,7 @@ describe("ChangedFilesTree", () => {
           files={files}
           allDirectoriesExpanded
           resolvedTheme="light"
-          onOpenTurnDiff={() => {}}
+          onOpenFilePreview={() => {}}
         />,
       );
 

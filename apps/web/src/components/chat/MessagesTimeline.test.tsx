@@ -176,7 +176,7 @@ function buildProps() {
     runningTurnId: null,
     turnDiffSummaryByAssistantMessageId: new Map(),
     routeThreadKey: "environment-local:thread-1",
-    onOpenTurnDiff: () => {},
+    onOpenTurnFilePreview: () => {},
     revertTurnCountByUserMessageId: new Map(),
     onRevertUserMessage: () => {},
     isRevertingCheckpoint: false,

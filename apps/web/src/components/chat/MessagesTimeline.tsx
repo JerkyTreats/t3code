@@ -135,7 +135,7 @@ interface TimelineRowSharedState {
   activeThreadEnvironmentId: EnvironmentId;
   onRevertUserMessage: (messageId: MessageId) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
-  onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onOpenTurnFilePreview: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
   onToggleWorkGroup: (groupId: string, anchorElement?: HTMLElement) => void;
   onOpenProposedPlanPreview:
@@ -169,7 +169,7 @@ interface MessagesTimelineProps {
   runningTurnId: TurnId | null;
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
   routeThreadKey: string;
-  onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onOpenTurnFilePreview: (turnId: TurnId, filePath?: string) => void;
   onOpenProposedPlanPreview?: (input: {
     planThreadId: ThreadId;
     planId: OrchestrationProposedPlanId;
@@ -207,7 +207,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   runningTurnId,
   turnDiffSummaryByAssistantMessageId,
   routeThreadKey,
-  onOpenTurnDiff,
+  onOpenTurnFilePreview,
   onOpenProposedPlanPreview,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
@@ -432,7 +432,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       onRevertUserMessage,
       onImageExpand,
-      onOpenTurnDiff,
+      onOpenTurnFilePreview,
       onOpenProposedPlanPreview,
       onToggleTurnFold,
       onToggleWorkGroup,
@@ -447,7 +447,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       onRevertUserMessage,
       onImageExpand,
-      onOpenTurnDiff,
+      onOpenTurnFilePreview,
       onOpenProposedPlanPreview,
       onToggleTurnFold,
       onToggleWorkGroup,
@@ -1085,7 +1085,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           turnSummary={row.assistantTurnDiffSummary}
           routeThreadKey={ctx.routeThreadKey}
           resolvedTheme={ctx.resolvedTheme}
-          onOpenTurnDiff={ctx.onOpenTurnDiff}
+          onOpenTurnFilePreview={ctx.onOpenTurnFilePreview}
         />
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
@@ -1297,12 +1297,12 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
   turnSummary,
   routeThreadKey,
   resolvedTheme,
-  onOpenTurnDiff,
+  onOpenTurnFilePreview,
 }: {
   turnSummary: TurnDiffSummary | undefined;
   routeThreadKey: string;
   resolvedTheme: "light" | "dark";
-  onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onOpenTurnFilePreview: (turnId: TurnId, filePath?: string) => void;
 }) {
   if (!turnSummary) return null;
   const checkpointFiles = turnSummary.files;
@@ -1314,7 +1314,7 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
       checkpointFiles={checkpointFiles}
       routeThreadKey={routeThreadKey}
       resolvedTheme={resolvedTheme}
-      onOpenTurnDiff={onOpenTurnDiff}
+      onOpenTurnFilePreview={onOpenTurnFilePreview}
     />
   );
 });
@@ -1326,13 +1326,13 @@ function AssistantChangedFilesSectionInner({
   checkpointFiles,
   routeThreadKey,
   resolvedTheme,
-  onOpenTurnDiff,
+  onOpenTurnFilePreview,
 }: {
   turnSummary: TurnDiffSummary;
   checkpointFiles: TurnDiffSummary["files"];
   routeThreadKey: string;
   resolvedTheme: "light" | "dark";
-  onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onOpenTurnFilePreview: (turnId: TurnId, filePath?: string) => void;
 }) {
   const allDirectoriesExpanded = useUiStateStore(
     (store) => store.threadChangedFilesExpandedById[routeThreadKey]?.[turnSummary.turnId] ?? true,
@@ -1367,9 +1367,9 @@ function AssistantChangedFilesSectionInner({
             type="button"
             size="xs"
             variant="outline"
-            onClick={() => onOpenTurnDiff(turnSummary.turnId, checkpointFiles[0]?.path)}
+            onClick={() => onOpenTurnFilePreview(turnSummary.turnId, checkpointFiles[0]?.path)}
           >
-            View diff
+            View preview
           </Button>
         </div>
       </div>
@@ -1379,7 +1379,7 @@ function AssistantChangedFilesSectionInner({
         files={checkpointFiles}
         allDirectoriesExpanded={allDirectoriesExpanded}
         resolvedTheme={resolvedTheme}
-        onOpenTurnDiff={onOpenTurnDiff}
+        onOpenFilePreview={onOpenTurnFilePreview}
       />
     </div>
   );

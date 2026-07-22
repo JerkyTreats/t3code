@@ -38,7 +38,7 @@ export type RightPanelSurface =
       splitDirection?: "horizontal" | "vertical";
     }
   | { id: "diff"; kind: "diff" }
-  | { id: "files"; kind: "files" }
+  | { id: "files"; kind: "files"; expandedDirectoryPath: string | null }
   | { id: "git"; kind: "git"; projectRef: ScopedProjectRef }
   | { id: "inference"; kind: "inference"; projectRef: ScopedProjectRef }
   | {
@@ -51,12 +51,13 @@ export type RightPanelSurface =
   | { id: "plan"; kind: "plan" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
-const RIGHT_PANEL_STORAGE_VERSION = 8;
+const RIGHT_PANEL_STORAGE_VERSION = 9;
 
 export interface ThreadRightPanelState {
   isOpen: boolean;
   activeSurfaceId: string | null;
   surfaces: RightPanelSurface[];
+  fileTreeExpandedDirectoryPaths?: string[];
 }
 
 interface RightPanelStoreState {
@@ -69,6 +70,11 @@ interface RightPanelStoreState {
     ref: ScopedThreadRef,
     kind: "git" | "inference",
     projectRef: ScopedProjectRef,
+  ) => void;
+  openFiles: (ref: ScopedThreadRef, expandedDirectoryPath?: string | null) => void;
+  setFileTreeExpandedDirectoryPaths: (
+    ref: ScopedThreadRef,
+    expandedDirectoryPaths: readonly string[],
   ) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
@@ -112,7 +118,7 @@ const singletonSurface = (
     case "diff":
       return { id: "diff", kind };
     case "files":
-      return { id: "files", kind };
+      return { id: "files", kind, expandedDirectoryPath: null };
     case "plan":
       return { id: "plan", kind };
   }
@@ -141,6 +147,12 @@ const fileSurface = (
   relativePath,
   revealLine,
   revealRequestId,
+});
+
+const filesSurface = (expandedDirectoryPath: string | null): RightPanelSurface => ({
+  id: "files",
+  kind: "files",
+  expandedDirectoryPath,
 });
 
 const terminalSurface = (terminalId: string): RightPanelSurface => ({
@@ -226,6 +238,17 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                           : 0;
                       return [{ ...surface, revealLine, revealRequestId }];
                     }
+                    if (surface.kind === "files") {
+                      return [
+                        {
+                          ...surface,
+                          expandedDirectoryPath:
+                            typeof surface.expandedDirectoryPath === "string"
+                              ? surface.expandedDirectoryPath
+                              : null,
+                        },
+                      ];
+                    }
                     if (surface.kind !== "terminal") return [surface];
                     if (
                       !("resourceId" in surface) ||
@@ -297,6 +320,35 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             upsertProjectSurface(current, projectSurface(kind, projectRef)),
           ),
         })),
+      openFiles: (ref, expandedDirectoryPath = null) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+            const surface = filesSurface(expandedDirectoryPath);
+            return {
+              isOpen: true,
+              activeSurfaceId: surface.id,
+              surfaces: current.surfaces.some((entry) => entry.id === surface.id)
+                ? current.surfaces.map((entry) => (entry.id === surface.id ? surface : entry))
+                : [...current.surfaces, surface],
+            };
+          }),
+        })),
+      setFileTreeExpandedDirectoryPaths: (ref, expandedDirectoryPaths) =>
+        set((state) => {
+          const paths = [...new Set(expandedDirectoryPaths.filter(Boolean))];
+          return {
+            byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+              const currentPaths = current.fileTreeExpandedDirectoryPaths ?? [];
+              if (
+                currentPaths.length === paths.length &&
+                currentPaths.every((path, index) => path === paths[index])
+              ) {
+                return current;
+              }
+              return { ...current, fileTreeExpandedDirectoryPaths: paths };
+            }),
+          };
+        }),
       openBrowser: (ref, tabId) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {

@@ -102,6 +102,28 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("upgrades saved file tree surfaces with no focused directory", () => {
+    expect(
+      migratePersistedRightPanelState({
+        byThreadKey: {
+          "env-1:thread-A": {
+            isOpen: true,
+            activeSurfaceId: "files",
+            surfaces: [{ id: "files", kind: "files" }],
+          },
+        },
+      }),
+    ).toEqual({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "files",
+          surfaces: [{ id: "files", kind: "files", expandedDirectoryPath: null }],
+        },
+      },
+    });
+  });
+
   it("open sets the active panel for a thread", () => {
     useRightPanelStore.getState().open(refA, "preview");
     expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("preview");
@@ -173,8 +195,34 @@ describe("rightPanelStore", () => {
     expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
       isOpen: true,
       activeSurfaceId: "files",
-      surfaces: [{ id: "files", kind: "files" }],
+      surfaces: [{ id: "files", kind: "files", expandedDirectoryPath: null }],
     });
+  });
+
+  it("opens the file tree at a requested directory", () => {
+    useRightPanelStore.getState().openFiles(refA, "design/plan/integration");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "files",
+      surfaces: [{ id: "files", kind: "files", expandedDirectoryPath: "design/plan/integration" }],
+    });
+  });
+
+  it("remembers expanded file tree directories per thread", () => {
+    useRightPanelStore.getState().openFiles(refA);
+    useRightPanelStore
+      .getState()
+      .setFileTreeExpandedDirectoryPaths(refA, ["design", "design/plan", "design"]);
+
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)
+        .fileTreeExpandedDirectoryPaths,
+    ).toEqual(["design", "design/plan"]);
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refB)
+        .fileTreeExpandedDirectoryPaths,
+    ).toBeUndefined();
   });
 
   it("replaces the standalone explorer with peer file surfaces", () => {

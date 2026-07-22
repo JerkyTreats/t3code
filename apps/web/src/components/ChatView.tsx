@@ -67,7 +67,6 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
-import { useDiffPanelStore } from "../diffPanelStore";
 import {
   collapseExpandedComposerCursor,
   parseStandaloneComposerSlashCommand,
@@ -2967,7 +2966,7 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThreadRef, isGitRepo, isServerThread, onDiffPanelOpen]);
   const addFilesSurface = useCallback(() => {
     if (!activeThreadRef || !activeProject) return;
-    useRightPanelStore.getState().open(activeThreadRef, "files");
+    useRightPanelStore.getState().openFiles(activeThreadRef);
   }, [activeProject, activeThreadRef]);
   const addGitSurface = useCallback(() => {
     if (!activeThreadRef || !activeProject) return;
@@ -3008,6 +3007,20 @@ function ChatViewContent(props: ChatViewProps) {
       useRightPanelStore.getState().openFile(activeThreadRef, relativePath);
     },
     [activeProject, activeThreadRef],
+  );
+  const openDirectorySurface = useCallback(
+    (relativePath: string | null) => {
+      if (!activeThreadRef || !activeProject) return;
+      useRightPanelStore.getState().openFiles(activeThreadRef, relativePath);
+    },
+    [activeProject, activeThreadRef],
+  );
+  const setFileTreeExpandedDirectoryPaths = useCallback(
+    (paths: readonly string[]) => {
+      if (!activeThreadRef) return;
+      useRightPanelStore.getState().setFileTreeExpandedDirectoryPaths(activeThreadRef, paths);
+    },
+    [activeThreadRef],
   );
   const togglePreviewPanel = useCallback(() => {
     if (!activeThreadRef || !isPreviewSupportedInRuntime()) return;
@@ -5202,14 +5215,12 @@ function ChatViewContent(props: ChatViewProps) {
   const onExpandTimelineImage = useCallback((preview: ExpandedImagePreview) => {
     setExpandedImage(preview);
   }, []);
-  const onOpenTurnDiff = useCallback(
-    (turnId: TurnId, filePath?: string) => {
-      if (!isServerThread || !activeThreadRef) return;
-      useDiffPanelStore.getState().selectTurn(activeThreadRef, turnId, filePath);
-      useRightPanelStore.getState().open(activeThreadRef, "diff");
-      onDiffPanelOpen?.();
+  const onOpenTurnFilePreview = useCallback(
+    (_turnId: TurnId, filePath?: string) => {
+      if (!activeProject || !activeThreadRef || !filePath) return;
+      useRightPanelStore.getState().openFile(activeThreadRef, filePath);
     },
-    [activeThreadRef, isServerThread, onDiffPanelOpen],
+    [activeProject, activeThreadRef],
   );
   // Both the Map and the revert handler are read from refs at call-time so
   // the callback reference is fully stable and never busts context identity.
@@ -5368,9 +5379,17 @@ function ChatViewContent(props: ChatViewProps) {
           relativePath={
             activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.relativePath : null
           }
+          expandedDirectoryPath={
+            activeRightPanelSurface.kind === "files"
+              ? activeRightPanelSurface.expandedDirectoryPath
+              : null
+          }
+          initialExpandedDirectoryPaths={rightPanelState.fileTreeExpandedDirectoryPaths ?? []}
           revealLine={activeFileSurface?.revealLine ?? null}
           revealRequestId={activeFileSurface?.revealRequestId ?? 0}
           onOpenFile={openFileSurface}
+          onOpenDirectory={openDirectorySurface}
+          onExpandedDirectoryPathsChange={setFileTreeExpandedDirectoryPaths}
           onPendingChange={handleFilePendingChange}
         />
       </Suspense>
@@ -5453,7 +5472,7 @@ function ChatViewContent(props: ChatViewProps) {
                 turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
                 activeThreadEnvironmentId={activeThread.environmentId}
                 routeThreadKey={routeThreadKey}
-                onOpenTurnDiff={onOpenTurnDiff}
+                onOpenTurnFilePreview={onOpenTurnFilePreview}
                 {...(onOpenProposedPlanPreview ? { onOpenProposedPlanPreview } : {})}
                 revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
                 onRevertUserMessage={onRevertUserMessage}

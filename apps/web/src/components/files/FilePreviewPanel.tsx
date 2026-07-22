@@ -1,3 +1,4 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type {
   EditorId,
   EnvironmentId,
@@ -66,6 +67,8 @@ interface FilePreviewPanelProps {
   cwd: string;
   projectName: string;
   relativePath: string | null;
+  expandedDirectoryPath: string | null;
+  initialExpandedDirectoryPaths: readonly string[];
   threadRef: ScopedThreadRef;
   composerDraftTarget: ScopedThreadRef | DraftId;
   keybindings: ResolvedKeybindingsConfig;
@@ -73,6 +76,8 @@ interface FilePreviewPanelProps {
   revealLine: number | null;
   revealRequestId: number;
   onOpenFile: (relativePath: string) => void;
+  onOpenDirectory: (relativePath: string | null) => void;
+  onExpandedDirectoryPathsChange: (paths: readonly string[]) => void;
   onPendingChange: (relativePath: string, pending: boolean) => void;
 }
 
@@ -611,6 +616,8 @@ export default function FilePreviewPanel({
   cwd,
   projectName,
   relativePath,
+  expandedDirectoryPath,
+  initialExpandedDirectoryPaths,
   threadRef,
   composerDraftTarget,
   keybindings,
@@ -618,6 +625,8 @@ export default function FilePreviewPanel({
   revealLine,
   revealRequestId,
   onOpenFile,
+  onOpenDirectory,
+  onExpandedDirectoryPathsChange,
   onPendingChange,
 }: FilePreviewPanelProps) {
   const { resolvedTheme } = useTheme();
@@ -737,17 +746,20 @@ export default function FilePreviewPanel({
                   {index > 0 ? (
                     <ChevronRight className="mx-1 size-3.5 shrink-0 text-muted-foreground/60" />
                   ) : null}
-                  <span
-                    className={cn(
-                      "max-w-40 truncate",
-                      crumb.kind === "file"
-                        ? "font-medium text-foreground"
-                        : "text-muted-foreground",
-                    )}
-                    title={crumb.path || projectName}
-                  >
-                    {crumb.label}
-                  </span>
+                  {crumb.kind === "file" ? (
+                    <span className="max-w-40 truncate font-medium text-foreground">
+                      {crumb.label}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="max-w-40 truncate text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      title={`Show ${crumb.label} in file tree`}
+                      onClick={() => onOpenDirectory(crumb.path || null)}
+                    >
+                      {crumb.label}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -911,11 +923,14 @@ export default function FilePreviewPanel({
             )}
           >
             <FileBrowserPanel
-              key={`${environmentId}:${cwd}`}
+              key={`${scopedThreadKey(threadRef)}:${environmentId}:${cwd}`}
               environmentId={environmentId}
               cwd={cwd}
               projectName={projectName}
+              expandedDirectoryPath={expandedDirectoryPath}
+              initialExpandedDirectoryPaths={initialExpandedDirectoryPaths}
               onOpenFile={onOpenFile}
+              onExpandedDirectoryPathsChange={onExpandedDirectoryPathsChange}
             />
           </aside>
         ) : null}

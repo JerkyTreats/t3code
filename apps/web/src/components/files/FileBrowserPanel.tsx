@@ -13,7 +13,10 @@ interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
   cwd: string;
   projectName: string;
+  expandedDirectoryPath: string | null;
+  initialExpandedDirectoryPaths: readonly string[];
   onOpenFile: (relativePath: string) => void;
+  onExpandedDirectoryPathsChange: (paths: readonly string[]) => void;
 }
 
 const TREE_UNSAFE_CSS = `
@@ -36,7 +39,10 @@ export default function FileBrowserPanel({
   environmentId,
   cwd,
   projectName,
+  expandedDirectoryPath,
+  initialExpandedDirectoryPaths,
   onOpenFile,
+  onExpandedDirectoryPathsChange,
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const entriesQuery = useProjectEntriesQuery(environmentId, cwd);
@@ -46,6 +52,8 @@ export default function FileBrowserPanel({
     [entries],
   );
   const entryKindsRef = useRef<ReadonlyMap<string, ProjectEntry["kind"]>>(entryKinds);
+  const onExpandedDirectoryPathsChangeRef = useRef(onExpandedDirectoryPathsChange);
+  onExpandedDirectoryPathsChangeRef.current = onExpandedDirectoryPathsChange;
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
   const previousTreePathsRef = useRef<readonly string[]>([]);
 
@@ -53,7 +61,8 @@ export default function FileBrowserPanel({
     density: "compact",
     fileTreeSearchMode: "hide-non-matches",
     flattenEmptyDirectories: true,
-    initialExpansion: 1,
+    initialExpansion: "closed",
+    initialExpandedPaths: initialExpandedDirectoryPaths,
     icons: T3_PIERRE_ICONS,
     onSelectionChange: (selectedPaths) => {
       const selectedPath = selectedPaths.at(-1)?.replace(/\/$/, "");
@@ -72,6 +81,32 @@ export default function FileBrowserPanel({
     previousTreePathsRef.current = treePaths;
     model.resetPaths(treePaths);
   }, [entryKinds, model, treePaths]);
+
+  useEffect(
+    () =>
+      model.subscribe(() => {
+        const expandedPaths = entries.flatMap((entry) => {
+          if (entry.kind !== "directory") return [];
+          const item = model.getItem(entry.path);
+          return item?.isDirectory() && "isExpanded" in item && item.isExpanded()
+            ? [entry.path]
+            : [];
+        });
+        onExpandedDirectoryPathsChangeRef.current(expandedPaths);
+      }),
+    [entries, model],
+  );
+
+  useEffect(() => {
+    if (!expandedDirectoryPath) return;
+    const segments = expandedDirectoryPath.split("/").filter(Boolean);
+    const ancestorPaths = segments.map((_, index) => segments.slice(0, index + 1).join("/"));
+    for (const path of ancestorPaths) {
+      const item = model.getItem(path);
+      if (item?.isDirectory() && "expand" in item) item.expand();
+    }
+    model.scrollToPath(expandedDirectoryPath, { offset: "nearest" });
+  }, [expandedDirectoryPath, model, treePaths]);
 
   const fileCount = useMemo(
     () => entries.reduce((count, entry) => count + (entry.kind === "file" ? 1 : 0), 0),
