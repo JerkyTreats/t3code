@@ -743,7 +743,6 @@ function MarkdownCodeBlock({
   language,
   fenceTitle,
   theme,
-  documentMode,
   isStreaming,
   children,
 }: {
@@ -751,7 +750,6 @@ function MarkdownCodeBlock({
   language: string;
   fenceTitle: string | null;
   theme: "light" | "dark";
-  documentMode: boolean;
   isStreaming: boolean;
   children: ReactNode;
 }) {
@@ -856,7 +854,7 @@ function MarkdownCodeBlock({
           </Tooltip>
         </span>
       </div>
-      {documentMode && isMermaidLanguage(language) && !isStreaming ? (
+      {isMermaidLanguage(language) && !isStreaming ? (
         <MermaidDiagramBlock code={code} fallback={mermaidFallback} theme={theme} />
       ) : (
         children
@@ -1883,7 +1881,6 @@ function ChatMarkdown({
             language={language}
             fenceTitle={fenceTitle}
             theme={resolvedTheme}
-            documentMode={documentMode}
             isStreaming={isStreaming}
           >
             <CodeHighlightErrorBoundary fallback={<pre {...props}>{children}</pre>}>
