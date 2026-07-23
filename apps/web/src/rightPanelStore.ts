@@ -207,6 +207,16 @@ function normalizeRevealLine(line: number | undefined): number | null {
   return Math.max(1, Math.trunc(line));
 }
 
+function normalizeDirectoryPaths(paths: readonly string[]): string[] {
+  return [...new Set(paths.map((path) => path.replace(/^\/+|\/+$/g, "")).filter(Boolean))];
+}
+
+function directoryPathAncestors(path: string | null): string[] {
+  if (!path) return [];
+  const segments = path.split("/").filter(Boolean);
+  return segments.map((_, index) => segments.slice(0, index + 1).join("/"));
+}
+
 export function migratePersistedRightPanelState(persistedState: unknown): {
   byThreadKey: Record<string, ThreadRightPanelState>;
 } {
@@ -324,9 +334,16 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
             const surface = filesSurface(expandedDirectoryPath);
+            const fileTreeExpandedDirectoryPaths = normalizeDirectoryPaths([
+              ...(current.fileTreeExpandedDirectoryPaths ?? []),
+              ...directoryPathAncestors(expandedDirectoryPath),
+            ]);
             return {
               isOpen: true,
               activeSurfaceId: surface.id,
+              ...(fileTreeExpandedDirectoryPaths.length > 0
+                ? { fileTreeExpandedDirectoryPaths }
+                : {}),
               surfaces: current.surfaces.some((entry) => entry.id === surface.id)
                 ? current.surfaces.map((entry) => (entry.id === surface.id ? surface : entry))
                 : [...current.surfaces, surface],
@@ -335,7 +352,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         })),
       setFileTreeExpandedDirectoryPaths: (ref, expandedDirectoryPaths) =>
         set((state) => {
-          const paths = [...new Set(expandedDirectoryPaths.filter(Boolean))];
+          const paths = normalizeDirectoryPaths(expandedDirectoryPaths);
           return {
             byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
               const currentPaths = current.fileTreeExpandedDirectoryPaths ?? [];

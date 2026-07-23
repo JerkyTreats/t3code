@@ -205,6 +205,7 @@ describe("rightPanelStore", () => {
     expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
       isOpen: true,
       activeSurfaceId: "files",
+      fileTreeExpandedDirectoryPaths: ["design", "design/plan", "design/plan/integration"],
       surfaces: [{ id: "files", kind: "files", expandedDirectoryPath: "design/plan/integration" }],
     });
   });
