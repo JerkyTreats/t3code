@@ -88,7 +88,7 @@ The current working tree also contains unrelated user edits and desktop core dum
 - `governance/upstream_merge_policy.md`
 - `governance/compatibility_policy.md`
 - `patch.md`
-- all active feature specs from `fork/F01` through `fork/F14`
+- all active feature specs from `fork/F01` through `fork/F15`
 - `.plans/33-upstream-intake-v0.0.28.md`
 - `.plans/34-connection-resilience-program.md`
 - `.plans/35-upstream-history-rebuild.md`
@@ -131,17 +131,18 @@ The counts below compare owner modules named by each active feature spec against
 | `F1` | 8 | 7 | 4 | 3 | 1 |
 | `F2` | 9 | 9 | 6 | 6 | 2 |
 | `F3` | 8 | 8 | 5 | 5 | 3 |
-| `F4` | 9 | 7 | 3 | 3 | 4 |
+| `F4` | 13 | 7 | 7 | 3 | 4 |
 | `F5` | 14 | 10 | 7 | 6 | 2 |
 | `F6` | 4 | 4 | 1 | 1 | 1 |
 | `F7` | 4 | 3 | 3 | 3 | 0 |
-| `F8` | 8 | 7 | 5 | 5 | 1 |
+| `F8` | 17 | 9 | 13 | 7 | 2 |
 | `F9` | 12 | 12 | 6 | 6 | 4 |
 | `F10` | 7 | 5 | 7 | 5 | 0 |
 | `F11` | 19 | 11 | 12 | 9 | 1 |
 | `F12` | 32 | 6 | 21 | 6 | 0 |
-| `F13` | 11 | 7 | 5 | 5 | 0 |
+| `F13` | 21 | 7 | 7 | 5 | 0 |
 | `F14` | 25 | 22 | 8 | 6 | 15 |
+| `F15` | 30 | 21 | 14 | 11 | 10 |
 
 This distribution rules out a package-wide replacement strategy. Every high-overlap surface needs outcome-level implementation behind named fork seams.
 
@@ -985,7 +986,6 @@ Every upstream hit in a mutation path needs an explicit read-only explanation or
 - `F3` exposes capture by platform rather than verified adapter capability.
 - `F7` lacks distinct worktree close and discard actions.
 - `F10` lacks detected supported Codex binary choices.
-- `F13` still describes an older NativeApi ownership shape instead of current Environment HTTP plus durable RPC.
 - `F14` command palette project actions do not open the unified project launcher.
 - Current Git ref polling reproduces the resource-storm condition corrected by the stable release.
 - Current Linux secure-storage selection lacks a direct launcher regression test.

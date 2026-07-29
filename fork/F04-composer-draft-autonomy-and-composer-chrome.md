@@ -16,9 +16,14 @@ The composer owns its local draft state and preserves rich draft behavior under 
 - A global provider-agnostic prompt stash stores text and image attachments independently from any thread.
 - Stashing succeeds only after durable persistence. A failed or memory-only write leaves the active draft intact.
 - Restoring a stash entry writes its text and images into the active draft without changing provider instance, model selection, attachments outside the stash entry, terminal context chips, or rich mode.
-- Stash entries are bounded and oversized or unreadable images are reported without losing restorable text.
+- The global stash holds at most 20 entries and evicts the oldest entry only after the replacement queue is durably persisted.
+- Each normalized image data URL is limited to 1,300,000 characters.
+- Each entry is limited to 2,700,000 total attachment data URL characters. Attachments are admitted in draft order and later images that exceed the remaining budget are reported as dropped without losing restorable text.
 - Provider-scoped legacy stash queues migrate once into the global queue. The legacy payload is deleted only after the complete converted queue is durably persisted.
 - Legacy migration is atomic. Partial conversion, decode failure, quota failure, or storage unavailability leaves the legacy payload intact and does not publish a partial global queue.
+- Legacy queues merge newest valid `createdAt` first. Invalid timestamps follow valid timestamps. Ties resolve by provider scope key, original queue index, then entry id.
+- Duplicate legacy entry ids retain the first entry under that ordering.
+- Migration strips provider instance and model fields, caps the merged queue at 20 entries, and treats the discarded tail as oldest-first eviction.
 
 ## Owner Modules
 
@@ -59,6 +64,7 @@ Planned owner modules:
 - Preserve local persistence warnings and attachment previews during layout changes.
 - Build the provider-agnostic stash beside the active draft store and keep provider or model state outside its schema.
 - Convert all decodable legacy queues in memory, persist the complete global queue, verify that write, and only then remove the legacy key.
+- Apply the specified migration ordering, de-duplication, field stripping, and cap before the single durable write.
 - Keep the active draft unchanged unless stash persistence is durable.
 
 ## Origin Rebuild Rule
@@ -77,6 +83,7 @@ Planned owner modules:
 - Stash restore transfers text and images without changing provider instance or model selection.
 - Bounded storage and image failure paths preserve restorable text and show accurate warnings.
 - A valid legacy provider-scoped payload migrates once with deterministic ordering and no duplicate entries.
+- Entry, image, and attachment budgets enforce the exact documented limits and evict only the oldest persisted entry.
 - Failed legacy conversion or persistence retains the legacy payload and leaves the global queue unchanged.
 
 ## Compatibility Checks

@@ -66,6 +66,7 @@ Planned owner modules:
 
 - `apps/server/src/httpCompression.ts`
 - `scripts/bench-connection-resilience.ts`
+- `package.json`
 
 ## Fork Seams
 
