@@ -22,6 +22,9 @@ const clientSettings: ClientSettings = {
   diffWordWrap: false,
   favorites: [],
   providerModelPreferences: {},
+  sidebarV2Enabled: true,
+  sidebarV2ConfiguredByUser: true,
+  sidebarAutoSettleAfterDays: 30,
   sidebarProjectGroupingMode: "repository_path",
   sidebarProjectGroupingOverrides: {
     "environment-1:/tmp/project-a": "separate",
@@ -108,6 +111,27 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
+  it.effect("round trips disabled and bounded Sidebar V2 auto-settle settings", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        const disabled = {
+          ...clientSettings,
+          sidebarAutoSettleAfterDays: null,
+        };
+        yield* settings.set(disabled);
+        assert.deepEqual(yield* settings.get, Option.some(disabled));
+
+        const bounded = {
+          ...clientSettings,
+          sidebarAutoSettleAfterDays: 90,
+        };
+        yield* settings.set(bounded);
+        assert.deepEqual(yield* settings.get, Option.some(bounded));
+      }),
+    ),
+  );
+
   it.effect("reports the failed client settings write operation and path", () =>
     withClientSettings(
       Effect.gen(function* () {
@@ -190,6 +214,29 @@ describe("DesktopClientSettings", () => {
         yield* fileSystem.writeFileString(environment.clientSettingsPath, "{}\n");
 
         assert.deepEqual(yield* settings.get, Option.some(yield* decodeClientSettingsJson("{}")));
+      }),
+    ),
+  );
+
+  it.effect("loads Sidebar V2 defaults from legacy client settings documents", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+        yield* fileSystem.writeFileString(
+          environment.clientSettingsPath,
+          `{"timestampFormat":"locale"}\n`,
+        );
+
+        const persisted = yield* settings.get;
+        assert.isTrue(Option.isSome(persisted));
+        if (Option.isSome(persisted)) {
+          assert.equal(persisted.value.sidebarV2Enabled, false);
+          assert.equal(persisted.value.sidebarV2ConfiguredByUser, false);
+          assert.equal(persisted.value.sidebarAutoSettleAfterDays, 3);
+        }
       }),
     ),
   );

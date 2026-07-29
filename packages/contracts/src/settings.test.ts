@@ -3,13 +3,18 @@ import * as Schema from "effect/Schema";
 
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
+  ClientSettingsPatch,
   ClientSettingsSchema,
+  DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   DEFAULT_SERVER_SETTINGS,
+  MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
 
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
+const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
@@ -29,6 +34,42 @@ describe("ClientSettings word wrap", () => {
     expect(decoded.diffWordWrap).toBe(true);
     expect(decoded).not.toHaveProperty("chatWordWrap");
   });
+});
+
+describe("ClientSettings Sidebar V2", () => {
+  it("defaults legacy settings to Sidebar V2 off and auto-settle after three days", () => {
+    expect(decodeClientSettings({})).toMatchObject({
+      sidebarV2Enabled: false,
+      sidebarV2ConfiguredByUser: false,
+      sidebarAutoSettleAfterDays: DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+    });
+  });
+
+  it.each([
+    null,
+    MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+    DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+    MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
+  ])("accepts the auto-settle patch value %s", (sidebarAutoSettleAfterDays) => {
+    expect(
+      decodeClientSettingsPatch({
+        sidebarV2Enabled: true,
+        sidebarV2ConfiguredByUser: true,
+        sidebarAutoSettleAfterDays,
+      }),
+    ).toEqual({
+      sidebarV2Enabled: true,
+      sidebarV2ConfiguredByUser: true,
+      sidebarAutoSettleAfterDays,
+    });
+  });
+
+  it.each([MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS - 1, MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS + 1, 1.5])(
+    "rejects the invalid auto-settle patch value %s",
+    (sidebarAutoSettleAfterDays) => {
+      expect(() => decodeClientSettingsPatch({ sidebarAutoSettleAfterDays })).toThrow();
+    },
+  );
 });
 
 describe("ServerSettings.providerInstances (slice-2 invariant)", () => {

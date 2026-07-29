@@ -52,6 +52,25 @@ describe("clientPersistenceStorage", () => {
     expect(readBrowserClientSettings()).toEqual(settings);
   });
 
+  it.each([null, 1, 90] as const)(
+    "round trips the Sidebar V2 auto-settle value %s",
+    async (sidebarAutoSettleAfterDays) => {
+      getTestWindow();
+      const { readBrowserClientSettings, writeBrowserClientSettings } =
+        await import("./clientPersistenceStorage");
+      const settings = {
+        ...DEFAULT_CLIENT_SETTINGS,
+        sidebarV2Enabled: true,
+        sidebarV2ConfiguredByUser: true,
+        sidebarAutoSettleAfterDays,
+      };
+
+      writeBrowserClientSettings(settings);
+
+      expect(readBrowserClientSettings()).toEqual(settings);
+    },
+  );
+
   it("reports structured decode failures while preserving the fallback", async () => {
     const testWindow = getTestWindow();
     testWindow.localStorage.setItem("t3code:client-settings:v1", "not-json");
@@ -89,5 +108,20 @@ describe("clientPersistenceStorage", () => {
       }),
     );
     expect(settings).not.toHaveProperty("chatWordWrap");
+  });
+
+  it("decodes legacy browser settings with Sidebar V2 defaults", async () => {
+    const testWindow = getTestWindow();
+    testWindow.localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({ timestampFormat: "12-hour" }),
+    );
+    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+
+    expect(readBrowserClientSettings()).toMatchObject({
+      sidebarV2Enabled: false,
+      sidebarV2ConfiguredByUser: false,
+      sidebarAutoSettleAfterDays: 3,
+    });
   });
 });

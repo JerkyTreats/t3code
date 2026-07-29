@@ -18,13 +18,15 @@ import {
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import {
-  type ClientSettingsPatch,
+  ClientSettingsPatch,
   type ClientSettings,
   DEFAULT_CLIENT_SETTINGS,
   type UnifiedSettings,
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import { ensureLocalApi } from "~/localApi";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
 import { usePrimaryEnvironment } from "~/state/environments";
@@ -138,6 +140,25 @@ function persistClientSettings(settings: ClientSettings): void {
         ...safeErrorLogAttributes(error),
       });
     });
+}
+
+const decodeClientSettingsPatch = Schema.decodeUnknownOption(ClientSettingsPatch);
+
+export function applyClientSettingsPatch(patch: ClientSettingsPatch): boolean {
+  // UI-derived values can escape static types, so validate before publishing an optimistic snapshot.
+  const decodedPatch = decodeClientSettingsPatch(patch);
+  if (Option.isNone(decodedPatch)) {
+    console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} rejected invalid patch`, {
+      operation: "validate",
+    });
+    return false;
+  }
+
+  persistClientSettings({
+    ...getClientSettingsSnapshot(),
+    ...decodedPatch.value,
+  });
+  return true;
 }
 
 // ── Key sets for routing patches ─────────────────────────────────────
@@ -259,10 +280,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
       }
 
       if (Object.keys(clientPatch).length > 0) {
-        persistClientSettings({
-          ...getClientSettingsSnapshot(),
-          ...clientPatch,
-        });
+        applyClientSettingsPatch(clientPatch);
       }
     },
     [environmentId, persistServerSettings],
@@ -281,10 +299,7 @@ export function useUpdatePrimarySettings() {
 
 export function useUpdateClientSettings() {
   return useCallback((patch: ClientSettingsPatch) => {
-    persistClientSettings({
-      ...getClientSettingsSnapshot(),
-      ...patch,
-    });
+    applyClientSettingsPatch(patch);
   }, []);
 }
 

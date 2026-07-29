@@ -53,6 +53,9 @@ Current owner modules:
 - `apps/web/src/session-logic.ts`
 - `packages/client-runtime/src/state/threadDetail.ts`
 - `packages/contracts/src/settings.ts`
+- `apps/web/src/hooks/useSettings.ts`
+- `apps/web/src/clientPersistenceStorage.ts`
+- `apps/desktop/src/settings/DesktopClientSettings.ts`
 - `packages/contracts/src/orchestration.ts`
 
 Planned owner modules:
@@ -103,6 +106,7 @@ Planned owner modules:
 - Settled policy tests cover explicit state, waking activity, blockers, queued-turn grace, merged or closed state, inactivity, and invalid timestamps.
 - A schema 38 database upgrades to migration 39 without rewriting migrations 33 through 38.
 - Auto-settle settings decode old data, persist null or integers from 1 through 90, and reject invalid UI values.
+- Client setting patches are schema validated before optimistic snapshot replacement or browser and desktop persistence.
 - Bulk settle, unread, delete, rename, pagination, grouping, project actions, and keyboard traversal work without losing concrete identities.
 - Static scans prove that snooze commands, events, persistence fields, wake scheduling, and UI are absent.
 
