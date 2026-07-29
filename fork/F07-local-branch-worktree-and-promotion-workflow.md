@@ -33,7 +33,7 @@ Local Git workflow semantics require explicit origin-only publication and promot
 - web Git action controls
 - worktree lifecycle helpers
 
-## One Shot Rebuild Notes
+## One Shot Origin Rebuild Notes
 
 - Restore origin-only promotion policy before wiring the panel action.
 - Keep backup creation before merge and push.

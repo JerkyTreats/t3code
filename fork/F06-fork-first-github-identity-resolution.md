@@ -27,7 +27,7 @@ GitHub change request mutations resolve to `origin` so repository, branch, and p
 - Git manager repository context resolution
 - source control context policy
 
-## One Shot Rebuild Notes
+## One Shot Origin Rebuild Notes
 
 - Restore origin-only target resolution before pull request actions.
 - Test origin, upstream, and missing-origin combinations.

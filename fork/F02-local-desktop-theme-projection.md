@@ -38,7 +38,7 @@ Omarchy remains one supported source adapter, but it is not the product boundary
 - web theme projection hook
 - CSS variable projection
 
-## One Shot Rebuild Notes
+## One Shot Origin Rebuild Notes
 
 - Restore the desktop theme source before wiring web CSS projection.
 - Keep Omarchy as the source value when Omarchy theme data is the selected source.
@@ -47,10 +47,10 @@ Omarchy remains one supported source adapter, but it is not the product boundary
 - Preserve missing state fallback as safe degradation, not as generic authority.
 - Add web projection after desktop IPC contracts are restored.
 
-## Upstream Replay Rule
+## Origin Rebuild Rule
 
-- Replay upstream theme infrastructure changes under the local desktop theme source model.
-- Override upstream behavior that discards local host theme projection on desktop.
+- Rebuild theme infrastructure only from origin-owned changes under the local desktop theme source model.
+- Reject origin behavior that discards local host theme projection on desktop.
 - Do not treat Omarchy as the product identity when preserving Omarchy theme support.
 
 ## Verification

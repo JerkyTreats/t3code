@@ -22,7 +22,7 @@ Use it together with the [Origin Only Source Control Policy](governance/upstream
 - Review this file before changes that modify fork owned behavior.
 - Review the linked feature specs under `fork/` for every affected feature.
 - Update this file in the same change whenever fork owned behavior changes.
-- Keep each feature spec current for intent, owner modules, fork seams, required behavior, replay notes, and verification.
+- Keep each feature spec current for intent, owner modules, fork seams, required behavior, origin rebuild notes, and verification.
 - Use the pnpm verification gate: `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test`.
 - If code and this file drift, fix the drift before merge.
 - Treat this file as a current state guide, not a release log.
@@ -62,6 +62,7 @@ When a feature is likely to be rebuilt onto future origin `main` snapshots, bias
 - [`F12` provider instance identity seam](fork/F12-provider-instance-identity-seam.md)
 - [`F13` auth access management](fork/F13-auth-access-management.md)
 - [`F14` unified project context and inference dashboard](fork/F14-project-management-and-inference-dashboard.md)
+- [`F15` connection resilience and offline send durability](fork/F15-connection-resilience-and-offline-send-durability.md)
 
 ## Origin Rebuild Packet
 
@@ -72,7 +73,7 @@ The rebuild packet must include:
 - origin base commit
 - target fork branch
 - affected feature ids
-- feature replay order
+- feature rebuild order
 - per feature origin implementation decision
 - fork seam or owner module used for each feature
 - automated or manual verification evidence for each restored behavior
@@ -88,13 +89,13 @@ Every spec under `fork/` must include:
 - required behavior
 - owner modules
 - fork seams
-- one shot rebuild notes
+- one shot origin rebuild notes
 - verification
 - compatibility checks when the feature affects contracts, routes, persistence, desktop, or runtime state
 
 Spec files should describe outcome behavior first and current implementation shape second. This lets future origin rebuilds preserve product behavior even when files have moved.
 
-## Rebuild Replay Order
+## Origin Rebuild Order
 
 Use this order unless a rebuild note records a concrete dependency that requires a local adjustment:
 
@@ -112,6 +113,7 @@ Use this order unless a rebuild note records a concrete dependency that requires
 - `F12` provider instance identity seam
 - `F13` auth access management
 - `F14` unified project context and inference dashboard
+- `F15` connection resilience and offline send durability
 
 ## Change Procedure
 
@@ -119,4 +121,4 @@ Use this order unless a rebuild note records a concrete dependency that requires
 - Add a new feature spec before merge if a new fork owned surface is introduced.
 - Remove a feature spec only when the fork intentionally drops that behavior and the replacement is documented here in the same change.
 - Keep `patch.md` and the matching `fork/` spec in sync.
-- For a new feature, add the spec file first, then add it to the feature index and replay order.
+- For a new feature, add the spec file first, then add it to the feature index and origin rebuild order.

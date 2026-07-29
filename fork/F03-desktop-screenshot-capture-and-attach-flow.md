@@ -38,20 +38,20 @@ Omarchy remains one supported capture adapter, but the product feature is direct
 - composer screenshot helper
 - active draft attachment path
 
-## One Shot Rebuild Notes
+## One Shot Origin Rebuild Notes
 
 - Restore desktop capture service and tests before UI attachment wiring.
 - Keep capture adapter preference order explicit.
 - Keep bridge capability exposure platform gated so non Linux clients do not render a broken composer action.
 - Wait for a stable PNG artifact before converting to a draft attachment.
-- Attach through the active draft store or current upstream equivalent, not through route level prompt ownership.
+- Attach through the active draft store or current origin equivalent, not through route level prompt ownership.
 - Preserve clipboard fallback for capture adapters that use the clipboard.
 - Reuse preview annotation screenshot conversion when the entity already provides a PNG data URL and active draft attachment path.
 
-## Upstream Replay Rule
+## Origin Rebuild Rule
 
-- Replay upstream screenshot or attachment changes under the direct desktop screenshot attach contract.
-- Override upstream flows that remove the first class composer screenshot action or make capture mutate unrelated draft text.
+- Rebuild screenshot or attachment changes only from origin-owned changes under the direct desktop screenshot attach contract.
+- Reject origin flows that remove the first class composer screenshot action or make capture mutate unrelated draft text.
 - Keep Omarchy capture support as one adapter when the host provides it.
 
 ## Verification

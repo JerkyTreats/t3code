@@ -5,7 +5,7 @@ Status: active
 
 ## Intent
 
-Plan review, project document preview, and markdown presentation preserve fork specific preview flows, navigation behavior, and readability guarantees instead of falling back to a narrower generic upstream markdown surface.
+Plan review, project document preview, and markdown presentation preserve fork specific preview flows, navigation behavior, and readability guarantees instead of falling back to a narrower generic reference surface.
 
 ## Required Behavior
 
@@ -49,7 +49,7 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - file preview surfaces
 - markdown overflow CSS
 
-## One Shot Rebuild Notes
+## One Shot Origin Rebuild Notes
 
 - Restore markdown link classification before preview route wiring.
 - Preserve separate document-link cwd and workspace-root metadata when rebuilding document preview wiring.
@@ -59,12 +59,12 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Verify file preview links from chat messages, files panel, and project document previews.
 - Keep code file preview behavior distinct from rendered markdown document behavior.
 
-## Upstream Replay Rule
+## Origin Rebuild Rule
 
-- Replay upstream markdown and document preview changes under the fork plan preview contract.
-- Preserve the richer document markdown renderer when upstream changes chat markdown internals.
-- Preserve route based document preview navigation when upstream changes diff, files, plan, or chat route search state.
-- Override upstream changes that remove fullscreen in memory plan preview, remove in app project document preview, regress plan or document navigation, remove document outline behavior, disable Mermaid or image preview support, or reintroduce clipped markdown content in protected surfaces.
+- Rebuild markdown and document preview changes only from origin-owned changes under the fork plan preview contract.
+- Preserve the richer document markdown renderer when origin changes chat markdown internals.
+- Preserve route based document preview navigation when origin changes diff, files, plan, or chat route search state.
+- Reject origin changes that remove fullscreen in memory plan preview, remove in app project document preview, regress plan or document navigation, remove document outline behavior, disable Mermaid or image preview support, or reintroduce clipped markdown content in protected surfaces.
 
 ## Verification
 

@@ -46,7 +46,7 @@ The primary Git management UI belongs in the unified right panel as a selectable
 - thread deletion workflow
 - worktree lifecycle helpers
 
-## One Shot Rebuild Notes
+## One Shot Origin Rebuild Notes
 
 - Rebuild draft isolation tests before porting broad Git surface UI.
 - Add the Git surface to the unified right panel launcher before removing legacy route assumptions.
@@ -54,10 +54,10 @@ The primary Git management UI belongs in the unified right panel as a selectable
 - Run worktree discard teardown before fallback navigation.
 - Treat project scoped Git actions as repository operations unless a thread scoped action is explicit.
 
-## Upstream Replay Rule
+## Origin Rebuild Rule
 
-- Replay upstream Git UX or routing changes so composer draft ownership remains isolated.
-- Override upstream coupling that makes Git interactions mutate unrelated draft state.
+- Rebuild Git UX or routing changes only from origin-owned changes so composer draft ownership remains isolated.
+- Reject origin coupling that makes Git interactions mutate unrelated draft state.
 - Prefer unified right panel integration over standalone Git panel routes.
 
 ## Verification

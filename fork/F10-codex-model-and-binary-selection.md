@@ -36,19 +36,19 @@ Codex provider setup follows the installed Codex app-server capability surface i
 - settings Codex binary selection
 - desktop launcher environment bridge
 
-## One Shot Rebuild Notes
+## One Shot Origin Rebuild Notes
 
 - Restore binary resolver and tests before provider setup wiring.
 - Send resolved Codex CLI version through app-server initialize.
 - Prefer live model and skill discovery before fallback model lists.
 - Keep explicit absolute binary paths pinned across desktop restart.
-- Recheck settings UI after upstream provider settings changes.
+- Recheck settings UI after origin provider settings changes.
 
-## Upstream Replay Rule
+## Origin Rebuild Rule
 
-- Replay upstream provider model changes so Codex app-server model discovery remains authoritative when available.
-- Override upstream changes that reintroduce a hardcoded Codex only model catalog as the primary source.
-- Override upstream binary resolution changes that silently replace an explicit user selected Codex binary path.
+- Rebuild provider model changes only from origin-owned changes so Codex app-server model discovery remains authoritative when available.
+- Reject origin changes that reintroduce a hardcoded Codex only model catalog as the primary source.
+- Reject origin binary resolution changes that silently replace an explicit user selected Codex binary path.
 
 ## Verification
 

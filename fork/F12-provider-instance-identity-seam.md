@@ -65,7 +65,7 @@ Provider status and settings can carry provider instance identity without collap
 - web provider instance helpers
 - composer command and skill presentation
 
-## One Shot Rebuild Notes
+## One Shot Origin Rebuild Notes
 
 - Restore additive contracts before runtime and settings wiring.
 - Keep legacy provider kind fallback until persisted thread and session state is fully instance aware.
@@ -73,9 +73,9 @@ Provider status and settings can carry provider instance identity without collap
 - Rebuild composer command and skill menus from active instance snapshots.
 - Keep provider instance routing compatible with Codex model discovery and composer draft ownership.
 
-## Upstream Replay Rule
+## Origin Rebuild Rule
 
-- Replay upstream provider instance work through the provider runtime seam so fork composer draft ownership, screenshot controls, and Codex model discovery remain intact.
+- Rebuild provider instance work only from origin-owned changes through the provider runtime seam so fork composer draft ownership, screenshot controls, and Codex model discovery remain intact.
 - Preserve legacy provider kind compatibility until all persisted thread, model selection, and session routing paths are instance aware.
 - Override changes that drop unknown or unavailable instance data during settings decode or provider status projection.
 

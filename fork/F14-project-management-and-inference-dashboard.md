@@ -67,7 +67,7 @@ The right panel provides compact global project context while `Open a surface` l
 - project script adapter
 - sidebar and command palette project actions
 
-## One Shot Rebuild Notes
+## One Shot Origin Rebuild Notes
 
 - Restore product helpers before route and UI integration.
 - Keep concrete project identity as environment id plus project id.
@@ -79,13 +79,13 @@ The right panel provides compact global project context while `Open a surface` l
 - Rebuild inference rollups from latest usage snapshot per turn before rendering dashboard metrics.
 - Recheck markdown and file preview behavior from `F9` because project surfaces link into those surfaces.
 
-## Upstream Replay Rule
+## Origin Rebuild Rule
 
-- Replay upstream right panel, dashboard, and route changes so concrete project identity and environment aware routing remain explicit.
+- Rebuild right panel, dashboard, and route changes only from origin-owned changes so concrete project identity and environment aware routing remain explicit.
 - Preserve fork sidebar grouping rules so grouped labels never replace concrete project identity for management actions.
 - Preserve fork Git panel draft isolation and source control guardrails when project scoped Git actions are added or changed.
-- Override upstream changes that make inference totals depend only on prompt and response tokens when provider processed token totals are available.
-- Override upstream changes that remove project level access to scripts, editor actions, latest thread navigation, Git Panel, or Inference Dashboard.
+- Reject origin changes that make inference totals depend only on prompt and response tokens when provider processed token totals are available.
+- Reject origin changes that remove project level access to scripts, editor actions, latest thread navigation, Git Panel, or Inference Dashboard.
 - Prefer unified right panel surfaces over standalone project management routes.
 
 ## Verification

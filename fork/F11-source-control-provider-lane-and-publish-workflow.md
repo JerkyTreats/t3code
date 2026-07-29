@@ -52,7 +52,7 @@ Source control support exposes GitHub, GitLab, Azure DevOps, and Bitbucket throu
 - Git provider lane UI
 - native API and RPC capability adapters
 
-## One Shot Rebuild Notes
+## One Shot Origin Rebuild Notes
 
 - Restore source control contracts before server and web wiring.
 - Keep provider discovery and publish behavior provider neutral.
