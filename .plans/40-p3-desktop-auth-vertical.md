@@ -4,7 +4,7 @@ Date: 2026-07-29
 Branch: product/v030-desktop-auth
 Commit Policy: conventional local commit after full gates and fresh review
 Objective: Reconcile v0.0.30 desktop relaunch, Connect, relay, identity, theme, screenshot, and secure-storage outcomes behind existing fork seams.
-Status: implementation, review, and full gates complete; local commit pending
+Status: complete
 
 ## Objective Baseline
 
@@ -74,7 +74,7 @@ Status: implementation, review, and full gates complete; local commit pending
 
 | Slice | Worktree | Branch | Status | Integration Commit | Notes |
 | --- | --- | --- | --- | --- | --- |
-| P3 | `/home/jerkytreats/t3code-v030-desktop-auth` | `product/v030-desktop-auth` | review and full gates complete | pending | independent rebuild from read-only outcome evidence |
+| P3 | `/home/jerkytreats/t3code-v030-desktop-auth` | `product/v030-desktop-auth` | complete | `97a550102` | independent rebuild from read-only outcome evidence |
 
 ## Gate Evidence
 
@@ -95,7 +95,7 @@ Status: implementation, review, and full gates complete; local commit pending
 
 | Scope | Commit | Status | Notes |
 | --- | --- | --- | --- |
-| P3 desktop and Connect vertical | pending | pending | local commit only after review |
+| P3 desktop and Connect vertical | `97a550102` | committed | local origin branch only |
 
 ## Review Lanes
 
@@ -107,12 +107,12 @@ Status: implementation, review, and full gates complete; local commit pending
 
 | ID | Source | Severity | File | Objective Or Policy Basis | Status | Fix Commit | Verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| P3-S1 | self review | blocking | `infra/relay/src/http/Api.ts` | deprovision failure must retain the upstream unavailable response | fixed | pending | relay type check and 37 affected tests pass |
-| P3-R1 | fresh review | blocking | managed allocation lifecycle | timestamp generations, unlink key identity, capacity race, shutdown ownership, and stale copy | fixed | pending | 47 relay, 12 server, and 1 mobile focused tests pass |
-| P3-R2 | fix rereview | blocking | managed allocation cleanup | cleanup must retain remote ids after failed deletion and serialize later reuse | fixed | pending | allocation CAS and provider tests pass |
-| P3-R3 | final rereview | blocking | environment link lifecycle | same-key relink finalization and unlink must not interleave | fixed | pending | shared advisory lock key and 47 affected relay tests pass |
-| P3-R4 | final fix rereview | blocking | unlink commit boundary | link and credential revocation must commit before remote endpoint deletion | fixed | pending | post-effect commit-failure regression and 47 affected relay tests pass |
-| P3-R5 | final fix rereview | blocking | shutdown release lifecycle | release must not advance allocation generation between unlink capture and cleanup | fixed | pending | forced release-first interleaving regression passes |
+| P3-S1 | self review | blocking | `infra/relay/src/http/Api.ts` | deprovision failure must retain the upstream unavailable response | fixed | `97a550102` | relay type check and 37 affected tests pass |
+| P3-R1 | fresh review | blocking | managed allocation lifecycle | timestamp generations, unlink key identity, capacity race, shutdown ownership, and stale copy | fixed | `97a550102` | 47 relay, 12 server, and 1 mobile focused tests pass |
+| P3-R2 | fix rereview | blocking | managed allocation cleanup | cleanup must retain remote ids after failed deletion and serialize later reuse | fixed | `97a550102` | allocation CAS and provider tests pass |
+| P3-R3 | final rereview | blocking | environment link lifecycle | same-key relink finalization and unlink must not interleave | fixed | `97a550102` | shared advisory lock key and 47 affected relay tests pass |
+| P3-R4 | final fix rereview | blocking | unlink commit boundary | link and credential revocation must commit before remote endpoint deletion | fixed | `97a550102` | post-effect commit-failure regression and 47 affected relay tests pass |
+| P3-R5 | final fix rereview | blocking | shutdown release lifecycle | release must not advance allocation generation between unlink capture and cleanup | fixed | `97a550102` | forced release-first interleaving regression passes |
 
 ## Deferred Findings
 
@@ -130,4 +130,4 @@ Status: implementation, review, and full gates complete; local commit pending
 
 ## Closeout
 
-Review and full gates are complete. Local commit and clean worktree proof remain.
+Review, full gates, local implementation commit, and clean worktree proof are complete. No remote mutation occurred.
