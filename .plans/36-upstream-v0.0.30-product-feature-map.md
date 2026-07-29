@@ -135,7 +135,7 @@ The counts below compare owner modules named by each active feature spec against
 | `F5` | 14 | 10 | 7 | 6 | 2 |
 | `F6` | 4 | 4 | 1 | 1 | 1 |
 | `F7` | 4 | 3 | 3 | 3 | 0 |
-| `F8` | 20 | 9 | 14 | 7 | 2 |
+| `F8` | 26 | 12 | 20 | 10 | 2 |
 | `F9` | 12 | 12 | 6 | 6 | 4 |
 | `F10` | 7 | 5 | 7 | 5 | 0 |
 | `F11` | 19 | 11 | 12 | 9 | 1 |
