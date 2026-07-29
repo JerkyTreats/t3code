@@ -9,6 +9,8 @@ export const isThreadDetailEvent = (
       | "thread.message-sent"
       | "thread.archived"
       | "thread.unarchived"
+      | "thread.settled"
+      | "thread.unsettled"
       | "thread.proposed-plan-upserted"
       | "thread.activity-appended"
       | "thread.turn-diff-completed"
@@ -20,6 +22,8 @@ export const isThreadDetailEvent = (
   event.type === "thread.message-sent" ||
   event.type === "thread.archived" ||
   event.type === "thread.unarchived" ||
+  event.type === "thread.settled" ||
+  event.type === "thread.unsettled" ||
   event.type === "thread.proposed-plan-upserted" ||
   event.type === "thread.activity-appended" ||
   event.type === "thread.turn-diff-completed" ||

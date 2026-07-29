@@ -91,6 +91,8 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         createdAt: "2026-03-24T00:00:00.000Z",
         updatedAt: "2026-03-24T00:00:00.000Z",
         archivedAt: null,
+        settledOverride: "settled",
+        settledAt: "2026-03-24T00:00:04.000Z",
         latestUserMessageAt: null,
         pendingApprovalCount: 0,
         pendingUserInputCount: 0,
@@ -165,6 +167,8 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
         Option.getOrNull(persisted)?.statusSummaryUpdatedAt,
         "2026-03-24T00:00:03.000Z",
       );
+      assert.strictEqual(Option.getOrNull(persisted)?.settledOverride, "settled");
+      assert.strictEqual(Option.getOrNull(persisted)?.settledAt, "2026-03-24T00:00:04.000Z");
     }),
   );
 });

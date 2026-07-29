@@ -48,6 +48,7 @@ import Migration0032 from "./Migrations/032_AuthPairingProofKeyThumbprint.ts";
 import Migration0036 from "./Migrations/036_ReconcileV0028MigrationHistories.ts";
 import Migration0037 from "./Migrations/037_ProjectionThreadRuntimeSummary.ts";
 import Migration0038 from "./Migrations/038_ProjectionThreadProposedPlanPagingIndex.ts";
+import Migration0039 from "./Migrations/039_ProjectionThreadsSettled.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -96,6 +97,7 @@ export const migrationEntries = [
   [36, "ReconcileV0028MigrationHistories", Migration0036],
   [37, "ProjectionThreadRuntimeSummary", Migration0037],
   [38, "ProjectionThreadProposedPlanPagingIndex", Migration0038],
+  [39, "ProjectionThreadsSettled", Migration0039],
 ] as const;
 
 export const makeMigrationLoader = (throughId?: number) =>

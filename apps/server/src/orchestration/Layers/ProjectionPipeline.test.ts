@@ -177,6 +177,130 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
   );
 });
 
+it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-settlement-projection-test-")))(
+  "settled thread projection",
+  (it) => {
+    it.effect("persists settled, user active, and activity-cleared states", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const sql = yield* SqlClient.SqlClient;
+        const threadId = ThreadId.make("thread-settlement-projection");
+        const base = {
+          aggregateKind: "thread" as const,
+          aggregateId: threadId,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+        };
+
+        yield* projectionPipeline.projectEvent({
+          ...base,
+          sequence: 1,
+          eventId: EventId.make("event-settlement-created"),
+          type: "thread.created",
+          occurredAt: "2026-07-29T00:00:00.000Z",
+          commandId: CommandId.make("command-settlement-created"),
+          payload: {
+            threadId,
+            projectId: ProjectId.make("project-settlement-projection"),
+            title: "Settlement projection",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5.4",
+            },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: "2026-07-29T00:00:00.000Z",
+            updatedAt: "2026-07-29T00:00:00.000Z",
+          },
+        });
+        yield* projectionPipeline.projectEvent({
+          ...base,
+          sequence: 2,
+          eventId: EventId.make("event-settlement-settled"),
+          type: "thread.settled",
+          occurredAt: "2026-07-29T00:01:00.000Z",
+          commandId: CommandId.make("command-settlement-settled"),
+          payload: {
+            threadId,
+            settledAt: "2026-07-29T00:01:00.000Z",
+            updatedAt: "2026-07-29T00:01:00.000Z",
+          },
+        });
+
+        let rows = yield* sql<{
+          readonly settledOverride: string | null;
+          readonly settledAt: string | null;
+        }>`
+          SELECT
+            settled_override AS "settledOverride",
+            settled_at AS "settledAt"
+          FROM projection_threads
+          WHERE thread_id = ${threadId}
+        `;
+        assert.deepStrictEqual(rows, [
+          {
+            settledOverride: "settled",
+            settledAt: "2026-07-29T00:01:00.000Z",
+          },
+        ]);
+
+        yield* projectionPipeline.projectEvent({
+          ...base,
+          sequence: 3,
+          eventId: EventId.make("event-settlement-user-unsettled"),
+          type: "thread.unsettled",
+          occurredAt: "2026-07-29T00:02:00.000Z",
+          commandId: CommandId.make("command-settlement-user-unsettled"),
+          payload: {
+            threadId,
+            reason: "user",
+            updatedAt: "2026-07-29T00:02:00.000Z",
+          },
+        });
+        rows = yield* sql<{
+          readonly settledOverride: string | null;
+          readonly settledAt: string | null;
+        }>`
+          SELECT
+            settled_override AS "settledOverride",
+            settled_at AS "settledAt"
+          FROM projection_threads
+          WHERE thread_id = ${threadId}
+        `;
+        assert.deepStrictEqual(rows, [{ settledOverride: "active", settledAt: null }]);
+
+        yield* projectionPipeline.projectEvent({
+          ...base,
+          sequence: 4,
+          eventId: EventId.make("event-settlement-activity-unsettled"),
+          type: "thread.unsettled",
+          occurredAt: "2026-07-29T00:03:00.000Z",
+          commandId: CommandId.make("command-settlement-activity-unsettled"),
+          payload: {
+            threadId,
+            reason: "activity",
+            updatedAt: "2026-07-29T00:03:00.000Z",
+          },
+        });
+        rows = yield* sql<{
+          readonly settledOverride: string | null;
+          readonly settledAt: string | null;
+        }>`
+          SELECT
+            settled_override AS "settledOverride",
+            settled_at AS "settledAt"
+          FROM projection_threads
+          WHERE thread_id = ${threadId}
+        `;
+        assert.deepStrictEqual(rows, [{ settledOverride: null, settledAt: null }]);
+      }),
+    );
+  },
+);
+
 it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-base-")))(
   "OrchestrationProjectionPipeline",
   (it) => {

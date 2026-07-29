@@ -89,6 +89,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           active_plan_progress_json,
           latest_runtime_activity_at,
           status_summary_updated_at,
+          settled_override,
+          settled_at,
           created_at,
           updated_at,
           deleted_at
@@ -110,6 +112,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           '{"completedAllSteps":false,"currentStepNumber":3,"totalSteps":5,"turnId":"turn-1","activityId":"activity-plan","updatedAt":"2026-02-24T00:00:06.000Z"}',
           '2026-02-24T00:00:06.000Z',
           '2026-02-24T00:00:06.000Z',
+          'settled',
+          '2026-02-24T00:00:02.500Z',
           '2026-02-24T00:00:02.000Z',
           '2026-02-24T00:00:03.000Z',
           NULL
@@ -318,6 +322,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           createdAt: "2026-02-24T00:00:02.000Z",
           updatedAt: "2026-02-24T00:00:03.000Z",
           archivedAt: null,
+          settledOverride: "settled",
+          settledAt: "2026-02-24T00:00:02.500Z",
           deletedAt: null,
           messages: [
             {
@@ -428,6 +434,8 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           createdAt: "2026-02-24T00:00:02.000Z",
           updatedAt: "2026-02-24T00:00:03.000Z",
           archivedAt: null,
+          settledOverride: "settled",
+          settledAt: "2026-02-24T00:00:02.500Z",
           session: {
             threadId: ThreadId.make("thread-1"),
             status: "running",

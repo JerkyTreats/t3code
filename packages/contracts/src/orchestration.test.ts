@@ -11,6 +11,8 @@ import {
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
+  OrchestrationThread,
+  OrchestrationThreadShell,
   ProjectCreatedPayload,
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
@@ -37,6 +39,8 @@ const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
 const decodeOrchestrationLatestTurn = Schema.decodeUnknownEffect(OrchestrationLatestTurn);
 const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(OrchestrationProposedPlan);
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
+const decodeOrchestrationThread = Schema.decodeUnknownEffect(OrchestrationThread);
+const decodeOrchestrationThreadShell = Schema.decodeUnknownEffect(OrchestrationThreadShell);
 const encodeThreadCreatedPayload = Schema.encodeEffect(ThreadCreatedPayload);
 
 function getOptionValue(
@@ -440,6 +444,114 @@ it.effect("decodes thread archive and unarchive commands", () =>
 
     assert.strictEqual(archive.type, "thread.archive");
     assert.strictEqual(unarchive.type, "thread.unarchive");
+  }),
+);
+
+it.effect("decodes exact settlement command wire literals", () =>
+  Effect.gen(function* () {
+    const settle = yield* decodeOrchestrationCommand({
+      type: "thread.settle",
+      commandId: "cmd-settle-1",
+      threadId: "thread-1",
+      createdAt: "2026-07-29T00:00:00.000Z",
+    });
+    const unsettle = yield* decodeOrchestrationCommand({
+      type: "thread.unsettle",
+      commandId: "cmd-unsettle-1",
+      threadId: "thread-1",
+      reason: "user",
+      createdAt: "2026-07-29T00:01:00.000Z",
+    });
+
+    assert.strictEqual(settle.type, "thread.settle");
+    assert.strictEqual(unsettle.type, "thread.unsettle");
+    if (unsettle.type !== "thread.unsettle") {
+      assert.fail("Expected thread.unsettle command.");
+    }
+    assert.strictEqual(unsettle.reason, "user");
+  }),
+);
+
+it.effect("decodes exact settlement event wire literals", () =>
+  Effect.gen(function* () {
+    const base = {
+      sequence: 1,
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      occurredAt: "2026-07-29T00:00:00.000Z",
+      causationEventId: null,
+      metadata: {},
+    };
+    const settled = yield* decodeOrchestrationEvent({
+      ...base,
+      eventId: "event-settled-1",
+      type: "thread.settled",
+      commandId: "cmd-settle-1",
+      correlationId: "cmd-settle-1",
+      payload: {
+        threadId: "thread-1",
+        settledAt: "2026-07-29T00:00:00.000Z",
+        updatedAt: "2026-07-29T00:00:00.000Z",
+      },
+    });
+    const unsettled = yield* decodeOrchestrationEvent({
+      ...base,
+      eventId: "event-unsettled-1",
+      type: "thread.unsettled",
+      commandId: "cmd-unsettle-1",
+      correlationId: "cmd-unsettle-1",
+      payload: {
+        threadId: "thread-1",
+        reason: "activity",
+        updatedAt: "2026-07-29T00:01:00.000Z",
+      },
+    });
+
+    assert.strictEqual(settled.type, "thread.settled");
+    assert.strictEqual(unsettled.type, "thread.unsettled");
+  }),
+);
+
+it.effect("defaults additive settlement fields for legacy thread payloads", () =>
+  Effect.gen(function* () {
+    const shared = {
+      id: "thread-1",
+      projectId: "project-1",
+      title: "Legacy thread",
+      modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      latestTurn: null,
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+      archivedAt: null,
+      session: null,
+    };
+    const thread = yield* decodeOrchestrationThread({
+      ...shared,
+      deletedAt: null,
+      messages: [],
+      proposedPlans: [],
+      activities: [],
+      checkpoints: [],
+    });
+    const shell = yield* decodeOrchestrationThreadShell({
+      ...shared,
+      latestUserMessageAt: null,
+      hasPendingApprovals: false,
+      hasPendingUserInput: false,
+      hasActionableProposedPlan: false,
+      activePlanProgress: null,
+      latestRuntimeActivityAt: null,
+      statusSummaryUpdatedAt: null,
+    });
+
+    assert.strictEqual(thread.settledOverride, null);
+    assert.strictEqual(thread.settledAt, null);
+    assert.strictEqual(shell.settledOverride, null);
+    assert.strictEqual(shell.settledAt, null);
   }),
 );
 

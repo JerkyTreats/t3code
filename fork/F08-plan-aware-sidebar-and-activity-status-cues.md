@@ -47,11 +47,19 @@ Current owner modules:
 - `apps/web/src/components/ChatView.tsx`
 - `apps/web/src/components/settings/SettingsPanels.tsx`
 - `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
+- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts`
 - `apps/server/src/orchestration/decider.ts`
 - `apps/server/src/orchestration/projector.ts`
+- `apps/server/src/persistence/Migrations/039_ProjectionThreadsSettled.ts`
+- `apps/server/src/persistence/Services/ProjectionThreads.ts`
+- `apps/server/src/persistence/Layers/ProjectionThreads.ts`
 - `packages/shared/src/planProgress.ts`
 - `apps/web/src/session-logic.ts`
 - `packages/client-runtime/src/state/threadDetail.ts`
+- `packages/client-runtime/src/state/threadSettled.ts`
+- `packages/client-runtime/src/state/threadReducer.ts`
+- `packages/client-runtime/src/state/threadCommands.ts`
+- `packages/client-runtime/src/operations/commands.ts`
 - `packages/contracts/src/settings.ts`
 - `apps/web/src/hooks/useSettings.ts`
 - `apps/web/src/clientPersistenceStorage.ts`
@@ -62,8 +70,6 @@ Planned owner modules:
 
 - `apps/web/src/components/SidebarV2.tsx`
 - `apps/web/src/components/AppSidebarLayout.tsx`
-- `apps/server/src/persistence/Migrations/039_ProjectionThreadsSettled.ts`
-- `packages/client-runtime/src/state/threadSettled.ts`
 
 ## Fork Seams
 

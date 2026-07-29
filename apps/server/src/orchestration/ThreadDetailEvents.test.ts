@@ -60,3 +60,40 @@ it("includes thread archive transitions in detail stream events", () => {
   assert.isTrue(isThreadDetailEvent(archived));
   assert.isTrue(isThreadDetailEvent(unarchived));
 });
+
+it("includes settled lifecycle events", () => {
+  const base = {
+    sequence: 7,
+    aggregateKind: "thread" as const,
+    aggregateId: ThreadId.make("thread-1"),
+    occurredAt: "2026-07-29T00:00:00.000Z",
+    commandId: null,
+    causationEventId: null,
+    correlationId: null,
+    metadata: {},
+  };
+  const settled: OrchestrationEvent = {
+    ...base,
+    eventId: EventId.make("event-thread-settled"),
+    type: "thread.settled",
+    payload: {
+      threadId: ThreadId.make("thread-1"),
+      settledAt: "2026-07-29T00:00:00.000Z",
+      updatedAt: "2026-07-29T00:00:00.000Z",
+    },
+  };
+  const unsettled: OrchestrationEvent = {
+    ...base,
+    sequence: 8,
+    eventId: EventId.make("event-thread-unsettled"),
+    type: "thread.unsettled",
+    payload: {
+      threadId: ThreadId.make("thread-1"),
+      reason: "activity",
+      updatedAt: "2026-07-29T00:01:00.000Z",
+    },
+  };
+
+  assert.isTrue(isThreadDetailEvent(settled));
+  assert.isTrue(isThreadDetailEvent(unsettled));
+});

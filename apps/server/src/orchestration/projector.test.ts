@@ -6,6 +6,7 @@ import {
   ThreadId,
   type OrchestrationEvent,
 } from "@t3tools/contracts";
+import { it as effectIt } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -89,6 +90,8 @@ describe("orchestration projector", () => {
         createdAt: now,
         updatedAt: now,
         archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
         deletedAt: null,
         messages: [],
         proposedPlans: [],
@@ -98,6 +101,100 @@ describe("orchestration projector", () => {
       },
     ]);
   });
+
+  effectIt.effect("projects user and activity unsettle semantics", () =>
+    Effect.gen(function* () {
+      const initial = createEmptyReadModel("2026-07-29T00:00:00.000Z");
+      const created = yield* projectEvent(
+        initial,
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: "2026-07-29T00:00:00.000Z",
+          commandId: "cmd-create",
+          payload: {
+            threadId: "thread-1",
+            projectId: "project-1",
+            title: "Settlement",
+            modelSelection: {
+              instanceId: "codex",
+              model: "gpt-5.4",
+            },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdAt: "2026-07-29T00:00:00.000Z",
+            updatedAt: "2026-07-29T00:00:00.000Z",
+          },
+        }),
+      );
+      const settled = yield* projectEvent(
+        created,
+        makeEvent({
+          sequence: 2,
+          type: "thread.settled",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: "2026-07-29T00:01:00.000Z",
+          commandId: "cmd-settle",
+          payload: {
+            threadId: "thread-1",
+            settledAt: "2026-07-29T00:01:00.000Z",
+            updatedAt: "2026-07-29T00:01:00.000Z",
+          },
+        }),
+      );
+      expect(settled.threads[0]).toMatchObject({
+        settledOverride: "settled",
+        settledAt: "2026-07-29T00:01:00.000Z",
+      });
+
+      const userUnsettled = yield* projectEvent(
+        settled,
+        makeEvent({
+          sequence: 3,
+          type: "thread.unsettled",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: "2026-07-29T00:02:00.000Z",
+          commandId: "cmd-unsettle-user",
+          payload: {
+            threadId: "thread-1",
+            reason: "user",
+            updatedAt: "2026-07-29T00:02:00.000Z",
+          },
+        }),
+      );
+      expect(userUnsettled.threads[0]).toMatchObject({
+        settledOverride: "active",
+        settledAt: null,
+      });
+
+      const activityUnsettled = yield* projectEvent(
+        settled,
+        makeEvent({
+          sequence: 4,
+          type: "thread.unsettled",
+          aggregateKind: "thread",
+          aggregateId: "thread-1",
+          occurredAt: "2026-07-29T00:03:00.000Z",
+          commandId: "cmd-unsettle-activity",
+          payload: {
+            threadId: "thread-1",
+            reason: "activity",
+            updatedAt: "2026-07-29T00:03:00.000Z",
+          },
+        }),
+      );
+      expect(activityUnsettled.threads[0]).toMatchObject({
+        settledOverride: null,
+        settledAt: null,
+      });
+    }),
+  );
 
   it("fails when event payload cannot be decoded by runtime schema", async () => {
     const now = "2026-01-01T00:00:00.000Z";

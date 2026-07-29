@@ -34,6 +34,8 @@ const baseThread: OrchestrationThread = {
   createdAt: "2026-04-01T00:00:00.000Z",
   updatedAt: "2026-04-01T00:00:00.000Z",
   archivedAt: null,
+  settledOverride: null,
+  settledAt: null,
   deletedAt: null,
   messages: [],
   proposedPlans: [],
@@ -99,6 +101,76 @@ describe("applyThreadDetailEvent", () => {
         expect(result.thread.messages).toEqual([]);
         expect(result.thread.session).toBeNull();
       }
+    });
+  });
+
+  describe("thread settlement", () => {
+    it("projects settled state and the original accepted timestamp", () => {
+      const result = applyThreadDetailEvent(baseThread, {
+        ...baseEventFields,
+        sequence: 2,
+        occurredAt: "2026-04-01T02:00:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: baseThread.id,
+        type: "thread.settled",
+        payload: {
+          threadId: baseThread.id,
+          settledAt: "2026-04-01T01:00:00.000Z",
+          updatedAt: "2026-04-01T02:00:00.000Z",
+        },
+      });
+
+      expect(result).toEqual({
+        kind: "updated",
+        thread: {
+          ...baseThread,
+          settledOverride: "settled",
+          settledAt: "2026-04-01T01:00:00.000Z",
+          updatedAt: "2026-04-01T02:00:00.000Z",
+        },
+      });
+    });
+
+    it.each([
+      {
+        reason: "user" as const,
+        settledOverride: "active" as const,
+      },
+      {
+        reason: "activity" as const,
+        settledOverride: null,
+      },
+    ])("projects $reason unsettle semantics", ({ reason, settledOverride }) => {
+      const result = applyThreadDetailEvent(
+        {
+          ...baseThread,
+          settledOverride: "settled",
+          settledAt: "2026-04-01T01:00:00.000Z",
+        },
+        {
+          ...baseEventFields,
+          sequence: 3,
+          occurredAt: "2026-04-01T03:00:00.000Z",
+          aggregateKind: "thread",
+          aggregateId: baseThread.id,
+          type: "thread.unsettled",
+          payload: {
+            threadId: baseThread.id,
+            reason,
+            updatedAt: "2026-04-01T03:00:00.000Z",
+          },
+        },
+      );
+
+      expect(result).toEqual({
+        kind: "updated",
+        thread: {
+          ...baseThread,
+          settledOverride,
+          settledAt: null,
+          updatedAt: "2026-04-01T03:00:00.000Z",
+        },
+      });
     });
   });
 

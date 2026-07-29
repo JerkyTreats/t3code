@@ -35,6 +35,8 @@ export type CreateThreadInput = CommandInput<"thread.create">;
 export type DeleteThreadInput = CommandInput<"thread.delete">;
 export type ArchiveThreadInput = CommandInput<"thread.archive">;
 export type UnarchiveThreadInput = CommandInput<"thread.unarchive">;
+export type SettleThreadInput = CommandInput<"thread.settle">;
+export type UnsettleThreadInput = Omit<CommandInput<"thread.unsettle">, "reason">;
 export type UpdateThreadMetadataInput = CommandInput<"thread.meta.update">;
 export type SetThreadRuntimeModeInput = CommandInput<"thread.runtime-mode.set">;
 export type SetThreadInteractionModeInput = CommandInput<"thread.interaction-mode.set">;
@@ -150,6 +152,31 @@ export const unarchiveThread: (input: UnarchiveThreadInput) => CommandEffect = E
     ...input,
     type: "thread.unarchive",
     commandId: yield* commandId(input),
+  });
+});
+
+export const settleThread: (input: SettleThreadInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.settleThread",
+)(function* (input) {
+  const metadata = yield* timestampedCommandMetadata(input);
+  return yield* dispatch({
+    ...input,
+    type: "thread.settle",
+    commandId: metadata.commandId,
+    createdAt: metadata.createdAt,
+  });
+});
+
+export const unsettleThread: (input: UnsettleThreadInput) => CommandEffect = Effect.fn(
+  "EnvironmentCommands.unsettleThread",
+)(function* (input) {
+  const metadata = yield* timestampedCommandMetadata(input);
+  return yield* dispatch({
+    ...input,
+    type: "thread.unsettle",
+    reason: "user",
+    commandId: metadata.commandId,
+    createdAt: metadata.createdAt,
   });
 });
 

@@ -93,7 +93,7 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
   return plannedEvents;
 });
 
-export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand")(function* ({
+const decideOrchestrationCommandCore = Effect.fn("decideOrchestrationCommandCore")(function* ({
   command,
   readModel,
 }: {
@@ -308,6 +308,52 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           threadId: command.threadId,
           updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "thread.settle": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const isAlreadySettled = thread.settledOverride === "settled" && thread.settledAt !== null;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.settled",
+        payload: {
+          threadId: command.threadId,
+          settledAt: isAlreadySettled ? thread.settledAt : command.createdAt,
+          updatedAt: isAlreadySettled ? thread.updatedAt : command.createdAt,
+        },
+      };
+    }
+
+    case "thread.unsettle": {
+      const thread = yield* requireThread({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      const isAlreadyActive = thread.settledOverride === "active" && thread.settledAt === null;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.unsettled",
+        payload: {
+          threadId: command.threadId,
+          reason: command.reason,
+          updatedAt: isAlreadyActive ? thread.updatedAt : command.createdAt,
         },
       };
     }
@@ -768,4 +814,65 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       });
     }
   }
+});
+
+type WakingActivityCommand = Extract<
+  OrchestrationCommand,
+  {
+    readonly type: "thread.turn.start" | "thread.session.set" | "thread.activity.append";
+  }
+>;
+
+function isWakingActivity(command: OrchestrationCommand): command is WakingActivityCommand {
+  switch (command.type) {
+    case "thread.turn.start":
+      return true;
+    case "thread.session.set":
+      return command.session.status === "starting" || command.session.status === "running";
+    case "thread.activity.append":
+      return (
+        command.activity.kind === "approval.requested" ||
+        command.activity.kind === "user-input.requested"
+      );
+    default:
+      return false;
+  }
+}
+
+export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand")(function* ({
+  command,
+  readModel,
+}: {
+  readonly command: OrchestrationCommand;
+  readonly readModel: OrchestrationReadModel;
+}): Effect.fn.Return<
+  DecideOrchestrationCommandResult,
+  OrchestrationCommandInvariantError | PlatformError.PlatformError,
+  Crypto.Crypto
+> {
+  const decided = yield* decideOrchestrationCommandCore({ command, readModel });
+  if (!isWakingActivity(command)) {
+    return decided;
+  }
+
+  const thread = readModel.threads.find((candidate) => candidate.id === command.threadId);
+  if (thread === undefined || (thread.settledOverride === null && thread.settledAt === null)) {
+    return decided;
+  }
+
+  const activityReset: PlannedOrchestrationEvent = {
+    ...(yield* withEventBase({
+      aggregateKind: "thread",
+      aggregateId: command.threadId,
+      occurredAt: command.createdAt,
+      commandId: command.commandId,
+    })),
+    type: "thread.unsettled",
+    payload: {
+      threadId: command.threadId,
+      reason: "activity",
+      updatedAt: command.createdAt,
+    },
+  };
+  return [activityReset, ...(Array.isArray(decided) ? decided : [decided])];
 });
