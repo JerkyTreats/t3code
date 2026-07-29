@@ -981,15 +981,9 @@ Every upstream hit in a mutation path needs an explicit read-only explanation or
 
 ## Confirmed Current Gaps
 
-- `F2` can leave stale projected colors active after an invalid replacement theme because validation exits without clearing the prior projection.
-- `F2` describes multiple theme sources while the current IPC discriminator names only `omarchy`.
-- `F3` exposes capture by platform rather than verified adapter capability.
-- `F7` lacks distinct worktree close and discard actions.
 - `F10` lacks detected supported Codex binary choices.
 - `F14` command palette project actions do not open the unified project launcher.
-- Current Git ref polling reproduces the resource-storm condition corrected by the stable release.
-- Current Linux secure-storage selection lacks a direct launcher regression test.
-- Sidebar V2 and all of its settings, lifecycle, and migration support are absent.
+- Sidebar V2 rendering and product parity remain absent. Shared settings and settled lifecycle support are complete.
 
 ## Risks
 
