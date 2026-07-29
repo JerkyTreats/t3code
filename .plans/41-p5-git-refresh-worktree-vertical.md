@@ -4,7 +4,7 @@ Date: 2026-07-29
 Branch: product/v030-git-refresh
 Commit Policy: Local conventional commits after exact origin-only remote preflight
 Objective: Reconcile v0.0.30 bounded Git ref refresh and immediate merged change-request settlement while preserving origin-only mutation and fork worktree semantics.
-Status: accepted for local commit
+Status: closed
 
 ## Objective Baseline
 
@@ -73,7 +73,7 @@ Status: accepted for local commit
 
 | Slice | Worktree | Branch | Status | Integration Commit | Notes |
 | --- | --- | --- | --- | --- | --- |
-| P5 | `/home/jerkytreats/t3code-v030-git-refresh` | `product/v030-git-refresh` | accepted for local commit | pending | isolated helper worktree from `cf59691ba` |
+| P5 | `/home/jerkytreats/t3code-v030-git-refresh` | `product/v030-git-refresh` | closed | `648289adc` | isolated helper worktree from `cf59691ba` |
 
 ## Gate Evidence
 
@@ -93,7 +93,7 @@ Status: accepted for local commit
 
 | Scope | Commit | Status | Notes |
 | --- | --- | --- | --- |
-| P5 implementation | pending | pending | local commit after fresh review |
+| P5 implementation | `648289adc` | committed | local commit after clean fresh review |
 
 ## Review Lanes
 
@@ -109,21 +109,21 @@ Status: accepted for local commit
 
 | ID | Source | Severity | File | Objective Or Policy Basis | Status | Fix Commit | Verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| P5-R1 | fresh review | blocking | settlement consumer | merged and closed settlement | closed | pending | live Sidebar and status indicator consumption |
-| P5-R2 | fresh review | blocking | ref invalidation identity | common directory scoping | closed | pending | alias-scoped invalidation sequence |
-| P5-R3 | fresh review | blocking | stale persistence cleanup | stale data safety | closed | pending | failed cleanup disables reads |
-| P5-R4 | fresh review | blocking | pull request preparation | action invalidation completeness | closed | pending | settled invalidation hook |
-| P5-R5 | fresh review | blocking | status remote fetch | server generation safety | closed | pending | status fetch advances generation |
-| P5-R6 | fresh review | blocking | worktree product actions | close and discard visibility | closed | pending | Sidebar context actions |
-| P5-R7 | fresh review | blocking | worktree close failure paths | lifecycle coherence | closed | pending | result checks, sharing, and rollback |
-| P5-R8 | fresh review | blocking | publish preflight | origin-only mutation | closed | pending | conflict rejection before create or ensure |
-| P5-R9 | first fix rereview | blocking | merge and promotion branch delete | action invalidation completeness | closed | pending | wrapped driver methods invalidate generations |
-| P5-R10 | first fix rereview | blocking | settlement time source | live settlement accuracy | closed | pending | one shared advancing external store clock |
-| P5-R11 | first fix rereview | blocking | ref identity aliases | active consumer coherence | closed | pending | no unsafe eviction and reassignment detaches old identity |
-| P5-R12 | first fix rereview | blocking | persisted ref reads | persistence serialization | closed | pending | reads, saves, removals, and cleanup share one environment lock |
-| P5-R13 | second fix rereview | blocking | first linked-worktree discovery | invalidation serialization | closed | pending | repository invalidation sequence rejects stale first discovery |
-| P5-R14 | second fix rereview | blocking | merged change settlement | branch identity correctness | closed | pending | status ref must equal the thread branch |
-| P5-R15 | third fix rereview | blocking | stale first-discovery persistence | remount cache safety | closed | pending | stale row removal and persistence freshness survive idle remount |
+| P5-R1 | fresh review | blocking | settlement consumer | merged and closed settlement | closed | `648289adc` | live Sidebar and status indicator consumption |
+| P5-R2 | fresh review | blocking | ref invalidation identity | common directory scoping | closed | `648289adc` | alias-scoped invalidation sequence |
+| P5-R3 | fresh review | blocking | stale persistence cleanup | stale data safety | closed | `648289adc` | failed cleanup disables reads |
+| P5-R4 | fresh review | blocking | pull request preparation | action invalidation completeness | closed | `648289adc` | settled invalidation hook |
+| P5-R5 | fresh review | blocking | status remote fetch | server generation safety | closed | `648289adc` | status fetch advances generation |
+| P5-R6 | fresh review | blocking | worktree product actions | close and discard visibility | closed | `648289adc` | Sidebar context actions |
+| P5-R7 | fresh review | blocking | worktree close failure paths | lifecycle coherence | closed | `648289adc` | result checks, sharing, and rollback |
+| P5-R8 | fresh review | blocking | publish preflight | origin-only mutation | closed | `648289adc` | conflict rejection before create or ensure |
+| P5-R9 | first fix rereview | blocking | merge and promotion branch delete | action invalidation completeness | closed | `648289adc` | wrapped driver methods invalidate generations |
+| P5-R10 | first fix rereview | blocking | settlement time source | live settlement accuracy | closed | `648289adc` | one shared advancing external store clock |
+| P5-R11 | first fix rereview | blocking | ref identity aliases | active consumer coherence | closed | `648289adc` | no unsafe eviction and reassignment detaches old identity |
+| P5-R12 | first fix rereview | blocking | persisted ref reads | persistence serialization | closed | `648289adc` | reads, saves, removals, and cleanup share one environment lock |
+| P5-R13 | second fix rereview | blocking | first linked-worktree discovery | invalidation serialization | closed | `648289adc` | repository invalidation sequence rejects stale first discovery |
+| P5-R14 | second fix rereview | blocking | merged change settlement | branch identity correctness | closed | `648289adc` | status ref must equal the thread branch |
+| P5-R15 | third fix rereview | blocking | stale first-discovery persistence | remount cache safety | closed | `648289adc` | stale row removal and persistence freshness survive idle remount |
 
 ## Deferred Findings
 
@@ -147,4 +147,4 @@ Status: accepted for local commit
 - Merged or closed change requests settle only the matching thread branch, use one advancing clock, and preserve active blocker precedence.
 - Publish rejects conflicting existing origin configuration before external or local mutation while equivalent transport forms share canonical identity.
 - All Node 24 gates passed and the final new fresh review reported no blockers.
-- Local implementation commit evidence remains to be recorded.
+- Local implementation commit `648289adc` records the accepted runtime, tests, and documentation.
