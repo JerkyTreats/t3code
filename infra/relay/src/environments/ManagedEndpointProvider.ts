@@ -16,6 +16,7 @@ import type {
 } from "@t3tools/contracts/relay";
 
 import * as RelayConfiguration from "../Config.ts";
+import * as RelayDb from "../db.ts";
 import {
   managedEndpointDigestInput,
   managedEndpointForHostname,
@@ -23,6 +24,7 @@ import {
   managedEndpointTunnelName,
 } from "../deploymentConfig.ts";
 import * as ManagedEndpointAllocations from "./ManagedEndpointAllocations.ts";
+import * as ManagedTunnelLimits from "./ManagedTunnelLimits.ts";
 
 export class ManagedEndpointProvisioningNotConfigured extends Schema.TaggedErrorClass<ManagedEndpointProvisioningNotConfigured>()(
   "ManagedEndpointProvisioningNotConfigured",
@@ -41,6 +43,7 @@ export class ManagedEndpointProvisioningNotConfigured extends Schema.TaggedError
 
 const ManagedEndpointProvisioningStage = Schema.Literals([
   "derive-environment-hash",
+  "check-tunnel-limit",
   "reserve-allocation",
   "ensure-tunnel",
   "validate-tunnel-response",
@@ -74,6 +77,8 @@ export class ManagedEndpointProvisioningFailed extends Schema.TaggedErrorClass<M
 
 const ManagedEndpointDeprovisioningStage = Schema.Literals([
   "load-allocation",
+  "claim-release",
+  "claim-deprovision",
   "delete-dns-record",
   "delete-tunnel",
   "remove-allocation",
@@ -112,12 +117,15 @@ export class ManagedEndpointOriginNotAllowed extends Schema.TaggedErrorClass<Man
 export type ManagedEndpointProviderError =
   | ManagedEndpointProvisioningNotConfigured
   | ManagedEndpointProvisioningFailed
-  | ManagedEndpointOriginNotAllowed;
+  | ManagedEndpointOriginNotAllowed
+  | ManagedTunnelLimits.ManagedTunnelLimitExceeded;
 
 export interface ManagedEndpointProvisioningResult {
   readonly endpoint: RelayManagedEndpoint;
   readonly runtime: RelayManagedEndpointRuntimeConfig;
 }
+
+export type ManagedEndpointDeprovisionTarget = ManagedEndpointAllocations.ManagedEndpointAllocation;
 
 export class ManagedEndpointProvider extends Context.Service<
   ManagedEndpointProvider,
@@ -127,10 +135,22 @@ export class ManagedEndpointProvider extends Context.Service<
       readonly environmentId: string;
       readonly origin: RelayManagedEndpointOrigin;
     }) => Effect.Effect<ManagedEndpointProvisioningResult, ManagedEndpointProviderError>;
+    readonly prepareDeprovision: (input: {
+      readonly userId: string;
+      readonly environmentId: string;
+    }) => Effect.Effect<
+      ManagedEndpointDeprovisionTarget | null,
+      ManagedEndpointDeprovisioningFailed
+    >;
     readonly deprovision: (input: {
       readonly userId: string;
       readonly environmentId: string;
+      readonly target?: ManagedEndpointDeprovisionTarget | null;
     }) => Effect.Effect<void, ManagedEndpointDeprovisioningFailed>;
+    readonly release: (input: {
+      readonly userId: string;
+      readonly environmentId: string;
+    }) => Effect.Effect<boolean, ManagedEndpointDeprovisioningFailed>;
   }
 >()("t3code-relay/environments/ManagedEndpointProvider") {}
 
@@ -331,6 +351,8 @@ export const make = Effect.gen(function* () {
   const tunnels = yield* ManagedEndpointTunnelClient;
   const dns = yield* ManagedEndpointDnsClient;
   const allocations = yield* ManagedEndpointAllocations.ManagedEndpointAllocations;
+  const tunnelLimits = yield* ManagedTunnelLimits.ManagedTunnelLimits;
+  const db = yield* RelayDb.RelayDb;
 
   const updateExistingDnsRecords = Effect.fnUntraced(function* (
     records: ReadonlyArray<{ readonly id: string }>,
@@ -403,13 +425,9 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  return ManagedEndpointProvider.of({
-    deprovision: Effect.fn("relay.managed_endpoint_provider.deprovision")(function* (input) {
-      yield* Effect.annotateCurrentSpan({
-        "relay.user_id": input.userId,
-        "relay.environment_id": input.environmentId,
-      });
-      const allocation = yield* allocations.get(input).pipe(
+  const prepareDeprovision = Effect.fn("relay.managed_endpoint_provider.prepare_deprovision")(
+    function* (input: { readonly userId: string; readonly environmentId: string }) {
+      return yield* allocations.get(input).pipe(
         Effect.mapError(
           (cause) =>
             new ManagedEndpointDeprovisioningFailed({
@@ -419,7 +437,40 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
+    },
+  );
+
+  const unlocked = ManagedEndpointProvider.of({
+    prepareDeprovision,
+    deprovision: Effect.fn("relay.managed_endpoint_provider.deprovision")(function* (input) {
+      yield* Effect.annotateCurrentSpan({
+        "relay.user_id": input.userId,
+        "relay.environment_id": input.environmentId,
+      });
+      const allocation =
+        input.target === undefined ? yield* prepareDeprovision(input) : input.target;
       if (allocation === null) {
+        return;
+      }
+      const claimedAt = yield* allocations
+        .claimDeprovision({
+          userId: input.userId,
+          environmentId: input.environmentId,
+          generation: allocation.generation,
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new ManagedEndpointDeprovisioningFailed({
+                ...input,
+                stage: "claim-deprovision",
+                ...(allocation.tunnelId === null ? {} : { tunnelId: allocation.tunnelId }),
+                ...(allocation.dnsRecordId === null ? {} : { dnsRecordId: allocation.dnsRecordId }),
+                cause,
+              }),
+          ),
+        );
+      if (claimedAt === null) {
         return;
       }
       const dnsRecordId = allocation.dnsRecordId;
@@ -450,18 +501,67 @@ export const make = Effect.gen(function* () {
           ),
         );
       }
-      yield* allocations.remove(input).pipe(
+      yield* allocations
+        .removeClaimed({
+          userId: input.userId,
+          environmentId: input.environmentId,
+          generation: claimedAt,
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new ManagedEndpointDeprovisioningFailed({
+                ...input,
+                stage: "remove-allocation",
+                ...(allocation.tunnelId === null ? {} : { tunnelId: allocation.tunnelId }),
+                ...(allocation.dnsRecordId === null ? {} : { dnsRecordId: allocation.dnsRecordId }),
+                cause,
+              }),
+          ),
+        );
+    }),
+    release: Effect.fn("relay.managed_endpoint_provider.release")(function* (input) {
+      yield* Effect.annotateCurrentSpan({
+        "relay.user_id": input.userId,
+        "relay.environment_id": input.environmentId,
+      });
+      const allocation = yield* prepareDeprovision(input);
+      const tunnelId = allocation?.tunnelId ?? null;
+      if (allocation === null || tunnelId === null) {
+        return true;
+      }
+      const claimed = yield* allocations
+        .claimRelease({
+          ...input,
+          tunnelId,
+          generation: allocation.generation,
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new ManagedEndpointDeprovisioningFailed({
+                ...input,
+                stage: "claim-release",
+                tunnelId,
+                cause,
+              }),
+          ),
+        );
+      if (!claimed) {
+        return false;
+      }
+      yield* ignoreNotFound(tunnels.delete(tunnelId)).pipe(
         Effect.mapError(
           (cause) =>
             new ManagedEndpointDeprovisioningFailed({
               ...input,
-              stage: "remove-allocation",
-              ...(allocation.tunnelId === null ? {} : { tunnelId: allocation.tunnelId }),
-              ...(allocation.dnsRecordId === null ? {} : { dnsRecordId: allocation.dnsRecordId }),
+              stage: "delete-tunnel",
+              tunnelId,
               cause,
             }),
         ),
       );
+      return true;
     }),
     provision: Effect.fn("relay.managed_endpoint_provider.provision")(function* (input) {
       yield* Effect.annotateCurrentSpan({
@@ -504,25 +604,44 @@ export const make = Effect.gen(function* () {
         environmentHash,
       );
       const requestedTunnelName = managedEndpointTunnelName(cf.namespace, environmentHash);
-      const allocation = yield* allocations
-        .reserve({
-          userId: input.userId,
-          environmentId: input.environmentId,
-          hostname: requestedHostname,
-          tunnelName: requestedTunnelName,
-        })
+      const allocation = yield* tunnelLimits
+        .withCapacityReservation(
+          {
+            userId: input.userId,
+            environmentId: input.environmentId,
+          },
+          allocations.reserve({
+            userId: input.userId,
+            environmentId: input.environmentId,
+            hostname: requestedHostname,
+            tunnelName: requestedTunnelName,
+          }),
+        )
         .pipe(
-          Effect.mapError(
-            (cause) =>
-              new ManagedEndpointProvisioningFailed({
-                userId: input.userId,
-                environmentId: input.environmentId,
-                stage: "reserve-allocation",
-                hostname: requestedHostname,
-                tunnelName: requestedTunnelName,
-                cause,
-              }),
-          ),
+          Effect.catchTags({
+            ManagedTunnelLimitPersistenceError: (cause) =>
+              Effect.fail(
+                new ManagedEndpointProvisioningFailed({
+                  userId: input.userId,
+                  environmentId: input.environmentId,
+                  stage: "check-tunnel-limit",
+                  hostname: requestedHostname,
+                  tunnelName: requestedTunnelName,
+                  cause,
+                }),
+              ),
+            ManagedEndpointAllocationPersistenceError: (cause) =>
+              Effect.fail(
+                new ManagedEndpointProvisioningFailed({
+                  userId: input.userId,
+                  environmentId: input.environmentId,
+                  stage: "reserve-allocation",
+                  hostname: requestedHostname,
+                  tunnelName: requestedTunnelName,
+                  cause,
+                }),
+              ),
+          }),
         );
       const { hostname, tunnelName } = allocation;
 
@@ -696,6 +815,56 @@ export const make = Effect.gen(function* () {
         },
       } satisfies ManagedEndpointProvisioningResult;
     }),
+  });
+
+  const withEndpointLock = <A, E, R>(
+    input: { readonly userId: string; readonly environmentId: string },
+    effect: Effect.Effect<A, E, R>,
+  ) =>
+    db.$client.withTransaction(
+      db.$client`SELECT pg_advisory_xact_lock(hashtextextended(${JSON.stringify([input.userId, input.environmentId])}, 0))`.pipe(
+        Effect.andThen(effect),
+      ),
+    );
+
+  return ManagedEndpointProvider.of({
+    prepareDeprovision: unlocked.prepareDeprovision,
+    deprovision: (input) =>
+      withEndpointLock(input, unlocked.deprovision(input)).pipe(
+        Effect.catchTag("SqlError", (cause) =>
+          Effect.fail(
+            new ManagedEndpointDeprovisioningFailed({
+              ...input,
+              stage: "load-allocation",
+              cause,
+            }),
+          ),
+        ),
+      ),
+    release: (input) =>
+      withEndpointLock(input, unlocked.release(input)).pipe(
+        Effect.catchTag("SqlError", (cause) =>
+          Effect.fail(
+            new ManagedEndpointDeprovisioningFailed({
+              ...input,
+              stage: "load-allocation",
+              cause,
+            }),
+          ),
+        ),
+      ),
+    provision: (input) =>
+      withEndpointLock(input, unlocked.provision(input)).pipe(
+        Effect.catchTag("SqlError", (cause) =>
+          Effect.fail(
+            new ManagedEndpointProvisioningFailed({
+              ...input,
+              stage: "reserve-allocation",
+              cause,
+            }),
+          ),
+        ),
+      ),
   });
 });
 

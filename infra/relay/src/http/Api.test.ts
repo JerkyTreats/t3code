@@ -2,6 +2,7 @@ import { createClerkClient, verifyToken } from "@clerk/backend";
 import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -9,6 +10,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Redacted from "effect/Redacted";
+import * as Semaphore from "effect/Semaphore";
 import * as TestClock from "effect/testing/TestClock";
 import * as Tracer from "effect/Tracer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -22,12 +24,17 @@ import {
   relayDocsRedirectRoute,
   relayEnvironmentAuthLayer,
   relayNotFoundRoute,
+  releaseEnvironmentTunnelRecord,
   traceRelayHttpRequestWith,
+  unlinkEnvironmentRecord,
   verifyRelayClientBearerToken,
   withoutCapturedParentSpan,
 } from "./Api.ts";
 import * as RelayConfiguration from "../Config.ts";
 import * as EnvironmentCredentials from "../environments/EnvironmentCredentials.ts";
+import * as EnvironmentLinks from "../environments/EnvironmentLinks.ts";
+import * as ManagedEndpointProvider from "../environments/ManagedEndpointProvider.ts";
+import * as RelayDb from "../db.ts";
 
 vi.mock("@clerk/backend", () => ({
   createClerkClient: vi.fn(),
@@ -153,6 +160,258 @@ describe("relay environment authentication", () => {
       Effect.scoped,
     );
   });
+});
+
+describe("relay environment unlink", () => {
+  it.effect("commits link and credential revocation before external deprovision", () => {
+    const calls: string[] = [];
+    let transactionDepth = 0;
+    const target = {
+      userId: "user-1",
+      environmentId: "environment-1",
+      hostname: "environment-1.example.test",
+      tunnelId: "tunnel-1",
+      tunnelName: "environment-1-tunnel",
+      dnsRecordId: "dns-1",
+      readyAt: "2026-07-29T00:00:00.000Z",
+      updatedAt: "unlink-generation",
+    };
+    const client = Object.assign(
+      (_strings: TemplateStringsArray, lockKey: unknown) =>
+        Effect.sync(() => {
+          expect(lockKey).toBe(
+            EnvironmentLinks.environmentLinkLockKey({
+              userId: "user-1",
+              environmentId: "environment-1",
+            }),
+          );
+          calls.push("lock");
+        }),
+      {
+        withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+          Effect.gen(function* () {
+            transactionDepth += 1;
+            const outermost = transactionDepth === 1;
+            calls.push(outermost ? "transaction" : "savepoint");
+            const result = yield* effect;
+            calls.push(outermost ? "commit" : "release-savepoint");
+            transactionDepth -= 1;
+            return result;
+          }),
+      },
+    );
+    const db = {
+      $client: client,
+    } as unknown as RelayDb.RelayDb["Service"];
+    const links = {
+      getForUser: () =>
+        Effect.succeed({
+          environmentId: "environment-1",
+          environmentPublicKey: "public-key-1",
+        } as never),
+      revokeForUser: () =>
+        Effect.sync(() => {
+          calls.push("link");
+          return true;
+        }),
+    } as unknown as EnvironmentLinks.EnvironmentLinks["Service"];
+    const credentials = {
+      revokeForEnvironmentPublicKey: () =>
+        Effect.sync(() => {
+          calls.push("credential");
+          return true;
+        }),
+    } as unknown as EnvironmentCredentials.EnvironmentCredentials["Service"];
+    const managedEndpoints = {
+      prepareDeprovision: () =>
+        Effect.sync(() => {
+          calls.push("prepare");
+          return target;
+        }),
+      deprovision: (input: { readonly target?: unknown }) =>
+        Effect.sync(() => {
+          expect(input.target).toBe(target);
+          calls.push("deprovision");
+        }),
+    } as unknown as ManagedEndpointProvider.ManagedEndpointProvider["Service"];
+
+    return Effect.gen(function* () {
+      const unlinked = yield* unlinkEnvironmentRecord(
+        { db, links, credentials, managedEndpoints },
+        { userId: "user-1", environmentId: "environment-1" },
+      );
+
+      expect(unlinked).toBe(true);
+      expect(calls).toEqual([
+        "transaction",
+        "lock",
+        "prepare",
+        "link",
+        "credential",
+        "commit",
+        "deprovision",
+      ]);
+    });
+  });
+
+  it.effect("does not deprovision when revocation fails to commit", () => {
+    const failure = new Error("transaction failed");
+    let transactionDepth = 0;
+    let deprovisioned = false;
+    const client = Object.assign(() => Effect.void, {
+      withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        Effect.gen(function* () {
+          transactionDepth += 1;
+          const outermost = transactionDepth === 1;
+          const result = yield* effect;
+          transactionDepth -= 1;
+          return outermost ? yield* Effect.fail(failure) : result;
+        }),
+    });
+    const db = {
+      $client: client,
+    } as unknown as RelayDb.RelayDb["Service"];
+    const links = {
+      getForUser: () =>
+        Effect.succeed({
+          environmentId: "environment-1",
+          environmentPublicKey: "public-key-1",
+        } as never),
+      revokeForUser: () => Effect.succeed(true),
+    } as unknown as EnvironmentLinks.EnvironmentLinks["Service"];
+    const credentials = {
+      revokeForEnvironmentPublicKey: () => Effect.succeed(true),
+    } as unknown as EnvironmentCredentials.EnvironmentCredentials["Service"];
+    const managedEndpoints = {
+      prepareDeprovision: () =>
+        Effect.succeed({
+          userId: "user-1",
+          environmentId: "environment-1",
+          updatedAt: "unlink-generation",
+        } as never),
+      deprovision: () =>
+        Effect.sync(() => {
+          deprovisioned = true;
+        }),
+    } as unknown as ManagedEndpointProvider.ManagedEndpointProvider["Service"];
+
+    return Effect.gen(function* () {
+      const error = yield* Effect.flip(
+        unlinkEnvironmentRecord(
+          { db, links, credentials, managedEndpoints },
+          { userId: "user-1", environmentId: "environment-1" },
+        ),
+      );
+
+      expect(error).toBe(failure);
+      expect(deprovisioned).toBe(false);
+    });
+  });
+
+  it.effect("serializes shutdown release before unlink captures its cleanup generation", () =>
+    Effect.gen(function* () {
+      const transactionLock = yield* Semaphore.make(1);
+      const releaseStarted = yield* Deferred.make<void>();
+      const continueRelease = yield* Deferred.make<void>();
+      let linkActive = true;
+      let allocation: { readonly generation: number; readonly dnsRecordId: string } | null = {
+        generation: 7,
+        dnsRecordId: "dns-1",
+      };
+      const dnsRecords = new Set(["dns-1"]);
+
+      const client = Object.assign(() => Effect.void, {
+        withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+          transactionLock.withPermits(1)(effect),
+      });
+      const db = {
+        $client: client,
+      } as unknown as RelayDb.RelayDb["Service"];
+      const links = {
+        getForUser: () =>
+          Effect.sync(() =>
+            linkActive
+              ? ({
+                  environmentId: "environment-1",
+                  environmentPublicKey: "public-key-1",
+                } as never)
+              : null,
+          ),
+        revokeForUser: () =>
+          Effect.sync(() => {
+            linkActive = false;
+            return true;
+          }),
+      } as unknown as EnvironmentLinks.EnvironmentLinks["Service"];
+      const credentials = {
+        revokeForEnvironmentPublicKey: () => Effect.succeed(true),
+      } as unknown as EnvironmentCredentials.EnvironmentCredentials["Service"];
+      const managedEndpoints = {
+        release: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(releaseStarted, undefined);
+            yield* Deferred.await(continueRelease);
+            if (allocation === null) {
+              return false;
+            }
+            allocation = {
+              ...allocation,
+              generation: allocation.generation + 1,
+            };
+            return true;
+          }),
+        prepareDeprovision: () =>
+          Effect.sync(() =>
+            allocation === null
+              ? null
+              : ({
+                  userId: "user-1",
+                  environmentId: "environment-1",
+                  hostname: "environment-1.example.test",
+                  tunnelId: "tunnel-1",
+                  tunnelName: "environment-1-tunnel",
+                  readyAt: "2026-07-29T00:00:00.000Z",
+                  updatedAt: "unlink-generation",
+                  ...allocation,
+                } as never),
+          ),
+        deprovision: (input: { readonly target?: { readonly generation: number } | null }) =>
+          Effect.sync(() => {
+            if (
+              allocation !== null &&
+              input.target !== null &&
+              input.target !== undefined &&
+              allocation.generation === input.target.generation
+            ) {
+              dnsRecords.delete(allocation.dnsRecordId);
+              allocation = null;
+            }
+          }),
+      } as unknown as ManagedEndpointProvider.ManagedEndpointProvider["Service"];
+
+      const releaseFiber = yield* Effect.forkChild(
+        releaseEnvironmentTunnelRecord(
+          { db, links, managedEndpoints },
+          { userId: "user-1", environmentId: "environment-1" },
+        ),
+      );
+      yield* Deferred.await(releaseStarted);
+      const unlinkFiber = yield* Effect.forkChild(
+        unlinkEnvironmentRecord(
+          { db, links, credentials, managedEndpoints },
+          { userId: "user-1", environmentId: "environment-1" },
+        ),
+      );
+      yield* Deferred.succeed(continueRelease, undefined);
+
+      expect(yield* Fiber.join(releaseFiber)).toBe(true);
+      expect(yield* Fiber.join(unlinkFiber)).toBe(true);
+      expect(linkActive).toBe(false);
+      expect(allocation).toBeNull();
+      expect(dnsRecords.size).toBe(0);
+      expect(allocation === null ? 0 : 1).toBe(0);
+    }),
+  );
 });
 
 describe("relay request tracing", () => {

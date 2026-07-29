@@ -138,26 +138,21 @@ redirect: an external browser cannot use it to reopen the packaged app.
 The current mobile UI uses Clerk's native authentication view. If a future mobile browser OAuth
 flow uses a custom redirect URI, add that exact URI to the same allowlist.
 
-## Enable Waitlist Access
+## Enable General Account Access
 
-For a private beta where people should request access, use **Clerk Dashboard > Waitlist**:
+T3 Connect uses Clerk sign-in and sign-up without an enrollment approval flow. Keep Clerk waitlist
+mode disabled.
 
-1. Toggle on **Enable waitlist** and save.
-2. Review requests on the same page and select **Invite** or **Deny**.
+Signed-in users manage T3 Connect under **Connections**. Signed-out web and desktop users reach
+Clerk sign-in from the T3 Connect controls on the Connections page.
 
-Approved signed-in users manage T3 Connect under **Connections**. The web and desktop sidebars do
-not expose a dedicated account or waitlist control. Signed-out users reach Clerk's waitlist and
-sign-in flow contextually from the T3 Connect controls on the Connections page.
-
-On mobile, signed-out users open **Settings > T3 Account** to reach `/settings/waitlist` within the
-Settings form sheet. It submits enrollment through Clerk's `useWaitlist()` flow because the prebuilt
-`<Waitlist />` component is web-only in the Expo SDK. Approved users can use **Sign in** from that
-screen.
+On mobile, signed-out users open **Settings > T3 Account** to reach the native sign-in screen. The
+legacy `/settings/waitlist` deep link remains a compatibility alias for that sign-in screen and does
+not enroll a user in a waitlist.
 
 ## Alternative: Known-User Allowlist
 
-For a closed beta where all permitted users are known in advance, use an allowlist instead of a
-request-and-approval waitlist:
+For a restricted deployment where all permitted users are known in advance, use an allowlist:
 
 To restrict the beta to permitted email addresses or domains:
 
@@ -165,7 +160,7 @@ To restrict the beta to permitted email addresses or domains:
    domain.
 2. Enable the allowlist and save.
 3. Alternatively, enable **Restricted mode** when all new users must be explicitly invited or
-   manually created without a waitlist request flow.
+   manually created.
 
 Do not enable an empty allowlist: it blocks all new sign-ups.
 

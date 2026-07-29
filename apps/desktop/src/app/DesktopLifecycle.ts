@@ -170,16 +170,25 @@ export const make = DesktopLifecycle.of({
     const context = yield* Effect.context<DesktopLifecycleRuntimeServices>();
     const runEffect = Effect.runPromiseWith(context);
     let quitAllowed = false;
+    let updaterQuitAllowed = false;
     yield* electronTheme.onUpdated(() => {
       void runEffect(
         desktopWindow.syncAppearance.pipe(Effect.withSpan("desktop.lifecycle.themeUpdated")),
+      );
+    });
+    yield* electronApp.onBeforeQuitForUpdate(() => {
+      updaterQuitAllowed = true;
+      void runEffect(
+        logLifecycleInfo("native updater requested quit").pipe(
+          Effect.withSpan("desktop.lifecycle.beforeQuitForUpdate"),
+        ),
       );
     });
     yield* electronApp.on("before-quit", (event: Electron.Event) => {
       handleBeforeQuit(
         event,
         runEffect,
-        () => quitAllowed,
+        () => quitAllowed || updaterQuitAllowed,
         () => {
           quitAllowed = true;
         },

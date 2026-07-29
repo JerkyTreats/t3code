@@ -28,6 +28,7 @@ import {
   RelayEnvironmentLinkProofPayload,
   RelayLinkProofRequest,
   RelayManagedEndpointOrigin,
+  RelayOkResponse,
 } from "@t3tools/contracts/relay";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import {
@@ -68,7 +69,11 @@ import {
   RELAY_URL_SECRET,
 } from "./config.ts";
 import { relayUrlConfig } from "./publicConfig.ts";
-import { readCliDesiredLinkMode, setCliDesiredCloudLink } from "./CliState.ts";
+import {
+  readCliDesiredCloudLink,
+  readCliDesiredLinkMode,
+  setCliDesiredCloudLink,
+} from "./CliState.ts";
 import * as CliTokenManager from "./CliTokenManager.ts";
 import { getOrCreateEnvironmentKeyPairFromSecretStore } from "./environmentKeys.ts";
 import { traceRelayRequest } from "./traceRelayRequest.ts";
@@ -621,6 +626,48 @@ export const reconcileDesiredCloudLink = Effect.fn("environment.cloud.reconcileD
     return yield* reconcileDesiredCloudLinkWith(yield* cloudHttpDependencies, localOrigin);
   },
 );
+
+export const releaseManagedTunnelOnShutdown = Effect.fn(
+  "environment.cloud.releaseManagedTunnelOnShutdown",
+)(function* () {
+  const dependencies = yield* cloudHttpDependencies;
+  const releasedRuntimeConfig = yield* dependencies.secrets.get(CLOUD_ENDPOINT_RUNTIME_CONFIG);
+  if (Option.isNone(releasedRuntimeConfig)) {
+    return false;
+  }
+  if (!(yield* readCliDesiredCloudLink) || (yield* readCliDesiredLinkMode) !== "managed") {
+    return false;
+  }
+  const token = yield* dependencies.cliTokenManager.getExisting;
+  const relayUrl = yield* dependencies.secrets.get(RELAY_URL_SECRET);
+  if (Option.isNone(token) || Option.isNone(relayUrl)) {
+    return false;
+  }
+
+  const environmentId = yield* dependencies.environment.getEnvironmentId;
+  yield* dependencies.endpointRuntime.applyConfig(null);
+  const response = yield* HttpClientRequest.delete(
+    `${bytesToString(relayUrl.value)}/v1/client/environment-links/${encodeURIComponent(environmentId)}/tunnel`,
+  ).pipe(
+    HttpClientRequest.bearerToken(token.value.accessToken),
+    dependencies.httpClient.execute,
+    Effect.flatMap(HttpClientResponse.filterStatusOk),
+    Effect.flatMap(HttpClientResponse.schemaBodyJson(RelayOkResponse)),
+    withRelayClientTracing,
+  );
+  if (!response.ok) {
+    return false;
+  }
+
+  const currentRuntimeConfig = yield* dependencies.secrets.get(CLOUD_ENDPOINT_RUNTIME_CONFIG);
+  if (
+    Option.isSome(currentRuntimeConfig) &&
+    bytesToString(currentRuntimeConfig.value) === bytesToString(releasedRuntimeConfig.value)
+  ) {
+    yield* dependencies.secrets.remove(CLOUD_ENDPOINT_RUNTIME_CONFIG);
+  }
+  return true;
+});
 
 const readCloudLinkState = Effect.fn("environment.cloud.readLinkState")(function* (
   dependencies: CloudHttpDependencies,

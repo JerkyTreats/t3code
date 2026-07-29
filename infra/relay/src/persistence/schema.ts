@@ -95,6 +95,7 @@ export const relayManagedEndpointAllocations = pgTable(
     tunnelName: text("tunnel_name").notNull(),
     dnsRecordId: varchar("dns_record_id", { length: 191 }),
     readyAt: varchar("ready_at", { length: 64 }),
+    generation: integer("generation").notNull().default(0),
     createdAt: varchar("created_at", { length: 64 }).notNull(),
     updatedAt: varchar("updated_at", { length: 64 }).notNull(),
   },
@@ -104,6 +105,13 @@ export const relayManagedEndpointAllocations = pgTable(
     uniqueIndex("idx_relay_managed_endpoint_allocations_tunnel_name").on(table.tunnelName),
   ],
 );
+
+export const relayManagedTunnelLimits = pgTable("relay_managed_tunnel_limits", {
+  userId: varchar("user_id", { length: 191 }).primaryKey(),
+  maxTunnels: integer("max_tunnels").notNull(),
+  createdAt: varchar("created_at", { length: 64 }).notNull(),
+  updatedAt: varchar("updated_at", { length: 64 }).notNull(),
+});
 
 export const relayEnvironmentCredentials = pgTable(
   "relay_environment_credentials",

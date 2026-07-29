@@ -45,7 +45,6 @@ import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsCl
 import { SettingsAuthRouteScreen } from "./features/settings/SettingsAuthRouteScreen";
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsRouteScreen } from "./features/settings/SettingsRouteScreen";
-import { SettingsWaitlistRouteScreen } from "./features/settings/SettingsWaitlistRouteScreen";
 import { useAppShortcuts } from "./features/shortcuts/useAppShortcuts";
 import { nativeHeaderScrollEdgeEffects } from "./native/StackHeader";
 import { useThreadOutboxDrain } from "./state/use-thread-outbox-drain";
@@ -164,10 +163,10 @@ const SettingsSheetStack = createNativeStackNavigator({
       },
     }),
     SettingsWaitlist: createNativeStackScreen({
-      screen: SettingsWaitlistRouteScreen,
+      screen: SettingsAuthRouteScreen,
       linking: "waitlist",
       options: {
-        title: "Join the waitlist",
+        title: "Sign in",
       },
     }),
   },

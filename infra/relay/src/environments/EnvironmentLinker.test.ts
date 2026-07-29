@@ -14,6 +14,7 @@ import * as Schema from "effect/Schema";
 
 import * as DpopProofs from "../auth/DpopProofs.ts";
 import * as RelayTokens from "../auth/RelayTokens.ts";
+import * as RelayDb from "../db.ts";
 import * as EnvironmentCredentials from "./EnvironmentCredentials.ts";
 import * as EnvironmentLinks from "./EnvironmentLinks.ts";
 import * as RelayConfiguration from "../Config.ts";
@@ -110,12 +111,27 @@ function testLayer(input?: {
   readonly upsert?: EnvironmentLinks.EnvironmentLinks["Service"]["upsert"];
   readonly consume?: DpopProofs.DpopProofReplay["Service"]["consume"];
   readonly deprovision?: ManagedEndpointProvider.ManagedEndpointProvider["Service"]["deprovision"];
+  readonly lockKeys?: Array<string>;
 }) {
+  const client = Object.assign(
+    (_strings: TemplateStringsArray, lockKey: unknown) => {
+      if (typeof lockKey === "string") {
+        input?.lockKeys?.push(lockKey);
+      }
+      return Effect.void;
+    },
+    {
+      withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => effect,
+    },
+  );
   return EnvironmentLinker.layer.pipe(
     Layer.provideMerge(RelayTokens.layer),
     Layer.provide(
       Layer.mergeAll(
         RelayConfiguration.layer(config),
+        Layer.succeed(RelayDb.RelayDb, {
+          $client: client,
+        } as unknown as RelayDb.RelayDb["Service"]),
         Layer.succeed(DpopProofs.DpopProofReplay, {
           verifyAndConsume: () => Effect.die("unexpected DPoP proof verification"),
           consume: input?.consume ?? (() => Effect.succeed(true)),
@@ -136,7 +152,9 @@ function testLayer(input?: {
           revokeForEnvironmentPublicKey: () => Effect.succeed(false),
         }),
         Layer.succeed(ManagedEndpointProvider.ManagedEndpointProvider, {
+          prepareDeprovision: () => Effect.succeed(null),
           deprovision: input?.deprovision ?? (() => Effect.void),
+          release: () => Effect.succeed(true),
           provision: () =>
             Effect.succeed({
               endpoint: {
@@ -155,6 +173,7 @@ function testLayer(input?: {
 describe("EnvironmentLinker", () => {
   it.effect("uses verified JWT claims when linking an environment", () => {
     let persistedEnvironmentId: string | null = null;
+    const lockKeys: string[] = [];
     return Effect.gen(function* () {
       const { request, payload } = yield* makeRequest;
       const linker = yield* EnvironmentLinker.EnvironmentLinker;
@@ -162,6 +181,12 @@ describe("EnvironmentLinker", () => {
       expect(result.environmentId).toBe(payload.environmentId);
       expect(result.environmentCredential).toBe("t3env_credential_secret");
       expect(persistedEnvironmentId).toBe(payload.environmentId);
+      expect(lockKeys).toEqual([
+        EnvironmentLinks.environmentLinkLockKey({
+          userId: "user_123",
+          environmentId: payload.environmentId,
+        }),
+      ]);
     }).pipe(
       Effect.provide(
         testLayer({
@@ -169,6 +194,7 @@ describe("EnvironmentLinker", () => {
             Effect.sync(() => {
               persistedEnvironmentId = input.proof.environmentId;
             }),
+          lockKeys,
         }),
       ),
     );

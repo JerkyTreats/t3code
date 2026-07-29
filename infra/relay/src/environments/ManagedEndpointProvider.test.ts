@@ -7,8 +7,10 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
 import * as RelayConfiguration from "../Config.ts";
+import * as RelayDb from "../db.ts";
 import * as ManagedEndpointAllocations from "./ManagedEndpointAllocations.ts";
 import * as ManagedEndpointProvider from "./ManagedEndpointProvider.ts";
+import * as ManagedTunnelLimits from "./ManagedTunnelLimits.ts";
 
 const config = RelayConfiguration.RelayConfiguration.of({
   relayIssuer: "https://relay.example.test",
@@ -40,7 +42,16 @@ interface DnsCall {
 }
 
 interface AllocationCall {
-  readonly operation: "get" | "reserve" | "recordTunnel" | "recordDns" | "markReady" | "remove";
+  readonly operation:
+    | "get"
+    | "reserve"
+    | "recordTunnel"
+    | "recordDns"
+    | "markReady"
+    | "claimRelease"
+    | "claimDeprovision"
+    | "remove"
+    | "removeClaimed";
   readonly input: unknown;
 }
 
@@ -161,6 +172,8 @@ function makeAllocations(calls: AllocationCall[] = []) {
           tunnelId: null,
           dnsRecordId: null,
           readyAt: null,
+          generation: 1,
+          updatedAt: "generation-1",
         };
         allocations.set(allocationKey(input), allocation);
         return allocation;
@@ -192,10 +205,26 @@ function makeAllocations(calls: AllocationCall[] = []) {
           });
         }
       }),
+    claimRelease: (input) =>
+      Effect.sync(() => {
+        calls.push({ operation: "claimRelease", input });
+        return true;
+      }),
+    claimDeprovision: (input) =>
+      Effect.sync(() => {
+        calls.push({ operation: "claimDeprovision", input });
+        return 2;
+      }),
     remove: (input) =>
       Effect.sync(() => {
         calls.push({ operation: "remove", input });
         allocations.delete(allocationKey(input));
+      }),
+    removeClaimed: (input) =>
+      Effect.sync(() => {
+        calls.push({ operation: "removeClaimed", input });
+        allocations.delete(allocationKey(input));
+        return true;
       }),
   });
 }
@@ -204,7 +233,21 @@ function providerLayer(
   tunnelClient = makeTunnelClient(),
   dnsClient = makeDnsClient(),
   allocations = makeAllocations(),
+  tunnelLimits: ManagedTunnelLimits.ManagedTunnelLimits["Service"] = {
+    ensureCapacity: () => Effect.void,
+    withCapacityReservation: (_input, reserve) => reserve,
+  },
+  lockKeys: string[] = [],
 ) {
+  const client = Object.assign(
+    (_strings: TemplateStringsArray, key: string) => {
+      lockKeys.push(key);
+      return Effect.void;
+    },
+    {
+      withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => effect,
+    },
+  );
   return ManagedEndpointProvider.layer.pipe(
     Layer.provideMerge(NodeServices.layer),
     Layer.provide(RelayConfiguration.layer(config)),
@@ -212,6 +255,12 @@ function providerLayer(
     Layer.provide(ManagedEndpointProvider.layerDnsClient(dnsClient)),
     Layer.provide(
       Layer.succeed(ManagedEndpointAllocations.ManagedEndpointAllocations, allocations),
+    ),
+    Layer.provide(Layer.succeed(ManagedTunnelLimits.ManagedTunnelLimits, tunnelLimits)),
+    Layer.provide(
+      Layer.succeed(RelayDb.RelayDb, {
+        $client: client,
+      } as unknown as RelayDb.RelayDb["Service"]),
     ),
   );
 }
@@ -623,7 +672,8 @@ describe("ManagedEndpointProvider", () => {
           "recordDns",
           "markReady",
           "get",
-          "remove",
+          "claimDeprovision",
+          "removeClaimed",
         ]);
       }).pipe(Effect.provide(layer));
     },
@@ -700,8 +750,10 @@ describe("ManagedEndpointProvider", () => {
         "recordDns",
         "markReady",
         "get",
+        "claimDeprovision",
         "get",
-        "remove",
+        "claimDeprovision",
+        "removeClaimed",
       ]);
     }).pipe(Effect.provide(layer));
   });
@@ -742,7 +794,7 @@ describe("ManagedEndpointProvider", () => {
       });
       yield* provider.deprovision(key);
 
-      expect(allocationCalls.map((call) => call.operation)).toContain("remove");
+      expect(allocationCalls.map((call) => call.operation)).toContain("removeClaimed");
     }).pipe(Effect.provide(layer));
   });
 
@@ -888,5 +940,161 @@ describe("ManagedEndpointProvider", () => {
         expect(error.cause).toBe(failure);
       }
     }).pipe(Effect.provide(providerLayer(makeTunnelClient(), dnsClient)));
+  });
+
+  it.effect(
+    "leaves a newer allocation untouched when deprovision loses its generation claim",
+    () => {
+      const tunnelCalls: TunnelCall[] = [];
+      const dnsCalls: DnsCall[] = [];
+      const target: ManagedEndpointAllocations.ManagedEndpointAllocation = {
+        userId: "user_ABC",
+        environmentId: "env_ABC",
+        hostname: expectedManagedHostname("env_ABC"),
+        tunnelId: "stale-tunnel",
+        tunnelName: expectedManagedTunnelName("env_ABC"),
+        dnsRecordId: "stale-dns",
+        readyAt: "2026-07-29T00:00:00.000Z",
+        generation: 1,
+        updatedAt: "stale-generation",
+      };
+      const baseAllocations = makeAllocations();
+      const allocations = ManagedEndpointAllocations.ManagedEndpointAllocations.of({
+        ...baseAllocations,
+        get: () => Effect.succeed(target),
+        claimDeprovision: () => Effect.succeed(null),
+        removeClaimed: () => Effect.die("stale allocation must not be removed"),
+      });
+
+      return Effect.gen(function* () {
+        const provider = yield* ManagedEndpointProvider.ManagedEndpointProvider;
+        yield* provider.deprovision({
+          userId: target.userId,
+          environmentId: target.environmentId,
+          target,
+        });
+
+        expect(tunnelCalls).toHaveLength(0);
+        expect(dnsCalls).toHaveLength(0);
+      }).pipe(
+        Effect.provide(
+          providerLayer(makeTunnelClient(tunnelCalls), makeDnsClient(dnsCalls), allocations),
+        ),
+      );
+    },
+  );
+
+  it.effect("does not delete a tunnel when shutdown release loses its generation claim", () => {
+    const tunnelCalls: TunnelCall[] = [];
+    const allocation: ManagedEndpointAllocations.ManagedEndpointAllocation = {
+      userId: "user_ABC",
+      environmentId: "env_ABC",
+      hostname: expectedManagedHostname("env_ABC"),
+      tunnelId: "new-tunnel",
+      tunnelName: expectedManagedTunnelName("env_ABC"),
+      dnsRecordId: "dns-record",
+      readyAt: "2026-07-29T00:00:00.000Z",
+      generation: 1,
+      updatedAt: "new-generation",
+    };
+    const baseAllocations = makeAllocations();
+    const allocations = ManagedEndpointAllocations.ManagedEndpointAllocations.of({
+      ...baseAllocations,
+      get: () => Effect.succeed(allocation),
+      claimRelease: () => Effect.succeed(false),
+    });
+
+    return Effect.gen(function* () {
+      const provider = yield* ManagedEndpointProvider.ManagedEndpointProvider;
+      const released = yield* provider.release({
+        userId: allocation.userId,
+        environmentId: allocation.environmentId,
+      });
+
+      expect(released).toBe(false);
+      expect(tunnelCalls).toHaveLength(0);
+    }).pipe(
+      Effect.provide(providerLayer(makeTunnelClient(tunnelCalls), makeDnsClient(), allocations)),
+    );
+  });
+
+  it.effect("reports the configured tunnel limit before allocating resources", () => {
+    const tunnelCalls: TunnelCall[] = [];
+    const limits = ManagedTunnelLimits.ManagedTunnelLimits.of({
+      ensureCapacity: (input) =>
+        Effect.fail(
+          new ManagedTunnelLimits.ManagedTunnelLimitExceeded({
+            ...input,
+            maxTunnels: 3,
+            activeTunnels: 3,
+          }),
+        ),
+      withCapacityReservation: (input) =>
+        Effect.fail(
+          new ManagedTunnelLimits.ManagedTunnelLimitExceeded({
+            ...input,
+            maxTunnels: 3,
+            activeTunnels: 3,
+          }),
+        ),
+    });
+
+    return Effect.gen(function* () {
+      const provider = yield* ManagedEndpointProvider.ManagedEndpointProvider;
+      const error = yield* Effect.flip(
+        provider.provision({
+          userId: "user_ABC",
+          environmentId: "env_limit",
+          origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
+        }),
+      );
+
+      expect(error).toMatchObject({
+        _tag: "ManagedTunnelLimitExceeded",
+        userId: "user_ABC",
+        environmentId: "env_limit",
+        maxTunnels: 3,
+        activeTunnels: 3,
+      });
+      expect(tunnelCalls).toHaveLength(0);
+    }).pipe(
+      Effect.provide(
+        providerLayer(makeTunnelClient(tunnelCalls), makeDnsClient(), makeAllocations(), limits),
+      ),
+    );
+  });
+
+  it.effect("serializes provision, release, and deprovision with the same endpoint lock", () => {
+    const lockKeys: string[] = [];
+    const layer = providerLayer(
+      makeTunnelClient(),
+      makeDnsClient(),
+      makeAllocations(),
+      {
+        ensureCapacity: () => Effect.void,
+        withCapacityReservation: (_input, reserve) => reserve,
+      },
+      lockKeys,
+    );
+
+    return Effect.gen(function* () {
+      const provider = yield* ManagedEndpointProvider.ManagedEndpointProvider;
+      const input = {
+        userId: "user_ABC",
+        environmentId: "env_lock",
+      };
+      yield* provider.provision({
+        ...input,
+        origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
+      });
+      yield* provider.release(input);
+      yield* provider.deprovision(input);
+
+      expect(lockKeys).toEqual([
+        '["user_ABC","env_lock"]',
+        '["user_ABC","env_lock"]',
+        '["user_ABC","env_lock"]',
+      ]);
+    }).pipe(Effect.provide(layer));
   });
 });

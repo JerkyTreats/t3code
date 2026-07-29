@@ -5,6 +5,7 @@ import {
   makeDevelopmentLauncherScript,
   resolveElectronBinaryPath,
   resolveLauncherDisplayName,
+  resolveLinuxSecureStorageArgs,
 } from "./electron-launcher.mjs";
 
 describe("electron development launcher", () => {
@@ -55,5 +56,11 @@ describe("electron development launcher", () => {
       "/repo/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
     );
     assert.deepEqual(calls, ["ensure", "require:electron"]);
+  });
+
+  it("selects libsecret explicitly for Linux launcher processes", () => {
+    assert.deepEqual(resolveLinuxSecureStorageArgs("linux"), ["--password-store=gnome-libsecret"]);
+    assert.deepEqual(resolveLinuxSecureStorageArgs("darwin"), []);
+    assert.deepEqual(resolveLinuxSecureStorageArgs("win32"), []);
   });
 });

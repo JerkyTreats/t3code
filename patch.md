@@ -102,6 +102,24 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Configure Node and Bun compression through exact registered package patches without dependency version drift.
 - Verify identity and compressed response equivalence, reconnect replay continuity, durable command identity, wire reduction, latency, server RSS, and client heap with the fixed local release benchmark.
 
+## F1 Desktop Updater Relaunch
+
+- Permit updater-controlled quit only after Electron emits its native updater quit event.
+- Keep ordinary app quit and window close on the guarded desktop shutdown path across all platforms.
+- Preserve renderer recovery and fork release identity while updater relaunch authority is active.
+
+## F13 Connect Availability And Managed Tunnel Lifecycle
+
+- Route signed-out Connect entry points directly to sign-in and keep the legacy mobile waitlist deep link only as a sign-in alias.
+- Authenticate relay credentials only against an active environment link with the same environment id and public key.
+- Serialize link finalization and unlink for the same user and environment, then revoke links and matching credentials transactionally before external teardown.
+- Serialize shutdown tunnel release on the same link identity so unlink captures the released allocation generation before cleanup.
+- Use allocation generation claims for deprovision and shutdown release so stale cleanup cannot delete newer resources.
+- Enforce managed tunnel account limits before allocation and preserve per-user overrides.
+- Release restart-authorized CLI managed tunnels during server shutdown while keeping allocation and hostname identity for restart.
+- Keep paired-client managed tunnels live across shutdown until a restart reprovision credential path exists.
+- Keep Linux Secret Service selection explicit in both launcher and app startup.
+
 ## Feature Spec Contract
 
 Every spec under `fork/` must include:

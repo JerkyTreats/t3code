@@ -41,6 +41,7 @@ import { useSavedRemoteConnections } from "../../state/use-remote-environment-re
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
+import { settingsAccountLabel } from "./settingsAccountLabel";
 
 type NotificationStatus = "checking" | "enabled" | "disabled" | "unsupported";
 type LiveActivityStatus = "checking" | "enabled" | "disabled" | "signed-out" | "linking";
@@ -150,11 +151,11 @@ function ConfiguredSettingsRouteScreen() {
 
   const connections = useMemo(() => Object.values(savedConnectionsById), [savedConnectionsById]);
   const environmentCount = connections.length;
-  const accountLabel = useMemo(() => {
-    if (!isLoaded) return "Checking";
-    if (!isSignedIn) return "Request access";
-    return user?.primaryEmailAddress?.emailAddress ?? "Signed in";
-  }, [isLoaded, isSignedIn, user?.primaryEmailAddress?.emailAddress]);
+  const accountLabel = settingsAccountLabel({
+    isLoaded,
+    isSignedIn,
+    emailAddress: user?.primaryEmailAddress?.emailAddress,
+  });
 
   const refreshNotifications = useCallback(async () => {
     if (process.env.EXPO_OS !== "ios") {
@@ -259,13 +260,13 @@ function ConfiguredSettingsRouteScreen() {
 
   const promptSignIn = useCallback(() => {
     Alert.alert(
-      "Request T3 Connect access",
-      "Live Activity updates require approved T3 Connect access so relay can deliver updates to this device.",
+      "Sign in to T3 Connect",
+      "Live Activity updates require T3 Connect so relay can deliver updates to this device.",
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Continue",
-          onPress: () => navigation.navigate("SettingsSheet", { screen: "SettingsWaitlist" }),
+          onPress: () => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" }),
         },
       ],
     );
@@ -427,7 +428,8 @@ function ConfiguredSettingsRouteScreen() {
   const openAccount = useCallback(() => {
     if (!isLoaded) return;
     if (!isSignedIn) {
-      navigation.navigate("SettingsSheet", { screen: "SettingsWaitlist" });
+      expandClerkSheet();
+      navigation.navigate("SettingsSheet", { screen: "SettingsAuth" });
       return;
     }
     expandClerkSheet();

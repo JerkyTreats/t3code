@@ -65,6 +65,18 @@ const { logInfo: logBootstrapInfo, logWarning: logBootstrapWarning } =
 const { logInfo: logStartupInfo, logError: logStartupError } =
   DesktopObservability.makeComponentLogger("desktop-startup");
 
+export function desktopStartupCommandLineSwitches(
+  platform: NodeJS.Platform,
+  linuxWmClass: string,
+): ReadonlyArray<readonly [switchName: string, value: string]> {
+  return platform === "linux"
+    ? [
+        ["class", linuxWmClass],
+        ["password-store", "gnome-libsecret"],
+      ]
+    : [];
+}
+
 const resolveDesktopBackendPort = Effect.fn("resolveDesktopBackendPort")(function* (
   configuredPort: Option.Option<number>,
 ) {
@@ -235,9 +247,11 @@ const startup = Effect.gen(function* () {
   yield* logStartupInfo("runtime logging configured", { logDir: environment.logDir });
   yield* desktopSettings.load;
 
-  if (environment.platform === "linux") {
-    yield* electronApp.appendCommandLineSwitch("class", environment.linuxWmClass);
-    yield* electronApp.appendCommandLineSwitch("password-store", "gnome-libsecret");
+  for (const [switchName, value] of desktopStartupCommandLineSwitches(
+    environment.platform,
+    environment.linuxWmClass,
+  )) {
+    yield* electronApp.appendCommandLineSwitch(switchName, value);
   }
 
   yield* appIdentity.configure;

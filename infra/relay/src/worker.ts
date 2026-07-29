@@ -42,6 +42,7 @@ import * as RelayTokens from "./auth/RelayTokens.ts";
 import * as EnvironmentCredentials from "./environments/EnvironmentCredentials.ts";
 import * as EnvironmentLinks from "./environments/EnvironmentLinks.ts";
 import * as ManagedEndpointAllocations from "./environments/ManagedEndpointAllocations.ts";
+import * as ManagedTunnelLimits from "./environments/ManagedTunnelLimits.ts";
 import * as LiveActivities from "./agentActivity/LiveActivities.ts";
 import * as RelayDb from "./db.ts";
 import { RelayApnsDeliveryDeadLetterQueue, RelayApnsDeliveryQueue } from "./queues.ts";
@@ -205,13 +206,23 @@ export default class Api extends Cloudflare.Worker<Api>()(
       Layer.provideMerge(AgentActivityRows.layer),
       Layer.provideMerge(Devices.layer),
       Layer.provideMerge(EnvironmentCredentials.layer),
-      Layer.provideMerge(Layer.mergeAll(EnvironmentLinks.layer, ManagedEndpointAllocations.layer)),
+      Layer.provideMerge(
+        Layer.mergeAll(
+          EnvironmentLinks.layer,
+          ManagedEndpointAllocations.layer,
+          ManagedTunnelLimits.layer,
+        ),
+      ),
       Layer.provideMerge(LiveActivities.layer),
       Layer.provideMerge(DeliveryAttempts.layer),
       Layer.provideMerge(RelayTokens.layer),
       Layer.provideMerge(Layer.succeed(RelayDb.RelayDb, db)),
-      Layer.provideMerge(Layer.effect(RelayConfiguration.RelayConfiguration, loadSettings)),
-      Layer.provideMerge(webcryptoLayer),
+      Layer.provideMerge(
+        Layer.mergeAll(
+          Layer.effect(RelayConfiguration.RelayConfiguration, loadSettings),
+          webcryptoLayer,
+        ),
+      ),
     );
 
     const appLayer = relayApiLayer.pipe(

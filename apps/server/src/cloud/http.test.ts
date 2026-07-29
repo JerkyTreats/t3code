@@ -4,8 +4,14 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
 import * as Tracer from "effect/Tracer";
-import { HttpClient, HttpServerRequest } from "effect/unstable/http";
+import {
+  HttpClient,
+  HttpClientRequest,
+  HttpClientResponse,
+  HttpServerRequest,
+} from "effect/unstable/http";
 
+import { EnvironmentId } from "@t3tools/contracts";
 import { RelayClientTracer } from "@t3tools/shared/relayTracing";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -17,7 +23,10 @@ import {
   isSupportedLinkProviderKind,
   linkProofScopes,
   reconcileDesiredCloudLink,
+  releaseManagedTunnelOnShutdown,
 } from "./http.ts";
+import { CLOUD_ENDPOINT_RUNTIME_CONFIG, RELAY_URL_SECRET } from "./config.ts";
+import { CLOUD_CLI_DESIRED_LINK_SECRET } from "./CliState.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import { traceAuthenticatedRelayRequest, traceRelayRequest } from "./traceRelayRequest.ts";
 
@@ -209,6 +218,141 @@ describe("reconcileDesiredCloudLink", () => {
       ),
       Effect.provide(NodeServices.layer),
     ),
+  );
+});
+
+describe("releaseManagedTunnelOnShutdown", () => {
+  const encoder = new TextEncoder();
+
+  function makeReleaseProgram(input?: {
+    readonly cliDesired?: boolean;
+    readonly replaceRuntimeConfigDuringRequest?: boolean;
+    readonly responseOk?: boolean;
+  }) {
+    const secrets = new Map<string, Uint8Array>([
+      [CLOUD_ENDPOINT_RUNTIME_CONFIG, encoder.encode('{"generation":"old"}')],
+      [RELAY_URL_SECRET, encoder.encode("https://relay.example.test")],
+    ]);
+    if (input?.cliDesired !== false) {
+      secrets.set(CLOUD_CLI_DESIRED_LINK_SECRET, encoder.encode("managed"));
+    }
+    const requests: HttpClientRequest.HttpClientRequest[] = [];
+    const appliedConfigs: unknown[] = [];
+    const secretStore = ServerSecretStore.ServerSecretStore.of({
+      get: (name) => Effect.succeed(Option.fromNullishOr(secrets.get(name))),
+      set: (name, value) =>
+        Effect.sync(() => {
+          secrets.set(name, value);
+        }),
+      create: unusedSecretStoreOperation,
+      getOrCreateRandom: unusedSecretStoreOperation,
+      remove: (name) =>
+        Effect.sync(() => {
+          secrets.delete(name);
+        }),
+    });
+    const program = releaseManagedTunnelOnShutdown().pipe(
+      Effect.provideService(ServerSecretStore.ServerSecretStore, secretStore),
+      Effect.provideService(
+        ServerEnvironment.ServerEnvironment,
+        ServerEnvironment.ServerEnvironment.of({
+          getEnvironmentId: Effect.succeed(EnvironmentId.make("environment-1")),
+          getDescriptor: unusedSecretStoreOperation(),
+        }),
+      ),
+      Effect.provideService(
+        ManagedEndpointRuntime.CloudManagedEndpointRuntime,
+        ManagedEndpointRuntime.CloudManagedEndpointRuntime.of({
+          applyConfig: (config) =>
+            Effect.sync(() => {
+              appliedConfigs.push(config);
+              return { status: "disabled" } as const;
+            }),
+        }),
+      ),
+      Effect.provideService(
+        EnvironmentAuth.EnvironmentAuth,
+        EnvironmentAuth.EnvironmentAuth.of({} as EnvironmentAuth.EnvironmentAuth["Service"]),
+      ),
+      Effect.provideService(
+        CliTokenManager.CloudCliTokenManager,
+        CliTokenManager.CloudCliTokenManager.of({
+          get: unusedSecretStoreOperation(),
+          getExisting: Effect.succeed(
+            Option.some({
+              accessToken: "access-token",
+              refreshToken: "refresh-token",
+              expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+            }),
+          ),
+          hasCredential: unusedSecretStoreOperation(),
+          clear: unusedSecretStoreOperation(),
+        }),
+      ),
+      Effect.provideService(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Effect.sync(() => {
+            requests.push(request);
+            if (input?.replaceRuntimeConfigDuringRequest === true) {
+              secrets.set(CLOUD_ENDPOINT_RUNTIME_CONFIG, encoder.encode('{"generation":"new"}'));
+            }
+            return HttpClientResponse.fromWeb(
+              request,
+              Response.json({ ok: input?.responseOk ?? true }),
+            );
+          }),
+        ),
+      ),
+      Effect.provide(NodeServices.layer),
+    );
+    return { appliedConfigs, program, requests, secrets };
+  }
+
+  it.effect("releases a managed tunnel and clears the matching runtime generation", () =>
+    Effect.gen(function* () {
+      const harness = makeReleaseProgram();
+
+      expect(yield* harness.program).toBe(true);
+      expect(harness.requests).toHaveLength(1);
+      expect(harness.requests[0]?.method).toBe("DELETE");
+      expect(harness.requests[0]?.url).toBe(
+        "https://relay.example.test/v1/client/environment-links/environment-1/tunnel",
+      );
+      expect(harness.requests[0]?.headers.authorization).toBe("Bearer access-token");
+      expect(harness.appliedConfigs).toEqual([null]);
+      expect(harness.secrets.has(CLOUD_ENDPOINT_RUNTIME_CONFIG)).toBe(false);
+    }),
+  );
+
+  it.effect("preserves a newer runtime generation installed while release is in flight", () =>
+    Effect.gen(function* () {
+      const harness = makeReleaseProgram({ replaceRuntimeConfigDuringRequest: true });
+
+      expect(yield* harness.program).toBe(true);
+      expect(new TextDecoder().decode(harness.secrets.get(CLOUD_ENDPOINT_RUNTIME_CONFIG))).toBe(
+        '{"generation":"new"}',
+      );
+    }),
+  );
+
+  it.effect("preserves runtime state when the relay declines the release", () =>
+    Effect.gen(function* () {
+      const harness = makeReleaseProgram({ responseOk: false });
+
+      expect(yield* harness.program).toBe(false);
+      expect(harness.secrets.has(CLOUD_ENDPOINT_RUNTIME_CONFIG)).toBe(true);
+    }),
+  );
+
+  it.effect("keeps paired-client managed tunnels live without restart authority", () =>
+    Effect.gen(function* () {
+      const harness = makeReleaseProgram({ cliDesired: false });
+
+      expect(yield* harness.program).toBe(false);
+      expect(harness.requests).toHaveLength(0);
+      expect(harness.secrets.has(CLOUD_ENDPOINT_RUNTIME_CONFIG)).toBe(true);
+    }),
   );
 });
 

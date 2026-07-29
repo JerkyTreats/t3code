@@ -116,7 +116,7 @@ describe("EnvironmentLinks", () => {
     );
   });
 
-  it.effect("revokes only the active link owned by the requesting user", () => {
+  it.effect("revokes only the active matching link generation owned by the user", () => {
     const updateValues: Array<Record<string, unknown>> = [];
     const whereConditions: Array<unknown> = [];
     const fakeDb = {
@@ -146,6 +146,7 @@ describe("EnvironmentLinks", () => {
       const revoked = yield* links.revokeForUser({
         userId: "user-1",
         environmentId: "env-1",
+        environmentPublicKey: "key-1",
       });
 
       expect(revoked).toBe(true);
@@ -158,8 +159,9 @@ describe("EnvironmentLinks", () => {
       const query = dialect.sqlToQuery(whereConditions[0] as never);
       expect(query.sql).toContain('"relay_environment_links"."user_id" = $1');
       expect(query.sql).toContain('"relay_environment_links"."environment_id" = $2');
+      expect(query.sql).toContain('"relay_environment_links"."environment_public_key" = $3');
       expect(query.sql).toContain('"relay_environment_links"."revoked_at" is null');
-      expect(query.params).toEqual(["user-1", "env-1"]);
+      expect(query.params).toEqual(["user-1", "env-1", "key-1"]);
     }).pipe(
       Effect.provide(
         EnvironmentLinks.layer.pipe(Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb))),

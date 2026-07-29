@@ -361,8 +361,8 @@ function resolveLinuxSandboxArgs(electronBinaryPath) {
   return ["--no-sandbox"];
 }
 
-function resolveLinuxSecureStorageArgs() {
-  if (hostPlatform !== "linux") {
+export function resolveLinuxSecureStorageArgs(platform = hostPlatform) {
+  if (platform !== "linux") {
     return [];
   }
 

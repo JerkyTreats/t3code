@@ -74,7 +74,11 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import { connectHttpApiLayer, reconcileDesiredCloudLink } from "./cloud/http.ts";
+import {
+  connectHttpApiLayer,
+  reconcileDesiredCloudLink,
+  releaseManagedTunnelOnShutdown,
+} from "./cloud/http.ts";
 import { serverRelayBrokerTracingLayer } from "./cloud/relayTracing.ts";
 import * as CloudManagedEndpointRuntime from "./cloud/ManagedEndpointRuntime.ts";
 import * as CloudCliTokenManager from "./cloud/CliTokenManager.ts";
@@ -452,6 +456,20 @@ export const makeServerLayer = Layer.unwrap(
     const cloudDesiredLinkReconcileLayer = Layer.effectDiscard(
       Effect.gen(function* () {
         if (!hasCloudPublicConfig) return;
+        yield* Effect.addFinalizer(() =>
+          releaseManagedTunnelOnShutdown().pipe(
+            Effect.timeout("10 seconds"),
+            Effect.tap((released) =>
+              released ? Effect.logInfo("Released managed relay tunnel on shutdown") : Effect.void,
+            ),
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Failed to release managed relay tunnel on shutdown", {
+                cause,
+              }),
+            ),
+            Effect.asVoid,
+          ),
+        );
         if (!(yield* CloudCliState.readCliDesiredCloudLink)) return;
         const server = yield* HttpServer.HttpServer;
         const address = server.address;

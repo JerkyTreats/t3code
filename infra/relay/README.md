@@ -1,8 +1,5 @@
 # T3 Connect Relay
 
-> [!WARNING]
-> T3 Connect is currently in private beta. Join the waitlist in the app under Settings > T3 Connect.
-
 The relay is the hosted control plane for T3 Connect. It helps clients discover and connect to
 remote environments, manages the cloud-side records needed for those connections, and delivers
 optional mobile notifications and Live Activities.
@@ -160,8 +157,8 @@ fork-owned release automation is reintroduced.
 
 See:
 
-- [T3 Connect Clerk Setup](../../docs/cloud/t3-connect-clerk.md) for Clerk keys, JWT templates, and waitlist
-  setup.
+- [T3 Connect Clerk Setup](../../docs/cloud/t3-connect-clerk.md) for Clerk keys, JWT templates, and
+  account access setup.
 - [Relay Observability](../../docs/relay-observability.md) for deployment tracing and diagnostics.
 - [T3 Connect Architecture Overview](../../docs/cloud/t3-code-connect-auth-flow.html) for the full link,
   connect, endpoint, and notification flows.

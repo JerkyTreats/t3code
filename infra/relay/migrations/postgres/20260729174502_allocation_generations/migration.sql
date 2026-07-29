@@ -1,0 +1,1 @@
+ALTER TABLE "relay_managed_endpoint_allocations" ADD COLUMN "generation" integer DEFAULT 0 NOT NULL;

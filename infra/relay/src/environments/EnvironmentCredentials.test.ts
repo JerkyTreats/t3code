@@ -91,6 +91,63 @@ describe("EnvironmentCredentials", () => {
     );
   });
 
+  it.effect("authenticates credentials only while their matching link is active", () => {
+    const conditions: unknown[] = [];
+    const fakeDb = {
+      select: () => ({
+        from: (table: unknown) => {
+          expect(table).toBe(relayEnvironmentCredentials);
+          return {
+            where: (condition: unknown) => {
+              conditions.push(condition);
+              return {
+                limit: () =>
+                  Effect.succeed([
+                    {
+                      credentialId: "credential-1",
+                      environmentId: "env_test",
+                      environmentPublicKey: "environment-public-key",
+                    },
+                  ]),
+              };
+            },
+          };
+        },
+      }),
+    } as unknown as RelayDb.RelayDb["Service"];
+
+    return Effect.gen(function* () {
+      const credentials = yield* EnvironmentCredentials.EnvironmentCredentials;
+      const principal = yield* credentials.authenticate("t3env_test");
+
+      expect(principal).toMatchObject({
+        _tag: "Some",
+        value: {
+          credentialId: "credential-1",
+          environmentId: "env_test",
+          environmentPublicKey: "environment-public-key",
+        },
+      });
+      const query = new PgDialect().sqlToQuery(conditions[0] as never);
+      expect(query.sql).toContain("exists");
+      expect(query.sql).toContain('"relay_environment_links"');
+      expect(query.sql).toContain(
+        '"relay_environment_links"."environment_id" = "relay_environment_credentials"."environment_id"',
+      );
+      expect(query.sql).toContain(
+        '"relay_environment_links"."environment_public_key" = "relay_environment_credentials"."environment_public_key"',
+      );
+      expect(query.sql).toContain('"relay_environment_links"."revoked_at" is null');
+    }).pipe(
+      Effect.provide(
+        EnvironmentCredentials.layer.pipe(
+          Layer.provide(NodeCryptoLayer.layer),
+          Layer.provide(Layer.succeed(RelayDb.RelayDb, fakeDb)),
+        ),
+      ),
+    );
+  });
+
   it.effect(
     "creates opaque credentials and revokes only older credentials for the same key",
     () => {

@@ -101,6 +101,52 @@ export class EnvironmentLinkRevokePersistenceError extends Schema.TaggedErrorCla
   }
 }
 
+export class EnvironmentLinkLockPersistenceError extends Schema.TaggedErrorClass<EnvironmentLinkLockPersistenceError>()(
+  "EnvironmentLinkLockPersistenceError",
+  {
+    userId: Schema.String,
+    environmentId: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to serialize environment link changes for user '${this.userId}', environment '${this.environmentId}'`;
+  }
+}
+
+export function environmentLinkLockKey(input: {
+  readonly userId: string;
+  readonly environmentId: string;
+}): string {
+  return JSON.stringify(["environment-link", input.userId, input.environmentId]);
+}
+
+export function withEnvironmentLinkLock<A, E, R>(
+  db: RelayDb.RelayDb["Service"],
+  input: {
+    readonly userId: string;
+    readonly environmentId: string;
+  },
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E | EnvironmentLinkLockPersistenceError, R> {
+  return db.$client
+    .withTransaction(
+      db.$client`SELECT pg_advisory_xact_lock(hashtextextended(${environmentLinkLockKey(input)}, 0))`.pipe(
+        Effect.andThen(effect),
+      ),
+    )
+    .pipe(
+      Effect.catchTag("SqlError", (cause) =>
+        Effect.fail(
+          new EnvironmentLinkLockPersistenceError({
+            ...input,
+            cause,
+          }),
+        ),
+      ),
+    );
+}
+
 export class EnvironmentLinks extends Context.Service<
   EnvironmentLinks,
   {
@@ -136,6 +182,7 @@ export class EnvironmentLinks extends Context.Service<
     readonly revokeForUser: (input: {
       readonly userId: string;
       readonly environmentId: string;
+      readonly environmentPublicKey?: string;
     }) => Effect.Effect<boolean, EnvironmentLinkRevokePersistenceError>;
   }
 >()("t3code-relay/environments/EnvironmentLinks") {}
@@ -411,6 +458,9 @@ const make = Effect.gen(function* () {
           and(
             eq(relayEnvironmentLinks.userId, input.userId),
             eq(relayEnvironmentLinks.environmentId, input.environmentId),
+            ...(input.environmentPublicKey === undefined
+              ? []
+              : [eq(relayEnvironmentLinks.environmentPublicKey, input.environmentPublicKey)]),
             isNull(relayEnvironmentLinks.revokedAt),
           ),
         )
