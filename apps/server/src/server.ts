@@ -89,6 +89,7 @@ import {
   persistServerRuntimeState,
 } from "./serverRuntimeState.ts";
 import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
+import { snapshotCompressionMiddlewareLayer } from "./httpCompression.ts";
 import * as NetService from "@t3tools/shared/Net";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
@@ -343,15 +344,18 @@ const RuntimeServicesLive = ServerRuntimeStartup.layer.pipe(
   Layer.provideMerge(RuntimeDependenciesLive),
 );
 
+const apiRouteLayer = HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
+  Layer.provide(authHttpApiLayer),
+  Layer.provide(connectHttpApiLayer),
+  Layer.provide(orchestrationHttpApiLayer),
+  Layer.provide(serverEnvironmentHttpApiLayer),
+  Layer.provide(environmentAuthenticatedAuthLayer),
+  Layer.provide(snapshotCompressionMiddlewareLayer),
+);
+
 export const makeRoutesLayer = Layer.mergeAll(
   Layer.mergeAll(
-    HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
-      Layer.provide(authHttpApiLayer),
-      Layer.provide(connectHttpApiLayer),
-      Layer.provide(orchestrationHttpApiLayer),
-      Layer.provide(serverEnvironmentHttpApiLayer),
-      Layer.provide(environmentAuthenticatedAuthLayer),
-    ),
+    apiRouteLayer,
     otlpTracesProxyRouteLayer,
     assetRouteLayer,
     staticAndDevRouteLayer,

@@ -81,6 +81,14 @@ The rebuild packet must include:
 
 Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or missing evidence for affected behavior.
 
+## F15 Transport Compression
+
+- Compress only successful JSON snapshots on the exact orchestration snapshot routes.
+- Start HTTP gzip at 1024 response bytes and preserve correct `Accept-Encoding` and `Vary` semantics.
+- Keep WebSocket per-message compression optional so clients that do not negotiate it remain compatible.
+- Configure Node and Bun compression through exact registered package patches without dependency version drift.
+- Verify identity and compressed response equivalence, reconnect replay continuity, durable command identity, wire reduction, latency, server RSS, and client heap with the fixed local release benchmark.
+
 ## Feature Spec Contract
 
 Every spec under `fork/` must include:

@@ -51,6 +51,7 @@ Current owner modules:
 - `apps/web/src/components/settings/ConnectionFlightRecorder.tsx`
 - `apps/server/src/ws.ts`
 - `apps/server/src/http.ts`
+- `apps/server/src/httpCompression.ts`
 - `apps/server/src/orchestration/Layers/OrchestrationEngine.ts`
 - `apps/server/src/orchestration/Layers/ProjectionPipeline.ts`
 - `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
@@ -61,10 +62,6 @@ Current owner modules:
 - `patches`
 - `pnpm-workspace.yaml`
 - `pnpm-lock.yaml`
-
-Planned owner modules:
-
-- `apps/server/src/httpCompression.ts`
 - `scripts/bench-connection-resilience.ts`
 - `package.json`
 
