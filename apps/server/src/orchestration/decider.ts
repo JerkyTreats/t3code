@@ -3,7 +3,9 @@ import {
   type OrchestrationCommand,
   type OrchestrationEvent,
   type OrchestrationReadModel,
+  type OrchestrationThreadShell,
 } from "@t3tools/contracts";
+import { hasThreadSettlementBlocker } from "@t3tools/shared/threadSettlement";
 import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -96,9 +98,11 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
 const decideOrchestrationCommandCore = Effect.fn("decideOrchestrationCommandCore")(function* ({
   command,
   readModel,
+  settlementShell,
 }: {
   readonly command: OrchestrationCommand;
   readonly readModel: OrchestrationReadModel;
+  readonly settlementShell?: OrchestrationThreadShell;
 }): Effect.fn.Return<
   DecideOrchestrationCommandResult,
   OrchestrationCommandInvariantError | PlatformError.PlatformError,
@@ -318,19 +322,41 @@ const decideOrchestrationCommandCore = Effect.fn("decideOrchestrationCommandCore
         command,
         threadId: command.threadId,
       });
+      const occurredAt = yield* nowIso;
+      if (settlementShell === undefined || settlementShell.id !== command.threadId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.threadId}' settlement blocker state is unavailable.`,
+        });
+      }
+      if (
+        hasThreadSettlementBlocker({
+          now: occurredAt,
+          hasPendingApprovals: settlementShell.hasPendingApprovals,
+          hasPendingUserInput: settlementShell.hasPendingUserInput,
+          sessionStatus: settlementShell.session?.status ?? null,
+          latestUserMessageAt: settlementShell.latestUserMessageAt,
+          latestTurn: settlementShell.latestTurn,
+        })
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Thread '${command.threadId}' cannot be settled while activity is blocked or queued.`,
+        });
+      }
       const isAlreadySettled = thread.settledOverride === "settled" && thread.settledAt !== null;
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
           aggregateId: command.threadId,
-          occurredAt: command.createdAt,
+          occurredAt,
           commandId: command.commandId,
         })),
         type: "thread.settled",
         payload: {
           threadId: command.threadId,
-          settledAt: isAlreadySettled ? thread.settledAt : command.createdAt,
-          updatedAt: isAlreadySettled ? thread.updatedAt : command.createdAt,
+          settledAt: isAlreadySettled ? thread.settledAt : occurredAt,
+          updatedAt: isAlreadySettled ? thread.updatedAt : occurredAt,
         },
       };
     }
@@ -342,18 +368,19 @@ const decideOrchestrationCommandCore = Effect.fn("decideOrchestrationCommandCore
         threadId: command.threadId,
       });
       const isAlreadyActive = thread.settledOverride === "active" && thread.settledAt === null;
+      const occurredAt = yield* nowIso;
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
           aggregateId: command.threadId,
-          occurredAt: command.createdAt,
+          occurredAt,
           commandId: command.commandId,
         })),
         type: "thread.unsettled",
         payload: {
           threadId: command.threadId,
           reason: command.reason,
-          updatedAt: isAlreadyActive ? thread.updatedAt : command.createdAt,
+          updatedAt: isAlreadyActive ? thread.updatedAt : occurredAt,
         },
       };
     }
@@ -842,15 +869,21 @@ function isWakingActivity(command: OrchestrationCommand): command is WakingActiv
 export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand")(function* ({
   command,
   readModel,
+  settlementShell,
 }: {
   readonly command: OrchestrationCommand;
   readonly readModel: OrchestrationReadModel;
+  readonly settlementShell?: OrchestrationThreadShell;
 }): Effect.fn.Return<
   DecideOrchestrationCommandResult,
   OrchestrationCommandInvariantError | PlatformError.PlatformError,
   Crypto.Crypto
 > {
-  const decided = yield* decideOrchestrationCommandCore({ command, readModel });
+  const decided = yield* decideOrchestrationCommandCore({
+    command,
+    readModel,
+    ...(settlementShell !== undefined ? { settlementShell } : {}),
+  });
   if (!isWakingActivity(command)) {
     return decided;
   }
@@ -860,18 +893,19 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     return decided;
   }
 
+  const occurredAt = yield* nowIso;
   const activityReset: PlannedOrchestrationEvent = {
     ...(yield* withEventBase({
       aggregateKind: "thread",
       aggregateId: command.threadId,
-      occurredAt: command.createdAt,
+      occurredAt,
       commandId: command.commandId,
     })),
     type: "thread.unsettled",
     payload: {
       threadId: command.threadId,
       reason: "activity",
-      updatedAt: command.createdAt,
+      updatedAt: occurredAt,
     },
   };
   return [activityReset, ...(Array.isArray(decided) ? decided : [decided])];

@@ -200,7 +200,19 @@ describe("OrchestrationEngine", () => {
           getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
           getThreadCheckpointContext: () => Effect.succeed(Option.none()),
           getFullThreadDiffContext: () => Effect.succeed(Option.none()),
-          getThreadShellById: () => Effect.succeed(Option.none()),
+          getThreadShellById: () =>
+            Effect.succeed(
+              Option.some({
+                ...projectionSnapshot.threads[0]!,
+                latestUserMessageAt: null,
+                hasPendingApprovals: true,
+                hasPendingUserInput: false,
+                hasActionableProposedPlan: false,
+                activePlanProgress: null,
+                latestRuntimeActivityAt: null,
+                statusSummaryUpdatedAt: "2026-03-03T00:00:04.000Z",
+              }),
+            ),
           getThreadDetailById: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshotById: () => Effect.succeed(Option.none()),
@@ -239,6 +251,18 @@ describe("OrchestrationEngine", () => {
 
     expect(result.sequence).toBe(8);
     expect(fullSnapshotReadCount).toBe(0);
+    await expect(
+      runtime.runPromise(
+        engine.dispatch({
+          type: "thread.settle",
+          commandId: CommandId.make("cmd-bootstrap-thread-settle"),
+          threadId: ThreadId.make("thread-bootstrap"),
+          createdAt: "2026-03-03T00:00:05.000Z",
+        }),
+      ),
+    ).rejects.toMatchObject({
+      _tag: "OrchestrationCommandInvariantError",
+    });
 
     await runtime.dispose();
   });

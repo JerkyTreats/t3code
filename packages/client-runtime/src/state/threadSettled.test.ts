@@ -99,6 +99,19 @@ describe("resolveThreadSettlement", () => {
     ).toEqual({ settled: true, reason: "inactivity" });
   });
 
+  it("accepts the ninety day upper inactivity threshold", () => {
+    expect(
+      resolveThreadSettlement(
+        input({
+          now: "2026-04-02T00:00:00.001Z",
+          latestUserMessageAt: "2026-01-01T00:00:00.000Z",
+          latestTurn: null,
+          autoSettleAfterDays: 90,
+        }),
+      ),
+    ).toEqual({ settled: true, reason: "inactivity" });
+  });
+
   it.each([null, 0, 1.5, 91, Number.NaN])(
     "does not apply inactivity for disabled or invalid threshold %s",
     (autoSettleAfterDays) => {

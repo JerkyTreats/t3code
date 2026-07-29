@@ -4,7 +4,7 @@ Date: 2026-07-29
 Branch: `product/v030-settlement`
 Commit Policy: local conventional commit required
 Objective: Implement the complete settled thread lifecycle atomically on the origin rebuild branch.
-Status: gates passed
+Status: fix review pending
 
 ## Objective Baseline
 
@@ -66,7 +66,7 @@ Status: gates passed
 
 | Slice | Worktree | Branch | Status | Integration Commit | Notes |
 | --- | --- | --- | --- | --- | --- |
-| P2 settlement | `/home/jerkytreats/t3code-v030-settlement` | `product/v030-settlement` | in progress | pending | isolated from the dirty primary checkout |
+| P2 settlement | `/home/jerkytreats/t3code-v030-settlement` | `product/v030-settlement` | fix review pending | `522a55d86` | isolated from the dirty primary checkout |
 
 ## Gate Evidence
 
@@ -83,21 +83,35 @@ Status: gates passed
 | Server tests | full repository test gate | passed | 2026-07-29 | 171 files and 1460 tests passed, with two files and seven tests skipped |
 | Snooze exclusion | `rg -ni snooz` across production source | passed | 2026-07-29 | no matches |
 | Diff integrity | `git diff --check` | passed | 2026-07-29 | no whitespace errors |
+| Review fix focused server tests | server decider and engine tests | passed | 2026-07-29 | 2 files and 21 tests passed |
+| Review fix focused policy tests | client settled policy tests | passed | 2026-07-29 | 1 file and 22 tests passed |
+| Review fix format | `pnpm fmt` with Node 24 path | passed | 2026-07-29 | 2172 files checked |
+| Review fix lint | `pnpm lint` with Node 24 path | passed | 2026-07-29 | existing warnings only |
+| Review fix typecheck | `pnpm typecheck` with Node 24 path | passed | 2026-07-29 | all 15 workspaces passed |
+| Review fix tests | `pnpm test` with Node 24 path | passed | 2026-07-29 | all workspace suites passed |
+| Review fix server tests | full repository test gate | passed | 2026-07-29 | 171 files and 1461 tests passed, with two files and seven tests skipped |
 
 ## Commit Evidence
 
 | Scope | Commit | Status | Notes |
 | --- | --- | --- | --- |
+| Settled thread lifecycle | `522a55d86` | passed gates, reviewed with findings | initial atomic implementation |
+| Fresh review fixes | pending | passed gates | restart-safe blockers, server acceptance time, patch guide sync, and ninety-day boundary proof |
 
 ## Review Lanes
 
 | Lane | Reviewer | Status | Findings | Notes |
 | --- | --- | --- | --- | --- |
+| Fresh committed-range review | `settlement_fresh_review` | fixes implemented | four blocking | same reviewer receives the fix packet |
 
 ## Blocking Findings
 
 | ID | Source | Severity | File | Objective Or Policy Basis | Status | Fix Commit | Verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| SET-REV-001 | fresh review | high | server engine and decider | settlement blockers must be enforced after restart | fixed pending re-review | pending | persisted shell summary is read before settle, with engine and decider tests |
+| SET-REV-002 | fresh review | high | server decider | accepted settlement and unsettle timestamps use server time | fixed pending re-review | pending | test clock proves command creation time is not persisted |
+| SET-REV-003 | fresh review | medium | `patch.md` and F8 | authoritative fork guide must stay current | fixed pending re-review | pending | F8 index and behavior contract updated |
+| SET-REV-004 | fresh review | low | settled policy tests | valid threshold range includes ninety | fixed pending re-review | pending | explicit ninety-day inactivity test |
 
 ## Deferred Findings
 
@@ -109,7 +123,9 @@ Status: gates passed
 - The orchestration engine persists every event returned by one command decision in one SQL transaction.
 - Waking reset events can therefore land atomically with the business event without a new RPC method.
 - Settlement activation remains central because partial union activation would break exhaustive runtime owners.
+- The server reads the persisted shell summary before settle, preserving lightweight command bootstrap while enforcing blockers after restart.
+- Shared settlement policy owns blocker and queued-turn logic for both the server decision and client presentation adapters.
 
 ## Closeout
 
-Pending.
+Pending same-reviewer fix verification.

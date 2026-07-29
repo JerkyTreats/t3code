@@ -191,6 +191,10 @@
       "types": "./src/hostProcess.ts",
       "import": "./src/hostProcess.ts"
     },
+    "./threadSettlement": {
+      "types": "./src/threadSettlement.ts",
+      "import": "./src/threadSettlement.ts"
+    },
     "./httpReadiness": {
       "types": "./src/httpReadiness.ts",
       "import": "./src/httpReadiness.ts"

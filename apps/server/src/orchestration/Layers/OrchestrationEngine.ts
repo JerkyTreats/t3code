@@ -150,9 +150,16 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           });
         }
 
+        const settlementShell =
+          envelope.command.type === "thread.settle"
+            ? Option.getOrUndefined(
+                yield* projectionSnapshotQuery.getThreadShellById(envelope.command.threadId),
+              )
+            : undefined;
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
           readModel: commandReadModel,
+          ...(settlementShell !== undefined ? { settlementShell } : {}),
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError((cause) =>

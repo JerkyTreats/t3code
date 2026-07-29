@@ -24,7 +24,7 @@ Thread and sidebar status cues reflect plan state directly instead of collapsing
 - Sidebar V2 supports bounded pagination, project grouping, project actions, bulk settle, unread state, delete, rename, and keyboard traversal.
 - Settled threads remain reachable and can be explicitly settled or returned to active state.
 - Persisted thread settlement uses `settledOverride` with null, `settled`, or `active`, plus `settledAt` as an ISO timestamp or null.
-- Settle and unsettle commands emit idempotent events. Repeated settle preserves the original accepted timestamp.
+- Settle and unsettle commands emit idempotent events. The first settle and user unsettle use server acceptance time, and repeated settle preserves the original accepted timestamp.
 - User unsettle writes the active override and clears the settled timestamp. Waking activity clears both fields.
 - User message, live session transition, approval request, and user-input request count as waking activity.
 - Pending approval, pending input, starting session, running session, and a queued turn block settlement.

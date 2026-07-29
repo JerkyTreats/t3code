@@ -55,7 +55,7 @@ When a feature is likely to be rebuilt onto future origin `main` snapshots, bias
 - [`F5` Git surface isolation from draft ownership](fork/F05-git-panel-isolation-from-draft-ownership.md)
 - [`F6` origin only GitHub target resolution](fork/F06-fork-first-github-identity-resolution.md)
 - [`F7` local branch, worktree, and promotion workflow](fork/F07-local-branch-worktree-and-promotion-workflow.md)
-- [`F8` plan aware sidebar and activity status cues](fork/F08-plan-aware-sidebar-and-activity-status-cues.md)
+- [`F8` plan aware sidebar, settled lifecycle, and activity status cues](fork/F08-plan-aware-sidebar-and-activity-status-cues.md)
 - [`F9` plan markdown preview and markdown rendering behavior](fork/F09-plan-markdown-preview-and-document-markdown-rendering.md)
 - [`F10` Codex model and binary selection](fork/F10-codex-model-and-binary-selection.md)
 - [`F11` source control provider lane and publish workflow](fork/F11-source-control-provider-lane-and-publish-workflow.md)
