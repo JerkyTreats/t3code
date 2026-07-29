@@ -4,7 +4,7 @@ Date: 2026-07-29
 Branch: `product/v030-settlement`
 Commit Policy: local conventional commit required
 Objective: Implement the complete settled thread lifecycle atomically on the origin rebuild branch.
-Status: fix review pending
+Status: closed
 
 ## Objective Baseline
 
@@ -66,7 +66,7 @@ Status: fix review pending
 
 | Slice | Worktree | Branch | Status | Integration Commit | Notes |
 | --- | --- | --- | --- | --- | --- |
-| P2 settlement | `/home/jerkytreats/t3code-v030-settlement` | `product/v030-settlement` | fix review pending | `522a55d86` | isolated from the dirty primary checkout |
+| P2 settlement | `/home/jerkytreats/t3code-v030-settlement` | `product/v030-settlement` | complete | `522a55d86` and `2488dac2a` | isolated from the dirty primary checkout |
 
 ## Gate Evidence
 
@@ -96,22 +96,22 @@ Status: fix review pending
 | Scope | Commit | Status | Notes |
 | --- | --- | --- | --- |
 | Settled thread lifecycle | `522a55d86` | passed gates, reviewed with findings | initial atomic implementation |
-| Fresh review fixes | pending | passed gates | restart-safe blockers, server acceptance time, patch guide sync, and ninety-day boundary proof |
+| Fresh review fixes | `2488dac2a` | passed gates and review | restart-safe blockers, server acceptance time, patch guide sync, and ninety-day boundary proof |
 
 ## Review Lanes
 
 | Lane | Reviewer | Status | Findings | Notes |
 | --- | --- | --- | --- | --- |
-| Fresh committed-range review | `settlement_fresh_review` | fixes implemented | four blocking | same reviewer receives the fix packet |
+| Fresh committed-range review | `settlement_fresh_review` | passed after fix review | four resolved | no remaining blocking or deferred findings |
 
 ## Blocking Findings
 
 | ID | Source | Severity | File | Objective Or Policy Basis | Status | Fix Commit | Verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| SET-REV-001 | fresh review | high | server engine and decider | settlement blockers must be enforced after restart | fixed pending re-review | pending | persisted shell summary is read before settle, with engine and decider tests |
-| SET-REV-002 | fresh review | high | server decider | accepted settlement and unsettle timestamps use server time | fixed pending re-review | pending | test clock proves command creation time is not persisted |
-| SET-REV-003 | fresh review | medium | `patch.md` and F8 | authoritative fork guide must stay current | fixed pending re-review | pending | F8 index and behavior contract updated |
-| SET-REV-004 | fresh review | low | settled policy tests | valid threshold range includes ninety | fixed pending re-review | pending | explicit ninety-day inactivity test |
+| SET-REV-001 | fresh review | high | server engine and decider | settlement blockers must be enforced after restart | resolved | `2488dac2a` | persisted shell summary is read before settle, with engine and decider tests |
+| SET-REV-002 | fresh review | high | server decider | accepted settlement and unsettle timestamps use server time | resolved | `2488dac2a` | test clock proves command creation time is not persisted |
+| SET-REV-003 | fresh review | medium | `patch.md` and F8 | authoritative fork guide must stay current | resolved | `2488dac2a` | F8 index and behavior contract updated |
+| SET-REV-004 | fresh review | low | settled policy tests | valid threshold range includes ninety | resolved | `2488dac2a` | explicit ninety-day inactivity test |
 
 ## Deferred Findings
 
@@ -128,4 +128,4 @@ Status: fix review pending
 
 ## Closeout
 
-Pending same-reviewer fix verification.
+Complete. Full gates pass, both implementation commits are local, the same-reviewer fix pass has no remaining findings, and no remote mutation occurred.
