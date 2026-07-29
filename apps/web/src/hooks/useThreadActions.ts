@@ -14,7 +14,11 @@ import { useCallback, useMemo, useRef } from "react";
 import { getFallbackThreadIdAfterDelete } from "../components/Sidebar.logic";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useDiffPanelStore } from "../diffPanelStore";
-import { clearDeletedThreadState, runThreadDeletionLifecycle } from "../lib/threadDeletionWorkflow";
+import {
+  clearDeletedThreadState,
+  runThreadDeletionLifecycle,
+  runWorktreeThreadTeardown,
+} from "../lib/threadDeletionWorkflow";
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
@@ -51,6 +55,9 @@ export function useThreadActions() {
     reportFailure: false,
   });
   const deleteThreadMutation = useAtomCommand(threadEnvironment.delete, {
+    reportFailure: false,
+  });
+  const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
   const stopThreadSession = useAtomCommand(threadEnvironment.stopSession);
@@ -153,7 +160,13 @@ export function useThreadActions() {
   );
 
   const deleteThread = useCallback(
-    async (target: ScopedThreadRef, opts: { deletedThreadKeys?: ReadonlySet<string> } = {}) => {
+    async (
+      target: ScopedThreadRef,
+      opts: {
+        deletedThreadKeys?: ReadonlySet<string>;
+        discardWorktree?: boolean;
+      } = {},
+    ) => {
       const resolved = resolveThreadTarget(target);
       if (!resolved) {
         // Thread not in main store (e.g. archived thread) — dispatch delete directly.
@@ -198,7 +211,9 @@ export function useThreadActions() {
       const canDeleteWorktree = orphanedWorktreePath !== null && threadProject !== null;
       const localApi = readLocalApi();
       let shouldDeleteWorktree = false;
-      if (canDeleteWorktree && localApi) {
+      if (opts.discardWorktree && canDeleteWorktree) {
+        shouldDeleteWorktree = true;
+      } else if (canDeleteWorktree && localApi) {
         const confirmationResult = await settlePromise(() =>
           localApi.dialogs.confirm(
             [
@@ -236,18 +251,20 @@ export function useThreadActions() {
         ...(thread.session && thread.session.status !== "stopped"
           ? {
               stopSession: async () => {
-                await stopThreadSession({
+                const result = await stopThreadSession({
                   environmentId: threadRef.environmentId,
                   input: { threadId: threadRef.threadId },
                 });
+                if (result._tag === "Failure") throw squashAtomCommandFailure(result);
               },
             }
           : {}),
         closeTerminalState: async () => {
-          await closeTerminal({
+          const result = await closeTerminal({
             environmentId: threadRef.environmentId,
             input: { threadId: threadRef.threadId, deleteHistory: true },
           });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
         },
         deleteThreadRecord: async () => {
           const result = await deleteThreadMutation({
@@ -364,6 +381,129 @@ export function useThreadActions() {
     ],
   );
 
+  const closeThreadWorktree = useCallback(
+    async (target: ScopedThreadRef) => {
+      const resolved = resolveThreadTarget(target);
+      const worktreePath = resolved?.thread.worktreePath;
+      if (!resolved || !worktreePath) return AsyncResult.success(undefined);
+      const { thread, threadRef } = resolved;
+      const project = readProject({
+        environmentId: threadRef.environmentId,
+        projectId: thread.projectId,
+      });
+      if (!project) return AsyncResult.success(undefined);
+      const worktreeIsShared = readEnvironmentThreadRefs(threadRef.environmentId).some(
+        (candidate) => {
+          if (candidate.threadId === threadRef.threadId) return false;
+          return readThreadShell(candidate)?.worktreePath === worktreePath;
+        },
+      );
+
+      try {
+        return await runWorktreeThreadTeardown({
+          ...(thread.session && thread.session.status !== "stopped"
+            ? {
+                stopSession: async () => {
+                  const result = await stopThreadSession({
+                    environmentId: threadRef.environmentId,
+                    input: { threadId: threadRef.threadId },
+                  });
+                  if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+                },
+              }
+            : {}),
+          closeTerminalState: async () => {
+            const result = await closeTerminal({
+              environmentId: threadRef.environmentId,
+              input: { threadId: threadRef.threadId, deleteHistory: true },
+            });
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          },
+          removeWorktreeBeforeTransition: false,
+          ...(!worktreeIsShared
+            ? {
+                removeWorktree: async () => {
+                  const result = await removeWorktree({
+                    environmentId: threadRef.environmentId,
+                    input: {
+                      cwd: project.workspaceRoot,
+                      path: worktreePath,
+                    },
+                  });
+                  if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+                },
+              }
+            : {}),
+          refreshRepository: async () => {
+            const result = await refreshVcsStatus({
+              environmentId: threadRef.environmentId,
+              input: { cwd: project.workspaceRoot },
+            });
+            if (result._tag === "Failure") {
+              const error = squashAtomCommandFailure(result);
+              console.error("Failed to refresh Git status after closing worktree", {
+                threadId: threadRef.threadId,
+                projectCwd: project.workspaceRoot,
+                worktreePath,
+                error,
+              });
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: "Worktree closed, but Git refresh failed",
+                  description: error instanceof Error ? error.message : "Git refresh failed.",
+                }),
+              );
+            }
+          },
+          transitionThreadRecord: async () => {
+            const result = await updateThreadMetadata({
+              environmentId: threadRef.environmentId,
+              input: {
+                threadId: threadRef.threadId,
+                branch: null,
+                worktreePath: null,
+              },
+            });
+            return { transitioned: result._tag === "Success", result };
+          },
+          rollbackThreadRecord: async () => {
+            const result = await updateThreadMetadata({
+              environmentId: threadRef.environmentId,
+              input: {
+                threadId: threadRef.threadId,
+                branch: thread.branch,
+                worktreePath,
+              },
+            });
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          },
+          clearRuntimeState: () => {
+            clearTerminalUiState(threadRef);
+            clearDiffPanelState(threadRef);
+          },
+        });
+      } catch (error) {
+        return AsyncResult.failure(Cause.fail(error));
+      }
+    },
+    [
+      clearDiffPanelState,
+      clearTerminalUiState,
+      closeTerminal,
+      refreshVcsStatus,
+      removeWorktree,
+      resolveThreadTarget,
+      stopThreadSession,
+      updateThreadMetadata,
+    ],
+  );
+
+  const discardThreadWorktree = useCallback(
+    (target: ScopedThreadRef) => deleteThread(target, { discardWorktree: true }),
+    [deleteThread],
+  );
+
   const confirmAndDeleteThread = useCallback(
     async (target: ScopedThreadRef) => {
       const localApi = readLocalApi();
@@ -397,8 +537,17 @@ export function useThreadActions() {
       archiveThread,
       unarchiveThread,
       deleteThread,
+      closeThreadWorktree,
+      discardThreadWorktree,
       confirmAndDeleteThread,
     }),
-    [archiveThread, confirmAndDeleteThread, deleteThread, unarchiveThread],
+    [
+      archiveThread,
+      closeThreadWorktree,
+      confirmAndDeleteThread,
+      deleteThread,
+      discardThreadWorktree,
+      unarchiveThread,
+    ],
   );
 }

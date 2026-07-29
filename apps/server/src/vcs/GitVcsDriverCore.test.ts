@@ -1,15 +1,19 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, describe } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
+import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import { GitCommandError } from "@t3tools/contracts";
 import { ServerConfig } from "../config.ts";
-import { splitNullSeparatedGitStdoutPaths } from "./GitVcsDriverCore.ts";
+import { makeGitVcsDriverCore, splitNullSeparatedGitStdoutPaths } from "./GitVcsDriverCore.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 
 const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
@@ -78,6 +82,109 @@ const initRepoWithCommit = (
   });
 
 it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
+  describe("ref snapshot generations", () => {
+    it.effect("coalesces linked-worktree consumers by Git common directory", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const refScans = yield* Ref.make(0);
+          const countingSpawner = ChildProcessSpawner.make((command) =>
+            Effect.gen(function* () {
+              if (
+                ChildProcess.isStandardCommand(command) &&
+                command.args.includes("for-each-ref") &&
+                command.args.includes("refs/heads") &&
+                command.args.includes("refs/remotes")
+              ) {
+                yield* Ref.update(refScans, (count) => count + 1);
+              }
+              return yield* delegate.spawn(command);
+            }),
+          );
+          const driver = yield* makeGitVcsDriverCore().pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, countingSpawner),
+            Effect.provide(ServerConfigLayer),
+          );
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd).pipe(
+            Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
+          );
+          const pathService = yield* Path.Path;
+          const worktreePath = pathService.join(yield* makeTmpDir(), "linked");
+          yield* driver.createWorktree({
+            cwd,
+            path: worktreePath,
+            refName: "HEAD",
+            newRefName: "feature/linked",
+          });
+          yield* Ref.set(refScans, 0);
+
+          yield* Effect.all(
+            [
+              driver.listRefs({ cwd, query: "main", limit: 25 }),
+              driver.listRefs({ cwd: worktreePath, query: "feature", limit: 25 }),
+              driver.listRefs({ cwd, cursor: 0, limit: 25 }),
+            ],
+            { concurrency: "unbounded" },
+          );
+
+          assert.equal(yield* Ref.get(refScans), 1);
+        }),
+      ),
+    );
+
+    it.effect("retries a snapshot invalidated while its scan is in flight", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+          const worktreeScanStarted = yield* Deferred.make<void>();
+          const releaseWorktreeScan = yield* Deferred.make<void>();
+          const delayFirstWorktreeScan = yield* Ref.make(true);
+          const refScans = yield* Ref.make(0);
+          const coordinatingSpawner = ChildProcessSpawner.make((command) =>
+            Effect.gen(function* () {
+              if (!ChildProcess.isStandardCommand(command)) {
+                return yield* delegate.spawn(command);
+              }
+              const isRefScan =
+                command.args.includes("for-each-ref") &&
+                command.args.includes("refs/heads") &&
+                command.args.includes("refs/remotes");
+              if (isRefScan) yield* Ref.update(refScans, (count) => count + 1);
+              const isWorktreeScan =
+                command.args.includes("worktree") && command.args.includes("--porcelain");
+              if (isWorktreeScan && (yield* Ref.getAndSet(delayFirstWorktreeScan, false))) {
+                yield* Deferred.succeed(worktreeScanStarted, undefined);
+                yield* Deferred.await(releaseWorktreeScan);
+              }
+              return yield* delegate.spawn(command);
+            }),
+          );
+          const driver = yield* makeGitVcsDriverCore().pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, coordinatingSpawner),
+            Effect.provide(ServerConfigLayer),
+          );
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd).pipe(
+            Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
+          );
+          yield* Ref.set(refScans, 0);
+
+          const pending = yield* driver
+            .listRefs({ cwd, refresh: true })
+            .pipe(Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(worktreeScanStarted);
+          yield* driver.createRef({ cwd, refName: "feature/during-scan" });
+          yield* Deferred.succeed(releaseWorktreeScan, undefined);
+          const result = yield* Fiber.join(pending);
+
+          assert.isTrue(result.refs.some((ref) => ref.name === "feature/during-scan"));
+          assert.equal(yield* Ref.get(refScans), 2);
+        }),
+      ),
+    );
+  });
+
   describe("structured errors", () => {
     it.effect("preserves structured spawn context and the platform cause", () =>
       Effect.gen(function* () {

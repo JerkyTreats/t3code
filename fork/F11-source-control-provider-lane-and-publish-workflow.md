@@ -34,6 +34,8 @@ Source control support exposes GitHub, GitLab, Azure DevOps, and Bitbucket throu
 - `apps/server/src/ws.ts`
 - `packages/client-runtime/src/state/sourceControl.ts`
 - `packages/client-runtime/src/state/vcsAction.ts`
+- `packages/client-runtime/src/state/vcs.ts`
+- `packages/client-runtime/src/state/vcsRefInvalidation.ts`
 - `packages/client-runtime/src/rpc/client.ts`
 - `apps/web/src/connection/runtime.ts`
 - `apps/web/src/rpc/atomRegistry.ts`

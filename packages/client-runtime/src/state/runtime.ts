@@ -616,13 +616,31 @@ export function createEnvironmentRpcCommand<R, ER, TTag extends EnvironmentUnary
       readonly environmentId: EnvironmentIdType;
       readonly input: EnvironmentRpcInput<TTag>;
     }>;
+    readonly onSuccess?: (
+      target: {
+        readonly environmentId: EnvironmentIdType;
+        readonly input: EnvironmentRpcInput<TTag>;
+      },
+      registry: AtomRegistry.AtomRegistry,
+    ) => Effect.Effect<void, never, R>;
+    readonly onSettled?: (
+      target: {
+        readonly environmentId: EnvironmentIdType;
+        readonly input: EnvironmentRpcInput<TTag>;
+      },
+      registry: AtomRegistry.AtomRegistry,
+    ) => Effect.Effect<void, never, R>;
   },
 ) {
-  return createEnvironmentCommand(runtime, {
+  return createRuntimeCommand(runtime, {
     label: options.label,
     ...(options.scheduler === undefined ? {} : { scheduler: options.scheduler }),
     ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
-    execute: (input: EnvironmentRpcInput<TTag>) => request(options.tag, input),
+    execute: (target, registry) =>
+      runInEnvironment(target.environmentId, request(options.tag, target.input)).pipe(
+        Effect.tap(() => options.onSuccess?.(target, registry) ?? Effect.void),
+        Effect.ensuring(options.onSettled?.(target, registry) ?? Effect.void),
+      ),
   });
 }
 

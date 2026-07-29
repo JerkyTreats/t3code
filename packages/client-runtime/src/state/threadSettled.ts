@@ -1,4 +1,4 @@
-import type { OrchestrationThreadShell } from "@t3tools/contracts";
+import type { OrchestrationThreadShell, VcsStatusResult } from "@t3tools/contracts";
 import {
   hasQueuedThreadTurn,
   hasThreadSettlementBlocker,
@@ -77,4 +77,28 @@ export function effectiveSettled(
   },
 ): boolean {
   return resolveThreadSettlement(toPolicyInput(shell, options)).settled;
+}
+
+export function changeRequestStateFromVcsStatus(
+  threadBranch: string | null,
+  status: Pick<VcsStatusResult, "pr" | "refName"> | null | undefined,
+): ChangeRequestStateLike | null {
+  return threadBranch !== null && status?.refName === threadBranch
+    ? (status.pr?.state ?? null)
+    : null;
+}
+
+export function effectiveSettledFromVcsStatus(
+  shell: OrchestrationThreadShell,
+  options: {
+    readonly now: string;
+    readonly autoSettleAfterDays: number | null;
+    readonly status: Pick<VcsStatusResult, "pr" | "refName"> | null | undefined;
+  },
+): boolean {
+  return effectiveSettled(shell, {
+    now: options.now,
+    autoSettleAfterDays: options.autoSettleAfterDays,
+    changeRequestState: changeRequestStateFromVcsStatus(shell.branch, options.status),
+  });
 }

@@ -64,6 +64,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { effectiveSettledFromVcsStatus } from "@t3tools/client-runtime/state/vcs";
 import { Link, useLocation, useNavigate, useParams, useRouter } from "@tanstack/react-router";
 import {
   MAX_SIDEBAR_THREAD_PREVIEW_COUNT,
@@ -73,6 +74,7 @@ import {
   type SidebarThreadSortOrder,
 } from "@t3tools/contracts/settings";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
+import { useSettlementNow } from "../hooks/useSettlementNow";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { isElectron } from "../env";
 import { APP_STAGE_LABEL } from "../branding";
@@ -433,6 +435,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
         })
       : null,
   );
+  const settlementNow = useSettlementNow();
   const isHighlighted = isActive || isSelected;
   const handleOpenDiscoveredPort = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -461,12 +464,18 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   );
   const isThreadRunning =
     thread.session?.status === "running" && thread.session.activeTurnId != null;
-  const threadStatus = resolveThreadStatusPill({
-    thread: {
-      ...thread,
-      lastVisitedAt,
-    },
-  });
+  const threadStatus = effectiveSettledFromVcsStatus(thread, {
+    now: settlementNow,
+    autoSettleAfterDays: null,
+    status: gitStatus.data,
+  })
+    ? null
+    : resolveThreadStatusPill({
+        thread: {
+          ...thread,
+          lastVisitedAt,
+        },
+      });
   const pr = resolveThreadPr(thread.branch, gitStatus.data);
   const prStatus = prStatusIndicator(pr, gitStatus.data?.sourceControlProvider);
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
@@ -1083,6 +1092,7 @@ interface SidebarProjectItemProps {
 }
 
 const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjectItemProps) {
+  const { closeThreadWorktree, discardThreadWorktree } = useThreadActions();
   const {
     project,
     isThreadListExpanded,
@@ -2173,6 +2183,17 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
           { id: "mark-unread", label: "Mark unread" },
           { id: "copy-path", label: "Copy Path" },
           { id: "copy-thread-id", label: "Copy Thread ID" },
+          ...(thread.worktreePath
+            ? [
+                { id: "close-worktree", label: "Close worktree" },
+                {
+                  id: "discard-worktree",
+                  label: "Discard worktree",
+                  destructive: true,
+                  icon: "trash",
+                },
+              ]
+            : []),
           { id: "delete", label: "Delete", destructive: true, icon: "trash" },
         ],
         position,
@@ -2205,6 +2226,41 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         copyThreadIdToClipboard(thread.id, { threadId: thread.id });
         return;
       }
+      if (clicked === "close-worktree") {
+        const result = await closeThreadWorktree(threadRef);
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to close worktree",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        }
+        return;
+      }
+      if (clicked === "discard-worktree") {
+        const confirmed = await api.dialogs.confirm(
+          [
+            `Discard worktree for "${thread.title}"?`,
+            "This permanently deletes the thread and removes its dedicated workspace.",
+          ].join("\n"),
+        );
+        if (!confirmed) return;
+        const result = await discardThreadWorktree(threadRef);
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to discard worktree",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        }
+        return;
+      }
       if (clicked !== "delete") return;
       if (appSettingsConfirmThreadDelete) {
         const confirmed = await api.dialogs.confirm(
@@ -2233,7 +2289,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       appSettingsConfirmThreadDelete,
       copyPathToClipboard,
       copyThreadIdToClipboard,
+      closeThreadWorktree,
       deleteThread,
+      discardThreadWorktree,
       markThreadUnread,
       memberProjectByScopedKey,
       project.workspaceRoot,

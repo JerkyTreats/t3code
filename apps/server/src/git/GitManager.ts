@@ -1606,7 +1606,7 @@ export const make = Effect.gen(function* () {
         resolvePullRequestWorktreeLocalBranchName(pullRequestWithRemoteInfo);
 
       const findLocalHeadBranch = Effect.fn("findLocalHeadBranch")(function* (cwd: string) {
-        const result = yield* gitCore.listRefs({ cwd });
+        const result = yield* gitCore.listRefs({ cwd, refresh: true });
         const localBranch = result.refs.find(
           (branch) => !branch.isRemote && branch.name === localPullRequestBranch,
         );
@@ -1815,22 +1815,15 @@ export const make = Effect.gen(function* () {
   });
 
   const deleteLocalBranch = Effect.fn("deleteLocalBranch")(function* (cwd: string, branch: string) {
-    const result = yield* gitCore
-      .execute({
-        operation: "GitManager.deleteLocalBranch",
-        cwd,
-        args: ["branch", "-d", "--", branch],
-        allowNonZeroExit: true,
-      })
-      .pipe(
-        Effect.orElseSucceed(() => ({
-          exitCode: 1,
-          stdout: "",
-          stderr: "",
-          stdoutTruncated: false,
-          stderrTruncated: false,
-        })),
-      );
+    const result = yield* gitCore.deleteLocalBranch({ cwd, branch }).pipe(
+      Effect.orElseSucceed(() => ({
+        exitCode: 1,
+        stdout: "",
+        stderr: "",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+      })),
+    );
     return result.exitCode === 0;
   });
 
@@ -1864,12 +1857,7 @@ export const make = Effect.gen(function* () {
       });
     }
     yield* Effect.scoped(gitCore.switchRef({ cwd, refName: targetBranch }));
-    const result = yield* gitCore.execute({
-      operation: "GitManager.mergeSourceIntoTarget",
-      cwd,
-      args: ["merge", "--no-ff", "--no-edit", "--", sourceBranch],
-      allowNonZeroExit: true,
-    });
+    const result = yield* gitCore.mergeRef({ cwd, sourceRef: sourceBranch });
     if (result.exitCode === 0) {
       return { status: "merged" as const, conflictedFiles: [] };
     }

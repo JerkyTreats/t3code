@@ -16,6 +16,7 @@ import * as Stream from "effect/Stream";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/unstable/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { EnvironmentCacheStore } from "../platform/persistence.ts";
 import { runStream } from "../rpc/client.ts";
 import {
   createRuntimeCommand,
@@ -24,6 +25,7 @@ import {
   type AtomCommandResult,
 } from "./runtime.ts";
 import { vcsCommandScheduler } from "./vcsCommandScheduler.ts";
+import { invalidateCachedVcsRefs } from "./vcsRefInvalidation.ts";
 
 export const VcsActionOperation = Schema.Literals([
   "refresh_status",
@@ -72,7 +74,9 @@ export interface RunVcsStackedActionInput {
   readonly actionId: string;
   readonly action: GitStackedAction;
   readonly commitMessage?: string;
+  readonly targetBranch?: string;
   readonly featureBranch?: boolean;
+  readonly issueLink?: GitRunStackedActionInput["issueLink"];
   readonly filePaths?: ReadonlyArray<string>;
   readonly onProgress?: (event: GitActionProgressEvent) => void;
 }
@@ -403,7 +407,7 @@ export function applyVcsActionProgressEvent(
 }
 
 export function createVcsActionManager<R, E>(
-  runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+  runtime: Atom.AtomRuntime<EnvironmentRegistry | EnvironmentCacheStore | R, E>,
 ) {
   const runStackedActionCommands = new Map<
     string,
@@ -425,7 +429,7 @@ export function createVcsActionManager<R, E>(
     const target = targetKey === null ? null : parseVcsActionTargetKey(targetKey);
     const stateAtom = targetKey === null ? EMPTY_VCS_ACTION_ATOM : vcsActionStateAtom(targetKey);
     const command = createRuntimeCommand<
-      EnvironmentRegistry | R,
+      EnvironmentRegistry | EnvironmentCacheStore | R,
       E,
       RunVcsStackedActionInput,
       GitRunStackedActionResult,
@@ -459,7 +463,9 @@ export function createVcsActionManager<R, E>(
           cwd: target.cwd,
           action: input.action,
           ...(input.commitMessage ? { commitMessage: input.commitMessage } : {}),
+          ...(input.targetBranch ? { targetBranch: input.targetBranch } : {}),
           ...(input.featureBranch ? { featureBranch: true } : {}),
+          ...(input.issueLink !== undefined ? { issueLink: input.issueLink } : {}),
           ...(input.filePaths?.length ? { filePaths: [...input.filePaths] } : {}),
         };
         return consumeVcsActionProgress(
@@ -489,6 +495,7 @@ export function createVcsActionManager<R, E>(
               }),
           },
         ).pipe(
+          Effect.ensuring(invalidateCachedVcsRefs(registry, target)),
           Effect.tapError((error) =>
             Effect.sync(() => {
               const current = registry.get(stateAtom);

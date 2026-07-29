@@ -36,6 +36,8 @@ The primary Git management UI belongs in the unified right panel as a selectable
 - `apps/web/src/state/sourceControl.ts`
 - `apps/web/src/composerDraftStore.ts`
 - `apps/web/src/lib/threadDeletionWorkflow.ts`
+- `apps/web/src/hooks/useThreadActions.ts`
+- `packages/client-runtime/src/state/vcsRefInvalidation.ts`
 
 ## Fork Seams
 

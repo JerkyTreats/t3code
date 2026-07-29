@@ -11,6 +11,13 @@ describe("buildGitStackedActionRpcInput", () => {
         action: "promote",
         commitMessage: "Promote feature work",
         targetBranch: "main",
+        issueLink: {
+          repoNameWithOwner: "JerkyTreats/t3code",
+          number: 29,
+          title: "Refresh Git refs",
+          url: "https://github.com/JerkyTreats/t3code/issues/29",
+          state: "open",
+        },
         filePaths: ["src/index.ts"],
       }),
       {
@@ -19,6 +26,13 @@ describe("buildGitStackedActionRpcInput", () => {
         action: "promote",
         commitMessage: "Promote feature work",
         targetBranch: "main",
+        issueLink: {
+          repoNameWithOwner: "JerkyTreats/t3code",
+          number: 29,
+          title: "Refresh Git refs",
+          url: "https://github.com/JerkyTreats/t3code/issues/29",
+          state: "open",
+        },
         filePaths: ["src/index.ts"],
       },
     );

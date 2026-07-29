@@ -42,6 +42,12 @@ function makeDatabase() {
         removed.push(id);
         values.delete(id);
       }),
+    clearCacheKind: (environmentId, kind) =>
+      Effect.sync(() => {
+        for (const key of values.keys()) {
+          if (key.startsWith(`${environmentId}:${kind}:`)) values.delete(key);
+        }
+      }),
     clearEnvironmentCache: (environmentId) =>
       Effect.sync(() => {
         for (const key of values.keys()) {
@@ -92,6 +98,23 @@ describe("mobile SQLite environment cache store", () => {
 
       expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo")).toEqual(Option.none());
       expect(yield* store.loadVcsRefs(otherEnvironmentId, "/repo")).toEqual(Option.some(REFS));
+    }),
+  );
+
+  it.effect("clears every ref snapshot for only the selected environment", () =>
+    Effect.gen(function* () {
+      const memory = makeDatabase();
+      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+      const otherEnvironmentId = EnvironmentId.make("environment-2");
+      yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo-a", REFS);
+      yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo-b", REFS);
+      yield* store.saveVcsRefs(otherEnvironmentId, "/repo-a", REFS);
+
+      yield* store.clearVcsRefs(ENVIRONMENT_ID);
+
+      expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo-a")).toEqual(Option.none());
+      expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo-b")).toEqual(Option.none());
+      expect(yield* store.loadVcsRefs(otherEnvironmentId, "/repo-a")).toEqual(Option.some(REFS));
     }),
   );
 });

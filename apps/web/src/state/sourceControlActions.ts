@@ -5,16 +5,9 @@ import type {
   AtomCommandSuccess,
 } from "@t3tools/client-runtime/state/runtime";
 import {
-  consumeVcsActionProgress,
-  createVcsActionTransportId,
   VcsActionUnavailableError,
   type VcsActionOperation,
 } from "@t3tools/client-runtime/state/vcs";
-import { runStream } from "@t3tools/client-runtime/rpc";
-import {
-  createRuntimeCommand,
-  runStreamInEnvironment,
-} from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   GitActionProgressEvent,
@@ -25,15 +18,12 @@ import type {
   SourceControlRepositoryVisibility,
   ThreadId,
 } from "@t3tools/contracts";
-import { WS_METHODS } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { useCallback } from "react";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { connectionAtomRuntime } from "../connection/runtime";
 import { gitEnvironment } from "./git";
 import { useEnvironmentQuery } from "./query";
 import { sourceControlEnvironment } from "./sourceControl";
@@ -58,6 +48,7 @@ export interface GitStackedActionRequest {
   readonly commitMessage?: string;
   readonly targetBranch?: string;
   readonly featureBranch?: boolean;
+  readonly issueLink?: GitRunStackedActionInput["issueLink"];
   readonly filePaths?: ReadonlyArray<string>;
   readonly onProgress?: (event: GitActionProgressEvent) => void;
 }
@@ -69,6 +60,7 @@ export function buildGitStackedActionRpcInput(input: {
   readonly commitMessage?: string;
   readonly targetBranch?: string;
   readonly featureBranch?: boolean;
+  readonly issueLink?: GitRunStackedActionInput["issueLink"];
   readonly filePaths?: ReadonlyArray<string>;
 }): GitRunStackedActionInput {
   return {
@@ -78,54 +70,10 @@ export function buildGitStackedActionRpcInput(input: {
     ...(input.commitMessage ? { commitMessage: input.commitMessage } : {}),
     ...(input.targetBranch ? { targetBranch: input.targetBranch } : {}),
     ...(input.featureBranch ? { featureBranch: true } : {}),
+    ...(input.issueLink !== undefined ? { issueLink: input.issueLink } : {}),
     ...(input.filePaths?.length ? { filePaths: [...input.filePaths] } : {}),
   };
 }
-
-interface RunTargetedGitStackedActionInput extends GitStackedActionRequest {
-  readonly environmentId: EnvironmentId;
-  readonly cwd: string;
-  readonly targetBranch: string;
-}
-
-const runTargetedGitStackedAction = createRuntimeCommand(connectionAtomRuntime, {
-  label: "environment-data:git:run-targeted-stacked-action",
-  concurrency: {
-    mode: "serial",
-    key: (input: RunTargetedGitStackedActionInput) =>
-      JSON.stringify([input.environmentId, input.cwd]),
-  },
-  execute: (input: RunTargetedGitStackedActionInput) => {
-    const target = {
-      environmentId: input.environmentId,
-      cwd: input.cwd,
-    };
-    const transportActionId = createVcsActionTransportId(target, input.actionId);
-    const rpcInput = buildGitStackedActionRpcInput({
-      actionId: transportActionId,
-      cwd: input.cwd,
-      action: input.action,
-      ...(input.commitMessage ? { commitMessage: input.commitMessage } : {}),
-      targetBranch: input.targetBranch,
-      ...(input.featureBranch ? { featureBranch: true } : {}),
-      ...(input.filePaths?.length ? { filePaths: input.filePaths } : {}),
-    });
-
-    return consumeVcsActionProgress(
-      runStreamInEnvironment(
-        input.environmentId,
-        runStream(WS_METHODS.gitRunStackedAction, rpcInput),
-      ),
-      {
-        target,
-        transportActionId,
-        actionId: input.actionId,
-        action: input.action,
-        onProgress: (event) => Effect.sync(() => input.onProgress?.(event)),
-      },
-    );
-  },
-});
 
 interface SourceControlActionState<
   TArgs extends ReadonlyArray<unknown>,
@@ -288,9 +236,6 @@ export function useGitStackedAction(scope: SourceControlActionScope) {
   const runStackedAction = useAtomCommand(vcsActionManager.runStackedAction(scope), {
     reportFailure: false,
   });
-  const runTargetedStackedAction = useAtomCommand(runTargetedGitStackedAction, {
-    reportFailure: false,
-  });
   const status = useEnvironmentQuery(
     scope.environmentId !== null && scope.cwd !== null
       ? vcsEnvironment.status({
@@ -314,35 +259,18 @@ export function useGitStackedAction(scope: SourceControlActionScope) {
           ),
         );
       }
-      const targetBranch = input.targetBranch;
-      if (input.action === "promote" && targetBranch) {
-        return vcsActionManager.track(
-          appAtomRegistry,
-          scope,
-          {
-            operation: "run_change_request",
-            label: "Running source control action",
-            actionId: input.actionId,
-          },
-          () =>
-            runTargetedStackedAction({
-              environmentId: target.environmentId,
-              cwd: target.cwd,
-              ...input,
-              targetBranch,
-            }),
-        );
-      }
       return runStackedAction({
         actionId: input.actionId,
         action: input.action,
         ...(input.commitMessage ? { commitMessage: input.commitMessage } : {}),
+        ...(input.targetBranch ? { targetBranch: input.targetBranch } : {}),
         ...(input.featureBranch ? { featureBranch: true } : {}),
+        ...(input.issueLink !== undefined ? { issueLink: input.issueLink } : {}),
         ...(input.filePaths?.length ? { filePaths: [...input.filePaths] } : {}),
         ...(input.onProgress ? { onProgress: input.onProgress } : {}),
       });
     },
-    [runStackedAction, runTargetedStackedAction, scope],
+    [runStackedAction, scope],
   );
 
   return useAction({

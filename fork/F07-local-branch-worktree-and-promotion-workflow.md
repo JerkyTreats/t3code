@@ -25,6 +25,10 @@ Local Git workflow semantics require explicit origin-only publication and promot
 - `apps/server/src/vcs/GitVcsDriverCore.ts`
 - `apps/web/src/lib/sourceControlActions.ts`
 - `apps/web/src/components/GitActionsControl.tsx`
+- `apps/web/src/lib/threadDeletionWorkflow.ts`
+- `apps/web/src/hooks/useThreadActions.ts`
+- `packages/client-runtime/src/state/vcs.ts`
+- `packages/client-runtime/src/state/vcsRefInvalidation.ts`
 
 ## Fork Seams
 

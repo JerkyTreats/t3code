@@ -18,6 +18,7 @@ import {
   type SourceControlRepositoryInfo,
   type SourceControlRepositoryLookupInput,
 } from "@t3tools/contracts";
+import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 
 import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -234,11 +235,36 @@ export const make = Effect.gen(function* () {
           detail: "Origin-only policy permits publishing only through the origin remote.",
         });
       }
-      const urls = yield* provider.createRepository({
-        cwd: input.cwd,
-        repository: input.repository.trim(),
-        visibility: input.visibility,
-      });
+      const existingOriginUrl = yield* git.readConfigValue(input.cwd, "remote.origin.url");
+      const existingOriginPushUrl =
+        (yield* git.readConfigValue(input.cwd, "remote.origin.pushurl")) ?? existingOriginUrl;
+      const urls =
+        existingOriginUrl === null
+          ? yield* provider.createRepository({
+              cwd: input.cwd,
+              repository: input.repository.trim(),
+              visibility: input.visibility,
+            })
+          : yield* provider.getRepositoryCloneUrls({
+              cwd: input.cwd,
+              repository: input.repository.trim(),
+            });
+      if (existingOriginUrl !== null) {
+        const normalizedOrigin = normalizeGitRemoteUrl(existingOriginUrl);
+        const normalizedPush = normalizeGitRemoteUrl(existingOriginPushUrl ?? existingOriginUrl);
+        const requestedUrls = new Set([
+          normalizeGitRemoteUrl(urls.url),
+          normalizeGitRemoteUrl(urls.sshUrl),
+        ]);
+        if (!requestedUrls.has(normalizedOrigin) || normalizedPush !== normalizedOrigin) {
+          return yield* new SourceControlRepositoryError({
+            operation: "publishRepository",
+            provider: providerKind,
+            detail:
+              "Origin-only policy rejected publication because the existing origin does not match the requested repository.",
+          });
+        }
+      }
       const remoteUrl = selectRemoteUrl(urls, input.protocol);
       const remoteName = yield* git.ensureRemote({
         cwd: input.cwd,

@@ -67,6 +67,7 @@ function makeLayer(input: {
     Layer.provide(
       Layer.mock(GitVcsDriver.GitVcsDriver)({
         execute: () => Effect.succeed(processOutput()),
+        readConfigValue: () => Effect.succeed(null),
         ensureRemote: () => Effect.succeed("origin"),
         pushCurrentBranch: () =>
           Effect.succeed({
@@ -288,6 +289,103 @@ it.effect("publishes by creating the repository, adding a remote, and pushing up
                 upstreamBranch: "origin/feature/remote-v1",
                 setUpstream: true,
               };
+            }),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("rejects a conflicting origin before external creation or remote mutation", () => {
+  let createCalls = 0;
+  let ensureRemoteCalls = 0;
+  const provider = makeProvider({
+    createRepository: () =>
+      Effect.sync(() => {
+        createCalls += 1;
+        return CLONE_URLS;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .publishRepository({
+        cwd: "/workspace",
+        provider: "github",
+        repository: "octocat/t3code",
+        visibility: "private",
+        remoteName: "origin",
+        protocol: "ssh",
+      })
+      .pipe(Effect.flip);
+
+    assert.equal(
+      error.detail,
+      "Origin-only policy rejected publication because the existing origin does not match the requested repository.",
+    );
+    assert.equal(createCalls, 0);
+    assert.equal(ensureRemoteCalls, 0);
+  }).pipe(
+    Effect.provide(
+      makeLayer({
+        provider,
+        git: {
+          readConfigValue: (_cwd, key) =>
+            Effect.succeed(key === "remote.origin.url" ? "git@github.com:other/project.git" : null),
+          ensureRemote: () =>
+            Effect.sync(() => {
+              ensureRemoteCalls += 1;
+              return "origin";
+            }),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("accepts equivalent HTTPS fetch and SSH push URLs without external creation", () => {
+  let createCalls = 0;
+  let ensureRemoteCalls = 0;
+  const provider = makeProvider({
+    createRepository: () =>
+      Effect.sync(() => {
+        createCalls += 1;
+        return CLONE_URLS;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.publishRepository({
+      cwd: "/workspace",
+      provider: "github",
+      repository: "octocat/t3code",
+      visibility: "private",
+      remoteName: "origin",
+      protocol: "ssh",
+    });
+
+    assert.equal(result.remoteName, "origin");
+    assert.equal(createCalls, 0);
+    assert.equal(ensureRemoteCalls, 1);
+  }).pipe(
+    Effect.provide(
+      makeLayer({
+        provider,
+        git: {
+          readConfigValue: (_cwd, key) =>
+            Effect.succeed(
+              key === "remote.origin.url"
+                ? CLONE_URLS.url
+                : key === "remote.origin.pushurl"
+                  ? CLONE_URLS.sshUrl
+                  : null,
+            ),
+          ensureRemote: () =>
+            Effect.sync(() => {
+              ensureRemoteCalls += 1;
+              return "origin";
             }),
         },
       }),

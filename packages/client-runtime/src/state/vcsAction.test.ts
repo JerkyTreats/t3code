@@ -417,7 +417,7 @@ describe("vcsActionState", () => {
 
   it("keys mutation ownership by environment and cwd", () => {
     const runtime = Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
-      EnvironmentRegistry,
+      EnvironmentRegistry | import("../platform/persistence.ts").EnvironmentCacheStore,
       never
     >;
     const manager = createVcsActionManager(runtime);
@@ -437,7 +437,7 @@ describe("vcsActionState", () => {
 
   it("retains the incomplete target and operation when tracking is unavailable", async () => {
     const runtime = Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
-      EnvironmentRegistry,
+      EnvironmentRegistry | import("../platform/persistence.ts").EnvironmentCacheStore,
       never
     >;
     const manager = createVcsActionManager(runtime);
@@ -469,7 +469,7 @@ describe("vcsActionState", () => {
 
   it("tracks finite mutations without letting an older completion clear newer state", async () => {
     const runtime = Atom.runtime(Layer.empty) as unknown as Atom.AtomRuntime<
-      EnvironmentRegistry,
+      EnvironmentRegistry | import("../platform/persistence.ts").EnvironmentCacheStore,
       never
     >;
     const manager = createVcsActionManager(runtime);

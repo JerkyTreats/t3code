@@ -32,30 +32,80 @@ export interface ThreadDeletionLifecycleInput<TResult, TNavigationResult = never
   onWorktreeRemovalError?: (error: unknown) => void;
 }
 
-export async function runThreadDeletionLifecycle<TResult, TNavigationResult = never>(
-  input: ThreadDeletionLifecycleInput<TResult, TNavigationResult>,
+export interface WorktreeThreadTeardownInput<TResult, TNavigationResult = never> {
+  stopSession?: () => Promise<void>;
+  closeTerminalState: () => Promise<void>;
+  transitionThreadRecord: () => Promise<{ transitioned: boolean; result: TResult }>;
+  rollbackThreadRecord?: () => Promise<void>;
+  clearRuntimeState: () => void;
+  removeWorktree?: () => Promise<void>;
+  refreshRepository?: () => Promise<void>;
+  removeWorktreeBeforeTransition?: boolean;
+  continueAfterWorktreeRemovalError?: boolean;
+  navigateToFallback?: () => Promise<TNavigationResult | undefined>;
+  onWorktreeRemovalError?: (error: unknown) => void;
+}
+
+export async function runWorktreeThreadTeardown<TResult, TNavigationResult = never>(
+  input: WorktreeThreadTeardownInput<TResult, TNavigationResult>,
 ): Promise<TResult | TNavigationResult> {
   await input.stopSession?.();
   await input.closeTerminalState();
 
-  const deletion = await input.deleteThreadRecord();
-  if (!deletion.deleted) {
-    return deletion.result;
-  }
-
-  input.clearLocalThreadState();
-
-  if (input.removeOrphanedWorktree) {
+  const removeWorktree = async () => {
+    if (!input.removeWorktree) return;
     try {
-      await input.removeOrphanedWorktree();
+      await input.removeWorktree();
     } catch (error) {
       input.onWorktreeRemovalError?.(error);
+      if (!input.continueAfterWorktreeRemovalError) {
+        throw error;
+      }
+    }
+    await input.refreshRepository?.();
+  };
+  if (input.removeWorktreeBeforeTransition) {
+    await removeWorktree();
+  }
+
+  const transition = await input.transitionThreadRecord();
+  if (!transition.transitioned) {
+    return transition.result;
+  }
+
+  if (!input.removeWorktreeBeforeTransition) {
+    try {
+      await removeWorktree();
+    } catch (error) {
+      await input.rollbackThreadRecord?.();
+      throw error;
     }
   }
+  input.clearRuntimeState();
 
   const navigationResult = await input.navigateToFallback?.();
   if (navigationResult !== undefined) {
     return navigationResult;
   }
-  return deletion.result;
+  return transition.result;
+}
+
+export async function runThreadDeletionLifecycle<TResult, TNavigationResult = never>(
+  input: ThreadDeletionLifecycleInput<TResult, TNavigationResult>,
+): Promise<TResult | TNavigationResult> {
+  return runWorktreeThreadTeardown({
+    ...(input.stopSession ? { stopSession: input.stopSession } : {}),
+    closeTerminalState: input.closeTerminalState,
+    transitionThreadRecord: async () => {
+      const deletion = await input.deleteThreadRecord();
+      return { transitioned: deletion.deleted, result: deletion.result };
+    },
+    clearRuntimeState: input.clearLocalThreadState,
+    ...(input.removeOrphanedWorktree ? { removeWorktree: input.removeOrphanedWorktree } : {}),
+    continueAfterWorktreeRemovalError: true,
+    ...(input.navigateToFallback ? { navigateToFallback: input.navigateToFallback } : {}),
+    ...(input.onWorktreeRemovalError
+      ? { onWorktreeRemovalError: input.onWorktreeRemovalError }
+      : {}),
+  });
 }

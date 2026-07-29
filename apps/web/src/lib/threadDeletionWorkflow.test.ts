@@ -7,7 +7,11 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { clearDeletedThreadState, runThreadDeletionLifecycle } from "./threadDeletionWorkflow";
+import {
+  clearDeletedThreadState,
+  runThreadDeletionLifecycle,
+  runWorktreeThreadTeardown,
+} from "./threadDeletionWorkflow";
 
 const deletedThreadRef: ScopedThreadRef = {
   environmentId: EnvironmentId.make("environment-1"),
@@ -80,13 +84,7 @@ describe("runThreadDeletionLifecycle", () => {
     });
 
     await worktreeRemovalStarted;
-    expect(calls).toEqual([
-      "stop-session",
-      "close-terminals",
-      "delete-thread",
-      "clear-local-state",
-      "remove-worktree",
-    ]);
+    expect(calls).toEqual(["stop-session", "close-terminals", "delete-thread", "remove-worktree"]);
 
     finishWorktreeRemoval?.();
     const result = await lifecycle;
@@ -96,9 +94,9 @@ describe("runThreadDeletionLifecycle", () => {
       "stop-session",
       "close-terminals",
       "delete-thread",
-      "clear-local-state",
       "remove-worktree",
       "remove-worktree-complete",
+      "clear-local-state",
       "navigate-fallback",
     ]);
   });
@@ -136,9 +134,9 @@ describe("runThreadDeletionLifecycle", () => {
     expect(calls).toEqual([
       "close-terminals",
       "delete-thread",
-      "clear-local-state",
       "remove-worktree",
       "report-worktree-error",
+      "clear-local-state",
       "navigate-fallback",
     ]);
   });
@@ -173,5 +171,106 @@ describe("runThreadDeletionLifecycle", () => {
     });
 
     expect(result).toBe(navigationFailure);
+  });
+});
+
+describe("runWorktreeThreadTeardown", () => {
+  it("closes a worktree before retaining and releasing its thread", async () => {
+    const calls: string[] = [];
+    const result = await runWorktreeThreadTeardown({
+      stopSession: async () => {
+        calls.push("stop-session");
+      },
+      closeTerminalState: async () => {
+        calls.push("close-terminals");
+      },
+      removeWorktreeBeforeTransition: true,
+      removeWorktree: async () => {
+        calls.push("remove-worktree");
+      },
+      refreshRepository: async () => {
+        calls.push("refresh-repository");
+      },
+      transitionThreadRecord: async () => {
+        calls.push("release-thread");
+        return { transitioned: true, result: "retained" };
+      },
+      clearRuntimeState: () => {
+        calls.push("clear-runtime");
+      },
+    });
+
+    expect(result).toBe("retained");
+    expect(calls).toEqual([
+      "stop-session",
+      "close-terminals",
+      "remove-worktree",
+      "refresh-repository",
+      "release-thread",
+      "clear-runtime",
+    ]);
+  });
+
+  it("does not release a retained thread when safe worktree removal fails", async () => {
+    const releaseThread = vi.fn(async () => ({ transitioned: true, result: "retained" }));
+    await expect(
+      runWorktreeThreadTeardown({
+        closeTerminalState: async () => undefined,
+        removeWorktreeBeforeTransition: true,
+        removeWorktree: async () => {
+          throw new Error("dirty worktree");
+        },
+        transitionThreadRecord: releaseThread,
+        clearRuntimeState: vi.fn(),
+      }),
+    ).rejects.toThrow("dirty worktree");
+    expect(releaseThread).not.toHaveBeenCalled();
+  });
+
+  it("restores a retained thread when removal fails after release", async () => {
+    const calls: string[] = [];
+    await expect(
+      runWorktreeThreadTeardown({
+        closeTerminalState: async () => undefined,
+        transitionThreadRecord: async () => {
+          calls.push("release-thread");
+          return { transitioned: true, result: "retained" };
+        },
+        removeWorktree: async () => {
+          calls.push("remove-worktree");
+          throw new Error("dirty worktree");
+        },
+        rollbackThreadRecord: async () => {
+          calls.push("restore-thread");
+        },
+        clearRuntimeState: vi.fn(),
+      }),
+    ).rejects.toThrow("dirty worktree");
+    expect(calls).toEqual(["release-thread", "remove-worktree", "restore-thread"]);
+  });
+
+  it("discards by deleting the thread before forced worktree teardown", async () => {
+    const calls: string[] = [];
+    await runWorktreeThreadTeardown({
+      closeTerminalState: async () => {
+        calls.push("close-terminals");
+      },
+      transitionThreadRecord: async () => {
+        calls.push("delete-thread");
+        return { transitioned: true, result: "discarded" };
+      },
+      removeWorktree: async () => {
+        calls.push("remove-worktree");
+      },
+      clearRuntimeState: () => {
+        calls.push("clear-thread-state");
+      },
+    });
+    expect(calls).toEqual([
+      "close-terminals",
+      "delete-thread",
+      "remove-worktree",
+      "clear-thread-state",
+    ]);
   });
 });

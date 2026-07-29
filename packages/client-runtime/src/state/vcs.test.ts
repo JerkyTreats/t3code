@@ -7,6 +7,7 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
+import { AtomRegistry } from "effect/unstable/reactivity";
 
 import {
   AVAILABLE_CONNECTION_STATE,
@@ -18,7 +19,8 @@ import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as Persistence from "../platform/persistence.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
-import { makeCachedVcsRefsChanges } from "./vcs.ts";
+import { loadCachedVcsRefsSnapshot, makeCachedVcsRefsChanges } from "./vcs.ts";
+import { invalidateCachedVcsRefs, registerVcsRepositoryIdentity } from "./vcsRefInvalidation.ts";
 
 const TARGET = new PrimaryConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -84,11 +86,56 @@ function cacheWithRefs(refs: Option.Option<VcsListRefsResult>) {
     saveServerConfig: () => Effect.void,
     loadVcsRefs: () => Effect.succeed(refs),
     saveVcsRefs: () => Effect.void,
+    removeVcsRefs: () => Effect.void,
+    clearVcsRefs: () => Effect.void,
     clear: () => Effect.void,
   });
 }
 
 describe("cached VCS refs", () => {
+  it.effect("does not resurrect stale linked-worktree refs after atom expiry and remount", () =>
+    Effect.gen(function* () {
+      const remountEnvironmentId = EnvironmentId.make("environment-vcs-remount");
+      const registry = AtomRegistry.make();
+      const removals: string[] = [];
+      let persisted = Option.some<VcsListRefsResult>({
+        ...CACHED_REFS,
+        repositoryIdentity: "/repo/.git",
+      });
+      const cache = Persistence.EnvironmentCacheStore.of({
+        ...cacheWithRefs(Option.none()),
+        loadVcsRefs: () => Effect.sync(() => persisted),
+        removeVcsRefs: (_environmentId, cwd) =>
+          Effect.sync(() => {
+            removals.push(cwd);
+            if (cwd === "/repo-worktree") persisted = Option.none();
+          }),
+      });
+      registerVcsRepositoryIdentity(remountEnvironmentId, "/repo", "/repo/.git");
+
+      yield* invalidateCachedVcsRefs(registry, {
+        environmentId: remountEnvironmentId,
+        cwd: "/repo",
+      }).pipe(Effect.provideService(Persistence.EnvironmentCacheStore, cache));
+
+      const firstMount = yield* loadCachedVcsRefsSnapshot(cache, {
+        environmentId: remountEnvironmentId,
+        cwd: "/repo-worktree",
+        registry,
+      });
+      const remountAfterIdleExpiry = yield* loadCachedVcsRefsSnapshot(cache, {
+        environmentId: remountEnvironmentId,
+        cwd: "/repo-worktree",
+        registry,
+      });
+
+      expect(Option.isNone(firstMount)).toBe(true);
+      expect(Option.isNone(remountAfterIdleExpiry)).toBe(true);
+      expect(removals).toEqual(["/repo", "/repo-worktree"]);
+      registry.dispose();
+    }),
+  );
+
   it.effect("loads an unfiltered branch list without a connection", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -116,7 +163,7 @@ describe("cached VCS refs", () => {
     ),
   );
 
-  it.effect("continues polling after a transient live failure", () =>
+  it.effect("retries a transient live failure with bounded backoff", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const expectedError = new Error("Could not list Git refs.");
@@ -161,7 +208,7 @@ describe("cached VCS refs", () => {
     ),
   );
 
-  it.effect("revalidates connected refs every five seconds", () =>
+  it.effect("refreshes once per connection generation without interval polling", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const calls = yield* Ref.make(0);
@@ -171,9 +218,12 @@ describe("cached VCS refs", () => {
               Effect.map((count) => (count === 1 ? CACHED_REFS : LIVE_REFS)),
             ),
         } as unknown as WsRpcProtocolClient;
+        const connectionState = yield* SubscriptionRef.make<SupervisorConnectionState>(
+          CONNECTED_CONNECTION_STATE,
+        );
         const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
           target: TARGET,
-          state: yield* SubscriptionRef.make(CONNECTED_CONNECTION_STATE),
+          state: connectionState,
           session: yield* SubscriptionRef.make(Option.some(session(client))),
           prepared: yield* SubscriptionRef.make(Option.none<PreparedConnection>()),
           connect: Effect.void,
@@ -193,7 +243,20 @@ describe("cached VCS refs", () => {
         }
         expect(yield* Ref.get(calls)).toBe(1);
 
-        yield* TestClock.adjust("5 seconds");
+        yield* TestClock.adjust("30 seconds");
+        expect(yield* Ref.get(calls)).toBe(1);
+        yield* SubscriptionRef.set(connectionState, {
+          ...AVAILABLE_CONNECTION_STATE,
+          desired: true,
+          network: "online",
+          phase: "available",
+          attempt: 1,
+          generation: 1,
+        } satisfies SupervisorConnectionState);
+        yield* SubscriptionRef.set(connectionState, {
+          ...CONNECTED_CONNECTION_STATE,
+          generation: 2,
+        });
         expect(Array.from(yield* Fiber.join(fiber))).toEqual([CACHED_REFS, LIVE_REFS]);
       }).pipe(Effect.provide(TestClock.layer())),
     ),

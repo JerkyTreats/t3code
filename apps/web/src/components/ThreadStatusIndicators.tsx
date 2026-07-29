@@ -3,9 +3,11 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
+import { effectiveSettledFromVcsStatus } from "@t3tools/client-runtime/state/vcs";
 import type { VcsStatusResult } from "@t3tools/contracts";
 import { CloudIcon, FolderGit2Icon, GitPullRequestIcon, TerminalIcon } from "lucide-react";
 import { useMemo } from "react";
+import { useSettlementNow } from "../hooks/useSettlementNow";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { useProject } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
@@ -206,14 +208,21 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
         })
       : null,
   );
+  const settlementNow = useSettlementNow();
   const pr = resolveThreadPr(thread.branch, gitStatus.data);
   const prStatus = prStatusIndicator(pr, gitStatus.data?.sourceControlProvider);
-  const threadStatus = resolveThreadStatusPill({
-    thread: {
-      ...thread,
-      lastVisitedAt,
-    },
-  });
+  const threadStatus = effectiveSettledFromVcsStatus(thread, {
+    now: settlementNow,
+    autoSettleAfterDays: null,
+    status: gitStatus.data,
+  })
+    ? null
+    : resolveThreadStatusPill({
+        thread: {
+          ...thread,
+          lastVisitedAt,
+        },
+      });
 
   if (!prStatus && !threadStatus) {
     return null;

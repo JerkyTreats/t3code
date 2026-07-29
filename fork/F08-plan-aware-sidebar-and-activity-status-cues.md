@@ -43,6 +43,7 @@ Current owner modules:
 
 - `apps/web/src/components/Sidebar.logic.ts`
 - `apps/web/src/components/Sidebar.tsx`
+- `apps/web/src/components/ThreadStatusIndicators.tsx`
 - `apps/web/src/components/PlanSidebar.tsx`
 - `apps/web/src/components/ChatView.tsx`
 - `apps/web/src/components/settings/SettingsPanels.tsx`
@@ -57,11 +58,13 @@ Current owner modules:
 - `apps/web/src/session-logic.ts`
 - `packages/client-runtime/src/state/threadDetail.ts`
 - `packages/client-runtime/src/state/threadSettled.ts`
+- `packages/client-runtime/src/state/vcs.ts`
 - `packages/client-runtime/src/state/threadReducer.ts`
 - `packages/client-runtime/src/state/threadCommands.ts`
 - `packages/client-runtime/src/operations/commands.ts`
 - `packages/contracts/src/settings.ts`
 - `apps/web/src/hooks/useSettings.ts`
+- `apps/web/src/hooks/useSettlementNow.ts`
 - `apps/web/src/clientPersistenceStorage.ts`
 - `apps/desktop/src/settings/DesktopClientSettings.ts`
 - `packages/contracts/src/orchestration.ts`

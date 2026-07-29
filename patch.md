@@ -81,6 +81,19 @@ The rebuild packet must include:
 
 Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or missing evidence for affected behavior.
 
+## Git Ref Refresh And Worktree Lifecycle
+
+- Refresh Git refs once per live connection generation and retry transient failures with a delay capped at 30 seconds.
+- Invalidate persisted and live ref snapshots after every ref-affecting action settles, including failed actions.
+- Reject stale connection or invalidation generations before publication and persistence.
+- Coalesce server ref scans by canonical Git common directory and generation so linked worktrees share bounded work.
+- Release inactive ref atoms after 30 seconds.
+- Preserve worktree close and discard as distinct operations over one teardown substrate.
+- Close safely removes the dedicated worktree, retains the thread, and releases it to the primary checkout.
+- Discard deletes the thread and clears its scoped runtime state after forced worktree teardown.
+- Feed merged or closed VCS state through the shared settlement policy while active blockers and explicit active state remain authoritative.
+- Keep origin-only remote policy unchanged and fail closed when fetch and push targets differ.
+
 ## F15 Transport Compression
 
 - Compress only successful JSON snapshots on the exact orchestration snapshot routes.

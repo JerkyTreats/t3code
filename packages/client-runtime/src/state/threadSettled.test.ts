@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  changeRequestStateFromVcsStatus,
+  effectiveSettledFromVcsStatus,
   THREAD_QUEUED_GRACE_MS,
   hasQueuedThreadTurn,
   resolveThreadSettlement,
   type ThreadSettlementPolicyInput,
 } from "./threadSettled.ts";
+import {
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  type OrchestrationThreadShell,
+} from "@t3tools/contracts";
 
 const now = "2026-07-29T12:00:00.000Z";
 
@@ -195,5 +203,78 @@ describe("hasQueuedThreadTurn", () => {
     } as const;
     expect(hasQueuedThreadTurn({ ...queued, sessionStatus: null })).toBe(true);
     expect(hasQueuedThreadTurn({ ...queued, sessionStatus: "error" })).toBe(false);
+  });
+});
+
+describe("VCS settlement adapter", () => {
+  const shell: OrchestrationThreadShell = {
+    id: ThreadId.make("thread-vcs-settlement"),
+    projectId: ProjectId.make("project-vcs-settlement"),
+    title: "VCS settlement",
+    modelSelection: {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.4",
+    },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    session: null,
+    branch: "feature",
+    worktreePath: "/repo-worktree",
+    createdAt: "2026-07-29T10:00:00.000Z",
+    updatedAt: "2026-07-29T11:00:00.000Z",
+    archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
+    latestTurn: null,
+    latestUserMessageAt: "2026-07-29T11:00:00.000Z",
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    activePlanProgress: null,
+    hasActionableProposedPlan: false,
+    latestRuntimeActivityAt: null,
+    statusSummaryUpdatedAt: null,
+  };
+
+  it.each(["merged", "closed"] as const)(
+    "feeds %s change-request state into immediate settlement",
+    (state) => {
+      const status = { refName: "feature", pr: { state } } as never;
+      expect(changeRequestStateFromVcsStatus(shell.branch, status)).toBe(state);
+      expect(
+        effectiveSettledFromVcsStatus(shell, {
+          now,
+          autoSettleAfterDays: null,
+          status,
+        }),
+      ).toBe(true);
+    },
+  );
+
+  it("preserves blockers and explicit active precedence", () => {
+    const status = { refName: "feature", pr: { state: "merged" } } as never;
+    expect(
+      effectiveSettledFromVcsStatus(
+        { ...shell, hasPendingApprovals: true },
+        { now, autoSettleAfterDays: null, status },
+      ),
+    ).toBe(false);
+    expect(
+      effectiveSettledFromVcsStatus(
+        { ...shell, settledOverride: "active" },
+        { now, autoSettleAfterDays: null, status },
+      ),
+    ).toBe(false);
+  });
+
+  it("ignores a change request for a different checked-out branch", () => {
+    const status = { refName: "unrelated", pr: { state: "merged" } } as never;
+    expect(changeRequestStateFromVcsStatus(shell.branch, status)).toBeNull();
+    expect(
+      effectiveSettledFromVcsStatus(shell, {
+        now,
+        autoSettleAfterDays: null,
+        status,
+      }),
+    ).toBe(false);
   });
 });
