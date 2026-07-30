@@ -33,6 +33,7 @@ on:
 jobs:
   production:
     name: EAS Production ${{ inputs.mode }}
+    if: github.repository == 'JerkyTreats/t3code'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     permissions:
       contents: read

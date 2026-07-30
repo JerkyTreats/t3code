@@ -4,6 +4,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   PRODUCT_BASE_NAME,
+  PRODUCT_GITHUB_REPOSITORY,
   resolveProductReleaseDescription,
 } from "@t3tools/shared/productIdentity";
 import * as Config from "effect/Config";
@@ -61,6 +62,19 @@ class DiscordReleaseAnnouncementError extends Data.TaggedError("DiscordReleaseAn
   readonly cause?: unknown;
 }> {}
 
+export class InvalidDiscordReleaseUrlError extends Error {
+  readonly releaseUrl: string;
+  readonly requiredRepository = PRODUCT_GITHUB_REPOSITORY;
+
+  constructor(releaseUrl: URL) {
+    super(
+      `Discord release URL must be an HTTPS GitHub tag release for ${PRODUCT_GITHUB_REPOSITORY}.`,
+    );
+    this.name = "InvalidDiscordReleaseUrlError";
+    this.releaseUrl = releaseUrl.href;
+  }
+}
+
 const targetLabels = {
   prerelease: "Prerelease",
   latest: "Latest",
@@ -88,37 +102,65 @@ function summarizePayload(payload: DiscordWebhookPayload) {
   } as const;
 }
 
+export function validateDiscordReleaseUrl(releaseUrl: URL, expectedTag: string): URL {
+  const expectedPathPrefix = `/${PRODUCT_GITHUB_REPOSITORY}/releases/tag/`;
+  const tagPath = releaseUrl.pathname.slice(expectedPathPrefix.length);
+  let decodedTagPath: string | undefined;
+  try {
+    decodedTagPath = decodeURIComponent(tagPath);
+  } catch {
+    decodedTagPath = undefined;
+  }
+  if (
+    releaseUrl.origin !== "https://github.com" ||
+    releaseUrl.username !== "" ||
+    releaseUrl.password !== "" ||
+    !releaseUrl.pathname.startsWith(expectedPathPrefix) ||
+    tagPath.length === 0 ||
+    tagPath.split("/").some((segment) => segment.length === 0) ||
+    decodedTagPath !== expectedTag ||
+    releaseUrl.search !== "" ||
+    releaseUrl.hash !== ""
+  ) {
+    throw new InvalidDiscordReleaseUrlError(releaseUrl);
+  }
+  return releaseUrl;
+}
+
 export const buildDiscordReleaseAnnouncement = (
   options: DiscordReleaseAnnouncementOptions,
-): DiscordWebhookPayload => ({
-  content: `<@&${options.roleId}> ${targetLabels[options.target]} published: ${options.releaseName}`,
-  allowed_mentions: {
-    roles: [options.roleId],
-  },
-  embeds: [
-    {
-      title: options.releaseName,
-      url: options.releaseUrl.href,
-      description: resolveProductReleaseDescription(
-        options.target === "prerelease" ? "nightly" : "latest",
-      ),
-      color: targetColors[options.target],
-      fields: [
-        {
-          name: "Version",
-          value: options.version,
-          inline: true,
-        },
-        {
-          name: "Tag",
-          value: options.tag,
-          inline: true,
-        },
-      ],
-      timestamp: options.timestamp,
+): DiscordWebhookPayload => {
+  validateDiscordReleaseUrl(options.releaseUrl, options.tag);
+  return {
+    content: `<@&${options.roleId}> ${targetLabels[options.target]} published: ${options.releaseName}`,
+    allowed_mentions: {
+      roles: [options.roleId],
     },
-  ],
-});
+    embeds: [
+      {
+        title: options.releaseName,
+        url: options.releaseUrl.href,
+        description: resolveProductReleaseDescription(
+          options.target === "prerelease" ? "nightly" : "latest",
+        ),
+        color: targetColors[options.target],
+        fields: [
+          {
+            name: "Version",
+            value: options.version,
+            inline: true,
+          },
+          {
+            name: "Tag",
+            value: options.tag,
+            inline: true,
+          },
+        ],
+        timestamp: options.timestamp,
+      },
+    ],
+  };
+};
 
 const postDiscordWebhook = Effect.fn("postDiscordWebhook")(function* (
   webhookUrl: URL,
@@ -209,7 +251,6 @@ export const notifyDiscordReleaseCommand = Command.make(
         }),
       );
 
-      const webhookUrl = yield* DiscordWebhookUrl;
       const timestamp = DateTime.formatIso(yield* DateTime.now);
       const payload = buildDiscordReleaseAnnouncement({
         target,
@@ -220,6 +261,7 @@ export const notifyDiscordReleaseCommand = Command.make(
         releaseUrl,
         timestamp,
       });
+      const webhookUrl = yield* DiscordWebhookUrl;
 
       yield* Effect.logInfo("discord release announcement payload built").pipe(
         Effect.annotateLogs(summarizePayload(payload)),

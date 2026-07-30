@@ -23,7 +23,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   IMAGE_NAME: ghcr.io/jerkytreats/t3code-server
@@ -31,8 +30,12 @@ env:
 jobs:
   build:
     name: Build and push server image
+    if: github.repository == 'JerkyTreats/t3code'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout
