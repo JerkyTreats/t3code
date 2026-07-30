@@ -70,6 +70,8 @@ Codex provider setup follows the installed Codex app-server capability surface i
 - A Codex app-server `model/list` response containing a new model such as `gpt-5.5` appears in the Codex model selector without a code update to the built in fallback list.
 - A Codex app-server `skills/list` response containing an enabled skill appears in provider status and can be used by the composer.
 - App-server initialize sends the resolved Codex CLI version as `clientInfo.version`.
+- Initialize version probes retain only bounded stdout and stderr prefixes while fully draining flooded
+  streams.
 - Probe, session, and text-generation spawns receive the configured launch arguments.
 - Settings show detected supported Codex binaries and selecting one persists its absolute path.
 - Restarting the desktop app keeps the configured Codex binary path for the backend process.

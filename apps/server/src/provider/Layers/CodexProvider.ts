@@ -4,6 +4,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as PlatformError from "effect/PlatformError";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -28,6 +29,7 @@ import { ServerSettingsError } from "@t3tools/contracts";
 
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { collectUint8StreamText } from "../../stream/collectUint8StreamText.ts";
 import {
   AUTH_PROBE_TIMEOUT_MS,
   buildServerProvider,
@@ -42,6 +44,7 @@ const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnErro
 const CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
 const CODEX_VERSION_PROBE_TIMEOUT_MS = 2_000;
 const CODEX_VERSION_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
+const CODEX_VERSION_PROBE_MAX_OUTPUT_BYTES = 16 * 1024;
 
 class CodexVersionProbeTextError extends Data.TaggedError("CodexVersionProbeTextError")<{
   readonly cause: unknown;
@@ -296,14 +299,13 @@ export function parseCodexCliVersionOutput(output: string): string | undefined {
 }
 
 function collectProcessText(
-  stream: Stream.Stream<Uint8Array, unknown>,
+  stream: Stream.Stream<Uint8Array, PlatformError.PlatformError>,
 ): Effect.Effect<string, CodexVersionProbeTextError> {
-  return stream.pipe(
-    Stream.decodeText(),
-    Stream.runFold(
-      () => "",
-      (acc, chunk) => acc + chunk,
-    ),
+  return collectUint8StreamText({
+    stream,
+    maxBytes: CODEX_VERSION_PROBE_MAX_OUTPUT_BYTES,
+  }).pipe(
+    Effect.map((collected) => collected.text),
     Effect.mapError((cause) => new CodexVersionProbeTextError({ cause })),
   );
 }
