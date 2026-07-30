@@ -14,7 +14,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { ChevronRight, Code2, Eye, FolderTree, Globe2, LoaderCircle } from "lucide-react";
 import * as Schema from "effect/Schema";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { DocumentMarkdownRenderer } from "~/components/DocumentMarkdownRenderer";
@@ -52,7 +52,6 @@ import {
 import {
   clampFileLine,
   centeredFileRevealScrollTop,
-  createFileRevealIncarnation,
   FILE_LINK_REVEAL_ATTRIBUTE,
   type FileRevealIncarnation,
   ownsFileRevealIncarnation,
@@ -70,6 +69,7 @@ import {
   setProjectFileQueryData,
   useProjectFileQuery,
 } from "./projectFilesQueryState";
+import { useFileRevealIncarnation } from "./useFileRevealIncarnation";
 
 interface FilePreviewPanelProps {
   environmentId: EnvironmentId;
@@ -137,25 +137,11 @@ function useFileLineReveal(
   revealRequestId: number,
 ): FilePostRender {
   const ownerKey = scopedThreadKey(threadRef);
-  const incarnation = useMemo(
-    () =>
-      createFileRevealIncarnation({
-        ownerKey,
-        relativePath,
-        revealRequestId,
-      }),
-    [ownerKey, relativePath, revealRequestId],
-  );
-  const currentIncarnationRef = useRef<FileRevealIncarnation | null>(incarnation);
-  currentIncarnationRef.current = incarnation;
-  useLayoutEffect(
-    () => () => {
-      if (ownsFileRevealIncarnation(currentIncarnationRef.current, incarnation)) {
-        currentIncarnationRef.current = null;
-      }
-    },
-    [incarnation],
-  );
+  const { incarnation, currentIncarnationRef } = useFileRevealIncarnation({
+    ownerKey,
+    relativePath,
+    revealRequestId,
+  });
   const [handledIncarnations] = useState(() => new WeakSet<FileRevealIncarnation>());
   const pendingFrameRef = useRef<PendingFileRevealFrame | null>(null);
 
