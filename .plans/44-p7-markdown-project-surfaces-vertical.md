@@ -1,10 +1,10 @@
 # Implementation Ledger
 
-Date:
-Branch: product/v0.0.30-origin-rebuild
-Commit Policy:
+Date: 2026-07-30
+Branch: product/v030-p7
+Commit Policy: `governance/commit_policy.md`
 Objective: Reconcile v0.0.30 inline file links and diff stability while preserving fork document rendering, virtual plan preview, project surfaces, environment-aware navigation, and inference metrics.
-Status: planned
+Status: in progress
 
 ## Objective Baseline
 
@@ -24,7 +24,8 @@ Status: planned
 - `.plans/36-upstream-v0.0.30-product-feature-map.md`
 - upstream read-only evidence commit `55dd01612` for inline code file paths
 - upstream read-only evidence commit `3c50a6488` for diff panel scroll stability
-- integrated P2 context-window trimming and P6 shared navigation
+- integrated P6 shared navigation and Sidebar V2 at program commit `6dd90deba`
+- read-only upstream evidence commit `5fcdefd05` for latest resolvable context-window projection rows
 
 ## Vertical Plan
 
@@ -75,6 +76,10 @@ Status: planned
 
 | Slice | Worktree | Branch | Status | Integration Commit | Notes |
 | --- | --- | --- | --- | --- | --- |
+| P7 integration | `/home/jerkytreats/t3code-v030-p7` | `product/v030-p7` | in progress | pending | central documentation reconciliation, final gates, and review |
+| P7a Markdown links | `/home/jerkytreats/t3code-v030-p7-markdown` | `product/v030-p7-markdown` | ready | pending | conservative inline path classification and rich-rendering preservation |
+| P7b file and diff panels | `/home/jerkytreats/t3code-v030-p7-files` | `product/v030-p7-files` | ready | pending | diff metrics, file reveal, and virtual plan preservation |
+| P7c project and inference | `/home/jerkytreats/t3code-v030-p7-projects` | `product/v030-p7-projects` | ready | pending | stale surfaces, inference accounting, and context-row projection |
 
 ## Gate Evidence
 
@@ -108,5 +113,6 @@ Status: planned
 - Nested document links resolve from the document working directory while retaining workspace-root metadata.
 - Project Git must remain usable with only environment and project identity.
 - Cached input is counted once and magnitude formatting covers `K` through `Q`.
+- Context-window trimming must be rebuilt at the current snapshot projection seam. The earlier ledger assumption that P2 already integrated it was disproved by direct code inspection.
 
 ## Closeout
