@@ -18,6 +18,7 @@ import {
   pruneSidebarV2ChangeRequestStates,
   resolveSidebarV2BulkSettleTargets,
   resolveSidebarV2ChangeRequestState,
+  resolveSidebarV2ProjectStatusIndicator,
   resolveSidebarV2RowKeyAction,
   sidebarV2VcsProbedThreadKeys,
   resolveSidebarV2SettledTimestamp,
@@ -884,6 +885,47 @@ describe("resolveProjectStatusIndicator", () => {
     };
 
     expect(resolveProjectStatusIndicator([working, progress])).toBe(progress);
+  });
+});
+
+describe("resolveSidebarV2ProjectStatusIndicator", () => {
+  it("ignores archived threads and responds to scoped visit timestamps", () => {
+    const activeThread = makeThreadShell({
+      id: ThreadId.make("thread-active"),
+      latestTurn: makeLatestTurn(),
+    });
+    const archivedThread = makeThreadShell({
+      id: ThreadId.make("thread-archived"),
+      archivedAt: "2026-03-09T10:06:00.000Z",
+      hasPendingApprovals: true,
+    });
+    const projectRefs = [
+      {
+        environmentId: localEnvironmentId,
+        projectId: ProjectId.make("project-1"),
+      },
+    ];
+    const activeThreadKey = `${localEnvironmentId}:${activeThread.id}`;
+
+    expect(
+      resolveSidebarV2ProjectStatusIndicator({
+        threads: [activeThread, archivedThread],
+        projectRefs,
+        lastVisitedAtByThreadKey: {
+          [activeThreadKey]: "2026-03-09T10:04:00.000Z",
+        },
+      }),
+    ).toMatchObject({ label: "Completed" });
+
+    expect(
+      resolveSidebarV2ProjectStatusIndicator({
+        threads: [activeThread, archivedThread],
+        projectRefs,
+        lastVisitedAtByThreadKey: {
+          [activeThreadKey]: "2026-03-09T10:06:00.000Z",
+        },
+      }),
+    ).toBeNull();
   });
 });
 

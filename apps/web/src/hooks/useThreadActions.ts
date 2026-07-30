@@ -2,6 +2,7 @@ import {
   parseScopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
+  scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { EnvironmentId, type ScopedThreadRef, ThreadId } from "@t3tools/contracts";
@@ -28,6 +29,7 @@ import { readLocalApi } from "../localApi";
 import { useRightPanelStore } from "../rightPanelStore";
 import { readEnvironmentThreadRefs, readProject, readThreadShell } from "../state/entities";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
+import { useThreadSelectionStore } from "../threadSelectionStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
@@ -76,6 +78,7 @@ export function useThreadActions() {
   const clearTerminalUiState = useTerminalUiStateStore((state) => state.clearTerminalUiState);
   const clearRightPanelState = useRightPanelStore((state) => state.removeThread);
   const clearDiffPanelState = useDiffPanelStore((state) => state.removeThread);
+  const removeFromThreadSelection = useThreadSelectionStore((state) => state.removeFromSelection);
   const router = useRouter();
   const handleNewThread = useNewThreadHandler();
   // Keep a ref so archiveThread can call handleNewThread without appearing in
@@ -286,6 +289,9 @@ export function useThreadActions() {
               clearTerminalUiState,
               clearRightPanelState,
               clearDiffPanelState,
+              removeFromThreadSelection: (threadRefs) => {
+                removeFromThreadSelection(threadRefs.map(scopedThreadKey));
+              },
             },
           });
         },
@@ -373,6 +379,7 @@ export function useThreadActions() {
       deleteThreadMutation,
       getCurrentRouteThreadRef,
       refreshVcsStatus,
+      removeFromThreadSelection,
       removeWorktree,
       router,
       resolveThreadTarget,

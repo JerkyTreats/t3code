@@ -53,6 +53,9 @@ import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useComposerDraftStore } from "../composerDraftStore";
+import { useDiffPanelStore } from "../diffPanelStore";
+import { clearDeletedThreadStates } from "../lib/threadDeletionWorkflow";
+import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import { formatRelativeTimeLabel } from "../timestampFormat";
@@ -76,7 +79,7 @@ import {
   paginateSidebarV2Threads,
   pruneSidebarV2ChangeRequestStates,
   resolveAdjacentThreadId,
-  resolveProjectStatusIndicator,
+  resolveSidebarV2ProjectStatusIndicator,
   resolveSidebarV2BulkSettleTargets,
   resolveSidebarV2ChangeRequestState,
   resolveSidebarV2RowKeyAction,
@@ -446,9 +449,17 @@ export default function SidebarV2() {
   const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projectOrder = useUiStateStore((state) => state.projectOrder);
+  const threadLastVisitedAtById = useUiStateStore((state) => state.threadLastVisitedAtById);
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeys = useThreadSelectionStore((state) => state.selectedThreadKeys);
   const removeFromSelection = useThreadSelectionStore((state) => state.removeFromSelection);
+  const clearComposerDraftForThread = useComposerDraftStore((state) => state.clearDraftThread);
+  const clearProjectDraftThreadById = useComposerDraftStore(
+    (state) => state.clearProjectDraftThreadById,
+  );
+  const clearTerminalUiState = useTerminalUiStateStore((state) => state.clearTerminalUiState);
+  const clearRightPanelState = useRightPanelStore((state) => state.removeThread);
+  const clearDiffPanelState = useDiffPanelStore((state) => state.removeThread);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const openAddProjectCommandPalette = useOpenAddProjectCommandPalette();
   const { deleteThread } = useThreadActions();
@@ -690,31 +701,19 @@ export default function SidebarV2() {
   const projectStatusByKey = useMemo(
     () =>
       new Map(
-        projectGroups.map((group) => {
-          const refs = new Set(
-            group.memberProjectRefs.map((ref) => projectRefKey(ref.environmentId, ref.projectId)),
-          );
-          return [
-            group.projectKey,
-            resolveProjectStatusIndicator(
-              threads
-                .filter((thread) => refs.has(projectRefKey(thread.environmentId, thread.projectId)))
-                .map((thread) =>
-                  resolveThreadStatusPill({
-                    thread: {
-                      ...thread,
-                      lastVisitedAt:
-                        useUiStateStore.getState().threadLastVisitedAtById[
-                          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
-                        ],
-                    },
-                  }),
-                ),
-            ),
-          ] as const;
-        }),
+        projectGroups.map(
+          (group) =>
+            [
+              group.projectKey,
+              resolveSidebarV2ProjectStatusIndicator({
+                threads,
+                projectRefs: group.memberProjectRefs,
+                lastVisitedAtByThreadKey: threadLastVisitedAtById,
+              }),
+            ] as const,
+        ),
       ),
-    [projectGroups, threads],
+    [projectGroups, threadLastVisitedAtById, threads],
   );
   const projectActionGroups = scopedProject ? [scopedProject] : projectGroups;
   const newThreadMembers = getSidebarV2ConcreteProjectTargets({
@@ -901,9 +900,10 @@ export default function SidebarV2() {
       const draftStore = useComposerDraftStore.getState();
       const projectDraftThread = draftStore.getDraftThreadByProjectRef(memberProjectRef);
       const api = readLocalApi();
-      const projectThreadCount = threads.filter(
+      const projectThreads = threads.filter(
         (thread) => thread.environmentId === member.environmentId && thread.projectId === member.id,
-      ).length;
+      );
+      const projectThreadCount = projectThreads.length;
       const confirmed =
         api == null
           ? window.confirm(`Remove project "${member.title}" from T3 Code?`)
@@ -926,6 +926,22 @@ export default function SidebarV2() {
       });
       reportCommandFailure("Failed to remove project", result);
       if (result._tag !== "Success") return;
+      clearDeletedThreadStates({
+        targets: projectThreads.map((thread) => ({
+          threadRef: scopeThreadRef(thread.environmentId, thread.id),
+          projectRef: memberProjectRef,
+        })),
+        actions: {
+          clearComposerDraftForThread,
+          clearProjectDraftThreadById,
+          clearTerminalUiState,
+          clearRightPanelState,
+          clearDiffPanelState,
+          removeFromThreadSelection: (threadRefs) => {
+            removeFromSelection(threadRefs.map(scopedThreadKey));
+          },
+        },
+      });
       if (projectDraftThread) {
         draftStore.clearDraftThread(projectDraftThread.draftId);
       }
@@ -941,7 +957,19 @@ export default function SidebarV2() {
         if (group?.memberProjects.length === 1) setProjectScopeKey(null);
       }
     },
-    [deleteProject, projectGroups, projectScopeKey, reportCommandFailure, threads],
+    [
+      clearComposerDraftForThread,
+      clearDiffPanelState,
+      clearProjectDraftThreadById,
+      clearRightPanelState,
+      clearTerminalUiState,
+      deleteProject,
+      projectGroups,
+      projectScopeKey,
+      removeFromSelection,
+      reportCommandFailure,
+      threads,
+    ],
   );
   const handleOpenProject = useCallback(
     async (member: SidebarProjectGroupMember) => {

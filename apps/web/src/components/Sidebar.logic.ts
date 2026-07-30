@@ -1,4 +1,5 @@
 import * as React from "react";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import { canSettle } from "@t3tools/client-runtime/state/thread-settled";
 import {
@@ -526,6 +527,36 @@ export function resolveProjectStatusIndicator(
   }
 
   return highestPriorityStatus;
+}
+
+export function resolveSidebarV2ProjectStatusIndicator(input: {
+  threads: readonly SidebarThreadSummary[];
+  projectRefs: ReadonlyArray<Pick<SidebarThreadSummary, "environmentId" | "projectId">>;
+  lastVisitedAtByThreadKey: Readonly<Record<string, string>>;
+}): ThreadStatusPill | null {
+  return resolveProjectStatusIndicator(
+    input.threads
+      .filter(
+        (thread) =>
+          thread.archivedAt === null &&
+          input.projectRefs.some(
+            (projectRef) =>
+              projectRef.environmentId === thread.environmentId &&
+              projectRef.projectId === thread.projectId,
+          ),
+      )
+      .map((thread) =>
+        resolveThreadStatusPill({
+          thread: {
+            ...thread,
+            lastVisitedAt:
+              input.lastVisitedAtByThreadKey[
+                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))
+              ],
+          },
+        }),
+      ),
+  );
 }
 
 export function parseSidebarTimestamp(timestamp: string | null | undefined): number {

@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   clearDeletedThreadState,
+  clearDeletedThreadStates,
   runThreadDeletionLifecycle,
   runWorktreeThreadTeardown,
 } from "./threadDeletionWorkflow";
@@ -31,6 +32,7 @@ describe("clearDeletedThreadState", () => {
       clearTerminalUiState: vi.fn(),
       clearRightPanelState: vi.fn(),
       clearDiffPanelState: vi.fn(),
+      removeFromThreadSelection: vi.fn(),
     };
 
     clearDeletedThreadState({ threadRef: deletedThreadRef, projectRef, actions });
@@ -43,6 +45,39 @@ describe("clearDeletedThreadState", () => {
     expect(actions.clearTerminalUiState).toHaveBeenCalledExactlyOnceWith(deletedThreadRef);
     expect(actions.clearRightPanelState).toHaveBeenCalledExactlyOnceWith(deletedThreadRef);
     expect(actions.clearDiffPanelState).toHaveBeenCalledExactlyOnceWith(deletedThreadRef);
+    expect(actions.removeFromThreadSelection).toHaveBeenCalledExactlyOnceWith([deletedThreadRef]);
+  });
+
+  it("clears local state and bulk selection for every deleted project thread", () => {
+    const secondThreadRef: ScopedThreadRef = {
+      environmentId: deletedThreadRef.environmentId,
+      threadId: ThreadId.make("thread-second"),
+    };
+    const actions = {
+      clearComposerDraftForThread: vi.fn(),
+      clearProjectDraftThreadById: vi.fn(),
+      clearTerminalUiState: vi.fn(),
+      clearRightPanelState: vi.fn(),
+      clearDiffPanelState: vi.fn(),
+      removeFromThreadSelection: vi.fn(),
+    };
+
+    clearDeletedThreadStates({
+      targets: [
+        { threadRef: deletedThreadRef, projectRef },
+        { threadRef: secondThreadRef, projectRef },
+      ],
+      actions,
+    });
+
+    expect(actions.clearComposerDraftForThread).toHaveBeenCalledTimes(2);
+    expect(actions.clearComposerDraftForThread).toHaveBeenNthCalledWith(1, deletedThreadRef);
+    expect(actions.clearComposerDraftForThread).toHaveBeenNthCalledWith(2, secondThreadRef);
+    expect(actions.clearProjectDraftThreadById).toHaveBeenCalledTimes(2);
+    expect(actions.removeFromThreadSelection).toHaveBeenCalledExactlyOnceWith([
+      deletedThreadRef,
+      secondThreadRef,
+    ]);
   });
 });
 

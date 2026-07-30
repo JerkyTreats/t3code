@@ -6,20 +6,39 @@ export interface DeletedThreadStateActions {
   clearTerminalUiState: (threadRef: ScopedThreadRef) => void;
   clearRightPanelState: (threadRef: ScopedThreadRef) => void;
   clearDiffPanelState: (threadRef: ScopedThreadRef) => void;
+  removeFromThreadSelection: (threadRefs: readonly ScopedThreadRef[]) => void;
 }
 
-export interface ClearDeletedThreadStateInput {
+export interface DeletedThreadStateTarget {
   threadRef: ScopedThreadRef;
   projectRef: ScopedProjectRef;
+}
+
+export interface ClearDeletedThreadStateInput extends DeletedThreadStateTarget {
   actions: DeletedThreadStateActions;
 }
 
+export interface ClearDeletedThreadStatesInput {
+  targets: readonly DeletedThreadStateTarget[];
+  actions: DeletedThreadStateActions;
+}
+
+export function clearDeletedThreadStates(input: ClearDeletedThreadStatesInput): void {
+  for (const target of input.targets) {
+    input.actions.clearComposerDraftForThread(target.threadRef);
+    input.actions.clearProjectDraftThreadById(target.projectRef, target.threadRef);
+    input.actions.clearTerminalUiState(target.threadRef);
+    input.actions.clearRightPanelState(target.threadRef);
+    input.actions.clearDiffPanelState(target.threadRef);
+  }
+  input.actions.removeFromThreadSelection(input.targets.map((target) => target.threadRef));
+}
+
 export function clearDeletedThreadState(input: ClearDeletedThreadStateInput): void {
-  input.actions.clearComposerDraftForThread(input.threadRef);
-  input.actions.clearProjectDraftThreadById(input.projectRef, input.threadRef);
-  input.actions.clearTerminalUiState(input.threadRef);
-  input.actions.clearRightPanelState(input.threadRef);
-  input.actions.clearDiffPanelState(input.threadRef);
+  clearDeletedThreadStates({
+    targets: [{ threadRef: input.threadRef, projectRef: input.projectRef }],
+    actions: input.actions,
+  });
 }
 
 export interface ThreadDeletionLifecycleInput<TResult, TNavigationResult = never> {
