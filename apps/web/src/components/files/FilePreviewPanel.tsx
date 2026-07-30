@@ -61,7 +61,12 @@ import { installFileEditorDismissal } from "./fileEditorDismissal";
 import { LocalCommentAnnotation } from "./LocalCommentAnnotation";
 import { projectFileCacheKey } from "./fileContentRevision";
 import { fileBreadcrumbs } from "./filePath";
-import { resolveFilePreviewMode, setMarkdownTaskChecked } from "./filePreviewMode";
+import {
+  markdownLineRevealRequestKey,
+  markdownLineRevealSourcePath,
+  resolveFilePreviewMode,
+  setMarkdownTaskChecked,
+} from "./filePreviewMode";
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
 import {
   confirmProjectFileQueryData,
@@ -635,9 +640,27 @@ export default function FilePreviewPanel({
   const [compactExplorerOpen, setCompactExplorerOpen] = useState(false);
   const [compactLayout, setCompactLayout] = useState(false);
   const [markdownSourcePath, setMarkdownSourcePath] = useState<string | null>(null);
+  const [dismissedMarkdownRevealKey, setDismissedMarkdownRevealKey] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const breadcrumbRef = useRef<HTMLDivElement>(null);
-  const previewMode = resolveFilePreviewMode(relativePath, markdownSourcePath);
+  const revealOwnerKey = scopedThreadKey(threadRef);
+  const markdownRevealKey = markdownLineRevealRequestKey(
+    revealOwnerKey,
+    relativePath,
+    revealLine,
+    revealRequestId,
+  );
+  const automaticMarkdownSourcePath = markdownLineRevealSourcePath(
+    revealOwnerKey,
+    relativePath,
+    revealLine,
+    revealRequestId,
+    dismissedMarkdownRevealKey,
+  );
+  const previewMode = resolveFilePreviewMode(
+    relativePath,
+    automaticMarkdownSourcePath ?? markdownSourcePath,
+  );
   const isMarkdown = previewMode !== "code";
   const renderMarkdown = previewMode === "rendered-markdown";
   const canOpenInBrowser =
@@ -775,6 +798,7 @@ export default function FilePreviewPanel({
                     pressed={renderMarkdown}
                     onPressedChange={(pressed) => {
                       setMarkdownSourcePath(pressed ? null : relativePath);
+                      setDismissedMarkdownRevealKey(pressed ? markdownRevealKey : null);
                     }}
                     aria-label={renderMarkdown ? "Show markdown source" : "Show rendered markdown"}
                     variant="ghost"

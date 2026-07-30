@@ -2,6 +2,34 @@ export const isMarkdownPreviewFile = (path: string): boolean => /\.(?:md|mdx)$/i
 
 export type FilePreviewMode = "rendered-markdown" | "source" | "code";
 
+export function markdownLineRevealRequestKey(
+  ownerKey: string,
+  relativePath: string | null,
+  revealLine: number | null,
+  revealRequestId: number,
+): string | null {
+  if (!relativePath || revealLine === null || !isMarkdownPreviewFile(relativePath)) {
+    return null;
+  }
+  return JSON.stringify([ownerKey, relativePath, revealRequestId]);
+}
+
+export function markdownLineRevealSourcePath(
+  ownerKey: string,
+  relativePath: string | null,
+  revealLine: number | null,
+  revealRequestId: number,
+  dismissedRequestKey: string | null,
+): string | null {
+  const requestKey = markdownLineRevealRequestKey(
+    ownerKey,
+    relativePath,
+    revealLine,
+    revealRequestId,
+  );
+  return requestKey === null || requestKey === dismissedRequestKey ? null : relativePath;
+}
+
 export function resolveFilePreviewMode(
   relativePath: string | null,
   markdownSourcePath: string | null,

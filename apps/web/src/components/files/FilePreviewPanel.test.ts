@@ -16,6 +16,8 @@ import {
 } from "./fileLineReveal";
 import {
   isMarkdownPreviewFile,
+  markdownLineRevealRequestKey,
+  markdownLineRevealSourcePath,
   resolveFilePreviewMode,
   setMarkdownTaskChecked,
 } from "./filePreviewMode";
@@ -89,6 +91,50 @@ describe("resolveFilePreviewMode", () => {
   it("classifies non-markdown files as code previews", () => {
     expect(resolveFilePreviewMode("src/index.ts", null)).toBe("code");
     expect(resolveFilePreviewMode(null, null)).toBe("code");
+  });
+
+  it("opens line-qualified markdown links in source mode until that request is dismissed", () => {
+    const requestKey = markdownLineRevealRequestKey("local:thread-one", "README.md", 42, 7);
+    const sourcePath = markdownLineRevealSourcePath("local:thread-one", "README.md", 42, 7, null);
+
+    expect(sourcePath).toBe("README.md");
+    expect(resolveFilePreviewMode("README.md", sourcePath)).toBe("source");
+    expect(
+      markdownLineRevealSourcePath("local:thread-one", "README.md", 42, 7, requestKey),
+    ).toBeNull();
+    expect(resolveFilePreviewMode("README.md", null)).toBe("rendered-markdown");
+  });
+
+  it("starts a fresh markdown source reveal when the same target is requested again", () => {
+    const dismissedRequestKey = markdownLineRevealRequestKey(
+      "local:thread-one",
+      "README.md",
+      42,
+      7,
+    );
+
+    expect(
+      markdownLineRevealSourcePath("local:thread-one", "README.md", 42, 8, dismissedRequestKey),
+    ).toBe("README.md");
+    expect(
+      markdownLineRevealSourcePath("local:thread-one", "README.md", null, 8, dismissedRequestKey),
+    ).toBeNull();
+    expect(
+      markdownLineRevealSourcePath("local:thread-one", "src/index.ts", 42, 8, dismissedRequestKey),
+    ).toBeNull();
+  });
+
+  it("does not carry a dismissed reveal across same-project thread switches", () => {
+    const dismissedRequestKey = markdownLineRevealRequestKey(
+      "local:thread-one",
+      "README.md",
+      42,
+      1,
+    );
+
+    expect(
+      markdownLineRevealSourcePath("local:thread-two", "README.md", 42, 1, dismissedRequestKey),
+    ).toBe("README.md");
   });
 });
 
