@@ -27,8 +27,10 @@ import { selectThreadDiffPanelSelection, useDiffPanelStore } from "../diffPanelS
 import { useTheme } from "../hooks/useTheme";
 import {
   buildFileDiffRenderKey,
+  getDiffPanelVirtualizerMetrics,
   getDiffCollapseIconClassName,
   getRenderablePatch,
+  resolveDiffPanelRenderKey,
   resolveDiffThemeName,
   resolveFileDiffPath,
 } from "../lib/diffRendering";
@@ -76,6 +78,7 @@ interface CollapsedDiffFilesState {
 }
 
 const EMPTY_COLLAPSED_DIFF_FILE_KEYS: ReadonlySet<string> = new Set();
+const DIFF_PANEL_VIRTUALIZER_METRICS = getDiffPanelVirtualizerMetrics();
 
 const DIFF_PANEL_UNSAFE_CSS = `
 [data-diffs-header],
@@ -801,7 +804,7 @@ export default function DiffPanel({ mode = "inline", composerDraftTarget }: Diff
               >
                 <AnnotatableCodeView
                   viewerRef={codeViewRef}
-                  key={collapseScopeKey ?? reviewSectionId}
+                  key={resolveDiffPanelRenderKey(collapseScopeKey, reviewSectionId)}
                   className="diff-render-surface h-full min-h-0 overflow-auto"
                   files={codeViewFiles}
                   sectionId={reviewSectionId}
@@ -848,7 +851,7 @@ export default function DiffPanel({ mode = "inline", composerDraftTarget }: Diff
                     themeType: resolvedTheme as DiffThemeType,
                     unsafeCSS: DIFF_PANEL_UNSAFE_CSS,
                     stickyHeaders: true,
-                    layout: { paddingTop: 8, paddingBottom: 8, gap: 8 },
+                    ...DIFF_PANEL_VIRTUALIZER_METRICS,
                   }}
                 />
               </div>

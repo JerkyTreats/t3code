@@ -1,11 +1,21 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   formatFileCommentRange,
   normalizeFileCommentRange,
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
-import { isMarkdownPreviewFile, setMarkdownTaskChecked } from "./filePreviewMode";
+import {
+  clampFileLine,
+  centeredFileRevealScrollTop,
+  FILE_LINK_REVEAL_ATTRIBUTE,
+  updateFileLinkReveal,
+} from "./fileLineReveal";
+import {
+  isMarkdownPreviewFile,
+  resolveFilePreviewMode,
+  setMarkdownTaskChecked,
+} from "./filePreviewMode";
 
 describe("file comment annotations", () => {
   it("normalizes and formats selected line ranges", () => {
@@ -63,6 +73,73 @@ describe("isMarkdownPreviewFile", () => {
   it("does not treat other text files as markdown", () => {
     expect(isMarkdownPreviewFile("docs/guide.txt")).toBe(false);
     expect(isMarkdownPreviewFile("docs/markdown.ts")).toBe(false);
+  });
+});
+
+describe("resolveFilePreviewMode", () => {
+  it("renders markdown by default and keeps source mode scoped to the selected file", () => {
+    expect(resolveFilePreviewMode("docs/guide.md", null)).toBe("rendered-markdown");
+    expect(resolveFilePreviewMode("docs/guide.md", "docs/guide.md")).toBe("source");
+    expect(resolveFilePreviewMode("docs/other.md", "docs/guide.md")).toBe("rendered-markdown");
+  });
+
+  it("classifies non-markdown files as code previews", () => {
+    expect(resolveFilePreviewMode("src/index.ts", null)).toBe("code");
+    expect(resolveFilePreviewMode(null, null)).toBe("code");
+  });
+});
+
+describe("file line reveal", () => {
+  it("clamps requested lines across Unix and Windows line endings", () => {
+    expect(clampFileLine("one\ntwo\r\nthree\rfour", -4)).toBe(1);
+    expect(clampFileLine("one\ntwo\r\nthree\rfour", 3)).toBe(3);
+    expect(clampFileLine("one\ntwo\r\nthree\rfour", 99)).toBe(4);
+  });
+
+  it("centers a requested line and clamps the result to the scroll range", () => {
+    expect(
+      centeredFileRevealScrollTop({
+        scrollTop: 0,
+        scrollHeight: 2_000,
+        viewportHeight: 400,
+        fileTop: 100,
+        lineTop: 700,
+        lineHeight: 20,
+      }),
+    ).toBe(610);
+    expect(
+      centeredFileRevealScrollTop({
+        scrollTop: 0,
+        scrollHeight: 900,
+        viewportHeight: 400,
+        fileTop: 100,
+        lineTop: 700,
+        lineHeight: 20,
+      }),
+    ).toBe(500);
+  });
+
+  it("clears stale highlights before applying the current line reveal", () => {
+    const staleLine = { removeAttribute: vi.fn() };
+    const staleColumn = { removeAttribute: vi.fn() };
+    const nextLine = { setAttribute: vi.fn() };
+    const nextColumn = { setAttribute: vi.fn() };
+    const root = {
+      querySelectorAll: vi.fn(() => [staleLine, staleColumn]),
+      querySelector: vi.fn((selector: string) =>
+        selector === '[data-line="42"]' ? nextLine : nextColumn,
+      ),
+    };
+    const container = {
+      shadowRoot: root,
+    } as unknown as HTMLElement;
+
+    updateFileLinkReveal(container, 42);
+
+    expect(staleLine.removeAttribute).toHaveBeenCalledWith(FILE_LINK_REVEAL_ATTRIBUTE);
+    expect(staleColumn.removeAttribute).toHaveBeenCalledWith(FILE_LINK_REVEAL_ATTRIBUTE);
+    expect(nextLine.setAttribute).toHaveBeenCalledWith(FILE_LINK_REVEAL_ATTRIBUTE, "");
+    expect(nextColumn.setAttribute).toHaveBeenCalledWith(FILE_LINK_REVEAL_ATTRIBUTE, "");
   });
 });
 

@@ -1,5 +1,17 @@
 export const isMarkdownPreviewFile = (path: string): boolean => /\.(?:md|mdx)$/i.test(path);
 
+export type FilePreviewMode = "rendered-markdown" | "source" | "code";
+
+export function resolveFilePreviewMode(
+  relativePath: string | null,
+  markdownSourcePath: string | null,
+): FilePreviewMode {
+  if (!relativePath || !isMarkdownPreviewFile(relativePath)) {
+    return "code";
+  }
+  return markdownSourcePath === relativePath ? "source" : "rendered-markdown";
+}
+
 export function setMarkdownTaskChecked(
   markdown: string,
   markerOffset: number,

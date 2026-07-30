@@ -8,6 +8,20 @@ export const DIFF_THEME_NAMES = {
 
 export type DiffThemeName = (typeof DIFF_THEME_NAMES)[keyof typeof DIFF_THEME_NAMES];
 
+export function getDiffPanelVirtualizerMetrics() {
+  return {
+    itemMetrics: { diffHeaderHeight: 33 },
+    layout: { paddingTop: 0, paddingBottom: 8, gap: 8 },
+  } as const;
+}
+
+export function resolveDiffPanelRenderKey(
+  collapseScopeKey: string | null,
+  reviewSectionId: string,
+): string {
+  return collapseScopeKey ?? reviewSectionId;
+}
+
 export function resolveDiffThemeName(theme: "light" | "dark"): DiffThemeName {
   return theme === "dark" ? DIFF_THEME_NAMES.dark : DIFF_THEME_NAMES.light;
 }

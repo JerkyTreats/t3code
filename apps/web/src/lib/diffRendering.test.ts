@@ -1,5 +1,29 @@
 import { describe, expect, it } from "vite-plus/test";
-import { buildPatchCacheKey, getRenderablePatch } from "./diffRendering";
+import {
+  buildPatchCacheKey,
+  getDiffPanelVirtualizerMetrics,
+  getRenderablePatch,
+  resolveDiffPanelRenderKey,
+} from "./diffRendering";
+
+describe("diff panel virtualizer stability", () => {
+  it("uses the measured header height without top padding", () => {
+    expect(getDiffPanelVirtualizerMetrics()).toEqual({
+      itemMetrics: { diffHeaderHeight: 33 },
+      layout: { paddingTop: 0, paddingBottom: 8, gap: 8 },
+    });
+  });
+
+  it("keeps the render key stable for a selected diff scope", () => {
+    expect(resolveDiffPanelRenderKey("branch:origin/main", "review-one")).toBe(
+      "branch:origin/main",
+    );
+    expect(resolveDiffPanelRenderKey("branch:origin/main", "review-two")).toBe(
+      "branch:origin/main",
+    );
+    expect(resolveDiffPanelRenderKey(null, "review-two")).toBe("review-two");
+  });
+});
 
 describe("buildPatchCacheKey", () => {
   it("returns a stable cache key for identical content", () => {

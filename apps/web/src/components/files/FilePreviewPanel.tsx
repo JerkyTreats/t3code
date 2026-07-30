@@ -49,11 +49,17 @@ import {
   normalizeFileCommentRange,
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
+import {
+  clampFileLine,
+  centeredFileRevealScrollTop,
+  FILE_LINK_REVEAL_ATTRIBUTE,
+  updateFileLinkReveal,
+} from "./fileLineReveal";
 import { installFileEditorDismissal } from "./fileEditorDismissal";
 import { LocalCommentAnnotation } from "./LocalCommentAnnotation";
 import { projectFileCacheKey } from "./fileContentRevision";
 import { fileBreadcrumbs } from "./filePath";
-import { isMarkdownPreviewFile, setMarkdownTaskChecked } from "./filePreviewMode";
+import { resolveFilePreviewMode, setMarkdownTaskChecked } from "./filePreviewMode";
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
 import {
   confirmProjectFileQueryData,
@@ -83,7 +89,6 @@ interface FilePreviewPanelProps {
 
 const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
 const FILE_SAVE_DEBOUNCE_MS = 500;
-const FILE_LINK_REVEAL_ATTRIBUTE = "data-file-link-reveal";
 const FILE_LINK_REVEAL_UNSAFE_CSS = `
   [${FILE_LINK_REVEAL_ATTRIBUTE}][data-line] {
     background-color: light-dark(
@@ -117,35 +122,6 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
   }
 `;
 type FilePostRender = NonNullable<FileOptions<unknown>["onPostRender"]>;
-
-function clampFileLine(contents: string, requestedLine: number): number {
-  let lineCount = 1;
-  for (let index = 0; index < contents.length; index += 1) {
-    const character = contents.charCodeAt(index);
-    if (character === 10) {
-      lineCount += 1;
-    } else if (character === 13) {
-      lineCount += 1;
-      if (contents.charCodeAt(index + 1) === 10) index += 1;
-    }
-  }
-  return Math.min(Math.max(1, requestedLine), lineCount);
-}
-
-function updateFileLinkReveal(fileContainer: HTMLElement, line: number | null): void {
-  const root = fileContainer.shadowRoot ?? fileContainer;
-  for (const element of root.querySelectorAll<HTMLElement>(`[${FILE_LINK_REVEAL_ATTRIBUTE}]`)) {
-    element.removeAttribute(FILE_LINK_REVEAL_ATTRIBUTE);
-  }
-  if (line === null) return;
-
-  root
-    .querySelector<HTMLElement>(`[data-line="${line}"]`)
-    ?.setAttribute(FILE_LINK_REVEAL_ATTRIBUTE, "");
-  root
-    .querySelector<HTMLElement>(`[data-column-number="${line}"]`)
-    ?.setAttribute(FILE_LINK_REVEAL_ATTRIBUTE, "");
-}
 
 function useFileLineReveal(
   relativePath: string | null,
@@ -215,21 +191,15 @@ function useFileLineReveal(
         if (!linePosition) return;
 
         const fileTop =
-          scrollContainer.scrollTop +
-          fileContainer.getBoundingClientRect().top -
-          scrollContainer.getBoundingClientRect().top;
-        const centeredTop = Math.max(
-          0,
-          fileTop +
-            linePosition.top -
-            Math.max(0, (scrollContainer.clientHeight - linePosition.height) / 2),
-        );
-        const maxScrollTop = Math.max(
-          0,
-          scrollContainer.scrollHeight - scrollContainer.clientHeight,
-        );
-
-        scrollContainer.scrollTop = Math.min(centeredTop, maxScrollTop);
+          fileContainer.getBoundingClientRect().top - scrollContainer.getBoundingClientRect().top;
+        scrollContainer.scrollTop = centeredFileRevealScrollTop({
+          scrollTop: scrollContainer.scrollTop,
+          scrollHeight: scrollContainer.scrollHeight,
+          viewportHeight: scrollContainer.clientHeight,
+          fileTop,
+          lineTop: linePosition.top,
+          lineHeight: linePosition.height,
+        });
         handledRequestIdsByPath.set(relativePath, revealRequestId);
       };
 
@@ -646,8 +616,9 @@ export default function FilePreviewPanel({
   const [markdownSourcePath, setMarkdownSourcePath] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const breadcrumbRef = useRef<HTMLDivElement>(null);
-  const isMarkdown = relativePath ? isMarkdownPreviewFile(relativePath) : false;
-  const renderMarkdown = isMarkdown && markdownSourcePath !== relativePath;
+  const previewMode = resolveFilePreviewMode(relativePath, markdownSourcePath);
+  const isMarkdown = previewMode !== "code";
+  const renderMarkdown = previewMode === "rendered-markdown";
   const canOpenInBrowser =
     relativePath !== null && isPreviewSupportedInRuntime() && isBrowserPreviewFile(relativePath);
   const absolutePath = relativePath ? resolvePathLinkTarget(relativePath, cwd) : null;
