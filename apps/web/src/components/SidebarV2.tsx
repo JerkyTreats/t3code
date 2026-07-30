@@ -79,6 +79,7 @@ import {
   resolveProjectStatusIndicator,
   resolveSidebarV2BulkSettleTargets,
   resolveSidebarV2ChangeRequestState,
+  resolveSidebarV2RowKeyAction,
   resolveThreadStatusPill,
   sidebarV2VcsProbedThreadKeys,
   SIDEBAR_V2_ACTIVE_PAGE_SIZE,
@@ -232,13 +233,21 @@ const SidebarV2ThreadRow = memo(function SidebarV2ThreadRow(props: ThreadRowProp
         }
         return;
       }
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        setAnchor(threadKey);
-        onNavigate(threadRef);
+      const action = resolveSidebarV2RowKeyAction(event);
+      if (action === null) return;
+      event.preventDefault();
+      if (action === "range-selection") {
+        rangeSelectTo(threadKey, orderedThreadKeys);
+        return;
       }
+      if (action === "toggle-selection") {
+        toggleThread(threadKey);
+        return;
+      }
+      setAnchor(threadKey);
+      onNavigate(threadRef);
     },
-    [onNavigate, orderedThreadKeys, setAnchor, threadKey, threadRef],
+    [onNavigate, orderedThreadKeys, rangeSelectTo, setAnchor, threadKey, threadRef, toggleThread],
   );
 
   const handleLifecycle = useCallback(

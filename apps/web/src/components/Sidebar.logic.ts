@@ -34,6 +34,20 @@ type SidebarProject = {
 };
 
 export type ThreadTraversalDirection = "previous" | "next";
+export type SidebarV2RowKeyAction = "navigate" | "toggle-selection" | "range-selection";
+
+export function resolveSidebarV2RowKeyAction(input: {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+}): SidebarV2RowKeyAction | null {
+  if (input.key === "Enter") return "navigate";
+  if (input.key !== " ") return null;
+  if (input.shiftKey) return "range-selection";
+  if (input.metaKey || input.ctrlKey) return "toggle-selection";
+  return "navigate";
+}
 
 export interface ThreadStatusPill {
   label:

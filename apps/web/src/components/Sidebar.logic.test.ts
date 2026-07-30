@@ -18,6 +18,7 @@ import {
   pruneSidebarV2ChangeRequestStates,
   resolveSidebarV2BulkSettleTargets,
   resolveSidebarV2ChangeRequestState,
+  resolveSidebarV2RowKeyAction,
   sidebarV2VcsProbedThreadKeys,
   resolveSidebarV2SettledTimestamp,
   resolveProjectStatusIndicator,
@@ -1245,6 +1246,53 @@ describe("sortProjectsForSidebar", () => {
 });
 
 describe("Sidebar V2 ordering and pagination", () => {
+  it.each([
+    {
+      key: "Enter",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      expected: "navigate",
+    },
+    {
+      key: " ",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      expected: "navigate",
+    },
+    {
+      key: " ",
+      metaKey: true,
+      ctrlKey: false,
+      shiftKey: false,
+      expected: "toggle-selection",
+    },
+    {
+      key: " ",
+      metaKey: false,
+      ctrlKey: true,
+      shiftKey: false,
+      expected: "toggle-selection",
+    },
+    {
+      key: " ",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: true,
+      expected: "range-selection",
+    },
+    {
+      key: "Escape",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      expected: null,
+    },
+  ] as const)("resolves keyboard row action for $key as $expected", (input) => {
+    expect(resolveSidebarV2RowKeyAction(input)).toBe(input.expected);
+  });
+
   it("defers single click activation and cancels it for rename", () => {
     vi.useFakeTimers();
     const activate = vi.fn();
