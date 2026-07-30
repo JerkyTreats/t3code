@@ -981,8 +981,10 @@ Every upstream hit in a mutation path needs an explicit read-only explanation or
 
 ## Confirmed Current Gaps
 
-- `F14` command palette project actions do not open the unified project launcher.
-- Sidebar V2 rendering and product parity remain absent. Shared settings and settled lifecycle support are complete.
+- Inline code paths do not yet use the conservative workspace-aware file link treatment planned for Slice 7.
+- Diff virtualization metrics still need the v0.0.30 stability reconciliation.
+- Stale project right-panel descriptors and the remaining context-window projection trim need Slice 7 reconciliation.
+- Mobile, release, workflow, and packaged Linux artifact evidence remains in Slice 8.
 
 ## Risks
 
