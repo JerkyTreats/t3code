@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   clearDeletedThreadState,
   clearDeletedThreadStates,
+  runProjectDeletionLifecycle,
   runThreadDeletionLifecycle,
   runWorktreeThreadTeardown,
 } from "./threadDeletionWorkflow";
@@ -77,6 +78,70 @@ describe("clearDeletedThreadState", () => {
     expect(actions.removeFromThreadSelection).toHaveBeenCalledExactlyOnceWith([
       deletedThreadRef,
       secondThreadRef,
+    ]);
+  });
+});
+
+describe("runProjectDeletionLifecycle", () => {
+  it("cleans threads that appear during confirmation and deletion", async () => {
+    const existingThreadRef = deletedThreadRef;
+    const duringConfirmationThreadRef: ScopedThreadRef = {
+      environmentId: deletedThreadRef.environmentId,
+      threadId: ThreadId.make("thread-during-confirmation"),
+    };
+    const duringDeletionThreadRef: ScopedThreadRef = {
+      environmentId: deletedThreadRef.environmentId,
+      threadId: ThreadId.make("thread-during-deletion"),
+    };
+    const targetsBeforeDelete = [
+      { threadRef: existingThreadRef, projectRef },
+      { threadRef: duringConfirmationThreadRef, projectRef },
+    ];
+    const targetsAfterDelete = [
+      ...targetsBeforeDelete,
+      { threadRef: duringDeletionThreadRef, projectRef },
+    ];
+    const readThreadTargets = vi
+      .fn<() => readonly (typeof targetsAfterDelete)[number][]>()
+      .mockReturnValueOnce(targetsBeforeDelete)
+      .mockReturnValueOnce(targetsAfterDelete);
+    const actions = {
+      clearComposerDraftForThread: vi.fn(),
+      clearProjectDraftThreadById: vi.fn(),
+      clearTerminalUiState: vi.fn(),
+      clearRightPanelState: vi.fn(),
+      clearDiffPanelState: vi.fn(),
+      removeFromThreadSelection: vi.fn(),
+    };
+    const deleteProjectRecord = vi.fn(
+      async (targets: readonly (typeof targetsAfterDelete)[number][]) => {
+        expect(targets).toEqual(targetsBeforeDelete);
+        return { deleted: true };
+      },
+    );
+
+    await runProjectDeletionLifecycle({
+      readThreadTargets,
+      deleteProjectRecord,
+      didDeleteProject: (result) => result.deleted,
+      actions,
+    });
+
+    expect(readThreadTargets).toHaveBeenCalledTimes(2);
+    for (const threadRef of [
+      existingThreadRef,
+      duringConfirmationThreadRef,
+      duringDeletionThreadRef,
+    ]) {
+      expect(actions.clearComposerDraftForThread).toHaveBeenCalledWith(threadRef);
+      expect(actions.clearTerminalUiState).toHaveBeenCalledWith(threadRef);
+      expect(actions.clearRightPanelState).toHaveBeenCalledWith(threadRef);
+      expect(actions.clearDiffPanelState).toHaveBeenCalledWith(threadRef);
+    }
+    expect(actions.removeFromThreadSelection).toHaveBeenCalledExactlyOnceWith([
+      existingThreadRef,
+      duringConfirmationThreadRef,
+      duringDeletionThreadRef,
     ]);
   });
 });

@@ -44,7 +44,13 @@ import { readLocalApi } from "../localApi";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import { openConcreteProjectLauncher } from "../project-management/openProjectLauncher";
 import { useRightPanelStore } from "../rightPanelStore";
-import { readThreadShell, useProjects, useServerConfigs, useThreadShells } from "../state/entities";
+import {
+  readEnvironmentThreadRefs,
+  readThreadShell,
+  useProjects,
+  useServerConfigs,
+  useThreadShells,
+} from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
@@ -54,7 +60,7 @@ import { vcsEnvironment } from "../state/vcs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useDiffPanelStore } from "../diffPanelStore";
-import { clearDeletedThreadStates } from "../lib/threadDeletionWorkflow";
+import { runProjectDeletionLifecycle } from "../lib/threadDeletionWorkflow";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
@@ -900,10 +906,9 @@ export default function SidebarV2() {
       const draftStore = useComposerDraftStore.getState();
       const projectDraftThread = draftStore.getDraftThreadByProjectRef(memberProjectRef);
       const api = readLocalApi();
-      const projectThreads = threads.filter(
+      const confirmationProjectThreadCount = threads.filter(
         (thread) => thread.environmentId === member.environmentId && thread.projectId === member.id,
-      );
-      const projectThreadCount = projectThreads.length;
+      ).length;
       const confirmed =
         api == null
           ? window.confirm(`Remove project "${member.title}" from T3 Code?`)
@@ -911,26 +916,30 @@ export default function SidebarV2() {
               [
                 `Remove project "${member.title}"?`,
                 `Path: ${member.workspaceRoot}`,
-                projectThreadCount > 0
-                  ? `This also deletes ${projectThreadCount} linked thread${projectThreadCount === 1 ? "" : "s"}.`
+                confirmationProjectThreadCount > 0
+                  ? `This also deletes ${confirmationProjectThreadCount} linked thread${confirmationProjectThreadCount === 1 ? "" : "s"}.`
                   : "This removes only the project entry.",
               ].join("\n"),
             );
       if (!confirmed) return;
-      const result = await deleteProject({
-        environmentId: member.environmentId,
-        input: {
-          projectId: member.id,
-          ...(projectThreadCount > 0 ? { force: true } : {}),
-        },
-      });
-      reportCommandFailure("Failed to remove project", result);
-      if (result._tag !== "Success") return;
-      clearDeletedThreadStates({
-        targets: projectThreads.map((thread) => ({
-          threadRef: scopeThreadRef(thread.environmentId, thread.id),
-          projectRef: memberProjectRef,
-        })),
+      const readExactProjectThreadTargets = () =>
+        readEnvironmentThreadRefs(member.environmentId).flatMap((threadRef) => {
+          const thread = readThreadShell(threadRef);
+          return thread?.projectId === member.id
+            ? [{ threadRef, projectRef: memberProjectRef }]
+            : [];
+        });
+      const result = await runProjectDeletionLifecycle({
+        readThreadTargets: readExactProjectThreadTargets,
+        deleteProjectRecord: (targetsBeforeDelete) =>
+          deleteProject({
+            environmentId: member.environmentId,
+            input: {
+              projectId: member.id,
+              ...(targetsBeforeDelete.length > 0 ? { force: true } : {}),
+            },
+          }),
+        didDeleteProject: (deleteResult) => deleteResult._tag === "Success",
         actions: {
           clearComposerDraftForThread,
           clearProjectDraftThreadById,
@@ -942,6 +951,8 @@ export default function SidebarV2() {
           },
         },
       });
+      reportCommandFailure("Failed to remove project", result);
+      if (result._tag !== "Success") return;
       if (projectDraftThread) {
         draftStore.clearDraftThread(projectDraftThread.draftId);
       }

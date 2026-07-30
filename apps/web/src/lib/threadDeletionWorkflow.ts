@@ -1,3 +1,4 @@
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
 
 export interface DeletedThreadStateActions {
@@ -39,6 +40,37 @@ export function clearDeletedThreadState(input: ClearDeletedThreadStateInput): vo
     targets: [{ threadRef: input.threadRef, projectRef: input.projectRef }],
     actions: input.actions,
   });
+}
+
+export interface ProjectDeletionLifecycleInput<TResult> {
+  readThreadTargets: () => readonly DeletedThreadStateTarget[];
+  deleteProjectRecord: (
+    targetsBeforeDelete: readonly DeletedThreadStateTarget[],
+  ) => Promise<TResult>;
+  didDeleteProject: (result: TResult) => boolean;
+  actions: DeletedThreadStateActions;
+}
+
+export async function runProjectDeletionLifecycle<TResult>(
+  input: ProjectDeletionLifecycleInput<TResult>,
+): Promise<TResult> {
+  const targetsBeforeDelete = input.readThreadTargets();
+  const result = await input.deleteProjectRecord(targetsBeforeDelete);
+  if (!input.didDeleteProject(result)) {
+    return result;
+  }
+
+  const targetsByThreadKey = new Map(
+    targetsBeforeDelete.map((target) => [scopedThreadKey(target.threadRef), target] as const),
+  );
+  for (const target of input.readThreadTargets()) {
+    targetsByThreadKey.set(scopedThreadKey(target.threadRef), target);
+  }
+  clearDeletedThreadStates({
+    targets: [...targetsByThreadKey.values()],
+    actions: input.actions,
+  });
+  return result;
 }
 
 export interface ThreadDeletionLifecycleInput<TResult, TNavigationResult = never> {
