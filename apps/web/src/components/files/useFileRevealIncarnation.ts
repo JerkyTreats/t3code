@@ -1,4 +1,4 @@
-import { type RefObject, useLayoutEffect, useMemo, useRef } from "react";
+import { type RefObject, useInsertionEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import {
   createFileRevealIncarnation,
@@ -14,8 +14,15 @@ export function useFileRevealIncarnation(input: FileRevealIncarnation): {
     () => createFileRevealIncarnation(input),
     [input.ownerKey, input.relativePath, input.revealRequestId],
   );
-  const currentIncarnationRef = useRef<FileRevealIncarnation | null>(incarnation);
-  currentIncarnationRef.current = incarnation;
+  const currentIncarnationRef = useRef<FileRevealIncarnation | null>(null);
+  useInsertionEffect(() => {
+    currentIncarnationRef.current = incarnation;
+    return () => {
+      if (ownsFileRevealIncarnation(currentIncarnationRef.current, incarnation)) {
+        currentIncarnationRef.current = null;
+      }
+    };
+  }, [incarnation]);
   useLayoutEffect(() => {
     currentIncarnationRef.current = incarnation;
     return () => {
