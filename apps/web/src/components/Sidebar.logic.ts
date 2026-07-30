@@ -20,6 +20,7 @@ export const SIDEBAR_THREAD_PREWARM_LIMIT = 10;
 export const SIDEBAR_V2_ACTIVE_PAGE_SIZE = 50;
 export const SIDEBAR_V2_SETTLED_INITIAL_COUNT = 10;
 export const SIDEBAR_V2_SETTLED_PAGE_SIZE = 25;
+export const SIDEBAR_V2_SINGLE_CLICK_DELAY_MS = 180;
 export type SidebarNewThreadEnvMode = "local" | "worktree";
 type SidebarProject = {
   id: string;
@@ -82,6 +83,41 @@ function isPlanProgressCurrent(thread: ThreadStatusInput): boolean {
 export interface ThreadJumpHintVisibilityController {
   sync: (shouldShow: boolean) => void;
   dispose: () => void;
+}
+
+export interface DeferredSidebarV2ActivationController {
+  schedule: (activate: () => void) => void;
+  cancel: () => void;
+  dispose: () => void;
+}
+
+export function createDeferredSidebarV2ActivationController(input?: {
+  delayMs?: number;
+  setTimeoutFn?: typeof globalThis.setTimeout;
+  clearTimeoutFn?: typeof globalThis.clearTimeout;
+}): DeferredSidebarV2ActivationController {
+  const delayMs = input?.delayMs ?? SIDEBAR_V2_SINGLE_CLICK_DELAY_MS;
+  const setTimeoutFn = input?.setTimeoutFn ?? globalThis.setTimeout;
+  const clearTimeoutFn = input?.clearTimeoutFn ?? globalThis.clearTimeout;
+  let timeoutId: NodeJS.Timeout | null = null;
+
+  const cancel = () => {
+    if (timeoutId === null) return;
+    clearTimeoutFn(timeoutId);
+    timeoutId = null;
+  };
+
+  return {
+    schedule: (activate) => {
+      cancel();
+      timeoutId = setTimeoutFn(() => {
+        timeoutId = null;
+        activate();
+      }, delayMs);
+    },
+    cancel,
+    dispose: cancel,
+  };
 }
 
 export function resolveSidebarStageBadgeLabel(input: {
@@ -494,6 +530,71 @@ export function resolveSidebarV2SettledTimestamp(
   );
 }
 
+export function resolveSidebarV2ChangeRequestState(input: {
+  threadBranch: string | null;
+  status:
+    | {
+        readonly refName: string | null;
+        readonly pr: { readonly state: "open" | "closed" | "merged" } | null;
+      }
+    | null
+    | undefined;
+}): "open" | "closed" | "merged" | null {
+  if (input.threadBranch === null || input.status?.refName !== input.threadBranch) {
+    return null;
+  }
+  return input.status.pr?.state ?? null;
+}
+
+export interface SidebarV2VcsProbeGroup<TThread> {
+  readonly key: string;
+  readonly environmentId: string;
+  readonly cwd: string;
+  readonly threads: readonly TThread[];
+}
+
+export function groupSidebarV2VcsProbes<
+  TThread extends {
+    readonly environmentId: string;
+    readonly projectId: string;
+    readonly branch: string | null;
+    readonly worktreePath: string | null;
+  },
+>(input: {
+  threads: readonly TThread[];
+  projectCwd: (thread: TThread) => string | null;
+}): SidebarV2VcsProbeGroup<TThread>[] {
+  const groups = new Map<string, SidebarV2VcsProbeGroup<TThread>>();
+  for (const thread of input.threads) {
+    if (thread.branch === null) continue;
+    const cwd = thread.worktreePath ?? input.projectCwd(thread);
+    if (cwd === null) continue;
+    const key = `${thread.environmentId}\0${cwd}`;
+    const group = groups.get(key);
+    if (group) {
+      groups.set(key, { ...group, threads: [...group.threads, thread] });
+    } else {
+      groups.set(key, {
+        key,
+        environmentId: thread.environmentId,
+        cwd,
+        threads: [thread],
+      });
+    }
+  }
+  return [...groups.values()];
+}
+
+export function pruneSidebarV2ChangeRequestStates<T>(
+  current: ReadonlyMap<string, T>,
+  liveThreadKeys: ReadonlySet<string>,
+): ReadonlyMap<string, T> {
+  if ([...current.keys()].every((key) => liveThreadKeys.has(key))) {
+    return current;
+  }
+  return new Map([...current].filter(([key]) => liveThreadKeys.has(key)));
+}
+
 export function sortThreadsForSidebarV2<T extends Pick<SidebarThreadSummary, "id" | "createdAt">>(
   threads: readonly T[],
 ): T[] {
@@ -566,6 +667,22 @@ export function sortProjectGroupsForSidebarV2<
       left.projectKey.localeCompare(right.projectKey)
     );
   });
+}
+
+export function getSidebarV2ConcreteProjectTargets<
+  TGroup extends {
+    readonly projectKey: string;
+    readonly memberProjects: readonly unknown[];
+  },
+>(input: {
+  groups: readonly TGroup[];
+  scopedProjectKey: string | null;
+}): Array<TGroup["memberProjects"][number]> {
+  const groups =
+    input.scopedProjectKey === null
+      ? input.groups
+      : input.groups.filter((group) => group.projectKey === input.scopedProjectKey);
+  return groups.flatMap((group) => group.memberProjects);
 }
 
 export function paginateSidebarV2Threads<T>(input: {

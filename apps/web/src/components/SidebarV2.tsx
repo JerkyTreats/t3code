@@ -28,6 +28,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -42,7 +43,7 @@ import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { readLocalApi } from "../localApi";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import { useRightPanelStore } from "../rightPanelStore";
-import { useProjects, useServerConfigs, useThreadShells } from "../state/entities";
+import { readThreadShell, useProjects, useServerConfigs, useThreadShells } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
@@ -50,6 +51,7 @@ import { primaryServerKeybindingsAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useAtomCommand } from "../state/use-atom-command";
+import { useComposerDraftStore } from "../composerDraftStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import { formatRelativeTimeLabel } from "../timestampFormat";
@@ -65,12 +67,17 @@ import {
 import type { SidebarThreadSummary } from "../types";
 import { ProjectFavicon } from "./ProjectFavicon";
 import {
+  createDeferredSidebarV2ActivationController,
+  getSidebarV2ConcreteProjectTargets,
+  groupSidebarV2VcsProbes,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   paginateSidebarV2Threads,
+  pruneSidebarV2ChangeRequestStates,
   resolveAdjacentThreadId,
   resolveProjectStatusIndicator,
   resolveSidebarV2BulkSettleTargets,
+  resolveSidebarV2ChangeRequestState,
   resolveThreadStatusPill,
   SIDEBAR_V2_ACTIVE_PAGE_SIZE,
   SIDEBAR_V2_SETTLED_INITIAL_COUNT,
@@ -138,13 +145,11 @@ interface ThreadRowProps {
   onSettle: (threadRef: ScopedThreadRef) => void;
   onUnsettle: (threadRef: ScopedThreadRef) => void;
   onDelete: (threadRef: ScopedThreadRef) => void;
-  onChangeRequestState: (threadKey: string, state: "open" | "closed" | "merged" | null) => void;
 }
 
 const SidebarV2ThreadRow = memo(function SidebarV2ThreadRow(props: ThreadRowProps) {
   const {
     active,
-    onChangeRequestState,
     onDelete,
     onNavigate,
     onRename,
@@ -175,43 +180,33 @@ const SidebarV2ThreadRow = memo(function SidebarV2ThreadRow(props: ThreadRowProp
     },
   });
   const unread = status?.label === "Completed";
-  const gitCwd = thread.worktreePath ?? project?.workspaceRoot ?? null;
-  const gitStatus = useEnvironmentQuery(
-    thread.branch && gitCwd
-      ? vcsEnvironment.status({
-          environmentId: thread.environmentId,
-          input: { cwd: gitCwd },
-        })
-      : null,
-  );
-  const changeRequestState =
-    thread.branch && gitStatus.data?.refName === thread.branch
-      ? (gitStatus.data.pr?.state ?? null)
-      : null;
+  const activationControllerRef = useRef(createDeferredSidebarV2ActivationController());
 
-  useEffect(() => {
-    onChangeRequestState(threadKey, changeRequestState);
-    return () => onChangeRequestState(threadKey, null);
-  }, [changeRequestState, onChangeRequestState, threadKey]);
+  useEffect(() => () => activationControllerRef.current.dispose(), []);
 
   const activate = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
       if (isTrailingDoubleClick(event.detail)) {
+        activationControllerRef.current.cancel();
         event.preventDefault();
         return;
       }
       if (event.metaKey || event.ctrlKey) {
+        activationControllerRef.current.cancel();
         event.preventDefault();
         toggleThread(threadKey);
         return;
       }
       if (event.shiftKey) {
+        activationControllerRef.current.cancel();
         event.preventDefault();
         rangeSelectTo(threadKey, orderedThreadKeys);
         return;
       }
-      setAnchor(threadKey);
-      onNavigate(threadRef);
+      activationControllerRef.current.schedule(() => {
+        setAnchor(threadKey);
+        onNavigate(threadRef);
+      });
     },
     [onNavigate, orderedThreadKeys, rangeSelectTo, setAnchor, threadKey, threadRef, toggleThread],
   );
@@ -274,7 +269,11 @@ const SidebarV2ThreadRow = memo(function SidebarV2ThreadRow(props: ThreadRowProp
         data-sidebar-v2-thread-key={threadKey}
         className="flex w-full min-w-0 cursor-pointer flex-col gap-1.5 px-3 py-2.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
         onClick={activate}
-        onDoubleClick={() => onRename(thread)}
+        onDoubleClick={(event) => {
+          activationControllerRef.current.cancel();
+          if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+          onRename(thread);
+        }}
         onKeyDown={handleKeyDown}
       >
         <span className="flex w-full min-w-0 items-center gap-2">
@@ -381,6 +380,40 @@ const SidebarV2ThreadRow = memo(function SidebarV2ThreadRow(props: ThreadRowProp
   );
 });
 
+const SidebarV2ChangeRequestMonitor = memo(function SidebarV2ChangeRequestMonitor(props: {
+  environmentId: SidebarThreadSummary["environmentId"];
+  cwd: string;
+  threads: readonly SidebarThreadSummary[];
+  onChange: (states: ReadonlyMap<string, "open" | "closed" | "merged" | null>) => void;
+}) {
+  const { cwd, environmentId, onChange, threads } = props;
+  const gitStatus = useEnvironmentQuery(
+    vcsEnvironment.status({
+      environmentId,
+      input: { cwd },
+    }),
+  );
+  const states = useMemo(
+    () =>
+      new Map(
+        threads.map((thread) => [
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+          resolveSidebarV2ChangeRequestState({
+            threadBranch: thread.branch,
+            status: gitStatus.data,
+          }),
+        ]),
+      ),
+    [gitStatus.data, threads],
+  );
+
+  useEffect(() => {
+    onChange(states);
+  }, [onChange, states]);
+
+  return null;
+});
+
 export default function SidebarV2() {
   const projects = useProjects();
   const threads = useThreadShells();
@@ -399,6 +432,7 @@ export default function SidebarV2() {
   const autoSettleAfterDays = useClientSettings((settings) => settings.sidebarAutoSettleAfterDays);
   const projectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
   const threadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
+  const confirmThreadDelete = useClientSettings((settings) => settings.confirmThreadDelete);
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projectOrder = useUiStateStore((state) => state.projectOrder);
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
@@ -406,7 +440,7 @@ export default function SidebarV2() {
   const removeFromSelection = useThreadSelectionStore((state) => state.removeFromSelection);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const openAddProjectCommandPalette = useOpenAddProjectCommandPalette();
-  const { confirmAndDeleteThread } = useThreadActions();
+  const { deleteThread } = useThreadActions();
   const createProjectThread = useNewThreadHandler();
   const settleThread = useAtomCommand(threadEnvironment.settle, { reportFailure: false });
   const unsettleThread = useAtomCommand(threadEnvironment.unsettle, { reportFailure: false });
@@ -540,6 +574,30 @@ export default function SidebarV2() {
       ),
     [scopedProjectRefs, threads],
   );
+  const vcsProbeGroups = useMemo(
+    () =>
+      groupSidebarV2VcsProbes({
+        threads: visibleThreads,
+        projectCwd: (thread) =>
+          projectMemberByRef.get(projectRefKey(thread.environmentId, thread.projectId))
+            ?.workspaceRoot ?? null,
+      }),
+    [projectMemberByRef, visibleThreads],
+  );
+  const visibleThreadKeys = useMemo(
+    () =>
+      new Set(
+        visibleThreads.map((thread) =>
+          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+        ),
+      ),
+    [visibleThreads],
+  );
+  useEffect(() => {
+    setChangeRequestStateByKey((current) =>
+      pruneSidebarV2ChangeRequestStates(current, visibleThreadKeys),
+    );
+  }, [visibleThreadKeys]);
   const partition = useMemo(() => {
     const active: SidebarThreadSummary[] = [];
     const settled: SidebarThreadSummary[] = [];
@@ -583,16 +641,25 @@ export default function SidebarV2() {
     visibleCount: activeVisibleCount,
     activeThread: activeRouteThread,
   });
+  const settledRouteThread =
+    routeThreadKey === null
+      ? null
+      : (partition.settled.find(
+          (thread) =>
+            scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
+        ) ?? null);
   const settledPage = paginateSidebarV2Threads({
     threads: partition.settled,
     visibleCount: settledVisibleCount,
+    activeThread: settledRouteThread,
   });
+  const showSettledRows = settledExpanded || settledRouteThread !== null;
   const orderedThreadKeys = useMemo(
     () =>
-      [...activePage.visibleThreads, ...(settledExpanded ? settledPage.visibleThreads : [])].map(
+      [...activePage.visibleThreads, ...(showSettledRows ? settledPage.visibleThreads : [])].map(
         (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
       ),
-    [activePage.visibleThreads, settledExpanded, settledPage.visibleThreads],
+    [activePage.visibleThreads, settledPage.visibleThreads, showSettledRows],
   );
   const threadByKey = useMemo(
     () =>
@@ -644,6 +711,18 @@ export default function SidebarV2() {
     [projectGroups, threads],
   );
   const projectActionGroups = scopedProject ? [scopedProject] : projectGroups;
+  const newThreadMembers = getSidebarV2ConcreteProjectTargets({
+    groups: projectGroups,
+    scopedProjectKey: scopedProject?.projectKey ?? null,
+  }).map((member) => ({
+    group:
+      projectActionGroups.find((group) =>
+        group.memberProjects.some(
+          (candidate) => candidate.physicalProjectKey === member.physicalProjectKey,
+        ),
+      ) ?? projectActionGroups[0]!,
+    member,
+  }));
 
   const navigateToThread = useCallback(
     (threadRef: ScopedThreadRef) => {
@@ -656,17 +735,21 @@ export default function SidebarV2() {
     },
     [clearSelection, isMobile, router, setOpenMobile],
   );
-  const handleChangeRequestState = useCallback(
-    (threadKey: string, state: "open" | "closed" | "merged" | null) => {
+  const handleChangeRequestStates = useCallback(
+    (states: ReadonlyMap<string, "open" | "closed" | "merged" | null>) => {
       setChangeRequestStateByKey((current) => {
-        if ((current.get(threadKey) ?? null) === state) return current;
         const next = new Map(current);
-        if (state === null) {
-          next.delete(threadKey);
-        } else {
-          next.set(threadKey, state);
+        let changed = false;
+        for (const [threadKey, state] of states) {
+          if ((current.get(threadKey) ?? null) === state) continue;
+          changed = true;
+          if (state === null) {
+            next.delete(threadKey);
+          } else {
+            next.set(threadKey, state);
+          }
         }
-        return next;
+        return changed ? next : current;
       });
     },
     [],
@@ -756,10 +839,24 @@ export default function SidebarV2() {
   }, [removeFromSelection, reportCommandFailure, selectedTargets, settleThread]);
   const handleDelete = useCallback(
     async (threadRef: ScopedThreadRef) => {
-      const result = await confirmAndDeleteThread(threadRef);
+      const api = readLocalApi();
+      if (confirmThreadDelete && api) {
+        const thread = readThreadShell(threadRef);
+        const confirmed = await api.dialogs.confirm(
+          [
+            `Delete thread "${thread?.title ?? "this thread"}"?`,
+            "This permanently clears conversation history for this thread.",
+          ].join("\n"),
+        );
+        if (!confirmed) return;
+      }
+      const result = await deleteThread(threadRef);
       reportCommandFailure("Failed to delete thread", result);
+      if (result._tag === "Success") {
+        removeFromSelection([scopedThreadKey(threadRef)]);
+      }
     },
-    [confirmAndDeleteThread, reportCommandFailure],
+    [confirmThreadDelete, deleteThread, removeFromSelection, reportCommandFailure],
   );
   const submitRename = useCallback(async () => {
     if (!renameTarget) return;
@@ -794,6 +891,9 @@ export default function SidebarV2() {
   }, [projectRenameTarget, projectRenameTitle, reportCommandFailure, updateProject]);
   const handleRemoveProject = useCallback(
     async (member: SidebarProjectGroupMember) => {
+      const memberProjectRef = scopeProjectRef(member.environmentId, member.id);
+      const draftStore = useComposerDraftStore.getState();
+      const projectDraftThread = draftStore.getDraftThreadByProjectRef(memberProjectRef);
       const api = readLocalApi();
       const projectThreadCount = threads.filter(
         (thread) => thread.environmentId === member.environmentId && thread.projectId === member.id,
@@ -819,7 +919,12 @@ export default function SidebarV2() {
         },
       });
       reportCommandFailure("Failed to remove project", result);
-      if (result._tag === "Success" && projectScopeKey !== null) {
+      if (result._tag !== "Success") return;
+      if (projectDraftThread) {
+        draftStore.clearDraftThread(projectDraftThread.draftId);
+      }
+      draftStore.clearProjectDraftThreadId(memberProjectRef);
+      if (projectScopeKey !== null) {
         const group = projectGroups.find((candidate) =>
           candidate.memberProjects.some(
             (candidateMember) =>
@@ -885,13 +990,11 @@ export default function SidebarV2() {
           onSettle={(threadRef) => void handleSettle(threadRef)}
           onUnsettle={(threadRef) => void handleUnsettle(threadRef)}
           onDelete={(threadRef) => void handleDelete(threadRef)}
-          onChangeRequestState={handleChangeRequestState}
         />
       );
     },
     [
       handleDelete,
-      handleChangeRequestState,
       handleSettle,
       handleUnsettle,
       navigateToThread,
@@ -905,6 +1008,15 @@ export default function SidebarV2() {
 
   return (
     <>
+      {vcsProbeGroups.map((group) => (
+        <SidebarV2ChangeRequestMonitor
+          key={`change-request:${group.key}`}
+          environmentId={group.environmentId as SidebarThreadSummary["environmentId"]}
+          cwd={group.cwd}
+          threads={group.threads}
+          onChange={handleChangeRequestStates}
+        />
+      ))}
       <SidebarHeader className="gap-2 border-b border-border/70 px-2.5 pb-2 pt-3">
         <div className="flex items-center gap-2 px-1">
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -915,28 +1027,42 @@ export default function SidebarV2() {
               V2
             </span>
           </div>
-          <Tooltip>
-            <TooltipTrigger
+          <Menu>
+            <MenuTrigger
               render={
                 <button
                   type="button"
                   aria-label="New thread"
                   className="inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                  disabled={projectGroups.length === 0}
-                  onClick={() => {
-                    const member =
-                      scopedProject?.memberProjects[0] ?? projectGroups[0]?.memberProjects[0];
-                    if (member) {
-                      void createProjectThread(scopeProjectRef(member.environmentId, member.id));
-                    }
-                  }}
+                  disabled={newThreadMembers.length === 0}
                 />
               }
             >
               <PlusIcon className="size-4" />
-            </TooltipTrigger>
-            <TooltipPopup side="bottom">New thread</TooltipPopup>
-          </Tooltip>
+            </MenuTrigger>
+            <MenuPopup align="end" className="w-64">
+              <MenuGroupLabel>New thread in</MenuGroupLabel>
+              {newThreadMembers.map(({ group, member }) => (
+                <MenuItem
+                  key={member.physicalProjectKey}
+                  onClick={() =>
+                    void createProjectThread(scopeProjectRef(member.environmentId, member.id))
+                  }
+                >
+                  <ProjectFavicon
+                    environmentId={member.environmentId}
+                    cwd={member.workspaceRoot}
+                    className="size-3.5"
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    {group.groupedProjectCount > 1
+                      ? `${group.displayName} · ${member.environmentLabel ?? member.workspaceRoot}`
+                      : member.title}
+                  </span>
+                </MenuItem>
+              ))}
+            </MenuPopup>
+          </Menu>
         </div>
         <div className="flex items-center gap-1.5">
           <Menu>
@@ -1126,7 +1252,7 @@ export default function SidebarV2() {
               <ChevronRightIcon
                 className={cn(
                   "mr-1 size-3 text-muted-foreground transition-transform",
-                  settledExpanded && "rotate-90",
+                  showSettledRows && "rotate-90",
                 )}
               />
               <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/65">
@@ -1136,7 +1262,7 @@ export default function SidebarV2() {
                 {partition.settled.length}
               </span>
             </button>
-            {settledExpanded ? (
+            {showSettledRows ? (
               <>
                 <ul className="grid gap-1.5">
                   {settledPage.visibleThreads.map((thread) => renderThreadRow(thread, true))}
@@ -1162,21 +1288,43 @@ export default function SidebarV2() {
 
       <SidebarFooter className="border-t border-border/70 p-2">
         <div className="grid grid-cols-2 gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="justify-start text-xs text-muted-foreground"
-            onClick={() => {
-              const member =
-                scopedProject?.memberProjects[0] ?? projectGroups[0]?.memberProjects[0];
-              if (member) {
-                void createProjectThread(scopeProjectRef(member.environmentId, member.id));
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start text-xs text-muted-foreground"
+                  disabled={newThreadMembers.length === 0}
+                />
               }
-            }}
-          >
-            <PlusIcon />
-            New thread
-          </Button>
+            >
+              <PlusIcon />
+              New thread
+            </MenuTrigger>
+            <MenuPopup align="start" side="top" className="w-64">
+              <MenuGroupLabel>New thread in</MenuGroupLabel>
+              {newThreadMembers.map(({ group, member }) => (
+                <MenuItem
+                  key={member.physicalProjectKey}
+                  onClick={() =>
+                    void createProjectThread(scopeProjectRef(member.environmentId, member.id))
+                  }
+                >
+                  <ProjectFavicon
+                    environmentId={member.environmentId}
+                    cwd={member.workspaceRoot}
+                    className="size-3.5"
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    {group.groupedProjectCount > 1
+                      ? `${group.displayName} · ${member.environmentLabel ?? member.workspaceRoot}`
+                      : member.title}
+                  </span>
+                </MenuItem>
+              ))}
+            </MenuPopup>
+          </Menu>
           <Button
             variant="ghost"
             size="sm"

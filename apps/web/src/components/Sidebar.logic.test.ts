@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   createThreadJumpHintVisibilityController,
+  createDeferredSidebarV2ActivationController,
+  getSidebarV2ConcreteProjectTargets,
+  groupSidebarV2VcsProbes,
   getSidebarThreadIdsToPrewarm,
   getVisibleSidebarThreadIds,
   resolveAdjacentThreadId,
@@ -12,7 +15,9 @@ import {
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   paginateSidebarV2Threads,
+  pruneSidebarV2ChangeRequestStates,
   resolveSidebarV2BulkSettleTargets,
+  resolveSidebarV2ChangeRequestState,
   resolveSidebarV2SettledTimestamp,
   resolveProjectStatusIndicator,
   resolveSidebarNewThreadSeedContext,
@@ -26,6 +31,7 @@ import {
   sortSettledThreadsForSidebarV2,
   sortThreadsForSidebarV2,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
+  SIDEBAR_V2_SINGLE_CLICK_DELAY_MS,
 } from "./Sidebar.logic";
 import {
   EnvironmentId,
@@ -1175,6 +1181,115 @@ describe("sortProjectsForSidebar", () => {
 });
 
 describe("Sidebar V2 ordering and pagination", () => {
+  it("defers single click activation and cancels it for rename", () => {
+    vi.useFakeTimers();
+    const activate = vi.fn();
+    const controller = createDeferredSidebarV2ActivationController();
+
+    controller.schedule(activate);
+    controller.cancel();
+    vi.advanceTimersByTime(SIDEBAR_V2_SINGLE_CLICK_DELAY_MS);
+
+    expect(activate).not.toHaveBeenCalled();
+    controller.schedule(activate);
+    vi.advanceTimersByTime(SIDEBAR_V2_SINGLE_CLICK_DELAY_MS);
+    expect(activate).toHaveBeenCalledOnce();
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
+  it("keeps every concrete member available for grouped new thread actions", () => {
+    const local = { id: "local" };
+    const remote = { id: "remote" };
+    const other = { id: "other" };
+    const groups = [
+      {
+        projectKey: "group-shared",
+        memberProjects: [local, remote],
+      },
+      {
+        projectKey: "group-other",
+        memberProjects: [other],
+      },
+    ];
+
+    expect(
+      getSidebarV2ConcreteProjectTargets({
+        groups,
+        scopedProjectKey: "group-shared",
+      }),
+    ).toEqual([local, remote]);
+    expect(
+      getSidebarV2ConcreteProjectTargets({
+        groups,
+        scopedProjectKey: null,
+      }),
+    ).toEqual([local, remote, other]);
+  });
+
+  it("accepts change request state only from the exact thread branch", () => {
+    expect(
+      resolveSidebarV2ChangeRequestState({
+        threadBranch: "feature/sidebar",
+        status: {
+          refName: "feature/sidebar",
+          pr: { state: "merged" },
+        },
+      }),
+    ).toBe("merged");
+    expect(
+      resolveSidebarV2ChangeRequestState({
+        threadBranch: "feature/sidebar",
+        status: {
+          refName: "main",
+          pr: { state: "merged" },
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("coalesces change request probes by exact environment and cwd", () => {
+    const groups = groupSidebarV2VcsProbes({
+      threads: [
+        {
+          environmentId: "environment-local",
+          projectId: "project-1",
+          branch: "feature/one",
+          worktreePath: null,
+        },
+        {
+          environmentId: "environment-local",
+          projectId: "project-1",
+          branch: "feature/two",
+          worktreePath: null,
+        },
+        {
+          environmentId: "environment-remote",
+          projectId: "project-1",
+          branch: "feature/remote",
+          worktreePath: null,
+        },
+      ],
+      projectCwd: () => "/workspace",
+    });
+
+    expect(groups).toHaveLength(2);
+    expect(groups.map((group) => group.threads.length)).toEqual([2, 1]);
+  });
+
+  it("prunes change request state for removed shells", () => {
+    const current = new Map([
+      ["environment-local:thread-live", "open" as const],
+      ["environment-local:thread-removed", "merged" as const],
+    ]);
+    const pruned = pruneSidebarV2ChangeRequestStates(
+      current,
+      new Set(["environment-local:thread-live"]),
+    );
+
+    expect([...pruned]).toEqual([["environment-local:thread-live", "open"]]);
+  });
+
   it("orders logical groups from concrete environment and project identities", () => {
     const groups = [
       {
