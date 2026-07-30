@@ -21,11 +21,12 @@ const POSIX_FILE_ROOT_PREFIXES = [
   "/private/",
   "/root/",
 ] as const;
-const INLINE_CODE_DISQUALIFIER_PATTERN = /[\s`"'<>|;&$]/;
+const INLINE_CODE_DISQUALIFIER_PATTERN = /[\s`"'<>|;&$=]/;
 const INLINE_CODE_GLOB_PATTERN = /[*?[\]{}]/;
 const INLINE_CODE_FILE_EXTENSION_PATTERN = /\.[A-Za-z0-9_-]+$/;
 const INLINE_CODE_BARE_FILE_POSITION_PATTERN =
   /^[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9_-]+(?::\d+){1,2}$/;
+const INLINE_CODE_GIT_REF_PATTERN = /^refs[\\/](?:heads|remotes|tags)[\\/]/i;
 const INLINE_CODE_BARE_FILE_EXTENSIONS = new Set([
   "c",
   "conf",
@@ -128,6 +129,36 @@ const INLINE_CODE_PRIVATE_HOST_TLDS = new Set([
   "local",
   "localhost",
   "test",
+]);
+const INLINE_CODE_LOCAL_DOTTED_DIRECTORIES = new Set(["conf.d"]);
+const INLINE_CODE_EXTENSIONLESS_FILE_NAMES = new Set([
+  "AUTHORS",
+  "BUILD",
+  "Brewfile",
+  "Caddyfile",
+  "CHANGELOG",
+  "CODEOWNERS",
+  "CONTRIBUTORS",
+  "COPYING",
+  "Containerfile",
+  "Dockerfile",
+  "Fastfile",
+  "Gemfile",
+  "GNUmakefile",
+  "Jenkinsfile",
+  "Justfile",
+  "LICENCE",
+  "LICENSE",
+  "Makefile",
+  "NOTICE",
+  "Podfile",
+  "Procfile",
+  "Rakefile",
+  "README",
+  "Vagrantfile",
+  "WORKSPACE",
+  "justfile",
+  "makefile",
 ]);
 
 export interface MarkdownFileLinkMeta {
@@ -353,6 +384,7 @@ function normalizeWorkspaceTarget(targetPath: string, workspaceRoot: string): st
 
 function hasInlineCodeFileShape(candidate: string): boolean {
   const withoutPosition = candidate.replace(POSITION_SUFFIX_PATTERN, "");
+  const hasPosition = POSITION_SUFFIX_PATTERN.test(candidate);
   if (
     RELATIVE_PATH_PREFIX_PATTERN.test(withoutPosition) ||
     withoutPosition.startsWith("/") ||
@@ -367,13 +399,18 @@ function hasInlineCodeFileShape(candidate: string): boolean {
     const extension = basename.slice(basename.lastIndexOf(".") + 1).toLowerCase();
     return INLINE_CODE_BARE_FILE_EXTENSIONS.has(extension);
   }
+  const basename = basenameOfPath(withoutPosition);
+  if (hasPosition && INLINE_CODE_EXTENSIONLESS_FILE_NAMES.has(basename)) return true;
   if (!/[\\/]/.test(withoutPosition)) return false;
-  return INLINE_CODE_FILE_EXTENSION_PATTERN.test(basenameOfPath(withoutPosition));
+  return INLINE_CODE_FILE_EXTENSION_PATTERN.test(basename);
 }
 
 function looksLikeInlineCodeHost(candidate: string): boolean {
   const withoutPosition = candidate.replace(POSITION_SUFFIX_PATTERN, "");
   const firstSegment = withoutPosition.split(/[\\/]/, 1)[0]?.toLowerCase() ?? "";
+  if (firstSegment.startsWith(".") || INLINE_CODE_LOCAL_DOTTED_DIRECTORIES.has(firstSegment)) {
+    return false;
+  }
   if (firstSegment === "localhost" || /^(?:\d{1,3}\.){3}\d{1,3}$/.test(firstSegment)) {
     return true;
   }
@@ -397,6 +434,7 @@ export function resolveInlineCodeFileLinkMeta(
   workspaceRoot: string | undefined,
 ): MarkdownFileLinkMeta | null {
   const trimmed = codeText.trim();
+  const pathWithoutPosition = trimmed.replace(POSITION_SUFFIX_PATTERN, "");
   const windowsAbsolute =
     WINDOWS_DRIVE_PATH_PATTERN.test(trimmed) || WINDOWS_UNC_PATH_PATTERN.test(trimmed);
   if (
@@ -404,8 +442,11 @@ export function resolveInlineCodeFileLinkMeta(
     !cwd ||
     !workspaceRoot ||
     trimmed.includes("\u0000") ||
+    pathWithoutPosition.endsWith("/") ||
+    pathWithoutPosition.endsWith("\\") ||
     INLINE_CODE_DISQUALIFIER_PATTERN.test(trimmed) ||
     INLINE_CODE_GLOB_PATTERN.test(trimmed) ||
+    INLINE_CODE_GIT_REF_PATTERN.test(trimmed) ||
     looksLikeInlineCodeHost(trimmed) ||
     (!windowsAbsolute && hasExternalScheme(trimmed)) ||
     !hasInlineCodeFileShape(trimmed)
@@ -435,6 +476,20 @@ function inlineCodeSpanIsInsideBracketLabel(
   return after.includes("]");
 }
 
+function advanceRawAnchorDepth(
+  source: string,
+  start: number,
+  end: number,
+  initialDepth: number,
+): number {
+  let depth = initialDepth;
+  for (const match of source.slice(start, end).matchAll(/<\/?a(?:\s|>)/gi)) {
+    depth += match[0].startsWith("</") ? -1 : 1;
+    depth = Math.max(depth, 0);
+  }
+  return depth;
+}
+
 function normalizeInlineCodeText(value: string): string {
   const normalized = value.replaceAll("\n", " ");
   if (
@@ -456,19 +511,23 @@ export function extractLinkableInlineCodeSpans(markdown: string): InlineCodeSpan
   const spans: InlineCodeSpan[] = [];
   let offset = 0;
   let fence: { readonly marker: "`" | "~"; readonly length: number } | null = null;
+  let rawAnchorDepth = 0;
 
   for (const lineWithNewline of markdown.match(/[^\n]*(?:\n|$)/g) ?? []) {
     if (lineWithNewline.length === 0) continue;
     const line = lineWithNewline.endsWith("\n") ? lineWithNewline.slice(0, -1) : lineWithNewline;
-    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    const fenceMatch = line.match(
+      /^(?:(?: {0,3}>[ \t]?)+)?[ \t]*(?:(?:[-+*]|\d{1,9}[.)])[ \t]+)?[ \t]*(`{3,}|~{3,})(.*)$/,
+    );
     if (fenceMatch?.[1]) {
       const marker = fenceMatch[1][0] as "`" | "~";
+      const trailing = fenceMatch[2] ?? "";
       if (!fence) {
         fence = { marker, length: fenceMatch[1].length };
       } else if (
         marker === fence.marker &&
         fenceMatch[1].length >= fence.length &&
-        /^ {0,3}(?:`{3,}|~{3,})\s*$/.test(line)
+        trailing.trim().length === 0
       ) {
         fence = null;
       }
@@ -478,6 +537,7 @@ export function extractLinkableInlineCodeSpans(markdown: string): InlineCodeSpan
 
     if (!fence) {
       let cursor = 0;
+      let rawHtmlCursor = 0;
       while (cursor < line.length) {
         if (line[cursor] !== "`") {
           cursor += 1;
@@ -489,7 +549,11 @@ export function extractLinkableInlineCodeSpans(markdown: string): InlineCodeSpan
         const closingStart = line.indexOf(marker, runEnd);
         if (closingStart < 0) break;
         const closingEnd = closingStart + marker.length;
-        if (!inlineCodeSpanIsInsideBracketLabel(markdown, offset + cursor, offset + closingEnd)) {
+        rawAnchorDepth = advanceRawAnchorDepth(line, rawHtmlCursor, cursor, rawAnchorDepth);
+        if (
+          !inlineCodeSpanIsInsideBracketLabel(markdown, offset + cursor, offset + closingEnd) &&
+          rawAnchorDepth === 0
+        ) {
           const text = normalizeInlineCodeText(line.slice(runEnd, closingStart));
           if (text.length > 0) {
             spans.push({
@@ -499,8 +563,10 @@ export function extractLinkableInlineCodeSpans(markdown: string): InlineCodeSpan
             });
           }
         }
+        rawHtmlCursor = closingEnd;
         cursor = closingEnd;
       }
+      rawAnchorDepth = advanceRawAnchorDepth(line, rawHtmlCursor, line.length, rawAnchorDepth);
     }
     offset += lineWithNewline.length;
   }

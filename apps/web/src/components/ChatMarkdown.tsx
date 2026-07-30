@@ -174,7 +174,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
       ...(defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
       "id",
     ],
-    code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
+    code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta"],
   },
   protocols: {
     ...defaultSchema.protocols,
@@ -259,26 +259,6 @@ function remarkPreserveCodeMeta() {
     };
 
     visit(tree);
-  };
-}
-
-function remarkTagInlineCode() {
-  return (tree: MarkdownAstNode) => {
-    const visit = (node: MarkdownAstNode, insideLink: boolean) => {
-      if (node.type === "inlineCode" && !insideLink) {
-        node.data = {
-          ...node.data,
-          hProperties: {
-            ...node.data?.hProperties,
-            dataInlineCode: "",
-          },
-        };
-      }
-      const childInsideLink = insideLink || node.type === "link" || node.type === "linkReference";
-      node.children?.forEach((child) => visit(child, childInsideLink));
-    };
-
-    visit(tree, false);
   };
 }
 
@@ -1654,24 +1634,23 @@ function ChatMarkdown({
     }
     return metaByHref;
   }, [cwd, text, workspaceRoot]);
-  const inlineCodeFileLinkMetaByText = useMemo(() => {
-    const metaByText = new Map<string, MarkdownFileLinkMeta>();
+  const inlineCodeFileLinkMetaBySourceRange = useMemo(() => {
+    const metaBySourceRange = new Map<string, MarkdownFileLinkMeta>();
     for (const span of extractLinkableInlineCodeSpans(text)) {
-      if (metaByText.has(span.text)) continue;
       const meta = resolveInlineCodeFileLinkMeta(span.text, cwd, inlineCodeWorkspaceRoot);
       if (meta) {
-        metaByText.set(span.text, meta);
+        metaBySourceRange.set(`${span.start}:${span.end}`, meta);
       }
     }
-    return metaByText;
+    return metaBySourceRange;
   }, [cwd, inlineCodeWorkspaceRoot, text]);
   const fileLinkParentSuffixByPath = useMemo(() => {
     const filePaths = [
       ...[...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath),
-      ...[...inlineCodeFileLinkMetaByText.values()].map((meta) => meta.filePath),
+      ...[...inlineCodeFileLinkMetaBySourceRange.values()].map((meta) => meta.filePath),
     ];
     return buildFileLinkParentSuffixByPath(filePaths);
-  }, [inlineCodeFileLinkMetaByText, markdownFileLinkMetaByHref]);
+  }, [inlineCodeFileLinkMetaBySourceRange, markdownFileLinkMetaByHref]);
   const markdownUrlTransform = useCallback((href: string) => {
     return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
   }, []);
@@ -1900,14 +1879,14 @@ function ChatMarkdown({
         );
       },
       code({ node, children, className, ...props }) {
-        if (node?.properties?.dataInlineCode != null) {
-          const codeText = nodeToPlainText(children);
-          const fileLinkMeta =
-            inlineCodeFileLinkMetaByText.get(codeText) ??
-            resolveInlineCodeFileLinkMeta(codeText, cwd, inlineCodeWorkspaceRoot);
-          if (fileLinkMeta) {
-            return fileLinkChip(fileLinkMeta, `\`${codeText}\``);
-          }
+        const sourceStart = node?.position?.start.offset;
+        const sourceEnd = node?.position?.end.offset;
+        const fileLinkMeta =
+          typeof sourceStart === "number" && typeof sourceEnd === "number"
+            ? inlineCodeFileLinkMetaBySourceRange.get(`${sourceStart}:${sourceEnd}`)
+            : undefined;
+        if (fileLinkMeta) {
+          return fileLinkChip(fileLinkMeta, `\`${nodeToPlainText(children)}\``);
         }
         return (
           <code {...props} className={className}>
@@ -1972,7 +1951,7 @@ function ChatMarkdown({
     documentMode,
     diffThemeName,
     fileLinkParentSuffixByPath,
-    inlineCodeFileLinkMetaByText,
+    inlineCodeFileLinkMetaBySourceRange,
     inlineCodeWorkspaceRoot,
     isStreaming,
     markdownFileLinkMetaByHref,
@@ -1988,8 +1967,8 @@ function ChatMarkdown({
   ]);
   const remarkPlugins = useMemo(() => {
     const plugins = lineBreaks
-      ? [remarkGfm, remarkBreaks, remarkPreserveCodeMeta, remarkTagInlineCode]
-      : [remarkGfm, remarkPreserveCodeMeta, remarkTagInlineCode];
+      ? [remarkGfm, remarkBreaks, remarkPreserveCodeMeta]
+      : [remarkGfm, remarkPreserveCodeMeta];
     return documentMode ? [...plugins, remarkDocumentHeadingIds] : plugins;
   }, [documentMode, lineBreaks]);
 

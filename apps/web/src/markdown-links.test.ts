@@ -184,6 +184,16 @@ describe("resolveInlineCodeFileLinkMeta", () => {
     ).toMatchObject({
       targetPath: "/repo/project/conf.d/nginx.conf",
     });
+    expect(
+      resolveInlineCodeFileLinkMeta(".plans/release.md", workspaceRoot, workspaceRoot),
+    ).toMatchObject({
+      targetPath: "/repo/project/.plans/release.md",
+    });
+    expect(
+      resolveInlineCodeFileLinkMeta("conf.d/nginx.conf", workspaceRoot, workspaceRoot),
+    ).toMatchObject({
+      targetPath: "/repo/project/conf.d/nginx.conf",
+    });
   });
 
   it("resolves workspace-contained absolute and windows paths", () => {
@@ -239,6 +249,25 @@ describe("resolveInlineCodeFileLinkMeta", () => {
       targetPath: "/repo/project/script.ts:10",
       line: 10,
     });
+    expect(
+      resolveInlineCodeFileLinkMeta("Makefile:12", workspaceRoot, workspaceRoot),
+    ).toMatchObject({
+      targetPath: "/repo/project/Makefile:12",
+      line: 12,
+    });
+    expect(
+      resolveInlineCodeFileLinkMeta("Dockerfile:8:2", workspaceRoot, workspaceRoot),
+    ).toMatchObject({
+      targetPath: "/repo/project/Dockerfile:8:2",
+      line: 8,
+      column: 2,
+    });
+    expect(
+      resolveInlineCodeFileLinkMeta("src/Makefile:12", workspaceRoot, workspaceRoot),
+    ).toMatchObject({
+      targetPath: "/repo/project/src/Makefile:12",
+      line: 12,
+    });
     expect(resolveInlineCodeFileLinkMeta("AGENTS.md", workspaceRoot, workspaceRoot)).toBeNull();
   });
 
@@ -271,6 +300,7 @@ describe("resolveInlineCodeFileLinkMeta", () => {
       "example.uk/index.html",
       "example.museum/index.html",
       "example.photography/index.html",
+      "example.d/index.html",
       "example.museum:8080",
       "service.internal/index.html",
       "localhost/index.html",
@@ -282,6 +312,13 @@ describe("resolveInlineCodeFileLinkMeta", () => {
       "origin/main",
       "apps/web",
       "node.meta",
+      "refs/tags/v1.2.3",
+      "refs/heads/release.v1",
+      "FILE=src/main.ts",
+      "--config=src/main.ts",
+      "src/",
+      "./conf.d/",
+      "src/:12",
     ];
     for (const candidate of rejected) {
       expect(
@@ -339,6 +376,42 @@ describe("extractLinkableInlineCodeSpans", () => {
     expect(spans.map((span) => markdown.slice(span.start, span.end))).toEqual([
       "`src/a.ts`",
       "`src/b.ts:2`",
+    ]);
+  });
+
+  it("excludes blockquote and list-nested fenced code", () => {
+    const markdown = [
+      "> ```ts",
+      "> const quoted = `src/quoted.ts`;",
+      "> ```",
+      "",
+      "- ```sh",
+      "  echo `src/list-hidden.ts`",
+      "  ```",
+      "",
+      "Visible `src/visible.ts`",
+    ].join("\n");
+
+    expect(extractLinkableInlineCodeSpans(markdown).map((span) => span.text)).toEqual([
+      "src/visible.ts",
+    ]);
+  });
+
+  it("does not expose user-authored markers or code inside raw anchors", () => {
+    const markdown = [
+      '<code data-inline-code="true">src/spoof.ts</code>',
+      '<a href="/existing">`src/nested.ts`</a>',
+      '<a href="/existing">',
+      "`src/multiline-nested.ts`",
+      "</a>",
+      "```html",
+      "<a>`src/fenced-raw-anchor.ts`</a>",
+      "```",
+      "Real `src/real.ts`",
+    ].join("\n");
+
+    expect(extractLinkableInlineCodeSpans(markdown).map((span) => span.text)).toEqual([
+      "src/real.ts",
     ]);
   });
 });

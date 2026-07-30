@@ -217,8 +217,11 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Link inline code only when it has strong file path evidence and resolves below the active workspace root.
 - Resolve nested document paths from the document directory while using the workspace root for containment and preview metadata.
 - Keep fenced code, existing links and references, URLs, hosts, commands, globs, bare refs, malformed targets, and workspace escapes as plain code.
+- Keep known local dotted directories such as `.plans` and `conf.d` linkable while rejecting arbitrary dotted host shaped roots.
+- Keep extensionless conventional filenames linkable only when line qualified.
 - Preserve line and column metadata, duplicate basename parent suffixes, copy behavior, preferred editor routing, and eligible in app preview behavior.
-- Keep the inline code AST tag compatible with fenced extraction and skill token rendering.
+- Match rendered code against standalone markdown source ranges so raw HTML cannot opt into linkification or create nested anchors.
+- Keep fence extraction aware of blockquote and list containers so hidden fenced paths do not affect parent suffix disambiguation.
 
 ## Feature Spec Contract
 
