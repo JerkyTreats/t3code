@@ -3477,9 +3477,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           });
         }
 
-        const removableActivity = activityMappings.find(
-          (mapping) => mapping.activity.id !== reservedContextActivityId,
-        );
+        const oldestActivity = activityMappings[0];
+        const removableActivity =
+          oldestActivity?.activity.id === reservedContextActivityId ? undefined : oldestActivity;
         const candidates = [
           messages[0] === undefined
             ? null
@@ -3515,20 +3515,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             proposedPlansHaveMoreBefore = true;
             break;
           case "activities":
-            {
-              const removableIndex = activityMappings.findIndex(
-                (mapping) => mapping.activity.id === removableActivity?.activity.id,
-              );
-              if (removableIndex < 0) {
-                return yield* new PersistenceDecodeError({
-                  operation:
-                    "ProjectionSnapshotQuery.getThreadDetailV2ById:reservedContextResponseBound",
-                  issue: `Reserved context activity exceeds ${THREAD_SYNC_V2_MAX_PAGE_RESPONSE_BYTES} bytes`,
-                  correlation: { threadId },
-                });
-              }
-              activityMappings = activityMappings.filter((_, index) => index !== removableIndex);
-            }
+            activityMappings = activityMappings.slice(1);
             activitiesHaveMoreBefore = true;
             break;
           case "checkpoints":

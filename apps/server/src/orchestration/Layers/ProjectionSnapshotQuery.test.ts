@@ -1581,6 +1581,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       const threadId = ThreadId.make("thread-reserved-context");
       const largeContextSummary = "c".repeat(6_000_000);
       const largeMessage = "m".repeat(3_000_000);
+      const largeLaterActivitySummary = "a".repeat(3_000_000);
 
       yield* sql`DELETE FROM projection_projects`;
       yield* sql`DELETE FROM projection_threads`;
@@ -1718,6 +1719,44 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         });
         assert.isTrue(snapshot.value.estimatedSerializedBytes <= 8 * 1024 * 1024);
       }
+
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id,
+          thread_id,
+          turn_id,
+          tone,
+          kind,
+          summary,
+          payload_json,
+          sequence,
+          created_at
+        )
+        VALUES (
+          'activity-after-reserved-context',
+          ${threadId},
+          'turn-after-reserved-context',
+          'info',
+          'runtime.note',
+          ${largeLaterActivitySummary},
+          '{}',
+          2,
+          '2026-04-02T00:00:06.000Z'
+        )
+      `;
+
+      const error = yield* snapshotQuery
+        .getThreadDetailV2ById(threadId, {
+          messages: 1,
+          activities: 2,
+        })
+        .pipe(Effect.flip);
+
+      assert.equal(error._tag, "PersistenceDecodeError");
+      assert.equal(
+        error.operation,
+        "ProjectionSnapshotQuery.getThreadDetailV2ById:reservedContextResponseBound",
+      );
     }),
   );
 

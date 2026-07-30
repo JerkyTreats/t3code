@@ -99,7 +99,8 @@ Current owner modules:
 - Keep server projection as the only owner of context-window activity trimming.
 - Apply retention before selecting a contiguous V2 suffix and expose the effective expanded activity window.
 - Keep explicit activity pages on a dedicated untrimmed query path, including requests without a cursor.
-- Keep the reserved usable row through response byte trimming, remove every eligible peer category first, and fail explicitly only when the reserved row and metadata cannot fit.
+- Trim activities only from the oldest edge before the reserved usable row.
+- Once the reserved usable row is oldest, keep its complete contiguous activity suffix, drain every eligible peer category, and fail explicitly when that suffix and metadata cannot fit.
 - Add compression through narrow HTTP and WebSocket seams without replacing the connection driver, supervisor, outbox, thread synchronization, or diagnostics subtrees.
 - Patch only the selected Effect platform package behavior needed for WebSocket compression and register the patch explicitly.
 - Preserve every diagnostic redaction boundary while adding compression and replay metrics.

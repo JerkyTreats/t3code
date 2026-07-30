@@ -208,7 +208,8 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Expand the bounded V2 activity suffix contiguously when malformed rows would displace usable state.
 - Keep one usable row for every surviving turn so a turn revert can reveal older context state.
 - Preserve complete before-cursor recovery and keep no-cursor explicit activity pages untrimmed.
-- Protect the reserved usable row during byte trimming while eligible peer categories remain.
+- Trim activities only from the oldest edge before the reserved usable row.
+- Once the reserved usable row is oldest, keep its complete contiguous activity suffix while draining eligible peer categories.
 - Treat every null-turn context row as an independent activity identity in V1 and V2.
 
 ## Feature Spec Contract
