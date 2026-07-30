@@ -29,7 +29,15 @@ import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connect
 import { CommandId, type EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Arr from "effect/Array";
@@ -52,6 +60,7 @@ import { uuidv4 } from "../../lib/uuid";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import { createProjectDestinationNavigationCoordinator } from "./projectDestinationNavigation";
 import { resolveProjectEnvironmentFromParam } from "./projectEnvironmentSelection";
 
 interface EnvironmentOption {
@@ -527,19 +536,22 @@ export function AddProjectRepositoryScreen(props: {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const destinationNavigationRef = useRef<ReturnType<
-    typeof createBrowseNavigationCoordinator
+    typeof createProjectDestinationNavigationCoordinator
   > | null>(null);
   if (destinationNavigationRef.current === null) {
-    destinationNavigationRef.current = createBrowseNavigationCoordinator();
+    destinationNavigationRef.current = createProjectDestinationNavigationCoordinator();
   }
   const destinationNavigation = destinationNavigationRef.current;
 
-  useEffect(
-    () => () => {
+  useLayoutEffect(() => {
+    destinationNavigation.updateContext({
+      environmentId: environment?.environmentId ?? null,
+      source,
+    });
+    return () => {
       destinationNavigation.invalidate();
-    },
-    [destinationNavigation],
-  );
+    };
+  }, [destinationNavigation, environment?.environmentId, source]);
 
   const lookupRepository = useCallback(async () => {
     if (!environment || repositoryInput.trim().length === 0 || isSubmitting) return;
