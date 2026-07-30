@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  extractLinkableInlineCodeSpans,
+  resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
   resolveMarkdownFileLinkTarget,
   rewriteMarkdownFileUriHref,
@@ -147,5 +149,196 @@ describe("resolveMarkdownFileLinkTarget", () => {
 
   it("does not treat app routes as file links", () => {
     expect(resolveMarkdownFileLinkTarget("/chat/settings")).toBeNull();
+  });
+});
+
+describe("resolveInlineCodeFileLinkMeta", () => {
+  const workspaceRoot = "/repo/project";
+
+  it("resolves document-relative paths inside the workspace", () => {
+    expect(
+      resolveInlineCodeFileLinkMeta(
+        "../../src/main.ts:71:4",
+        "/repo/project/docs/guides",
+        workspaceRoot,
+      ),
+    ).toMatchObject({
+      filePath: "/repo/project/src/main.ts",
+      targetPath: "/repo/project/src/main.ts:71:4",
+      workspaceRelativePath: "src/main.ts",
+      basename: "main.ts",
+      line: 71,
+      column: 4,
+    });
+  });
+
+  it("resolves explicit extensionless paths inside the workspace", () => {
+    expect(
+      resolveInlineCodeFileLinkMeta("./scripts/deploy", workspaceRoot, workspaceRoot),
+    ).toMatchObject({
+      targetPath: "/repo/project/scripts/deploy",
+      workspaceRelativePath: "scripts/deploy",
+    });
+    expect(
+      resolveInlineCodeFileLinkMeta("./conf.d/nginx.conf", workspaceRoot, workspaceRoot),
+    ).toMatchObject({
+      targetPath: "/repo/project/conf.d/nginx.conf",
+    });
+  });
+
+  it("resolves workspace-contained absolute and windows paths", () => {
+    expect(
+      resolveInlineCodeFileLinkMeta("/repo/project/AGENTS.md", "/repo/project/docs", workspaceRoot),
+    ).toMatchObject({
+      filePath: "/repo/project/AGENTS.md",
+    });
+    expect(
+      resolveInlineCodeFileLinkMeta(
+        "/repo/project/scripts/deploy",
+        "/repo/project/docs",
+        workspaceRoot,
+      ),
+    ).toMatchObject({
+      filePath: "/repo/project/scripts/deploy",
+    });
+    expect(
+      resolveInlineCodeFileLinkMeta("src\\main.ts:9", "C:\\repo\\project", "C:\\repo\\project"),
+    ).toMatchObject({
+      targetPath: "C:/repo/project/src/main.ts:9",
+      workspaceRelativePath: "src/main.ts",
+      line: 9,
+    });
+    expect(
+      resolveInlineCodeFileLinkMeta(
+        "C:\\repo\\project\\src\\absolute.ts:11:3",
+        "C:\\repo\\project",
+        "C:\\repo\\project",
+      ),
+    ).toMatchObject({
+      targetPath: "C:/repo/project/src/absolute.ts:11:3",
+      line: 11,
+      column: 3,
+    });
+    expect(
+      resolveInlineCodeFileLinkMeta(
+        "\\\\server\\share\\project\\src\\main.ts:5",
+        "\\\\server\\share\\project",
+        "\\\\server\\share\\project",
+      ),
+    ).toMatchObject({
+      targetPath: "//server/share/project/src/main.ts:5",
+      workspaceRelativePath: "src/main.ts",
+      line: 5,
+    });
+  });
+
+  it("allows a bare filename only with an explicit line reference", () => {
+    expect(
+      resolveInlineCodeFileLinkMeta("script.ts:10", workspaceRoot, workspaceRoot),
+    ).toMatchObject({
+      targetPath: "/repo/project/script.ts:10",
+      line: 10,
+    });
+    expect(resolveInlineCodeFileLinkMeta("AGENTS.md", workspaceRoot, workspaceRoot)).toBeNull();
+  });
+
+  it("rejects workspace escapes after normalizing dot segments", () => {
+    expect(
+      resolveInlineCodeFileLinkMeta("../../secrets.txt", "/repo/project/docs", workspaceRoot),
+    ).toBeNull();
+    expect(
+      resolveInlineCodeFileLinkMeta("/repo/project-other/file.ts", workspaceRoot, workspaceRoot),
+    ).toBeNull();
+    expect(
+      resolveInlineCodeFileLinkMeta(
+        "C:\\repo\\other\\main.ts",
+        "C:\\repo\\project",
+        "C:\\repo\\project",
+      ),
+    ).toBeNull();
+  });
+
+  it("requires both a cwd and workspace root", () => {
+    expect(resolveInlineCodeFileLinkMeta("src/main.ts", workspaceRoot, undefined)).toBeNull();
+    expect(resolveInlineCodeFileLinkMeta("src/main.ts", undefined, workspaceRoot)).toBeNull();
+  });
+
+  it("rejects urls, hosts, commands, globs, and bare refs", () => {
+    const rejected = [
+      "https://example.com/docs.html",
+      "file:///repo/project/main.ts",
+      "example.com/index.html",
+      "example.uk/index.html",
+      "example.museum/index.html",
+      "example.photography/index.html",
+      "example.museum:8080",
+      "service.internal/index.html",
+      "localhost/index.html",
+      "127.0.0.1/index.html",
+      "pnpm install",
+      "git;status",
+      "src/**/*.ts",
+      "src/{main,test}.ts",
+      "origin/main",
+      "apps/web",
+      "node.meta",
+    ];
+    for (const candidate of rejected) {
+      expect(
+        resolveInlineCodeFileLinkMeta(candidate, workspaceRoot, workspaceRoot),
+        candidate,
+      ).toBeNull();
+    }
+  });
+
+  it("rejects malformed targets", () => {
+    for (const candidate of [
+      "",
+      "`src/main.ts`",
+      '"src/main.ts"',
+      "src/<main>.ts",
+      "src/ma|in.ts",
+    ]) {
+      expect(
+        resolveInlineCodeFileLinkMeta(candidate, workspaceRoot, workspaceRoot),
+        candidate,
+      ).toBeNull();
+    }
+  });
+});
+
+describe("extractLinkableInlineCodeSpans", () => {
+  it("collects inline code while excluding fenced code and linked labels", () => {
+    const markdown = [
+      "Open `src/main.ts:7` and ``docs/`guide`.md``.",
+      "",
+      "```ts",
+      "const hidden = `src/hidden.ts`;",
+      "```",
+      "",
+      "[`src/existing.ts`](./src/existing.ts)",
+      "[`src/reference.ts`][source]",
+      "",
+      "[source]: ./src/reference.ts",
+      "",
+      "Keep `origin/main` as plain code.",
+    ].join("\n");
+
+    expect(extractLinkableInlineCodeSpans(markdown).map((span) => span.text)).toEqual([
+      "src/main.ts:7",
+      "docs/`guide`.md",
+      "origin/main",
+    ]);
+  });
+
+  it("excludes tilde fences and preserves source offsets", () => {
+    const markdown = "Before `src/a.ts`\n~~~text\n`src/hidden.ts`\n~~~\nAfter `src/b.ts:2`";
+    const spans = extractLinkableInlineCodeSpans(markdown);
+
+    expect(spans.map((span) => span.text)).toEqual(["src/a.ts", "src/b.ts:2"]);
+    expect(spans.map((span) => markdown.slice(span.start, span.end))).toEqual([
+      "`src/a.ts`",
+      "`src/b.ts:2`",
+    ]);
   });
 });

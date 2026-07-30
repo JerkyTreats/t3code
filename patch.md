@@ -212,6 +212,14 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Once the reserved usable row is oldest, keep its complete contiguous activity suffix while draining eligible peer categories.
 - Treat every null-turn context row as an independent activity identity in V1 and V2.
 
+## F9 Workspace Contained Inline Code Links
+
+- Link inline code only when it has strong file path evidence and resolves below the active workspace root.
+- Resolve nested document paths from the document directory while using the workspace root for containment and preview metadata.
+- Keep fenced code, existing links and references, URLs, hosts, commands, globs, bare refs, malformed targets, and workspace escapes as plain code.
+- Preserve line and column metadata, duplicate basename parent suffixes, copy behavior, preferred editor routing, and eligible in app preview behavior.
+- Keep the inline code AST tag compatible with fenced extraction and skill token rendering.
+
 ## Feature Spec Contract
 
 Every spec under `fork/` must include:

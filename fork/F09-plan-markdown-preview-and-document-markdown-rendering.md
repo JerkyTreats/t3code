@@ -24,6 +24,10 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - The document renderer can hide the source footer when the preview is virtual rather than backed by a real workspace file.
 - Project files preview remains part of this feature area because it is the primary in app consumer of document markdown navigation, document preview routing, image resolution, and source file open behavior.
 - Document outline affordances remain available when a document preview exposes heading structure.
+- Inline code becomes a file link only when the candidate has strong path evidence and its normalized target remains inside the current workspace root.
+- Inline code path resolution uses the document directory as cwd while retaining the workspace root as the containment and preview metadata boundary.
+- Fenced code, existing markdown links and references, URLs, hosts, commands, globs, bare refs, malformed targets, and workspace escapes remain plain code.
+- Inline file links preserve line and column metadata, duplicate basename parent suffixes, copy behavior, preferred editor behavior, and eligible in app preview behavior.
 
 ## Owner Modules
 
@@ -58,6 +62,8 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Rebuild document markdown as a richer document surface, not as chat markdown reuse.
 - Verify file preview links from chat messages, files panel, and project document previews.
 - Keep code file preview behavior distinct from rendered markdown document behavior.
+- Rebuild inline code file links through the shared markdown link resolver and keep workspace containment fail closed.
+- Tag inline code at the markdown AST boundary so custom code rendering does not mistake fenced code or linked code labels for standalone file references.
 
 ## Origin Rebuild Rule
 
@@ -80,6 +86,9 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Document outline entries reflect rendered heading structure and navigate to the selected heading.
 - Virtual plan preview hides source file footer while real project document previews keep source open behavior available.
 - Code file preview links from chat open the code preview surface and do not render as broken markdown.
+- Workspace-contained inline code paths render as file links from chat and nested document previews.
+- Ambiguous inline code and targets outside the workspace remain plain code.
+- Inline code file links retain line and column labels and disambiguate duplicate basenames by parent suffix.
 
 ## Compatibility Checks
 

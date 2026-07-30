@@ -21,6 +21,114 @@ const POSIX_FILE_ROOT_PREFIXES = [
   "/private/",
   "/root/",
 ] as const;
+const INLINE_CODE_DISQUALIFIER_PATTERN = /[\s`"'<>|;&$]/;
+const INLINE_CODE_GLOB_PATTERN = /[*?[\]{}]/;
+const INLINE_CODE_FILE_EXTENSION_PATTERN = /\.[A-Za-z0-9_-]+$/;
+const INLINE_CODE_BARE_FILE_POSITION_PATTERN =
+  /^[A-Za-z0-9][A-Za-z0-9._-]*\.[A-Za-z0-9_-]+(?::\d+){1,2}$/;
+const INLINE_CODE_BARE_FILE_EXTENSIONS = new Set([
+  "c",
+  "conf",
+  "cpp",
+  "css",
+  "env",
+  "go",
+  "h",
+  "html",
+  "ini",
+  "java",
+  "js",
+  "json",
+  "jsx",
+  "kt",
+  "lock",
+  "md",
+  "php",
+  "pl",
+  "pt",
+  "py",
+  "rb",
+  "rs",
+  "sh",
+  "sql",
+  "svelte",
+  "swift",
+  "toml",
+  "ts",
+  "tsx",
+  "txt",
+  "vue",
+  "xml",
+  "yaml",
+  "yml",
+  "zsh",
+]);
+const INLINE_CODE_HOST_TLDS = new Set([
+  "ai",
+  "app",
+  "biz",
+  "cloud",
+  "co",
+  "com",
+  "dev",
+  "edu",
+  "gg",
+  "gov",
+  "info",
+  "io",
+  "link",
+  "me",
+  "mil",
+  "net",
+  "online",
+  "org",
+  "site",
+  "store",
+  "tech",
+  "tv",
+  "xyz",
+]);
+const INLINE_CODE_COUNTRY_HOST_TLDS = new Set([
+  "at",
+  "au",
+  "be",
+  "br",
+  "ca",
+  "ch",
+  "cn",
+  "cz",
+  "de",
+  "dk",
+  "es",
+  "eu",
+  "fi",
+  "fr",
+  "hk",
+  "ie",
+  "it",
+  "jp",
+  "kr",
+  "mx",
+  "nl",
+  "no",
+  "nz",
+  "pl",
+  "pt",
+  "ru",
+  "se",
+  "sg",
+  "tr",
+  "uk",
+  "us",
+]);
+const INLINE_CODE_PRIVATE_HOST_TLDS = new Set([
+  "example",
+  "internal",
+  "invalid",
+  "local",
+  "localhost",
+  "test",
+]);
 
 export interface MarkdownFileLinkMeta {
   filePath: string;
@@ -30,6 +138,12 @@ export interface MarkdownFileLinkMeta {
   basename: string;
   line?: number;
   column?: number;
+}
+
+export interface InlineCodeSpan {
+  readonly text: string;
+  readonly start: number;
+  readonly end: number;
 }
 
 function safeDecode(value: string): string {
@@ -188,6 +302,212 @@ export function resolveMarkdownFileLinkTarget(
   return resolvePathLinkTarget(pathWithPosition, cwd);
 }
 
+function normalizeAbsolutePath(path: string): string | null {
+  const slashPath = normalizeWindowsDrivePath(path.replaceAll("\\", "/"));
+  const isUnc = slashPath.startsWith("//");
+  const driveMatch = slashPath.match(/^([A-Za-z]:)(?:\/|$)/);
+  const isAbsolute = slashPath.startsWith("/") || driveMatch !== null;
+  if (!isAbsolute) return null;
+
+  const prefix = driveMatch?.[1] ?? "";
+  const body = driveMatch ? slashPath.slice(prefix.length) : isUnc ? slashPath.slice(2) : slashPath;
+  const segments: string[] = [];
+  for (const segment of body.split("/")) {
+    if (segment.length === 0 || segment === ".") continue;
+    if (segment === "..") {
+      if (segments.length === 0) return null;
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+
+  if (isUnc) {
+    return segments.length >= 2 ? `//${segments.join("/")}` : null;
+  }
+  return `${prefix}/${segments.join("/")}`;
+}
+
+function isWindowsStylePath(path: string): boolean {
+  const normalized = normalizeWindowsDrivePath(path);
+  return /^[A-Za-z]:[\\/]/.test(normalized) || normalized.startsWith("//");
+}
+
+function pathInsideWorkspace(path: string, workspaceRoot: string): boolean {
+  const normalizedPath = normalizeAbsolutePath(path);
+  const normalizedRoot = normalizeAbsolutePath(workspaceRoot);
+  if (!normalizedPath || !normalizedRoot) return false;
+
+  const windowsStyle = isWindowsStylePath(normalizedPath) || isWindowsStylePath(normalizedRoot);
+  const comparablePath = windowsStyle ? normalizedPath.toLowerCase() : normalizedPath;
+  const comparableRoot = windowsStyle ? normalizedRoot.toLowerCase() : normalizedRoot;
+  return comparablePath.startsWith(`${comparableRoot.replace(/\/+$/, "")}/`);
+}
+
+function normalizeWorkspaceTarget(targetPath: string, workspaceRoot: string): string | null {
+  const { path, line, column } = splitPathAndPosition(targetPath);
+  const normalizedPath = normalizeAbsolutePath(path);
+  if (!normalizedPath || !pathInsideWorkspace(normalizedPath, workspaceRoot)) return null;
+  return `${normalizedPath}${line ? `:${line}${column ? `:${column}` : ""}` : ""}`;
+}
+
+function hasInlineCodeFileShape(candidate: string): boolean {
+  const withoutPosition = candidate.replace(POSITION_SUFFIX_PATTERN, "");
+  if (
+    RELATIVE_PATH_PREFIX_PATTERN.test(withoutPosition) ||
+    withoutPosition.startsWith("/") ||
+    WINDOWS_DRIVE_PATH_PATTERN.test(withoutPosition) ||
+    WINDOWS_UNC_PATH_PATTERN.test(withoutPosition)
+  ) {
+    return true;
+  }
+
+  if (INLINE_CODE_BARE_FILE_POSITION_PATTERN.test(candidate)) {
+    const basename = candidate.replace(POSITION_SUFFIX_PATTERN, "");
+    const extension = basename.slice(basename.lastIndexOf(".") + 1).toLowerCase();
+    return INLINE_CODE_BARE_FILE_EXTENSIONS.has(extension);
+  }
+  if (!/[\\/]/.test(withoutPosition)) return false;
+  return INLINE_CODE_FILE_EXTENSION_PATTERN.test(basenameOfPath(withoutPosition));
+}
+
+function looksLikeInlineCodeHost(candidate: string): boolean {
+  const withoutPosition = candidate.replace(POSITION_SUFFIX_PATTERN, "");
+  const firstSegment = withoutPosition.split(/[\\/]/, 1)[0]?.toLowerCase() ?? "";
+  if (firstSegment === "localhost" || /^(?:\d{1,3}\.){3}\d{1,3}$/.test(firstSegment)) {
+    return true;
+  }
+  const labels = firstSegment.split(".");
+  const tld = labels.length > 1 ? labels.at(-1) : undefined;
+  if (tld === undefined) return false;
+  if (!RELATIVE_PATH_PREFIX_PATTERN.test(withoutPosition) && /[\\/]/.test(withoutPosition)) {
+    return true;
+  }
+  if (INLINE_CODE_HOST_TLDS.has(tld) || INLINE_CODE_PRIVATE_HOST_TLDS.has(tld)) return true;
+  return !POSITION_SUFFIX_PATTERN.test(candidate) && INLINE_CODE_COUNTRY_HOST_TLDS.has(tld);
+}
+
+/**
+ * Resolves an inline-code path only when it has strong file evidence and the
+ * normalized target remains below the current workspace root.
+ */
+export function resolveInlineCodeFileLinkMeta(
+  codeText: string,
+  cwd: string | undefined,
+  workspaceRoot: string | undefined,
+): MarkdownFileLinkMeta | null {
+  const trimmed = codeText.trim();
+  const windowsAbsolute =
+    WINDOWS_DRIVE_PATH_PATTERN.test(trimmed) || WINDOWS_UNC_PATH_PATTERN.test(trimmed);
+  if (
+    trimmed.length === 0 ||
+    !cwd ||
+    !workspaceRoot ||
+    trimmed.includes("\u0000") ||
+    INLINE_CODE_DISQUALIFIER_PATTERN.test(trimmed) ||
+    INLINE_CODE_GLOB_PATTERN.test(trimmed) ||
+    looksLikeInlineCodeHost(trimmed) ||
+    (!windowsAbsolute && hasExternalScheme(trimmed)) ||
+    !hasInlineCodeFileShape(trimmed)
+  ) {
+    return null;
+  }
+
+  const candidate = windowsAbsolute ? trimmed : trimmed.replaceAll("\\", "/");
+  const targetPath = resolvePathLinkTarget(candidate, cwd);
+  const workspaceTarget = normalizeWorkspaceTarget(targetPath, workspaceRoot);
+  if (!workspaceTarget) return null;
+  return buildFileLinkMetaFromTarget(workspaceTarget, workspaceRoot);
+}
+
+function inlineCodeSpanIsInsideBracketLabel(
+  markdown: string,
+  openingTickStart: number,
+  closingTickEnd: number,
+): boolean {
+  const lineStart = markdown.lastIndexOf("\n", openingTickStart - 1) + 1;
+  const before = markdown.slice(lineStart, openingTickStart);
+  const openBracket = before.lastIndexOf("[");
+  if (openBracket < 0 || before.slice(openBracket + 1).includes("]")) return false;
+
+  const lineEnd = markdown.indexOf("\n", closingTickEnd);
+  const after = markdown.slice(closingTickEnd, lineEnd < 0 ? markdown.length : lineEnd);
+  return after.includes("]");
+}
+
+function normalizeInlineCodeText(value: string): string {
+  const normalized = value.replaceAll("\n", " ");
+  if (
+    normalized.length >= 3 &&
+    normalized.startsWith(" ") &&
+    normalized.endsWith(" ") &&
+    normalized.trim().length > 0
+  ) {
+    return normalized.slice(1, -1);
+  }
+  return normalized;
+}
+
+/**
+ * Collects inline-code spans while excluding fenced blocks and code used as a
+ * markdown link label. The markdown AST plugin remains the rendering authority.
+ */
+export function extractLinkableInlineCodeSpans(markdown: string): InlineCodeSpan[] {
+  const spans: InlineCodeSpan[] = [];
+  let offset = 0;
+  let fence: { readonly marker: "`" | "~"; readonly length: number } | null = null;
+
+  for (const lineWithNewline of markdown.match(/[^\n]*(?:\n|$)/g) ?? []) {
+    if (lineWithNewline.length === 0) continue;
+    const line = lineWithNewline.endsWith("\n") ? lineWithNewline.slice(0, -1) : lineWithNewline;
+    const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (fenceMatch?.[1]) {
+      const marker = fenceMatch[1][0] as "`" | "~";
+      if (!fence) {
+        fence = { marker, length: fenceMatch[1].length };
+      } else if (
+        marker === fence.marker &&
+        fenceMatch[1].length >= fence.length &&
+        /^ {0,3}(?:`{3,}|~{3,})\s*$/.test(line)
+      ) {
+        fence = null;
+      }
+      offset += lineWithNewline.length;
+      continue;
+    }
+
+    if (!fence) {
+      let cursor = 0;
+      while (cursor < line.length) {
+        if (line[cursor] !== "`") {
+          cursor += 1;
+          continue;
+        }
+        let runEnd = cursor + 1;
+        while (line[runEnd] === "`") runEnd += 1;
+        const marker = line.slice(cursor, runEnd);
+        const closingStart = line.indexOf(marker, runEnd);
+        if (closingStart < 0) break;
+        const closingEnd = closingStart + marker.length;
+        if (!inlineCodeSpanIsInsideBracketLabel(markdown, offset + cursor, offset + closingEnd)) {
+          const text = normalizeInlineCodeText(line.slice(runEnd, closingStart));
+          if (text.length > 0) {
+            spans.push({
+              text,
+              start: offset + cursor,
+              end: offset + closingEnd,
+            });
+          }
+        }
+        cursor = closingEnd;
+      }
+    }
+    offset += lineWithNewline.length;
+  }
+
+  return spans;
+}
+
 function basenameOfPath(path: string): string {
   const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return separatorIndex >= 0 ? path.slice(separatorIndex + 1) : path;
@@ -213,14 +533,18 @@ export function resolveMarkdownFileLinkMeta(
 ): MarkdownFileLinkMeta | null {
   const targetPath = resolveMarkdownFileLinkTarget(href, cwd);
   if (!targetPath) return null;
+  return buildFileLinkMetaFromTarget(targetPath, workspaceRoot ?? cwd);
+}
 
+function buildFileLinkMetaFromTarget(
+  targetPath: string,
+  displayRoot: string | undefined,
+): MarkdownFileLinkMeta {
   const { path, line, column } = splitPathAndPosition(targetPath);
   const parsedLine = line ? Number.parseInt(line, 10) : Number.NaN;
   const parsedColumn = column ? Number.parseInt(column, 10) : Number.NaN;
   const lineNumber = Number.isFinite(parsedLine) ? parsedLine : undefined;
   const columnNumber = Number.isFinite(parsedColumn) ? parsedColumn : undefined;
-
-  const displayRoot = workspaceRoot ?? cwd;
 
   return {
     filePath: path,

@@ -66,9 +66,12 @@ import {
   serializeTableElementToMarkdown,
 } from "../markdown-clipboard";
 import {
+  extractLinkableInlineCodeSpans,
   normalizeMarkdownLinkDestination,
+  resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
   rewriteMarkdownFileUriHref,
+  type MarkdownFileLinkMeta,
 } from "../markdown-links";
 import { readLocalApi } from "../localApi";
 import { cn } from "../lib/utils";
@@ -171,7 +174,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
       ...(defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
       "id",
     ],
-    code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta"],
+    code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
   },
   protocols: {
     ...defaultSchema.protocols,
@@ -259,6 +262,26 @@ function remarkPreserveCodeMeta() {
   };
 }
 
+function remarkTagInlineCode() {
+  return (tree: MarkdownAstNode) => {
+    const visit = (node: MarkdownAstNode, insideLink: boolean) => {
+      if (node.type === "inlineCode" && !insideLink) {
+        node.data = {
+          ...node.data,
+          hProperties: {
+            ...node.data?.hProperties,
+            dataInlineCode: "",
+          },
+        };
+      }
+      const childInsideLink = insideLink || node.type === "link" || node.type === "linkReference";
+      node.children?.forEach((child) => visit(child, childInsideLink));
+    };
+
+    visit(tree, false);
+  };
+}
+
 function remarkDocumentHeadingIds() {
   return (tree: MarkdownAstNode) => {
     const seen = new Map<string, number>();
@@ -303,9 +326,13 @@ function extractCodeBlock(
 
   const onlyChild = childNodes[0];
   if (
-    !isValidElement<{ className?: string; children?: ReactNode }>(onlyChild) ||
-    onlyChild.type !== "code"
+    !isValidElement<{ className?: string; children?: ReactNode; node?: { tagName?: string } }>(
+      onlyChild,
+    )
   ) {
+    return null;
+  }
+  if (onlyChild.type !== "code" && onlyChild.props.node?.tagName !== "code") {
     return null;
   }
 
@@ -1611,6 +1638,7 @@ function ChatMarkdown({
   const [expandedDocumentImage, setExpandedDocumentImage] = useState<ExpandedImagePreview | null>(
     null,
   );
+  const inlineCodeWorkspaceRoot = workspaceRoot ?? cwd;
   const markdownFileLinkMetaByHref = useMemo(() => {
     const metaByHref = new Map<
       string,
@@ -1626,10 +1654,24 @@ function ChatMarkdown({
     }
     return metaByHref;
   }, [cwd, text, workspaceRoot]);
+  const inlineCodeFileLinkMetaByText = useMemo(() => {
+    const metaByText = new Map<string, MarkdownFileLinkMeta>();
+    for (const span of extractLinkableInlineCodeSpans(text)) {
+      if (metaByText.has(span.text)) continue;
+      const meta = resolveInlineCodeFileLinkMeta(span.text, cwd, inlineCodeWorkspaceRoot);
+      if (meta) {
+        metaByText.set(span.text, meta);
+      }
+    }
+    return metaByText;
+  }, [cwd, inlineCodeWorkspaceRoot, text]);
   const fileLinkParentSuffixByPath = useMemo(() => {
-    const filePaths = [...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath);
+    const filePaths = [
+      ...[...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath),
+      ...[...inlineCodeFileLinkMetaByText.values()].map((meta) => meta.filePath),
+    ];
     return buildFileLinkParentSuffixByPath(filePaths);
-  }, [markdownFileLinkMetaByHref]);
+  }, [inlineCodeFileLinkMetaByText, markdownFileLinkMetaByHref]);
   const markdownUrlTransform = useCallback((href: string) => {
     return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
   }, []);
@@ -1684,8 +1726,49 @@ function ChatMarkdown({
     },
     [createAssetUrl, openPreview, preparedConnection, threadRef],
   );
-  const markdownComponents = useMemo<Components>(
-    () => ({
+  const markdownComponents = useMemo<Components>(() => {
+    const fileLinkChip = (
+      fileLinkMeta: MarkdownFileLinkMeta,
+      copyMarkdown: string,
+      className?: string,
+    ) => {
+      const parentSuffix = fileLinkParentSuffixByPath.get(fileLinkMeta.filePath);
+      const labelParts = [fileLinkMeta.basename];
+      if (typeof parentSuffix === "string" && parentSuffix.length > 0) {
+        labelParts.push(parentSuffix);
+      }
+      if (fileLinkMeta.line) {
+        labelParts.push(
+          `L${fileLinkMeta.line}${fileLinkMeta.column ? `:C${fileLinkMeta.column}` : ""}`,
+        );
+      }
+
+      return (
+        <MarkdownFileLink
+          href={fileLinkMeta.targetPath}
+          targetPath={fileLinkMeta.targetPath}
+          iconPath={fileLinkMeta.filePath}
+          displayPath={fileLinkMeta.displayPath}
+          workspaceRelativePath={fileLinkMeta.workspaceRelativePath}
+          line={fileLinkMeta.line}
+          label={labelParts.join(" · ")}
+          copyMarkdown={copyMarkdown}
+          theme={resolvedTheme}
+          threadRef={threadRef}
+          onOpen={openInPreferredEditor}
+          onOpenInBrowser={
+            threadRef &&
+            isPreviewSupportedInRuntime() &&
+            isBrowserPreviewFile(fileLinkMeta.filePath)
+              ? () => openMarkdownFileInPreview(fileLinkMeta.filePath)
+              : undefined
+          }
+          className={className}
+        />
+      );
+    };
+
+    return {
       p({ node: _node, children, ...props }) {
         return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>;
       },
@@ -1810,39 +1893,26 @@ function ChatMarkdown({
           );
         }
 
-        const parentSuffix = fileLinkParentSuffixByPath.get(fileLinkMeta.filePath);
-        const labelParts = [fileLinkMeta.basename];
-        if (typeof parentSuffix === "string" && parentSuffix.length > 0) {
-          labelParts.push(parentSuffix);
+        return fileLinkChip(
+          fileLinkMeta,
+          `[${fileLinkMeta.basename}](${normalizedHref})`,
+          props.className,
+        );
+      },
+      code({ node, children, className, ...props }) {
+        if (node?.properties?.dataInlineCode != null) {
+          const codeText = nodeToPlainText(children);
+          const fileLinkMeta =
+            inlineCodeFileLinkMetaByText.get(codeText) ??
+            resolveInlineCodeFileLinkMeta(codeText, cwd, inlineCodeWorkspaceRoot);
+          if (fileLinkMeta) {
+            return fileLinkChip(fileLinkMeta, `\`${codeText}\``);
+          }
         }
-        if (fileLinkMeta.line) {
-          labelParts.push(
-            `L${fileLinkMeta.line}${fileLinkMeta.column ? `:C${fileLinkMeta.column}` : ""}`,
-          );
-        }
-
         return (
-          <MarkdownFileLink
-            href={fileLinkMeta.targetPath}
-            targetPath={fileLinkMeta.targetPath}
-            iconPath={fileLinkMeta.filePath}
-            displayPath={fileLinkMeta.displayPath}
-            workspaceRelativePath={fileLinkMeta.workspaceRelativePath}
-            line={fileLinkMeta.line}
-            label={labelParts.join(" · ")}
-            copyMarkdown={`[${fileLinkMeta.basename}](${normalizedHref})`}
-            theme={resolvedTheme}
-            threadRef={threadRef}
-            onOpen={openInPreferredEditor}
-            onOpenInBrowser={
-              threadRef &&
-              isPreviewSupportedInRuntime() &&
-              isBrowserPreviewFile(fileLinkMeta.filePath)
-                ? () => openMarkdownFileInPreview(fileLinkMeta.filePath)
-                : undefined
-            }
-            className={props.className}
-          />
+          <code {...props} className={className}>
+            {children}
+          </code>
         );
       },
       table({ node: _node, ...props }) {
@@ -1896,29 +1966,30 @@ function ChatMarkdown({
           </MarkdownCodeBlock>
         );
       },
-    }),
-    [
-      cwd,
-      documentMode,
-      diffThemeName,
-      fileLinkParentSuffixByPath,
-      isStreaming,
-      markdownFileLinkMetaByHref,
-      onTaskListChange,
-      openInPreferredEditor,
-      openExternalLinkInPreview,
-      openMarkdownFileInPreview,
-      resolvedTheme,
-      skills,
-      text,
-      threadRef,
-      workspaceRoot,
-    ],
-  );
+    };
+  }, [
+    cwd,
+    documentMode,
+    diffThemeName,
+    fileLinkParentSuffixByPath,
+    inlineCodeFileLinkMetaByText,
+    inlineCodeWorkspaceRoot,
+    isStreaming,
+    markdownFileLinkMetaByHref,
+    onTaskListChange,
+    openInPreferredEditor,
+    openExternalLinkInPreview,
+    openMarkdownFileInPreview,
+    resolvedTheme,
+    skills,
+    text,
+    threadRef,
+    workspaceRoot,
+  ]);
   const remarkPlugins = useMemo(() => {
     const plugins = lineBreaks
-      ? [remarkGfm, remarkBreaks, remarkPreserveCodeMeta]
-      : [remarkGfm, remarkPreserveCodeMeta];
+      ? [remarkGfm, remarkBreaks, remarkPreserveCodeMeta, remarkTagInlineCode]
+      : [remarkGfm, remarkPreserveCodeMeta, remarkTagInlineCode];
     return documentMode ? [...plugins, remarkDocumentHeadingIds] : plugins;
   }, [documentMode, lineBreaks]);
 
