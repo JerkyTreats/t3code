@@ -10,10 +10,7 @@ import {
   sortAddProjectProviderSources,
   type AddProjectRemoteSource,
 } from "@t3tools/client-runtime/operations/projects";
-import {
-  canPreloadBrowsePath,
-  createBrowseNavigationCoordinator,
-} from "@t3tools/client-runtime/state/filesystem";
+import { canPreloadBrowsePath } from "@t3tools/client-runtime/state/filesystem";
 import {
   appendBrowsePathSegment,
   canNavigateUp,
@@ -32,7 +29,7 @@ import { SymbolView } from "../../components/AppSymbol";
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
+  useInsertionEffect,
   useMemo,
   useRef,
   useState,
@@ -60,7 +57,10 @@ import { uuidv4 } from "../../lib/uuid";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
-import { createProjectDestinationNavigationCoordinator } from "./projectDestinationNavigation";
+import {
+  createProjectDestinationNavigationCoordinator,
+  createProjectFolderNavigationCoordinator,
+} from "./projectBrowseNavigation";
 import { resolveProjectEnvironmentFromParam } from "./projectEnvironmentSelection";
 
 interface EnvironmentOption {
@@ -543,15 +543,23 @@ export function AddProjectRepositoryScreen(props: {
   }
   const destinationNavigation = destinationNavigationRef.current;
 
-  useLayoutEffect(() => {
+  useInsertionEffect(() => {
     destinationNavigation.updateContext({
       environmentId: environment?.environmentId ?? null,
       source,
+      connectionPhase: environment?.connectionPhase ?? null,
+      baseDirectory: environment?.baseDirectory ?? null,
     });
     return () => {
       destinationNavigation.invalidate();
     };
-  }, [destinationNavigation, environment?.environmentId, source]);
+  }, [
+    destinationNavigation,
+    environment?.baseDirectory,
+    environment?.connectionPhase,
+    environment?.environmentId,
+    source,
+  ]);
 
   const lookupRepository = useCallback(async () => {
     if (!environment || repositoryInput.trim().length === 0 || isSubmitting) return;
@@ -673,11 +681,11 @@ function FolderBrowser(props: {
     reportFailure: false,
     reportDefect: false,
   });
-  const browseNavigationRef = useRef<ReturnType<typeof createBrowseNavigationCoordinator> | null>(
-    null,
-  );
+  const browseNavigationRef = useRef<ReturnType<
+    typeof createProjectFolderNavigationCoordinator
+  > | null>(null);
   if (browseNavigationRef.current === null) {
-    browseNavigationRef.current = createBrowseNavigationCoordinator();
+    browseNavigationRef.current = createProjectFolderNavigationCoordinator();
   }
   const browseNavigation = browseNavigationRef.current;
   const [navigationError, setNavigationError] = useState<string | null>(null);
@@ -719,16 +727,31 @@ function FolderBrowser(props: {
   );
   const parentBrowsePath = getBrowseParentPath(browseDirectoryPath);
   const canBrowseUpPath = canNavigateUp(browseDirectoryPath);
-  useEffect(() => {
-    browseNavigation.invalidate();
-    setNavigationError(null);
-  }, [browseNavigation, props.environment.environmentId, props.pathInput]);
-  useEffect(
-    () => () => {
+  useInsertionEffect(() => {
+    browseNavigation.updateContext({
+      environmentId: props.environment.environmentId,
+      connectionPhase: props.environment.connectionPhase,
+      platform: props.environment.platform,
+      pathInput: props.pathInput,
+    });
+    return () => {
       browseNavigation.invalidate();
-    },
-    [browseNavigation],
-  );
+    };
+  }, [
+    browseNavigation,
+    props.environment.connectionPhase,
+    props.environment.environmentId,
+    props.environment.platform,
+    props.pathInput,
+  ]);
+  useEffect(() => {
+    setNavigationError(null);
+  }, [
+    props.environment.connectionPhase,
+    props.environment.environmentId,
+    props.environment.platform,
+    props.pathInput,
+  ]);
 
   const navigateToPath = useCallback(
     async (path: string) => {
