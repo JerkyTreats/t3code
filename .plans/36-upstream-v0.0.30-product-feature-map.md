@@ -981,7 +981,6 @@ Every upstream hit in a mutation path needs an explicit read-only explanation or
 
 ## Confirmed Current Gaps
 
-- `F10` lacks detected supported Codex binary choices.
 - `F14` command palette project actions do not open the unified project launcher.
 - Sidebar V2 rendering and product parity remain absent. Shared settings and settled lifecycle support are complete.
 
