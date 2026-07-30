@@ -14,6 +14,7 @@ import {
   createStagePatchedDependencies,
   createBuildConfig,
   DESKTOP_ASAR_UNPACK,
+  InvalidDesktopUpdateRepositoryError,
   InvalidMacPasskeyRpDomainError,
   InvalidMacPasskeyPublishableKeyError,
   InvalidMockUpdateServerPortError,
@@ -114,7 +115,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code",
+                T3CODE_DESKTOP_UPDATE_REPOSITORY: "JerkyTreats/t3code",
               },
             }),
           ),
@@ -125,7 +126,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                GITHUB_REPOSITORY: "pingdotgg/t3code",
+                GITHUB_REPOSITORY: "JerkyTreats/t3code",
               },
             }),
           ),
@@ -134,17 +135,40 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.deepStrictEqual(latestConfig, {
         provider: "github",
-        owner: "pingdotgg",
+        owner: "JerkyTreats",
         repo: "t3code",
         releaseType: "release",
       });
       assert.deepStrictEqual(nightlyConfig, {
         provider: "github",
-        owner: "pingdotgg",
+        owner: "JerkyTreats",
         repo: "t3code",
         releaseType: "prerelease",
         channel: "nightly",
       });
+    }),
+  );
+
+  it.effect("rejects upstream and malformed desktop update repositories", () =>
+    Effect.gen(function* () {
+      const upstreamRepository = ["pingdotgg", "t3code"].join("/");
+      for (const repository of [upstreamRepository, "JerkyTreats/t3code/other"]) {
+        const error = yield* resolveGitHubPublishConfig("latest").pipe(
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: {
+                  T3CODE_DESKTOP_UPDATE_REPOSITORY: repository,
+                },
+              }),
+            ),
+          ),
+          Effect.flip,
+        );
+
+        assert.instanceOf(error, InvalidDesktopUpdateRepositoryError);
+        assert.equal(error.requiredRepository, "JerkyTreats/t3code");
+      }
     }),
   );
 

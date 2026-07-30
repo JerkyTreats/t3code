@@ -1,4 +1,5 @@
 import * as Context from "effect/Context";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -7,6 +8,7 @@ import * as Ref from "effect/Ref";
 
 import type * as Electron from "electron";
 
+import { PRODUCT_DESKTOP_ARTIFACT_SMOKE_MARKERS } from "@t3tools/shared/productIdentity";
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
@@ -25,6 +27,7 @@ const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
 const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
 const RENDERER_CRASH_RECOVERY_DELAYS_MS = [250, 1_000, 4_000, 16_000] as const;
 const RENDERER_CRASH_STABILITY_RESET_MS = 60_000;
+const RENDERER_APPLICATION_READY_TIMEOUT_MS = 30_000;
 const DEVELOPMENT_RETRYABLE_LOAD_ERROR_CODES = new Set([
   -2, // ERR_FAILED
   -7, // ERR_TIMED_OUT
@@ -48,6 +51,10 @@ type DesktopWindowRuntimeServices =
   | ElectronTheme.ElectronTheme
   | ElectronWindow.ElectronWindow
   | PreviewManager.PreviewManager;
+
+class RendererApplicationReadyError extends Data.TaggedError("RendererApplicationReadyError")<{
+  readonly cause: unknown;
+}> {}
 
 export type DesktopWindowError =
   | ElectronWindow.ElectronWindowCreateError
@@ -482,6 +489,46 @@ export const make = Effect.gen(function* () {
       clearRendererCrashRecovery();
       scheduleRendererCrashStabilityReset();
       window.setTitle(environment.displayName);
+      void runPromise(
+        Effect.tryPromise({
+          try: () =>
+            window.webContents.executeJavaScript(
+              `
+                new Promise((resolve, reject) => {
+                  const deadline = Date.now() + ${RENDERER_APPLICATION_READY_TIMEOUT_MS};
+                  const check = () => {
+                    if (
+                      document.documentElement.dataset.t3codeRendererReady ===
+                      '${PRODUCT_DESKTOP_ARTIFACT_SMOKE_MARKERS.rendererReady}'
+                    ) {
+                      resolve(true);
+                      return;
+                    }
+                    if (Date.now() >= deadline) {
+                      reject(new Error("renderer application readiness timed out"));
+                      return;
+                    }
+                    setTimeout(check, 25);
+                  };
+                  check();
+                })
+              `,
+              true,
+            ),
+          catch: (cause) => new RendererApplicationReadyError({ cause }),
+        }).pipe(
+          Effect.flatMap(() =>
+            logWindowInfo(PRODUCT_DESKTOP_ARTIFACT_SMOKE_MARKERS.rendererReady, {
+              url: window.webContents.getURL(),
+            }),
+          ),
+          Effect.catch((cause) =>
+            logWindowWarning("renderer application readiness failed", {
+              cause: cause instanceof Error ? cause.message : String(cause),
+            }),
+          ),
+        ),
+      );
     });
     window.webContents.on(
       "did-fail-load",
@@ -669,6 +716,10 @@ export const make = Effect.gen(function* () {
     handleBackendReady: Effect.fn("desktop.window.handleBackendReady")(function* (httpBaseUrl) {
       yield* Ref.set(backendReadyRef, true);
       yield* logWindowInfo("backend ready", { source: "http", url: httpBaseUrl.href });
+      yield* logWindowInfo(PRODUCT_DESKTOP_ARTIFACT_SMOKE_MARKERS.backendListening, {
+        source: "http",
+        url: httpBaseUrl.href,
+      });
       yield* createMainIfBackendReady;
     }),
     handleBackendNotReady: Ref.set(backendReadyRef, false).pipe(

@@ -17,6 +17,7 @@ import { hasCloudPublicConfig } from "./cloud/publicConfig";
 import { getRouter } from "./router";
 import { syncDocumentWindowControlsOverlayClass } from "./lib/windowControlsOverlay";
 import { AppRoot } from "./AppRoot";
+import { PRODUCT_DESKTOP_ARTIFACT_SMOKE_MARKERS } from "@t3tools/shared/productIdentity";
 
 // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
 const history = isElectron ? createHashHistory() : createBrowserHistory();
@@ -29,7 +30,24 @@ if (isElectron) {
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
-const app = <AppRoot router={router} />;
+function RendererReadyMarker() {
+  React.useEffect(() => {
+    document.documentElement.dataset.t3codeRendererReady =
+      PRODUCT_DESKTOP_ARTIFACT_SMOKE_MARKERS.rendererReady;
+    return () => {
+      delete document.documentElement.dataset.t3codeRendererReady;
+    };
+  }, []);
+
+  return null;
+}
+
+const app = (
+  <>
+    <RendererReadyMarker />
+    <AppRoot router={router} />
+  </>
+);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

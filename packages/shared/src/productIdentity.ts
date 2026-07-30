@@ -3,6 +3,11 @@ export type ProductReleaseChannel = "latest" | "nightly";
 
 export const PRODUCT_BASE_NAME = "T3 Code";
 export const PRODUCT_PACKAGE_DESCRIPTION = "T3 Code desktop build";
+export const PRODUCT_GITHUB_REPOSITORY = "JerkyTreats/t3code";
+export const PRODUCT_DESKTOP_ARTIFACT_SMOKE_MARKERS = {
+  backendListening: "T3CODE_ARTIFACT_SMOKE backend-listening",
+  rendererReady: "T3CODE_ARTIFACT_SMOKE renderer-ready",
+} as const;
 
 export const PRODUCT_TECHNICAL_IDENTITY = {
   appId: "com.t3tools.t3code",

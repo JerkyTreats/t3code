@@ -50,6 +50,7 @@ function makeFakeBrowserWindow() {
   const windowListeners = new Map<string, (...args: readonly unknown[]) => void>();
   const webContents = {
     copyImageAt: vi.fn(),
+    executeJavaScript: vi.fn(() => Promise.resolve(true)),
     getURL: vi.fn(() => "t3code-dev://app/"),
     isLoadingMainFrame: vi.fn(() => false),
     on: vi.fn((eventName: string, listener: (...args: readonly unknown[]) => void) => {

@@ -14,6 +14,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import { assertReleaseWorkflowSafety } from "./lib/release-workflow-safety.ts";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -26,6 +27,7 @@ const workspaceFiles = [
   "apps/web/package.json",
   "apps/mobile/package.json",
   "apps/mobile/deps/react-native-nitro-markdown-0.5.0.tgz",
+  "apps/mobile/modules/t3-markdown-text/package.json",
   "apps/mobile/modules/t3-review-diff/package.json",
   "apps/mobile/modules/t3-terminal/package.json",
   "apps/marketing/package.json",
@@ -195,6 +197,7 @@ function assertMissing(path: string, message: string): void {
 const tempRoot = mkdtempSync(join(tmpdir(), "t3-release-smoke-"));
 
 try {
+  assertReleaseWorkflowSafety(repoRoot);
   copyWorkspaceManifestFixture(tempRoot);
 
   execFileSync(

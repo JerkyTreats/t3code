@@ -7,6 +7,7 @@ import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/ho
 import {
   formatProductDisplayName,
   PRODUCT_BASE_NAME,
+  PRODUCT_GITHUB_REPOSITORY,
   PRODUCT_PACKAGE_DESCRIPTION,
   PRODUCT_TECHNICAL_IDENTITY,
 } from "@t3tools/shared/productIdentity";
@@ -227,6 +228,18 @@ export class InvalidMockUpdateServerPortError extends Schema.TaggedErrorClass<In
       inputLength: configuredPort.length,
       cause,
     });
+  }
+}
+
+export class InvalidDesktopUpdateRepositoryError extends Schema.TaggedErrorClass<InvalidDesktopUpdateRepositoryError>()(
+  "InvalidDesktopUpdateRepositoryError",
+  {
+    repository: Schema.String,
+    requiredRepository: Schema.String,
+  },
+) {
+  override get message() {
+    return `Desktop update repository must be '${this.requiredRepository}', received '${this.repository}'.`;
   }
 }
 
@@ -1328,7 +1341,12 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
   if (!rawRepo) return undefined;
 
   const [owner, repo, ...rest] = rawRepo.split("/");
-  if (!owner || !repo || rest.length > 0) return undefined;
+  if (!owner || !repo || rest.length > 0 || rawRepo !== PRODUCT_GITHUB_REPOSITORY) {
+    return yield* new InvalidDesktopUpdateRepositoryError({
+      repository: rawRepo,
+      requiredRepository: PRODUCT_GITHUB_REPOSITORY,
+    });
+  }
 
   return {
     provider: "github",

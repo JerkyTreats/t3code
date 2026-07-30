@@ -22,7 +22,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: desktop-artifacts-${{ github.ref }}
@@ -63,11 +63,14 @@ jobs:
       - name: Build DMG
         env:
           INPUT_BUILD_VERSION: ${{ inputs.build_version || '' }}
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
           T3CODE_DESKTOP_OUTPUT_DIR: release/macos-${{ matrix.arch }}
         run: |
           set -euo pipefail
           if [[ -n "${INPUT_BUILD_VERSION:-}" ]]; then
             export T3CODE_DESKTOP_VERSION="${INPUT_BUILD_VERSION}"
+          elif [[ -n "${RELEASE_TAG:-}" ]]; then
+            export T3CODE_DESKTOP_VERSION="${RELEASE_TAG#v}"
           fi
 
           pnpm dist:desktop:dmg:${{ matrix.arch }}
@@ -112,14 +115,29 @@ jobs:
       - name: Build AppImage
         env:
           INPUT_BUILD_VERSION: ${{ inputs.build_version || '' }}
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
           T3CODE_DESKTOP_OUTPUT_DIR: release/linux-x64
         run: |
           set -euo pipefail
           if [[ -n "${INPUT_BUILD_VERSION:-}" ]]; then
             export T3CODE_DESKTOP_VERSION="${INPUT_BUILD_VERSION}"
+          elif [[ -n "${RELEASE_TAG:-}" ]]; then
+            export T3CODE_DESKTOP_VERSION="${RELEASE_TAG#v}"
           fi
 
           pnpm dist:desktop:linux
+
+      - name: Smoke AppImage
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          appimages=(release/linux-x64/*.AppImage)
+          if [[ "${#appimages[@]}" -ne 1 ]]; then
+            echo "Expected exactly one Linux AppImage, found ${#appimages[@]}." >&2
+            exit 1
+          fi
+          pnpm test:desktop-artifact-smoke "${appimages[0]}"
 
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
@@ -130,7 +148,9 @@ jobs:
 
   publish-release:
     name: Publish desktop release assets
-    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ github.repository == 'JerkyTreats/t3code' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs:
