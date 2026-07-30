@@ -50,6 +50,7 @@ import {
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
 import {
+  claimFileRevealGeneration,
   clampFileLine,
   centeredFileRevealScrollTop,
   FILE_LINK_REVEAL_ATTRIBUTE,
@@ -122,6 +123,10 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
   }
 `;
 type FilePostRender = NonNullable<FileOptions<unknown>["onPostRender"]>;
+interface PendingFileRevealFrame {
+  frameId: number;
+  revealRequestId: number;
+}
 
 function useFileLineReveal(
   relativePath: string | null,
@@ -130,19 +135,30 @@ function useFileLineReveal(
 ): FilePostRender {
   const [handledRequestIdsByPath] = useState(() => new Map<string, number>());
   const [latestRequestIdsByPath] = useState(() => new Map<string, number>());
-  const [pendingFramesByPath] = useState(() => new Map<string, number>());
+  const [pendingFramesByPath] = useState(() => new Map<string, PendingFileRevealFrame>());
 
   return useCallback<FilePostRender>(
     (fileContainer, instance, phase) => {
       if (relativePath === null) return;
 
+      const generationOwnership = claimFileRevealGeneration(
+        latestRequestIdsByPath,
+        relativePath,
+        revealRequestId,
+      );
+      if (generationOwnership === "stale") return;
+
       const cancelPendingReveal = () => {
-        const frameId = pendingFramesByPath.get(relativePath);
-        if (frameId !== undefined) {
-          cancelAnimationFrame(frameId);
+        const pendingFrame = pendingFramesByPath.get(relativePath);
+        if (pendingFrame !== undefined) {
+          cancelAnimationFrame(pendingFrame.frameId);
           pendingFramesByPath.delete(relativePath);
         }
       };
+
+      if (generationOwnership === "advanced") {
+        cancelPendingReveal();
+      }
 
       if (phase === "unmount") {
         cancelPendingReveal();
@@ -154,11 +170,6 @@ function useFileLineReveal(
       updateFileLinkReveal(fileContainer, targetLine);
 
       if (!(instance instanceof VirtualizedFile)) return;
-
-      if (latestRequestIdsByPath.get(relativePath) !== revealRequestId) {
-        cancelPendingReveal();
-        latestRequestIdsByPath.set(relativePath, revealRequestId);
-      }
 
       if (targetLine === null) {
         fileContainer.style.minHeight = "";
@@ -179,13 +190,14 @@ function useFileLineReveal(
       }
 
       const reveal = () => {
-        pendingFramesByPath.delete(relativePath);
         if (
           latestRequestIdsByPath.get(relativePath) !== revealRequestId ||
-          !fileContainer.isConnected
+          pendingFramesByPath.get(relativePath)?.revealRequestId !== revealRequestId
         ) {
           return;
         }
+        pendingFramesByPath.delete(relativePath);
+        if (!fileContainer.isConnected) return;
 
         const linePosition = instance.getLinePosition(targetLine);
         if (!linePosition) return;
@@ -203,7 +215,10 @@ function useFileLineReveal(
         handledRequestIdsByPath.set(relativePath, revealRequestId);
       };
 
-      pendingFramesByPath.set(relativePath, requestAnimationFrame(reveal));
+      pendingFramesByPath.set(relativePath, {
+        frameId: requestAnimationFrame(reveal),
+        revealRequestId,
+      });
     },
     [
       handledRequestIdsByPath,

@@ -6,6 +6,7 @@ import {
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
 import {
+  claimFileRevealGeneration,
   clampFileLine,
   centeredFileRevealScrollTop,
   FILE_LINK_REVEAL_ATTRIBUTE,
@@ -90,6 +91,27 @@ describe("resolveFilePreviewMode", () => {
 });
 
 describe("file line reveal", () => {
+  it("rejects superseded callbacks before they can reclaim generation ownership", () => {
+    const latestRequestIdsByPath = new Map<string, number>();
+    const applyRevealSideEffects = vi.fn();
+    const runPostRenderCallback = (revealRequestId: number) => {
+      const ownership = claimFileRevealGeneration(
+        latestRequestIdsByPath,
+        "src/index.ts",
+        revealRequestId,
+      );
+      if (ownership === "stale") return;
+      applyRevealSideEffects(ownership);
+    };
+
+    runPostRenderCallback(8);
+    applyRevealSideEffects.mockClear();
+    runPostRenderCallback(7);
+
+    expect(applyRevealSideEffects).not.toHaveBeenCalled();
+    expect(latestRequestIdsByPath.get("src/index.ts")).toBe(8);
+  });
+
   it("clamps requested lines across Unix and Windows line endings", () => {
     expect(clampFileLine("one\ntwo\r\nthree\rfour", -4)).toBe(1);
     expect(clampFileLine("one\ntwo\r\nthree\rfour", 3)).toBe(3);
