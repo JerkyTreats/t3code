@@ -39,3 +39,27 @@ export function projectManagementRouteSearch(view: unknown): {
     view: parseProjectManagementRouteView(view),
   };
 }
+
+export function projectManagementTargetKey(
+  target: Pick<ProjectManagementRouteTarget, "environmentId" | "projectId" | "view">,
+): string {
+  return `${target.environmentId}\u0000${target.projectId}\u0000${target.view}`;
+}
+
+export function projectIdentityMatchesManagementTarget(
+  project:
+    | {
+        readonly environmentId: EnvironmentId;
+        readonly id: ProjectId;
+      }
+    | null
+    | undefined,
+  target: Pick<ProjectManagementRouteTarget, "environmentId" | "projectId">,
+): boolean {
+  return (
+    project !== null &&
+    project !== undefined &&
+    project.environmentId === target.environmentId &&
+    project.id === target.projectId
+  );
+}

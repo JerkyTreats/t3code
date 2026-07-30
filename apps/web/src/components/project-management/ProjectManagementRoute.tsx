@@ -23,6 +23,10 @@ import { commandForProjectScript, nextProjectScriptId } from "~/projectScripts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { mapVcsStatusToProjectRepositoryStatus } from "~/project-management/projectManagementStatusAdapter";
 import { buildProjectOverviewSnapshot } from "~/project-management/projectManagementOverview";
+import {
+  projectIdentityMatchesManagementTarget,
+  projectManagementTargetKey,
+} from "~/project-management/projectManagementRoute";
 import type {
   ProjectManagementProject,
   ProjectManagementRouteTarget,
@@ -104,12 +108,16 @@ export function ProjectManagementRouteView({
   readonly target: ProjectManagementRouteTarget;
 }) {
   const navigate = useNavigate();
-  const redirectStartedRef = useRef(false);
+  const redirectedTargetKeyRef = useRef<string | null>(null);
+  const targetKey = projectManagementTargetKey(target);
   const projectRef = useMemo(
     () => scopeProjectRef(target.environmentId, target.projectId),
     [target.environmentId, target.projectId],
   );
-  const project = useProject(projectRef);
+  const projectCandidate = useProject(projectRef);
+  const project = projectIdentityMatchesManagementTarget(projectCandidate, target)
+    ? projectCandidate
+    : null;
   const serverConfigs = useServerConfigs();
   const threads = useProjectManagementThreads(target, {
     includeArchivedActivities: target.view === "inference",
@@ -181,8 +189,8 @@ export function ProjectManagementRouteView({
   );
 
   useEffect(() => {
-    if (!project || !bootstrapComplete || redirectStartedRef.current) return;
-    redirectStartedRef.current = true;
+    if (!project || !bootstrapComplete || redirectedTargetKeyRef.current === targetKey) return;
+    redirectedTargetKeyRef.current = targetKey;
 
     const openPanel = (threadRef: ScopedThreadRef) => {
       if (target.view === "inference") {
@@ -214,6 +222,7 @@ export function ProjectManagementRouteView({
     project,
     projectRef,
     target.environmentId,
+    targetKey,
     target.view,
   ]);
 

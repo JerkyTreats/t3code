@@ -26,6 +26,9 @@ Connection failures, restarts, partial streams, renderer crashes, and transport 
 - Repository lookup and destination preload share one generation guard, and only the current failure emits a notice.
 - Detail, shell, hydration, plan progress, and inference consumers agree on the authoritative retained activity rows.
 - Server projection owns context-window row trimming and retains the latest resolvable row for each turn with provider processed totals intact.
+- V1 and V2 initial thread snapshots apply the same per-turn retention rule before publication.
+- Malformed context-window rows remain visible and cannot shadow an older usable row.
+- Activity pages and live activity events remain untrimmed so replay and ongoing usage updates preserve their event semantics.
 - Connection diagnostics and the persistent flight recorder remain bounded, structured, sanitized, and free of credentials.
 - Diagnostic state distinguishes capability, authentication, secure storage, reachability, protocol, replay, and terminal send failures.
 - Electron renderer failure recovery uses bounded backoff, cancels stale recovery after a stable load, and leaves clean exits alone.
@@ -91,6 +94,7 @@ Current owner modules:
 - Restore outbox persistence and stable identities before changing transport dispatch.
 - Restore subscribe-first synchronization and dropped-event recovery before adding compression.
 - Keep server projection as the only owner of context-window activity trimming.
+- Apply retention before the V2 activity limit so stale rows cannot displace the latest usable row from bounded hydration.
 - Add compression through narrow HTTP and WebSocket seams without replacing the connection driver, supervisor, outbox, thread synchronization, or diagnostics subtrees.
 - Patch only the selected Effect platform package behavior needed for WebSocket compression and register the patch explicitly.
 - Preserve every diagnostic redaction boundary while adding compression and replay metrics.
@@ -113,6 +117,8 @@ Current owner modules:
 - Snapshot, replay, and live event boundary tests prove no gap and no duplicate application.
 - Dropped-event tests prove bounded recovery.
 - V2 paging, hydration, and Unicode-safe chunk tests continue to pass.
+- Reverting the newest turn reveals the latest retained usable row from an older surviving turn.
+- Provider processed totals remain unchanged on every retained context row.
 - Deferred filesystem navigation tests prove only the newest valid preload commits visible state.
 - Failed preload tests prove unsuccessful query results never commit visible navigation.
 - Diagnostics remain bounded and credential safe under connection and send failures.

@@ -192,6 +192,22 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Route Sidebar V1, Sidebar V2, and command palette project-panel actions through one concrete project launcher.
 - Filter launcher threads by exact environment and project identity before opening the right panel or navigating.
 
+## Unified Project Surface Safety
+
+- Validate persisted Git and Inference surface descriptors by exact environment plus project identity.
+- Reconcile project surfaces after environment bootstrap and remove descriptors for missing or changed projects.
+- Guard project surface rendering synchronously while reconciliation is pending.
+- Keep project Git available without an active server thread and keep its composer draft ownership isolated.
+- Key compatibility route redirect ownership by exact environment, project, and view.
+- Preserve provider processed totals in inference burn while classifying cached input subsets from current turn usage.
+
+## Context Window Snapshot Retention
+
+- Retain only the latest resolvable context-window row per turn in V1 and V2 initial snapshot payloads.
+- Preserve malformed rows, provider processed totals, activity pages, and live events.
+- Apply V2 retention before bounded activity limits so stale rows cannot displace usable state.
+- Keep one usable row for every surviving turn so a turn revert can reveal older context state.
+
 ## Feature Spec Contract
 
 Every spec under `fork/` must include:

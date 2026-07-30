@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   migratePersistedRightPanelState,
+  projectSurfaceMatchesProject,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
@@ -175,6 +176,84 @@ describe("rightPanelStore", () => {
       isOpen: true,
       activeSurfaceId: "git",
       surfaces: [{ id: "git", kind: "git", projectRef: nextProjectRef }],
+    });
+  });
+
+  it("reconciles project surfaces by exact environment and project identity", () => {
+    const projectRef = {
+      environmentId: refA.environmentId,
+      projectId: ProjectId.make("project-a"),
+    } as const;
+    const wrongEnvironmentRef = {
+      environmentId: "env-2" as EnvironmentId,
+      projectId: projectRef.projectId,
+    } as const;
+
+    useRightPanelStore.getState().open(refA, "plan");
+    useRightPanelStore.getState().openProjectSurface(refA, "git", wrongEnvironmentRef);
+    useRightPanelStore.getState().reconcileProjectSurfaces(refA, projectRef);
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: null,
+      surfaces: [{ id: "plan", kind: "plan" }],
+    });
+  });
+
+  it("preserves matching project surfaces and removes them when project data is unavailable", () => {
+    const projectRef = {
+      environmentId: refA.environmentId,
+      projectId: ProjectId.make("project-a"),
+    } as const;
+
+    useRightPanelStore.getState().openProjectSurface(refA, "git", projectRef);
+    useRightPanelStore.getState().reconcileProjectSurfaces(refA, projectRef);
+    expect(
+      projectSurfaceMatchesProject(
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+        projectRef,
+      ),
+    ).toBe(true);
+
+    useRightPanelStore.getState().reconcileProjectSurfaces(refA, null);
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: false,
+      activeSurfaceId: null,
+      surfaces: [],
+    });
+  });
+
+  it("drops malformed persisted project surface descriptors", () => {
+    expect(
+      projectSurfaceMatchesProject({ id: "git", kind: "git", projectRef: undefined } as never, {
+        environmentId: refA.environmentId,
+        projectId: ProjectId.make("project-a"),
+      }),
+    ).toBe(false);
+    expect(
+      migratePersistedRightPanelState({
+        byThreadKey: {
+          "env-1:thread-A": {
+            isOpen: true,
+            activeSurfaceId: "git",
+            surfaces: [
+              {
+                id: "git",
+                kind: "git",
+                projectRef: { environmentId: "env-1" },
+              },
+            ],
+          },
+        },
+      }),
+    ).toEqual({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: null,
+          surfaces: [],
+        },
+      },
     });
   });
 

@@ -23,6 +23,10 @@ The right panel provides compact global project context while `Open a surface` l
 - `Open a surface` stays concise and represents selectable surfaces rather than wordy project documentation.
 - Git Panel is opened as a unified right panel surface.
 - Project scoped Git management works without requiring an active thread while preserving thread scoped Git actions where they remain meaningful.
+- Persisted project surface descriptors are valid only when both environment id and project id match the active thread project.
+- Reconcile persisted project surfaces after environment bootstrap and remove descriptors for missing or changed projects.
+- Guard Git and Inference rendering synchronously so stale descriptors never borrow current project data before reconciliation settles.
+- Clear an invalid active project surface safely without activating another stale project surface.
 - Project scoped Git management must not take ownership of, clear, or reroute unrelated composer draft content.
 - Inference Dashboard is opened as a unified right panel surface and summarizes project wide model work across linked project threads.
 - Inference rollups use the latest usage snapshot per turn and preserve provider reported total processed tokens when available.
@@ -31,6 +35,7 @@ The right panel provides compact global project context while `Open a surface` l
 - Large token totals use compact magnitude suffixes through billions, trillions, and quadrillions instead of accumulating under the millions suffix.
 - Thread links from project surfaces and dashboard preserve environment aware thread routing.
 - Missing project data after bootstrap redirects or degrades safely instead of rendering stale project content.
+- Compatibility route redirects are keyed by exact environment, project, and view so a mounted route can safely receive a new target.
 
 ## Owner Modules
 
@@ -79,6 +84,7 @@ The right panel provides compact global project context while `Open a surface` l
 
 - Restore product helpers before route and UI integration.
 - Keep concrete project identity as environment id plus project id.
+- Validate restored right panel project descriptors against the concrete active project before rendering and again after bootstrap.
 - Keep sidebar grouping presentation only.
 - Keep sidebar version selection outside project routing so the switch cannot rewrite environment or project identity.
 - Add the project context header before adding project surfaces.
@@ -113,9 +119,11 @@ The right panel provides compact global project context while `Open a surface` l
 - The inference dashboard counts only the latest usage snapshot for each turn.
 - The inference dashboard preserves `totalProcessedTokens` and falls back to `usedTokens` plus token components when needed.
 - Cached input handling avoids double counting when cached input is reported as an input subset.
+- Cached input subset detection uses current turn usage even when a provider also reports a larger processed total.
 - Token totals remain readable across `K`, `M`, `B`, `T`, and `Q` magnitudes with stable rounding at unit boundaries.
 - Dashboard leaderboard links navigate to the correct environment scoped threads.
 - Missing or removed project state after bootstrap exits or degrades without stale project details.
+- A route target change resets redirect ownership without allowing the previous target to render or redirect the new target.
 - Sidebar V1 and command palette project-panel actions produce the same right-panel and route result.
 
 ## Compatibility Checks

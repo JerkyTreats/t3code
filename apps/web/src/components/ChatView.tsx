@@ -120,9 +120,9 @@ import {
   RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
 } from "../rightPanelLayout";
 import {
-  selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
+  projectSurfaceMatchesProject,
   type RightPanelSurface,
   useRightPanelStore,
 } from "../rightPanelStore";
@@ -1374,6 +1374,12 @@ function ChatViewContent(props: ChatViewProps) {
     () => (activeThread ? scopeThreadRef(activeThread.environmentId, activeThread.id) : null),
     [activeThread],
   );
+  const activeProjectRef = useMemo(
+    () =>
+      activeThread ? scopeProjectRef(activeThread.environmentId, activeThread.projectId) : null,
+    [activeThread?.environmentId, activeThread?.projectId],
+  );
+  const activeProject = useProject(activeProjectRef);
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
   const [timelineAnchor, setTimelineAnchor] = useState<{
     readonly threadKey: string | null;
@@ -1383,15 +1389,28 @@ function ChatViewContent(props: ChatViewProps) {
     setTimelineAnchor({ threadKey: activeThreadKey, messageId: null });
   }
   const timelineAnchorMessageId = timelineAnchor.messageId;
-  const activeRightPanelKind = useRightPanelStore((state) =>
-    selectActiveRightPanel(state.byThreadKey, activeThreadRef),
-  );
-  const diffOpen = activeRightPanelKind === "diff";
   const rightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
-  const activeRightPanelSurface = useRightPanelStore((state) =>
+  const storedActiveRightPanelSurface = useRightPanelStore((state) =>
     selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
+  );
+  const activeRightPanelSurface =
+    (storedActiveRightPanelSurface?.kind === "git" ||
+      storedActiveRightPanelSurface?.kind === "inference") &&
+    !projectSurfaceMatchesProject(storedActiveRightPanelSurface, activeProjectRef)
+      ? null
+      : storedActiveRightPanelSurface;
+  const activeRightPanelKind = activeRightPanelSurface?.kind ?? null;
+  const diffOpen = activeRightPanelKind === "diff";
+  const renderedRightPanelSurfaces = useMemo(
+    () =>
+      rightPanelState.surfaces.filter(
+        (surface) =>
+          (surface.kind !== "git" && surface.kind !== "inference") ||
+          projectSurfaceMatchesProject(surface, activeProjectRef),
+      ),
+    [activeProjectRef, rightPanelState.surfaces],
   );
   const activeFileSurface =
     activeRightPanelSurface?.kind === "file" ? activeRightPanelSurface : null;
@@ -1468,10 +1487,6 @@ function ChatViewContent(props: ChatViewProps) {
     });
   }, [activeThreadKey, existingOpenTerminalThreadKeys, terminalUiState.terminalOpen]);
   const latestTurnSettled = isLatestTurnSettled(activeLatestTurn, activeThread?.session ?? null);
-  const activeProjectRef = activeThread
-    ? scopeProjectRef(activeThread.environmentId, activeThread.projectId)
-    : null;
-  const activeProject = useProject(activeProjectRef);
   const activeProjectRefs = useMemo(
     () => (activeProjectRef ? [activeProjectRef] : []),
     [activeProjectRef?.environmentId, activeProjectRef?.projectId],
@@ -1529,8 +1544,13 @@ function ChatViewContent(props: ChatViewProps) {
 
   useEffect(() => {
     if (!activeThreadRef || !activeEnvironmentBootstrapComplete) return;
-    useRightPanelStore.getState().reconcileFileSurfaces(activeThreadRef, activeProject !== null);
-  }, [activeEnvironmentBootstrapComplete, activeProject, activeThreadRef]);
+    const rightPanelStore = useRightPanelStore.getState();
+    rightPanelStore.reconcileFileSurfaces(activeThreadRef, activeProject !== null);
+    rightPanelStore.reconcileProjectSurfaces(
+      activeThreadRef,
+      activeProject === null ? null : activeProjectRef,
+    );
+  }, [activeEnvironmentBootstrapComplete, activeProject, activeProjectRef, activeThreadRef]);
 
   // Compute the list of environments this logical project spans, used to
   // drive the environment picker in BranchToolbar.
@@ -5694,7 +5714,7 @@ function ChatViewContent(props: ChatViewProps) {
         <RightPanelTabs
           mode="inline"
           maximized={rightPanelMaximized}
-          surfaces={rightPanelState.surfaces}
+          surfaces={renderedRightPanelSurfaces}
           activeSurfaceId={activeRightPanelSurface?.id ?? null}
           pendingSurfaceIds={pendingFileSurfaceIds}
           previewSessions={activePreviewState.sessions}
@@ -5730,7 +5750,7 @@ function ChatViewContent(props: ChatViewProps) {
           <RightPanelTabs
             mode="sheet"
             layoutControls={panelToggleControls}
-            surfaces={rightPanelState.surfaces}
+            surfaces={renderedRightPanelSurfaces}
             activeSurfaceId={activeRightPanelSurface?.id ?? null}
             pendingSurfaceIds={pendingFileSurfaceIds}
             previewSessions={activePreviewState.sessions}

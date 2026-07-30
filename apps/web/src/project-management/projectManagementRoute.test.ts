@@ -3,7 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   buildProjectManagementRouteTarget,
   parseProjectManagementRouteTarget,
+  projectIdentityMatchesManagementTarget,
   projectManagementRouteSearch,
+  projectManagementTargetKey,
 } from "./projectManagementRoute";
 
 describe("project management route helpers", () => {
@@ -37,5 +39,41 @@ describe("project management route helpers", () => {
       projectId: "project-1",
       view: "management",
     });
+  });
+
+  it("keys redirect ownership by exact target and view", () => {
+    const base = {
+      environmentId: "env-local" as never,
+      projectId: "project-1" as never,
+      view: "management" as const,
+    };
+
+    expect(projectManagementTargetKey(base)).not.toBe(
+      projectManagementTargetKey({ ...base, environmentId: "env-remote" as never }),
+    );
+    expect(projectManagementTargetKey(base)).not.toBe(
+      projectManagementTargetKey({ ...base, view: "inference" }),
+    );
+  });
+
+  it("matches projects by environment and project identity", () => {
+    const target = {
+      environmentId: "env-local" as never,
+      projectId: "project-1" as never,
+    };
+
+    expect(
+      projectIdentityMatchesManagementTarget(
+        { environmentId: target.environmentId, id: target.projectId },
+        target,
+      ),
+    ).toBe(true);
+    expect(
+      projectIdentityMatchesManagementTarget(
+        { environmentId: "env-remote" as never, id: target.projectId },
+        target,
+      ),
+    ).toBe(false);
+    expect(projectIdentityMatchesManagementTarget(null, target)).toBe(false);
   });
 });

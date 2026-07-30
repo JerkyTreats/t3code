@@ -152,7 +152,11 @@ function collectLatestTurnUsageSnapshots(
       if (processedTokens <= 0 && durationMs <= 0) {
         continue;
       }
-      const componentTotals = resolveTokenComponentTotals(payload, processedTokens);
+      const usedTokens = asFiniteNumber(payload.usedTokens) ?? 0;
+      const componentTotals = resolveTokenComponentTotals(
+        payload,
+        usedTokens > 0 ? usedTokens : processedTokens,
+      );
 
       latestUsageByTurnKey.set(activity.turnId ?? activity.id, {
         createdAt: activity.createdAt,

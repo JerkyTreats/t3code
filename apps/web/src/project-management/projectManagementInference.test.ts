@@ -200,4 +200,46 @@ describe("buildProjectInferenceDashboardSnapshot", () => {
       outputTokens: 685,
     });
   });
+
+  it("uses current-turn usage to classify cached subsets while preserving processed totals", () => {
+    const snapshot = buildProjectInferenceDashboardSnapshot({
+      nowIso: "2026-03-12T10:00:00.000Z",
+      threads: [
+        makeThread({
+          id: "thread-1" as ThreadId,
+          projectId: "project-1" as ProjectId,
+          title: "Processed total",
+          activities: [
+            {
+              id: "activity-1" as never,
+              tone: "info",
+              kind: "context-window.updated",
+              summary: "Usage updated",
+              payload: {
+                usedTokens: 11_839,
+                totalProcessedTokens: 50_000,
+                inputTokens: 11_833,
+                cachedInputTokens: 3_456,
+                outputTokens: 6,
+              },
+              turnId: "turn-1" as TurnId,
+              sequence: 1,
+              createdAt: "2026-03-11T09:00:00.000Z",
+            },
+          ],
+        }),
+      ],
+    });
+
+    expect(snapshot.lifetimeTotalBurnTokens).toBe(50_000);
+    expect(snapshot.lifetimeInputTokens).toBe(11_833);
+    expect(snapshot.lifetimeCachedInputTokens).toBe(3_456);
+    expect(snapshot.lifetimeOutputTokens).toBe(6);
+    expect(snapshot.leaderboard[0]).toMatchObject({
+      totalProcessedTokens: 50_000,
+      totalInputTokens: 11_833,
+      cachedInputTokens: 3_456,
+      outputTokens: 6,
+    });
+  });
 });

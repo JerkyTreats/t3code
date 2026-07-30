@@ -2,6 +2,7 @@ import {
   CheckpointRef,
   EventId,
   MessageId,
+  type OrchestrationThreadActivity,
   ORCHESTRATION_THREAD_SYNC_V2_MAX_CONTENT_CHUNK_BYTES,
   ORCHESTRATION_THREAD_SYNC_V2_MAX_PAGE_BYTES,
   ProjectId,
@@ -19,7 +20,10 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
-import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
+import {
+  OrchestrationProjectionSnapshotQueryLive,
+  retainLatestResolvableContextWindowActivities,
+} from "./ProjectionSnapshotQuery.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
@@ -36,6 +40,48 @@ const projectionSnapshotLayer = it.layer(
     Layer.provideMerge(NodeServices.layer),
   ),
 );
+
+it("retains the latest resolvable context row per turn without shadowing malformed rows", () => {
+  const activity = (id: string, turnId: string, payload: unknown): OrchestrationThreadActivity => ({
+    id: asEventId(id),
+    tone: "info",
+    kind: "context-window.updated",
+    summary: "Context window updated",
+    payload,
+    turnId: asTurnId(turnId),
+    createdAt: "2026-04-01T00:00:00.000Z",
+  });
+  const stale = activity("context-stale", "turn-a", {
+    usedTokens: 1_000,
+    totalProcessedTokens: 10_000,
+  });
+  const malformed = activity("context-malformed", "turn-a", { usedTokens: null });
+  const latest = activity("context-latest", "turn-a", {
+    usedTokens: 2_000,
+    totalProcessedTokens: 25_000,
+  });
+  const olderTurn = activity("context-older-turn", "turn-b", {
+    usedTokens: 3_000,
+    totalProcessedTokens: 40_000,
+  });
+
+  const retained = retainLatestResolvableContextWindowActivities([
+    stale,
+    malformed,
+    latest,
+    olderTurn,
+  ]);
+
+  assert.deepEqual(
+    retained.map((entry) => entry.id),
+    [malformed.id, latest.id, olderTurn.id],
+  );
+  assert.deepEqual(retained[1]?.payload, latest.payload);
+  assert.deepEqual(
+    retained.filter((entry) => entry.turnId === olderTurn.turnId),
+    [olderTurn],
+  );
+});
 
 projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
   it.effect("hydrates read model from projection tables and computes snapshot sequence", () =>
@@ -1166,15 +1212,69 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             '{"source":"sequence-1"}',
             1,
             '2026-04-01T00:00:05.000Z'
+          ),
+          (
+            'context-stale',
+            'thread-1',
+            'turn-a',
+            'info',
+            'context-window.updated',
+            'stale context',
+            '{"usedTokens":1000,"totalProcessedTokens":10000}',
+            3,
+            '2026-04-01T00:00:07.000Z'
+          ),
+          (
+            'context-malformed',
+            'thread-1',
+            'turn-a',
+            'info',
+            'context-window.updated',
+            'malformed context',
+            '{"usedTokens":null}',
+            4,
+            '2026-04-01T00:00:08.000Z'
+          ),
+          (
+            'context-latest',
+            'thread-1',
+            'turn-a',
+            'info',
+            'context-window.updated',
+            'latest context',
+            '{"usedTokens":2000,"totalProcessedTokens":25000}',
+            5,
+            '2026-04-01T00:00:09.000Z'
+          ),
+          (
+            'context-older-turn',
+            'thread-1',
+            'turn-b',
+            'info',
+            'context-window.updated',
+            'older turn context',
+            '{"usedTokens":3000,"totalProcessedTokens":40000}',
+            6,
+            '2026-04-01T00:00:10.000Z'
           )
       `;
 
       const snapshot = yield* snapshotQuery.getSnapshot();
       const threadDetail = yield* snapshotQuery.getThreadDetailById(ThreadId.make("thread-1"));
+      const threadDetailV2 = yield* snapshotQuery.getThreadDetailV2ById(ThreadId.make("thread-1"), {
+        activities: 20,
+      });
 
       assert.equal(threadDetail._tag, "Some");
       if (threadDetail._tag === "Some") {
         assert.deepEqual(threadDetail.value.activities, snapshot.threads[0]?.activities ?? []);
+      }
+      assert.equal(threadDetailV2._tag, "Some");
+      if (threadDetailV2._tag === "Some") {
+        assert.deepEqual(
+          threadDetailV2.value.thread.activities,
+          snapshot.threads[0]?.activities ?? [],
+        );
       }
 
       assert.deepEqual(snapshot.threads[0]?.activities ?? [], [
@@ -1206,6 +1306,36 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           turnId: null,
           sequence: 2,
           createdAt: "2026-04-01T00:00:04.000Z",
+        },
+        {
+          id: asEventId("context-malformed"),
+          tone: "info",
+          kind: "context-window.updated",
+          summary: "malformed context",
+          payload: { usedTokens: null },
+          turnId: asTurnId("turn-a"),
+          sequence: 4,
+          createdAt: "2026-04-01T00:00:08.000Z",
+        },
+        {
+          id: asEventId("context-latest"),
+          tone: "info",
+          kind: "context-window.updated",
+          summary: "latest context",
+          payload: { usedTokens: 2_000, totalProcessedTokens: 25_000 },
+          turnId: asTurnId("turn-a"),
+          sequence: 5,
+          createdAt: "2026-04-01T00:00:09.000Z",
+        },
+        {
+          id: asEventId("context-older-turn"),
+          tone: "info",
+          kind: "context-window.updated",
+          summary: "older turn context",
+          payload: { usedTokens: 3_000, totalProcessedTokens: 40_000 },
+          turnId: asTurnId("turn-b"),
+          sequence: 6,
+          createdAt: "2026-04-01T00:00:10.000Z",
         },
       ]);
     }),

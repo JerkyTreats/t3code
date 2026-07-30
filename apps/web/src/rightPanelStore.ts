@@ -51,7 +51,7 @@ export type RightPanelSurface =
   | { id: "plan"; kind: "plan" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
-const RIGHT_PANEL_STORAGE_VERSION = 9;
+const RIGHT_PANEL_STORAGE_VERSION = 10;
 
 export interface ThreadRightPanelState {
   isOpen: boolean;
@@ -94,6 +94,7 @@ interface RightPanelStoreState {
   closeAllSurfaces: (ref: ScopedThreadRef) => void;
   reconcileBrowserSurfaces: (ref: ScopedThreadRef, tabIds: readonly string[]) => void;
   reconcileFileSurfaces: (ref: ScopedThreadRef, workspaceAvailable: boolean) => void;
+  reconcileProjectSurfaces: (ref: ScopedThreadRef, projectRef: ScopedProjectRef | null) => void;
   show: (ref: ScopedThreadRef) => void;
   showLauncher: (ref: ScopedThreadRef) => void;
   close: (ref: ScopedThreadRef) => void;
@@ -217,6 +218,33 @@ function directoryPathAncestors(path: string | null): string[] {
   return segments.map((_, index) => segments.slice(0, index + 1).join("/"));
 }
 
+function isScopedProjectRef(value: unknown): value is ScopedProjectRef {
+  if (!value || typeof value !== "object") return false;
+  const ref = value as Record<string, unknown>;
+  return (
+    typeof ref.environmentId === "string" &&
+    ref.environmentId.length > 0 &&
+    typeof ref.projectId === "string" &&
+    ref.projectId.length > 0
+  );
+}
+
+export function projectSurfaceMatchesProject(
+  surface: RightPanelSurface | null | undefined,
+  projectRef: ScopedProjectRef | null | undefined,
+): boolean {
+  return (
+    projectRef !== null &&
+    projectRef !== undefined &&
+    surface !== null &&
+    surface !== undefined &&
+    (surface.kind === "git" || surface.kind === "inference") &&
+    isScopedProjectRef(surface.projectRef) &&
+    surface.projectRef.environmentId === projectRef.environmentId &&
+    surface.projectRef.projectId === projectRef.projectId
+  );
+}
+
 export function migratePersistedRightPanelState(persistedState: unknown): {
   byThreadKey: Record<string, ThreadRightPanelState>;
 } {
@@ -233,61 +261,75 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
               const validThreadState =
                 threadState && typeof threadState === "object" ? threadState : null;
               const surfaces = Array.isArray(validThreadState?.surfaces)
-                ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
-                    if (surface.kind === "file") {
+                ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface: unknown) => {
+                    if (!surface || typeof surface !== "object" || !("kind" in surface)) {
+                      return [];
+                    }
+                    const candidate = surface as RightPanelSurface;
+                    if (candidate.kind === "git" || candidate.kind === "inference") {
+                      if (
+                        candidate.id !== candidate.kind ||
+                        !("projectRef" in candidate) ||
+                        !isScopedProjectRef(candidate.projectRef)
+                      ) {
+                        return [];
+                      }
+                      return [candidate];
+                    }
+                    if (candidate.kind === "file") {
                       const revealLine =
-                        typeof surface.revealLine === "number" &&
-                        Number.isFinite(surface.revealLine)
-                          ? Math.max(1, Math.trunc(surface.revealLine))
+                        typeof candidate.revealLine === "number" &&
+                        Number.isFinite(candidate.revealLine)
+                          ? Math.max(1, Math.trunc(candidate.revealLine))
                           : null;
                       const revealRequestId =
-                        typeof surface.revealRequestId === "number" &&
-                        Number.isSafeInteger(surface.revealRequestId) &&
-                        surface.revealRequestId >= 0
-                          ? surface.revealRequestId
+                        typeof candidate.revealRequestId === "number" &&
+                        Number.isSafeInteger(candidate.revealRequestId) &&
+                        candidate.revealRequestId >= 0
+                          ? candidate.revealRequestId
                           : 0;
-                      return [{ ...surface, revealLine, revealRequestId }];
+                      return [{ ...candidate, revealLine, revealRequestId }];
                     }
-                    if (surface.kind === "files") {
+                    if (candidate.kind === "files") {
                       return [
                         {
-                          ...surface,
+                          ...candidate,
                           expandedDirectoryPath:
-                            typeof surface.expandedDirectoryPath === "string"
-                              ? surface.expandedDirectoryPath
+                            typeof candidate.expandedDirectoryPath === "string"
+                              ? candidate.expandedDirectoryPath
                               : null,
                         },
                       ];
                     }
-                    if (surface.kind !== "terminal") return [surface];
+                    if (candidate.kind !== "terminal") return [candidate];
                     if (
-                      !("resourceId" in surface) ||
-                      typeof surface.resourceId !== "string" ||
-                      surface.id !== `terminal:${surface.resourceId}`
+                      !("resourceId" in candidate) ||
+                      typeof candidate.resourceId !== "string" ||
+                      candidate.id !== `terminal:${candidate.resourceId}`
                     ) {
                       return [];
                     }
                     const terminalIds =
-                      "terminalIds" in surface && Array.isArray(surface.terminalIds)
+                      "terminalIds" in candidate && Array.isArray(candidate.terminalIds)
                         ? [
                             ...new Set(
-                              surface.terminalIds.filter(
+                              candidate.terminalIds.filter(
                                 (terminalId): terminalId is string =>
                                   typeof terminalId === "string",
                               ),
                             ),
                           ]
-                        : [surface.resourceId];
+                        : [candidate.resourceId];
                     const activeTerminalId =
-                      "activeTerminalId" in surface &&
-                      typeof surface.activeTerminalId === "string" &&
-                      terminalIds.includes(surface.activeTerminalId)
-                        ? surface.activeTerminalId
-                        : (terminalIds[0] ?? surface.resourceId);
+                      "activeTerminalId" in candidate &&
+                      typeof candidate.activeTerminalId === "string" &&
+                      terminalIds.includes(candidate.activeTerminalId)
+                        ? candidate.activeTerminalId
+                        : (terminalIds[0] ?? candidate.resourceId);
                     return [
                       {
-                        ...surface,
-                        terminalIds: terminalIds.length > 0 ? terminalIds : [surface.resourceId],
+                        ...candidate,
+                        terminalIds: terminalIds.length > 0 ? terminalIds : [candidate.resourceId],
                         activeTerminalId,
                       },
                     ];
@@ -592,6 +634,26 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               activeSurfaceId: activeStillExists
                 ? current.activeSurfaceId
                 : (surfaces.at(-1)?.id ?? null),
+            };
+          }),
+        })),
+      reconcileProjectSurfaces: (ref, projectRef) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, scopedThreadKey(ref), (current) => {
+            const surfaces = current.surfaces.filter(
+              (surface) =>
+                (surface.kind !== "git" && surface.kind !== "inference") ||
+                projectSurfaceMatchesProject(surface, projectRef),
+            );
+            if (surfaces.length === current.surfaces.length) return current;
+            const activeStillExists = surfaces.some(
+              (surface) => surface.id === current.activeSurfaceId,
+            );
+            return {
+              ...current,
+              isOpen: surfaces.length > 0 ? current.isOpen : false,
+              surfaces,
+              activeSurfaceId: activeStillExists ? current.activeSurfaceId : null,
             };
           }),
         })),

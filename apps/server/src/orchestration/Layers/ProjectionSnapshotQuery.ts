@@ -371,6 +371,37 @@ function mapActivityRow(
   return activity;
 }
 
+function isResolvableContextWindowActivity(activity: OrchestrationThreadActivity): boolean {
+  if (activity.kind !== "context-window.updated") {
+    return false;
+  }
+  if (!activity.payload || typeof activity.payload !== "object") {
+    return false;
+  }
+  const usedTokens = (activity.payload as Record<string, unknown>).usedTokens;
+  return typeof usedTokens === "number" && Number.isFinite(usedTokens) && usedTokens >= 0;
+}
+
+export function retainLatestResolvableContextWindowActivities(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): ReadonlyArray<OrchestrationThreadActivity> {
+  const latestIndexByTurn = new Map<string | null, number>();
+  for (let index = 0; index < activities.length; index += 1) {
+    const activity = activities[index];
+    if (activity && isResolvableContextWindowActivity(activity)) {
+      latestIndexByTurn.set(activity.turnId, index);
+    }
+  }
+  if (latestIndexByTurn.size === 0) {
+    return activities;
+  }
+  return activities.filter(
+    (activity, index) =>
+      !isResolvableContextWindowActivity(activity) ||
+      latestIndexByTurn.get(activity.turnId) === index,
+  );
+}
+
 interface ThreadSyncV2ActivityMapping {
   readonly activity: OrchestrationThreadActivity;
   readonly cursor: OrchestrationActivityCursor;
@@ -1540,6 +1571,24 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     Result: ProjectionThreadActivityRawDbRowSchema,
     execute: ({ threadId, limit }) =>
       sql`
+        WITH resolvable_context_activities AS (
+          SELECT
+            activity_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY thread_id, turn_id
+              ORDER BY sequence DESC, created_at DESC, activity_id DESC
+            ) AS context_rank
+          FROM projection_thread_activities
+          WHERE thread_id = ${threadId}
+            AND kind = 'context-window.updated'
+            AND json_type(payload_json, '$.usedTokens') IN ('integer', 'real')
+            AND CAST(json_extract(payload_json, '$.usedTokens') AS REAL) >= 0
+        ),
+        latest_context_activity_ids AS (
+          SELECT activity_id
+          FROM resolvable_context_activities
+          WHERE context_rank = 1
+        )
         SELECT
           activity_id AS "activityId",
           thread_id AS "threadId",
@@ -1557,6 +1606,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at AS "createdAt"
         FROM projection_thread_activities
         WHERE thread_id = ${threadId}
+          AND (
+            kind <> 'context-window.updated'
+            OR COALESCE(json_type(payload_json, '$.usedTokens') NOT IN ('integer', 'real'), 1)
+            OR COALESCE(CAST(json_extract(payload_json, '$.usedTokens') AS REAL) < 0, 1)
+            OR activity_id IN (SELECT activity_id FROM latest_context_activity_ids)
+          )
           AND EXISTS (
             SELECT 1
             FROM projection_threads
@@ -2182,7 +2237,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 deletedAt: row.deletedAt,
                 messages: messagesByThread.get(row.threadId) ?? [],
                 proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
-                activities: activitiesByThread.get(row.threadId) ?? [],
+                activities: retainLatestResolvableContextWindowActivities(
+                  activitiesByThread.get(row.threadId) ?? [],
+                ),
                 checkpoints: checkpointsByThread.get(row.threadId) ?? [],
                 session: sessionsByThread.get(row.threadId) ?? null,
               }));
@@ -3010,21 +3067,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           return message;
         }),
         proposedPlans: proposedPlanRows.map(mapProposedPlanRow),
-        activities: activityRows.map((row) => {
-          const activity = {
-            id: row.activityId,
-            tone: row.tone,
-            kind: row.kind,
-            summary: row.summary,
-            payload: row.payload,
-            turnId: row.turnId,
-            createdAt: row.createdAt,
-          };
-          if (row.sequence !== null) {
-            return Object.assign(activity, { sequence: row.sequence });
-          }
-          return activity;
-        }),
+        activities: retainLatestResolvableContextWindowActivities(
+          activityRows.map((row) => mapActivityRow(row, row.payload)),
+        ),
         checkpoints: checkpointRows.map((row) => ({
           turnId: row.turnId,
           checkpointTurnCount: row.checkpointTurnCount,
