@@ -54,7 +54,7 @@ import { vcsEnvironment } from "../state/vcs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useDiffPanelStore } from "../diffPanelStore";
-import { useLocallyKnownProjectThreadRefsReader } from "../lib/archivedThreadsState";
+import { useLocallyKnownProjectThreadMembershipReader } from "../lib/archivedThreadsState";
 import { runProjectDeletionLifecycle } from "../lib/threadDeletionWorkflow";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
@@ -81,6 +81,7 @@ import {
   paginateSidebarV2Threads,
   pruneSidebarV2ChangeRequestStates,
   resolveAdjacentThreadId,
+  resolveProjectRemovalConsentBlocker,
   resolveProjectRemovalMembershipBlocker,
   resolveSidebarV2ProjectStatusIndicator,
   resolveSidebarV2BulkSettleTargets,
@@ -441,12 +442,8 @@ export default function SidebarV2() {
     () => environments.map((environment) => environment.environmentId),
     [environments],
   );
-  const {
-    readProjectThreadRefs: readLocallyKnownProjectThreadRefs,
-    isLoading: isArchivedMembershipLoading,
-    error: archivedMembershipError,
-    refreshEnvironment: refreshArchivedEnvironment,
-  } = useLocallyKnownProjectThreadRefsReader(archivedEnvironmentIds);
+  const { readProjectMembership, refreshEnvironment: refreshArchivedEnvironment } =
+    useLocallyKnownProjectThreadMembershipReader(archivedEnvironmentIds);
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const routeTarget = useParams({
@@ -909,9 +906,11 @@ export default function SidebarV2() {
   }, [projectRenameTarget, projectRenameTitle, reportCommandFailure, updateProject]);
   const handleRemoveProject = useCallback(
     async (member: SidebarProjectGroupMember) => {
+      const memberProjectRef = scopeProjectRef(member.environmentId, member.id);
+      const confirmedMembership = readProjectMembership(memberProjectRef);
       const membershipBlocker = resolveProjectRemovalMembershipBlocker({
-        isLoading: isArchivedMembershipLoading,
-        error: archivedMembershipError,
+        isLoading: confirmedMembership.isLoading,
+        error: confirmedMembership.error,
       });
       if (membershipBlocker !== null) {
         toastManager.add({
@@ -921,24 +920,38 @@ export default function SidebarV2() {
         });
         return;
       }
-      const memberProjectRef = scopeProjectRef(member.environmentId, member.id);
       const draftStore = useComposerDraftStore.getState();
       const projectDraftThread = draftStore.getDraftThreadByProjectRef(memberProjectRef);
       const api = readLocalApi();
-      const confirmationProjectThreadCount =
-        readLocallyKnownProjectThreadRefs(memberProjectRef).length;
       const confirmation = buildProjectRemovalConfirmation({
         projectTitle: member.title,
         workspaceRoot: member.workspaceRoot,
-        linkedConversationCount: confirmationProjectThreadCount,
+        linkedConversationCount: confirmedMembership.threadRefs.length,
       });
       const confirmed =
         api == null
           ? window.confirm(confirmation.browserMessage)
           : await api.dialogs.confirm(confirmation.dialogLines.join("\n"));
       if (!confirmed) return;
+      const currentMembership = readProjectMembership(memberProjectRef);
+      const consentBlocker = resolveProjectRemovalConsentBlocker({
+        confirmedThreadKeys: confirmedMembership.threadRefs.map(scopedThreadKey),
+        currentMembership: {
+          threadKeys: currentMembership.threadRefs.map(scopedThreadKey),
+          isLoading: currentMembership.isLoading,
+          error: currentMembership.error,
+        },
+      });
+      if (consentBlocker !== null) {
+        toastManager.add({
+          type: "warning",
+          title: consentBlocker.title,
+          description: consentBlocker.description,
+        });
+        return;
+      }
       const readExactProjectThreadTargets = () =>
-        readLocallyKnownProjectThreadRefs(memberProjectRef).map((threadRef) => ({
+        readProjectMembership(memberProjectRef).threadRefs.map((threadRef) => ({
           threadRef,
           projectRef: memberProjectRef,
         }));
@@ -991,11 +1004,9 @@ export default function SidebarV2() {
       clearRightPanelState,
       clearTerminalUiState,
       deleteProject,
-      archivedMembershipError,
-      isArchivedMembershipLoading,
       projectGroups,
       projectScopeKey,
-      readLocallyKnownProjectThreadRefs,
+      readProjectMembership,
       refreshArchivedEnvironment,
       removeFromSelection,
       reportCommandFailure,

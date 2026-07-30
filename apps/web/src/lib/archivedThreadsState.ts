@@ -7,7 +7,7 @@ import {
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, ScopedProjectRef, ScopedThreadRef } from "@t3tools/contracts";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 
 import { orchestrationEnvironment } from "../state/orchestration";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -73,42 +73,50 @@ export function useArchivedThreadSnapshots(environmentIds: ReadonlyArray<Environ
   };
 }
 
-export function useLocallyKnownProjectThreadRefsReader(
+export function useLocallyKnownProjectThreadMembershipReader(
   environmentIds: ReadonlyArray<EnvironmentId>,
 ): {
-  readonly readProjectThreadRefs: (projectRef: ScopedProjectRef) => ScopedThreadRef[];
-  readonly isLoading: boolean;
-  readonly error: string | null;
+  readonly readProjectMembership: (projectRef: ScopedProjectRef) => {
+    readonly threadRefs: ScopedThreadRef[];
+    readonly isLoading: boolean;
+    readonly error: string | null;
+  };
   readonly refreshEnvironment: (environmentId: EnvironmentId) => void;
 } {
-  const { snapshots, isLoading, error } = useArchivedThreadSnapshots(environmentIds);
-  const snapshotsRef = useRef(snapshots);
-  snapshotsRef.current = snapshots;
+  useArchivedThreadSnapshots(environmentIds);
 
-  const readProjectThreadRefs = useCallback((projectRef: ScopedProjectRef) => {
+  const readProjectMembership = useCallback((projectRef: ScopedProjectRef) => {
+    const archivedState = appAtomRegistry.get(
+      archivedSnapshotsAtom(makeArchivedThreadsEnvironmentKey([projectRef.environmentId])),
+    );
+    const environmentState = archivedState.environmentStateById.get(projectRef.environmentId);
     const activeThreads = readEnvironmentThreadRefs(projectRef.environmentId).flatMap(
       (threadRef) => {
         const thread = readThreadShell(threadRef);
         return thread === null ? [] : [thread];
       },
     );
-    const archivedThreads = snapshotsRef.current.flatMap(({ environmentId, snapshot }) =>
-      snapshot.threads.map((thread) => ({ ...thread, environmentId })),
-    );
-    return collectLocallyKnownProjectThreadRefs({
-      projectRef,
-      activeThreads,
-      archivedThreads,
-    });
+    const archivedThreads =
+      environmentState?.snapshot?.threads.map((thread) => ({
+        ...thread,
+        environmentId: projectRef.environmentId,
+      })) ?? [];
+    return {
+      threadRefs: collectLocallyKnownProjectThreadRefs({
+        projectRef,
+        activeThreads,
+        archivedThreads,
+      }),
+      isLoading: environmentState?.isLoading ?? true,
+      error: environmentState?.error ?? null,
+    };
   }, []);
   const refreshEnvironment = useCallback((environmentId: EnvironmentId) => {
     refreshArchivedThreadsForEnvironment(environmentId);
   }, []);
 
   return {
-    readProjectThreadRefs,
-    isLoading,
-    error,
+    readProjectMembership,
     refreshEnvironment,
   };
 }

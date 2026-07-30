@@ -584,6 +584,34 @@ export function resolveProjectRemovalMembershipBlocker(input: {
   return null;
 }
 
+export function resolveProjectRemovalConsentBlocker(input: {
+  confirmedThreadKeys: readonly string[];
+  currentMembership: {
+    threadKeys: readonly string[];
+    isLoading: boolean;
+    error: string | null;
+  };
+}): ProjectRemovalMembershipBlocker | null {
+  if (input.currentMembership.error !== null || input.currentMembership.isLoading) {
+    return {
+      title: "Project removal needs confirmation again",
+      description:
+        "Conversation membership became unavailable while confirmation was open. Review and try again.",
+    };
+  }
+  const confirmedThreadKeys = new Set(input.confirmedThreadKeys);
+  const membershipChanged =
+    confirmedThreadKeys.size !== input.currentMembership.threadKeys.length ||
+    input.currentMembership.threadKeys.some((threadKey) => !confirmedThreadKeys.has(threadKey));
+  return membershipChanged
+    ? {
+        title: "Project removal needs confirmation again",
+        description:
+          "Linked conversations changed while confirmation was open. Review and try again.",
+      }
+    : null;
+}
+
 export function buildProjectRemovalConfirmation(input: {
   projectTitle: string;
   workspaceRoot: string;

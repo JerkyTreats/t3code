@@ -24,6 +24,7 @@ import {
   sidebarV2VcsProbedThreadKeys,
   resolveSidebarV2SettledTimestamp,
   resolveProjectStatusIndicator,
+  resolveProjectRemovalConsentBlocker,
   resolveProjectRemovalMembershipBlocker,
   resolveSidebarNewThreadSeedContext,
   resolveSidebarNewThreadEnvMode,
@@ -954,6 +955,40 @@ describe("project removal safeguards", () => {
       title: "Cannot remove project",
       description:
         "Archived conversations could not be loaded. Retry before removing this project.",
+    });
+  });
+
+  it("requires retry when a thread arrives during confirmation", () => {
+    expect(
+      resolveProjectRemovalConsentBlocker({
+        confirmedThreadKeys: ["environment-a:thread-1"],
+        currentMembership: {
+          threadKeys: ["environment-a:thread-1", "environment-a:thread-2"],
+          isLoading: false,
+          error: null,
+        },
+      }),
+    ).toEqual({
+      title: "Project removal needs confirmation again",
+      description:
+        "Linked conversations changed while confirmation was open. Review and try again.",
+    });
+  });
+
+  it("requires retry when readiness degrades during confirmation", () => {
+    expect(
+      resolveProjectRemovalConsentBlocker({
+        confirmedThreadKeys: ["environment-a:thread-1"],
+        currentMembership: {
+          threadKeys: ["environment-a:thread-1"],
+          isLoading: true,
+          error: null,
+        },
+      }),
+    ).toEqual({
+      title: "Project removal needs confirmation again",
+      description:
+        "Conversation membership became unavailable while confirmation was open. Review and try again.",
     });
   });
 

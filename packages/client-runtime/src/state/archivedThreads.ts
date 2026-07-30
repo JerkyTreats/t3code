@@ -10,10 +10,17 @@ export interface ArchivedSnapshotEntry {
   readonly snapshot: OrchestrationShellSnapshot;
 }
 
+export interface ArchivedThreadSnapshotEnvironmentState {
+  readonly snapshot: OrchestrationShellSnapshot | null;
+  readonly error: string | null;
+  readonly isLoading: boolean;
+}
+
 export interface ArchivedThreadSnapshotsState {
   readonly snapshots: ReadonlyArray<ArchivedSnapshotEntry>;
   readonly error: string | null;
   readonly isLoading: boolean;
+  readonly environmentStateById: ReadonlyMap<EnvironmentId, ArchivedThreadSnapshotEnvironmentState>;
 }
 
 const ARCHIVED_THREADS_ENVIRONMENT_KEY_SEPARATOR = "\u001f";
@@ -46,6 +53,7 @@ export function createArchivedThreadSnapshotsAtomFamily<E>(options: {
   return Atom.family((environmentKey: string) =>
     Atom.make((get): ArchivedThreadSnapshotsState => {
       const snapshots: ArchivedSnapshotEntry[] = [];
+      const environmentStateById = new Map<EnvironmentId, ArchivedThreadSnapshotEnvironmentState>();
       let error: string | null = null;
       let isLoading = false;
 
@@ -54,16 +62,23 @@ export function createArchivedThreadSnapshotsAtomFamily<E>(options: {
         isLoading ||= result.waiting;
 
         const snapshot = Option.getOrNull(AsyncResult.value(result));
+        const environmentError =
+          result._tag === "Failure" ? "Failed to load archived threads." : null;
+        environmentStateById.set(environmentId, {
+          snapshot,
+          error: environmentError,
+          isLoading: result.waiting,
+        });
         if (snapshot !== null) {
           snapshots.push({ environmentId, snapshot });
         }
 
-        if (error === null && result._tag === "Failure") {
-          error = "Failed to load archived threads.";
+        if (error === null && environmentError !== null) {
+          error = environmentError;
         }
       }
 
-      return { snapshots, error, isLoading };
+      return { snapshots, error, isLoading, environmentStateById };
     }).pipe(Atom.withLabel(`${options.labelPrefix}:${environmentKey}`)),
   );
 }
