@@ -222,7 +222,7 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Preserve line and column metadata, duplicate basename parent suffixes, copy behavior, preferred editor routing, and eligible in app preview behavior.
 - Match rendered code against standalone markdown source ranges so raw HTML cannot opt into linkification or create nested anchors.
 - Derive standalone source ranges from the CommonMark AST so blockquote and repeated list containers, fenced code, and four-space indented code cannot pollute parent suffix disambiguation.
-- Track quote-aware multiline raw anchor ranges while leaving safe HTML and heading anchors unchanged.
+- Track quote-aware multiline raw anchor ranges using HTML non-void anchor semantics, including slash syntax, while leaving safe HTML and heading anchors unchanged.
 
 ## Feature Spec Contract
 

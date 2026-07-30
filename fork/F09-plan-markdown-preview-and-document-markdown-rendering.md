@@ -30,6 +30,7 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Inline file links preserve line and column metadata, duplicate basename parent suffixes, copy behavior, preferred editor behavior, and eligible in app preview behavior.
 - Known local dotted directories such as `.plans` and `conf.d` remain linkable without requiring an explicit relative prefix while arbitrary dotted host shaped roots remain plain code.
 - Only source ranges parsed as standalone markdown inline code can link, so user authored raw HTML attributes cannot opt into linkification or create nested anchors.
+- Raw anchor slash syntax follows HTML non-void element semantics and keeps suppressing inline linkification until the matching close tag.
 
 ## Owner Modules
 
@@ -92,7 +93,7 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Ambiguous inline code and targets outside the workspace remain plain code.
 - Inline code file links retain line and column labels and disambiguate duplicate basenames by parent suffix.
 - Blockquote and list nested fenced code does not contribute hidden paths to duplicate basename disambiguation.
-- Raw HTML code markers and code nested inside multiline raw anchors remain non-linkable.
+- Raw HTML code markers and code nested inside multiline raw anchors remain non-linkable, including anchors written with slash syntax.
 
 ## Compatibility Checks
 

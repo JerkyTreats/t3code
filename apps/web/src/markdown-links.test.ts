@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -444,5 +445,34 @@ describe("collectLinkableInlineCodeSpansFromAst", () => {
     ].join("\n");
 
     expect(parsedInlineCodeSpans(markdown).map((span) => span.text)).toEqual(["src/real.ts"]);
+  });
+
+  it("matches rehypeRaw non-void anchor slash semantics", () => {
+    const sameLine = '<a href="/same" /> `src/same-line.ts` </a>';
+    const multiline = [
+      "<a",
+      '  class="multiline"',
+      '  href="/multiline" />',
+      "`src/multiline.ts`",
+      "</a>",
+    ].join("\n");
+    const markdown = [
+      sameLine,
+      multiline,
+      '<img src="/image.png" /> `src/after-image.ts`',
+      "<span /> `src/after-span.ts`",
+      "Real `src/real.ts`",
+    ].join("\n");
+
+    const rendered = renderToStaticMarkup(
+      createElement(ReactMarkdown, { rehypePlugins: [rehypeRaw] }, markdown),
+    );
+    expect(rendered).toContain('<a href="/same"> <code>src/same-line.ts</code> </a>');
+    expect(rendered).toContain('<a class="multiline" href="/multiline">');
+    expect(parsedInlineCodeSpans(markdown).map((span) => span.text)).toEqual([
+      "src/after-image.ts",
+      "src/after-span.ts",
+      "src/real.ts",
+    ]);
   });
 });

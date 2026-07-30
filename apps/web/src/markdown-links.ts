@@ -475,7 +475,6 @@ interface RawAnchorTagEvent {
   readonly kind: "open" | "close";
   readonly start: number;
   readonly end: number;
-  readonly selfClosing: boolean;
 }
 
 function offsetInsideRanges(
@@ -525,12 +524,10 @@ function rawAnchorTagEvents(
       } else if (character === "'" || character === '"') {
         quote = character;
       } else if (character === ">") {
-        const beforeClose = source.slice(tagStart, tagCursor).trimEnd();
         events.push({
           kind: closing ? "close" : "open",
           start: tagStart,
           end: tagCursor + 1,
-          selfClosing: !closing && beforeClose.endsWith("/"),
         });
         tagCursor += 1;
         break;
@@ -570,7 +567,7 @@ function rawAnchorRanges(
   const ranges: Array<{ start: number; end: number }> = [];
   for (const event of events) {
     if (event.kind === "open") {
-      if (!event.selfClosing) openStarts.push(event.start);
+      openStarts.push(event.start);
       continue;
     }
     const start = openStarts.pop();
