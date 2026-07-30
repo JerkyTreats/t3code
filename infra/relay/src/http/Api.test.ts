@@ -308,6 +308,85 @@ describe("relay environment unlink", () => {
     });
   });
 
+  it.effect("deprovisions an orphaned allocation after the link is already absent", () => {
+    const calls: string[] = [];
+    const target = {
+      userId: "user-1",
+      environmentId: "environment-1",
+      hostname: "environment-1.example.test",
+      tunnelId: "tunnel-1",
+      tunnelName: "environment-1-tunnel",
+      dnsRecordId: "dns-1",
+      readyAt: "2026-07-29T00:00:00.000Z",
+      generation: 7,
+      updatedAt: "unlink-generation",
+    };
+    const client = Object.assign(() => Effect.void, {
+      withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => effect,
+    });
+    const db = {
+      $client: client,
+    } as unknown as RelayDb.RelayDb["Service"];
+    const links = {
+      getForUser: () =>
+        Effect.sync(() => {
+          calls.push("link");
+          return null;
+        }),
+      revokeForUser: () => Effect.die("an absent link must not be revoked"),
+    } as unknown as EnvironmentLinks.EnvironmentLinks["Service"];
+    const credentials = {
+      revokeForEnvironmentPublicKey: () =>
+        Effect.die("credentials must not be revoked without a matching link"),
+    } as unknown as EnvironmentCredentials.EnvironmentCredentials["Service"];
+    const managedEndpoints = {
+      prepareDeprovision: () =>
+        Effect.sync(() => {
+          calls.push("prepare");
+          return target;
+        }),
+      deprovision: (input: { readonly target?: unknown }) =>
+        Effect.sync(() => {
+          expect(input.target).toBe(target);
+          calls.push("deprovision");
+        }),
+    } as unknown as ManagedEndpointProvider.ManagedEndpointProvider["Service"];
+
+    return Effect.gen(function* () {
+      const unlinked = yield* unlinkEnvironmentRecord(
+        { db, links, credentials, managedEndpoints },
+        { userId: "user-1", environmentId: "environment-1" },
+      );
+
+      expect(unlinked).toBe(false);
+      expect(calls).toEqual(["prepare", "link", "deprovision"]);
+    });
+  });
+
+  it.effect("does not release a tunnel without an active link", () => {
+    const client = Object.assign(() => Effect.void, {
+      withTransaction: <A, E, R>(effect: Effect.Effect<A, E, R>) => effect,
+    });
+    const db = {
+      $client: client,
+    } as unknown as RelayDb.RelayDb["Service"];
+    const links = {
+      getForUser: () => Effect.succeed(null),
+    } as unknown as EnvironmentLinks.EnvironmentLinks["Service"];
+    const managedEndpoints = {
+      release: () => Effect.die("an orphaned allocation must not be released as a live link"),
+    } as unknown as ManagedEndpointProvider.ManagedEndpointProvider["Service"];
+
+    return Effect.gen(function* () {
+      const released = yield* releaseEnvironmentTunnelRecord(
+        { db, links, managedEndpoints },
+        { userId: "user-1", environmentId: "environment-1" },
+      );
+
+      expect(released).toBe(false);
+    });
+  });
+
   it.effect("serializes shutdown release before unlink captures its cleanup generation", () =>
     Effect.gen(function* () {
       const transactionLock = yield* Semaphore.make(1);

@@ -226,6 +226,7 @@ describe("releaseManagedTunnelOnShutdown", () => {
 
   function makeReleaseProgram(input?: {
     readonly cliDesired?: boolean;
+    readonly cliDesiredMode?: "managed" | "publish_only";
     readonly replaceRuntimeConfigDuringRequest?: boolean;
     readonly responseOk?: boolean;
   }) {
@@ -234,7 +235,10 @@ describe("releaseManagedTunnelOnShutdown", () => {
       [RELAY_URL_SECRET, encoder.encode("https://relay.example.test")],
     ]);
     if (input?.cliDesired !== false) {
-      secrets.set(CLOUD_CLI_DESIRED_LINK_SECRET, encoder.encode("managed"));
+      secrets.set(
+        CLOUD_CLI_DESIRED_LINK_SECRET,
+        encoder.encode(input?.cliDesiredMode ?? "managed"),
+      );
     }
     const requests: HttpClientRequest.HttpClientRequest[] = [];
     const appliedConfigs: unknown[] = [];
@@ -351,6 +355,18 @@ describe("releaseManagedTunnelOnShutdown", () => {
 
       expect(yield* harness.program).toBe(false);
       expect(harness.requests).toHaveLength(0);
+      expect(harness.appliedConfigs).toEqual([]);
+      expect(harness.secrets.has(CLOUD_ENDPOINT_RUNTIME_CONFIG)).toBe(true);
+    }),
+  );
+
+  it.effect("keeps stale tunnel state live after CLI switches to publish-only mode", () =>
+    Effect.gen(function* () {
+      const harness = makeReleaseProgram({ cliDesiredMode: "publish_only" });
+
+      expect(yield* harness.program).toBe(false);
+      expect(harness.requests).toHaveLength(0);
+      expect(harness.appliedConfigs).toEqual([]);
       expect(harness.secrets.has(CLOUD_ENDPOINT_RUNTIME_CONFIG)).toBe(true);
     }),
   );
