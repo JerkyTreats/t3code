@@ -207,6 +207,8 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Preserve malformed rows, provider processed totals, activity pages, and live events.
 - Apply V2 retention before bounded activity limits so stale rows cannot displace usable state.
 - Keep one usable row for every surviving turn so a turn revert can reveal older context state.
+- Reserve one bounded V2 activity slot for the newest usable context row when later malformed rows fill the tail.
+- Treat every null-turn context row as an independent activity identity in V1 and V2.
 
 ## Feature Spec Contract
 

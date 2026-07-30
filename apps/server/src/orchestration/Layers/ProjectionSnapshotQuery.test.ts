@@ -64,17 +64,33 @@ it("retains the latest resolvable context row per turn without shadowing malform
     usedTokens: 3_000,
     totalProcessedTokens: 40_000,
   });
+  const firstNullTurn = {
+    ...activity("context-null-a", "unused", {
+      usedTokens: 4_000,
+      totalProcessedTokens: 50_000,
+    }),
+    turnId: null,
+  };
+  const secondNullTurn = {
+    ...activity("context-null-b", "unused", {
+      usedTokens: 5_000,
+      totalProcessedTokens: 60_000,
+    }),
+    turnId: null,
+  };
 
   const retained = retainLatestResolvableContextWindowActivities([
     stale,
     malformed,
     latest,
     olderTurn,
+    firstNullTurn,
+    secondNullTurn,
   ]);
 
   assert.deepEqual(
     retained.map((entry) => entry.id),
-    [malformed.id, latest.id, olderTurn.id],
+    [malformed.id, latest.id, olderTurn.id, firstNullTurn.id, secondNullTurn.id],
   );
   assert.deepEqual(retained[1]?.payload, latest.payload);
   assert.deepEqual(
@@ -1256,6 +1272,83 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             '{"usedTokens":3000,"totalProcessedTokens":40000}',
             6,
             '2026-04-01T00:00:10.000Z'
+          ),
+          (
+            'context-claude-null-a',
+            'thread-1',
+            NULL,
+            'info',
+            'context-window.updated',
+            'Claude null turn context A',
+            '{"usedTokens":4000,"totalProcessedTokens":50000,"inputTokens":3500,"cachedInputTokens":1000,"outputTokens":500}',
+            7,
+            '2026-04-01T00:00:11.000Z'
+          ),
+          (
+            'context-claude-null-b',
+            'thread-1',
+            NULL,
+            'info',
+            'context-window.updated',
+            'Claude null turn context B',
+            '{"usedTokens":5000,"totalProcessedTokens":60000,"inputTokens":4250,"cachedInputTokens":1250,"outputTokens":750}',
+            8,
+            '2026-04-01T00:00:12.000Z'
+          ),
+          (
+            'context-crowd-valid',
+            'thread-1',
+            'turn-crowd',
+            'info',
+            'context-window.updated',
+            'usable context before malformed tail',
+            '{"usedTokens":6000,"totalProcessedTokens":70000}',
+            9,
+            '2026-04-01T00:00:13.000Z'
+          ),
+          (
+            'context-crowd-malformed-1',
+            'thread-1',
+            'turn-crowd',
+            'info',
+            'context-window.updated',
+            'malformed context one',
+            '{"usedTokens":null}',
+            10,
+            '2026-04-01T00:00:14.000Z'
+          ),
+          (
+            'context-crowd-malformed-2',
+            'thread-1',
+            'turn-crowd',
+            'info',
+            'context-window.updated',
+            'malformed context two',
+            '{"usedTokens":"unknown"}',
+            11,
+            '2026-04-01T00:00:15.000Z'
+          ),
+          (
+            'context-crowd-malformed-3',
+            'thread-1',
+            'turn-crowd',
+            'info',
+            'context-window.updated',
+            'malformed context three',
+            '{}',
+            12,
+            '2026-04-01T00:00:16.000Z'
+          ),
+          (
+            'context-crowd-malformed-4',
+            'thread-1',
+            'turn-crowd',
+            'info',
+            'context-window.updated',
+            'malformed context four',
+            '{"usedTokens":-1}',
+            13,
+            '2026-04-01T00:00:17.000Z'
           )
       `;
 
@@ -1264,6 +1357,10 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       const threadDetailV2 = yield* snapshotQuery.getThreadDetailV2ById(ThreadId.make("thread-1"), {
         activities: 20,
       });
+      const boundedThreadDetailV2 = yield* snapshotQuery.getThreadDetailV2ById(
+        ThreadId.make("thread-1"),
+        { activities: 2 },
+      );
 
       assert.equal(threadDetail._tag, "Some");
       if (threadDetail._tag === "Some") {
@@ -1275,6 +1372,20 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           threadDetailV2.value.thread.activities,
           snapshot.threads[0]?.activities ?? [],
         );
+      }
+      assert.equal(boundedThreadDetailV2._tag, "Some");
+      if (boundedThreadDetailV2._tag === "Some") {
+        assert.deepEqual(
+          boundedThreadDetailV2.value.thread.activities.map((activity) => activity.id),
+          [asEventId("context-crowd-valid"), asEventId("context-crowd-malformed-4")],
+        );
+        assert.equal(boundedThreadDetailV2.value.windows.activities.returned, 2);
+        assert.equal(boundedThreadDetailV2.value.windows.activities.limit, 2);
+        assert.equal(boundedThreadDetailV2.value.windows.activities.hasMoreBefore, true);
+        assert.deepEqual(boundedThreadDetailV2.value.thread.activities[0]?.payload, {
+          usedTokens: 6_000,
+          totalProcessedTokens: 70_000,
+        });
       }
 
       assert.deepEqual(snapshot.threads[0]?.activities ?? [], [
@@ -1336,6 +1447,88 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           turnId: asTurnId("turn-b"),
           sequence: 6,
           createdAt: "2026-04-01T00:00:10.000Z",
+        },
+        {
+          id: asEventId("context-claude-null-a"),
+          tone: "info",
+          kind: "context-window.updated",
+          summary: "Claude null turn context A",
+          payload: {
+            usedTokens: 4_000,
+            totalProcessedTokens: 50_000,
+            inputTokens: 3_500,
+            cachedInputTokens: 1_000,
+            outputTokens: 500,
+          },
+          turnId: null,
+          sequence: 7,
+          createdAt: "2026-04-01T00:00:11.000Z",
+        },
+        {
+          id: asEventId("context-claude-null-b"),
+          tone: "info",
+          kind: "context-window.updated",
+          summary: "Claude null turn context B",
+          payload: {
+            usedTokens: 5_000,
+            totalProcessedTokens: 60_000,
+            inputTokens: 4_250,
+            cachedInputTokens: 1_250,
+            outputTokens: 750,
+          },
+          turnId: null,
+          sequence: 8,
+          createdAt: "2026-04-01T00:00:12.000Z",
+        },
+        {
+          id: asEventId("context-crowd-valid"),
+          tone: "info",
+          kind: "context-window.updated",
+          summary: "usable context before malformed tail",
+          payload: { usedTokens: 6_000, totalProcessedTokens: 70_000 },
+          turnId: asTurnId("turn-crowd"),
+          sequence: 9,
+          createdAt: "2026-04-01T00:00:13.000Z",
+        },
+        {
+          id: asEventId("context-crowd-malformed-1"),
+          tone: "info",
+          kind: "context-window.updated",
+          summary: "malformed context one",
+          payload: { usedTokens: null },
+          turnId: asTurnId("turn-crowd"),
+          sequence: 10,
+          createdAt: "2026-04-01T00:00:14.000Z",
+        },
+        {
+          id: asEventId("context-crowd-malformed-2"),
+          tone: "info",
+          kind: "context-window.updated",
+          summary: "malformed context two",
+          payload: { usedTokens: "unknown" },
+          turnId: asTurnId("turn-crowd"),
+          sequence: 11,
+          createdAt: "2026-04-01T00:00:15.000Z",
+        },
+        {
+          id: asEventId("context-crowd-malformed-3"),
+          tone: "info",
+          kind: "context-window.updated",
+          summary: "malformed context three",
+          payload: {},
+          turnId: asTurnId("turn-crowd"),
+          sequence: 12,
+          createdAt: "2026-04-01T00:00:16.000Z",
+        },
+        {
+          id: asEventId("context-crowd-malformed-4"),
+          tone: "info",
+          kind: "context-window.updated",
+          summary: "malformed context four",
+          payload: { usedTokens: -1 },
+          turnId: asTurnId("turn-crowd"),
+          sequence: 13,
+          createdAt: "2026-04-01T00:00:17.000Z",
         },
       ]);
     }),

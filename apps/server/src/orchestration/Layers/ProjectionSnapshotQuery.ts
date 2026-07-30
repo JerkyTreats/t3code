@@ -114,6 +114,9 @@ const ProjectionThreadActivityRawDbRowSchema = Schema.Struct({
   sequence: Schema.NullOr(NonNegativeInt),
   createdAt: IsoDateTime,
 });
+type ProjectionThreadActivityRawDbRow = Schema.Schema.Type<
+  typeof ProjectionThreadActivityRawDbRowSchema
+>;
 const ProjectionThreadActivityPayloadMetadataDbRowSchema = Schema.Struct({
   activityId: EventId,
   payloadByteLength: NonNegativeInt,
@@ -385,11 +388,14 @@ function isResolvableContextWindowActivity(activity: OrchestrationThreadActivity
 export function retainLatestResolvableContextWindowActivities(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): ReadonlyArray<OrchestrationThreadActivity> {
-  const latestIndexByTurn = new Map<string | null, number>();
+  const latestIndexByTurn = new Map<string, number>();
   for (let index = 0; index < activities.length; index += 1) {
     const activity = activities[index];
     if (activity && isResolvableContextWindowActivity(activity)) {
-      latestIndexByTurn.set(activity.turnId, index);
+      latestIndexByTurn.set(
+        activity.turnId === null ? `activity:${activity.id}` : `turn:${activity.turnId}`,
+        index,
+      );
     }
   }
   if (latestIndexByTurn.size === 0) {
@@ -398,7 +404,9 @@ export function retainLatestResolvableContextWindowActivities(
   return activities.filter(
     (activity, index) =>
       !isResolvableContextWindowActivity(activity) ||
-      latestIndexByTurn.get(activity.turnId) === index,
+      latestIndexByTurn.get(
+        activity.turnId === null ? `activity:${activity.id}` : `turn:${activity.turnId}`,
+      ) === index,
   );
 }
 
@@ -479,6 +487,55 @@ function takeLimitedRows<T>(
   return {
     rows: options?.reverse === true ? limitedRows.toReversed() : limitedRows,
     hasMore,
+  };
+}
+
+function compareRawActivityRowsDescending(
+  left: ProjectionThreadActivityRawDbRow,
+  right: ProjectionThreadActivityRawDbRow,
+): number {
+  if (left.sequence === null && right.sequence !== null) return 1;
+  if (left.sequence !== null && right.sequence === null) return -1;
+  if (left.sequence !== null && right.sequence !== null && left.sequence !== right.sequence) {
+    return right.sequence - left.sequence;
+  }
+  return (
+    right.createdAt.localeCompare(left.createdAt) || right.activityId.localeCompare(left.activityId)
+  );
+}
+
+function takeInitialActivityRows(input: {
+  readonly rows: ReadonlyArray<ProjectionThreadActivityRawDbRow>;
+  readonly latestResolvableContextRow: ProjectionThreadActivityRawDbRow | null;
+  readonly limit: number;
+}): {
+  readonly rows: ReadonlyArray<ProjectionThreadActivityRawDbRow>;
+  readonly hasMore: boolean;
+  readonly reservedActivityId: EventId | null;
+} {
+  const limitedRows = input.rows.slice(0, input.limit);
+  const latestContext = input.latestResolvableContextRow;
+  if (
+    latestContext !== null &&
+    !limitedRows.some((row) => row.activityId === latestContext.activityId)
+  ) {
+    if (limitedRows.length >= input.limit) {
+      limitedRows.pop();
+    }
+    limitedRows.push(latestContext);
+    limitedRows.sort(compareRawActivityRowsDescending);
+  }
+  const reservedActivityId =
+    latestContext !== null && limitedRows.some((row) => row.activityId === latestContext.activityId)
+      ? latestContext.activityId
+      : null;
+  return {
+    rows: limitedRows.toReversed(),
+    hasMore:
+      input.rows.length > input.limit ||
+      (latestContext !== null &&
+        !input.rows.some((row) => row.activityId === latestContext.activityId)),
+    reservedActivityId,
   };
 }
 
@@ -1575,7 +1632,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           SELECT
             activity_id,
             ROW_NUMBER() OVER (
-              PARTITION BY thread_id, turn_id
+              PARTITION BY
+                thread_id,
+                turn_id IS NULL,
+                CASE WHEN turn_id IS NULL THEN activity_id ELSE turn_id END
               ORDER BY sequence DESC, created_at DESC, activity_id DESC
             ) AS context_rank
           FROM projection_thread_activities
@@ -1623,6 +1683,45 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at DESC,
           activity_id DESC
         LIMIT ${limit}
+      `,
+  });
+
+  const getLatestResolvableContextActivityRawRowByThread = SqlSchema.findOneOption({
+    Request: ThreadIdLookupInput,
+    Result: ProjectionThreadActivityRawDbRowSchema,
+    execute: ({ threadId }) =>
+      sql`
+        SELECT
+          activity_id AS "activityId",
+          thread_id AS "threadId",
+          turn_id AS "turnId",
+          tone,
+          kind,
+          summary,
+          CASE
+            WHEN length(CAST(payload_json AS BLOB)) <= ${THREAD_SYNC_V2_INLINE_ACTIVITY_PAYLOAD_BYTES}
+              THEN payload_json
+            ELSE NULL
+          END AS "payloadJson",
+          length(CAST(payload_json AS BLOB)) AS "payloadByteLength",
+          sequence,
+          created_at AS "createdAt"
+        FROM projection_thread_activities
+        WHERE thread_id = ${threadId}
+          AND kind = 'context-window.updated'
+          AND json_type(payload_json, '$.usedTokens') IN ('integer', 'real')
+          AND CAST(json_extract(payload_json, '$.usedTokens') AS REAL) >= 0
+          AND EXISTS (
+            SELECT 1
+            FROM projection_threads
+            WHERE projection_threads.thread_id = projection_thread_activities.thread_id
+              AND projection_threads.deleted_at IS NULL
+          )
+        ORDER BY
+          sequence DESC,
+          created_at DESC,
+          activity_id DESC
+        LIMIT 1
       `,
   });
 
@@ -3155,6 +3254,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         messageRows,
         proposedPlanRows,
         activityRows,
+        latestResolvableContextActivityRow,
         checkpointRows,
         latestTurnRow,
         sessionRow,
@@ -3201,6 +3301,14 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             ),
           ),
         ),
+        getLatestResolvableContextActivityRawRowByThread({ threadId }).pipe(
+          Effect.mapError(
+            toPersistenceSqlOrDecodeError(
+              "ProjectionSnapshotQuery.getThreadDetailV2ById:getLatestResolvableContextActivity:query",
+              "ProjectionSnapshotQuery.getThreadDetailV2ById:getLatestResolvableContextActivity:decodeRow",
+            ),
+          ),
+        ),
         listTailCheckpointRowsByThread({
           threadId,
           limit: limits.checkpoints + 1,
@@ -3238,7 +3346,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       const proposedPlanWindow = takeLimitedRows(proposedPlanRows, limits.proposedPlans, {
         reverse: true,
       });
-      const activityWindow = takeLimitedRows(activityRows, limits.activities, { reverse: true });
+      const activityWindow = takeInitialActivityRows({
+        rows: activityRows,
+        latestResolvableContextRow: Option.getOrNull(latestResolvableContextActivityRow),
+        limit: limits.activities,
+      });
       const checkpointWindow = takeLimitedRows(checkpointRows, limits.checkpoints, {
         reverse: true,
       });
@@ -3252,6 +3364,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       let messagesHaveMoreBefore = messageWindow.hasMore;
       let proposedPlansHaveMoreBefore = proposedPlanWindow.hasMore;
       let activitiesHaveMoreBefore = activityWindow.hasMore;
+      const reservedContextActivityId = activityWindow.reservedActivityId;
       let checkpointsHaveMoreBefore = checkpointWindow.hasMore;
 
       while (true) {
@@ -3364,7 +3477,20 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             proposedPlansHaveMoreBefore = true;
             break;
           case "activities":
-            activityMappings = activityMappings.slice(1);
+            {
+              const removableIndex = activityMappings.findIndex(
+                (mapping) => mapping.activity.id !== reservedContextActivityId,
+              );
+              if (removableIndex < 0) {
+                return yield* new PersistenceDecodeError({
+                  operation:
+                    "ProjectionSnapshotQuery.getThreadDetailV2ById:reservedContextResponseBound",
+                  issue: `Reserved context activity exceeds ${THREAD_SYNC_V2_MAX_PAGE_RESPONSE_BYTES} bytes`,
+                  correlation: { threadId },
+                });
+              }
+              activityMappings = activityMappings.filter((_, index) => index !== removableIndex);
+            }
             activitiesHaveMoreBefore = true;
             break;
           case "checkpoints":
