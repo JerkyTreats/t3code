@@ -1,10 +1,10 @@
 # Implementation Ledger
 
-Date:
-Branch: product/v0.0.30-origin-rebuild
-Commit Policy:
+Date: 2026-07-30
+Branch: product/v030-p8
+Commit Policy: `governance/commit_policy.md`
 Objective: Reconcile mobile, relay, fork release, workflow, and packaged Linux desktop behavior after all runtime slices integrate.
-Status: planned
+Status: in progress
 
 ## Objective Baseline
 
@@ -62,9 +62,9 @@ Status: planned
 
 | Requirement | Source | Implementation Evidence | Test Evidence | Fuzz Evidence | Comment Or Doc Evidence | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| Mobile contract compatibility | P1 through P7 | pending integrated runtime | pending | selected for legacy decode | pending | blocked |
+| Mobile contract compatibility | P1 through P7 | integrated runtime through P7 | pending | selected for legacy decode | pending | ready |
 | Mobile remote flows | F13 and F15 | current adapters | pending | selected for reconnect order | F13 and F15 | planned |
-| Relay credential and tunnel lifecycle | F13 and P3 | pending P3 | pending | selected for generation races | F13 | blocked |
+| Relay credential and tunnel lifecycle | F13 and P3 | integrated P3 runtime | pending | selected for generation races | F13 | ready |
 | Fork release identity | F01 | current shared identity | pending | not selected | F01 | planned |
 | Origin-only workflows | repository policy | current workflows | pending static scan | selected for target variants | policy docs | planned |
 | Release metadata and manifests | F01 | current release scripts | pending | selected for version inputs | F01 | planned |
@@ -75,6 +75,10 @@ Status: planned
 
 | Slice | Worktree | Branch | Status | Integration Commit | Notes |
 | --- | --- | --- | --- | --- | --- |
+| P8 integration | `/home/jerkytreats/t3code-v030-p8` | `product/v030-p8` | in progress | pending | central reconciliation, combined gates, artifact proof, and review |
+| P8a mobile | `/home/jerkytreats/t3code-v030-p8-mobile` | `product/v030-p8-mobile` | planned | pending | mobile contract and remote flow compatibility |
+| P8b relay | `/home/jerkytreats/t3code-v030-p8-relay` | `product/v030-p8-relay` | planned | pending | relay credentials, allocation, tunnel release, and shutdown |
+| P8c release | `/home/jerkytreats/t3code-v030-p8-release` | `product/v030-p8-release` | planned | pending | identity, workflow scan, Linux artifact, and extracted AppImage smoke |
 
 ## Gate Evidence
 
@@ -103,6 +107,7 @@ Status: planned
 
 ## Phase Notes
 
+- P8 started from verified P7 runtime commit `173a20957` on the program history.
 - This wave does not publish a release or mutate any remote.
 - Upstream hosted deployment automation remains absent unless separately adopted.
 - The artifact smoke uses an isolated temporary user data directory and bounded display service.
