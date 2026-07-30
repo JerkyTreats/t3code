@@ -120,6 +120,18 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Keep paired-client managed tunnels live across shutdown until a restart reprovision credential path exists.
 - Keep Linux Secret Service selection explicit in both launcher and app startup.
 
+## F8 Sidebar V2 And Settled Work
+
+- Keep Sidebar V2 optional and default it off until the user enables the persisted setting.
+- Reuse the shared status resolver so approval and input outrank fractional plan progress, and plan progress outranks generic working state.
+- Keep active rows stable by creation time and expose them in bounded pages of 50 while retaining the routed row.
+- Keep settled history reachable behind an explicit shelf, with 10 initial rows and pages of 25.
+- Gate settle, unsettle, and bulk settle through the exact environment `threadSettlement` capability.
+- Decode missing settlement capability data as false and advertise support from current servers.
+- Preserve exact environment, project, and thread identity through grouping, project actions, selection, navigation, rename, unread, delete, settle, and unsettle.
+- Keep logical project group labels presentation only.
+- Keep thread snoozing absent.
+
 ## Provider Runtime And Binary Selection
 
 - Route provider work by exact instance id and use driver kind only for capabilities and presentation.

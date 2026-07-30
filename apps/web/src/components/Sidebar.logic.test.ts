@@ -22,6 +22,7 @@ import {
   resolveThreadStatusPill,
   shouldClearThreadSelectionOnMouseDown,
   sortProjectsForSidebar,
+  sortProjectGroupsForSidebarV2,
   sortSettledThreadsForSidebarV2,
   sortThreadsForSidebarV2,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
@@ -1174,6 +1175,53 @@ describe("sortProjectsForSidebar", () => {
 });
 
 describe("Sidebar V2 ordering and pagination", () => {
+  it("orders logical groups from concrete environment and project identities", () => {
+    const groups = [
+      {
+        projectKey: "group-local",
+        displayName: "Local",
+        memberProjectRefs: [
+          {
+            environmentId: "environment-local",
+            projectId: "project-shared",
+          },
+        ],
+      },
+      {
+        projectKey: "group-remote",
+        displayName: "Remote",
+        memberProjectRefs: [
+          {
+            environmentId: "environment-remote",
+            projectId: "project-shared",
+          },
+        ],
+      },
+    ];
+    const sorted = sortProjectGroupsForSidebarV2({
+      projects: groups,
+      threads: [
+        {
+          environmentId: "environment-local",
+          projectId: "project-shared",
+          createdAt: "2026-03-09T10:00:00.000Z",
+          updatedAt: "2026-03-09T10:00:00.000Z",
+          latestUserMessageAt: "2026-03-09T10:00:00.000Z",
+        },
+        {
+          environmentId: "environment-remote",
+          projectId: "project-shared",
+          createdAt: "2026-03-09T11:00:00.000Z",
+          updatedAt: "2026-03-09T11:00:00.000Z",
+          latestUserMessageAt: "2026-03-09T11:00:00.000Z",
+        },
+      ],
+      sortOrder: "updated_at",
+    });
+
+    expect(sorted.map((group) => group.projectKey)).toEqual(["group-remote", "group-local"]);
+  });
+
   it("keeps active work in stable creation order", () => {
     const sorted = sortThreadsForSidebarV2([
       makeThreadShell({

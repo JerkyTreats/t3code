@@ -53,6 +53,7 @@ The right panel provides compact global project context while `Open a surface` l
 - `apps/web/src/components/ProjectScriptsControl.tsx`
 - `apps/web/src/lib/projectPaths.ts`
 - `apps/web/src/components/Sidebar.tsx`
+- `apps/web/src/components/SidebarV2.tsx`
 - `apps/web/src/components/AppSidebarLayout.tsx`
 - `apps/web/src/sidebarV2Settings.ts`
 - `apps/web/src/components/CommandPalette.tsx`

@@ -28,7 +28,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -36,21 +35,20 @@ import {
 import { Link, useParams, useRouter } from "@tanstack/react-router";
 
 import { useClientSettings } from "../hooks/useSettings";
+import { useOpenAddProjectCommandPalette } from "../commandPaletteContext";
 import { useSettlementNow } from "../hooks/useSettlementNow";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { readLocalApi } from "../localApi";
-import {
-  deriveProjectGroupingOverrideKey,
-  getProjectOrderKey,
-  selectProjectGroupingSettings,
-} from "../logicalProject";
+import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import { useRightPanelStore } from "../rightPanelStore";
-import { readThreadShell, useProjects, useServerConfigs, useThreadShells } from "../state/entities";
+import { useProjects, useServerConfigs, useThreadShells } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { projectEnvironment } from "../state/projects";
+import { useEnvironmentQuery } from "../state/query";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
+import { vcsEnvironment } from "../state/vcs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
@@ -63,11 +61,11 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import {
   buildSidebarProjectSnapshots,
   type SidebarProjectGroupMember,
-  type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import type { SidebarThreadSummary } from "../types";
 import { ProjectFavicon } from "./ProjectFavicon";
 import {
+  isTrailingDoubleClick,
   orderItemsByPreferredIds,
   paginateSidebarV2Threads,
   resolveAdjacentThreadId,
@@ -140,11 +138,13 @@ interface ThreadRowProps {
   onSettle: (threadRef: ScopedThreadRef) => void;
   onUnsettle: (threadRef: ScopedThreadRef) => void;
   onDelete: (threadRef: ScopedThreadRef) => void;
+  onChangeRequestState: (threadKey: string, state: "open" | "closed" | "merged" | null) => void;
 }
 
 const SidebarV2ThreadRow = memo(function SidebarV2ThreadRow(props: ThreadRowProps) {
   const {
     active,
+    onChangeRequestState,
     onDelete,
     onNavigate,
     onRename,
@@ -175,9 +175,31 @@ const SidebarV2ThreadRow = memo(function SidebarV2ThreadRow(props: ThreadRowProp
     },
   });
   const unread = status?.label === "Completed";
+  const gitCwd = thread.worktreePath ?? project?.workspaceRoot ?? null;
+  const gitStatus = useEnvironmentQuery(
+    thread.branch && gitCwd
+      ? vcsEnvironment.status({
+          environmentId: thread.environmentId,
+          input: { cwd: gitCwd },
+        })
+      : null,
+  );
+  const changeRequestState =
+    thread.branch && gitStatus.data?.refName === thread.branch
+      ? (gitStatus.data.pr?.state ?? null)
+      : null;
+
+  useEffect(() => {
+    onChangeRequestState(threadKey, changeRequestState);
+    return () => onChangeRequestState(threadKey, null);
+  }, [changeRequestState, onChangeRequestState, threadKey]);
 
   const activate = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
+      if (isTrailingDoubleClick(event.detail)) {
+        event.preventDefault();
+        return;
+      }
       if (event.metaKey || event.ctrlKey) {
         event.preventDefault();
         toggleThread(threadKey);
@@ -382,8 +404,8 @@ export default function SidebarV2() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeys = useThreadSelectionStore((state) => state.selectedThreadKeys);
   const removeFromSelection = useThreadSelectionStore((state) => state.removeFromSelection);
-  const markThreadUnread = useUiStateStore((state) => state.markThreadUnread);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const openAddProjectCommandPalette = useOpenAddProjectCommandPalette();
   const { confirmAndDeleteThread } = useThreadActions();
   const createProjectThread = useNewThreadHandler();
   const settleThread = useAtomCommand(threadEnvironment.settle, { reportFailure: false });
@@ -403,6 +425,9 @@ export default function SidebarV2() {
     null,
   );
   const [projectRenameTitle, setProjectRenameTitle] = useState("");
+  const [changeRequestStateByKey, setChangeRequestStateByKey] = useState<
+    ReadonlyMap<string, "open" | "closed" | "merged">
+  >(() => new Map());
   const orderedProjects = useMemo(
     () =>
       orderItemsByPreferredIds({
@@ -524,6 +549,10 @@ export default function SidebarV2() {
         effectiveSettled(thread, {
           now: settlementNow,
           autoSettleAfterDays,
+          changeRequestState:
+            changeRequestStateByKey.get(
+              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+            ) ?? null,
         })
       ) {
         settled.push(thread);
@@ -535,7 +564,13 @@ export default function SidebarV2() {
       active: sortThreadsForSidebarV2(active),
       settled: sortSettledThreadsForSidebarV2(settled),
     };
-  }, [autoSettleAfterDays, settlementNow, supportsSettlement, visibleThreads]);
+  }, [
+    autoSettleAfterDays,
+    changeRequestStateByKey,
+    settlementNow,
+    supportsSettlement,
+    visibleThreads,
+  ]);
   const activeRouteThread =
     routeThreadKey === null
       ? null
@@ -608,6 +643,7 @@ export default function SidebarV2() {
       ),
     [projectGroups, threads],
   );
+  const projectActionGroups = scopedProject ? [scopedProject] : projectGroups;
 
   const navigateToThread = useCallback(
     (threadRef: ScopedThreadRef) => {
@@ -619,6 +655,21 @@ export default function SidebarV2() {
       });
     },
     [clearSelection, isMobile, router, setOpenMobile],
+  );
+  const handleChangeRequestState = useCallback(
+    (threadKey: string, state: "open" | "closed" | "merged" | null) => {
+      setChangeRequestStateByKey((current) => {
+        if ((current.get(threadKey) ?? null) === state) return current;
+        const next = new Map(current);
+        if (state === null) {
+          next.delete(threadKey);
+        } else {
+          next.set(threadKey, state);
+        }
+        return next;
+      });
+    },
+    [],
   );
 
   useEffect(() => {
@@ -834,11 +885,13 @@ export default function SidebarV2() {
           onSettle={(threadRef) => void handleSettle(threadRef)}
           onUnsettle={(threadRef) => void handleUnsettle(threadRef)}
           onDelete={(threadRef) => void handleDelete(threadRef)}
+          onChangeRequestState={handleChangeRequestState}
         />
       );
     },
     [
       handleDelete,
+      handleChangeRequestState,
       handleSettle,
       handleUnsettle,
       navigateToThread,
@@ -949,53 +1002,60 @@ export default function SidebarV2() {
               <EllipsisIcon className="size-3.5" />
             </MenuTrigger>
             <MenuPopup align="end" className="w-64">
-              {(scopedProject ?? projectGroups[0])?.memberProjects.map((member) => (
-                <MenuGroup key={member.physicalProjectKey}>
-                  <MenuGroupLabel>
-                    {member.environmentLabel
-                      ? `${member.title} · ${member.environmentLabel}`
-                      : member.title}
-                  </MenuGroupLabel>
-                  <MenuItem onClick={() => void handleOpenProject(member)}>
-                    <PanelRightOpenIcon />
-                    Project panel
-                  </MenuItem>
-                  <MenuItem
-                    onClick={() =>
-                      void createProjectThread(scopeProjectRef(member.environmentId, member.id))
-                    }
-                  >
-                    <PlusIcon />
-                    New thread
-                  </MenuItem>
-                  <MenuItem
-                    onClick={() => {
-                      setProjectRenameTarget(member);
-                      setProjectRenameTitle(member.title);
-                    }}
-                  >
-                    Rename
-                  </MenuItem>
-                  <MenuItem
-                    onClick={() => {
-                      void navigator.clipboard.writeText(member.workspaceRoot);
-                      toastManager.add({
-                        type: "success",
-                        title: "Path copied",
-                        description: member.workspaceRoot,
-                      });
-                    }}
-                  >
-                    <CopyIcon />
-                    Copy path
-                  </MenuItem>
-                  <MenuItem variant="destructive" onClick={() => void handleRemoveProject(member)}>
-                    <Trash2Icon />
-                    Remove
-                  </MenuItem>
-                  <MenuSeparator />
-                </MenuGroup>
-              ))}
+              {projectActionGroups.flatMap((group) =>
+                group.memberProjects.map((member) => (
+                  <MenuGroup key={member.physicalProjectKey}>
+                    <MenuGroupLabel>
+                      {group.groupedProjectCount > 1
+                        ? `${group.displayName} · ${member.environmentLabel ?? member.workspaceRoot}`
+                        : member.environmentLabel
+                          ? `${member.title} · ${member.environmentLabel}`
+                          : member.title}
+                    </MenuGroupLabel>
+                    <MenuItem onClick={() => void handleOpenProject(member)}>
+                      <PanelRightOpenIcon />
+                      Project panel
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() =>
+                        void createProjectThread(scopeProjectRef(member.environmentId, member.id))
+                      }
+                    >
+                      <PlusIcon />
+                      New thread
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        setProjectRenameTarget(member);
+                        setProjectRenameTitle(member.title);
+                      }}
+                    >
+                      Rename
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        void navigator.clipboard.writeText(member.workspaceRoot);
+                        toastManager.add({
+                          type: "success",
+                          title: "Path copied",
+                          description: member.workspaceRoot,
+                        });
+                      }}
+                    >
+                      <CopyIcon />
+                      Copy path
+                    </MenuItem>
+                    <MenuItem
+                      variant="destructive"
+                      onClick={() => void handleRemoveProject(member)}
+                    >
+                      <Trash2Icon />
+                      Remove
+                    </MenuItem>
+                    <MenuSeparator />
+                  </MenuGroup>
+                )),
+              )}
             </MenuPopup>
           </Menu>
         </div>
@@ -1131,15 +1191,10 @@ export default function SidebarV2() {
           variant="ghost"
           size="sm"
           className="mt-1 w-full justify-start text-xs text-muted-foreground"
-          onClick={() => {
-            const api = readLocalApi();
-            if (api) {
-              void api.contextMenu.show([], { x: 0, y: 0 });
-            }
-          }}
+          onClick={openAddProjectCommandPalette}
         >
           <FolderPlusIcon />
-          Add project from command palette
+          Add project
         </Button>
       </SidebarFooter>
 

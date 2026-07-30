@@ -1,6 +1,6 @@
 # F8 Plan Aware Sidebar And Activity Status Cues
 
-Date: 2026-06-02
+Date: 2026-07-30
 Status: active
 
 ## Intent
@@ -25,6 +25,9 @@ Thread and sidebar status cues reflect plan state directly instead of collapsing
 - Sidebar V2 uses the same plan progress derivation as Sidebar V1. Active fractional plan progress replaces the generic Working label while approval and input states remain higher priority.
 - Sidebar V2 actions remain capability gated and preserve concrete environment, project, and thread identities.
 - Sidebar V2 supports bounded pagination, project grouping, project actions, bulk settle, unread state, delete, rename, and keyboard traversal.
+- Sidebar V2 keeps active rows in stable creation order, loads active rows in pages of 50, and keeps the routed row visible when it falls beyond the loaded page.
+- Sidebar V2 loads 10 settled rows initially and reveals deeper settled history in pages of 25.
+- Environments advertise `threadSettlement`. Missing capability data decodes to false, and unsupported environments keep threads active without rendering lifecycle actions.
 - Settled threads remain reachable and can be explicitly settled or returned to active state.
 - Persisted thread settlement uses `settledOverride` with null, `settled`, or `active`, plus `settledAt` as an ISO timestamp or null.
 - Settle and unsettle commands emit idempotent events. The first settle and user unsettle use server acceptance time, and repeated settle preserves the original accepted timestamp.
@@ -77,8 +80,6 @@ Current owner modules:
 - `apps/desktop/src/settings/DesktopClientSettings.ts`
 - `packages/contracts/src/orchestration.ts`
 
-Planned owner modules:
-
 - `apps/web/src/components/SidebarV2.tsx`
 
 ## Fork Seams
@@ -124,6 +125,8 @@ Planned owner modules:
 - A legacy stored Sidebar V2 opt-in remains enabled after hydration when explicit-choice tracking is absent.
 - Settings routes keep Sidebar V1 after Sidebar V2 is enabled.
 - Both sidebar versions agree on fractional plan progress and status priority.
+- Sidebar V2 ordering and pagination keep the active route reachable without activity-driven row movement.
+- Legacy environment descriptors decode settlement support off while current servers advertise it on.
 - Settled policy tests cover explicit state, waking activity, blockers, queued-turn grace, merged or closed state, inactivity, and invalid timestamps.
 - A schema 38 database upgrades to migration 39 without rewriting migrations 33 through 38.
 - Auto-settle settings decode old data, persist null or integers from 1 through 90, and reject invalid UI values.
