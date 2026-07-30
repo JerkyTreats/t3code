@@ -585,6 +585,19 @@ export function groupSidebarV2VcsProbes<
   return [...groups.values()];
 }
 
+export function sidebarV2VcsProbedThreadKeys<
+  TThread extends {
+    readonly environmentId: string;
+    readonly id: string;
+  },
+>(groups: readonly SidebarV2VcsProbeGroup<TThread>[]): ReadonlySet<string> {
+  return new Set(
+    groups.flatMap((group) =>
+      group.threads.map((thread) => `${thread.environmentId}:${thread.id}`),
+    ),
+  );
+}
+
 export function pruneSidebarV2ChangeRequestStates<T>(
   current: ReadonlyMap<string, T>,
   liveThreadKeys: ReadonlySet<string>,

@@ -18,6 +18,7 @@ import {
   pruneSidebarV2ChangeRequestStates,
   resolveSidebarV2BulkSettleTargets,
   resolveSidebarV2ChangeRequestState,
+  sidebarV2VcsProbedThreadKeys,
   resolveSidebarV2SettledTimestamp,
   resolveProjectStatusIndicator,
   resolveSidebarNewThreadSeedContext,
@@ -1288,6 +1289,36 @@ describe("Sidebar V2 ordering and pagination", () => {
     );
 
     expect([...pruned]).toEqual([["environment-local:thread-live", "open"]]);
+  });
+
+  it("prunes stale state when a visible shell is no longer probeable", () => {
+    const groups = groupSidebarV2VcsProbes({
+      threads: [
+        {
+          id: "thread-probed",
+          environmentId: "environment-local",
+          projectId: "project-1",
+          branch: "feature/probed",
+          worktreePath: null,
+        },
+        {
+          id: "thread-no-branch",
+          environmentId: "environment-local",
+          projectId: "project-1",
+          branch: null,
+          worktreePath: null,
+        },
+      ],
+      projectCwd: () => "/workspace",
+    });
+    const current = new Map([
+      ["environment-local:thread-probed", "open" as const],
+      ["environment-local:thread-no-branch", "merged" as const],
+    ]);
+
+    const pruned = pruneSidebarV2ChangeRequestStates(current, sidebarV2VcsProbedThreadKeys(groups));
+
+    expect([...pruned]).toEqual([["environment-local:thread-probed", "open"]]);
   });
 
   it("orders logical groups from concrete environment and project identities", () => {

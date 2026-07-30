@@ -80,6 +80,7 @@ import {
   resolveSidebarV2BulkSettleTargets,
   resolveSidebarV2ChangeRequestState,
   resolveThreadStatusPill,
+  sidebarV2VcsProbedThreadKeys,
   SIDEBAR_V2_ACTIVE_PAGE_SIZE,
   SIDEBAR_V2_SETTLED_INITIAL_COUNT,
   SIDEBAR_V2_SETTLED_PAGE_SIZE,
@@ -585,20 +586,15 @@ export default function SidebarV2() {
       }),
     [projectMemberByRef, visibleThreads],
   );
-  const visibleThreadKeys = useMemo(
-    () =>
-      new Set(
-        visibleThreads.map((thread) =>
-          scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-        ),
-      ),
-    [visibleThreads],
+  const probedThreadKeys = useMemo(
+    () => sidebarV2VcsProbedThreadKeys(vcsProbeGroups),
+    [vcsProbeGroups],
   );
   useEffect(() => {
     setChangeRequestStateByKey((current) =>
-      pruneSidebarV2ChangeRequestStates(current, visibleThreadKeys),
+      pruneSidebarV2ChangeRequestStates(current, probedThreadKeys),
     );
-  }, [visibleThreadKeys]);
+  }, [probedThreadKeys]);
   const partition = useMemo(() => {
     const active: SidebarThreadSummary[] = [];
     const settled: SidebarThreadSummary[] = [];
