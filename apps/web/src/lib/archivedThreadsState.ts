@@ -75,12 +75,17 @@ export function useArchivedThreadSnapshots(environmentIds: ReadonlyArray<Environ
 
 export function useLocallyKnownProjectThreadRefsReader(
   environmentIds: ReadonlyArray<EnvironmentId>,
-): (projectRef: ScopedProjectRef) => ScopedThreadRef[] {
-  const { snapshots } = useArchivedThreadSnapshots(environmentIds);
+): {
+  readonly readProjectThreadRefs: (projectRef: ScopedProjectRef) => ScopedThreadRef[];
+  readonly isLoading: boolean;
+  readonly error: string | null;
+  readonly refreshEnvironment: (environmentId: EnvironmentId) => void;
+} {
+  const { snapshots, isLoading, error } = useArchivedThreadSnapshots(environmentIds);
   const snapshotsRef = useRef(snapshots);
   snapshotsRef.current = snapshots;
 
-  return useCallback((projectRef: ScopedProjectRef) => {
+  const readProjectThreadRefs = useCallback((projectRef: ScopedProjectRef) => {
     const activeThreads = readEnvironmentThreadRefs(projectRef.environmentId).flatMap(
       (threadRef) => {
         const thread = readThreadShell(threadRef);
@@ -96,4 +101,14 @@ export function useLocallyKnownProjectThreadRefsReader(
       archivedThreads,
     });
   }, []);
+  const refreshEnvironment = useCallback((environmentId: EnvironmentId) => {
+    refreshArchivedThreadsForEnvironment(environmentId);
+  }, []);
+
+  return {
+    readProjectThreadRefs,
+    isLoading,
+    error,
+    refreshEnvironment,
+  };
 }

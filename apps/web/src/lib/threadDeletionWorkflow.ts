@@ -49,6 +49,7 @@ export interface ProjectDeletionLifecycleInput<TResult> {
   ) => Promise<TResult>;
   didDeleteProject: (result: TResult) => boolean;
   actions: DeletedThreadStateActions;
+  onProjectDeleted?: () => void;
 }
 
 export async function runProjectDeletionLifecycle<TResult>(
@@ -70,6 +71,7 @@ export async function runProjectDeletionLifecycle<TResult>(
     targets: [...targetsByThreadKey.values()],
     actions: input.actions,
   });
+  input.onProjectDeleted?.();
   return result;
 }
 

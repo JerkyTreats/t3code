@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
+  buildProjectRemovalConfirmation,
   createThreadJumpHintVisibilityController,
   createDeferredSidebarV2ActivationController,
   getSidebarV2ConcreteProjectTargets,
@@ -23,6 +24,7 @@ import {
   sidebarV2VcsProbedThreadKeys,
   resolveSidebarV2SettledTimestamp,
   resolveProjectStatusIndicator,
+  resolveProjectRemovalMembershipBlocker,
   resolveSidebarNewThreadSeedContext,
   resolveSidebarNewThreadEnvMode,
   resolveSidebarStageBadgeLabel,
@@ -926,6 +928,59 @@ describe("resolveSidebarV2ProjectStatusIndicator", () => {
         },
       }),
     ).toBeNull();
+  });
+});
+
+describe("project removal safeguards", () => {
+  it("blocks removal while archived membership is loading", () => {
+    expect(
+      resolveProjectRemovalMembershipBlocker({
+        isLoading: true,
+        error: null,
+      }),
+    ).toEqual({
+      title: "Cannot remove project yet",
+      description: "Archived conversations are still loading. Try again after loading completes.",
+    });
+  });
+
+  it("blocks removal when archived membership failed to load", () => {
+    expect(
+      resolveProjectRemovalMembershipBlocker({
+        isLoading: false,
+        error: "Failed to load archived threads.",
+      }),
+    ).toEqual({
+      title: "Cannot remove project",
+      description:
+        "Archived conversations could not be loaded. Retry before removing this project.",
+    });
+  });
+
+  it("warns about archived-only linked conversations in native confirmation", () => {
+    const confirmation = buildProjectRemovalConfirmation({
+      projectTitle: "Archived project",
+      workspaceRoot: "/workspace/archived",
+      linkedConversationCount: 2,
+    });
+
+    expect(confirmation.dialogLines).toEqual([
+      'Remove project "Archived project"?',
+      "Path: /workspace/archived",
+      "This will permanently delete 2 linked conversations.",
+    ]);
+  });
+
+  it("includes the destructive conversation warning in browser fallback text", () => {
+    const confirmation = buildProjectRemovalConfirmation({
+      projectTitle: "Browser project",
+      workspaceRoot: "/workspace/browser",
+      linkedConversationCount: 1,
+    });
+
+    expect(confirmation.browserMessage).toBe(
+      'Remove project "Browser project"?\n\nPath: /workspace/browser\n\nThis will permanently delete 1 linked conversation.',
+    );
   });
 });
 

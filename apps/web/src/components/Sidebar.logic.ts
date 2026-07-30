@@ -559,6 +559,54 @@ export function resolveSidebarV2ProjectStatusIndicator(input: {
   );
 }
 
+export interface ProjectRemovalMembershipBlocker {
+  title: string;
+  description: string;
+}
+
+export function resolveProjectRemovalMembershipBlocker(input: {
+  isLoading: boolean;
+  error: string | null;
+}): ProjectRemovalMembershipBlocker | null {
+  if (input.error !== null) {
+    return {
+      title: "Cannot remove project",
+      description:
+        "Archived conversations could not be loaded. Retry before removing this project.",
+    };
+  }
+  if (input.isLoading) {
+    return {
+      title: "Cannot remove project yet",
+      description: "Archived conversations are still loading. Try again after loading completes.",
+    };
+  }
+  return null;
+}
+
+export function buildProjectRemovalConfirmation(input: {
+  projectTitle: string;
+  workspaceRoot: string;
+  linkedConversationCount: number;
+}): {
+  browserMessage: string;
+  dialogLines: readonly string[];
+} {
+  const conversationWarning =
+    input.linkedConversationCount > 0
+      ? `This will permanently delete ${input.linkedConversationCount} linked conversation${input.linkedConversationCount === 1 ? "" : "s"}.`
+      : "This removes only the project entry.";
+  const dialogLines = [
+    `Remove project "${input.projectTitle}"?`,
+    `Path: ${input.workspaceRoot}`,
+    conversationWarning,
+  ];
+  return {
+    browserMessage: dialogLines.join("\n\n"),
+    dialogLines,
+  };
+}
+
 export function parseSidebarTimestamp(timestamp: string | null | undefined): number {
   if (!timestamp) return 0;
   const parsed = Date.parse(timestamp);

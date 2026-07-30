@@ -119,15 +119,18 @@ describe("runProjectDeletionLifecycle", () => {
         return { deleted: true };
       },
     );
+    const refreshArchivedSnapshot = vi.fn();
 
     await runProjectDeletionLifecycle({
       readThreadTargets,
       deleteProjectRecord,
       didDeleteProject: (result) => result.deleted,
       actions,
+      onProjectDeleted: refreshArchivedSnapshot,
     });
 
     expect(readThreadTargets).toHaveBeenCalledTimes(2);
+    expect(refreshArchivedSnapshot).toHaveBeenCalledTimes(1);
     for (const threadRef of [
       existingThreadRef,
       duringConfirmationThreadRef,
@@ -143,6 +146,32 @@ describe("runProjectDeletionLifecycle", () => {
       duringConfirmationThreadRef,
       duringDeletionThreadRef,
     ]);
+  });
+
+  it("does not refresh archived membership or clear state when deletion fails", async () => {
+    const actions = {
+      clearComposerDraftForThread: vi.fn(),
+      clearProjectDraftThreadById: vi.fn(),
+      clearTerminalUiState: vi.fn(),
+      clearRightPanelState: vi.fn(),
+      clearDiffPanelState: vi.fn(),
+      removeFromThreadSelection: vi.fn(),
+    };
+    const refreshArchivedSnapshot = vi.fn();
+    const readThreadTargets = vi.fn(() => [{ threadRef: deletedThreadRef, projectRef }]);
+
+    await runProjectDeletionLifecycle({
+      readThreadTargets,
+      deleteProjectRecord: async () => ({ deleted: false }),
+      didDeleteProject: (result) => result.deleted,
+      actions,
+      onProjectDeleted: refreshArchivedSnapshot,
+    });
+
+    expect(readThreadTargets).toHaveBeenCalledTimes(1);
+    expect(actions.clearComposerDraftForThread).not.toHaveBeenCalled();
+    expect(actions.removeFromThreadSelection).not.toHaveBeenCalled();
+    expect(refreshArchivedSnapshot).not.toHaveBeenCalled();
   });
 });
 

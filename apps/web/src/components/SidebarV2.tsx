@@ -72,6 +72,7 @@ import {
 import type { SidebarThreadSummary } from "../types";
 import { ProjectFavicon } from "./ProjectFavicon";
 import {
+  buildProjectRemovalConfirmation,
   createDeferredSidebarV2ActivationController,
   getSidebarV2ConcreteProjectTargets,
   groupSidebarV2VcsProbes,
@@ -80,6 +81,7 @@ import {
   paginateSidebarV2Threads,
   pruneSidebarV2ChangeRequestStates,
   resolveAdjacentThreadId,
+  resolveProjectRemovalMembershipBlocker,
   resolveSidebarV2ProjectStatusIndicator,
   resolveSidebarV2BulkSettleTargets,
   resolveSidebarV2ChangeRequestState,
@@ -439,8 +441,12 @@ export default function SidebarV2() {
     () => environments.map((environment) => environment.environmentId),
     [environments],
   );
-  const readLocallyKnownProjectThreadRefs =
-    useLocallyKnownProjectThreadRefsReader(archivedEnvironmentIds);
+  const {
+    readProjectThreadRefs: readLocallyKnownProjectThreadRefs,
+    isLoading: isArchivedMembershipLoading,
+    error: archivedMembershipError,
+    refreshEnvironment: refreshArchivedEnvironment,
+  } = useLocallyKnownProjectThreadRefsReader(archivedEnvironmentIds);
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const routeTarget = useParams({
@@ -903,25 +909,33 @@ export default function SidebarV2() {
   }, [projectRenameTarget, projectRenameTitle, reportCommandFailure, updateProject]);
   const handleRemoveProject = useCallback(
     async (member: SidebarProjectGroupMember) => {
+      const membershipBlocker = resolveProjectRemovalMembershipBlocker({
+        isLoading: isArchivedMembershipLoading,
+        error: archivedMembershipError,
+      });
+      if (membershipBlocker !== null) {
+        toastManager.add({
+          type: "error",
+          title: membershipBlocker.title,
+          description: membershipBlocker.description,
+        });
+        return;
+      }
       const memberProjectRef = scopeProjectRef(member.environmentId, member.id);
       const draftStore = useComposerDraftStore.getState();
       const projectDraftThread = draftStore.getDraftThreadByProjectRef(memberProjectRef);
       const api = readLocalApi();
-      const confirmationProjectThreadCount = threads.filter(
-        (thread) => thread.environmentId === member.environmentId && thread.projectId === member.id,
-      ).length;
+      const confirmationProjectThreadCount =
+        readLocallyKnownProjectThreadRefs(memberProjectRef).length;
+      const confirmation = buildProjectRemovalConfirmation({
+        projectTitle: member.title,
+        workspaceRoot: member.workspaceRoot,
+        linkedConversationCount: confirmationProjectThreadCount,
+      });
       const confirmed =
         api == null
-          ? window.confirm(`Remove project "${member.title}" from T3 Code?`)
-          : await api.dialogs.confirm(
-              [
-                `Remove project "${member.title}"?`,
-                `Path: ${member.workspaceRoot}`,
-                confirmationProjectThreadCount > 0
-                  ? `This also deletes ${confirmationProjectThreadCount} linked thread${confirmationProjectThreadCount === 1 ? "" : "s"}.`
-                  : "This removes only the project entry.",
-              ].join("\n"),
-            );
+          ? window.confirm(confirmation.browserMessage)
+          : await api.dialogs.confirm(confirmation.dialogLines.join("\n"));
       if (!confirmed) return;
       const readExactProjectThreadTargets = () =>
         readLocallyKnownProjectThreadRefs(memberProjectRef).map((threadRef) => ({
@@ -949,6 +963,9 @@ export default function SidebarV2() {
             removeFromSelection(threadRefs.map(scopedThreadKey));
           },
         },
+        onProjectDeleted: () => {
+          refreshArchivedEnvironment(member.environmentId);
+        },
       });
       reportCommandFailure("Failed to remove project", result);
       if (result._tag !== "Success") return;
@@ -974,12 +991,14 @@ export default function SidebarV2() {
       clearRightPanelState,
       clearTerminalUiState,
       deleteProject,
+      archivedMembershipError,
+      isArchivedMembershipLoading,
       projectGroups,
       projectScopeKey,
       readLocallyKnownProjectThreadRefs,
+      refreshArchivedEnvironment,
       removeFromSelection,
       reportCommandFailure,
-      threads,
     ],
   );
   const handleOpenProject = useCallback(
