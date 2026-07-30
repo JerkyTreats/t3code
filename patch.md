@@ -146,6 +146,17 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Reject ordinary and resumed adapter start results that carry a different explicit instance id.
 - Parse Claude skill frontmatter with the workspace catalog `yaml` runtime dependency.
 
+## Sidebar V2 Selection
+
+- Keep Sidebar V2 off by default for the first fork release.
+- Hold Sidebar V1 until client settings finish hydration.
+- Honor explicit persisted choices and preserve a legacy stored opt-in when explicit-choice tracking is absent.
+- Keep settings routes on the Sidebar V1 navigation shell even when Sidebar V2 is enabled.
+- Disable Sidebar V2 preference edits until saved client settings finish hydration.
+- Persist every Beta switch interaction with the explicit-choice bit.
+- Accept inactivity auto-settle as null or a whole number from 1 through 90 and reject invalid drafts before optimistic state or persistence.
+- Keep sidebar version selection as presentation only so concrete environment, project, and thread identities remain unchanged.
+
 ## Feature Spec Contract
 
 Every spec under `fork/` must include:

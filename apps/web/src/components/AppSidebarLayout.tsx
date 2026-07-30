@@ -1,12 +1,15 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, type CSSProperties, type ReactNode } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import { isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
+import { useSidebarV2Enabled } from "../hooks/useSettings";
+import { resolveAppSidebarVersion } from "../sidebarV2Settings";
 import ThreadSidebar from "./Sidebar";
+import ThreadSidebarV2 from "./SidebarV2";
 import { Sidebar, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
@@ -55,6 +58,9 @@ function SidebarControl() {
 
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const sidebarV2Enabled = useSidebarV2Enabled();
+  const sidebarVersion = resolveAppSidebarVersion({ pathname, sidebarV2Enabled });
   const macosWindowControlsStyle =
     isElectron && isMacPlatform(navigator.platform)
       ? ({ "--workspace-controls-left": MACOS_TRAFFIC_LIGHTS_LEFT_INSET } as CSSProperties)
@@ -82,6 +88,8 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
       <Sidebar
         side="left"
         collapsible="offcanvas"
+        data-app-sidebar=""
+        data-sidebar-version={sidebarVersion}
         className="border-r border-border bg-card text-foreground"
         resizable={{
           minWidth: THREAD_SIDEBAR_MIN_WIDTH,
@@ -90,7 +98,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           storageKey: THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
         }}
       >
-        <ThreadSidebar />
+        {sidebarVersion === "v2" ? <ThreadSidebarV2 /> : <ThreadSidebar />}
         <SidebarRail />
       </Sidebar>
       {children}

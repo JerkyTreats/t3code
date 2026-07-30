@@ -65,7 +65,7 @@ Status: in progress
 
 | Requirement | Source | Implementation Evidence | Test Evidence | Fuzz Evidence | Comment Or Doc Evidence | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| Default-off hydration-safe switch | F8 | P1a settings ready | pending | selected for hydration order | F8 | planned |
+| Default-off hydration-safe switch | F8 | `apps/web/src/sidebarV2Settings.ts`, `apps/web/src/hooks/useSettings.ts`, and `apps/web/src/components/AppSidebarLayout.tsx` | resolver, route policy, bounds, persistence, and navigation tests pass | selected for hydration order | F8 and patch guide updated | in_progress |
 | V1 rollback and settings shell | F8 | pending | pending | not selected | pending | planned |
 | Shared fractional plan progress | F8 | current plan resolver | pending | selected for status precedence | F8 | planned |
 | Settled lifecycle and capability gates | F8 and P2 | integrated foundation | pending | selected for activity sequences | F8 | planned |
@@ -80,7 +80,7 @@ Status: in progress
 | Slice | Worktree | Branch | Status | Integration Commit | Notes |
 | --- | --- | --- | --- | --- | --- |
 | P6 integration | `/home/jerkytreats/t3code-v030-sidebar-v2` | `product/v030-sidebar-v2` | in progress | pending | central reconciliation and full gates |
-| P6a switch and layout | `/home/jerkytreats/t3code-v030-p6-switch` | `product/v030-p6-switch` | in progress | pending | hydration, settings, and shell ownership |
+| P6a switch and layout | `/home/jerkytreats/t3code-v030-p6-switch` | `product/v030-p6-switch` | integrated | `0521c5599` | hydration, settings, and shell ownership |
 | P6b Sidebar V2 | `/home/jerkytreats/t3code-v030-p6-sidebar` | `product/v030-p6-sidebar` | in progress | pending | sidebar state and interaction ownership |
 | P6c composer and navigation | `/home/jerkytreats/t3code-v030-p6-composer-nav` | `product/v030-p6-composer-nav` | in progress | pending | stash, composer, deferred browse, and launcher ownership |
 
@@ -88,16 +88,23 @@ Status: in progress
 
 | Gate | Command | Result | Evidence Date | Notes |
 | --- | --- | --- | --- | --- |
+| P6a focused web tests | `pnpm --filter @t3tools/web test -- src/sidebarV2Settings.test.ts src/components/settings/SettingsSidebarNav.test.ts src/hooks/useSettings.test.ts` | passed with 169 files and 1456 tests | 2026-07-30 | Workspace runner selected the full web unit project |
+| P6a format | `pnpm fmt` | passed on 2194 files | 2026-07-30 | Node 24.13.1 |
+| P6a lint | `pnpm lint` | passed with known repository warnings | 2026-07-30 | No new warning in P6a files |
+| P6a full test | `pnpm test` | passed | 2026-07-30 | All workspace test tasks exited zero |
+| P6a typecheck | `pnpm --filter @t3tools/web typecheck` | waiting for P6b dependency | 2026-07-30 | Only missing `SidebarV2.tsx` import remains before P6b reconciliation |
 
 ## Commit Evidence
 
 | Scope | Commit | Status | Notes |
 | --- | --- | --- | --- |
+| P6a switch and layout | `0521c5599` | integrated | Local focused commit with no remote mutation |
 
 ## Review Lanes
 
 | Lane | Reviewer | Status | Findings | Notes |
 | --- | --- | --- | --- | --- |
+| P6a integrated findings review | parent orchestrator fresh reviewer | pending | none yet | Runs after P6b provides the Sidebar V2 dependency |
 
 ## Blocking Findings
 
@@ -111,6 +118,9 @@ Status: in progress
 
 ## Phase Notes
 
+- P6a audited the P1a schema, browser and desktop persistence, settings hydration, V1 settings shell, root layout, route tree, F8, F14, and read-only stable reference before implementation.
+- P6a resolves Sidebar V2 through one pure product helper and holds V1 until hydration completes.
+- P6a keeps every settings route on V1 and adds the Beta route, navigation entry, explicit-choice switch, and bounded auto-settle editor.
 - The fork intentionally does not adopt the stable nightly or development default-on rule. V2 defaults off for the first fork release in every channel.
 - A legacy stored `sidebarV2Enabled: true` remains an opt-in even when the configured-by-user bit is absent.
 - During hydration every consumer reads V1 so the tree cannot mount V2 and then swap.
@@ -119,3 +129,7 @@ Status: in progress
 - Snooze remains absent from schema, commands, events, timers, and user interface.
 
 ## Closeout
+
+- P6a focused implementation, documentation, formatting, lint, focused web tests, and full workspace tests pass.
+- P6a intentionally retains the compile-time `SidebarV2.tsx` dependency owned by P6b.
+- The parent orchestrator owns P6a plus P6b integration, full typecheck, final full gates, and fresh findings review.

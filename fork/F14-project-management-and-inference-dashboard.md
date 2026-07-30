@@ -16,6 +16,7 @@ The right panel provides compact global project context while `Open a surface` l
 - Sidebar and command palette project actions open the unified right panel for the intended concrete project.
 - Project routes preserve concrete project identity, including environment identity when multiple environments can expose projects with overlapping ids.
 - Logical project grouping remains presentation only and must not become the source of workspace path, repository identity, or project route decisions.
+- Switching between Sidebar V1 and Sidebar V2 changes presentation only and preserves concrete environment and project identity.
 - The right panel header exposes compact global project information such as project name, workspace path, repository summary, environment, latest active thread, editor actions, and project script entrypoints.
 - `Open a surface` stays concise and represents selectable surfaces rather than wordy project documentation.
 - Git Panel is opened as a unified right panel surface.
@@ -52,6 +53,8 @@ The right panel provides compact global project context while `Open a surface` l
 - `apps/web/src/components/ProjectScriptsControl.tsx`
 - `apps/web/src/lib/projectPaths.ts`
 - `apps/web/src/components/Sidebar.tsx`
+- `apps/web/src/components/AppSidebarLayout.tsx`
+- `apps/web/src/sidebarV2Settings.ts`
 - `apps/web/src/components/CommandPalette.tsx`
 - `apps/web/src/hooks/useHandleNewThread.ts`
 - `apps/web/src/projectPendingScriptRun.ts`
@@ -72,6 +75,7 @@ The right panel provides compact global project context while `Open a surface` l
 - Restore product helpers before route and UI integration.
 - Keep concrete project identity as environment id plus project id.
 - Keep sidebar grouping presentation only.
+- Keep sidebar version selection outside project routing so the switch cannot rewrite environment or project identity.
 - Add the project context header before adding project surfaces.
 - Add project scoped Git through a right panel surface adapter instead of faking active thread identity.
 - Add Inference Dashboard through a right panel surface descriptor instead of a standalone management page dependency.
@@ -93,6 +97,7 @@ The right panel provides compact global project context while `Open a surface` l
 - Sidebar and command palette project actions open the unified right panel for the intended concrete project.
 - Environment scoped project routes distinguish projects with the same id or path across saved environments.
 - Grouped sidebar projects keep group labels presentation only while concrete project actions still target concrete projects.
+- Sidebar version changes preserve the current environment-aware project route.
 - Project context can start a new thread, open the latest active thread, open the project in an available editor, and run project scripts.
 - `Open a surface` exposes Git Panel and Inference Dashboard as concise launchers.
 - Project scoped Git surface renders repository state without an active thread and does not clear active composer drafts.
@@ -107,5 +112,6 @@ The right panel provides compact global project context while `Open a surface` l
 ## Compatibility Checks
 
 - Project routes remain environment aware.
+- Sidebar version settings remain client-local and never enter project route ids.
 - Legacy or missing project state redirects or degrades safely.
 - Project scoped Git surface does not mutate unrelated composer draft state.

@@ -19,6 +19,9 @@ Thread and sidebar status cues reflect plan state directly instead of collapsing
 - Sidebar V2 is an optional surface that defaults off for its first fork release.
 - Settings persist both the Sidebar V2 enabled value and whether the user configured that value explicitly.
 - Sidebar V1 remains available while Sidebar V2 is optional.
+- Sidebar selection remains on V1 until client settings finish hydration, then honors explicit choices and legacy stored opt-ins without remounting the application shell.
+- Settings routes always render through the Sidebar V1 navigation shell even when Sidebar V2 is enabled.
+- Beta settings expose the Sidebar V2 choice and bounded inactivity auto-settle controls after saved client preferences load.
 - Sidebar V2 uses the same plan progress derivation as Sidebar V1. Active fractional plan progress replaces the generic Working label while approval and input states remain higher priority.
 - Sidebar V2 actions remain capability gated and preserve concrete environment, project, and thread identities.
 - Sidebar V2 supports bounded pagination, project grouping, project actions, bulk settle, unread state, delete, rename, and keyboard traversal.
@@ -43,10 +46,14 @@ Current owner modules:
 
 - `apps/web/src/components/Sidebar.logic.ts`
 - `apps/web/src/components/Sidebar.tsx`
+- `apps/web/src/components/AppSidebarLayout.tsx`
 - `apps/web/src/components/ThreadStatusIndicators.tsx`
 - `apps/web/src/components/PlanSidebar.tsx`
 - `apps/web/src/components/ChatView.tsx`
 - `apps/web/src/components/settings/SettingsPanels.tsx`
+- `apps/web/src/components/settings/BetaSettingsPanel.tsx`
+- `apps/web/src/components/settings/SettingsSidebarNav.tsx`
+- `apps/web/src/routes/settings.beta.tsx`
 - `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts`
 - `apps/server/src/orchestration/Layers/ProjectionPipeline.ts`
 - `apps/server/src/orchestration/decider.ts`
@@ -64,6 +71,7 @@ Current owner modules:
 - `packages/client-runtime/src/operations/commands.ts`
 - `packages/contracts/src/settings.ts`
 - `apps/web/src/hooks/useSettings.ts`
+- `apps/web/src/sidebarV2Settings.ts`
 - `apps/web/src/hooks/useSettlementNow.ts`
 - `apps/web/src/clientPersistenceStorage.ts`
 - `apps/desktop/src/settings/DesktopClientSettings.ts`
@@ -72,7 +80,6 @@ Current owner modules:
 Planned owner modules:
 
 - `apps/web/src/components/SidebarV2.tsx`
-- `apps/web/src/components/AppSidebarLayout.tsx`
 
 ## Fork Seams
 
@@ -93,6 +100,8 @@ Planned owner modules:
 - Treat project group labels as display only.
 - Verify plan sidebar entry points after route and layout changes.
 - Restore settlement contracts, migration, policy, and projection before mounting Sidebar V2.
+- Resolve Sidebar V2 through the hydration-aware product helper and never read the raw enabled bit for layout selection.
+- Keep settings routes on Sidebar V1 so enabling the beta cannot replace settings navigation.
 - Keep one shared plan progress resolver across both sidebar versions.
 - Route Sidebar V1, Sidebar V2, and command palette project actions through one concrete project launcher.
 - Keep unsupported settlement actions hidden through environment capability checks.
@@ -111,6 +120,9 @@ Planned owner modules:
 - Plan sidebar remains reachable from the thread view.
 - Enabling logical project grouping keeps concrete project actions and plan aware thread cues visible.
 - Sidebar V2 defaults off, honors explicit persisted choices, and leaves Sidebar V1 selectable.
+- Hydration holds Sidebar V1 even when a persisted opt-in will enable Sidebar V2 after settings load.
+- A legacy stored Sidebar V2 opt-in remains enabled after hydration when explicit-choice tracking is absent.
+- Settings routes keep Sidebar V1 after Sidebar V2 is enabled.
 - Both sidebar versions agree on fractional plan progress and status priority.
 - Settled policy tests cover explicit state, waking activity, blockers, queued-turn grace, merged or closed state, inactivity, and invalid timestamps.
 - A schema 38 database upgrades to migration 39 without rewriting migrations 33 through 38.
@@ -124,5 +136,6 @@ Planned owner modules:
 - Group labels never become route ids, repository ids, GitHub ids, or workspace paths.
 - Sidebar row actions still target concrete projects and threads.
 - Old settings decode with Sidebar V2 off and auto-settle set to 3.
+- Invalid auto-settle drafts never reach optimistic state or persistence and valid values remain limited to null or whole days from 1 through 90.
 - Unsupported environments do not expose settlement mutations.
 - Settlement fields remain additive to shell, detail, and hydration payloads.

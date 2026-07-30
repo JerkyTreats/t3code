@@ -25,6 +25,7 @@ import {
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import { ensureLocalApi } from "~/localApi";
+import { resolveSidebarV2Enabled } from "~/sidebarV2Settings";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
@@ -237,6 +238,27 @@ export function useClientSettings<T = ClientSettings>(
 ): T {
   const settings = useClientSettingsValue();
   return useMemo(() => (selector ? selector(settings) : (settings as T)), [selector, settings]);
+}
+
+/**
+ * Hold the original sidebar through client-settings hydration, then honor an
+ * explicit preference or a legacy stored opt-in. The stable fork default is V1.
+ */
+export function useSidebarV2Enabled(): boolean {
+  const settingsHydrated = useClientSettingsHydrated();
+  const settings = useClientSettingsValue();
+
+  return useMemo(
+    () =>
+      resolveSidebarV2Enabled({
+        preference: {
+          enabled: settings.sidebarV2Enabled,
+          configuredByUser: settings.sidebarV2ConfiguredByUser,
+        },
+        settingsHydrated,
+      }),
+    [settings.sidebarV2ConfiguredByUser, settings.sidebarV2Enabled, settingsHydrated],
+  );
 }
 
 /** Read current settings for one environment, merged with client-local preferences. */
