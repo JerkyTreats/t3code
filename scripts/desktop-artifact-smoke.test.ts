@@ -1,21 +1,36 @@
 // @effect-diagnostics nodeBuiltinImport:off
 // @effect-diagnostics globalTimers:off
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, assert, describe, it } from "@effect/vitest";
 
 import {
   assertContainedPath,
   DESKTOP_ARTIFACT_SMOKE_MARKERS,
+  DesktopArtifactSmokeCleanupError,
   makeIsolatedDesktopEnvironment,
   parseDesktopArtifactSmokeArgs,
   runDesktopArtifactSmoke,
   validateAppImagePath,
+  waitForCapturedProcessGroupsToExit,
 } from "./desktop-artifact-smoke.ts";
 
 const temporaryDirectories: string[] = [];
 const SETSID_PATH = "/usr/bin/setsid";
+const DESKTOP_ARTIFACT_SMOKE_SCRIPT_PATH = fileURLToPath(
+  new URL("./desktop-artifact-smoke.ts", import.meta.url),
+);
 
 function makeTemporaryDirectory(): string {
   const directory = mkdtempSync(join(tmpdir(), "desktop-artifact-smoke-test-"));
@@ -135,6 +150,129 @@ describe("desktop-artifact-smoke", () => {
     assert.equal(environment.T3CODE_HOME, join(temporaryRoot, "t3-home"));
   });
 
+  it("waits until every captured process group exits", async () => {
+    let currentTime = 0;
+    let existenceChecks = 0;
+    await waitForCapturedProcessGroupsToExit(new Set([1234]), 100, {
+      groupExists: () => {
+        existenceChecks += 1;
+        return currentTime < 50;
+      },
+      now: () => currentTime,
+      sleep: async (durationMs) => {
+        currentTime += durationMs;
+      },
+    });
+
+    assert.equal(currentTime, 50);
+    assert.equal(existenceChecks, 3);
+  });
+
+  it("fails closed when a captured process group survives the cleanup bound", async () => {
+    let currentTime = 0;
+    let failure: unknown;
+    try {
+      await waitForCapturedProcessGroupsToExit(new Set([5678]), 50, {
+        groupExists: () => true,
+        now: () => currentTime,
+        sleep: async (durationMs) => {
+          currentTime += durationMs;
+        },
+      });
+    } catch (cause) {
+      failure = cause;
+    }
+
+    assert.instanceOf(failure, Error);
+    assert.match(failure.message, /process groups survived cleanup: 5678/);
+    assert.equal(currentTime, 50);
+  });
+
+  it("retains temporary files when cleanup failure follows output overflow", async () => {
+    const supervisorPath = join(makeTemporaryDirectory(), "failing-supervisor.py");
+    writeFileSync(
+      supervisorPath,
+      `import os
+import sys
+os.write(3, b"cleanup-failed\\n")
+sys.stdout.write("x" * ${2 * 1024 * 1024 + 1})
+sys.exit(125)
+`,
+    );
+    const appImagePath = makeFakeAppImage("#!/bin/sh\nexit 0\n");
+
+    let failure: unknown;
+    try {
+      await runDesktopArtifactSmoke(
+        {
+          appImagePath,
+          startupTimeoutMs: 1_000,
+          shutdownTimeoutMs: 1_000,
+        },
+        { processSupervisorPath: supervisorPath },
+      );
+    } catch (cause) {
+      failure = cause;
+    }
+
+    assert.instanceOf(failure, DesktopArtifactSmokeCleanupError);
+    assert.isTrue(existsSync(failure.temporaryRoot));
+    temporaryDirectories.push(failure.temporaryRoot);
+  });
+
+  it("retains temporary files after an unmarked process supervisor crash", async () => {
+    const supervisorPath = join(makeTemporaryDirectory(), "crashing-supervisor.py");
+    writeFileSync(supervisorPath, "import sys\nsys.exit(125)\n");
+    const appImagePath = makeFakeAppImage("#!/bin/sh\nexit 0\n");
+
+    let failure: unknown;
+    try {
+      await runDesktopArtifactSmoke(
+        {
+          appImagePath,
+          startupTimeoutMs: 1_000,
+          shutdownTimeoutMs: 1_000,
+        },
+        { processSupervisorPath: supervisorPath },
+      );
+    } catch (cause) {
+      failure = cause;
+    }
+
+    assert.instanceOf(failure, DesktopArtifactSmokeCleanupError);
+    assert.isTrue(existsSync(failure.temporaryRoot));
+    temporaryDirectories.push(failure.temporaryRoot);
+  });
+
+  it("does not retain the event loop for the full shutdown bound", () => {
+    const appImagePath = makeFakeAppImage(`#!/bin/sh
+trap 'exit 0' TERM INT
+echo '${DESKTOP_ARTIFACT_SMOKE_MARKERS.backendListening}'
+echo '${DESKTOP_ARTIFACT_SMOKE_MARKERS.rendererReady}'
+while true; do sleep 1; done
+`);
+    const startedAt = process.hrtime.bigint();
+
+    execFileSync(
+      process.execPath,
+      [
+        DESKTOP_ARTIFACT_SMOKE_SCRIPT_PATH,
+        appImagePath,
+        "--startup-timeout-ms",
+        "2000",
+        "--shutdown-timeout-ms",
+        "5000",
+      ],
+      {
+        encoding: "utf8",
+        timeout: 3_500,
+      },
+    );
+
+    const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    assert.isBelow(elapsedMs, 3_000);
+  });
+
   it("extracts and launches an AppImage until both readiness markers appear", async () => {
     const appImagePath = makeFakeAppImage(`#!/bin/sh
 trap 'exit 0' TERM INT
@@ -217,7 +355,7 @@ while true; do sleep 1; done
     try {
       await runDesktopArtifactSmoke({
         appImagePath,
-        startupTimeoutMs: 100,
+        startupTimeoutMs: 1_000,
         shutdownTimeoutMs: 1_000,
       });
     } catch (cause) {
@@ -285,6 +423,79 @@ while true; do sleep 1; done
       }
 
       assert.fail(`Packaged descendant ${descendantPid} survived process-group cleanup.`);
+    },
+  );
+
+  descendantCleanupTest(
+    "captures a detached child when its packaged parent exits immediately",
+    async () => {
+      const descendantPidPath = join(makeTemporaryDirectory(), "fast-descendant.pid");
+      const appImagePath = makeFakeAppImage(`#!/bin/sh
+${SETSID_PATH} /bin/sleep 60 &
+printf '%s' "$!" > '${descendantPidPath}'
+exit 0
+`);
+
+      let failure: unknown;
+      try {
+        await runDesktopArtifactSmoke({
+          appImagePath,
+          startupTimeoutMs: 5_000,
+          shutdownTimeoutMs: 2_000,
+        });
+      } catch (cause) {
+        failure = cause;
+      }
+      assert.instanceOf(failure, Error);
+      assert.match(failure.message, /exited before required markers/);
+
+      const descendantPid = Number(readFileSync(descendantPidPath, "utf8"));
+      assert.ok(Number.isSafeInteger(descendantPid));
+      let processLookupFailure: unknown;
+      try {
+        process.kill(descendantPid, 0);
+      } catch (cause) {
+        processLookupFailure = cause;
+      }
+      assert.equal((processLookupFailure as NodeJS.ErrnoException).code, "ESRCH");
+    },
+  );
+
+  descendantCleanupTest(
+    "drains adopted children while a packaged descendant creates detached sessions",
+    async () => {
+      const descendantPidPath = join(makeTemporaryDirectory(), "racing-descendants.pid");
+      const appImagePath = makeFakeAppImage(`#!/bin/sh
+trap 'exit 0' TERM INT
+(
+  while true; do
+    ${SETSID_PATH} /bin/sleep 60 &
+    printf '%s\\n' "$!" >> '${descendantPidPath}'
+    /bin/sleep 0.01
+  done
+) &
+echo '${DESKTOP_ARTIFACT_SMOKE_MARKERS.backendListening}'
+echo '${DESKTOP_ARTIFACT_SMOKE_MARKERS.rendererReady}'
+while true; do /bin/sleep 1; done
+`);
+
+      await runDesktopArtifactSmoke({
+        appImagePath,
+        startupTimeoutMs: 5_000,
+        shutdownTimeoutMs: 2_000,
+      });
+
+      const descendantPids = readFileSync(descendantPidPath, "utf8").trim().split("\n").map(Number);
+      assert.isAbove(descendantPids.length, 0);
+      for (const descendantPid of descendantPids) {
+        let processLookupFailure: unknown;
+        try {
+          process.kill(descendantPid, 0);
+        } catch (cause) {
+          processLookupFailure = cause;
+        }
+        assert.equal((processLookupFailure as NodeJS.ErrnoException).code, "ESRCH");
+      }
     },
   );
 });

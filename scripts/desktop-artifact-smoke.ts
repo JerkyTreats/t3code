@@ -26,6 +26,11 @@ const DEFAULT_STARTUP_TIMEOUT_MS = 90_000;
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 20_000;
 const MAX_CAPTURED_OUTPUT_BYTES = 2 * 1024 * 1024;
 const APPIMAGE_SUFFIX = ".AppImage";
+const PROCESS_GROUP_POLL_INTERVAL_MS = 25;
+const PROCESS_SUPERVISOR_PATH = fileURLToPath(
+  new URL("./lib/desktop-artifact-process-supervisor.py", import.meta.url),
+);
+const PYTHON_PATH = "/usr/bin/python3";
 
 export const DESKTOP_ARTIFACT_SMOKE_MARKERS = PRODUCT_DESKTOP_ARTIFACT_SMOKE_MARKERS;
 
@@ -43,6 +48,22 @@ export interface DesktopArtifactSmokeResult {
   readonly output: string;
 }
 
+export class DesktopArtifactSmokeCleanupError extends Error {
+  readonly temporaryRoot: string;
+  override readonly cause: unknown;
+
+  constructor(temporaryRoot: string, cause: unknown) {
+    super(`Desktop artifact process cleanup failed. Temporary files remain at ${temporaryRoot}.`);
+    this.name = "DesktopArtifactSmokeCleanupError";
+    this.temporaryRoot = temporaryRoot;
+    this.cause = cause;
+  }
+}
+
+interface DesktopArtifactSmokeDependencies {
+  readonly processSupervisorPath?: string;
+}
+
 interface ProcessResult {
   readonly code: number | null;
   readonly signal: NodeJS.Signals | null;
@@ -52,7 +73,7 @@ interface ProcessResult {
 interface RunningProcess {
   readonly wait: Promise<ProcessResult>;
   readonly terminate: (gracePeriodMs?: number) => void;
-  readonly forceTerminate: () => void;
+  readonly forceTerminate: () => Promise<void>;
 }
 
 interface LinuxProcessIdentity {
@@ -109,6 +130,68 @@ function captureDescendantProcessGroups(
     }
   }
   capturedGroups.add(rootPid);
+}
+
+function processGroupExists(processGroupId: number): boolean {
+  try {
+    process.kill(-processGroupId, 0);
+    return true;
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ESRCH") {
+      return false;
+    }
+    return true;
+  }
+}
+
+export async function waitForCapturedProcessGroupsToExit(
+  processGroupIds: ReadonlySet<number>,
+  timeoutMs: number,
+  hooks: {
+    readonly groupExists?: (processGroupId: number) => boolean;
+    readonly now?: () => number;
+    readonly sleep?: (durationMs: number) => Promise<void>;
+  } = {},
+): Promise<void> {
+  const groupExists = hooks.groupExists ?? processGroupExists;
+  const now = hooks.now ?? Date.now;
+  const sleep =
+    hooks.sleep ??
+    ((durationMs: number) =>
+      new Promise<void>((resolvePromise) => {
+        setTimeout(resolvePromise, durationMs);
+      }));
+  const deadline = now() + timeoutMs;
+
+  while (true) {
+    const survivingGroups = [...processGroupIds].filter(groupExists);
+    if (survivingGroups.length === 0) return;
+    const remainingMs = deadline - now();
+    if (remainingMs <= 0) {
+      throw new Error(
+        `Captured packaged process groups survived cleanup: ${survivingGroups.join(", ")}.`,
+      );
+    }
+    await sleep(Math.min(PROCESS_GROUP_POLL_INTERVAL_MS, remainingMs));
+  }
+}
+
+async function waitForProcessSettlement(
+  wait: Promise<ProcessResult>,
+  timeoutMs: number,
+): Promise<boolean> {
+  return new Promise<boolean>((resolvePromise) => {
+    let settlementTimer: NodeJS.Timeout | undefined;
+    const finish = (settled: boolean) => {
+      if (settlementTimer) clearTimeout(settlementTimer);
+      resolvePromise(settled);
+    };
+    settlementTimer = setTimeout(() => finish(false), timeoutMs);
+    void wait.then(
+      () => finish(true),
+      () => finish(true),
+    );
+  });
 }
 
 function positiveBoundedInteger(value: string, name: string): number {
@@ -206,30 +289,50 @@ function startProcess(input: {
   readonly cwd: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly timeoutMs: number;
+  readonly cleanupTimeoutMs: number;
+  readonly processSupervisorPath: string;
   readonly onOutput?: (output: string) => void;
 }): RunningProcess {
-  const child = spawn(input.command, [...input.args], {
-    cwd: input.cwd,
-    detached: true,
-    env: input.env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  accessSync(PYTHON_PATH, constants.R_OK | constants.X_OK);
+  accessSync(input.processSupervisorPath, constants.R_OK);
+  const child = spawn(
+    PYTHON_PATH,
+    [
+      input.processSupervisorPath,
+      "--cleanup-timeout-ms",
+      String(input.cleanupTimeoutMs),
+      "--",
+      input.command,
+      ...input.args,
+    ],
+    {
+      cwd: input.cwd,
+      detached: true,
+      env: input.env,
+      stdio: ["ignore", "pipe", "pipe", "pipe"],
+    },
+  );
 
   let output = "";
   let outputBytes = 0;
+  let supervisorStatus = "";
   let settled = false;
   let timedOut = false;
   let outputOverflow = false;
+  let processCleanupFailure: Error | undefined;
+  let supervisorCleanupAttested = false;
   let forceKill: NodeJS.Timeout | undefined;
+  let forceTermination: Promise<void> | undefined;
   const capturedProcessGroups = new Set<number>();
   const captureProcessGroups = () =>
     captureDescendantProcessGroups(child.pid, capturedProcessGroups);
   captureProcessGroups();
   const descendantCapture = setInterval(captureProcessGroups, 50);
   descendantCapture.unref();
-  const signalCapturedProcessGroups = (signal: NodeJS.Signals) => {
+  const signalCapturedProcessGroups = (signal: NodeJS.Signals, includeSupervisor = true) => {
     captureProcessGroups();
     for (const processGroupId of capturedProcessGroups) {
+      if (!includeSupervisor && processGroupId === child.pid) continue;
       try {
         process.kill(-processGroupId, signal);
       } catch (cause) {
@@ -244,7 +347,7 @@ function startProcess(input: {
     outputBytes += chunk.byteLength;
     if (outputBytes > MAX_CAPTURED_OUTPUT_BYTES) {
       outputOverflow = true;
-      signalCapturedProcessGroups("SIGTERM");
+      child.kill("SIGTERM");
       return;
     }
     const text = chunk.toString();
@@ -255,12 +358,15 @@ function startProcess(input: {
 
   child.stdout?.on("data", appendOutput);
   child.stderr?.on("data", appendOutput);
+  child.stdio[3]?.on("data", (chunk: Buffer) => {
+    supervisorStatus += chunk.toString();
+  });
 
   const timeout = setTimeout(() => {
     timedOut = true;
-    signalCapturedProcessGroups("SIGTERM");
+    child.kill("SIGTERM");
     forceKill = setTimeout(() => {
-      signalCapturedProcessGroups("SIGKILL");
+      signalCapturedProcessGroups("SIGKILL", false);
     }, 5_000);
   }, input.timeoutMs);
 
@@ -274,13 +380,21 @@ function startProcess(input: {
       if (forceKill) clearTimeout(forceKill);
       rejectPromise(cause);
     });
-    child.once("exit", (code, signal) => {
+    child.once("close", (code, signal) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
       clearInterval(descendantCapture);
       captureProcessGroups();
       if (forceKill) clearTimeout(forceKill);
+      supervisorCleanupAttested = supervisorStatus === "cleanup-ok\n";
+      if (!supervisorCleanupAttested) {
+        processCleanupFailure = new Error(
+          `Packaged process supervisor did not attest cleanup success. Status: ${JSON.stringify(supervisorStatus)}.\n${output}`,
+        );
+        rejectPromise(processCleanupFailure);
+        return;
+      }
       if (outputOverflow) {
         rejectPromise(
           new Error(`Process output exceeded ${MAX_CAPTURED_OUTPUT_BYTES} bytes.\n${output}`),
@@ -303,13 +417,37 @@ function startProcess(input: {
       child.kill("SIGTERM");
       if (!forceKill) {
         forceKill = setTimeout(() => {
-          signalCapturedProcessGroups("SIGKILL");
+          signalCapturedProcessGroups("SIGKILL", false);
         }, gracePeriodMs);
       }
     },
-    forceTerminate: () => {
-      signalCapturedProcessGroups("SIGKILL");
-    },
+    forceTerminate: () =>
+      (forceTermination ??= (async () => {
+        captureProcessGroups();
+        child.kill("SIGTERM");
+        signalCapturedProcessGroups("SIGKILL", false);
+        await waitForProcessSettlement(
+          wait,
+          input.cleanupTimeoutMs + PROCESS_GROUP_POLL_INTERVAL_MS,
+        );
+        captureProcessGroups();
+        if (!settled) {
+          signalCapturedProcessGroups("SIGKILL");
+        }
+        await waitForCapturedProcessGroupsToExit(capturedProcessGroups, input.cleanupTimeoutMs);
+        const closeObserved =
+          settled ||
+          (await waitForProcessSettlement(
+            wait,
+            input.cleanupTimeoutMs + PROCESS_GROUP_POLL_INTERVAL_MS,
+          ));
+        if (!closeObserved || !supervisorCleanupAttested) {
+          throw (
+            processCleanupFailure ??
+            new Error("Packaged process supervisor did not attest cleanup success before exit.")
+          );
+        }
+      })()),
   };
 }
 
@@ -344,6 +482,7 @@ export function makeIsolatedDesktopEnvironment(
 
 export async function runDesktopArtifactSmoke(
   options: DesktopArtifactSmokeOptions,
+  dependencies: DesktopArtifactSmokeDependencies = {},
 ): Promise<DesktopArtifactSmokeResult> {
   if (process.platform !== "linux") {
     throw new Error("Desktop AppImage smoke is supported only on Linux.");
@@ -357,8 +496,12 @@ export async function runDesktopArtifactSmoke(
   const extractedRoot = join(extractionWorkspace, "squashfs-root");
   const userDataDirectory = join(temporaryRoot, "user-data");
   const temporaryDirectory = join(temporaryRoot, "tmp");
+  const processSupervisorPath = dependencies.processSupervisorPath ?? PROCESS_SUPERVISOR_PATH;
   let extractionProcess: RunningProcess | undefined;
   let applicationProcess: RunningProcess | undefined;
+  let smokeResult: DesktopArtifactSmokeResult | undefined;
+  let operationFailure: unknown;
+  let cleanupFailure: unknown;
 
   try {
     mkdirSync(extractionWorkspace, { recursive: true });
@@ -373,10 +516,12 @@ export async function runDesktopArtifactSmoke(
       cwd: extractionWorkspace,
       env: isolatedEnvironment,
       timeoutMs: startupTimeoutMs,
+      cleanupTimeoutMs: shutdownTimeoutMs,
+      processSupervisorPath,
     });
     extractionProcess = extraction;
     const extractionResult = await extraction.wait;
-    extraction.forceTerminate();
+    await extraction.forceTerminate();
     extractionProcess = undefined;
     requireSuccessfulExit(extractionResult, "AppImage extraction");
 
@@ -410,6 +555,8 @@ export async function runDesktopArtifactSmoke(
       cwd: extractedRoot,
       env: isolatedEnvironment,
       timeoutMs: startupTimeoutMs + shutdownTimeoutMs,
+      cleanupTimeoutMs: shutdownTimeoutMs,
+      processSupervisorPath,
       onOutput: (output) => {
         observedOutput = output;
         const backendMarkerIndex = output.indexOf(DESKTOP_ARTIFACT_SMOKE_MARKERS.backendListening);
@@ -437,7 +584,7 @@ export async function runDesktopArtifactSmoke(
 
     if (startupOutcome === "exited") {
       const result = await appResultPromise;
-      app.forceTerminate();
+      await app.forceTerminate();
       applicationProcess = undefined;
       requireSuccessfulExit(result, "Packaged desktop");
       throw new Error(
@@ -447,7 +594,7 @@ export async function runDesktopArtifactSmoke(
     if (startupOutcome === "timeout") {
       app.terminate(shutdownTimeoutMs);
       await appResultPromise.catch(() => undefined);
-      app.forceTerminate();
+      await app.forceTerminate();
       applicationProcess = undefined;
       throw new Error(
         `Packaged desktop did not emit required markers within ${startupTimeoutMs} milliseconds.\n${observedOutput}`,
@@ -456,23 +603,42 @@ export async function runDesktopArtifactSmoke(
 
     app.terminate(shutdownTimeoutMs);
     const appResult = await appResultPromise;
-    app.forceTerminate();
+    await app.forceTerminate();
     applicationProcess = undefined;
     requireSuccessfulExit(appResult, "Packaged desktop shutdown");
 
-    return {
+    smokeResult = {
       appImagePath,
       extractedRoot,
       temporaryRoot,
       output: observedOutput,
     };
+  } catch (cause) {
+    operationFailure = cause;
   } finally {
-    applicationProcess?.forceTerminate();
-    extractionProcess?.forceTerminate();
-    if (!options.keepTemporaryDirectory) {
+    for (const runningProcess of [applicationProcess, extractionProcess]) {
+      if (!runningProcess) continue;
+      try {
+        await runningProcess.forceTerminate();
+      } catch (cause) {
+        cleanupFailure ??= cause;
+      }
+    }
+    if (cleanupFailure === undefined && !options.keepTemporaryDirectory) {
       rmSync(temporaryRoot, { recursive: true, force: true });
     }
   }
+
+  if (cleanupFailure !== undefined) {
+    throw new DesktopArtifactSmokeCleanupError(temporaryRoot, cleanupFailure);
+  }
+  if (operationFailure !== undefined) {
+    throw operationFailure;
+  }
+  if (smokeResult === undefined) {
+    throw new Error("Desktop artifact smoke completed without a result.");
+  }
+  return smokeResult;
 }
 
 async function main(): Promise<void> {
