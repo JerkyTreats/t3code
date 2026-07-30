@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { afterEach, vi } from "vite-plus/test";
 
-import { makeCatalogBackend, makeCatalogStore } from "./storage";
+import { makeCatalogBackend, makeCatalogStore, persistenceError } from "./storage";
 
 const emptyCatalog = {
   schemaVersion: 1,
@@ -56,7 +56,7 @@ describe("makeCatalogStore", () => {
 });
 
 describe("makeCatalogBackend", () => {
-  it.effect("fails writes when desktop secure storage declines the catalog", () =>
+  it.effect("preserves desktop secure storage capability failures through registration", () =>
     Effect.gen(function* () {
       const setConnectionCatalog = vi.fn().mockResolvedValue(false);
       vi.stubGlobal("window", {
@@ -66,11 +66,25 @@ describe("makeCatalogBackend", () => {
         },
       });
       const backend = makeCatalogBackend({} as IDBDatabase);
+      const store = yield* makeCatalogStore(backend);
 
-      const error = yield* backend.write("{}").pipe(Effect.flip);
+      const backendError = yield* backend.write("{}").pipe(Effect.flip);
+      expect(backendError).toMatchObject({
+        _tag: "ConnectionBlockedError",
+        reason: "secure-storage-unavailable",
+      });
 
-      expect(error).toBeInstanceOf(ConnectionTransientError);
-      expect(error.message).toContain("Desktop secure storage is unavailable");
+      const error = yield* store
+        .update((catalog) => catalog)
+        .pipe(
+          Effect.mapError((cause) => persistenceError("register-connection", cause)),
+          Effect.flip,
+        );
+
+      expect(error).toMatchObject({
+        _tag: "ConnectionPersistenceError",
+        reason: "secure-storage-unavailable",
+      });
       expect(setConnectionCatalog).toHaveBeenCalledWith("{}");
     }),
   );

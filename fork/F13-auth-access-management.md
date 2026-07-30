@@ -20,6 +20,7 @@ Auth access management is exposed through Environment HTTP mutations, the durabl
 - Existing paste pairing-link, saved environment reconnect, disconnect, forget, SSH connect, and local-first desktop fallback flows remain unchanged.
 - Desktop saved-environment credentials persist only through the secure connection catalog and never fall back to plaintext.
 - Linux desktop launch selects `gnome-libsecret` unconditionally. Missing Secret Service support is reported as a capability error with actionable guidance rather than as a generic pairing failure.
+- Linux Secret Service guidance names the required `gnome-keyring` and `libsecret` packages, asks the user to start or unlock the login keyring, and directs them to restart T3 Code.
 - T3 Connect is generally available. Signed-out web, desktop, and mobile entry points route to account sign-in without an enrollment or approval waitlist.
 - Relay credentials authenticate only while an active environment link exists for the same environment id and public key.
 - Link finalization and unlink serialize on the same user and environment identity. Unlink revokes the link and matching credentials in one database transaction before external tunnel teardown begins.
@@ -48,6 +49,7 @@ Auth access management is exposed through Environment HTTP mutations, the durabl
 - `apps/web/src/environments/primary/auth.ts`
 - `apps/web/src/state/auth.ts`
 - `apps/web/src/connection/storage.ts`
+- `apps/web/src/connection/secureStoragePresentation.ts`
 - `apps/web/src/components/settings/ConnectionsSettings.tsx`
 - `apps/web/src/components/clerk/useT3ConnectAuthPrompt.tsx`
 - `apps/mobile/src/Stack.tsx`
@@ -121,6 +123,7 @@ Auth access management is exposed through Environment HTTP mutations, the durabl
 - Linux launcher tests prove `gnome-libsecret` selection.
 - Desktop app startup tests prove `gnome-libsecret` selection.
 - Missing Secret Service support produces a secure-storage capability error and never writes plaintext credentials.
+- Web pairing and saved-environment presentation converts that typed capability failure into actionable Linux Secret Service remediation.
 - Signed-out web and mobile Connect prompts route to sign-in, including the legacy mobile waitlist deep link.
 - Relay credential tests require an active matching environment link.
 - Link lifecycle tests require one lock identity for link finalization and unlink.

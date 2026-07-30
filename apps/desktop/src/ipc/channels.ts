@@ -1,6 +1,8 @@
 export const PICK_FOLDER_CHANNEL = "desktop:pick-folder";
 export const CONFIRM_CHANNEL = "desktop:confirm";
 export const SET_THEME_CHANNEL = "desktop:set-theme";
+export const GET_SCREENSHOT_CAPTURE_AVAILABILITY_CHANNEL =
+  "desktop:get-screenshot-capture-availability";
 export const CAPTURE_SCREENSHOT_CHANNEL = "desktop:capture-screenshot";
 export const GET_SYSTEM_THEME_CHANNEL = "desktop:get-system-theme";
 export const SYSTEM_THEME_CHANNEL = "desktop:system-theme";

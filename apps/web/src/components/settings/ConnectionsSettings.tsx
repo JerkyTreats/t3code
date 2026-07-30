@@ -117,6 +117,7 @@ import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useCloudLinkController } from "~/cloud/useCloudLinkController";
 import { authEnvironment } from "~/state/auth";
 import { environmentCatalog } from "~/connection/catalog";
+import { connectionRegistrationErrorMessage } from "~/connection/secureStoragePresentation";
 import {
   connectPairing as connectPairingAtom,
   connectSshEnvironment as connectSshEnvironmentAtom,
@@ -2207,7 +2208,7 @@ export function ConnectionsSettings() {
         pairingCode: savedBackendPairingCode,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to add backend.";
+      const message = connectionRegistrationErrorMessage(error);
       setSavedBackendError(message);
       toastManager.add(
         stackedThreadToast({
@@ -2224,7 +2225,7 @@ export function ConnectionsSettings() {
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        const message = error instanceof Error ? error.message : "Failed to add backend.";
+        const message = connectionRegistrationErrorMessage(error);
         setSavedBackendError(message);
         toastManager.add(
           stackedThreadToast({

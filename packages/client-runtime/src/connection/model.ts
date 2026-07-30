@@ -71,6 +71,7 @@ export const ConnectionBlockedReason = Schema.Literals([
   "authentication",
   "configuration",
   "permission",
+  "secure-storage-unavailable",
   "unsupported",
 ]);
 export type ConnectionBlockedReason = typeof ConnectionBlockedReason.Type;

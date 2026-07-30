@@ -25,6 +25,7 @@ import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as DesktopSystemThemeService from "../../fork/DesktopSystemThemeService.ts";
+import { isDesktopScreenshotCaptureAvailable } from "../../fork/DesktopScreenshotCaptureAvailability.ts";
 import { captureDesktopScreenshot } from "../../fork/OmarchyScreenshotCapture.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
@@ -241,6 +242,14 @@ export const setTheme = DesktopIpc.makeIpcMethod({
     const electronTheme = yield* ElectronTheme.ElectronTheme;
     yield* electronTheme.setSource(theme);
   }),
+});
+
+export const getScreenshotCaptureAvailability = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_SCREENSHOT_CAPTURE_AVAILABILITY_CHANNEL,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.getScreenshotCaptureAvailability")(() =>
+    Effect.sync(isDesktopScreenshotCaptureAvailable),
+  ),
 });
 
 export const captureScreenshot = DesktopIpc.makeIpcMethod({

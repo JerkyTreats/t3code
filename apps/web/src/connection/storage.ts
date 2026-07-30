@@ -13,6 +13,8 @@ import {
 } from "@t3tools/client-runtime/platform";
 import { TokenStore } from "@t3tools/client-runtime/authorization";
 import {
+  ConnectionBlockedError,
+  type ConnectionAttemptError,
   ConnectionTransientError,
   CredentialStore,
   ProfileStore,
@@ -83,6 +85,7 @@ const decodeStoredServerConfig = Schema.decodeUnknownEffect(StoredServerConfigJs
 const encodeStoredServerConfig = Schema.encodeEffect(StoredServerConfigJson);
 const decodeStoredVcsRefs = Schema.decodeUnknownEffect(StoredVcsRefsJson);
 const encodeStoredVcsRefs = Schema.encodeEffect(StoredVcsRefsJson);
+const isConnectionBlockedError = Schema.is(ConnectionBlockedError);
 
 function catalogError(operation: string, cause: unknown) {
   return new ConnectionTransientError({
@@ -91,7 +94,7 @@ function catalogError(operation: string, cause: unknown) {
   });
 }
 
-function persistenceError(
+export function persistenceError(
   operation:
     | "list-targets"
     | "register-connection"
@@ -110,6 +113,13 @@ function persistenceError(
     | "clear-environment",
   cause: unknown,
 ) {
+  if (isConnectionBlockedError(cause) && cause.reason === "secure-storage-unavailable") {
+    return new ConnectionPersistenceError({
+      operation,
+      reason: "secure-storage-unavailable",
+      message: `Could not ${operation.replaceAll("-", " ")}: Desktop secure storage is unavailable.`,
+    });
+  }
   return new ConnectionPersistenceError({
     operation,
     message: `Could not ${operation.replaceAll("-", " ")}: ${String(cause)}`,
@@ -249,9 +259,9 @@ const encodeCatalog = Effect.fn("web.connectionStorage.encodeCatalog")(function*
 });
 
 export interface CatalogBackend {
-  readonly read: Effect.Effect<string | null, ConnectionTransientError>;
-  readonly write: (raw: string) => Effect.Effect<void, ConnectionTransientError>;
-  readonly quarantine?: (raw: string) => Effect.Effect<void, ConnectionTransientError>;
+  readonly read: Effect.Effect<string | null, ConnectionAttemptError>;
+  readonly write: (raw: string) => Effect.Effect<void, ConnectionAttemptError>;
+  readonly quarantine?: (raw: string) => Effect.Effect<void, ConnectionAttemptError>;
 }
 
 export function makeCatalogBackend(database: IDBDatabase): CatalogBackend {
@@ -271,10 +281,10 @@ export function makeCatalogBackend(database: IDBDatabase): CatalogBackend {
             stored
               ? Effect.void
               : Effect.fail(
-                  catalogError(
-                    "save",
-                    "Desktop secure storage is unavailable in this system context.",
-                  ),
+                  new ConnectionBlockedError({
+                    reason: "secure-storage-unavailable",
+                    detail: "Desktop secure storage is unavailable.",
+                  }),
                 ),
           ),
         ),
@@ -292,10 +302,10 @@ export function makeCatalogBackend(database: IDBDatabase): CatalogBackend {
 }
 
 interface CatalogStore {
-  readonly read: Effect.Effect<ConnectionCatalogDocumentType, ConnectionTransientError>;
+  readonly read: Effect.Effect<ConnectionCatalogDocumentType, ConnectionAttemptError>;
   readonly update: (
     transform: (catalog: ConnectionCatalogDocumentType) => ConnectionCatalogDocumentType,
-  ) => Effect.Effect<void, ConnectionTransientError>;
+  ) => Effect.Effect<void, ConnectionAttemptError>;
 }
 
 export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStore")(function* (

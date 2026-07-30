@@ -14,6 +14,9 @@ import * as Schema from "effect/Schema";
 import type { ConnectionRegistration } from "../connection/catalog.ts";
 import type { ConnectionTarget } from "../connection/model.ts";
 
+export const ConnectionPersistenceReason = Schema.Literals(["secure-storage-unavailable"]);
+export type ConnectionPersistenceReason = typeof ConnectionPersistenceReason.Type;
+
 export class ConnectionPersistenceError extends Schema.TaggedErrorClass<ConnectionPersistenceError>()(
   "ConnectionPersistenceError",
   {
@@ -34,6 +37,7 @@ export class ConnectionPersistenceError extends Schema.TaggedErrorClass<Connecti
       "clear-vcs-refs",
       "clear-environment",
     ]),
+    reason: Schema.optionalKey(ConnectionPersistenceReason),
     message: Schema.String,
   },
 ) {}

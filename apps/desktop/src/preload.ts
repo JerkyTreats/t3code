@@ -27,6 +27,14 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
   return result as Awaited<ReturnType<DesktopBridge["ensureSshEnvironment"]>>;
 }
 
+function screenshotCaptureAvailable(): boolean {
+  try {
+    return ipcRenderer.sendSync(IpcChannels.GET_SCREENSHOT_CAPTURE_AVAILABILITY_CHANNEL) === true;
+  } catch {
+    return false;
+  }
+}
+
 contextBridge.exposeInMainWorld("desktopBridge", {
   getAppBranding: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_APP_BRANDING_CHANNEL);
@@ -99,7 +107,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   pickFolder: (options) => ipcRenderer.invoke(IpcChannels.PICK_FOLDER_CHANNEL, options),
   confirm: (message) => ipcRenderer.invoke(IpcChannels.CONFIRM_CHANNEL, message),
   setTheme: (theme) => ipcRenderer.invoke(IpcChannels.SET_THEME_CHANNEL, theme),
-  ...(process.platform === "linux"
+  ...(screenshotCaptureAvailable()
     ? {
         captureScreenshot: () => ipcRenderer.invoke(IpcChannels.CAPTURE_SCREENSHOT_CHANNEL),
       }

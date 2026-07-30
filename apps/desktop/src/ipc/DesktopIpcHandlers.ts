@@ -36,6 +36,7 @@ import {
   getAppBranding,
   getLocalEnvironmentBootstraps,
   getLocalEnvironmentBearerToken,
+  getScreenshotCaptureAvailability,
   getSystemTheme,
   openExternal,
   pickFolder,
@@ -81,6 +82,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(pickFolder);
   yield* ipc.handle(confirm);
   yield* ipc.handle(setTheme);
+  yield* ipc.handleSync(getScreenshotCaptureAvailability);
   yield* ipc.handle(captureScreenshot);
   yield* ipc.handle(getSystemTheme);
   yield* ipc.handle(showContextMenu);

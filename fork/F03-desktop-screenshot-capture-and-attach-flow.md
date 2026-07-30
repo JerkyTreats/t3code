@@ -18,11 +18,13 @@ Omarchy remains one supported capture adapter, but the product feature is direct
 - Clipboard fallback remains available when the capture adapter updates the clipboard instead of writing a file.
 - Composer chrome exposes screenshot capture as a first class action and attaches the result into the active draft.
 - Desktop bridge exposes screenshot capture only when the host platform can support at least one capture implementation.
+- Linux desktop capability discovery checks executable capture adapters before exposing the screenshot bridge method.
 - New screenshot entities may be used for direct attach when they provide or can resolve a PNG `File` and draft preview URL without replacing active draft text.
 
 ## Owner Modules
 
 - `apps/desktop/src/fork/OmarchyScreenshotCapture.ts`
+- `apps/desktop/src/fork/DesktopScreenshotCaptureAvailability.ts`
 - `apps/desktop/src/main.ts`
 - `apps/desktop/src/preload.ts`
 - `apps/desktop/src/ipc/channels.ts`
@@ -57,6 +59,7 @@ Omarchy remains one supported capture adapter, but the product feature is direct
 ## Verification
 
 - Screenshot capture works through a supported host adapter when available.
+- Supported Linux hosts expose screenshot capture and Linux hosts without a supported executable adapter omit it.
 - Composer receives the captured image as a draft attachment.
 - Failure paths keep clear user facing error handling.
 - Draft text survives screenshot capture and attachment.

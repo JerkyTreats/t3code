@@ -11,37 +11,17 @@ import { promisify } from "node:util";
 import type { DesktopScreenshotCapture } from "@t3tools/contracts";
 import { clipboard } from "electron";
 
+import {
+  findExecutableOnPath,
+  resolveOmarchyScreenshotCommand,
+} from "./DesktopScreenshotCaptureAvailability.ts";
+
 const execFile = promisify(ChildProcess.execFile);
 const SCREENSHOT_MIME_TYPE = "image/png";
 const SCREENSHOT_FILE_BASENAME = "capture.png";
 const CANCELLATION_EXIT_CODE = 1;
 const TOOL_FAILURE_SEPARATOR = " | ";
 const OMARCHY_CAPTURE_RESULT_SETTLE_MS = 125;
-const OMARCHY_SCREENSHOT_COMMAND_CANDIDATES = [
-  {
-    executableName: "omarchy-capture-screenshot",
-    executablePath: Path.join(
-      OS.homedir(),
-      ".local",
-      "share",
-      "omarchy",
-      "bin",
-      "omarchy-capture-screenshot",
-    ),
-  },
-  {
-    executableName: "omarchy-cmd-screenshot",
-    executablePath: Path.join(
-      OS.homedir(),
-      ".local",
-      "share",
-      "omarchy",
-      "bin",
-      "omarchy-cmd-screenshot",
-    ),
-  },
-] as const;
-
 type SpawnCaptureResult = {
   code: number | null;
   signal: NodeJS.Signals | null;
@@ -256,35 +236,7 @@ async function execCaptureCommand(
 }
 
 async function commandExists(command: string): Promise<boolean> {
-  try {
-    await execCaptureCommand("which", [command]);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function fileIsExecutable(filePath: string): Promise<boolean> {
-  try {
-    await FS.access(filePath, FSNative.constants.X_OK);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function resolveOmarchyScreenshotCommand(): Promise<string | null> {
-  for (const candidate of OMARCHY_SCREENSHOT_COMMAND_CANDIDATES) {
-    if (await fileIsExecutable(candidate.executablePath)) {
-      return candidate.executablePath;
-    }
-  }
-  for (const candidate of OMARCHY_SCREENSHOT_COMMAND_CANDIDATES) {
-    if (await commandExists(candidate.executableName)) {
-      return candidate.executableName;
-    }
-  }
-  return null;
+  return findExecutableOnPath(command) !== null;
 }
 
 function tryBuildScreenshotCapture(

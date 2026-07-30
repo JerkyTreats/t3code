@@ -4,6 +4,7 @@ import React, { startTransition, useEffect, useRef, useState, useCallback } from
 
 import { APP_DISPLAY_NAME } from "../../branding";
 import { connectPairing } from "../../connection/onboarding";
+import { connectionRegistrationErrorMessage } from "../../connection/secureStoragePresentation";
 import {
   peekPairingTokenFromUrl,
   stripPairingTokenFromUrl,
@@ -216,7 +217,10 @@ export function HostedPairingRouteSurface() {
     setStatus("error");
     setCanRetry(true);
     setMessage(
-      `${errorMessageFromUnknown(squashAtomCommandFailure(result))} If the backend accepted this one-time token, request a new pairing link before retrying.`,
+      `${connectionRegistrationErrorMessage(
+        squashAtomCommandFailure(result),
+        "Authentication failed.",
+      )} If the backend accepted this one-time token, request a new pairing link before retrying.`,
     );
   }, [connectPairingEnvironment]);
 
