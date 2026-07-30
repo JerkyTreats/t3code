@@ -1,6 +1,6 @@
 # F4 Composer Draft Autonomy And Composer Chrome
 
-Date: 2026-07-29
+Date: 2026-07-30
 Status: active
 
 ## Intent
@@ -38,15 +38,15 @@ Current owner modules:
 - `apps/web/src/components/chat/ComposerTopActions.tsx`
 - `apps/web/src/components/chat/ComposerRichDraftToolbar.tsx`
 - `apps/web/src/composerDraftStore.ts`
-- `apps/web/src/lib/composerPathSearchState.ts`
-- `packages/client-runtime/src/state/composerPathSearch.ts`
-
-Planned owner modules:
-
-- `apps/web/src/components/chat/ComposerStashBadge.tsx`
-- `apps/web/src/components/chat/ComposerStashMenu.tsx`
+- `apps/web/src/promptStashPolicy.ts`
 - `apps/web/src/promptStashStore.ts`
 - `apps/web/src/lib/stashImageCompression.ts`
+- `apps/web/src/components/chat/ComposerStashBadge.tsx`
+- `apps/web/src/components/chat/ComposerStashMenu.tsx`
+- `apps/web/src/lib/composerPathSearchState.ts`
+- `packages/client-runtime/src/state/composerPathSearch.ts`
+- `packages/contracts/src/keybindings.ts`
+- `packages/shared/src/keybindings.ts`
 
 ## Fork Seams
 
@@ -57,6 +57,7 @@ Planned owner modules:
 - global prompt stash store
 - prompt stash image normalization
 - atomic legacy stash migration
+- composer stash keybinding contract
 
 ## One Shot Origin Rebuild Notes
 
@@ -69,6 +70,9 @@ Planned owner modules:
 - Apply the specified migration ordering, de-duplication, field stripping, and cap before the single durable write.
 - Keep the active draft unchanged unless stash persistence is durable.
 - Keep explicit provider and model intent outside the local no-provider presentation state.
+- Keep exact stash budgets in one neutral policy module shared by persistence and image normalization.
+- Treat an existing global payload plus a remaining legacy payload as an interrupted migration.
+- Merge missing legacy ids into the global queue before verified persistence and legacy deletion.
 
 ## Origin Rebuild Rule
 
@@ -88,6 +92,7 @@ Planned owner modules:
 - A valid legacy provider-scoped payload migrates once with deterministic ordering and no duplicate entries.
 - Entry, image, and attachment budgets enforce the exact documented limits and evict only the oldest persisted entry.
 - Failed legacy conversion or persistence retains the legacy payload and leaves the global queue unchanged.
+- An interrupted migration with both storage keys preserves every unique entry within the global cap.
 
 ## Compatibility Checks
 

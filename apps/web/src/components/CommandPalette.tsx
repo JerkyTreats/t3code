@@ -2,6 +2,12 @@
 
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
+  canPreloadBrowsePath,
+  createBrowseNavigationCoordinator,
+  filterFilesystemBrowseEntries,
+  resolveFilesystemBrowsePath,
+} from "@t3tools/client-runtime/state/filesystem";
+import {
   isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
@@ -67,16 +73,12 @@ import {
 } from "../lib/chatThreadActions";
 import {
   appendBrowsePathSegment,
-  canNavigateUp,
   ensureBrowseDirectoryPath,
   findProjectByPath,
   getBrowseDirectoryPath,
-  getBrowseLeafPathSegment,
-  getBrowseParentPath,
   hasTrailingPathSeparator,
   inferProjectTitleFromPath,
   isExplicitRelativeProjectPath,
-  isFilesystemBrowseQuery,
   isUnsupportedWindowsProjectPath,
   resolveProjectPathForDispatch,
 } from "../lib/projectPaths";
@@ -101,7 +103,6 @@ import {
   type CommandPaletteActionItem,
   type CommandPaletteSubmenuItem,
   type CommandPaletteView,
-  filterBrowseEntries,
   filterCommandPaletteGroups,
   getCommandPaletteInputPlaceholder,
   getCommandPaletteMode,
@@ -129,6 +130,7 @@ import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerHandleContext, useComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
+import { openConcreteProjectLauncher } from "../project-management/openProjectLauncher";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
@@ -464,6 +466,10 @@ function OpenCommandPaletteDialog(props: {
   const createProject = useAtomCommand(projectEnvironment.create, {
     reportFailure: false,
   });
+  const loadBrowsePath = useAtomQueryRunner(filesystemEnvironment.browse, {
+    reportFailure: false,
+    reportDefect: false,
+  });
   const lookupRepository = useAtomQueryRunner(sourceControlEnvironment.repository, {
     reportFailure: false,
   });
@@ -481,6 +487,13 @@ function OpenCommandPaletteDialog(props: {
   const [viewStack, setViewStack] = useState<CommandPaletteView[]>([]);
   const currentView = viewStack.at(-1) ?? null;
   const [browseGeneration, setBrowseGeneration] = useState(0);
+  const browseNavigationRef = useRef<ReturnType<typeof createBrowseNavigationCoordinator> | null>(
+    null,
+  );
+  if (browseNavigationRef.current === null) {
+    browseNavigationRef.current = createBrowseNavigationCoordinator();
+  }
+  const browseNavigation = browseNavigationRef.current;
   const [addProjectEnvironmentId, setAddProjectEnvironmentId] = useState<EnvironmentId | null>(
     null,
   );
@@ -564,8 +577,12 @@ function OpenCommandPaletteDialog(props: {
   );
   const isRemoteProjectCloneFlow = addProjectCloneFlow !== null;
   const isRemoteProjectRepositoryStep = addProjectCloneFlow?.step === "repository";
-  const isBrowsing =
-    !isRemoteProjectRepositoryStep && isFilesystemBrowseQuery(query, browseEnvironmentPlatform);
+  const browsePath = useMemo(
+    () =>
+      resolveFilesystemBrowsePath(query, browseEnvironmentPlatform, !isRemoteProjectRepositoryStep),
+    [browseEnvironmentPlatform, isRemoteProjectRepositoryStep, query],
+  );
+  const isBrowsing = browsePath.isBrowsing;
   const paletteMode = getCommandPaletteMode({ currentView, isBrowsing });
   const getAddProjectInitialQueryForEnvironment = useCallback(
     (environmentId: EnvironmentId | null): string => {
@@ -605,9 +622,7 @@ function OpenCommandPaletteDialog(props: {
       : null;
   const relativePathNeedsActiveProject =
     isExplicitRelativeProjectPath(query.trim()) && currentProjectCwdForBrowse === null;
-  const browseDirectoryPath = isBrowsing ? getBrowseDirectoryPath(query) : "";
-  const browseFilterQuery =
-    isBrowsing && !hasTrailingPathSeparator(query) ? getBrowseLeafPathSegment(query) : "";
+  const browseDirectoryPath = browsePath.directoryPath;
   const browseQuery = useEnvironmentQuery(
     isBrowsing &&
       browseDirectoryPath.length > 0 &&
@@ -625,9 +640,31 @@ function OpenCommandPaletteDialog(props: {
   const browseResult = browseQuery.data;
   const isBrowsePending = browseQuery.isPending;
   const browseEntries = browseResult?.entries ?? EMPTY_BROWSE_ENTRIES;
-  const { filteredEntries: filteredBrowseEntries, exactEntry: exactBrowseEntry } = useMemo(
-    () => filterBrowseEntries({ browseEntries, browseFilterQuery, highlightedItemValue }),
-    [browseEntries, browseFilterQuery, highlightedItemValue],
+  const { visibleEntries: filteredBrowseEntries, exactEntry: exactBrowseEntry } = useMemo(
+    () => filterFilesystemBrowseEntries(browseEntries, browsePath.filterQuery),
+    [browseEntries, browsePath.filterQuery],
+  );
+
+  const prefetchBrowsePath = useCallback(
+    async (
+      partialPath: string,
+      environmentId: EnvironmentId | null = browseEnvironmentId,
+      cwd: string | null = currentProjectCwdForBrowse,
+    ): Promise<void> => {
+      if (!environmentId) return;
+      const environment = environments.find(
+        (candidate) => candidate.environmentId === environmentId,
+      );
+      if (!canPreloadBrowsePath(environment?.connection.phase)) return;
+      await loadBrowsePath({
+        environmentId,
+        input: {
+          partialPath,
+          ...(cwd ? { cwd } : {}),
+        },
+      });
+    },
+    [browseEnvironmentId, currentProjectCwdForBrowse, environments, loadBrowsePath],
   );
 
   const openProjectFromSearch = useMemo(
@@ -710,26 +747,19 @@ function OpenCommandPaletteDialog(props: {
           />
         ),
         runProject: async (project) => {
-          const latestThread = getLatestThreadForProject(
-            threads.filter((thread) => thread.environmentId === project.environmentId),
-            project.id,
-            clientSettings.sidebarThreadSortOrder,
-          );
-          if (latestThread) {
-            const threadRef = scopeThreadRef(latestThread.environmentId, latestThread.id);
-            useRightPanelStore.getState().showLauncher(threadRef);
-            await navigate({
-              to: "/$environmentId/$threadId",
-              params: buildThreadRouteParams(threadRef),
-            });
-            return;
-          }
-
-          await handleNewThread(scopeProjectRef(project.environmentId, project.id), {
-            beforeNavigate: (threadId) => {
-              useRightPanelStore
-                .getState()
-                .showLauncher(scopeThreadRef(project.environmentId, threadId));
+          await openConcreteProjectLauncher({
+            projectRef: scopeProjectRef(project.environmentId, project.id),
+            threads,
+            sortOrder: clientSettings.sidebarThreadSortOrder,
+            showLauncher: (threadRef) => useRightPanelStore.getState().showLauncher(threadRef),
+            navigateToThread: async (threadRef) => {
+              await navigate({
+                to: "/$environmentId/$threadId",
+                params: buildThreadRouteParams(threadRef),
+              });
+            },
+            createProjectThread: async (projectRef, beforeNavigate) => {
+              await handleNewThread(projectRef, { beforeNavigate });
             },
           });
         },
@@ -758,18 +788,29 @@ function OpenCommandPaletteDialog(props: {
   );
   const recentThreadItems = allThreadItems.slice(0, RECENT_THREAD_LIMIT);
 
-  function pushPaletteView(view: CommandPaletteView): void {
-    setViewStack((previousViews) => [
-      ...previousViews,
-      {
-        addonIcon: view.addonIcon,
-        groups: view.groups,
-        ...(view.initialQuery ? { initialQuery: view.initialQuery } : {}),
-      },
-    ]);
-    setHighlightedItemValue(null);
-    setQuery(view.initialQuery ?? "");
-  }
+  useEffect(
+    () => () => {
+      browseNavigation.invalidate();
+    },
+    [browseNavigation],
+  );
+
+  const pushPaletteView = useCallback(
+    (view: CommandPaletteView): void => {
+      browseNavigation.invalidate();
+      setViewStack((previousViews) => [
+        ...previousViews,
+        {
+          addonIcon: view.addonIcon,
+          groups: view.groups,
+          ...(view.initialQuery ? { initialQuery: view.initialQuery } : {}),
+        },
+      ]);
+      setHighlightedItemValue(null);
+      setQuery(view.initialQuery ?? "");
+    },
+    [browseNavigation],
+  );
 
   function pushView(item: CommandPaletteSubmenuItem): void {
     pushPaletteView({
@@ -780,6 +821,7 @@ function OpenCommandPaletteDialog(props: {
   }
 
   function popView(): void {
+    browseNavigation.invalidate();
     setAddProjectCloneFlow(null);
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
@@ -790,6 +832,7 @@ function OpenCommandPaletteDialog(props: {
   }
 
   function handleQueryChange(nextQuery: string): void {
+    browseNavigation.invalidate();
     setHighlightedItemValue(null);
     setQuery(nextQuery);
     if (nextQuery === "" && currentView?.initialQuery) {
@@ -798,16 +841,34 @@ function OpenCommandPaletteDialog(props: {
   }
 
   const startAddProjectBrowse = useCallback(
-    (environmentId: EnvironmentId): void => {
-      setAddProjectEnvironmentId(environmentId);
-      setAddProjectCloneFlow(null);
-      pushPaletteView({
-        addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
-        groups: [],
-        initialQuery: getAddProjectInitialQueryForEnvironment(environmentId),
-      });
+    async (environmentId: EnvironmentId): Promise<void> => {
+      const initialQuery = getAddProjectInitialQueryForEnvironment(environmentId);
+      const initialDirectory = getBrowseDirectoryPath(initialQuery);
+      const cwd = currentProjectEnvironmentId === environmentId ? currentProjectCwd : null;
+      await browseNavigation.run(
+        () =>
+          initialDirectory.length > 0
+            ? prefetchBrowsePath(initialDirectory, environmentId, cwd)
+            : Promise.resolve(),
+        () => {
+          setAddProjectEnvironmentId(environmentId);
+          setAddProjectCloneFlow(null);
+          pushPaletteView({
+            addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
+            groups: [],
+            initialQuery,
+          });
+        },
+      );
     },
-    [getAddProjectInitialQueryForEnvironment],
+    [
+      browseNavigation,
+      currentProjectCwd,
+      currentProjectEnvironmentId,
+      getAddProjectInitialQueryForEnvironment,
+      prefetchBrowsePath,
+      pushPaletteView,
+    ],
   );
 
   const startAddProjectClone = useCallback(
@@ -820,7 +881,7 @@ function OpenCommandPaletteDialog(props: {
         initialQuery: "",
       });
     },
-    [],
+    [pushPaletteView],
   );
 
   const openSourceControlSettings = useCallback(() => {
@@ -843,7 +904,7 @@ function OpenCommandPaletteDialog(props: {
           icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
           keepOpen: true,
           run: async () => {
-            startAddProjectBrowse(environmentId);
+            await startAddProjectBrowse(environmentId);
           },
         },
       ];
@@ -1092,7 +1153,7 @@ function OpenCommandPaletteDialog(props: {
       icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
       keepOpen: true,
       run: async () => {
-        startAddProjectBrowse(wslAddProjectEnvironmentOption.environmentId);
+        await startAddProjectBrowse(wslAddProjectEnvironmentOption.environmentId);
       },
     });
   }
@@ -1401,23 +1462,33 @@ function OpenCommandPaletteDialog(props: {
     await handleAddProject(cloneResult.value.cwd);
   }
 
-  function browseTo(name: string): void {
-    const nextQuery = appendBrowsePathSegment(query, name);
-    setHighlightedItemValue(null);
-    setQuery(nextQuery);
-    setBrowseGeneration((generation) => generation + 1);
-  }
+  const browseTo = useCallback(
+    async (name: string): Promise<void> => {
+      const nextQuery = appendBrowsePathSegment(query, name);
+      await browseNavigation.run(
+        () => prefetchBrowsePath(getBrowseDirectoryPath(nextQuery)),
+        () => {
+          setHighlightedItemValue(null);
+          setQuery(nextQuery);
+          setBrowseGeneration((generation) => generation + 1);
+        },
+      );
+    },
+    [browseNavigation, prefetchBrowsePath, query],
+  );
 
-  function browseUp(): void {
-    const parentPath = getBrowseParentPath(query);
-    if (parentPath === null) {
-      return;
-    }
-
-    setHighlightedItemValue(null);
-    setQuery(parentPath);
-    setBrowseGeneration((generation) => generation + 1);
-  }
+  const browseUp = useCallback(async (): Promise<void> => {
+    const parentPath = browsePath.parentPath;
+    if (parentPath === null) return;
+    await browseNavigation.run(
+      () => prefetchBrowsePath(parentPath),
+      () => {
+        setHighlightedItemValue(null);
+        setQuery(parentPath);
+        setBrowseGeneration((generation) => generation + 1);
+      },
+    );
+  }, [browseNavigation, browsePath.parentPath, prefetchBrowsePath]);
 
   // Resolve the add-project path from browse data when available. When the
   // query has a trailing separator (e.g. "~/projects/foo/"), parentPath is the
@@ -1427,8 +1498,7 @@ function OpenCommandPaletteDialog(props: {
     ? (browseResult?.parentPath ?? query.trim())
     : (exactBrowseEntry?.fullPath ?? query.trim());
 
-  const canBrowseUp =
-    isBrowsing && !relativePathNeedsActiveProject && canNavigateUp(browseDirectoryPath);
+  const canBrowseUp = !relativePathNeedsActiveProject && browsePath.canBrowseUp;
 
   const browseGroups = buildBrowseGroups({
     browseEntries: filteredBrowseEntries,

@@ -521,6 +521,35 @@ describe("composerDraftStore clearComposerContent", () => {
     expect(draft).toBeUndefined();
     expect(revokeSpy).not.toHaveBeenCalledWith("blob:optimistic");
   });
+
+  it("clears stash-owned text and images without changing provider or rich context", () => {
+    const image = makeImage({
+      id: "img-stash",
+      previewUrl: "blob:stash",
+    });
+    const terminalContext = makeTerminalContext({ id: "terminal-stash" });
+    const selectedModel = createModelSelection(CODEX_SECONDARY_INSTANCE, "gpt-secondary");
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(threadRef, "stash me");
+    store.addImage(threadRef, image);
+    store.setTerminalContexts(threadRef, [terminalContext]);
+    store.setModelSelection(threadRef, selectedModel);
+    store.setRichDraftMode(threadRef, true);
+
+    store.clearComposerPromptAndImages(threadRef);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      prompt: "",
+      images: [],
+      terminalContexts: [expect.objectContaining({ id: terminalContext.id })],
+      activeProvider: CODEX_SECONDARY_INSTANCE,
+      modelSelectionByProvider: {
+        [CODEX_SECONDARY_INSTANCE]: selectedModel,
+      },
+      richDraftMode: true,
+    });
+    expect(revokeSpy).toHaveBeenCalledWith("blob:stash");
+  });
 });
 
 describe("composerDraftStore syncPersistedAttachments", () => {

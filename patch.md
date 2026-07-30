@@ -169,6 +169,20 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Accept inactivity auto-settle as null or a whole number from 1 through 90 and reject invalid drafts before optimistic state or persistence.
 - Keep sidebar version selection as presentation only so concrete environment, project, and thread identities remain unchanged.
 
+## Composer Stash And Concrete Project Navigation
+
+- Keep one provider-agnostic prompt stash for text and images.
+- Clear the active prompt and images only after the stash entry is durably written and verified.
+- Restore stash content without changing provider instance, model, rich mode, terminal context, element context, annotations, or review comments.
+- Enforce the exact global entry, per-image, and per-entry attachment budgets from `F4`.
+- Migrate provider-scoped legacy queues atomically with deterministic ordering and id de-duplication.
+- Treat simultaneous global and legacy storage as an interrupted migration and preserve every unique entry within the global cap.
+- Delete legacy storage only after the complete replacement payload is written, reread, decoded, and verified.
+- Preload filesystem browse destinations before publishing visible navigation changes.
+- Reject stale browse completions after newer navigation or explicit invalidation.
+- Route Sidebar V1, Sidebar V2, and command palette project-panel actions through one concrete project launcher.
+- Filter launcher threads by exact environment and project identity before opening the right panel or navigating.
+
 ## Feature Spec Contract
 
 Every spec under `fork/` must include:

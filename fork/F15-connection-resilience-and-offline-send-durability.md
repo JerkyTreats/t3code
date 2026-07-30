@@ -1,6 +1,6 @@
 # F15 Connection Resilience And Offline Send Durability
 
-Date: 2026-07-29
+Date: 2026-07-30
 Status: active
 
 ## Intent
@@ -19,6 +19,8 @@ Connection failures, restarts, partial streams, renderer crashes, and transport 
 - Events at or below the accepted snapshot sequence are ignored.
 - Dropped-event detection performs a bounded recovery instead of applying an incomplete stream.
 - V2 thread synchronization preserves shell-first project state, bounded page loading, deferred payload hydration, and Unicode-safe content chunking.
+- Filesystem browse navigation preloads the target directory before publishing the next visible path.
+- A newer browse request or explicit invalidation prevents stale preload completion from changing visible navigation state.
 - Detail, shell, hydration, plan progress, and inference consumers agree on the authoritative retained activity rows.
 - Server projection owns context-window row trimming and retains the latest resolvable row for each turn with provider processed totals intact.
 - Connection diagnostics and the persistent flight recorder remain bounded, structured, sanitized, and free of credentials.
@@ -43,6 +45,7 @@ Current owner modules:
 - `packages/client-runtime/src/state/threads.ts`
 - `packages/client-runtime/src/state/threadSyncDiagnostics.ts`
 - `packages/client-runtime/src/state/threadSnapshotHttp.ts`
+- `packages/client-runtime/src/state/filesystem.ts`
 - `packages/client-runtime/src/connection/driver.ts`
 - `packages/client-runtime/src/connection/supervisor.ts`
 - `packages/client-runtime/src/connection/diagnostics.ts`
@@ -78,6 +81,7 @@ Current owner modules:
 - HTTP response compression policy
 - WebSocket compression compatibility patch
 - connection resilience benchmark
+- deferred filesystem browse coordinator
 
 ## One Shot Origin Rebuild Notes
 
@@ -87,6 +91,7 @@ Current owner modules:
 - Add compression through narrow HTTP and WebSocket seams without replacing the connection driver, supervisor, outbox, thread synchronization, or diagnostics subtrees.
 - Patch only the selected Effect platform package behavior needed for WebSocket compression and register the patch explicitly.
 - Preserve every diagnostic redaction boundary while adding compression and replay metrics.
+- Keep filesystem browse generation ownership in shared client runtime so web and mobile callers use the same stale-result policy.
 - Compose renderer recovery with updater-controlled relaunch and ordinary guarded shutdown.
 - Use deterministic local fixtures and an isolated temporary data directory for the benchmark.
 
@@ -105,6 +110,7 @@ Current owner modules:
 - Snapshot, replay, and live event boundary tests prove no gap and no duplicate application.
 - Dropped-event tests prove bounded recovery.
 - V2 paging, hydration, and Unicode-safe chunk tests continue to pass.
+- Deferred filesystem navigation tests prove only the newest valid preload commits visible state.
 - Diagnostics remain bounded and credential safe under connection and send failures.
 - Renderer recovery tests prove bounded backoff, stability reset, stale recovery cancellation, and clean-exit handling.
 - HTTP tests prove threshold, content negotiation, equivalent decoded bodies, and `Vary` behavior.

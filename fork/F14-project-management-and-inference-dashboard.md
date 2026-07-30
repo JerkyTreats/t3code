@@ -1,6 +1,6 @@
 # F14 Unified Project Context And Inference Dashboard
 
-Date: 2026-07-10
+Date: 2026-07-30
 Status: active
 
 ## Intent
@@ -50,6 +50,7 @@ The right panel provides compact global project context while `Open a surface` l
 - `apps/web/src/project-management/projectManagementTypes.ts`
 - `apps/web/src/project-management/useProjectManagementThreads.ts`
 - `apps/web/src/project-management/projectManagementStatusAdapter.ts`
+- `apps/web/src/project-management/openProjectLauncher.ts`
 - `apps/web/src/components/ProjectScriptsControl.tsx`
 - `apps/web/src/lib/projectPaths.ts`
 - `apps/web/src/components/Sidebar.tsx`
@@ -70,6 +71,7 @@ The right panel provides compact global project context while `Open a surface` l
 - project scoped Git surface adapter
 - project script adapter
 - sidebar and command palette project actions
+- concrete project launcher adapter
 
 ## One Shot Origin Rebuild Notes
 
@@ -81,6 +83,9 @@ The right panel provides compact global project context while `Open a surface` l
 - Add project scoped Git through a right panel surface adapter instead of faking active thread identity.
 - Add Inference Dashboard through a right panel surface descriptor instead of a standalone management page dependency.
 - Preserve latest thread navigation through environment aware thread route helpers.
+- Route Sidebar V1, Sidebar V2, and command palette project-panel actions through the same concrete project launcher.
+- Resolve an existing thread only after filtering by exact environment id and project id.
+- Bind a newly allocated thread to the concrete environment before opening the right-panel launcher.
 - Rebuild inference rollups from latest usage snapshot per turn before rendering dashboard metrics.
 - Recheck markdown and file preview behavior from `F9` because project surfaces link into those surfaces.
 
@@ -109,6 +114,7 @@ The right panel provides compact global project context while `Open a surface` l
 - Token totals remain readable across `K`, `M`, `B`, `T`, and `Q` magnitudes with stable rounding at unit boundaries.
 - Dashboard leaderboard links navigate to the correct environment scoped threads.
 - Missing or removed project state after bootstrap exits or degrades without stale project details.
+- Sidebar V1 and command palette project-panel actions produce the same right-panel and route result.
 
 ## Compatibility Checks
 
