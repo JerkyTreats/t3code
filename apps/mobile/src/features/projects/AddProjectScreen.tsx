@@ -52,6 +52,7 @@ import { uuidv4 } from "../../lib/uuid";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import { resolveProjectEnvironmentFromParam } from "./projectEnvironmentSelection";
 
 interface EnvironmentOption {
   readonly environmentId: EnvironmentId;
@@ -505,12 +506,7 @@ function useEnvironmentFromParam(
   environmentIdParam: string | string[] | undefined,
 ): EnvironmentOption | null {
   const environmentOptions = useEnvironmentOptions();
-  const environmentId = stringParam(environmentIdParam) as EnvironmentId | null;
-  return (
-    environmentOptions.find((environment) => environment.environmentId === environmentId) ??
-    environmentOptions[0] ??
-    null
-  );
+  return resolveProjectEnvironmentFromParam(environmentOptions, environmentIdParam);
 }
 
 export function AddProjectRepositoryScreen(props: {
