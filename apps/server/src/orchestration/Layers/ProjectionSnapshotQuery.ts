@@ -117,6 +117,13 @@ const ProjectionThreadActivityRawDbRowSchema = Schema.Struct({
 type ProjectionThreadActivityRawDbRow = Schema.Schema.Type<
   typeof ProjectionThreadActivityRawDbRowSchema
 >;
+const ProjectionThreadActivityInitialRawDbRowSchema = Schema.Struct({
+  ...ProjectionThreadActivityRawDbRowSchema.fields,
+  retainInInitialSnapshot: Schema.Number,
+});
+type ProjectionThreadActivityInitialRawDbRow = Schema.Schema.Type<
+  typeof ProjectionThreadActivityInitialRawDbRowSchema
+>;
 const ProjectionThreadActivityPayloadMetadataDbRowSchema = Schema.Struct({
   activityId: EventId,
   payloadByteLength: NonNegativeInt,
@@ -491,11 +498,11 @@ function takeLimitedRows<T>(
 }
 
 function takeInitialActivityRows(input: {
-  readonly rows: ReadonlyArray<ProjectionThreadActivityRawDbRow>;
+  readonly rows: ReadonlyArray<ProjectionThreadActivityInitialRawDbRow>;
   readonly latestResolvableContextRow: ProjectionThreadActivityRawDbRow | null;
   readonly limit: number;
 }): {
-  readonly rows: ReadonlyArray<ProjectionThreadActivityRawDbRow>;
+  readonly rows: ReadonlyArray<ProjectionThreadActivityInitialRawDbRow>;
   readonly hasMore: boolean;
   readonly effectiveLimit: number;
   readonly reservedActivityId: EventId | null;
@@ -507,14 +514,17 @@ function takeInitialActivityRows(input: {
       : input.rows.findIndex((row) => row.activityId === latestContext.activityId);
   const effectiveLimit =
     latestContextIndex < 0 ? input.limit : Math.max(input.limit, latestContextIndex + 1);
-  const limitedRows = input.rows.slice(0, effectiveLimit);
+  const boundedRows = input.rows.slice(0, effectiveLimit);
+  const firstFilteredRowIndex = boundedRows.findIndex((row) => row.retainInInitialSnapshot !== 1);
+  const limitedRows =
+    firstFilteredRowIndex < 0 ? boundedRows : boundedRows.slice(0, firstFilteredRowIndex);
   const reservedActivityId =
     latestContext !== null && limitedRows.some((row) => row.activityId === latestContext.activityId)
       ? latestContext.activityId
       : null;
   return {
     rows: limitedRows.toReversed(),
-    hasMore: input.rows.length > effectiveLimit,
+    hasMore: input.rows.length > effectiveLimit || firstFilteredRowIndex >= 0,
     effectiveLimit,
     reservedActivityId,
   };
@@ -1604,9 +1614,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
-  const listTailRetainedThreadActivityRawRowsByThread = SqlSchema.findAll({
+  const listTailThreadActivityInitialRawRowsByThread = SqlSchema.findAll({
     Request: ThreadLimitLookupInput,
-    Result: ProjectionThreadActivityRawDbRowSchema,
+    Result: ProjectionThreadActivityInitialRawDbRowSchema,
     execute: ({ threadId, limit }) =>
       sql`
         WITH resolvable_context_activities AS (
@@ -1623,12 +1633,43 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           WHERE thread_id = ${threadId}
             AND kind = 'context-window.updated'
             AND json_type(payload_json, '$.usedTokens') IN ('integer', 'real')
-            AND CAST(json_extract(payload_json, '$.usedTokens') AS REAL) >= 0
+            AND CAST(json_extract(payload_json, '$.usedTokens') AS REAL)
+              BETWEEN 0 AND 1.7976931348623157e308
         ),
         latest_context_activity_ids AS (
           SELECT activity_id
           FROM resolvable_context_activities
           WHERE context_rank = 1
+        ),
+        ordered_activity_ids AS (
+          SELECT
+            activity_id,
+            ROW_NUMBER() OVER (
+              ORDER BY sequence DESC, created_at DESC, activity_id DESC
+            ) AS activity_rank
+          FROM projection_thread_activities
+          WHERE thread_id = ${threadId}
+            AND EXISTS (
+              SELECT 1
+              FROM projection_threads
+              WHERE projection_threads.thread_id = projection_thread_activities.thread_id
+                AND projection_threads.deleted_at IS NULL
+            )
+        ),
+        latest_resolvable_context_boundary AS (
+          SELECT MIN(ordered_activity_ids.activity_rank) AS activity_rank
+          FROM ordered_activity_ids
+          INNER JOIN latest_context_activity_ids
+            ON latest_context_activity_ids.activity_id = ordered_activity_ids.activity_id
+        ),
+        bounded_activity_ids AS (
+          SELECT activity_id
+          FROM ordered_activity_ids
+          WHERE activity_rank <= ${limit}
+            OR activity_rank <= COALESCE(
+              (SELECT activity_rank FROM latest_resolvable_context_boundary),
+              0
+            )
         )
         SELECT
           activity_id AS "activityId",
@@ -1644,21 +1685,22 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           END AS "payloadJson",
           length(CAST(payload_json AS BLOB)) AS "payloadByteLength",
           sequence,
-          created_at AS "createdAt"
+          created_at AS "createdAt",
+          CASE
+            WHEN kind <> 'context-window.updated'
+              OR COALESCE(json_type(payload_json, '$.usedTokens') NOT IN ('integer', 'real'), 1)
+              OR COALESCE(
+                CAST(json_extract(payload_json, '$.usedTokens') AS REAL)
+                  NOT BETWEEN 0 AND 1.7976931348623157e308,
+                1
+              )
+              OR activity_id IN (SELECT activity_id FROM latest_context_activity_ids)
+              THEN 1
+            ELSE 0
+          END AS "retainInInitialSnapshot"
         FROM projection_thread_activities
         WHERE thread_id = ${threadId}
-          AND (
-            kind <> 'context-window.updated'
-            OR COALESCE(json_type(payload_json, '$.usedTokens') NOT IN ('integer', 'real'), 1)
-            OR COALESCE(CAST(json_extract(payload_json, '$.usedTokens') AS REAL) < 0, 1)
-            OR activity_id IN (SELECT activity_id FROM latest_context_activity_ids)
-          )
-          AND EXISTS (
-            SELECT 1
-            FROM projection_threads
-            WHERE projection_threads.thread_id = projection_thread_activities.thread_id
-              AND projection_threads.deleted_at IS NULL
-          )
+          AND activity_id IN (SELECT activity_id FROM bounded_activity_ids)
         ORDER BY
           sequence DESC,
           created_at DESC,
@@ -1727,7 +1769,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE thread_id = ${threadId}
           AND kind = 'context-window.updated'
           AND json_type(payload_json, '$.usedTokens') IN ('integer', 'real')
-          AND CAST(json_extract(payload_json, '$.usedTokens') AS REAL) >= 0
+          AND CAST(json_extract(payload_json, '$.usedTokens') AS REAL)
+            BETWEEN 0 AND 1.7976931348623157e308
           AND EXISTS (
             SELECT 1
             FROM projection_threads
@@ -3307,7 +3350,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             ),
           ),
         ),
-        listTailRetainedThreadActivityRawRowsByThread({
+        listTailThreadActivityInitialRawRowsByThread({
           threadId,
           limit: THREAD_SYNC_V2_MAX_LIMITS.activities + 1,
         }).pipe(

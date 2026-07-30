@@ -1374,8 +1374,9 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       if (threadDetailV2._tag === "Some") {
         assert.deepEqual(
           threadDetailV2.value.thread.activities,
-          snapshot.threads[0]?.activities ?? [],
+          (snapshot.threads[0]?.activities ?? []).slice(3),
         );
+        assert.equal(threadDetailV2.value.windows.activities.hasMoreBefore, true);
       }
       assert.equal(boundedThreadDetailV2._tag, "Some");
       if (boundedThreadDetailV2._tag === "Some") {
@@ -1571,6 +1572,358 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           createdAt: "2026-04-01T00:00:17.000Z",
         },
       ]);
+    }),
+  );
+
+  it.effect("chooses the v2 activity boundary before filtering superseded context rows", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-context-boundary");
+
+      yield* sql`DELETE FROM projection_projects`;
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_thread_activities`;
+      yield* sql`DELETE FROM projection_state`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id,
+          title,
+          workspace_root,
+          default_model_selection_json,
+          scripts_json,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          'project-context-boundary',
+          'Context Boundary',
+          '/tmp/project-context-boundary',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          '[]',
+          '2026-04-02T00:00:00.000Z',
+          '2026-04-02T00:00:01.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id,
+          project_id,
+          title,
+          model_selection_json,
+          runtime_mode,
+          interaction_mode,
+          branch,
+          worktree_path,
+          latest_turn_id,
+          latest_user_message_at,
+          pending_approval_count,
+          pending_user_input_count,
+          has_actionable_proposed_plan,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          ${threadId},
+          'project-context-boundary',
+          'Context Boundary Thread',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          'full-access',
+          'default',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          0,
+          0,
+          0,
+          '2026-04-02T00:00:02.000Z',
+          '2026-04-02T00:00:03.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id,
+          thread_id,
+          turn_id,
+          tone,
+          kind,
+          summary,
+          payload_json,
+          sequence,
+          created_at
+        )
+        VALUES
+          (
+            'runtime-before-context',
+            ${threadId},
+            'turn-current',
+            'info',
+            'runtime.note',
+            'runtime before context',
+            '{}',
+            1,
+            '2026-04-02T00:00:04.000Z'
+          ),
+          (
+            'context-superseded',
+            ${threadId},
+            'turn-current',
+            'info',
+            'context-window.updated',
+            'superseded context',
+            '{"usedTokens":2000}',
+            2,
+            '2026-04-02T00:00:05.000Z'
+          ),
+          (
+            'context-current',
+            ${threadId},
+            'turn-current',
+            'info',
+            'context-window.updated',
+            'current context',
+            '{"usedTokens":3000}',
+            3,
+            '2026-04-02T00:00:06.000Z'
+          ),
+          (
+            'runtime-after-context',
+            ${threadId},
+            'turn-current',
+            'info',
+            'runtime.note',
+            'runtime after context',
+            '{}',
+            4,
+            '2026-04-02T00:00:07.000Z'
+          )
+      `;
+
+      const snapshot = yield* snapshotQuery.getThreadDetailV2ById(threadId, {
+        activities: 4,
+      });
+      assert.equal(snapshot._tag, "Some");
+      if (snapshot._tag === "Some") {
+        assert.deepEqual(
+          snapshot.value.thread.activities.map((activity) => activity.id),
+          [asEventId("context-current"), asEventId("runtime-after-context")],
+        );
+        assert.equal(snapshot.value.windows.activities.hasMoreBefore, true);
+
+        const firstActivity = snapshot.value.thread.activities[0];
+        assert.isDefined(firstActivity);
+        if (firstActivity) {
+          const precedingPage = yield* snapshotQuery.getThreadActivityPage({
+            threadId,
+            limit: 100,
+            cursor: {
+              direction: "before",
+              position: {
+                activityId: firstActivity.id,
+                createdAt: firstActivity.createdAt,
+                sequence: firstActivity.sequence ?? null,
+              },
+            },
+          });
+          const fullPage = yield* snapshotQuery.getThreadActivityPage({
+            threadId,
+            limit: 100,
+          });
+          assert.deepEqual(
+            precedingPage.items.map((activity) => activity.id),
+            [asEventId("runtime-before-context"), asEventId("context-superseded")],
+          );
+          assert.deepEqual(
+            [...precedingPage.items, ...snapshot.value.thread.activities].map(
+              (activity) => activity.id,
+            ),
+            fullPage.items.map((activity) => activity.id),
+          );
+        }
+      }
+    }),
+  );
+
+  it.effect("keeps non-finite context rows malformed in v1 and v2 snapshots", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-non-finite-context");
+
+      yield* sql`DELETE FROM projection_projects`;
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_thread_activities`;
+      yield* sql`DELETE FROM projection_state`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id,
+          title,
+          workspace_root,
+          default_model_selection_json,
+          scripts_json,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          'project-non-finite-context',
+          'Non-finite Context',
+          '/tmp/project-non-finite-context',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          '[]',
+          '2026-04-02T01:00:00.000Z',
+          '2026-04-02T01:00:01.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id,
+          project_id,
+          title,
+          model_selection_json,
+          runtime_mode,
+          interaction_mode,
+          branch,
+          worktree_path,
+          latest_turn_id,
+          latest_user_message_at,
+          pending_approval_count,
+          pending_user_input_count,
+          has_actionable_proposed_plan,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          ${threadId},
+          'project-non-finite-context',
+          'Non-finite Context Thread',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          'full-access',
+          'default',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          0,
+          0,
+          0,
+          '2026-04-02T01:00:02.000Z',
+          '2026-04-02T01:00:03.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id,
+          thread_id,
+          turn_id,
+          tone,
+          kind,
+          summary,
+          payload_json,
+          sequence,
+          created_at
+        )
+        VALUES
+          (
+            'context-finite',
+            ${threadId},
+            'turn-non-finite',
+            'info',
+            'context-window.updated',
+            'finite context',
+            '{"usedTokens":4000}',
+            1,
+            '2026-04-02T01:00:04.000Z'
+          ),
+          (
+            'context-infinite',
+            ${threadId},
+            'turn-non-finite',
+            'info',
+            'context-window.updated',
+            'non-finite context',
+            '{"usedTokens":1e999}',
+            2,
+            '2026-04-02T01:00:05.000Z'
+          )
+      `;
+
+      const v1 = yield* snapshotQuery.getThreadDetailById(threadId);
+      const v2 = yield* snapshotQuery.getThreadDetailV2ById(threadId, {
+        activities: 2,
+      });
+
+      assert.equal(v1._tag, "Some");
+      if (v1._tag === "Some") {
+        assert.deepEqual(
+          v1.value.activities.map((activity) => activity.id),
+          [asEventId("context-finite"), asEventId("context-infinite")],
+        );
+      }
+      assert.equal(v2._tag, "Some");
+      if (v2._tag === "Some") {
+        assert.deepEqual(
+          v2.value.thread.activities.map((activity) => activity.id),
+          [asEventId("context-finite"), asEventId("context-infinite")],
+        );
+      }
+
+      yield* sql`
+        WITH RECURSIVE malformed_rows(offset) AS (
+          SELECT 1
+          UNION ALL
+          SELECT offset + 1
+          FROM malformed_rows
+          WHERE offset < 301
+        )
+        INSERT INTO projection_thread_activities (
+          activity_id,
+          thread_id,
+          turn_id,
+          tone,
+          kind,
+          summary,
+          payload_json,
+          sequence,
+          created_at
+        )
+        SELECT
+          printf('context-malformed-%03d', offset),
+          ${threadId},
+          'turn-non-finite',
+          'info',
+          'context-window.updated',
+          'malformed context tail',
+          '{"usedTokens":null}',
+          offset + 2,
+          '2026-04-02T01:00:06.000Z'
+        FROM malformed_rows
+      `;
+
+      const boundedError = yield* snapshotQuery
+        .getThreadDetailV2ById(threadId, {
+          activities: 2,
+        })
+        .pipe(Effect.flip);
+      assert.equal(boundedError._tag, "PersistenceDecodeError");
+      assert.equal(
+        boundedError.operation,
+        "ProjectionSnapshotQuery.getThreadDetailV2ById:contiguousContextWindow",
+      );
     }),
   );
 
