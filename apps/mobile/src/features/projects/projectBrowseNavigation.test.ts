@@ -16,6 +16,7 @@ describe("mobile project destination navigation ownership", () => {
       source: "github",
       connectionPhase: "connected",
       baseDirectory: "/old/projects",
+      repositoryQuery: "owner/repository",
     });
     const transition = coordinator.run(
       () => preload.promise,
@@ -29,6 +30,7 @@ describe("mobile project destination navigation ownership", () => {
       source: "github",
       connectionPhase: "connected",
       baseDirectory: "/old/projects",
+      repositoryQuery: "owner/repository",
     });
     preload.resolve(true);
 
@@ -45,6 +47,7 @@ describe("mobile project destination navigation ownership", () => {
       source: "github",
       connectionPhase: "connected",
       baseDirectory: "/projects",
+      repositoryQuery: "owner/repository",
     });
     const transition = coordinator.run(
       () => lookup.promise,
@@ -58,6 +61,7 @@ describe("mobile project destination navigation ownership", () => {
       source: "url",
       connectionPhase: "connected",
       baseDirectory: "/projects",
+      repositoryQuery: "owner/repository",
     });
     lookup.resolve(true);
 
@@ -74,6 +78,7 @@ describe("mobile project destination navigation ownership", () => {
       source: "github",
       connectionPhase: "connected",
       baseDirectory: "/projects",
+      repositoryQuery: "owner/repository",
     });
     const transition = coordinator.run(
       () => preload.promise,
@@ -87,6 +92,7 @@ describe("mobile project destination navigation ownership", () => {
       source: "github",
       connectionPhase: "reconnecting",
       baseDirectory: "/projects",
+      repositoryQuery: "owner/repository",
     });
     preload.resolve(true);
 
@@ -103,6 +109,7 @@ describe("mobile project destination navigation ownership", () => {
       source: "github",
       connectionPhase: "connected",
       baseDirectory: null,
+      repositoryQuery: "owner/repository",
     });
     const transition = coordinator.run(
       () => lookup.promise,
@@ -116,8 +123,79 @@ describe("mobile project destination navigation ownership", () => {
       source: "github",
       connectionPhase: "connected",
       baseDirectory: "/configured/projects",
+      repositoryQuery: "owner/repository",
     });
     lookup.resolve(true);
+
+    await expect(transition).resolves.toBe(false);
+    expect(navigated).toBe(false);
+  });
+
+  it("rejects an old transition when repository input changes during lookup", async () => {
+    const coordinator = createProjectDestinationNavigationCoordinator();
+    const lookup = Promise.withResolvers<boolean>();
+    let navigated = false;
+    coordinator.updateContext({
+      environmentId: EnvironmentId.make("environment-1"),
+      source: "github",
+      connectionPhase: "connected",
+      baseDirectory: "/projects",
+      repositoryQuery: "owner/old-repository",
+    });
+    const transition = coordinator.run(
+      () => lookup.promise,
+      () => {
+        navigated = true;
+      },
+    );
+
+    coordinator.updateContext({
+      environmentId: EnvironmentId.make("environment-1"),
+      source: "github",
+      connectionPhase: "connected",
+      baseDirectory: "/projects",
+      repositoryQuery: "owner/new-repository",
+    });
+    lookup.resolve(true);
+
+    await expect(transition).resolves.toBe(false);
+    expect(navigated).toBe(false);
+  });
+
+  it("rejects an old transition when repository input changes during preload", async () => {
+    const coordinator = createProjectDestinationNavigationCoordinator();
+    const lookup = Promise.withResolvers<boolean>();
+    const preload = Promise.withResolvers<boolean>();
+    const preloadStarted = Promise.withResolvers<void>();
+    let navigated = false;
+    coordinator.updateContext({
+      environmentId: EnvironmentId.make("environment-1"),
+      source: "github",
+      connectionPhase: "connected",
+      baseDirectory: "/projects",
+      repositoryQuery: "owner/old-repository",
+    });
+    const transition = coordinator.run(
+      async () => {
+        await lookup.promise;
+        preloadStarted.resolve();
+        return preload.promise;
+      },
+      () => {
+        navigated = true;
+      },
+    );
+
+    lookup.resolve(true);
+    await preloadStarted.promise;
+    coordinator.updateContext({
+      environmentId: EnvironmentId.make("environment-1"),
+      source: "github",
+      connectionPhase: "connected",
+      baseDirectory: "/projects",
+      repositoryQuery: "owner/new-repository",
+    });
+    preload.resolve(true);
 
     await expect(transition).resolves.toBe(false);
     expect(navigated).toBe(false);

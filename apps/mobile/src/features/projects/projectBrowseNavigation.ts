@@ -32,12 +32,14 @@ export function createProjectDestinationNavigationCoordinator() {
       readonly source: AddProjectRemoteSource;
       readonly connectionPhase: EnvironmentConnectionPhase | null;
       readonly baseDirectory: string | null;
+      readonly repositoryQuery: string;
     }) =>
       JSON.stringify([
         input.environmentId,
         input.source,
         input.connectionPhase,
         input.baseDirectory,
+        input.repositoryQuery,
       ]),
   );
 }

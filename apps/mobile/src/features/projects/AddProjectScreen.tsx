@@ -533,6 +533,7 @@ export function AddProjectRepositoryScreen(props: {
   const environment = useEnvironmentFromParam(props.environmentId);
   const source = sourceFromParam(props.source);
   const [repositoryInput, setRepositoryInput] = useState("");
+  const repositoryQuery = repositoryInput.trim();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const destinationNavigationRef = useRef<ReturnType<
@@ -549,6 +550,7 @@ export function AddProjectRepositoryScreen(props: {
       source,
       connectionPhase: environment?.connectionPhase ?? null,
       baseDirectory: environment?.baseDirectory ?? null,
+      repositoryQuery,
     });
     return () => {
       destinationNavigation.invalidate();
@@ -558,11 +560,12 @@ export function AddProjectRepositoryScreen(props: {
     environment?.baseDirectory,
     environment?.connectionPhase,
     environment?.environmentId,
+    repositoryQuery,
     source,
   ]);
 
   const lookupRepository = useCallback(async () => {
-    if (!environment || repositoryInput.trim().length === 0 || isSubmitting) return;
+    if (!environment || repositoryQuery.length === 0 || isSubmitting) return;
     setError(null);
     setIsSubmitting(true);
     const provider = addProjectRemoteSourceProvider(source);
@@ -576,7 +579,7 @@ export function AddProjectRepositoryScreen(props: {
     await destinationNavigation.run(
       async (isCurrent) => {
         if (!provider) {
-          const remoteUrl = repositoryInput.trim();
+          const remoteUrl = repositoryQuery;
           destination = {
             remoteUrl,
             repositoryTitle: remoteUrl,
@@ -586,7 +589,7 @@ export function AddProjectRepositoryScreen(props: {
             environmentId: environment.environmentId,
             input: {
               provider,
-              repository: repositoryInput.trim(),
+              repository: repositoryQuery,
             },
           });
           if (AsyncResult.isFailure(result)) {
@@ -640,7 +643,7 @@ export function AddProjectRepositoryScreen(props: {
     loadBrowsePath,
     lookupRepositoryQuery,
     navigation,
-    repositoryInput,
+    repositoryQuery,
     source,
   ]);
 
@@ -663,7 +666,7 @@ export function AddProjectRepositoryScreen(props: {
       />
       <PrimaryActionButton
         label={source === "url" ? "Continue" : "Lookup repository"}
-        disabled={isSubmitting || repositoryInput.trim().length === 0}
+        disabled={isSubmitting || repositoryQuery.length === 0}
         onPress={() => void lookupRepository()}
         loading={isSubmitting}
       />
