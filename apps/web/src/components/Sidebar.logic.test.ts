@@ -33,6 +33,7 @@ import {
   sortThreadsForSidebarV2,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
   SIDEBAR_V2_SINGLE_CLICK_DELAY_MS,
+  type ThreadStatusPill,
 } from "./Sidebar.logic";
 import {
   EnvironmentId,
@@ -820,6 +821,68 @@ describe("resolveProjectStatusIndicator", () => {
         },
       ]),
     ).toMatchObject({ label: "Plan Ready", dotClass: "bg-violet-500" });
+  });
+
+  it("orders every project status tier explicitly", () => {
+    const statuses: ThreadStatusPill[] = [
+      {
+        label: "Pending Approval",
+        colorClass: "approval",
+        dotClass: "approval-dot",
+        pulse: false,
+      },
+      {
+        label: "Awaiting Input",
+        colorClass: "input",
+        dotClass: "input-dot",
+        pulse: false,
+      },
+      {
+        label: "1/4",
+        colorClass: "plan-progress",
+        dotClass: "plan-progress-dot",
+        pulse: true,
+      },
+      {
+        label: "Working",
+        colorClass: "working",
+        dotClass: "working-dot",
+        pulse: true,
+      },
+      {
+        label: "Plan Ready",
+        colorClass: "plan-ready",
+        dotClass: "plan-ready-dot",
+        pulse: false,
+      },
+      {
+        label: "Completed",
+        colorClass: "completed",
+        dotClass: "completed-dot",
+        pulse: false,
+      },
+    ];
+
+    for (const [index, expected] of statuses.entries()) {
+      expect(resolveProjectStatusIndicator(statuses.slice(index))).toBe(expected);
+    }
+  });
+
+  it("replaces earlier generic working state with later fractional progress", () => {
+    const working: ThreadStatusPill = {
+      label: "Working",
+      colorClass: "working",
+      dotClass: "working-dot",
+      pulse: true,
+    };
+    const progress: ThreadStatusPill = {
+      label: "1/4",
+      colorClass: "plan-progress",
+      dotClass: "plan-progress-dot",
+      pulse: true,
+    };
+
+    expect(resolveProjectStatusIndicator([working, progress])).toBe(progress);
   });
 });
 

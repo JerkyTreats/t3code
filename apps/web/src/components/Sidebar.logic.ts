@@ -50,8 +50,8 @@ export interface ThreadStatusPill {
 }
 
 const THREAD_STATUS_PRIORITY: Record<string, number> = {
-  "Pending Approval": 5,
-  "Awaiting Input": 4,
+  "Pending Approval": 6,
+  "Awaiting Input": 5,
   Working: 3,
   Connecting: 3,
   "Plan Ready": 2,
@@ -59,7 +59,10 @@ const THREAD_STATUS_PRIORITY: Record<string, number> = {
 };
 
 function threadStatusPriority(status: ThreadStatusPill): number {
-  return THREAD_STATUS_PRIORITY[status.label] ?? 3;
+  if (/^\d+\/\d+$/.test(status.label)) {
+    return 4;
+  }
+  return THREAD_STATUS_PRIORITY[status.label] ?? 0;
 }
 
 type ThreadStatusInput = Pick<
