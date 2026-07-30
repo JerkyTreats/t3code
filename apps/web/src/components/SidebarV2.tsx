@@ -59,6 +59,7 @@ import { runProjectDeletionLifecycle } from "../lib/threadDeletionWorkflow";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
+import { projectThreadSettledWithOutbox } from "../threadOutbox";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { cn, isMacPlatform } from "../lib/utils";
@@ -71,6 +72,7 @@ import {
 } from "../sidebarProjectGrouping";
 import type { SidebarThreadSummary } from "../types";
 import { ProjectFavicon } from "./ProjectFavicon";
+import { useWebThreadOutboxSettlementProjection } from "./ThreadOutboxCoordinator";
 import {
   buildProjectRemovalConfirmation,
   createDeferredSidebarV2ActivationController,
@@ -452,6 +454,7 @@ export default function SidebarV2() {
   });
   const routeThreadKey =
     routeTarget?.kind === "server" ? scopedThreadKey(routeTarget.threadRef) : null;
+  const outboxSettlementProjection = useWebThreadOutboxSettlementProjection();
   const settlementNow = useSettlementNow();
   const autoSettleAfterDays = useClientSettings((settings) => settings.sidebarAutoSettleAfterDays);
   const projectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
@@ -631,13 +634,18 @@ export default function SidebarV2() {
     for (const thread of visibleThreads) {
       if (
         supportsSettlement(thread.environmentId) &&
-        effectiveSettled(thread, {
-          now: settlementNow,
-          autoSettleAfterDays,
-          changeRequestState:
-            changeRequestStateByKey.get(
-              scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-            ) ?? null,
+        projectThreadSettledWithOutbox({
+          environmentId: thread.environmentId,
+          threadId: thread.id,
+          effectiveSettled: effectiveSettled(thread, {
+            now: settlementNow,
+            autoSettleAfterDays,
+            changeRequestState:
+              changeRequestStateByKey.get(
+                scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+              ) ?? null,
+          }),
+          outboxProjection: outboxSettlementProjection,
         })
       ) {
         settled.push(thread);
@@ -652,6 +660,7 @@ export default function SidebarV2() {
   }, [
     autoSettleAfterDays,
     changeRequestStateByKey,
+    outboxSettlementProjection,
     settlementNow,
     supportsSettlement,
     visibleThreads,

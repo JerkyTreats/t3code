@@ -116,8 +116,13 @@ import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
 import { useRightPanelStore } from "../rightPanelStore";
 import { openConcreteProjectLauncher } from "../project-management/openProjectLauncher";
+import {
+  projectThreadSettledWithOutbox,
+  type WebThreadOutboxSettlementProjection,
+} from "../threadOutbox";
 
 import { useThreadActions } from "../hooks/useThreadActions";
+import { useWebThreadOutboxSettlementProjection } from "./ThreadOutboxCoordinator";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { threadEnvironment, useEnvironmentThread } from "../state/threads";
@@ -325,6 +330,7 @@ function buildThreadJumpLabelMap(input: {
 interface SidebarThreadRowProps {
   thread: SidebarThreadSummary;
   projectCwd: string | null;
+  outboxSettlementProjection: WebThreadOutboxSettlementProjection;
   orderedProjectThreadKeys: readonly string[];
   isActive: boolean;
   jumpLabel: string | null;
@@ -465,10 +471,15 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
   );
   const isThreadRunning =
     thread.session?.status === "running" && thread.session.activeTurnId != null;
-  const threadStatus = effectiveSettledFromVcsStatus(thread, {
-    now: settlementNow,
-    autoSettleAfterDays: null,
-    status: gitStatus.data,
+  const threadStatus = projectThreadSettledWithOutbox({
+    environmentId: thread.environmentId,
+    threadId: thread.id,
+    effectiveSettled: effectiveSettledFromVcsStatus(thread, {
+      now: settlementNow,
+      autoSettleAfterDays: null,
+      status: gitStatus.data,
+    }),
+    outboxProjection: props.outboxSettlementProjection,
   })
     ? null
     : resolveThreadStatusPill({
@@ -900,6 +911,7 @@ export const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThr
 interface SidebarProjectThreadListProps {
   projectKey: string;
   projectExpanded: boolean;
+  outboxSettlementProjection: WebThreadOutboxSettlementProjection;
   hasOverflowingThreads: boolean;
   hiddenThreadStatus: ThreadStatusPill | null;
   orderedProjectThreadKeys: readonly string[];
@@ -951,6 +963,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
   const {
     projectKey,
     projectExpanded,
+    outboxSettlementProjection,
     hasOverflowingThreads,
     hiddenThreadStatus,
     orderedProjectThreadKeys,
@@ -1010,6 +1023,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
               key={threadKey}
               thread={thread}
               projectCwd={projectCwd}
+              outboxSettlementProjection={outboxSettlementProjection}
               orderedProjectThreadKeys={orderedProjectThreadKeys}
               isActive={activeRouteThreadKey === threadKey}
               jumpLabel={threadJumpLabelByKey.get(threadKey) ?? null}
@@ -1075,6 +1089,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
 
 interface SidebarProjectItemProps {
   project: SidebarProjectSnapshot;
+  outboxSettlementProjection: WebThreadOutboxSettlementProjection;
   isThreadListExpanded: boolean;
   activeRouteThreadKey: string | null;
   newThreadShortcutLabel: string | null;
@@ -1096,6 +1111,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   const { closeThreadWorktree, discardThreadWorktree } = useThreadActions();
   const {
     project,
+    outboxSettlementProjection,
     isThreadListExpanded,
     activeRouteThreadKey,
     newThreadShortcutLabel,
@@ -2400,6 +2416,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       <SidebarProjectThreadList
         projectKey={project.projectKey}
         projectExpanded={projectExpanded}
+        outboxSettlementProjection={outboxSettlementProjection}
         hasOverflowingThreads={hasOverflowingThreads}
         hiddenThreadStatus={hiddenThreadStatus}
         orderedProjectThreadKeys={orderedProjectThreadKeys}
@@ -2945,6 +2962,7 @@ interface SidebarProjectsContentProps {
   archiveThread: ReturnType<typeof useThreadActions>["archiveThread"];
   deleteThread: ReturnType<typeof useThreadActions>["deleteThread"];
   sortedProjects: readonly SidebarProjectSnapshot[];
+  outboxSettlementProjection: WebThreadOutboxSettlementProjection;
   expandedThreadListsByProject: ReadonlySet<string>;
   activeRouteProjectKey: string | null;
   routeThreadKey: string | null;
@@ -2986,6 +3004,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     archiveThread,
     deleteThread,
     sortedProjects,
+    outboxSettlementProjection,
     expandedThreadListsByProject,
     activeRouteProjectKey,
     routeThreadKey,
@@ -3130,6 +3149,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                     {(dragHandleProps) => (
                       <SidebarProjectItem
                         project={project}
+                        outboxSettlementProjection={outboxSettlementProjection}
                         isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
                         activeRouteThreadKey={
                           activeRouteProjectKey === project.projectKey ? routeThreadKey : null
@@ -3162,6 +3182,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               <SidebarProjectListRow
                 key={project.projectKey}
                 project={project}
+                outboxSettlementProjection={outboxSettlementProjection}
                 isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
                 activeRouteThreadKey={
                   activeRouteProjectKey === project.projectKey ? routeThreadKey : null
@@ -3197,6 +3218,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
 export default function Sidebar() {
   const projects = useProjects();
   const sidebarThreads = useThreadShells();
+  const outboxSettlementProjection = useWebThreadOutboxSettlementProjection();
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);
@@ -3840,6 +3862,7 @@ export default function Sidebar() {
             archiveThread={archiveThread}
             deleteThread={deleteThread}
             sortedProjects={sortedProjects}
+            outboxSettlementProjection={outboxSettlementProjection}
             expandedThreadListsByProject={expandedThreadListsByProject}
             activeRouteProjectKey={activeRouteProjectKey}
             routeThreadKey={routeThreadKey}

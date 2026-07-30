@@ -4,11 +4,12 @@ import {
   encodeQueuedThreadMessage,
   groupQueuedThreadMessages,
   shouldRetryThreadOutboxDelivery,
+  threadOutboxKey,
   threadOutboxRetryDelayMs,
   type QueuedThreadMessage,
   type ThreadOutboxDeliveryStatus,
 } from "@t3tools/client-runtime/state/thread-outbox";
-import type { MessageId } from "@t3tools/contracts";
+import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 
 const DATABASE_NAME = "t3code:thread-outbox";
 const DATABASE_VERSION = 1;
@@ -25,6 +26,11 @@ export interface WebThreadOutboxEntry {
 export interface WebThreadOutboxSnapshot {
   readonly loaded: boolean;
   readonly entries: ReadonlyArray<WebThreadOutboxEntry>;
+}
+
+export interface WebThreadOutboxSettlementProjection {
+  readonly loaded: boolean;
+  readonly threadKeys: ReadonlySet<string>;
 }
 
 export interface WebThreadOutboxStorage {
@@ -306,6 +312,34 @@ export function createWebThreadOutboxManager(storage: WebThreadOutboxStorage) {
 }
 
 export const webThreadOutboxManager = createWebThreadOutboxManager(indexedDbWebThreadOutboxStorage);
+
+export function createWebThreadOutboxSettlementProjection(
+  snapshot: WebThreadOutboxSnapshot,
+): WebThreadOutboxSettlementProjection {
+  return {
+    loaded: snapshot.loaded,
+    // Keep acknowledged entries projected through their short local
+    // reconciliation window so server shell state can catch up without flicker.
+    threadKeys: new Set(
+      snapshot.entries.map((entry) =>
+        threadOutboxKey(entry.message.environmentId, entry.message.threadId),
+      ),
+    ),
+  };
+}
+
+export function projectThreadSettledWithOutbox(input: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly effectiveSettled: boolean;
+  readonly outboxProjection: WebThreadOutboxSettlementProjection;
+}): boolean {
+  return (
+    input.outboxProjection.loaded &&
+    input.effectiveSettled &&
+    !input.outboxProjection.threadKeys.has(threadOutboxKey(input.environmentId, input.threadId))
+  );
+}
 
 export function queuedEntriesByThread(
   entries: ReadonlyArray<WebThreadOutboxEntry>,

@@ -10,7 +10,9 @@ import {
 import {
   buildThreadOutboxStartTurnInput,
   classifyThreadOutboxFailure,
+  createWebThreadOutboxSettlementProjection,
   createWebThreadOutboxManager,
+  projectThreadSettledWithOutbox,
   queuedEntriesByThread,
   type WebThreadOutboxEntry,
   type WebThreadOutboxStorage,
@@ -63,6 +65,92 @@ function memoryStorage() {
 }
 
 describe("web thread outbox", () => {
+  it("keeps Sidebar V1 activity visible while exact thread intent remains local", () => {
+    const queued = message({
+      messageId: "message-sidebar-v1",
+      createdAt: "2026-07-11T10:00:00.000Z",
+    });
+    const outboxProjection = createWebThreadOutboxSettlementProjection({
+      loaded: true,
+      entries: [
+        {
+          message: queued,
+          status: "queued",
+          attempt: 0,
+          lastError: null,
+          retryAt: null,
+        },
+      ],
+    });
+
+    expect(
+      projectThreadSettledWithOutbox({
+        environmentId: queued.environmentId,
+        threadId: queued.threadId,
+        effectiveSettled: true,
+        outboxProjection,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps Sidebar V2 identity isolated during acknowledgement reconciliation", () => {
+    const queued = message({
+      messageId: "message-sidebar-v2",
+      createdAt: "2026-07-11T10:00:00.000Z",
+    });
+    const outboxProjection = createWebThreadOutboxSettlementProjection({
+      loaded: true,
+      entries: [
+        {
+          message: queued,
+          status: "acknowledged",
+          attempt: 1,
+          lastError: null,
+          retryAt: null,
+        },
+      ],
+    });
+
+    expect(
+      projectThreadSettledWithOutbox({
+        environmentId: queued.environmentId,
+        threadId: queued.threadId,
+        effectiveSettled: true,
+        outboxProjection,
+      }),
+    ).toBe(false);
+    expect(
+      projectThreadSettledWithOutbox({
+        environmentId: EnvironmentId.make("other-environment"),
+        threadId: queued.threadId,
+        effectiveSettled: true,
+        outboxProjection,
+      }),
+    ).toBe(true);
+    expect(
+      projectThreadSettledWithOutbox({
+        environmentId: queued.environmentId,
+        threadId: ThreadId.make("other-thread"),
+        effectiveSettled: true,
+        outboxProjection,
+      }),
+    ).toBe(true);
+  });
+
+  it("fails closed for settlement until durable outbox hydration completes", () => {
+    expect(
+      projectThreadSettledWithOutbox({
+        environmentId: EnvironmentId.make("leviathan"),
+        threadId: ThreadId.make("thread-1"),
+        effectiveSettled: true,
+        outboxProjection: createWebThreadOutboxSettlementProjection({
+          loaded: false,
+          entries: [],
+        }),
+      }),
+    ).toBe(false);
+  });
+
   it("persists text and attachment data before publishing the queued intent", async () => {
     let releaseWrite!: () => void;
     const blockedWrite = new Promise<void>((resolve) => {

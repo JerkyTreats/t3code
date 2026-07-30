@@ -16,9 +16,11 @@ import { useAtomCommand } from "../state/use-atom-command";
 import {
   buildThreadOutboxStartTurnInput,
   classifyThreadOutboxFailure,
+  createWebThreadOutboxSettlementProjection,
   queuedEntriesByThread,
   webThreadOutboxManager,
   type WebThreadOutboxEntry,
+  type WebThreadOutboxSettlementProjection,
   type WebThreadOutboxSnapshot,
 } from "../threadOutbox";
 
@@ -41,6 +43,11 @@ export function useWebThreadOutboxEntries(
     () => queuedEntriesByThread(snapshot.entries)[`${environmentId}:${threadId}`] ?? [],
     [environmentId, snapshot.entries, threadId],
   );
+}
+
+export function useWebThreadOutboxSettlementProjection(): WebThreadOutboxSettlementProjection {
+  const snapshot = useWebThreadOutboxSnapshot();
+  return useMemo(() => createWebThreadOutboxSettlementProjection(snapshot), [snapshot]);
 }
 
 function errorText(error: unknown): string {
