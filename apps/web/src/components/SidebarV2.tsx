@@ -42,6 +42,7 @@ import { useThreadActions } from "../hooks/useThreadActions";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { readLocalApi } from "../localApi";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
+import { openConcreteProjectLauncher } from "../project-management/openProjectLauncher";
 import { useRightPanelStore } from "../rightPanelStore";
 import { readThreadShell, useProjects, useServerConfigs, useThreadShells } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
@@ -939,29 +940,16 @@ export default function SidebarV2() {
   );
   const handleOpenProject = useCallback(
     async (member: SidebarProjectGroupMember) => {
-      const latestThread = [...threads]
-        .filter(
-          (thread) =>
-            thread.environmentId === member.environmentId &&
-            thread.projectId === member.id &&
-            thread.archivedAt === null,
-        )
-        .toSorted((left, right) =>
-          threadSortOrder === "created_at"
-            ? Date.parse(right.createdAt) - Date.parse(left.createdAt)
-            : Date.parse(right.updatedAt) - Date.parse(left.updatedAt),
-        )[0];
-      if (latestThread) {
-        const threadRef = scopeThreadRef(latestThread.environmentId, latestThread.id);
-        useRightPanelStore.getState().showLauncher(threadRef);
-        navigateToThread(threadRef);
-        return;
-      }
-      await createProjectThread(scopeProjectRef(member.environmentId, member.id), {
-        beforeNavigate: (threadId) => {
-          useRightPanelStore
-            .getState()
-            .showLauncher(scopeThreadRef(member.environmentId, threadId));
+      await openConcreteProjectLauncher({
+        projectRef: scopeProjectRef(member.environmentId, member.id),
+        threads,
+        sortOrder: threadSortOrder,
+        showLauncher: (threadRef) => useRightPanelStore.getState().showLauncher(threadRef),
+        navigateToThread: async (threadRef) => {
+          navigateToThread(threadRef);
+        },
+        createProjectThread: async (projectRef, beforeNavigate) => {
+          await createProjectThread(projectRef, { beforeNavigate });
         },
       });
     },
