@@ -221,7 +221,8 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Keep extensionless conventional filenames linkable only when line qualified.
 - Preserve line and column metadata, duplicate basename parent suffixes, copy behavior, preferred editor routing, and eligible in app preview behavior.
 - Match rendered code against standalone markdown source ranges so raw HTML cannot opt into linkification or create nested anchors.
-- Keep fence extraction aware of blockquote and list containers so hidden fenced paths do not affect parent suffix disambiguation.
+- Derive standalone source ranges from the CommonMark AST so blockquote and repeated list containers, fenced code, and four-space indented code cannot pollute parent suffix disambiguation.
+- Track quote-aware multiline raw anchor ranges while leaving safe HTML and heading anchors unchanged.
 
 ## Feature Spec Contract
 

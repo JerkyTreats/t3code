@@ -66,7 +66,7 @@ import {
   serializeTableElementToMarkdown,
 } from "../markdown-clipboard";
 import {
-  extractLinkableInlineCodeSpans,
+  collectLinkableInlineCodeSpansFromAst,
   normalizeMarkdownLinkDestination,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
@@ -1634,23 +1634,27 @@ function ChatMarkdown({
     }
     return metaByHref;
   }, [cwd, text, workspaceRoot]);
-  const inlineCodeFileLinkMetaBySourceRange = useMemo(() => {
+  const inlineCodeRenderState = useMemo(() => {
     const metaBySourceRange = new Map<string, MarkdownFileLinkMeta>();
-    for (const span of extractLinkableInlineCodeSpans(text)) {
-      const meta = resolveInlineCodeFileLinkMeta(span.text, cwd, inlineCodeWorkspaceRoot);
-      if (meta) {
-        metaBySourceRange.set(`${span.start}:${span.end}`, meta);
+    const parentSuffixByPath = new Map<string, string>();
+    const remarkPlugin = () => (tree: MarkdownAstNode) => {
+      metaBySourceRange.clear();
+      for (const span of collectLinkableInlineCodeSpansFromAst(tree, text)) {
+        const meta = resolveInlineCodeFileLinkMeta(span.text, cwd, inlineCodeWorkspaceRoot);
+        if (meta) {
+          metaBySourceRange.set(`${span.start}:${span.end}`, meta);
+        }
       }
-    }
-    return metaBySourceRange;
-  }, [cwd, inlineCodeWorkspaceRoot, text]);
-  const fileLinkParentSuffixByPath = useMemo(() => {
-    const filePaths = [
-      ...[...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath),
-      ...[...inlineCodeFileLinkMetaBySourceRange.values()].map((meta) => meta.filePath),
-    ];
-    return buildFileLinkParentSuffixByPath(filePaths);
-  }, [inlineCodeFileLinkMetaBySourceRange, markdownFileLinkMetaByHref]);
+      parentSuffixByPath.clear();
+      for (const [path, suffix] of buildFileLinkParentSuffixByPath([
+        ...[...markdownFileLinkMetaByHref.values()].map((meta) => meta.filePath),
+        ...[...metaBySourceRange.values()].map((meta) => meta.filePath),
+      ])) {
+        parentSuffixByPath.set(path, suffix);
+      }
+    };
+    return { metaBySourceRange, parentSuffixByPath, remarkPlugin };
+  }, [cwd, inlineCodeWorkspaceRoot, markdownFileLinkMetaByHref, text]);
   const markdownUrlTransform = useCallback((href: string) => {
     return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
   }, []);
@@ -1711,7 +1715,7 @@ function ChatMarkdown({
       copyMarkdown: string,
       className?: string,
     ) => {
-      const parentSuffix = fileLinkParentSuffixByPath.get(fileLinkMeta.filePath);
+      const parentSuffix = inlineCodeRenderState.parentSuffixByPath.get(fileLinkMeta.filePath);
       const labelParts = [fileLinkMeta.basename];
       if (typeof parentSuffix === "string" && parentSuffix.length > 0) {
         labelParts.push(parentSuffix);
@@ -1883,7 +1887,7 @@ function ChatMarkdown({
         const sourceEnd = node?.position?.end.offset;
         const fileLinkMeta =
           typeof sourceStart === "number" && typeof sourceEnd === "number"
-            ? inlineCodeFileLinkMetaBySourceRange.get(`${sourceStart}:${sourceEnd}`)
+            ? inlineCodeRenderState.metaBySourceRange.get(`${sourceStart}:${sourceEnd}`)
             : undefined;
         if (fileLinkMeta) {
           return fileLinkChip(fileLinkMeta, `\`${nodeToPlainText(children)}\``);
@@ -1950,8 +1954,7 @@ function ChatMarkdown({
     cwd,
     documentMode,
     diffThemeName,
-    fileLinkParentSuffixByPath,
-    inlineCodeFileLinkMetaBySourceRange,
+    inlineCodeRenderState,
     inlineCodeWorkspaceRoot,
     isStreaming,
     markdownFileLinkMetaByHref,
@@ -1967,10 +1970,10 @@ function ChatMarkdown({
   ]);
   const remarkPlugins = useMemo(() => {
     const plugins = lineBreaks
-      ? [remarkGfm, remarkBreaks, remarkPreserveCodeMeta]
-      : [remarkGfm, remarkPreserveCodeMeta];
+      ? [remarkGfm, remarkBreaks, remarkPreserveCodeMeta, inlineCodeRenderState.remarkPlugin]
+      : [remarkGfm, remarkPreserveCodeMeta, inlineCodeRenderState.remarkPlugin];
     return documentMode ? [...plugins, remarkDocumentHeadingIds] : plugins;
-  }, [documentMode, lineBreaks]);
+  }, [documentMode, inlineCodeRenderState.remarkPlugin, lineBreaks]);
 
   return (
     <div

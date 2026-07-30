@@ -461,116 +461,154 @@ export function resolveInlineCodeFileLinkMeta(
   return buildFileLinkMetaFromTarget(workspaceTarget, workspaceRoot);
 }
 
-function inlineCodeSpanIsInsideBracketLabel(
-  markdown: string,
-  openingTickStart: number,
-  closingTickEnd: number,
+export interface MarkdownInlineCodeAstNode {
+  readonly type?: string;
+  readonly value?: unknown;
+  readonly position?: {
+    readonly start?: { readonly offset?: number };
+    readonly end?: { readonly offset?: number };
+  };
+  readonly children?: ReadonlyArray<MarkdownInlineCodeAstNode>;
+}
+
+interface RawAnchorTagEvent {
+  readonly kind: "open" | "close";
+  readonly start: number;
+  readonly end: number;
+  readonly selfClosing: boolean;
+}
+
+function offsetInsideRanges(
+  offset: number,
+  ranges: ReadonlyArray<{ readonly start: number; readonly end: number }>,
 ): boolean {
-  const lineStart = markdown.lastIndexOf("\n", openingTickStart - 1) + 1;
-  const before = markdown.slice(lineStart, openingTickStart);
-  const openBracket = before.lastIndexOf("[");
-  if (openBracket < 0 || before.slice(openBracket + 1).includes("]")) return false;
-
-  const lineEnd = markdown.indexOf("\n", closingTickEnd);
-  const after = markdown.slice(closingTickEnd, lineEnd < 0 ? markdown.length : lineEnd);
-  return after.includes("]");
+  return ranges.some((range) => range.start <= offset && offset < range.end);
 }
 
-function advanceRawAnchorDepth(
+function rawAnchorTagEvents(
   source: string,
-  start: number,
-  end: number,
-  initialDepth: number,
-): number {
-  let depth = initialDepth;
-  for (const match of source.slice(start, end).matchAll(/<\/?a(?:\s|>)/gi)) {
-    depth += match[0].startsWith("</") ? -1 : 1;
-    depth = Math.max(depth, 0);
-  }
-  return depth;
-}
-
-function normalizeInlineCodeText(value: string): string {
-  const normalized = value.replaceAll("\n", " ");
-  if (
-    normalized.length >= 3 &&
-    normalized.startsWith(" ") &&
-    normalized.endsWith(" ") &&
-    normalized.trim().length > 0
-  ) {
-    return normalized.slice(1, -1);
-  }
-  return normalized;
-}
-
-/**
- * Collects inline-code spans while excluding fenced blocks and code used as a
- * markdown link label. The markdown AST plugin remains the rendering authority.
- */
-export function extractLinkableInlineCodeSpans(markdown: string): InlineCodeSpan[] {
-  const spans: InlineCodeSpan[] = [];
-  let offset = 0;
-  let fence: { readonly marker: "`" | "~"; readonly length: number } | null = null;
-  let rawAnchorDepth = 0;
-
-  for (const lineWithNewline of markdown.match(/[^\n]*(?:\n|$)/g) ?? []) {
-    if (lineWithNewline.length === 0) continue;
-    const line = lineWithNewline.endsWith("\n") ? lineWithNewline.slice(0, -1) : lineWithNewline;
-    const fenceMatch = line.match(
-      /^(?:(?: {0,3}>[ \t]?)+)?[ \t]*(?:(?:[-+*]|\d{1,9}[.)])[ \t]+)?[ \t]*(`{3,}|~{3,})(.*)$/,
-    );
-    if (fenceMatch?.[1]) {
-      const marker = fenceMatch[1][0] as "`" | "~";
-      const trailing = fenceMatch[2] ?? "";
-      if (!fence) {
-        fence = { marker, length: fenceMatch[1].length };
-      } else if (
-        marker === fence.marker &&
-        fenceMatch[1].length >= fence.length &&
-        trailing.trim().length === 0
-      ) {
-        fence = null;
-      }
-      offset += lineWithNewline.length;
+  ignoredRanges: ReadonlyArray<{ readonly start: number; readonly end: number }>,
+): RawAnchorTagEvent[] {
+  const events: RawAnchorTagEvent[] = [];
+  let cursor = 0;
+  while (cursor < source.length) {
+    const tagStart = source.indexOf("<", cursor);
+    if (tagStart < 0) break;
+    if (offsetInsideRanges(tagStart, ignoredRanges)) {
+      cursor = tagStart + 1;
+      continue;
+    }
+    if (source.startsWith("<!--", tagStart)) {
+      const commentEnd = source.indexOf("-->", tagStart + 4);
+      cursor = commentEnd < 0 ? source.length : commentEnd + 3;
+      continue;
+    }
+    let tagCursor = tagStart + 1;
+    const closing = source[tagCursor] === "/";
+    if (closing) tagCursor += 1;
+    if (source[tagCursor]?.toLowerCase() !== "a") {
+      cursor = tagStart + 1;
+      continue;
+    }
+    tagCursor += 1;
+    const boundary = source[tagCursor];
+    if (boundary !== undefined && !/[\s/>]/.test(boundary)) {
+      cursor = tagStart + 1;
       continue;
     }
 
-    if (!fence) {
-      let cursor = 0;
-      let rawHtmlCursor = 0;
-      while (cursor < line.length) {
-        if (line[cursor] !== "`") {
-          cursor += 1;
-          continue;
-        }
-        let runEnd = cursor + 1;
-        while (line[runEnd] === "`") runEnd += 1;
-        const marker = line.slice(cursor, runEnd);
-        const closingStart = line.indexOf(marker, runEnd);
-        if (closingStart < 0) break;
-        const closingEnd = closingStart + marker.length;
-        rawAnchorDepth = advanceRawAnchorDepth(line, rawHtmlCursor, cursor, rawAnchorDepth);
-        if (
-          !inlineCodeSpanIsInsideBracketLabel(markdown, offset + cursor, offset + closingEnd) &&
-          rawAnchorDepth === 0
-        ) {
-          const text = normalizeInlineCodeText(line.slice(runEnd, closingStart));
-          if (text.length > 0) {
-            spans.push({
-              text,
-              start: offset + cursor,
-              end: offset + closingEnd,
-            });
-          }
-        }
-        rawHtmlCursor = closingEnd;
-        cursor = closingEnd;
+    let quote: "'" | '"' | null = null;
+    while (tagCursor < source.length) {
+      const character = source[tagCursor];
+      if (quote) {
+        if (character === quote) quote = null;
+      } else if (character === "'" || character === '"') {
+        quote = character;
+      } else if (character === ">") {
+        const beforeClose = source.slice(tagStart, tagCursor).trimEnd();
+        events.push({
+          kind: closing ? "close" : "open",
+          start: tagStart,
+          end: tagCursor + 1,
+          selfClosing: !closing && beforeClose.endsWith("/"),
+        });
+        tagCursor += 1;
+        break;
       }
-      rawAnchorDepth = advanceRawAnchorDepth(line, rawHtmlCursor, line.length, rawAnchorDepth);
+      tagCursor += 1;
     }
-    offset += lineWithNewline.length;
+    cursor = Math.max(tagCursor, tagStart + 1);
   }
+  return events;
+}
 
+function rawAnchorRanges(
+  tree: MarkdownInlineCodeAstNode,
+  markdown: string,
+): ReadonlyArray<{
+  readonly start: number;
+  readonly end: number;
+}> {
+  const ignoredRanges: Array<{ start: number; end: number }> = [];
+  const visit = (node: MarkdownInlineCodeAstNode) => {
+    const start = node.position?.start?.offset;
+    const end = node.position?.end?.offset;
+    if (
+      (node.type === "code" || node.type === "inlineCode") &&
+      typeof start === "number" &&
+      typeof end === "number"
+    ) {
+      ignoredRanges.push({ start, end });
+      return;
+    }
+    node.children?.forEach(visit);
+  };
+  visit(tree);
+  const events = rawAnchorTagEvents(markdown, ignoredRanges);
+
+  const openStarts: number[] = [];
+  const ranges: Array<{ start: number; end: number }> = [];
+  for (const event of events) {
+    if (event.kind === "open") {
+      if (!event.selfClosing) openStarts.push(event.start);
+      continue;
+    }
+    const start = openStarts.pop();
+    if (start !== undefined) ranges.push({ start, end: event.end });
+  }
+  for (const start of openStarts) {
+    ranges.push({ start, end: Number.POSITIVE_INFINITY });
+  }
+  return ranges;
+}
+
+/**
+ * Collects standalone inline code from the parsed CommonMark tree. Fenced and
+ * indented code never become inline nodes, so container handling stays parser exact.
+ */
+export function collectLinkableInlineCodeSpansFromAst(
+  tree: MarkdownInlineCodeAstNode,
+  markdown: string,
+): InlineCodeSpan[] {
+  const anchorRanges = rawAnchorRanges(tree, markdown);
+  const spans: InlineCodeSpan[] = [];
+  const visit = (node: MarkdownInlineCodeAstNode, insideLink: boolean) => {
+    const start = node.position?.start?.offset;
+    const end = node.position?.end?.offset;
+    if (
+      node.type === "inlineCode" &&
+      !insideLink &&
+      typeof node.value === "string" &&
+      typeof start === "number" &&
+      typeof end === "number" &&
+      !anchorRanges.some((range) => range.start <= start && end <= range.end)
+    ) {
+      spans.push({ text: node.value, start, end });
+    }
+    const childInsideLink = insideLink || node.type === "link" || node.type === "linkReference";
+    node.children?.forEach((child) => visit(child, childInsideLink));
+  };
+  visit(tree, false);
   return spans;
 }
 

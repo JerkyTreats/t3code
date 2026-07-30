@@ -65,7 +65,7 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Verify file preview links from chat messages, files panel, and project document previews.
 - Keep code file preview behavior distinct from rendered markdown document behavior.
 - Rebuild inline code file links through the shared markdown link resolver and keep workspace containment fail closed.
-- Match rendered code nodes against standalone inline code source ranges so custom code rendering cannot mistake fenced code, linked code labels, or user authored raw HTML for linkable file references.
+- Derive standalone inline code source ranges from the CommonMark AST and match rendered code nodes against them so custom rendering cannot mistake fenced code, indented code, linked code labels, or user authored raw HTML for linkable file references.
 
 ## Origin Rebuild Rule
 
@@ -92,7 +92,7 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Ambiguous inline code and targets outside the workspace remain plain code.
 - Inline code file links retain line and column labels and disambiguate duplicate basenames by parent suffix.
 - Blockquote and list nested fenced code does not contribute hidden paths to duplicate basename disambiguation.
-- Raw HTML code markers and code nested inside raw anchors remain non-linkable.
+- Raw HTML code markers and code nested inside multiline raw anchors remain non-linkable.
 
 ## Compatibility Checks
 

@@ -1,12 +1,26 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ReactMarkdown from "react-markdown";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  extractLinkableInlineCodeSpans,
+  collectLinkableInlineCodeSpansFromAst,
+  type InlineCodeSpan,
+  type MarkdownInlineCodeAstNode,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
   resolveMarkdownFileLinkTarget,
   rewriteMarkdownFileUriHref,
 } from "./markdown-links";
+
+function parsedInlineCodeSpans(markdown: string): InlineCodeSpan[] {
+  let spans: InlineCodeSpan[] = [];
+  const capturePlugin = () => (tree: MarkdownInlineCodeAstNode) => {
+    spans = collectLinkableInlineCodeSpansFromAst(tree, markdown);
+  };
+  renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [capturePlugin] }, markdown));
+  return spans;
+}
 
 describe("rewriteMarkdownFileUriHref", () => {
   it("rewrites file uri hrefs into direct path hrefs", () => {
@@ -344,7 +358,7 @@ describe("resolveInlineCodeFileLinkMeta", () => {
   });
 });
 
-describe("extractLinkableInlineCodeSpans", () => {
+describe("collectLinkableInlineCodeSpansFromAst", () => {
   it("collects inline code while excluding fenced code and linked labels", () => {
     const markdown = [
       "Open `src/main.ts:7` and ``docs/`guide`.md``.",
@@ -361,7 +375,7 @@ describe("extractLinkableInlineCodeSpans", () => {
       "Keep `origin/main` as plain code.",
     ].join("\n");
 
-    expect(extractLinkableInlineCodeSpans(markdown).map((span) => span.text)).toEqual([
+    expect(parsedInlineCodeSpans(markdown).map((span) => span.text)).toEqual([
       "src/main.ts:7",
       "docs/`guide`.md",
       "origin/main",
@@ -370,7 +384,7 @@ describe("extractLinkableInlineCodeSpans", () => {
 
   it("excludes tilde fences and preserves source offsets", () => {
     const markdown = "Before `src/a.ts`\n~~~text\n`src/hidden.ts`\n~~~\nAfter `src/b.ts:2`";
-    const spans = extractLinkableInlineCodeSpans(markdown);
+    const spans = parsedInlineCodeSpans(markdown);
 
     expect(spans.map((span) => span.text)).toEqual(["src/a.ts", "src/b.ts:2"]);
     expect(spans.map((span) => markdown.slice(span.start, span.end))).toEqual([
@@ -379,29 +393,48 @@ describe("extractLinkableInlineCodeSpans", () => {
     ]);
   });
 
-  it("excludes blockquote and list-nested fenced code", () => {
+  it("uses CommonMark container boundaries without suffix pollution", () => {
     const markdown = [
       "> ```ts",
       "> const quoted = `src/quoted.ts`;",
       "> ```",
       "",
-      "- ```sh",
-      "  echo `src/list-hidden.ts`",
-      "  ```",
+      "- >   ```sh",
+      "  >   echo `src/list-then-quote.ts`",
+      "  >   ```",
+      "",
+      "- -   ```ts",
+      "      const nested = `src/repeated-list.ts`;",
+      "      ```",
+      "",
+      "> -   ~~~ts",
+      ">     const quoteList = `src/quote-then-list.ts`;",
+      ">     ~~~",
+      "",
+      "    ```ts",
+      "    const indented = `src/four-space-code.ts`;",
+      "    ```",
       "",
       "Visible `src/visible.ts`",
     ].join("\n");
 
-    expect(extractLinkableInlineCodeSpans(markdown).map((span) => span.text)).toEqual([
-      "src/visible.ts",
-    ]);
+    expect(parsedInlineCodeSpans(markdown).map((span) => span.text)).toEqual(["src/visible.ts"]);
   });
 
-  it("does not expose user-authored markers or code inside raw anchors", () => {
+  it("tracks multiline raw anchors with split attributes", () => {
     const markdown = [
       '<code data-inline-code="true">src/spoof.ts</code>',
       '<a href="/existing">`src/nested.ts`</a>',
-      '<a href="/existing">',
+      "<a",
+      '  class="valid-split-link"',
+      '  href="/valid-split">',
+      "`src/valid-split-nested.ts`",
+      "</a>",
+      "<a",
+      '  class="rich-link"',
+      '  data-label="a > b"',
+      '  href="/existing"',
+      ">",
       "`src/multiline-nested.ts`",
       "</a>",
       "```html",
@@ -410,8 +443,6 @@ describe("extractLinkableInlineCodeSpans", () => {
       "Real `src/real.ts`",
     ].join("\n");
 
-    expect(extractLinkableInlineCodeSpans(markdown).map((span) => span.text)).toEqual([
-      "src/real.ts",
-    ]);
+    expect(parsedInlineCodeSpans(markdown).map((span) => span.text)).toEqual(["src/real.ts"]);
   });
 });
