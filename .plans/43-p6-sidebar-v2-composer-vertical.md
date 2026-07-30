@@ -1,10 +1,10 @@
 # Implementation Ledger
 
-Date:
-Branch: product/v0.0.30-origin-rebuild
-Commit Policy:
+Date: 2026-07-30
+Branch: product/v030-sidebar-v2
+Commit Policy: `governance/commit_policy.md`
 Objective: Mount an optional Sidebar V2 behind a hydration-safe persisted switch while preserving plan progress, concrete project identity, provider-safe drafts, prompt stash behavior, and deferred filesystem navigation.
-Status: planned
+Status: in progress
 
 ## Objective Baseline
 
@@ -18,7 +18,7 @@ Status: planned
 
 - `AGENTS.md`
 - `patch.md`
-- `fork/F04-provider-preserving-composer-draft-ownership.md`
+- `fork/F04-composer-draft-autonomy-and-composer-chrome.md`
 - `fork/F05-git-panel-isolation-from-draft-ownership.md`
 - `fork/F08-plan-aware-sidebar-and-activity-status-cues.md`
 - `fork/F14-project-management-and-inference-dashboard.md`
@@ -69,9 +69,9 @@ Status: planned
 | V1 rollback and settings shell | F8 | pending | pending | not selected | pending | planned |
 | Shared fractional plan progress | F8 | current plan resolver | pending | selected for status precedence | F8 | planned |
 | Settled lifecycle and capability gates | F8 and P2 | integrated foundation | pending | selected for activity sequences | F8 | planned |
-| Concrete project identity and actions | F05 and F14 | pending P5 | pending | selected for grouped identity | F05 and F14 | blocked |
-| Provider-safe prompt stash | F04 | pending P4 | pending | selected for migration ordering | F04 | blocked |
-| Stable composer controls | F03 and F04 | current composer seams | pending | not selected | F03 and F04 | planned |
+| Concrete project identity and actions | F05 and F14 | P5 integrated | pending | selected for grouped identity | F05 and F14 | in progress |
+| Provider-safe prompt stash | F04 | P4 integrated | pending | selected for migration ordering | F04 | in progress |
+| Stable composer controls | F04 | current composer seams | pending | not selected | F04 | in progress |
 | Deferred filesystem navigation | v0.0.30 and F14 | pending | pending | selected for stale result order | pending | planned |
 | Keyboard traversal and bulk actions | F8 | pending | pending | selected for row state sequences | F8 | planned |
 
@@ -79,6 +79,10 @@ Status: planned
 
 | Slice | Worktree | Branch | Status | Integration Commit | Notes |
 | --- | --- | --- | --- | --- | --- |
+| P6 integration | `/home/jerkytreats/t3code-v030-sidebar-v2` | `product/v030-sidebar-v2` | in progress | pending | central reconciliation and full gates |
+| P6a switch and layout | `/home/jerkytreats/t3code-v030-p6-switch` | `product/v030-p6-switch` | in progress | pending | hydration, settings, and shell ownership |
+| P6b Sidebar V2 | `/home/jerkytreats/t3code-v030-p6-sidebar` | `product/v030-p6-sidebar` | in progress | pending | sidebar state and interaction ownership |
+| P6c composer and navigation | `/home/jerkytreats/t3code-v030-p6-composer-nav` | `product/v030-p6-composer-nav` | in progress | pending | stash, composer, deferred browse, and launcher ownership |
 
 ## Gate Evidence
 
