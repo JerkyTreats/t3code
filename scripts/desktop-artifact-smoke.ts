@@ -72,15 +72,18 @@ interface ProcessResult {
 
 interface RunningProcess {
   readonly wait: Promise<ProcessResult>;
-  readonly terminate: (gracePeriodMs?: number) => void;
+  readonly terminate: () => void;
   readonly forceTerminate: () => Promise<void>;
 }
 
-interface LinuxProcessIdentity {
+export interface LinuxProcessIdentity {
   readonly pid: number;
   readonly parentPid: number;
   readonly processGroupId: number;
+  readonly startTimeTicks: string;
 }
+
+export type CapturedProcessGroups = ReadonlyMap<number, ReadonlyMap<number, string>>;
 
 function readLinuxProcessIdentities(): ReadonlyArray<LinuxProcessIdentity> {
   const identities: LinuxProcessIdentity[] = [];
@@ -94,12 +97,15 @@ function readLinuxProcessIdentities(): ReadonlyArray<LinuxProcessIdentity> {
       const fields = stat.slice(commandEnd + 2).split(" ");
       const parentPid = Number(fields[1]);
       const processGroupId = Number(fields[2]);
+      const startTimeTicks = fields[19];
       if (
         Number.isSafeInteger(pid) &&
         Number.isSafeInteger(parentPid) &&
-        Number.isSafeInteger(processGroupId)
+        Number.isSafeInteger(processGroupId) &&
+        startTimeTicks !== undefined &&
+        /^\d+$/u.test(startTimeTicks)
       ) {
-        identities.push({ pid, parentPid, processGroupId });
+        identities.push({ pid, parentPid, processGroupId, startTimeTicks });
       }
     } catch {
       // Processes can exit between listing /proc and reading their stat file.
@@ -110,7 +116,7 @@ function readLinuxProcessIdentities(): ReadonlyArray<LinuxProcessIdentity> {
 
 function captureDescendantProcessGroups(
   rootPid: number | undefined,
-  capturedGroups: Set<number>,
+  capturedGroups: Map<number, Map<number, string>>,
 ): void {
   if (rootPid === undefined) return;
   const identities = readLinuxProcessIdentities();
@@ -126,34 +132,44 @@ function captureDescendantProcessGroups(
   }
   for (const identity of identities) {
     if (descendantPids.has(identity.pid) && identity.processGroupId > 1) {
-      capturedGroups.add(identity.processGroupId);
+      const capturedIdentities =
+        capturedGroups.get(identity.processGroupId) ?? new Map<number, string>();
+      capturedIdentities.set(identity.pid, identity.startTimeTicks);
+      capturedGroups.set(identity.processGroupId, capturedIdentities);
     }
   }
-  capturedGroups.add(rootPid);
 }
 
-function processGroupExists(processGroupId: number): boolean {
-  try {
-    process.kill(-processGroupId, 0);
-    return true;
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ESRCH") {
-      return false;
+export function findOccupiedCapturedProcessGroups(
+  capturedGroups: CapturedProcessGroups,
+  currentIdentities: ReadonlyArray<LinuxProcessIdentity>,
+): ReadonlyArray<number> {
+  const currentByPid = new Map(currentIdentities.map((identity) => [identity.pid, identity]));
+  const occupiedGroups: number[] = [];
+  for (const [processGroupId, capturedIdentities] of capturedGroups) {
+    const occupied = [...capturedIdentities].some(([pid, startTimeTicks]) => {
+      const current = currentByPid.get(pid);
+      return (
+        current?.processGroupId === processGroupId && current.startTimeTicks === startTimeTicks
+      );
+    });
+    if (occupied) {
+      occupiedGroups.push(processGroupId);
     }
-    return true;
   }
+  return occupiedGroups;
 }
 
 export async function waitForCapturedProcessGroupsToExit(
-  processGroupIds: ReadonlySet<number>,
+  capturedGroups: CapturedProcessGroups,
   timeoutMs: number,
   hooks: {
-    readonly groupExists?: (processGroupId: number) => boolean;
+    readonly readIdentities?: () => ReadonlyArray<LinuxProcessIdentity>;
     readonly now?: () => number;
     readonly sleep?: (durationMs: number) => Promise<void>;
   } = {},
 ): Promise<void> {
-  const groupExists = hooks.groupExists ?? processGroupExists;
+  const readIdentities = hooks.readIdentities ?? readLinuxProcessIdentities;
   const now = hooks.now ?? Date.now;
   const sleep =
     hooks.sleep ??
@@ -164,7 +180,7 @@ export async function waitForCapturedProcessGroupsToExit(
   const deadline = now() + timeoutMs;
 
   while (true) {
-    const survivingGroups = [...processGroupIds].filter(groupExists);
+    const survivingGroups = findOccupiedCapturedProcessGroups(capturedGroups, readIdentities());
     if (survivingGroups.length === 0) return;
     const remainingMs = deadline - now();
     if (remainingMs <= 0) {
@@ -321,28 +337,13 @@ function startProcess(input: {
   let outputOverflow = false;
   let processCleanupFailure: Error | undefined;
   let supervisorCleanupAttested = false;
-  let forceKill: NodeJS.Timeout | undefined;
   let forceTermination: Promise<void> | undefined;
-  const capturedProcessGroups = new Set<number>();
+  const capturedProcessGroups = new Map<number, Map<number, string>>();
   const captureProcessGroups = () =>
     captureDescendantProcessGroups(child.pid, capturedProcessGroups);
   captureProcessGroups();
   const descendantCapture = setInterval(captureProcessGroups, 50);
   descendantCapture.unref();
-  const signalCapturedProcessGroups = (signal: NodeJS.Signals, includeSupervisor = true) => {
-    captureProcessGroups();
-    for (const processGroupId of capturedProcessGroups) {
-      if (!includeSupervisor && processGroupId === child.pid) continue;
-      try {
-        process.kill(-processGroupId, signal);
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code !== "ESRCH") {
-          throw cause;
-        }
-      }
-    }
-  };
-
   const appendOutput = (chunk: Buffer) => {
     outputBytes += chunk.byteLength;
     if (outputBytes > MAX_CAPTURED_OUTPUT_BYTES) {
@@ -365,9 +366,6 @@ function startProcess(input: {
   const timeout = setTimeout(() => {
     timedOut = true;
     child.kill("SIGTERM");
-    forceKill = setTimeout(() => {
-      signalCapturedProcessGroups("SIGKILL", false);
-    }, 5_000);
   }, input.timeoutMs);
 
   const wait = new Promise<ProcessResult>((resolvePromise, rejectPromise) => {
@@ -377,7 +375,6 @@ function startProcess(input: {
       clearTimeout(timeout);
       clearInterval(descendantCapture);
       captureProcessGroups();
-      if (forceKill) clearTimeout(forceKill);
       rejectPromise(cause);
     });
     child.once("close", (code, signal) => {
@@ -386,7 +383,6 @@ function startProcess(input: {
       clearTimeout(timeout);
       clearInterval(descendantCapture);
       captureProcessGroups();
-      if (forceKill) clearTimeout(forceKill);
       supervisorCleanupAttested = supervisorStatus === "cleanup-ok\n";
       if (!supervisorCleanupAttested) {
         processCleanupFailure = new Error(
@@ -413,27 +409,18 @@ function startProcess(input: {
 
   return {
     wait,
-    terminate: (gracePeriodMs = 5_000) => {
+    terminate: () => {
       child.kill("SIGTERM");
-      if (!forceKill) {
-        forceKill = setTimeout(() => {
-          signalCapturedProcessGroups("SIGKILL", false);
-        }, gracePeriodMs);
-      }
     },
     forceTerminate: () =>
       (forceTermination ??= (async () => {
         captureProcessGroups();
         child.kill("SIGTERM");
-        signalCapturedProcessGroups("SIGKILL", false);
         await waitForProcessSettlement(
           wait,
           input.cleanupTimeoutMs + PROCESS_GROUP_POLL_INTERVAL_MS,
         );
         captureProcessGroups();
-        if (!settled) {
-          signalCapturedProcessGroups("SIGKILL");
-        }
         await waitForCapturedProcessGroupsToExit(capturedProcessGroups, input.cleanupTimeoutMs);
         const closeObserved =
           settled ||
@@ -592,7 +579,7 @@ export async function runDesktopArtifactSmoke(
       );
     }
     if (startupOutcome === "timeout") {
-      app.terminate(shutdownTimeoutMs);
+      app.terminate();
       await appResultPromise.catch(() => undefined);
       await app.forceTerminate();
       applicationProcess = undefined;
@@ -601,7 +588,7 @@ export async function runDesktopArtifactSmoke(
       );
     }
 
-    app.terminate(shutdownTimeoutMs);
+    app.terminate();
     const appResult = await appResultPromise;
     await app.forceTerminate();
     applicationProcess = undefined;

@@ -17,8 +17,11 @@ import { afterEach, assert, describe, it } from "@effect/vitest";
 
 import {
   assertContainedPath,
+  type CapturedProcessGroups,
   DESKTOP_ARTIFACT_SMOKE_MARKERS,
   DesktopArtifactSmokeCleanupError,
+  findOccupiedCapturedProcessGroups,
+  type LinuxProcessIdentity,
   makeIsolatedDesktopEnvironment,
   parseDesktopArtifactSmokeArgs,
   runDesktopArtifactSmoke,
@@ -31,6 +34,28 @@ const SETSID_PATH = "/usr/bin/setsid";
 const DESKTOP_ARTIFACT_SMOKE_SCRIPT_PATH = fileURLToPath(
   new URL("./desktop-artifact-smoke.ts", import.meta.url),
 );
+const PROCESS_SUPERVISOR_TEST_PATH = fileURLToPath(
+  new URL("./lib/desktop-artifact-process-supervisor.test.py", import.meta.url),
+);
+
+function processIdentity(input: {
+  readonly pid: number;
+  readonly processGroupId: number;
+  readonly startTimeTicks: string;
+}): LinuxProcessIdentity {
+  return {
+    ...input,
+    parentPid: 1,
+  };
+}
+
+function capturedProcessGroups(
+  processGroupId: number,
+  pid: number,
+  startTimeTicks: string,
+): CapturedProcessGroups {
+  return new Map([[processGroupId, new Map([[pid, startTimeTicks]])]]);
+}
 
 function makeTemporaryDirectory(): string {
   const directory = mkdtempSync(join(tmpdir(), "desktop-artifact-smoke-test-"));
@@ -153,10 +178,19 @@ describe("desktop-artifact-smoke", () => {
   it("waits until every captured process group exits", async () => {
     let currentTime = 0;
     let existenceChecks = 0;
-    await waitForCapturedProcessGroupsToExit(new Set([1234]), 100, {
-      groupExists: () => {
+    const capturedGroups = capturedProcessGroups(1234, 1234, "100");
+    await waitForCapturedProcessGroupsToExit(capturedGroups, 100, {
+      readIdentities: () => {
         existenceChecks += 1;
-        return currentTime < 50;
+        return currentTime < 50
+          ? [
+              processIdentity({
+                pid: 1234,
+                processGroupId: 1234,
+                startTimeTicks: "100",
+              }),
+            ]
+          : [];
       },
       now: () => currentTime,
       sleep: async (durationMs) => {
@@ -172,8 +206,14 @@ describe("desktop-artifact-smoke", () => {
     let currentTime = 0;
     let failure: unknown;
     try {
-      await waitForCapturedProcessGroupsToExit(new Set([5678]), 50, {
-        groupExists: () => true,
+      await waitForCapturedProcessGroupsToExit(capturedProcessGroups(5678, 5678, "200"), 50, {
+        readIdentities: () => [
+          processIdentity({
+            pid: 5678,
+            processGroupId: 5678,
+            startTimeTicks: "200",
+          }),
+        ],
         now: () => currentTime,
         sleep: async (durationMs) => {
           currentTime += durationMs;
@@ -186,6 +226,41 @@ describe("desktop-artifact-smoke", () => {
     assert.instanceOf(failure, Error);
     assert.match(failure.message, /process groups survived cleanup: 5678/);
     assert.equal(currentTime, 50);
+  });
+
+  it("treats a reused process group id as unrelated without a captured original identity", () => {
+    const capturedGroups = capturedProcessGroups(6789, 321, "old-start");
+    const reusedGroup = [
+      processIdentity({
+        pid: 321,
+        processGroupId: 6789,
+        startTimeTicks: "new-start",
+      }),
+      processIdentity({
+        pid: 999,
+        processGroupId: 6789,
+        startTimeTicks: "other-start",
+      }),
+    ];
+
+    assert.deepEqual(findOccupiedCapturedProcessGroups(capturedGroups, reusedGroup), []);
+    assert.deepEqual(
+      findOccupiedCapturedProcessGroups(capturedGroups, [
+        ...reusedGroup,
+        processIdentity({
+          pid: 321,
+          processGroupId: 6789,
+          startTimeTicks: "old-start",
+        }),
+      ]),
+      [6789],
+    );
+  });
+
+  it("passes the deterministic process supervisor identity regressions", () => {
+    execFileSync("/usr/bin/python3", ["-B", PROCESS_SUPERVISOR_TEST_PATH], {
+      encoding: "utf8",
+    });
   });
 
   it("retains temporary files when cleanup failure follows output overflow", async () => {

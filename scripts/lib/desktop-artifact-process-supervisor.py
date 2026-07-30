@@ -36,54 +36,106 @@ def enable_child_subreaper():
         raise OSError(error_number, os.strerror(error_number))
 
 
+def read_process_identity(pid):
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as stat_file:
+            stat = stat_file.read()
+        command_end = stat.rfind(")")
+        if command_end < 0:
+            return None
+        fields = stat[command_end + 2 :].split(" ")
+        start_time_ticks = fields[19]
+        if not start_time_ticks.isdigit():
+            return None
+        return (pid, int(fields[1]), int(fields[2]), start_time_ticks)
+    except (FileNotFoundError, PermissionError, ProcessLookupError, ValueError):
+        return None
+
+
 def read_process_identities():
     identities = []
     for entry in os.listdir("/proc"):
         if not entry.isdigit():
             continue
-        try:
-            with open(f"/proc/{entry}/stat", encoding="utf-8") as stat_file:
-                stat = stat_file.read()
-            command_end = stat.rfind(")")
-            if command_end < 0:
-                continue
-            fields = stat[command_end + 2 :].split(" ")
-            identities.append((int(entry), int(fields[1]), int(fields[2])))
-        except (FileNotFoundError, PermissionError, ProcessLookupError, ValueError):
-            continue
+        identity = read_process_identity(int(entry))
+        if identity is not None:
+            identities.append(identity)
     return identities
 
 
-def capture_descendant_groups(root_pid, captured_groups):
-    identities = read_process_identities()
+def open_verified_pidfd(
+    identity, pidfd_open=os.pidfd_open, read_identity=read_process_identity
+):
+    pidfd = pidfd_open(identity[0], 0)
+    if read_identity(identity[0]) != identity:
+        os.close(pidfd)
+        return None
+    return pidfd
+
+
+def capture_descendant_processes(
+    root_pid,
+    captured_processes,
+    identities=None,
+    pidfd_open=os.pidfd_open,
+    read_identity=read_process_identity,
+):
+    if identities is None:
+        identities = read_process_identities()
     descendant_pids = {root_pid}
     discovered = True
     while discovered:
         discovered = False
-        for pid, parent_pid, _process_group_id in identities:
+        for pid, parent_pid, _process_group_id, _start_time_ticks in identities:
             if parent_pid in descendant_pids and pid not in descendant_pids:
                 descendant_pids.add(pid)
                 discovered = True
-    for pid, _parent_pid, process_group_id in identities:
-        if pid != root_pid and pid in descendant_pids and process_group_id > 1:
-            captured_groups.add(process_group_id)
+    for identity in identities:
+        pid = identity[0]
+        identity_key = (pid, identity[3])
+        if (
+            pid == root_pid
+            or pid not in descendant_pids
+            or identity_key in captured_processes
+        ):
+            continue
+        try:
+            pidfd = open_verified_pidfd(identity, pidfd_open, read_identity)
+        except (OSError, ProcessLookupError):
+            continue
+        if pidfd is not None:
+            captured_processes[identity_key] = pidfd
 
 
-def signal_group(process_group_id, requested_signal):
-    try:
-        os.killpg(process_group_id, requested_signal)
-    except ProcessLookupError:
-        return
+def signal_captured_processes(
+    captured_processes,
+    requested_signal,
+    pidfd_send_signal=signal.pidfd_send_signal,
+):
+    for pidfd in captured_processes.values():
+        try:
+            pidfd_send_signal(pidfd, requested_signal)
+        except ProcessLookupError:
+            continue
 
 
-def group_exists(process_group_id):
-    try:
-        os.killpg(process_group_id, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+def live_captured_processes(
+    captured_processes, pidfd_send_signal=signal.pidfd_send_signal
+):
+    live_processes = set()
+    for identity_key, pidfd in captured_processes.items():
+        try:
+            pidfd_send_signal(pidfd, 0)
+            live_processes.add(identity_key)
+        except ProcessLookupError:
+            continue
+    return live_processes
+
+
+def close_captured_processes(captured_processes):
+    for pidfd in captured_processes.values():
+        os.close(pidfd)
+    captured_processes.clear()
 
 
 def reap_adopted_children():
@@ -101,6 +153,7 @@ def normalize_return_code(return_code):
         return return_code
     return 128 + abs(return_code)
 
+
 def write_supervisor_status(status):
     os.write(SUPERVISOR_STATUS_FD, f"{status}\n".encode("ascii"))
 
@@ -109,49 +162,74 @@ def main():
     arguments = parse_arguments()
     enable_child_subreaper()
     supervisor_pid = os.getpid()
-    captured_groups = set()
+    captured_processes = {}
     target = subprocess.Popen(arguments.command, start_new_session=True)
-    captured_groups.add(target.pid)
+    target_identity = read_process_identity(target.pid)
+    if target_identity is None:
+        raise ProcessLookupError(f"Unable to capture target process {target.pid}.")
+    target_pidfd = open_verified_pidfd(target_identity)
+    if target_pidfd is None:
+        raise ProcessLookupError(f"Target process {target.pid} changed before capture.")
+    captured_processes[(target_identity[0], target_identity[3])] = target_pidfd
+    termination_requested = False
+    termination_deadline = None
 
     def forward_signal(requested_signal, _frame):
+        nonlocal termination_requested
+        nonlocal termination_deadline
+        termination_requested = True
+        if termination_deadline is None:
+            termination_deadline = (
+                time.monotonic() + arguments.cleanup_timeout_ms / 1000
+            )
         try:
-            os.kill(target.pid, requested_signal)
-        except ProcessLookupError:
+            signal.pidfd_send_signal(target_pidfd, requested_signal)
+        except (OSError, ProcessLookupError):
             pass
 
     signal.signal(signal.SIGTERM, forward_signal)
     signal.signal(signal.SIGINT, forward_signal)
 
     while True:
-        capture_descendant_groups(supervisor_pid, captured_groups)
+        identities = read_process_identities()
+        capture_descendant_processes(supervisor_pid, captured_processes, identities)
         return_code = target.poll()
         if return_code is not None:
             break
+        if (
+            termination_requested
+            and termination_deadline is not None
+            and time.monotonic() >= termination_deadline
+        ):
+            return_code = -signal.SIGKILL
+            break
         time.sleep(POLL_INTERVAL_SECONDS)
 
-    capture_descendant_groups(supervisor_pid, captured_groups)
+    identities = read_process_identities()
+    capture_descendant_processes(supervisor_pid, captured_processes, identities)
     cleanup_deadline = time.monotonic() + arguments.cleanup_timeout_ms / 1000
     while True:
-        capture_descendant_groups(supervisor_pid, captured_groups)
-        for process_group_id in captured_groups:
-            signal_group(process_group_id, signal.SIGKILL)
+        identities = read_process_identities()
+        capture_descendant_processes(supervisor_pid, captured_processes, identities)
+        signal_captured_processes(captured_processes, signal.SIGKILL)
         no_children_remain = reap_adopted_children()
-        surviving_groups = {
-            process_group_id
-            for process_group_id in captured_groups
-            if group_exists(process_group_id)
-        }
-        if not surviving_groups and no_children_remain:
+        surviving_processes = live_captured_processes(captured_processes)
+        if not surviving_processes and no_children_remain:
+            close_captured_processes(captured_processes)
             write_supervisor_status("cleanup-ok")
             return normalize_return_code(return_code)
         if time.monotonic() >= cleanup_deadline:
-            groups = ", ".join(str(group) for group in sorted(surviving_groups))
+            processes = ", ".join(
+                f"{pid}:{start_time}"
+                for pid, start_time in sorted(surviving_processes)
+            )
             print(
                 "T3CODE_ARTIFACT_SMOKE cleanup-failed "
-                f"surviving-process-groups={groups} children-remain={not no_children_remain}",
+                f"surviving-processes={processes} children-remain={not no_children_remain}",
                 file=sys.stderr,
                 flush=True,
             )
+            close_captured_processes(captured_processes)
             write_supervisor_status("cleanup-failed")
             return SUPERVISOR_FAILURE_EXIT_CODE
         time.sleep(POLL_INTERVAL_SECONDS)
