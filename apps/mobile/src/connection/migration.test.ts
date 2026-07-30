@@ -75,4 +75,45 @@ describe("migrateLegacyConnectionCatalog", () => {
       expect(catalog.targets).toEqual([]);
     }),
   );
+
+  it.effect("preserves legacy entries that predate the authentication method marker", () =>
+    Effect.gen(function* () {
+      const catalog = yield* migrateLegacyConnectionCatalog(
+        JSON.stringify({
+          connections: [
+            {
+              environmentId: EnvironmentId.make("legacy-bearer"),
+              environmentLabel: "Legacy bearer",
+              pairingUrl: "https://legacy.example.test/pair",
+              displayUrl: "https://legacy.example.test",
+              httpBaseUrl: "https://legacy.example.test",
+              wsBaseUrl: "wss://legacy.example.test",
+              bearerToken: "legacy-token",
+            },
+            {
+              environmentId: EnvironmentId.make("legacy-relay"),
+              environmentLabel: "Legacy relay",
+              pairingUrl: "https://relay.example.test",
+              displayUrl: "https://relay.example.test",
+              httpBaseUrl: "https://relay.example.test",
+              wsBaseUrl: "wss://relay.example.test",
+              bearerToken: null,
+              authenticationMethod: "dpop",
+            },
+          ],
+        }),
+      );
+
+      expect(catalog.targets).toMatchObject([
+        {
+          _tag: "BearerConnectionTarget",
+          environmentId: EnvironmentId.make("legacy-bearer"),
+        },
+        {
+          _tag: "RelayConnectionTarget",
+          environmentId: EnvironmentId.make("legacy-relay"),
+        },
+      ]);
+    }),
+  );
 });

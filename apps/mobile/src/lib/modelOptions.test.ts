@@ -5,6 +5,70 @@ import { ProviderInstanceId, type ServerConfig } from "@t3tools/contracts";
 import { buildModelOptions } from "./modelOptions";
 
 describe("mobile model options", () => {
+  it("keeps models from same-driver provider instances scoped by exact instance id", () => {
+    const config = {
+      providers: [
+        {
+          instanceId: "codex-personal",
+          driver: "codex",
+          displayName: "Codex Personal",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          models: [
+            {
+              slug: "gpt-test",
+              name: "GPT Test",
+              isCustom: false,
+              capabilities: null,
+            },
+          ],
+        },
+        {
+          instanceId: "codex-work",
+          driver: "codex",
+          displayName: "Codex Work",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          models: [
+            {
+              slug: "gpt-test",
+              name: "GPT Test",
+              isCustom: false,
+              isDefault: true,
+              capabilities: null,
+            },
+          ],
+        },
+      ],
+    } as unknown as ServerConfig;
+
+    expect(
+      buildModelOptions(config, {
+        instanceId: ProviderInstanceId.make("codex-work"),
+        model: "gpt-test",
+      }),
+    ).toMatchObject([
+      {
+        key: "codex-personal:gpt-test",
+        providerKey: "codex-personal",
+        selection: {
+          instanceId: "codex-personal",
+          model: "gpt-test",
+        },
+      },
+      {
+        key: "codex-work:gpt-test",
+        providerKey: "codex-work",
+        selection: {
+          instanceId: "codex-work",
+          model: "gpt-test",
+        },
+      },
+    ]);
+  });
+
   it("normalizes a legacy fallback selection against current capabilities", () => {
     const config = {
       providers: [

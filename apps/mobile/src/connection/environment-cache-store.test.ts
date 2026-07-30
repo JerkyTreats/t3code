@@ -1,12 +1,19 @@
-import { EnvironmentId, type VcsListRefsResult } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
+  ServerConfig,
+  type VcsListRefsResult,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { type ClientCacheKind, MobileDatabase } from "../persistence/mobile-database";
 import { make } from "./environment-cache-store";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
+const encodeServerConfig = Schema.encodeSync(ServerConfig);
 const REFS: VcsListRefsResult = {
   refs: [
     {
@@ -18,6 +25,7 @@ const REFS: VcsListRefsResult = {
   ],
   isRepo: true,
   hasPrimaryRemote: true,
+  repositoryIdentity: "/repo/.git",
   nextCursor: null,
   totalCount: 1,
 };
@@ -63,6 +71,134 @@ function makeDatabase() {
 }
 
 describe("mobile SQLite environment cache store", () => {
+  it.effect("defaults newer environment and provider settings when loading a legacy config", () =>
+    Effect.gen(function* () {
+      const memory = makeDatabase();
+      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+      const encodedConfig = encodeServerConfig({
+        environment: {
+          environmentId: ENVIRONMENT_ID,
+          label: "Legacy environment",
+          platform: {
+            os: "linux",
+            arch: "x64",
+          },
+          serverVersion: "0.0.29",
+          capabilities: {
+            repositoryIdentity: true,
+            threadSyncV2: false,
+            threadSettlement: false,
+          },
+        },
+        auth: {
+          policy: "loopback-browser",
+          bootstrapMethods: ["one-time-token"],
+          sessionMethods: ["browser-session-cookie", "bearer-access-token"],
+          sessionCookieName: "t3_session",
+        },
+        cwd: "/repo",
+        keybindingsConfigPath: "/repo/keybindings.json",
+        keybindings: [],
+        issues: [],
+        providers: [],
+        availableEditors: [],
+        observability: {
+          logsDirectoryPath: "/tmp/logs",
+          localTracingEnabled: false,
+          otlpTracesEnabled: false,
+          otlpMetricsEnabled: false,
+        },
+        settings: DEFAULT_SERVER_SETTINGS,
+      });
+      const { threadSettlement: _threadSettlement, ...legacyCapabilities } =
+        encodedConfig.environment.capabilities;
+      const encodedProviderSettings = encodedConfig.settings.providers;
+      if (encodedProviderSettings?.codex === undefined) {
+        throw new Error("Expected encoded default Codex settings.");
+      }
+      const { launchArgs: _launchArgs, ...legacyCodexSettings } = encodedProviderSettings.codex;
+      memory.values.set(
+        cacheId(ENVIRONMENT_ID, "server-config", "config"),
+        JSON.stringify({
+          schemaVersion: 1,
+          environmentId: ENVIRONMENT_ID,
+          config: {
+            ...encodedConfig,
+            environment: {
+              ...encodedConfig.environment,
+              capabilities: legacyCapabilities,
+            },
+            settings: {
+              ...encodedConfig.settings,
+              providers: {
+                ...encodedProviderSettings,
+                codex: legacyCodexSettings,
+              },
+            },
+          },
+        }),
+      );
+
+      const config = Option.getOrThrow(yield* store.loadServerConfig(ENVIRONMENT_ID));
+
+      expect(config.environment.capabilities.threadSettlement).toBe(false);
+      expect(config.settings.providers.codex.launchArgs).toBe("");
+    }),
+  );
+
+  it.effect("decodes legacy shell rows with current settlement defaults", () =>
+    Effect.gen(function* () {
+      const memory = makeDatabase();
+      const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
+      memory.values.set(
+        cacheId(ENVIRONMENT_ID, "shell", "snapshot"),
+        JSON.stringify({
+          schemaVersion: 1,
+          environmentId: ENVIRONMENT_ID,
+          snapshot: {
+            snapshotSequence: 4,
+            projects: [],
+            threads: [
+              {
+                id: "thread-legacy",
+                projectId: "project-legacy",
+                title: "Legacy thread",
+                modelSelection: {
+                  instanceId: "codex",
+                  model: "gpt-test",
+                },
+                runtimeMode: "full-access",
+                branch: null,
+                worktreePath: null,
+                latestTurn: null,
+                createdAt: "2026-07-01T00:00:00.000Z",
+                updatedAt: "2026-07-01T00:01:00.000Z",
+                session: null,
+                latestUserMessageAt: null,
+                hasPendingApprovals: false,
+                hasPendingUserInput: false,
+                hasActionableProposedPlan: false,
+              },
+            ],
+            updatedAt: "2026-07-01T00:01:00.000Z",
+          },
+        }),
+      );
+
+      const snapshot = Option.getOrThrow(yield* store.loadShell(ENVIRONMENT_ID));
+
+      expect(snapshot.threads[0]).toMatchObject({
+        interactionMode: "default",
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        activePlanProgress: null,
+        latestRuntimeActivityAt: null,
+        statusSummaryUpdatedAt: null,
+      });
+    }),
+  );
+
   it.effect("round-trips schema-validated VCS refs", () =>
     Effect.gen(function* () {
       const memory = makeDatabase();
@@ -71,6 +207,9 @@ describe("mobile SQLite environment cache store", () => {
       yield* store.saveVcsRefs(ENVIRONMENT_ID, "/repo", REFS);
 
       expect(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo")).toEqual(Option.some(REFS));
+      expect(Option.getOrThrow(yield* store.loadVcsRefs(ENVIRONMENT_ID, "/repo"))).toMatchObject({
+        repositoryIdentity: "/repo/.git",
+      });
     }),
   );
 

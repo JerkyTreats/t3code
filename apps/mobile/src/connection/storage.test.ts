@@ -1,4 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
+import {
+  BearerConnectionCredential,
+  BearerConnectionProfile,
+  BearerConnectionRegistration,
+  BearerConnectionTarget,
+  RelayConnectionRegistration,
+  RelayConnectionTarget,
+} from "@t3tools/client-runtime/connection";
+import { registerConnectionInCatalog } from "@t3tools/client-runtime/platform";
+import { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { vi } from "vite-plus/test";
 
@@ -34,6 +44,75 @@ function makeStorage(initial: Readonly<Record<string, string>>) {
 }
 
 describe("mobile connection catalog storage", () => {
+  it.effect("restores bearer credentials and relay targets from the current secure catalog", () =>
+    Effect.gen(function* () {
+      const memory = makeStorage({});
+      const firstStore = yield* make().pipe(
+        Effect.provideService(MobileSecureStorage, memory.storage),
+      );
+      const bearerEnvironmentId = EnvironmentId.make("saved-bearer");
+      const relayEnvironmentId = EnvironmentId.make("saved-relay");
+      const connectionId = `bearer:${bearerEnvironmentId}`;
+
+      yield* firstStore.update((document) =>
+        registerConnectionInCatalog(
+          registerConnectionInCatalog(
+            document,
+            new BearerConnectionRegistration({
+              target: new BearerConnectionTarget({
+                environmentId: bearerEnvironmentId,
+                label: "Saved desktop",
+                connectionId,
+              }),
+              profile: new BearerConnectionProfile({
+                connectionId,
+                environmentId: bearerEnvironmentId,
+                label: "Saved desktop",
+                httpBaseUrl: "https://desktop.example.test",
+                wsBaseUrl: "wss://desktop.example.test",
+              }),
+              credential: new BearerConnectionCredential({
+                token: "saved-token",
+              }),
+            }),
+          ),
+          new RelayConnectionRegistration({
+            target: new RelayConnectionTarget({
+              environmentId: relayEnvironmentId,
+              label: "Saved relay",
+            }),
+          }),
+        ),
+      );
+
+      const restoredStore = yield* make().pipe(
+        Effect.provideService(MobileSecureStorage, memory.storage),
+      );
+      const restored = yield* restoredStore.read;
+
+      expect(restored.targets).toMatchObject([
+        {
+          _tag: "BearerConnectionTarget",
+          environmentId: bearerEnvironmentId,
+          connectionId,
+        },
+        {
+          _tag: "RelayConnectionTarget",
+          environmentId: relayEnvironmentId,
+        },
+      ]);
+      expect(restored.credentials).toMatchObject([
+        {
+          connectionId,
+          credential: {
+            _tag: "BearerConnectionCredential",
+            token: "saved-token",
+          },
+        },
+      ]);
+    }),
+  );
+
   it.effect("recovers from a corrupt current catalog", () =>
     Effect.gen(function* () {
       const memory = makeStorage({

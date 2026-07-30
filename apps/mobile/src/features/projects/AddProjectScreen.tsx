@@ -11,6 +11,10 @@ import {
   type AddProjectRemoteSource,
 } from "@t3tools/client-runtime/operations/projects";
 import {
+  canPreloadBrowsePath,
+  createBrowseNavigationCoordinator,
+} from "@t3tools/client-runtime/state/filesystem";
+import {
   appendBrowsePathSegment,
   canNavigateUp,
   ensureBrowseDirectoryPath,
@@ -21,10 +25,11 @@ import {
   inferProjectTitleFromPath,
   isFilesystemBrowseQuery,
 } from "@t3tools/client-runtime/state/projects";
+import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import { CommandId, type EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Arr from "effect/Array";
@@ -34,6 +39,7 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import { cn } from "../../lib/cn";
 
 import { useProjects, useServerConfigs } from "../../state/entities";
+import { useEnvironments } from "../../state/environments";
 import { filesystemEnvironment } from "../../state/filesystem";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
@@ -52,6 +58,7 @@ interface EnvironmentOption {
   readonly label: string;
   readonly platform: string;
   readonly baseDirectory: string | null;
+  readonly connectionPhase: EnvironmentConnectionPhase;
 }
 
 const environmentOptionOrder = Order.mapInput(
@@ -231,19 +238,22 @@ function ProjectPathInput(props: {
 function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
   const serverConfigByEnvironmentId = useServerConfigs();
   const { savedConnectionsById } = useSavedRemoteConnections();
+  const { presentationById } = useEnvironments();
 
   return useMemo<ReadonlyArray<EnvironmentOption>>(() => {
     const options = Object.values(savedConnectionsById).map((connection) => {
       const config = serverConfigByEnvironmentId.get(connection.environmentId);
+      const presentation = presentationById.get(connection.environmentId);
       return {
         environmentId: connection.environmentId,
         label: connection.environmentLabel,
         platform: platformFromOs(config?.environment.platform.os ?? null),
         baseDirectory: config?.settings.addProjectBaseDirectory ?? null,
+        connectionPhase: presentation?.connection.phase ?? "available",
       };
     });
     return Arr.sort(options, environmentOptionOrder);
-  }, [savedConnectionsById, serverConfigByEnvironmentId]);
+  }, [presentationById, savedConnectionsById, serverConfigByEnvironmentId]);
 }
 
 function useSelectedEnvironment(): {
@@ -510,56 +520,113 @@ export function AddProjectRepositoryScreen(props: {
   const lookupRepositoryQuery = useAtomQueryRunner(sourceControlEnvironment.repository, {
     reportFailure: false,
   });
+  const loadBrowsePath = useAtomQueryRunner(filesystemEnvironment.browse, {
+    reportFailure: false,
+    reportDefect: false,
+  });
   const navigation = useNavigation();
   const environment = useEnvironmentFromParam(props.environmentId);
   const source = sourceFromParam(props.source);
   const [repositoryInput, setRepositoryInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const destinationNavigationRef = useRef<ReturnType<
+    typeof createBrowseNavigationCoordinator
+  > | null>(null);
+  if (destinationNavigationRef.current === null) {
+    destinationNavigationRef.current = createBrowseNavigationCoordinator();
+  }
+  const destinationNavigation = destinationNavigationRef.current;
+
+  useEffect(
+    () => () => {
+      destinationNavigation.invalidate();
+    },
+    [destinationNavigation],
+  );
 
   const lookupRepository = useCallback(async () => {
     if (!environment || repositoryInput.trim().length === 0 || isSubmitting) return;
     setError(null);
     setIsSubmitting(true);
     const provider = addProjectRemoteSourceProvider(source);
-    if (!provider) {
-      const remoteUrl = repositoryInput.trim();
-      navigation.navigate("NewTaskSheet", {
-        screen: "AddProjectDestination",
-        params: {
+    let destination:
+      | {
+          readonly remoteUrl: string;
+          readonly repositoryTitle: string;
+        }
+      | undefined;
+    let failure: string | null = null;
+    await destinationNavigation.run(
+      async (isCurrent) => {
+        if (!provider) {
+          const remoteUrl = repositoryInput.trim();
+          destination = {
+            remoteUrl,
+            repositoryTitle: remoteUrl,
+          };
+        } else {
+          const result = await lookupRepositoryQuery({
+            environmentId: environment.environmentId,
+            input: {
+              provider,
+              repository: repositoryInput.trim(),
+            },
+          });
+          if (AsyncResult.isFailure(result)) {
+            failure = errorMessage(Cause.squash(result.cause));
+            return false;
+          }
+          destination = {
+            remoteUrl: result.value.sshUrl,
+            repositoryTitle: result.value.nameWithOwner,
+          };
+        }
+        if (!isCurrent()) return false;
+        if (!canPreloadBrowsePath(environment.connectionPhase)) {
+          failure = `${environment.label} is not connected.`;
+          return false;
+        }
+        const initialPath = getAddProjectInitialQuery(environment.baseDirectory);
+        const preloadResult = await loadBrowsePath({
           environmentId: environment.environmentId,
-          source,
-          remoteUrl,
-          repositoryTitle: remoteUrl,
-        },
-      });
-      setIsSubmitting(false);
-      return;
-    }
-
-    const result = await lookupRepositoryQuery({
-      environmentId: environment.environmentId,
-      input: {
-        provider,
-        repository: repositoryInput.trim(),
+          input: {
+            partialPath: getBrowseDirectoryPath(initialPath),
+          },
+        });
+        if (AsyncResult.isFailure(preloadResult)) {
+          failure = errorMessage(Cause.squash(preloadResult.cause));
+          return false;
+        }
+        return true;
       },
-    });
-    if (AsyncResult.isFailure(result)) {
-      setError(errorMessage(Cause.squash(result.cause)));
-    } else {
-      const repository = result.value;
-      navigation.navigate("NewTaskSheet", {
-        screen: "AddProjectDestination",
-        params: {
-          environmentId: environment.environmentId,
-          source,
-          remoteUrl: repository.sshUrl,
-          repositoryTitle: repository.nameWithOwner,
-        },
-      });
-    }
+      () => {
+        if (!destination) return;
+        navigation.navigate("NewTaskSheet", {
+          screen: "AddProjectDestination",
+          params: {
+            environmentId: environment.environmentId,
+            source,
+            remoteUrl: destination.remoteUrl,
+            repositoryTitle: destination.repositoryTitle,
+          },
+        });
+      },
+      () => {
+        setError(failure ?? "Unable to load the default project destination.");
+      },
+    );
     setIsSubmitting(false);
-  }, [environment, isSubmitting, lookupRepositoryQuery, repositoryInput, navigation, source]);
+  }, [
+    destinationNavigation,
+    environment,
+    isSubmitting,
+    loadBrowsePath,
+    lookupRepositoryQuery,
+    navigation,
+    repositoryInput,
+    source,
+  ]);
 
   return (
     <AddProjectShell>
@@ -594,6 +661,19 @@ function FolderBrowser(props: {
   readonly setPathInput: (path: string) => void;
 }) {
   const accentColor = useThemeColor("--color-icon-muted");
+  const loadBrowsePath = useAtomQueryRunner(filesystemEnvironment.browse, {
+    reportFailure: false,
+    reportDefect: false,
+  });
+  const browseNavigationRef = useRef<ReturnType<typeof createBrowseNavigationCoordinator> | null>(
+    null,
+  );
+  if (browseNavigationRef.current === null) {
+    browseNavigationRef.current = createBrowseNavigationCoordinator();
+  }
+  const browseNavigation = browseNavigationRef.current;
+  const [navigationError, setNavigationError] = useState<string | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
   const browseDirectoryPath = useMemo(
     () =>
       isFilesystemBrowseQuery(props.pathInput, props.environment.platform)
@@ -631,10 +711,54 @@ function FolderBrowser(props: {
   );
   const parentBrowsePath = getBrowseParentPath(browseDirectoryPath);
   const canBrowseUpPath = canNavigateUp(browseDirectoryPath);
+  useEffect(() => {
+    browseNavigation.invalidate();
+    setNavigationError(null);
+  }, [browseNavigation, props.environment.environmentId, props.pathInput]);
+  useEffect(
+    () => () => {
+      browseNavigation.invalidate();
+    },
+    [browseNavigation],
+  );
+
+  const navigateToPath = useCallback(
+    async (path: string) => {
+      setNavigationError(null);
+      setIsNavigating(true);
+      let failure: string | null = null;
+      await browseNavigation.run(
+        async () => {
+          if (!canPreloadBrowsePath(props.environment.connectionPhase)) {
+            failure = `${props.environment.label} is not connected.`;
+            return false;
+          }
+          const result = await loadBrowsePath({
+            environmentId: props.environment.environmentId,
+            input: {
+              partialPath: getBrowseDirectoryPath(path),
+            },
+          });
+          if (AsyncResult.isFailure(result)) {
+            failure = errorMessage(Cause.squash(result.cause));
+            return false;
+          }
+          return true;
+        },
+        () => props.setPathInput(path),
+        () => {
+          setNavigationError(failure ?? "Unable to browse that folder.");
+        },
+      );
+      setIsNavigating(false);
+    },
+    [browseNavigation, loadBrowsePath, props],
+  );
 
   return (
     <>
       <SectionTitle>Browse folders</SectionTitle>
+      {navigationError ? <ErrorBanner message={navigationError} /> : null}
       {browseState.error ? <ErrorBanner message={browseState.error} /> : null}
       <ListSection>
         {browseState.isPending && browseState.data === null ? (
@@ -654,9 +778,10 @@ function FolderBrowser(props: {
               />
             }
             isFirst
+            disabled={isNavigating}
             right={null}
             onPress={() => {
-              if (parentBrowsePath) props.setPathInput(parentBrowsePath);
+              if (parentBrowsePath) void navigateToPath(parentBrowsePath);
             }}
           />
         ) : null}
@@ -666,9 +791,10 @@ function FolderBrowser(props: {
             title={entry.name}
             icon={<SymbolView name="folder" size={17} tintColor={accentColor} type="monochrome" />}
             isFirst={index === 0 && !canBrowseUpPath}
+            disabled={isNavigating}
             right={null}
             onPress={() =>
-              props.setPathInput(
+              void navigateToPath(
                 browseDirectoryPath.length > 0
                   ? appendBrowsePathSegment(browseDirectoryPath, entry.name)
                   : ensureBrowseDirectoryPath(entry.fullPath),
