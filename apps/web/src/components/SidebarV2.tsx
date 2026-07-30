@@ -44,13 +44,7 @@ import { readLocalApi } from "../localApi";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import { openConcreteProjectLauncher } from "../project-management/openProjectLauncher";
 import { useRightPanelStore } from "../rightPanelStore";
-import {
-  readEnvironmentThreadRefs,
-  readThreadShell,
-  useProjects,
-  useServerConfigs,
-  useThreadShells,
-} from "../state/entities";
+import { readThreadShell, useProjects, useServerConfigs, useThreadShells } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
@@ -60,6 +54,7 @@ import { vcsEnvironment } from "../state/vcs";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useDiffPanelStore } from "../diffPanelStore";
+import { useLocallyKnownProjectThreadRefsReader } from "../lib/archivedThreadsState";
 import { runProjectDeletionLifecycle } from "../lib/threadDeletionWorkflow";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
@@ -440,6 +435,12 @@ export default function SidebarV2() {
   const serverConfigs = useServerConfigs();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const archivedEnvironmentIds = useMemo(
+    () => environments.map((environment) => environment.environmentId),
+    [environments],
+  );
+  const readLocallyKnownProjectThreadRefs =
+    useLocallyKnownProjectThreadRefsReader(archivedEnvironmentIds);
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const routeTarget = useParams({
@@ -923,20 +924,18 @@ export default function SidebarV2() {
             );
       if (!confirmed) return;
       const readExactProjectThreadTargets = () =>
-        readEnvironmentThreadRefs(member.environmentId).flatMap((threadRef) => {
-          const thread = readThreadShell(threadRef);
-          return thread?.projectId === member.id
-            ? [{ threadRef, projectRef: memberProjectRef }]
-            : [];
-        });
+        readLocallyKnownProjectThreadRefs(memberProjectRef).map((threadRef) => ({
+          threadRef,
+          projectRef: memberProjectRef,
+        }));
       const result = await runProjectDeletionLifecycle({
         readThreadTargets: readExactProjectThreadTargets,
-        deleteProjectRecord: (targetsBeforeDelete) =>
+        deleteProjectRecord: () =>
           deleteProject({
             environmentId: member.environmentId,
             input: {
               projectId: member.id,
-              ...(targetsBeforeDelete.length > 0 ? { force: true } : {}),
+              force: true,
             },
           }),
         didDeleteProject: (deleteResult) => deleteResult._tag === "Success",
@@ -977,6 +976,7 @@ export default function SidebarV2() {
       deleteProject,
       projectGroups,
       projectScopeKey,
+      readLocallyKnownProjectThreadRefs,
       removeFromSelection,
       reportCommandFailure,
       threads,
