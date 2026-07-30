@@ -16,6 +16,7 @@ The composer owns its local draft state and preserves rich draft behavior under 
 - A true no-provider state disables new dispatch without clearing prompt text or attachments.
 - Attachment previews and local persistence warnings remain visible when relevant.
 - A global provider-agnostic prompt stash stores text and image attachments independently from any thread.
+- Stash and restore preserve exact prompt text, including leading whitespace, trailing whitespace, and whitespace-only prompts.
 - Stashing succeeds only after durable persistence. A failed or memory-only write leaves the active draft intact.
 - Restoring a stash entry writes its text and images into the active draft without changing provider instance, model selection, attachments outside the stash entry, terminal context chips, or rich mode.
 - The global stash holds at most 20 entries and evicts the oldest entry only after the replacement queue is durably persisted.
@@ -26,6 +27,9 @@ The composer owns its local draft state and preserves rich draft behavior under 
 - Legacy queues merge newest valid `createdAt` first. Invalid timestamps follow valid timestamps. Ties resolve by provider scope key, original queue index, then entry id.
 - Duplicate legacy entry ids retain the first entry under that ordering.
 - Migration strips provider instance and model fields, caps the merged queue at 20 entries, and treats the discarded tail as oldest-first eviction.
+- Image finalization reports an explicit saved, missing entry, dropped, or persistence failure outcome.
+- Images that finish after their stash entry is restored or deleted are named in a visible warning.
+- The stash menu uses one focused listbox with active-descendant keyboard navigation and focus-visible destructive controls.
 
 ## Owner Modules
 
@@ -39,10 +43,13 @@ Current owner modules:
 - `apps/web/src/components/chat/ComposerRichDraftToolbar.tsx`
 - `apps/web/src/composerDraftStore.ts`
 - `apps/web/src/promptStashPolicy.ts`
+- `apps/web/src/promptStashText.ts`
+- `apps/web/src/promptStashFinalization.ts`
 - `apps/web/src/promptStashStore.ts`
 - `apps/web/src/lib/stashImageCompression.ts`
 - `apps/web/src/components/chat/ComposerStashBadge.tsx`
 - `apps/web/src/components/chat/ComposerStashMenu.tsx`
+- `apps/web/src/components/chat/composerStashMenuKeyboard.ts`
 - `apps/web/src/lib/composerPathSearchState.ts`
 - `packages/client-runtime/src/state/composerPathSearch.ts`
 - `packages/contracts/src/keybindings.ts`
@@ -89,6 +96,7 @@ Current owner modules:
 - Stash persistence failure leaves the draft untouched.
 - Stash restore transfers text and images without changing provider instance or model selection.
 - Bounded storage and image failure paths preserve restorable text and show accurate warnings.
+- Image finalization races and persistence failures never claim unavailable images can be recovered from the stash.
 - A valid legacy provider-scoped payload migrates once with deterministic ordering and no duplicate entries.
 - Entry, image, and attachment budgets enforce the exact documented limits and evict only the oldest persisted entry.
 - Failed legacy conversion or persistence retains the legacy payload and leaves the global queue unchanged.

@@ -295,8 +295,14 @@ interface PromptStashStoreState {
       readonly droppedImageNames: ReadonlyArray<string>;
       readonly unreadableImageNames: ReadonlyArray<string>;
     },
-  ) => { readonly attached: boolean; readonly durable: boolean };
+  ) => PromptStashImageFinalization;
 }
+
+export type PromptStashImageFinalization =
+  | { readonly status: "saved" }
+  | { readonly status: "entry-missing"; readonly imageNames: ReadonlyArray<string> }
+  | { readonly status: "images-dropped"; readonly imageNames: ReadonlyArray<string> }
+  | { readonly status: "persistence-failed"; readonly imageNames: ReadonlyArray<string> };
 
 export const usePromptStashStore = create<PromptStashStoreState>()((set, get) => ({
   entries: readInitialEntries(),
@@ -320,12 +326,17 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
     return { entry, durable: true };
   },
   finalizeEntryImages: (entryId, images) => {
+    const imageNames = [
+      ...images.attachments.map((attachment) => attachment.name),
+      ...images.droppedImageNames,
+      ...images.unreadableImageNames,
+    ];
     const index = get().entries.findIndex((candidate) => candidate.id === entryId);
-    if (index < 0) return { attached: false, durable: true };
+    if (index < 0) return { status: "entry-missing", imageNames };
     const partition = partitionStashAttachments(images.attachments);
     const nextEntries = [...get().entries];
     const existing = nextEntries[index];
-    if (!existing) return { attached: false, durable: true };
+    if (!existing) return { status: "entry-missing", imageNames };
     nextEntries[index] = {
       ...existing,
       attachments: partition.kept,
@@ -347,12 +358,12 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
       };
       if (baseStorage.durable && writeAndVerifyEntries(baseStorage.storage, fallbackEntries)) {
         set({ entries: fallbackEntries });
-        return { attached: true, durable: false };
+        return { status: "images-dropped", imageNames };
       }
-      return { attached: false, durable: false };
+      return { status: "persistence-failed", imageNames };
     }
     set({ entries: nextEntries });
-    return { attached: true, durable: true };
+    return { status: "saved" };
   },
 }));
 

@@ -174,11 +174,16 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Keep one provider-agnostic prompt stash for text and images.
 - Clear the active prompt and images only after the stash entry is durably written and verified.
 - Restore stash content without changing provider instance, model, rich mode, terminal context, element context, annotations, or review comments.
+- Preserve exact stashed and active prompt whitespace during stash and restore.
 - Enforce the exact global entry, per-image, and per-entry attachment budgets from `F4`.
 - Migrate provider-scoped legacy queues atomically with deterministic ordering and id de-duplication.
 - Treat simultaneous global and legacy storage as an interrupted migration and preserve every unique entry within the global cap.
 - Delete legacy storage only after the complete replacement payload is written, reread, decoded, and verified.
+- Report every image that finishes after its stash entry was restored or deleted.
+- Never describe an unpersisted image as recoverable from a stash that does not contain it.
+- Keep stash keyboard ownership inside one focused listbox and reveal destructive controls on keyboard focus.
 - Preload filesystem browse destinations before publishing visible navigation changes.
+- Commit visible browse navigation only after a successful preload and surface one bounded failure notice otherwise.
 - Reject stale browse completions after newer navigation or explicit invalidation.
 - Route Sidebar V1, Sidebar V2, and command palette project-panel actions through one concrete project launcher.
 - Filter launcher threads by exact environment and project identity before opening the right panel or navigating.

@@ -650,19 +650,50 @@ function OpenCommandPaletteDialog(props: {
       partialPath: string,
       environmentId: EnvironmentId | null = browseEnvironmentId,
       cwd: string | null = currentProjectCwdForBrowse,
-    ): Promise<void> => {
-      if (!environmentId) return;
+    ): Promise<boolean> => {
+      if (!environmentId) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Unable to browse folder",
+            description: "No environment is available for this filesystem.",
+          }),
+        );
+        return false;
+      }
       const environment = environments.find(
         (candidate) => candidate.environmentId === environmentId,
       );
-      if (!canPreloadBrowsePath(environment?.connection.phase)) return;
-      await loadBrowsePath({
+      if (!canPreloadBrowsePath(environment?.connection.phase)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Unable to browse folder",
+            description: `${environment?.label ?? "The selected environment"} is not connected.`,
+          }),
+        );
+        return false;
+      }
+      const result = await loadBrowsePath({
         environmentId,
         input: {
           partialPath,
           ...(cwd ? { cwd } : {}),
         },
       });
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Unable to browse folder",
+              description: errorMessage(squashAtomCommandFailure(result)),
+            }),
+          );
+        }
+        return false;
+      }
+      return true;
     },
     [browseEnvironmentId, currentProjectCwdForBrowse, environments, loadBrowsePath],
   );
@@ -849,7 +880,7 @@ function OpenCommandPaletteDialog(props: {
         () =>
           initialDirectory.length > 0
             ? prefetchBrowsePath(initialDirectory, environmentId, cwd)
-            : Promise.resolve(),
+            : Promise.resolve(true),
         () => {
           setAddProjectEnvironmentId(environmentId);
           setAddProjectCloneFlow(null);

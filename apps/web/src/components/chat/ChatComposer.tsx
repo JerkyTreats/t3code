@@ -64,13 +64,14 @@ import {
   usePromptStashStore,
 } from "../../promptStashStore";
 import { normalizeImageForStash } from "../../lib/stashImageCompression";
+import { mergeStashedPrompt, promptTextForStash } from "../../promptStashText";
+import { promptStashFinalizationWarning } from "../../promptStashFinalization";
 import { isCommandPaletteOpen } from "../../commandPaletteContext";
 import { resolveShortcutCommand } from "../../keybindings";
 import { getTerminalFocusOwner } from "../../lib/terminalFocus";
 import {
   type TerminalContextDraft,
   type TerminalContextSelection,
-  INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
   insertInlineTerminalContextPlaceholder,
   removeInlineTerminalContextPlaceholder,
 } from "../../lib/terminalContext";
@@ -1959,12 +1960,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
       const restored = result.entry;
       const currentPrompt = promptRef.current;
-      const nextPrompt =
-        restored.prompt.length === 0
-          ? currentPrompt
-          : currentPrompt.trim().length > 0
-            ? `${currentPrompt.replace(/\s+$/, "")}\n\n${restored.prompt}`
-            : restored.prompt;
+      const nextPrompt = mergeStashedPrompt(currentPrompt, restored.prompt);
       if (nextPrompt !== currentPrompt) {
         promptRef.current = nextPrompt;
         setComposerDraftPrompt(composerDraftTarget, nextPrompt);
@@ -2010,15 +2006,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
       }
       setIsStashMenuOpen(false);
-      if (nextPrompt !== currentPrompt) {
-        window.requestAnimationFrame(() => composerEditorRef.current?.focusAtEnd());
-      }
+      scheduleComposerFocus();
     },
     [
       addComposerDraftImages,
       composerDraftTarget,
       composerImagesRef,
       promptRef,
+      scheduleComposerFocus,
       setComposerDraftPrompt,
       takeStashEntry,
     ],
@@ -2039,9 +2034,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
 
   const stashCurrentPrompt = useCallback(async () => {
-    const stashPrompt = promptRef.current.split(INLINE_TERMINAL_CONTEXT_PLACEHOLDER).join("");
+    const stashPrompt = promptTextForStash(promptRef.current);
     const images = [...composerImagesRef.current];
-    if (stashPrompt.trim().length === 0 && images.length === 0) {
+    if (stashPrompt.length === 0 && images.length === 0) {
       setIsStashMenuOpen((open) => !open);
       return;
     }
@@ -2108,11 +2103,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         droppedImageNames,
         unreadableImageNames,
       });
-      if (!finalized.durable) {
+      const finalizationWarning = promptStashFinalizationWarning(finalized);
+      if (finalizationWarning) {
         toastManager.add({
           type: "warning",
-          title: "Stashed images were not saved",
-          description: "The prompt is safe, but its image update exceeded browser storage.",
+          title: finalizationWarning.title,
+          description: finalizationWarning.description,
         });
       }
     } finally {
@@ -2164,6 +2160,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useEffect(() => {
     if (composerMenuOpen) setIsStashMenuOpen(false);
   }, [composerMenuOpen]);
+
+  useEffect(() => {
+    setIsStashMenuOpen(false);
+  }, [prompt]);
 
   // ------------------------------------------------------------------
   // Callbacks: images
@@ -2766,7 +2766,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 entries={stashEntries}
                 onRestore={restoreStashEntry}
                 onDelete={deleteStashEntry}
-                onClose={() => setIsStashMenuOpen(false)}
+                onClose={() => {
+                  setIsStashMenuOpen(false);
+                  scheduleComposerFocus();
+                }}
               />
             ) : null}
 

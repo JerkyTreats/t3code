@@ -51,10 +51,10 @@ export function createBrowseNavigationCoordinator() {
     invalidate(): void {
       generation += 1;
     },
-    async run(load: () => Promise<unknown>, commit: () => void): Promise<boolean> {
+    async run(load: () => Promise<boolean>, commit: () => void): Promise<boolean> {
       const navigationGeneration = ++generation;
-      await load();
-      if (navigationGeneration !== generation) return false;
+      const loaded = await load();
+      if (!loaded || navigationGeneration !== generation) return false;
       commit();
       return true;
     },

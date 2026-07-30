@@ -20,6 +20,7 @@ Connection failures, restarts, partial streams, renderer crashes, and transport 
 - Dropped-event detection performs a bounded recovery instead of applying an incomplete stream.
 - V2 thread synchronization preserves shell-first project state, bounded page loading, deferred payload hydration, and Unicode-safe content chunking.
 - Filesystem browse navigation preloads the target directory before publishing the next visible path.
+- A failed filesystem preload leaves visible navigation unchanged and surfaces one bounded failure notice.
 - A newer browse request or explicit invalidation prevents stale preload completion from changing visible navigation state.
 - Detail, shell, hydration, plan progress, and inference consumers agree on the authoritative retained activity rows.
 - Server projection owns context-window row trimming and retains the latest resolvable row for each turn with provider processed totals intact.
@@ -111,6 +112,7 @@ Current owner modules:
 - Dropped-event tests prove bounded recovery.
 - V2 paging, hydration, and Unicode-safe chunk tests continue to pass.
 - Deferred filesystem navigation tests prove only the newest valid preload commits visible state.
+- Failed preload tests prove unsuccessful query results never commit visible navigation.
 - Diagnostics remain bounded and credential safe under connection and send failures.
 - Renderer recovery tests prove bounded backoff, stability reset, stale recovery cancellation, and clean-exit handling.
 - HTTP tests prove threshold, content negotiation, equivalent decoded bodies, and `Vary` behavior.

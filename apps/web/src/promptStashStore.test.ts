@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { createMemoryStorage, type StateStorage } from "./lib/storage";
 import {
@@ -10,6 +10,8 @@ import {
   convertLegacyPromptStash,
   migrateLegacyPromptStash,
   partitionStashAttachments,
+  resetPromptStashStoreForTest,
+  usePromptStashStore,
 } from "./promptStashStore";
 
 function attachment(id: string, chars: number) {
@@ -61,6 +63,41 @@ describe("prompt stash attachment budgets", () => {
     expect(partitionStashAttachments([first, second, third, tooLarge, overflow])).toEqual({
       kept: [first, second, third],
       droppedNames: ["too-large.png", "overflow.png"],
+    });
+  });
+});
+
+describe("prompt stash image finalization", () => {
+  beforeEach(() => {
+    resetPromptStashStoreForTest();
+  });
+
+  it("reports every image removed by a restore or delete race", () => {
+    const store = usePromptStashStore.getState();
+    usePromptStashStore.setState({
+      entries: [
+        {
+          id: "racing-entry",
+          createdAt: "2026-07-30T00:00:00.000Z",
+          prompt: "restore while encoding",
+          attachments: [],
+          droppedImageNames: [],
+          unreadableImageNames: [],
+          pendingImageCount: 3,
+        },
+      ],
+    });
+    usePromptStashStore.setState({ entries: [] });
+
+    expect(
+      store.finalizeEntryImages("racing-entry", {
+        attachments: [attachment("encoded", 20)],
+        droppedImageNames: ["too-large.png"],
+        unreadableImageNames: ["unreadable.png"],
+      }),
+    ).toEqual({
+      status: "entry-missing",
+      imageNames: ["encoded.png", "too-large.png", "unreadable.png"],
     });
   });
 });

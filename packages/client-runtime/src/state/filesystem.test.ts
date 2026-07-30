@@ -39,8 +39,8 @@ describe("filesystem browse path", () => {
 describe("filesystem browse navigation coordinator", () => {
   it("commits only the latest completed navigation", async () => {
     const coordinator = createBrowseNavigationCoordinator();
-    const first = Promise.withResolvers<void>();
-    const second = Promise.withResolvers<void>();
+    const first = Promise.withResolvers<boolean>();
+    const second = Promise.withResolvers<boolean>();
     const commits: string[] = [];
     const firstRun = coordinator.run(
       () => first.promise,
@@ -51,16 +51,16 @@ describe("filesystem browse navigation coordinator", () => {
       () => commits.push("second"),
     );
 
-    second.resolve();
+    second.resolve(true);
     await expect(secondRun).resolves.toBe(true);
-    first.resolve();
+    first.resolve(true);
     await expect(firstRun).resolves.toBe(false);
     expect(commits).toEqual(["second"]);
   });
 
   it("invalidates pending navigation and preloads connected environments only", async () => {
     const coordinator = createBrowseNavigationCoordinator();
-    const pending = Promise.withResolvers<void>();
+    const pending = Promise.withResolvers<boolean>();
     const run = coordinator.run(
       () => pending.promise,
       () => {
@@ -68,10 +68,24 @@ describe("filesystem browse navigation coordinator", () => {
       },
     );
     coordinator.invalidate();
-    pending.resolve();
+    pending.resolve(true);
     await expect(run).resolves.toBe(false);
     expect(canPreloadBrowsePath("connected")).toBe(true);
     expect(canPreloadBrowsePath("reconnecting")).toBe(false);
     expect(canPreloadBrowsePath(null)).toBe(false);
+  });
+
+  it("does not commit a failed preload", async () => {
+    const coordinator = createBrowseNavigationCoordinator();
+    let committed = false;
+    await expect(
+      coordinator.run(
+        () => Promise.resolve(false),
+        () => {
+          committed = true;
+        },
+      ),
+    ).resolves.toBe(false);
+    expect(committed).toBe(false);
   });
 });
