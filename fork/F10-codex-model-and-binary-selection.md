@@ -21,7 +21,7 @@ Codex provider setup follows the installed Codex app-server capability surface i
 - Settings expose detected supported Codex binaries when available.
 - Binary discovery is bounded to an explicit configured path and normalized process PATH candidates,
   including quoted Windows entries and command shims.
-- Binary version probes bound captured stdout and stderr while continuing to drain child streams.
+- Binary version probes retain at most a `16 KiB` prefix from stdout and stderr while continuing to drain both child streams.
 - Desktop and WSL backends contribute candidates through their hydrated process environments without filesystem-wide scans.
 - An explicit non bare Codex binary path selected by the user remains pinned and must not be silently replaced by another PATH or environment candidate.
 - Desktop launch preserves an explicit configured Codex binary path for the backend child process.
@@ -70,8 +70,8 @@ Codex provider setup follows the installed Codex app-server capability surface i
 - A Codex app-server `model/list` response containing a new model such as `gpt-5.5` appears in the Codex model selector without a code update to the built in fallback list.
 - A Codex app-server `skills/list` response containing an enabled skill appears in provider status and can be used by the composer.
 - App-server initialize sends the resolved Codex CLI version as `clientInfo.version`.
-- Initialize version probes retain only bounded stdout and stderr prefixes while fully draining flooded
-  streams.
+- Initialize version probes retain at most a `16 KiB` prefix from stdout and stderr while fully draining
+  both flooded streams.
 - Probe, session, and text-generation spawns receive the configured launch arguments.
 - Settings show detected supported Codex binaries and selecting one persists its absolute path.
 - Restarting the desktop app keeps the configured Codex binary path for the backend process.

@@ -34,6 +34,8 @@ Thread and sidebar status cues reflect plan state directly instead of collapsing
 - User unsettle writes the active override and clears the settled timestamp. Waking activity clears both fields.
 - User message, live session transition, approval request, and user-input request count as waking activity.
 - Pending approval, pending input, starting session, running session, and a queued turn block settlement.
+- Durable outbox entries in queued, sending, retrying, terminal failure, or acknowledged state block visual settlement until reconciliation removes the exact environment and thread entry.
+- Sidebar V1 and Sidebar V2 fail closed while outbox hydration is incomplete so queued work cannot flash as settled during startup.
 - Queued turn detection uses a two-minute grace and compares the latest user message with latest turn request, start, and completion timestamps.
 - Explicit settled state wins only after active blockers clear. Explicit active state suppresses merged, closed, and inactivity auto-settlement until real activity clears the override.
 - Merged or closed change request state settles only when no active blocker and no explicit active override remains.
@@ -76,6 +78,8 @@ Current owner modules:
 - `apps/web/src/hooks/useSettings.ts`
 - `apps/web/src/sidebarV2Settings.ts`
 - `apps/web/src/hooks/useSettlementNow.ts`
+- `apps/web/src/threadOutbox.ts`
+- `apps/web/src/components/ThreadOutboxCoordinator.tsx`
 - `apps/web/src/clientPersistenceStorage.ts`
 - `apps/desktop/src/settings/DesktopClientSettings.ts`
 - `packages/contracts/src/orchestration.ts`
@@ -106,6 +110,7 @@ Current owner modules:
 - Keep one shared plan progress resolver across both sidebar versions.
 - Route Sidebar V1, Sidebar V2, and command palette project actions through one concrete project launcher.
 - Keep unsupported settlement actions hidden through environment capability checks.
+- Project durable outbox blockers by exact environment and thread identity in both sidebar versions.
 - Do not add snooze fields, commands, events, timers, or user interface in this rebuild.
 
 ## Origin Rebuild Rule
@@ -128,6 +133,7 @@ Current owner modules:
 - Sidebar V2 ordering and pagination keep the active route reachable without activity-driven row movement.
 - Legacy environment descriptors decode settlement support off while current servers advertise it on.
 - Settled policy tests cover explicit state, waking activity, blockers, queued-turn grace, merged or closed state, inactivity, and invalid timestamps.
+- Both sidebar versions keep exact durable outbox work active before hydration, across retry and terminal failure, and until acknowledged work is removed.
 - A schema 38 database upgrades to migration 39 without rewriting migrations 33 through 38.
 - Auto-settle settings decode old data, persist null or integers from 1 through 90, and reject invalid UI values.
 - Client setting patches are schema validated before optimistic snapshot replacement or browser and desktop persistence.

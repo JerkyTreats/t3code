@@ -102,11 +102,21 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Configure Node and Bun compression through exact registered package patches without dependency version drift.
 - Verify identity and compressed response equivalence, reconnect replay continuity, durable command identity, wire reduction, latency, server RSS, and client heap with the fixed local release benchmark.
 
-## F1 Desktop Updater Relaunch
+## F1 Desktop Release And Updater
 
 - Permit updater-controlled quit only after Electron emits its native updater quit event.
 - Keep ordinary app quit and window close on the guarded desktop shutdown path across all platforms.
 - Preserve renderer recovery and fork release identity while updater relaunch authority is active.
+- Derive tag-triggered desktop artifact versions from the release tag unless a manual version is supplied.
+- Accept update metadata and release publication only for the exact fork origin.
+- Require Linux AppImage publication to pass an extracted packaged-entry smoke with isolated state, ordered backend and renderer readiness, bounded shutdown, exact process identity cleanup, and no surviving packaged process.
+
+## F3 Screenshot Capability Exposure
+
+- Expose the desktop screenshot bridge only when preload discovery finds a supported Linux capture adapter.
+- Accept Omarchy screenshot commands and supported general capture tools through the shared adapter.
+- Sample screenshot capability during preload so installing a capture tool requires a desktop restart.
+- Preserve the active prompt, draft ownership, and attachment budgets across capture success and failure.
 
 ## F13 Connect Availability And Managed Tunnel Lifecycle
 
@@ -119,6 +129,18 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Release restart-authorized CLI managed tunnels during server shutdown while keeping allocation and hostname identity for restart.
 - Keep paired-client managed tunnels live across shutdown until a restart reprovision credential path exists.
 - Keep Linux Secret Service selection explicit in both launcher and app startup.
+- Preserve the boolean `setConnectionCatalog` desktop IPC contract for compatibility.
+- Map a false catalog persistence result into the typed `secure-storage-unavailable` reason.
+- Present actionable Linux remediation that names `gnome-keyring`, `libsecret`, login keyring unlock, and a T3 Code restart.
+- Never add a plaintext catalog fallback.
+
+## F15 Durable Outbox And Mobile Browse
+
+- Keep durable local outbox entries active through queued, sending, retrying, terminal failure, and acknowledged states until reconciliation removes the entry.
+- Project outbox activity by exact environment and thread identity and fail closed while hydration is incomplete.
+- Let server settlement take over only after acknowledged local work is removed.
+- Preload mobile folder and clone destinations before publishing visible route or path state.
+- Fail closed for stale explicit mobile environment routes and never retarget another saved environment.
 
 ## F8 Sidebar V2 And Settled Work
 
@@ -130,6 +152,8 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Decode missing settlement capability data as false and advertise support from current servers.
 - Preserve exact environment, project, and thread identity through grouping, project actions, selection, navigation, rename, unread, delete, settle, and unsettle.
 - Keep logical project group labels presentation only.
+- Prevent visual settlement in Sidebar V1 and Sidebar V2 while the exact thread has durable local outbox work.
+- Treat incomplete outbox hydration as active work so settlement cannot flash early during startup.
 - Keep thread snoozing absent.
 
 ## Provider Runtime And Binary Selection
@@ -150,7 +174,7 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Pass quote-aware Codex launch arguments through health probes, sessions, and text generation.
 - Discover Codex binary choices only from the configured path and normalized process PATH entries,
   including quoted Windows paths, command shims, and hydrated desktop and WSL environments.
-- Bound and continuously drain output from every Codex binary version probe.
+- Retain at most a 16 KiB prefix from each Codex binary version probe stream while continuously draining both streams to completion.
 - Keep an explicit configured Codex binary path pinned until the user selects another candidate.
 - Subscribe once per adapter object even when multiple instance ids share a singleton adapter.
 - Recover legacy untagged shared-adapter sessions only from a matching persisted exact-instance binding.
@@ -223,6 +247,10 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Match rendered code against standalone markdown source ranges so raw HTML cannot opt into linkification or create nested anchors.
 - Derive standalone source ranges from the CommonMark AST so blockquote and repeated list containers, fenced code, and four-space indented code cannot pollute parent suffix disambiguation.
 - Track quote-aware multiline raw anchor ranges using HTML non-void anchor semantics, including slash syntax, while leaving safe HTML and heading anchors unchanged.
+- Open Markdown project files without a line target in rendered document mode and keep source mode as an explicit per-file choice.
+- Keep code files in code preview mode.
+- Open line-qualified Markdown links in source mode, clamp and center the requested line, and clear stale highlights.
+- Keep diff virtualization keyed by stable selection identity with header height 33, top padding 0, bottom padding 8, and item gap 8.
 
 ## Feature Spec Contract
 

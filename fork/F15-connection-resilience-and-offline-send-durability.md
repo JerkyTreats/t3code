@@ -12,6 +12,8 @@ Connection failures, restarts, partial streams, renderer crashes, and transport 
 - User sends enter a durable per-environment thread outbox before network dispatch.
 - Every queued send has stable command and message identities across retry, reconnect, reload, and process restart.
 - Acknowledgement removes an outbox entry only after the server has durably accepted its command identity.
+- Durable outbox entries remain active settlement blockers through queued, sending, retrying, terminal failure, and acknowledged states until reconciliation removes the exact environment and thread entry.
+- Settlement projection fails closed while outbox hydration is incomplete, then server settlement takes over after acknowledged local work is removed.
 - Retriable failures remain queued. Terminal failures expose explicit retry and discard actions without silently clearing draft or queue state.
 - Offline drafts and queued prompts survive browser and desktop restart.
 - Provider instance identity and model intent remain stable from draft through outbox delivery and recovery.
@@ -61,6 +63,8 @@ Current owner modules:
 - `apps/web/src/connection/runtime.ts`
 - `apps/web/src/connectionFlightRecorderHistory.ts`
 - `apps/web/src/components/settings/ConnectionFlightRecorder.tsx`
+- `apps/mobile/src/features/projects/AddProjectScreen.tsx`
+- `apps/mobile/src/features/projects/projectBrowseNavigation.ts`
 - `apps/server/src/ws.ts`
 - `apps/server/src/http.ts`
 - `apps/server/src/httpCompression.ts`
@@ -129,6 +133,8 @@ Current owner modules:
 - Claude usage rows without turn ids remain independently visible in V1 and V2 hydration.
 - Deferred filesystem navigation tests prove only the newest valid preload commits visible state.
 - Failed preload tests prove unsuccessful query results never commit visible navigation.
+- Mobile folder and clone-destination navigation preload successfully before publishing the next path or route.
+- Explicit stale mobile environment routes fail closed and never target another saved environment.
 - Diagnostics remain bounded and credential safe under connection and send failures.
 - Renderer recovery tests prove bounded backoff, stability reset, stale recovery cancellation, and clean-exit handling.
 - HTTP tests prove threshold, content negotiation, equivalent decoded bodies, and `Vary` behavior.
@@ -143,6 +149,7 @@ Current owner modules:
 ## Compatibility Checks
 
 - Existing outbox and flight-recorder storage decode without data loss.
+- Sidebar V1 and Sidebar V2 keep exact durable outbox work active before hydration, across retry and terminal failure, and until acknowledged work is removed.
 - Existing clients can remain uncompressed.
 - WebSocket compression is negotiated rather than required.
 - HTTP caches distinguish accepted encodings.

@@ -4,7 +4,7 @@ Date: 2026-07-30
 Branch: product/v030-p7
 Commit Policy: `governance/commit_policy.md`
 Objective: Reconcile v0.0.30 inline file links and diff stability while preserving fork document rendering, virtual plan preview, project surfaces, environment-aware navigation, and inference metrics.
-Status: in progress
+Status: verified
 
 ## Objective Baseline
 
@@ -63,43 +63,68 @@ Status: in progress
 
 | Requirement | Source | Implementation Evidence | Test Evidence | Fuzz Evidence | Comment Or Doc Evidence | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| Conservative inline file links | v0.0.30 and F09 | pending | pending | selected for path classifier inputs | pending | planned |
-| Rich document preservation | F09 | current renderers | pending | selected for mixed markdown blocks | F09 | planned |
-| File and diff stability | v0.0.30 and F09 | pending | pending | selected for navigation sequences | pending | planned |
-| Virtual plan behavior | F09 | current route state | pending | selected for save and close ordering | F09 | planned |
-| Concrete project identity | F14 | pending P5 and P6 | pending | selected for environment changes | F14 | blocked |
-| Safe stale project recovery | F14 | pending | pending | selected for bootstrap ordering | pending | planned |
-| Context-window latest row | F15 and P2 | integrated server behavior | pending | selected for row order | F15 | planned |
-| Inference metric integrity | F14 | current dashboard | pending | selected for usage magnitudes | F14 | planned |
+| Conservative inline file links | v0.0.30 and F09 | `ChatMarkdown.tsx` and `markdown-links.ts` | focused Markdown tests and full web suite | path, parser, raw HTML, and containment cases | F09 and `patch.md` | verified |
+| Rich document preservation | F09 | existing document renderer retained around additive link behavior | focused Markdown tests and full web suite | mixed Markdown blocks and raw HTML cases | F09 | verified |
+| File and diff stability | v0.0.30 and F09 | file reveal ownership helpers and stable diff metrics | focused file, panel-store, and diff tests | reveal replay and navigation sequences | F09 and `patch.md` reconciled | verified |
+| Virtual plan behavior | F09 | plan document action ordering and route return | focused plan document tests and full web suite | save, close, and hidden-footer cases | F09 and `patch.md` reconciled | verified |
+| Concrete project identity | F14 | exact environment plus project surface descriptors | focused project route and store tests | environment and project mismatch cases | F14 and `patch.md` | verified |
+| Safe stale project recovery | F14 | bootstrap reconciliation and synchronous render guards | focused project route and store tests | stale bootstrap and missing-project cases | F14 and `patch.md` | verified |
+| Context-window latest row | F15 and P2 | bounded contiguous projection suffix | 12 focused server tests and full server suite | malformed, paged, null-turn, and byte-limit rows | F15 and `patch.md` | verified |
+| Inference metric integrity | F14 | processed totals with cached input subset classification | focused inference tests and full web suite | cached and provider total magnitudes | F14 and `patch.md` | verified |
 
 ## Worktrees
 
 | Slice | Worktree | Branch | Status | Integration Commit | Notes |
 | --- | --- | --- | --- | --- | --- |
-| P7 integration | `/home/jerkytreats/t3code-v030-p7` | `product/v030-p7` | in progress | pending | central documentation reconciliation, final gates, and review |
-| P7a Markdown links | `/home/jerkytreats/t3code-v030-p7-markdown` | `product/v030-p7-markdown` | ready | pending | conservative inline path classification and rich-rendering preservation |
-| P7b file and diff panels | `/home/jerkytreats/t3code-v030-p7-files` | `product/v030-p7-files` | ready | pending | diff metrics, file reveal, and virtual plan preservation |
-| P7c project and inference | `/home/jerkytreats/t3code-v030-p7-projects` | `product/v030-p7-projects` | ready | pending | stale surfaces, inference accounting, and context-row projection |
+| P7 integration | `/home/jerkytreats/t3code-v030-p7` | `product/v030-p7` | complete | current documentation closeout | central documentation reconciliation, final gates, and review |
+| P7a Markdown links | `/home/jerkytreats/t3code-v030-p7-markdown` | `product/v030-p7-markdown` | complete | `64670eb32` through `9719718f1` | conservative inline path classification and rich-rendering preservation |
+| P7b file and diff panels | `/home/jerkytreats/t3code-v030-p7-files` | `product/v030-p7-files` | complete | `bcb837031` through `85c239ec7` | diff metrics, file reveal, and virtual plan preservation |
+| P7c project and inference | `/home/jerkytreats/t3code-v030-p7-projects` | `product/v030-p7-projects` | complete | `900b6facf` through `c9c5e854b` | stale surfaces, inference accounting, and context-row projection |
 
 ## Gate Evidence
 
 | Gate | Command | Result | Evidence Date | Notes |
 | --- | --- | --- | --- | --- |
+| Focused web | `pnpm --filter @t3tools/web exec vp test run --project unit ...` | pass, 7 files and 106 tests | 2026-07-30 | Markdown, plan, file, diff, store, project route, and inference integration |
+| Focused server | `pnpm --filter t3 exec vp test run src/orchestration/Layers/ProjectionSnapshotQuery.test.ts` | pass, 1 file and 12 tests | 2026-07-30 | initial snapshot and paging retention |
+| Web typecheck | `pnpm --filter @t3tools/web typecheck` | pass | 2026-07-30 | serial rerun after a dependency installation race |
+| Server typecheck | `pnpm --filter t3 typecheck` | pass | 2026-07-30 | no diagnostics |
+| Format | `pnpm fmt` | pass, 2220 files | 2026-07-30 | Node 24 |
+| Lint | `pnpm lint` | pass with known warnings | 2026-07-30 | no errors |
+| Typecheck | `pnpm typecheck` | pass, 15 workspaces | 2026-07-30 | no errors |
+| Test | `pnpm test` | pass | 2026-07-30 | final run has web 1556 tests, server 1504 passed and 7 skipped |
+| Visual browser | T3 collaborative preview | blocked by preview authentication | 2026-07-30 | preview status and open both returned auth required |
 
 ## Commit Evidence
 
 | Scope | Commit | Status | Notes |
 | --- | --- | --- | --- |
+| P7 start | `ac3c65c80` | integrated | implementation ledger |
+| File and diff lane | `bcb837031` through `85c239ec7` | integrated | stable previews, reveal ownership, and plan actions |
+| Project and inference lane | `900b6facf` through `c9c5e854b` | integrated | surface reconciliation and snapshot retention |
+| Markdown lane | `64670eb32` through `9719718f1` | integrated | contained inline code paths and parser alignment |
+| Snapshot review fixes | `089a33425` | integrated | gap-free paging and finite context validation |
+| Markdown reveal review fix | `bee7fd774` | integrated | line-qualified Markdown source reveal |
 
 ## Review Lanes
 
 | Lane | Reviewer | Status | Findings | Notes |
 | --- | --- | --- | --- | --- |
+| Markdown helper closure | fresh helper reviewer | complete | none open | final review at helper commit `c7f46d831` |
+| File and diff helper closure | fresh helper reviewer | complete | none open | final review at helper commit `c188e7ae6` |
+| Project and inference helper closure | fresh helper reviewer | complete | none open | final review at helper commit `8ff6faab6` |
+| Integrated P7 | fresh integration reviewer | complete | three closed | raw snapshot boundary, non-finite context, and Markdown line reveal |
+| Fix review | fresh fix reviewer | complete | one closed | contiguous initial suffix after superseded context omission |
+| Final review | fresh final reviewer | complete | none | 14 server tests, 57 web tests, both package typechecks, and clean diff |
 
 ## Blocking Findings
 
 | ID | Source | Severity | File | Objective Or Policy Basis | Status | Fix Commit | Verification |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| P7-R1 | integrated review | high | `ProjectionSnapshotQuery.ts` | F15 gap-free before-cursor reconstruction | closed | `089a33425` | raw suffix boundary regression |
+| P7-R2 | integrated review | medium | `ProjectionSnapshotQuery.ts` | F15 finite usable-context consistency | closed | `089a33425` | `1e999` SQLite regression |
+| P7-R3 | integrated review | medium | `FilePreviewPanel.tsx` | F09 line-qualified file reveal | closed | `bee7fd774` | Markdown source reveal tests |
+| P7-R4 | fix review | high | `ProjectionSnapshotQuery.ts` | F15 contiguous initial suffix | closed | `089a33425` | preceding plus initial equals full page |
 
 ## Deferred Findings
 
@@ -116,3 +141,7 @@ Status: in progress
 - Context-window trimming must be rebuilt at the current snapshot projection seam. The earlier ledger assumption that P2 already integrated it was disproved by direct code inspection.
 
 ## Closeout
+
+- Runtime changes, focused tests, final full gates, and fresh review are complete.
+- T3 collaborative preview could not authenticate, so visual transport evidence remains unavailable.
+- The approved central closeout reconciles the matching `patch.md` contract and commits the documentation locally.

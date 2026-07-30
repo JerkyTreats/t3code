@@ -31,6 +31,10 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Known local dotted directories such as `.plans` and `conf.d` remain linkable without requiring an explicit relative prefix while arbitrary dotted host shaped roots remain plain code.
 - Only source ranges parsed as standalone markdown inline code can link, so user authored raw HTML attributes cannot opt into linkification or create nested anchors.
 - Raw anchor slash syntax follows HTML non-void element semantics and keeps suppressing inline linkification until the matching close tag.
+- Markdown project files without a line target default to rendered document mode, with source available as an explicit per-file choice.
+- Code files remain code previews and never enter rendered document mode.
+- Line-qualified Markdown links enter source mode so file-link reveals can clamp and center the requested line while clearing stale highlights from earlier reveals.
+- Diff virtualization keeps a stable selection key and uses the measured header height of `33`, top padding of `0`, bottom padding of `8`, and item gap of `8`.
 
 ## Owner Modules
 
@@ -38,11 +42,15 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - `apps/web/src/components/DocumentMarkdownRenderer.tsx`
 - `apps/web/src/components/PlanConversationDocument.tsx`
 - `apps/web/src/components/files/FilePreviewPanel.tsx`
+- `apps/web/src/components/files/fileLineReveal.ts`
+- `apps/web/src/components/files/filePreviewMode.ts`
+- `apps/web/src/components/DiffPanel.tsx`
 - `apps/web/src/components/chat/ProposedPlanCard.tsx`
 - `apps/web/src/components/PlanSidebar.tsx`
 - `apps/web/src/components/ChatView.tsx`
 - `apps/web/src/planPreviewRouteSearch.ts`
 - `apps/web/src/documentMarkdown.ts`
+- `apps/web/src/lib/diffRendering.ts`
 - `apps/web/src/markdown-links.ts`
 - `apps/web/src/routes/_chat.$environmentId.$threadId.tsx`
 - `apps/web/src/index.css`
@@ -94,6 +102,10 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Inline code file links retain line and column labels and disambiguate duplicate basenames by parent suffix.
 - Blockquote and list nested fenced code does not contribute hidden paths to duplicate basename disambiguation.
 - Raw HTML code markers and code nested inside multiline raw anchors remain non-linkable, including anchors written with slash syntax.
+- Markdown project files without a line target open in rendered document mode unless the user explicitly selects source for that file.
+- Code files keep the code preview surface.
+- Line-qualified Markdown links open source, and repeated file-link reveals center the clamped target line and remove stale highlight state.
+- Diff selection remains stable while virtual measurements retain header height `33`, top padding `0`, bottom padding `8`, and item gap `8`.
 
 ## Compatibility Checks
 

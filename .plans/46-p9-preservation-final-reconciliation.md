@@ -4,7 +4,7 @@ Date: 2026-07-30
 Branch: `product/v030-p9`
 Program branch: `product/v0.0.30-origin-rebuild`
 Objective: Prove every protected fork feature survives the origin-only v0.0.30 product rebuild and produce a clean final local handoff.
-Status: runtime verified, governance confirmation pending
+Status: complete
 
 ## Objective Baseline
 
@@ -29,7 +29,7 @@ Status: runtime verified, governance confirmation pending
 
 | Feature | Decision | Final Owner Seam | Compatibility Note | Automated Evidence | Manual Evidence | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| F1 | preserve and rebuild | shared identity, desktop builder, release workflows, artifact supervisor | stable app id and storage with fork release identity | identity, lifecycle, workflow safety, release, and 19 artifact-smoke tests plus final real AppImage smoke | preview unavailable before tab access | verified, documentation pending |
+| F1 | preserve and rebuild | shared identity, desktop builder, release workflows, artifact supervisor | stable app id and storage with fork release identity | identity, lifecycle, workflow safety, release, and 19 artifact-smoke tests plus final real AppImage smoke | preview unavailable before tab access | verified |
 | F2 | preserve | desktop theme adapter and renderer projection | generic source contract with safe fallback | theme parsing, CSS projection, and bridge subscription suites pass | live watcher check unavailable with preview auth failure | verified with watcher coverage debt |
 | F3 | preserve | desktop screenshot adapter and composer attachment flow | delayed complete PNG and clipboard fallback | capture, delayed PNG, clipboard, draft, byte limit, action, and supported plus unsupported host capability suites pass | preview unavailable before tab access | verified |
 | F4 | preserve and rebuild | provider-aware composer state, provider-neutral global prompt stash, attachment queue | atomic legacy migration preserves exact draft provider identity while stash restores into the active draft | stash, draft, keyboard, migration, and attachment suites pass in a 242 test focused run | preview unavailable before tab access | verified with end-to-end coverage debt |
@@ -37,13 +37,13 @@ Status: runtime verified, governance confirmation pending
 | F6 | preserve | origin-only GitHub target resolver | every mutation remains exact origin | missing origin, push mismatch, cross-repository, and issue-target rejection suites pass | local repository checks only | verified |
 | F7 | preserve and rebuild | local worktree, promotion, teardown, close and discard | origin-only push with guarded cleanup | direct server tests prove backup, merge, target push, local cleanup, and conflict retention across 61 GitManager tests | no remote mutation | verified |
 | F8 | preserve and rebuild | shell plan projection, Sidebar V2, settlement policy, durable outbox projection | default-off switch with V1 rollback and snooze deferred | settings, migration, settlement, pagination, selection, plan-progress, exact outbox identity, hydration, and reconciliation suites pass | preview unavailable before tab access | verified |
-| F9 | preserve and rebuild | plan preview, document renderer, file reveal, diff panel | rendered Markdown and stable source reveal coexist | plan copy, download, save, return, headings, links, containment, ranges, and reveal ownership suites pass | preview unavailable before tab access | verified with renderer coverage debt and documentation pending |
+| F9 | preserve and rebuild | plan preview, document renderer, file reveal, diff panel | rendered Markdown and stable source reveal coexist | plan copy, download, save, return, headings, links, containment, ranges, and reveal ownership suites pass | preview unavailable before tab access | verified with renderer coverage debt |
 | F10 | preserve and rebuild | model catalog, bounded binary discovery and version probing, launch configuration | exact selected binary and provider model identity | model, discovery, launch, text generation, isolation, and flooded probe drain suites pass; full repository gates pass | preview unavailable before tab access | verified |
 | F11 | preserve and rebuild | source control provider lane and publish workflow | provider-neutral discovery with origin-only publish | GitHub, GitLab, Azure DevOps, Bitbucket, clone, lookup, publish, conflict, and origin authority suites pass | preview unavailable before tab access | verified with UI integration coverage debt |
 | F12 | preserve and rebuild | provider instance registry and routing | exact same-driver instance identity survives recovery | registry, model isolation, status cache, adapter, and provider service suites pass across 201 focused tests | preview unavailable before tab access | verified |
 | F13 | preserve and rebuild | access management, secure catalog, saved environments, relay | legacy bearer, boolean catalog IPC, and relay data remain compatible | auth, durable snapshot, encrypted catalog, typed capability mapping, remediation, migration, launcher, unlink, generation, limit, and shutdown suites pass | preview unavailable before tab access | verified |
 | F14 | preserve and rebuild | project context, right panel, inference dashboard | concrete environment and project identity remains stable | exact route identity, malformed cleanup, command palette, inference totals, and stale ownership suites pass | preview unavailable before tab access | verified with component integration debt |
-| F15 | preserve and rebuild | outbox, reconciliation, diagnostics, recovery, compression | restart and reconnect semantics remain durable | outbox hydration and settlement projection, synchronization, supervisor, diagnostics, compression, browse, and full acceptance benchmark pass | preview unavailable before tab access | verified, mobile documentation pending |
+| F15 | preserve and rebuild | outbox, reconciliation, diagnostics, recovery, compression | restart and reconnect semantics remain durable | outbox hydration and settlement projection, synchronization, supervisor, diagnostics, compression, browse, and full acceptance benchmark pass | preview unavailable before tab access | verified |
 
 ## Required Gate Set
 
@@ -130,11 +130,11 @@ Status: runtime verified, governance confirmation pending
 | D6 | P9 project audit | Sidebar V1, Sidebar V2, and command palette lack one shared launcher convergence component test | exact environment and project identity helpers and stale ownership suites pass | web follow-up | no runtime defect found |
 | D7 | P9 composer audit | stash restore through offline enqueue, restart, and reconnect lacks one end-to-end browser test | stash, draft, outbox, restart, reconnect, and acceptance benchmark suites pass independently | web follow-up | provider identity boundaries are preserved |
 
-## Governance Blocker
+## Governance Reconciliation
 
-- P7 and P8 feature specs are reconciled in their isolated worktrees.
-- The matching `patch.md` changes require explicit Policy Proposal Flow confirmation before edit and commit.
-- P9 may run every non-governance gate while that confirmation is pending.
+- Explicit Policy Proposal Flow confirmation was received.
+- P7 and P8 feature specs are reconciled with their final runtime evidence.
+- The matching `patch.md` contracts cover release identity, screenshot capability, secure storage, Sidebar settlement, Markdown previews, mobile browse, and bounded provider probes.
 
 ## Closeout
 
@@ -142,4 +142,4 @@ Status: runtime verified, governance confirmation pending
 - All required source, build, desktop, release, artifact, benchmark, isolated startup, and origin-authority gates pass.
 - Fresh feature and cross-domain reviews have no open material runtime finding.
 - The final local AppImage is at `release/p9-final-linux-x64/T3-Code-0.0.30-x86_64.AppImage`.
-- Program documentation closeout remains blocked only on explicit Policy Proposal Flow confirmation for the required matching `patch.md` reconciliation.
+- Program documentation and the authoritative fork delta guide are reconciled.

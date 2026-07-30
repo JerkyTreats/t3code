@@ -19,6 +19,7 @@ Omarchy remains one supported capture adapter, but the product feature is direct
 - Composer chrome exposes screenshot capture as a first class action and attaches the result into the active draft.
 - Desktop bridge exposes screenshot capture only when the host platform can support at least one capture implementation.
 - Linux desktop capability discovery checks executable capture adapters before exposing the screenshot bridge method.
+- Capability discovery runs during desktop preload, so installing a supported capture adapter requires a desktop restart before the bridge is exposed.
 - New screenshot entities may be used for direct attach when they provide or can resolve a PNG `File` and draft preview URL without replacing active draft text.
 
 ## Owner Modules
@@ -60,6 +61,7 @@ Omarchy remains one supported capture adapter, but the product feature is direct
 
 - Screenshot capture works through a supported host adapter when available.
 - Supported Linux hosts expose screenshot capture and Linux hosts without a supported executable adapter omit it.
+- A capture adapter installed after preload is discovered on the next desktop start.
 - Composer receives the captured image as a draft attachment.
 - Failure paths keep clear user facing error handling.
 - Draft text survives screenshot capture and attachment.

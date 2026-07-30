@@ -19,6 +19,7 @@ Auth access management is exposed through Environment HTTP mutations, the durabl
 - Current session revocation remains disabled in the settings UI.
 - Existing paste pairing-link, saved environment reconnect, disconnect, forget, SSH connect, and local-first desktop fallback flows remain unchanged.
 - Desktop saved-environment credentials persist only through the secure connection catalog and never fall back to plaintext.
+- Desktop connection catalog persistence preserves the boolean `setConnectionCatalog` IPC contract and maps false to the typed `secure-storage-unavailable` capability reason.
 - Linux desktop launch selects `gnome-libsecret` unconditionally. Missing Secret Service support is reported as a capability error with actionable guidance rather than as a generic pairing failure.
 - Linux Secret Service guidance names the required `gnome-keyring` and `libsecret` packages, asks the user to start or unlock the login keyring, and directs them to restart T3 Code.
 - T3 Connect is generally available. Signed-out web, desktop, and mobile entry points route to account sign-in without an enrollment or approval waitlist.
@@ -123,6 +124,7 @@ Auth access management is exposed through Environment HTTP mutations, the durabl
 - Linux launcher tests prove `gnome-libsecret` selection.
 - Desktop app startup tests prove `gnome-libsecret` selection.
 - Missing Secret Service support produces a secure-storage capability error and never writes plaintext credentials.
+- A false desktop catalog persistence result retains boolean IPC compatibility and reaches the same typed secure-storage remediation.
 - Web pairing and saved-environment presentation converts that typed capability failure into actionable Linux Secret Service remediation.
 - Signed-out web and mobile Connect prompts route to sign-in, including the legacy mobile waitlist deep link.
 - Relay credential tests require an active matching environment link.
