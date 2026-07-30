@@ -2,6 +2,7 @@
 
 import {
   scopedProjectKey,
+  scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
@@ -616,7 +617,9 @@ function OpenCommandPaletteDialog(props: {
   const projectCwdByScopedKey = useMemo(() => buildProjectCwdByScopedKey(projects), [projects]);
   const projectTitleByScopedKey = useMemo(() => buildProjectTitleByScopedKey(projects), [projects]);
 
-  const activeThreadId = activeThread?.id;
+  const activeThreadKey = activeThread
+    ? scopedThreadKey(scopeThreadRef(activeThread.environmentId, activeThread.id))
+    : null;
   const currentProjectEnvironmentId =
     activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null;
   const currentProjectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? null;
@@ -837,7 +840,7 @@ function OpenCommandPaletteDialog(props: {
     () =>
       buildThreadActionItems({
         threads,
-        ...(activeThreadId ? { activeThreadId } : {}),
+        ...(activeThreadKey ? { activeThreadKey } : {}),
         projectTitleByScopedKey,
         sortOrder: clientSettings.sidebarThreadSortOrder,
         icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
@@ -851,7 +854,7 @@ function OpenCommandPaletteDialog(props: {
         },
       }),
     [
-      activeThreadId,
+      activeThreadKey,
       clientSettings.sidebarThreadSortOrder,
       navigate,
       projectTitleByScopedKey,

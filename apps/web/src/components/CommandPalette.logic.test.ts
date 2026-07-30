@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import {
+  scopedProjectKey,
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
 import type { Thread } from "../types";
 import {
   buildProjectCwdByScopedKey,
@@ -110,8 +115,8 @@ describe("buildThreadActionItems", () => {
       });
 
       expect(items.map((item) => item.value)).toEqual([
-        "thread:thread-older",
-        "thread:thread-newer",
+        "thread:environment-local:thread-older",
+        "thread:environment-local:thread-newer",
       ]);
       expect(items[0]?.timestamp).toBe("1d ago");
       expect(items[1]?.timestamp).toBe("5d ago");
@@ -152,8 +157,8 @@ describe("buildThreadActionItems", () => {
     expect(groups).toHaveLength(1);
     expect(groups[0]?.value).toBe("threads-search");
     expect(groups[0]?.items.map((item) => item.value)).toEqual([
-      "thread:thread-title-match",
-      "thread:thread-context-match",
+      "thread:environment-local:thread-title-match",
+      "thread:environment-local:thread-context-match",
     ]);
   });
 
@@ -208,6 +213,46 @@ describe("buildThreadActionItems", () => {
       runThread: async (_thread) => undefined,
     });
 
-    expect(items.map((item) => item.value)).toEqual(["thread:thread-active"]);
+    expect(items.map((item) => item.value)).toEqual(["thread:environment-local:thread-active"]);
+  });
+
+  it("scopes item identity and active state across colliding thread ids", async () => {
+    const remoteEnvironmentId = EnvironmentId.make("environment-remote");
+    const sharedThreadId = ThreadId.make("thread-shared");
+    const opened: string[] = [];
+    const items = buildThreadActionItems({
+      threads: [
+        makeThread({
+          environmentId: LOCAL_ENVIRONMENT_ID,
+          id: sharedThreadId,
+          title: "Local thread",
+          updatedAt: "2026-03-20T00:00:00.000Z",
+        }),
+        makeThread({
+          environmentId: remoteEnvironmentId,
+          id: sharedThreadId,
+          title: "Remote thread",
+          updatedAt: "2026-03-21T00:00:00.000Z",
+        }),
+      ],
+      activeThreadKey: scopedThreadKey(scopeThreadRef(remoteEnvironmentId, sharedThreadId)),
+      projectTitleByScopedKey: new Map([[LOCAL_PROJECT_KEY, "Project"]]),
+      sortOrder: "updated_at",
+      icon: null,
+      runThread: async (thread) => {
+        opened.push(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)));
+      },
+    });
+
+    expect(items.map((item) => item.value)).toEqual([
+      "thread:environment-remote:thread-shared",
+      "thread:environment-local:thread-shared",
+    ]);
+    expect(items[0]?.description).toContain("Current thread");
+    expect(items[1]?.description).not.toContain("Current thread");
+
+    await items[0]?.run();
+    await items[1]?.run();
+    expect(opened).toEqual(["environment-remote:thread-shared", "environment-local:thread-shared"]);
   });
 });

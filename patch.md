@@ -188,6 +188,7 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Require successful default destination preload before exposing clone confirmation.
 - Guard repository lookup with the same browse generation and suppress superseded failure notices.
 - Key command palette project metadata by exact environment plus project identity.
+- Key command palette thread items and active state by exact environment plus thread identity.
 - Route Sidebar V1, Sidebar V2, and command palette project-panel actions through one concrete project launcher.
 - Filter launcher threads by exact environment and project identity before opening the right panel or navigating.
 

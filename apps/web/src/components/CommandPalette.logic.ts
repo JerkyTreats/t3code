@@ -1,12 +1,17 @@
 import { type KeybindingCommand, type FilesystemBrowseEntry } from "@t3tools/contracts";
 import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
-import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
+import {
+  scopedProjectKey,
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { type ReactNode } from "react";
 import { sortThreads } from "../lib/threadSort";
 import { formatRelativeTimeLabel } from "../timestampFormat";
-import { type Project, type SidebarThreadSummary, type Thread } from "../types";
+import { type Project, type SidebarThreadSummary } from "../types";
 
 export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-muted-foreground/80";
@@ -112,7 +117,7 @@ export type BuildThreadActionItemsThread = Pick<
 
 export function buildThreadActionItems<TThread extends BuildThreadActionItemsThread>(input: {
   threads: ReadonlyArray<TThread>;
-  activeThreadId?: Thread["id"];
+  activeThreadKey?: string;
   projectTitleByScopedKey: ReadonlyMap<string, string>;
   sortOrder: SidebarThreadSortOrder;
   icon: ReactNode;
@@ -131,6 +136,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
     input.limit === undefined ? sortedThreads : sortedThreads.slice(0, input.limit);
 
   return visibleThreads.map((thread) => {
+    const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
     const projectTitle = input.projectTitleByScopedKey.get(
       scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId)),
     );
@@ -142,7 +148,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
     if (thread.branch) {
       descriptionParts.push(`#${thread.branch}`);
     }
-    if (thread.id === input.activeThreadId) {
+    if (threadKey === input.activeThreadKey) {
       descriptionParts.push("Current thread");
     }
 
@@ -152,7 +158,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
     return Object.assign(
       {
         kind: "action" as const,
-        value: `thread:${thread.id}`,
+        value: `thread:${threadKey}`,
         searchTerms: [thread.title, projectTitle ?? ``, thread.branch ?? ``],
         title: thread.title,
         description: descriptionParts.join(` · `),
