@@ -8,6 +8,7 @@ import {
   MAX_STASH_IMAGE_DATA_URL_CHARS,
   PROMPT_STASH_STORAGE_KEY,
   convertLegacyPromptStash,
+  finalizePromptStashEntryImages,
   migrateLegacyPromptStash,
   partitionStashAttachments,
   resetPromptStashStoreForTest,
@@ -99,6 +100,38 @@ describe("prompt stash image finalization", () => {
       status: "entry-missing",
       imageNames: ["encoded.png", "too-large.png", "unreadable.png"],
     });
+  });
+
+  it("reports every normalized or budget-dropped image after a durable write", () => {
+    const result = finalizePromptStashEntryImages({
+      entries: [
+        {
+          id: "durable-entry",
+          createdAt: "2026-07-30T00:00:00.000Z",
+          prompt: "keep the readable image",
+          attachments: [],
+          droppedImageNames: [],
+          unreadableImageNames: [],
+          pendingImageCount: 4,
+        },
+      ],
+      entryId: "durable-entry",
+      images: {
+        attachments: [
+          attachment("kept", 20),
+          attachment("over-budget", MAX_STASH_IMAGE_DATA_URL_CHARS + 1),
+        ],
+        droppedImageNames: ["too-large.png"],
+        unreadableImageNames: ["unreadable.png"],
+      },
+      persist: () => true,
+    });
+
+    expect(result.finalization).toEqual({
+      status: "images-dropped",
+      imageNames: ["too-large.png", "unreadable.png", "over-budget.png"],
+    });
+    expect(result.entries?.[0]?.attachments.map((item) => item.name)).toEqual(["kept.png"]);
   });
 });
 

@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { Thread } from "../types";
 import {
+  buildProjectCwdByScopedKey,
+  buildProjectTitleByScopedKey,
   buildThreadActionItems,
   filterCommandPaletteGroups,
   type CommandPaletteGroup,
@@ -9,6 +12,49 @@ import {
 
 const LOCAL_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 const PROJECT_ID = ProjectId.make("project-1");
+const LOCAL_PROJECT_KEY = scopedProjectKey(scopeProjectRef(LOCAL_ENVIRONMENT_ID, PROJECT_ID));
+
+describe("buildProjectCwdByScopedKey", () => {
+  it("keeps colliding project ids isolated by exact environment identity", () => {
+    const otherEnvironmentId = EnvironmentId.make("environment-remote");
+    const cwdByProject = buildProjectCwdByScopedKey([
+      {
+        environmentId: LOCAL_ENVIRONMENT_ID,
+        id: PROJECT_ID,
+        workspaceRoot: "/local/project",
+      },
+      {
+        environmentId: otherEnvironmentId,
+        id: PROJECT_ID,
+        workspaceRoot: "/remote/project",
+      },
+    ]);
+
+    expect(
+      cwdByProject.get(scopedProjectKey(scopeProjectRef(LOCAL_ENVIRONMENT_ID, PROJECT_ID))),
+    ).toBe("/local/project");
+    expect(
+      cwdByProject.get(scopedProjectKey(scopeProjectRef(otherEnvironmentId, PROJECT_ID))),
+    ).toBe("/remote/project");
+
+    const titleByProject = buildProjectTitleByScopedKey([
+      {
+        environmentId: LOCAL_ENVIRONMENT_ID,
+        id: PROJECT_ID,
+        title: "Local project",
+      },
+      {
+        environmentId: otherEnvironmentId,
+        id: PROJECT_ID,
+        title: "Remote project",
+      },
+    ]);
+    expect(titleByProject.get(LOCAL_PROJECT_KEY)).toBe("Local project");
+    expect(
+      titleByProject.get(scopedProjectKey(scopeProjectRef(otherEnvironmentId, PROJECT_ID))),
+    ).toBe("Remote project");
+  });
+});
 
 function makeThread(overrides: Partial<Thread> = {}): Thread {
   return {
@@ -57,7 +103,7 @@ describe("buildThreadActionItems", () => {
             updatedAt: "2026-03-20T00:00:00.000Z",
           }),
         ],
-        projectTitleById: new Map([[PROJECT_ID, "Project"]]),
+        projectTitleByScopedKey: new Map([[LOCAL_PROJECT_KEY, "Project"]]),
         sortOrder: "updated_at",
         icon: null,
         runThread: async (_thread) => undefined,
@@ -89,7 +135,7 @@ describe("buildThreadActionItems", () => {
           updatedAt: "2026-03-19T00:00:00.000Z",
         }),
       ],
-      projectTitleById: new Map([[PROJECT_ID, "Project"]]),
+      projectTitleByScopedKey: new Map([[LOCAL_PROJECT_KEY, "Project"]]),
       sortOrder: "updated_at",
       icon: null,
       runThread: async (_thread) => undefined,
@@ -156,7 +202,7 @@ describe("buildThreadActionItems", () => {
           updatedAt: "2026-03-20T00:00:00.000Z",
         }),
       ],
-      projectTitleById: new Map([[PROJECT_ID, "Project"]]),
+      projectTitleByScopedKey: new Map([[LOCAL_PROJECT_KEY, "Project"]]),
       sortOrder: "updated_at",
       icon: null,
       runThread: async (_thread) => undefined,

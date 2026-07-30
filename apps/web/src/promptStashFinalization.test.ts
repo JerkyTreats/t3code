@@ -24,4 +24,17 @@ describe("prompt stash finalization warnings", () => {
     expect(warning?.description).toContain("cannot be recovered from the stash");
     expect(warning?.description).toContain("Reattach");
   });
+
+  it("names images dropped during otherwise durable finalization", () => {
+    expect(
+      promptStashFinalizationWarning({
+        status: "images-dropped",
+        imageNames: ["too-large.png", "unreadable.png"],
+      }),
+    ).toEqual({
+      title: "Stashed images were not saved",
+      description:
+        "too-large.png, unreadable.png could not fit within stash limits or could not be read. The text remains stashed without those images.",
+    });
+  });
 });

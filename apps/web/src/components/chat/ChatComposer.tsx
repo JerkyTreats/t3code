@@ -93,6 +93,7 @@ import { ComposerRichDraftToolbar } from "./ComposerRichDraftToolbar";
 import { ComposerTopActions } from "./ComposerTopActions";
 import { ComposerStashBadge } from "./ComposerStashBadge";
 import { ComposerStashMenu } from "./ComposerStashMenu";
+import { closeComposerStashMenu } from "./composerStashMenuFocus";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -1010,6 +1011,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerSurfaceRef = useRef<HTMLDivElement>(null);
   const composerSelectLockRef = useRef(false);
   const composerMenuOpenRef = useRef(false);
+  const isStashMenuOpenRef = useRef(false);
   const composerMenuItemsRef = useRef<ComposerCommandItem[]>([]);
   const activeComposerMenuItemRef = useRef<ComposerCommandItem | null>(null);
   const composerBlurFrameRef = useRef<number | null>(null);
@@ -1946,6 +1948,30 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const takeStashEntry = usePromptStashStore((state) => state.takeEntry);
   const finalizeStashEntryImages = usePromptStashStore((state) => state.finalizeEntryImages);
 
+  const openStashMenu = useCallback(() => {
+    isStashMenuOpenRef.current = true;
+    setIsStashMenuOpen(true);
+  }, []);
+
+  const closeStashMenu = useCallback(() => {
+    closeComposerStashMenu({
+      isOpen: isStashMenuOpenRef.current,
+      markClosed: () => {
+        isStashMenuOpenRef.current = false;
+        setIsStashMenuOpen(false);
+      },
+      restoreFocus: scheduleComposerFocus,
+    });
+  }, [scheduleComposerFocus]);
+
+  const toggleStashMenu = useCallback(() => {
+    if (isStashMenuOpenRef.current) {
+      closeStashMenu();
+      return;
+    }
+    openStashMenu();
+  }, [closeStashMenu, openStashMenu]);
+
   const restoreStashEntry = useCallback(
     (entry: PromptStashEntry) => {
       const result = takeStashEntry(entry.id);
@@ -2005,15 +2031,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           description: missing.join(", "),
         });
       }
-      setIsStashMenuOpen(false);
-      scheduleComposerFocus();
+      closeStashMenu();
     },
     [
       addComposerDraftImages,
       composerDraftTarget,
+      closeStashMenu,
       composerImagesRef,
       promptRef,
-      scheduleComposerFocus,
       setComposerDraftPrompt,
       takeStashEntry,
     ],
@@ -2037,7 +2062,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const stashPrompt = promptTextForStash(promptRef.current);
     const images = [...composerImagesRef.current];
     if (stashPrompt.length === 0 && images.length === 0) {
-      setIsStashMenuOpen((open) => !open);
+      toggleStashMenu();
       return;
     }
 
@@ -2121,6 +2146,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     finalizeStashEntryImages,
     persistStashEntry,
     promptRef,
+    toggleStashMenu,
   ]);
 
   useEffect(() => {
@@ -2158,12 +2184,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   useEffect(() => {
-    if (composerMenuOpen) setIsStashMenuOpen(false);
-  }, [composerMenuOpen]);
+    if (composerMenuOpen || isComposerApprovalState) closeStashMenu();
+  }, [closeStashMenu, composerMenuOpen, isComposerApprovalState]);
 
   useEffect(() => {
-    setIsStashMenuOpen(false);
-  }, [prompt]);
+    closeStashMenu();
+  }, [closeStashMenu, prompt]);
 
   // ------------------------------------------------------------------
   // Callbacks: images
@@ -2758,7 +2784,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             <ComposerStashBadge
               count={stashEntries.length}
               active={isStashMenuOpen}
-              onToggle={() => setIsStashMenuOpen((open) => !open)}
+              onToggle={toggleStashMenu}
             />
 
             {isStashMenuOpen && !composerMenuOpen && !isComposerApprovalState ? (
@@ -2766,10 +2792,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 entries={stashEntries}
                 onRestore={restoreStashEntry}
                 onDelete={deleteStashEntry}
-                onClose={() => {
-                  setIsStashMenuOpen(false);
-                  scheduleComposerFocus();
-                }}
+                onClose={closeStashMenu}
               />
             ) : null}
 

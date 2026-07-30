@@ -23,7 +23,7 @@ export function promptStashFinalizationWarning(
     case "images-dropped":
       return {
         title: "Stashed images were not saved",
-        description: `${imageLabel(result.imageNames)} exceeded available browser storage. The text remains stashed without those images.`,
+        description: `${imageLabel(result.imageNames)} could not fit within stash limits or could not be read. The text remains stashed without those images.`,
       };
     case "persistence-failed":
       return {

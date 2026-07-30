@@ -22,6 +22,8 @@ Connection failures, restarts, partial streams, renderer crashes, and transport 
 - Filesystem browse navigation preloads the target directory before publishing the next visible path.
 - A failed filesystem preload leaves visible navigation unchanged and surfaces one bounded failure notice.
 - A newer browse request or explicit invalidation prevents stale preload completion from changing visible navigation state.
+- Clone confirmation remains on the repository step until its default destination preload succeeds.
+- Repository lookup and destination preload share one generation guard, and only the current failure emits a notice.
 - Detail, shell, hydration, plan progress, and inference consumers agree on the authoritative retained activity rows.
 - Server projection owns context-window row trimming and retains the latest resolvable row for each turn with provider processed totals intact.
 - Connection diagnostics and the persistent flight recorder remain bounded, structured, sanitized, and free of credentials.

@@ -15,6 +15,7 @@ The right panel provides compact global project context while `Open a surface` l
 - Standalone project management routes are compatibility or deep link surfaces, not the expected entrypoint.
 - Sidebar and command palette project actions open the unified right panel for the intended concrete project.
 - Project routes preserve concrete project identity, including environment identity when multiple environments can expose projects with overlapping ids.
+- Command palette project titles and working directories use exact environment plus project identity.
 - Logical project grouping remains presentation only and must not become the source of workspace path, repository identity, or project route decisions.
 - Switching between Sidebar V1 and Sidebar V2 changes presentation only and preserves concrete environment and project identity.
 - The right panel header exposes compact global project information such as project name, workspace path, repository summary, environment, latest active thread, editor actions, and project script entrypoints.

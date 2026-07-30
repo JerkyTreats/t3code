@@ -29,7 +29,7 @@ The composer owns its local draft state and preserves rich draft behavior under 
 - Migration strips provider instance and model fields, caps the merged queue at 20 entries, and treats the discarded tail as oldest-first eviction.
 - Image finalization reports an explicit saved, missing entry, dropped, or persistence failure outcome.
 - Images that finish after their stash entry is restored or deleted are named in a visible warning.
-- The stash menu uses one focused listbox with active-descendant keyboard navigation and focus-visible destructive controls.
+- The stash menu uses one focused listbox with active-descendant navigation, Enter restore, Delete removal, and one focus-restoring close path.
 
 ## Owner Modules
 
@@ -50,6 +50,7 @@ Current owner modules:
 - `apps/web/src/components/chat/ComposerStashBadge.tsx`
 - `apps/web/src/components/chat/ComposerStashMenu.tsx`
 - `apps/web/src/components/chat/composerStashMenuKeyboard.ts`
+- `apps/web/src/components/chat/composerStashMenuFocus.ts`
 - `apps/web/src/lib/composerPathSearchState.ts`
 - `packages/client-runtime/src/state/composerPathSearch.ts`
 - `packages/contracts/src/keybindings.ts`

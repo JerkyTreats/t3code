@@ -1,5 +1,6 @@
 import { type KeybindingCommand, type FilesystemBrowseEntry } from "@t3tools/contracts";
 import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { type ReactNode } from "react";
@@ -10,6 +11,28 @@ import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-muted-foreground/80";
 export const ADDON_ICON_CLASS = "size-4";
+
+export function buildProjectCwdByScopedKey(
+  projects: ReadonlyArray<Pick<Project, "environmentId" | "id" | "workspaceRoot">>,
+): ReadonlyMap<string, string> {
+  return new Map(
+    projects.map((project) => [
+      scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
+      project.workspaceRoot,
+    ]),
+  );
+}
+
+export function buildProjectTitleByScopedKey(
+  projects: ReadonlyArray<Pick<Project, "environmentId" | "id" | "title">>,
+): ReadonlyMap<string, string> {
+  return new Map(
+    projects.map((project) => [
+      scopedProjectKey(scopeProjectRef(project.environmentId, project.id)),
+      project.title,
+    ]),
+  );
+}
 
 export interface CommandPaletteItem {
   readonly kind: "action" | "submenu";
@@ -90,7 +113,7 @@ export type BuildThreadActionItemsThread = Pick<
 export function buildThreadActionItems<TThread extends BuildThreadActionItemsThread>(input: {
   threads: ReadonlyArray<TThread>;
   activeThreadId?: Thread["id"];
-  projectTitleById: ReadonlyMap<Project["id"], string>;
+  projectTitleByScopedKey: ReadonlyMap<string, string>;
   sortOrder: SidebarThreadSortOrder;
   icon: ReactNode;
   /** Optional content rendered inline before the title text per-thread. */
@@ -108,7 +131,9 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
     input.limit === undefined ? sortedThreads : sortedThreads.slice(0, input.limit);
 
   return visibleThreads.map((thread) => {
-    const projectTitle = input.projectTitleById.get(thread.projectId);
+    const projectTitle = input.projectTitleByScopedKey.get(
+      scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId)),
+    );
     const descriptionParts: string[] = [];
 
     if (projectTitle) {

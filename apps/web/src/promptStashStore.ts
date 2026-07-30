@@ -304,6 +304,91 @@ export type PromptStashImageFinalization =
   | { readonly status: "images-dropped"; readonly imageNames: ReadonlyArray<string> }
   | { readonly status: "persistence-failed"; readonly imageNames: ReadonlyArray<string> };
 
+interface FinalizePromptStashEntryImagesInput {
+  readonly entries: ReadonlyArray<PromptStashEntry>;
+  readonly entryId: string;
+  readonly images: {
+    readonly attachments: ReadonlyArray<PersistedComposerImageAttachmentType>;
+    readonly droppedImageNames: ReadonlyArray<string>;
+    readonly unreadableImageNames: ReadonlyArray<string>;
+  };
+  readonly persist: (entries: ReadonlyArray<PromptStashEntry>) => boolean;
+}
+
+export interface FinalizePromptStashEntryImagesResult {
+  readonly finalization: PromptStashImageFinalization;
+  readonly entries: ReadonlyArray<PromptStashEntry> | null;
+}
+
+export function finalizePromptStashEntryImages(
+  input: FinalizePromptStashEntryImagesInput,
+): FinalizePromptStashEntryImagesResult {
+  const allImageNames = [
+    ...input.images.attachments.map((attachment) => attachment.name),
+    ...input.images.droppedImageNames,
+    ...input.images.unreadableImageNames,
+  ];
+  const index = input.entries.findIndex((candidate) => candidate.id === input.entryId);
+  if (index < 0) {
+    return {
+      finalization: { status: "entry-missing", imageNames: allImageNames },
+      entries: null,
+    };
+  }
+  const partition = partitionStashAttachments(input.images.attachments);
+  const droppedImageNames = [
+    ...input.images.droppedImageNames,
+    ...input.images.unreadableImageNames,
+    ...partition.droppedNames,
+  ];
+  const nextEntries = [...input.entries];
+  const existing = nextEntries[index];
+  if (!existing) {
+    return {
+      finalization: { status: "entry-missing", imageNames: allImageNames },
+      entries: null,
+    };
+  }
+  nextEntries[index] = {
+    ...existing,
+    attachments: partition.kept,
+    droppedImageNames: [...input.images.droppedImageNames, ...partition.droppedNames],
+    unreadableImageNames: [...input.images.unreadableImageNames],
+    pendingImageCount: 0,
+  };
+  if (input.persist(nextEntries)) {
+    return {
+      finalization:
+        droppedImageNames.length > 0
+          ? { status: "images-dropped", imageNames: droppedImageNames }
+          : { status: "saved" },
+      entries: nextEntries,
+    };
+  }
+
+  const fallbackEntries = [...input.entries];
+  fallbackEntries[index] = {
+    ...existing,
+    attachments: [],
+    droppedImageNames: [
+      ...input.images.droppedImageNames,
+      ...input.images.attachments.map((attachment) => attachment.name),
+    ],
+    unreadableImageNames: [...input.images.unreadableImageNames],
+    pendingImageCount: 0,
+  };
+  if (input.persist(fallbackEntries)) {
+    return {
+      finalization: { status: "images-dropped", imageNames: allImageNames },
+      entries: fallbackEntries,
+    };
+  }
+  return {
+    finalization: { status: "persistence-failed", imageNames: allImageNames },
+    entries: null,
+  };
+}
+
 export const usePromptStashStore = create<PromptStashStoreState>()((set, get) => ({
   entries: readInitialEntries(),
   stashEntry: (entry) => {
@@ -326,44 +411,15 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
     return { entry, durable: true };
   },
   finalizeEntryImages: (entryId, images) => {
-    const imageNames = [
-      ...images.attachments.map((attachment) => attachment.name),
-      ...images.droppedImageNames,
-      ...images.unreadableImageNames,
-    ];
-    const index = get().entries.findIndex((candidate) => candidate.id === entryId);
-    if (index < 0) return { status: "entry-missing", imageNames };
-    const partition = partitionStashAttachments(images.attachments);
-    const nextEntries = [...get().entries];
-    const existing = nextEntries[index];
-    if (!existing) return { status: "entry-missing", imageNames };
-    nextEntries[index] = {
-      ...existing,
-      attachments: partition.kept,
-      droppedImageNames: [...images.droppedImageNames, ...partition.droppedNames],
-      unreadableImageNames: [...images.unreadableImageNames],
-      pendingImageCount: 0,
-    };
-    if (!baseStorage.durable || !writeAndVerifyEntries(baseStorage.storage, nextEntries)) {
-      const fallbackEntries = [...get().entries];
-      fallbackEntries[index] = {
-        ...existing,
-        attachments: [],
-        droppedImageNames: [
-          ...images.droppedImageNames,
-          ...images.attachments.map((attachment) => attachment.name),
-        ],
-        unreadableImageNames: [...images.unreadableImageNames],
-        pendingImageCount: 0,
-      };
-      if (baseStorage.durable && writeAndVerifyEntries(baseStorage.storage, fallbackEntries)) {
-        set({ entries: fallbackEntries });
-        return { status: "images-dropped", imageNames };
-      }
-      return { status: "persistence-failed", imageNames };
-    }
-    set({ entries: nextEntries });
-    return { status: "saved" };
+    const result = finalizePromptStashEntryImages({
+      entries: get().entries,
+      entryId,
+      images,
+      persist: (entries) =>
+        baseStorage.durable && writeAndVerifyEntries(baseStorage.storage, entries),
+    });
+    if (result.entries) set({ entries: result.entries });
+    return result.finalization;
   },
 }));
 

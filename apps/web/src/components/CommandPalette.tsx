@@ -1,6 +1,10 @@
 "use client";
 
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  scopedProjectKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
 import {
   canPreloadBrowsePath,
   createBrowseNavigationCoordinator,
@@ -17,7 +21,6 @@ import {
   type DesktopWslState,
   type EnvironmentId,
   type FilesystemBrowseResult,
-  type ProjectId,
   ProviderInstanceId,
   type SourceControlDiscoveryResult,
   type SourceControlProviderKind,
@@ -97,6 +100,8 @@ import {
 import {
   ADDON_ICON_CLASS,
   buildBrowseGroups,
+  buildProjectCwdByScopedKey,
+  buildProjectTitleByScopedKey,
   buildProjectActionItems,
   buildRootGroups,
   buildThreadActionItems,
@@ -168,6 +173,15 @@ type AddProjectRemoteProviderKind = Extract<
   "github" | "gitlab" | "bitbucket" | "azure-devops"
 >;
 type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
+
+interface BrowseNavigationFailure {
+  readonly title: string;
+  readonly description: string;
+}
+
+type BrowsePreloadResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly failure: BrowseNavigationFailure | null };
 
 type AddProjectCloneFlow =
   | {
@@ -599,23 +613,19 @@ function OpenCommandPaletteDialog(props: {
     [environments],
   );
 
-  const projectCwdById = useMemo(
-    () =>
-      new Map<ProjectId, string>(projects.map((project) => [project.id, project.workspaceRoot])),
-    [projects],
-  );
-  const projectTitleById = useMemo(
-    () => new Map<ProjectId, string>(projects.map((project) => [project.id, project.title])),
-    [projects],
-  );
+  const projectCwdByScopedKey = useMemo(() => buildProjectCwdByScopedKey(projects), [projects]);
+  const projectTitleByScopedKey = useMemo(() => buildProjectTitleByScopedKey(projects), [projects]);
 
   const activeThreadId = activeThread?.id;
   const currentProjectEnvironmentId =
     activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null;
   const currentProjectId = activeThread?.projectId ?? activeDraftThread?.projectId ?? null;
-  const currentProjectCwd = currentProjectId
-    ? (projectCwdById.get(currentProjectId) ?? null)
-    : null;
+  const currentProjectCwd =
+    currentProjectEnvironmentId && currentProjectId
+      ? (projectCwdByScopedKey.get(
+          scopedProjectKey(scopeProjectRef(currentProjectEnvironmentId, currentProjectId)),
+        ) ?? null)
+      : null;
   const currentProjectCwdForBrowse =
     browseEnvironmentId && currentProjectEnvironmentId === browseEnvironmentId
       ? currentProjectCwd
@@ -650,29 +660,27 @@ function OpenCommandPaletteDialog(props: {
       partialPath: string,
       environmentId: EnvironmentId | null = browseEnvironmentId,
       cwd: string | null = currentProjectCwdForBrowse,
-    ): Promise<boolean> => {
+    ): Promise<BrowsePreloadResult> => {
       if (!environmentId) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
+        return {
+          ok: false,
+          failure: {
             title: "Unable to browse folder",
             description: "No environment is available for this filesystem.",
-          }),
-        );
-        return false;
+          },
+        };
       }
       const environment = environments.find(
         (candidate) => candidate.environmentId === environmentId,
       );
       if (!canPreloadBrowsePath(environment?.connection.phase)) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
+        return {
+          ok: false,
+          failure: {
             title: "Unable to browse folder",
             description: `${environment?.label ?? "The selected environment"} is not connected.`,
-          }),
-        );
-        return false;
+          },
+        };
       }
       const result = await loadBrowsePath({
         environmentId,
@@ -682,20 +690,47 @@ function OpenCommandPaletteDialog(props: {
         },
       });
       if (result._tag === "Failure") {
-        if (!isAtomCommandInterrupted(result)) {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Unable to browse folder",
-              description: errorMessage(squashAtomCommandFailure(result)),
-            }),
-          );
-        }
-        return false;
+        return {
+          ok: false,
+          failure: isAtomCommandInterrupted(result)
+            ? null
+            : {
+                title: "Unable to browse folder",
+                description: errorMessage(squashAtomCommandFailure(result)),
+              },
+        };
       }
-      return true;
+      return { ok: true };
     },
     [browseEnvironmentId, currentProjectCwdForBrowse, environments, loadBrowsePath],
+  );
+
+  const reportBrowseNavigationFailure = useCallback((failure: BrowseNavigationFailure): void => {
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: failure.title,
+        description: failure.description,
+      }),
+    );
+  }, []);
+
+  const runBrowseNavigation = useCallback(
+    async (load: () => Promise<BrowsePreloadResult>, commit: () => void): Promise<boolean> => {
+      let failure: BrowseNavigationFailure | null = null;
+      return browseNavigation.run(
+        async () => {
+          const result = await load();
+          if (!result.ok) failure = result.failure;
+          return result.ok;
+        },
+        commit,
+        () => {
+          if (failure) reportBrowseNavigationFailure(failure);
+        },
+      );
+    },
+    [browseNavigation, reportBrowseNavigationFailure],
   );
 
   const openProjectFromSearch = useMemo(
@@ -803,7 +838,7 @@ function OpenCommandPaletteDialog(props: {
       buildThreadActionItems({
         threads,
         ...(activeThreadId ? { activeThreadId } : {}),
-        projectTitleById,
+        projectTitleByScopedKey,
         sortOrder: clientSettings.sidebarThreadSortOrder,
         icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
         renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
@@ -815,7 +850,13 @@ function OpenCommandPaletteDialog(props: {
           });
         },
       }),
-    [activeThreadId, clientSettings.sidebarThreadSortOrder, navigate, projectTitleById, threads],
+    [
+      activeThreadId,
+      clientSettings.sidebarThreadSortOrder,
+      navigate,
+      projectTitleByScopedKey,
+      threads,
+    ],
   );
   const recentThreadItems = allThreadItems.slice(0, RECENT_THREAD_LIMIT);
 
@@ -829,6 +870,7 @@ function OpenCommandPaletteDialog(props: {
   const pushPaletteView = useCallback(
     (view: CommandPaletteView): void => {
       browseNavigation.invalidate();
+      setIsRemoteProjectLookingUp(false);
       setViewStack((previousViews) => [
         ...previousViews,
         {
@@ -853,6 +895,7 @@ function OpenCommandPaletteDialog(props: {
 
   function popView(): void {
     browseNavigation.invalidate();
+    setIsRemoteProjectLookingUp(false);
     setAddProjectCloneFlow(null);
     if (viewStack.length <= 1) {
       setAddProjectEnvironmentId(null);
@@ -864,6 +907,7 @@ function OpenCommandPaletteDialog(props: {
 
   function handleQueryChange(nextQuery: string): void {
     browseNavigation.invalidate();
+    setIsRemoteProjectLookingUp(false);
     setHighlightedItemValue(null);
     setQuery(nextQuery);
     if (nextQuery === "" && currentView?.initialQuery) {
@@ -876,11 +920,11 @@ function OpenCommandPaletteDialog(props: {
       const initialQuery = getAddProjectInitialQueryForEnvironment(environmentId);
       const initialDirectory = getBrowseDirectoryPath(initialQuery);
       const cwd = currentProjectEnvironmentId === environmentId ? currentProjectCwd : null;
-      await browseNavigation.run(
+      await runBrowseNavigation(
         () =>
           initialDirectory.length > 0
             ? prefetchBrowsePath(initialDirectory, environmentId, cwd)
-            : Promise.resolve(true),
+            : Promise.resolve({ ok: true }),
         () => {
           setAddProjectEnvironmentId(environmentId);
           setAddProjectCloneFlow(null);
@@ -893,12 +937,12 @@ function OpenCommandPaletteDialog(props: {
       );
     },
     [
-      browseNavigation,
       currentProjectCwd,
       currentProjectEnvironmentId,
       getAddProjectInitialQueryForEnvironment,
       prefetchBrowsePath,
       pushPaletteView,
+      runBrowseNavigation,
     ],
   );
 
@@ -1097,9 +1141,12 @@ function OpenCommandPaletteDialog(props: {
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
   if (projects.length > 0) {
-    const activeProjectTitle = currentProjectId
-      ? (projectTitleById.get(currentProjectId) ?? null)
-      : null;
+    const activeProjectTitle =
+      currentProjectEnvironmentId && currentProjectId
+        ? (projectTitleByScopedKey.get(
+            scopedProjectKey(scopeProjectRef(currentProjectEnvironmentId, currentProjectId)),
+          ) ?? null)
+        : null;
 
     if (activeProjectTitle) {
       actionItems.push({
@@ -1369,6 +1416,27 @@ function OpenCommandPaletteDialog(props: {
     return getAddProjectInitialQueryForEnvironment(environmentId);
   }
 
+  async function transitionToCloneConfirmation(input: {
+    readonly flow: Extract<AddProjectCloneFlow, { readonly step: "confirm" }>;
+    readonly destinationPath: string;
+  }): Promise<boolean> {
+    const cwd = currentProjectEnvironmentId === input.flow.environmentId ? currentProjectCwd : null;
+    return runBrowseNavigation(
+      () =>
+        prefetchBrowsePath(
+          getBrowseDirectoryPath(input.destinationPath),
+          input.flow.environmentId,
+          cwd,
+        ),
+      () => {
+        setAddProjectCloneFlow(input.flow);
+        setHighlightedItemValue(null);
+        setQuery(input.destinationPath);
+        setBrowseGeneration((generation) => generation + 1);
+      },
+    );
+  }
+
   async function submitAddProjectCloneFlow(destinationPathInput?: string): Promise<void> {
     if (!addProjectCloneFlow) {
       return;
@@ -1383,54 +1451,76 @@ function OpenCommandPaletteDialog(props: {
       const provider = remoteProjectSourceProvider(addProjectCloneFlow.source);
       if (!provider) {
         const destinationPath = getDefaultCloneParentPath(addProjectCloneFlow.environmentId);
-        setAddProjectCloneFlow({
-          step: "confirm",
-          environmentId: addProjectCloneFlow.environmentId,
-          source: addProjectCloneFlow.source,
-          repositoryInput: rawRepository,
-          repository: null,
-          remoteUrl: rawRepository,
+        await transitionToCloneConfirmation({
+          destinationPath,
+          flow: {
+            step: "confirm",
+            environmentId: addProjectCloneFlow.environmentId,
+            source: addProjectCloneFlow.source,
+            repositoryInput: rawRepository,
+            repository: null,
+            remoteUrl: rawRepository,
+          },
         });
-        setHighlightedItemValue(null);
-        setQuery(destinationPath);
-        setBrowseGeneration((generation) => generation + 1);
         return;
       }
 
-      setIsRemoteProjectLookingUp(true);
-      const lookupResult = await lookupRepository({
-        environmentId: addProjectCloneFlow.environmentId,
-        input: {
-          provider,
-          repository: rawRepository,
-        },
-      });
-      setIsRemoteProjectLookingUp(false);
-      if (lookupResult._tag === "Failure") {
-        if (!isAtomCommandInterrupted(lookupResult)) {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Repository lookup failed",
-              description: errorMessage(squashAtomCommandFailure(lookupResult)),
-            }),
-          );
-        }
-        return;
-      }
-      const repository = lookupResult.value;
       const destinationPath = getDefaultCloneParentPath(addProjectCloneFlow.environmentId);
-      setAddProjectCloneFlow({
-        step: "confirm",
-        environmentId: addProjectCloneFlow.environmentId,
-        source: addProjectCloneFlow.source,
-        repositoryInput: rawRepository,
-        repository,
-        remoteUrl: repository.sshUrl,
-      });
-      setHighlightedItemValue(null);
-      setQuery(destinationPath);
-      setBrowseGeneration((generation) => generation + 1);
+      const cwd =
+        currentProjectEnvironmentId === addProjectCloneFlow.environmentId
+          ? currentProjectCwd
+          : null;
+      let repository: SourceControlRepositoryInfo | null = null;
+      let failure: BrowseNavigationFailure | null = null;
+      setIsRemoteProjectLookingUp(true);
+      await browseNavigation.run(
+        async (isCurrent) => {
+          const lookupResult = await lookupRepository({
+            environmentId: addProjectCloneFlow.environmentId,
+            input: {
+              provider,
+              repository: rawRepository,
+            },
+          });
+          if (!isCurrent()) return false;
+          if (lookupResult._tag === "Failure") {
+            if (!isAtomCommandInterrupted(lookupResult)) {
+              failure = {
+                title: "Repository lookup failed",
+                description: errorMessage(squashAtomCommandFailure(lookupResult)),
+              };
+            }
+            return false;
+          }
+          repository = lookupResult.value;
+          const preloadResult = await prefetchBrowsePath(
+            getBrowseDirectoryPath(destinationPath),
+            addProjectCloneFlow.environmentId,
+            cwd,
+          );
+          if (!preloadResult.ok) failure = preloadResult.failure;
+          return preloadResult.ok;
+        },
+        () => {
+          if (!repository) return;
+          setIsRemoteProjectLookingUp(false);
+          setAddProjectCloneFlow({
+            step: "confirm",
+            environmentId: addProjectCloneFlow.environmentId,
+            source: addProjectCloneFlow.source,
+            repositoryInput: rawRepository,
+            repository,
+            remoteUrl: repository.sshUrl,
+          });
+          setHighlightedItemValue(null);
+          setQuery(destinationPath);
+          setBrowseGeneration((generation) => generation + 1);
+        },
+        () => {
+          setIsRemoteProjectLookingUp(false);
+          if (failure) reportBrowseNavigationFailure(failure);
+        },
+      );
       return;
     }
 
@@ -1496,7 +1586,7 @@ function OpenCommandPaletteDialog(props: {
   const browseTo = useCallback(
     async (name: string): Promise<void> => {
       const nextQuery = appendBrowsePathSegment(query, name);
-      await browseNavigation.run(
+      await runBrowseNavigation(
         () => prefetchBrowsePath(getBrowseDirectoryPath(nextQuery)),
         () => {
           setHighlightedItemValue(null);
@@ -1505,13 +1595,13 @@ function OpenCommandPaletteDialog(props: {
         },
       );
     },
-    [browseNavigation, prefetchBrowsePath, query],
+    [prefetchBrowsePath, query, runBrowseNavigation],
   );
 
   const browseUp = useCallback(async (): Promise<void> => {
     const parentPath = browsePath.parentPath;
     if (parentPath === null) return;
-    await browseNavigation.run(
+    await runBrowseNavigation(
       () => prefetchBrowsePath(parentPath),
       () => {
         setHighlightedItemValue(null);
@@ -1519,7 +1609,7 @@ function OpenCommandPaletteDialog(props: {
         setBrowseGeneration((generation) => generation + 1);
       },
     );
-  }, [browseNavigation, browsePath.parentPath, prefetchBrowsePath]);
+  }, [browsePath.parentPath, prefetchBrowsePath, runBrowseNavigation]);
 
   // Resolve the add-project path from browse data when available. When the
   // query has a trailing separator (e.g. "~/projects/foo/"), parentPath is the

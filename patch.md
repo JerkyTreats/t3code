@@ -181,10 +181,13 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Delete legacy storage only after the complete replacement payload is written, reread, decoded, and verified.
 - Report every image that finishes after its stash entry was restored or deleted.
 - Never describe an unpersisted image as recoverable from a stash that does not contain it.
-- Keep stash keyboard ownership inside one focused listbox and reveal destructive controls on keyboard focus.
+- Keep stash keyboard ownership inside one focused listbox with Enter restore, Delete removal, and a focus-restoring close path.
 - Preload filesystem browse destinations before publishing visible navigation changes.
 - Commit visible browse navigation only after a successful preload and surface one bounded failure notice otherwise.
 - Reject stale browse completions after newer navigation or explicit invalidation.
+- Require successful default destination preload before exposing clone confirmation.
+- Guard repository lookup with the same browse generation and suppress superseded failure notices.
+- Key command palette project metadata by exact environment plus project identity.
 - Route Sidebar V1, Sidebar V2, and command palette project-panel actions through one concrete project launcher.
 - Filter launcher threads by exact environment and project identity before opening the right panel or navigating.
 

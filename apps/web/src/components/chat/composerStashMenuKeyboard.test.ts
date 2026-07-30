@@ -7,33 +7,29 @@ describe("composer stash menu keyboard ownership", () => {
     expect(
       resolveComposerStashMenuKeyAction({
         key: "ArrowDown",
-        targetIsButton: false,
         hasEntries: true,
       }),
     ).toEqual({ kind: "move", offset: 1 });
     expect(
       resolveComposerStashMenuKeyAction({
         key: "a",
-        targetIsButton: false,
         hasEntries: true,
       }),
     ).toBeNull();
   });
 
-  it("leaves Enter on the focused delete button to that button", () => {
+  it("keeps restore and deletion under listbox keyboard ownership", () => {
     expect(
       resolveComposerStashMenuKeyAction({
         key: "Enter",
-        targetIsButton: true,
-        hasEntries: true,
-      }),
-    ).toBeNull();
-    expect(
-      resolveComposerStashMenuKeyAction({
-        key: "Enter",
-        targetIsButton: false,
         hasEntries: true,
       }),
     ).toEqual({ kind: "restore" });
+    expect(
+      resolveComposerStashMenuKeyAction({
+        key: "Delete",
+        hasEntries: true,
+      }),
+    ).toEqual({ kind: "delete" });
   });
 });

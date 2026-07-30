@@ -3,7 +3,6 @@ import { memo, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import type { PromptStashEntry } from "../../promptStashStore";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
-import { Button } from "../ui/button";
 import { cn } from "~/lib/utils";
 import { resolveComposerStashMenuKeyAction } from "./composerStashMenuKeyboard";
 
@@ -38,8 +37,6 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const action = resolveComposerStashMenuKeyAction({
       key: event.key,
-      targetIsButton:
-        event.target instanceof HTMLElement && event.target.closest("button") !== null,
       hasEntries: props.entries.length > 0,
     });
     if (!action) return;
@@ -51,6 +48,10 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
     }
     if (action.kind === "restore") {
       if (activeEntry) props.onRestore(activeEntry);
+      return;
+    }
+    if (action.kind === "delete") {
+      if (activeEntry) props.onDelete(activeEntry);
       return;
     }
     const currentIndex = Math.max(
@@ -77,6 +78,8 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
         role="listbox"
         tabIndex={0}
         aria-label="Stashed prompts"
+        aria-description="Use arrow keys to choose, Enter to restore, and Delete to remove"
+        aria-keyshortcuts="Delete"
         aria-activedescendant={activeEntry ? `stash-option-${activeEntry.id}` : undefined}
         className="max-h-60 overflow-y-auto rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         onKeyDown={handleKeyDown}
@@ -98,7 +101,16 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
               )}
               onMouseMove={() => setActiveId(entry.id)}
               onPointerDown={(event) => event.preventDefault()}
-              onClick={() => props.onRestore(entry)}
+              onClick={(event) => {
+                const shouldDelete =
+                  event.target instanceof Element &&
+                  event.target.closest("[data-stash-delete]") !== null;
+                if (shouldDelete) {
+                  props.onDelete(entry);
+                  return;
+                }
+                props.onRestore(entry);
+              }}
             >
               {entry.attachments[0] ? (
                 <img
@@ -120,19 +132,17 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
               <span className="shrink-0 text-xs text-muted-foreground/60">
                 {formatRelativeTimeLabel(entry.createdAt)}
               </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label="Delete stashed prompt"
-                className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  props.onDelete(entry);
-                }}
+              <span className="sr-only">Press Delete to remove</span>
+              <span
+                data-stash-delete
+                aria-hidden="true"
+                className={cn(
+                  "flex size-6 shrink-0 items-center justify-center rounded-md opacity-0 group-hover:opacity-100",
+                  activeEntry?.id === entry.id && "opacity-100",
+                )}
               >
-                <XIcon />
-              </Button>
+                <XIcon className="size-3.5" />
+              </span>
             </div>
           );
         })}
