@@ -1199,6 +1199,22 @@ describe("Sidebar V2 ordering and pagination", () => {
     vi.useRealTimers();
   });
 
+  it("keeps a slower native double click inside the rename window", () => {
+    vi.useFakeTimers();
+    const activate = vi.fn();
+    const controller = createDeferredSidebarV2ActivationController();
+
+    controller.schedule(activate);
+    vi.advanceTimersByTime(250);
+    expect(activate).not.toHaveBeenCalled();
+
+    controller.cancel();
+    vi.advanceTimersByTime(SIDEBAR_V2_SINGLE_CLICK_DELAY_MS);
+    expect(activate).not.toHaveBeenCalled();
+    controller.dispose();
+    vi.useRealTimers();
+  });
+
   it("keeps every concrete member available for grouped new thread actions", () => {
     const local = { id: "local" };
     const remote = { id: "remote" };

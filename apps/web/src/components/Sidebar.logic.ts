@@ -20,7 +20,11 @@ export const SIDEBAR_THREAD_PREWARM_LIMIT = 10;
 export const SIDEBAR_V2_ACTIVE_PAGE_SIZE = 50;
 export const SIDEBAR_V2_SETTLED_INITIAL_COUNT = 10;
 export const SIDEBAR_V2_SETTLED_PAGE_SIZE = 25;
-export const SIDEBAR_V2_SINGLE_CLICK_DELAY_MS = 180;
+// Native double-click recognition commonly allows a second click well after
+// 180 ms. The 600 ms delay intentionally covers the common 500 ms native
+// window and trades a small single-click latency
+// for the guarantee that rename never navigates first.
+export const SIDEBAR_V2_SINGLE_CLICK_DELAY_MS = 600;
 export type SidebarNewThreadEnvMode = "local" | "worktree";
 type SidebarProject = {
   id: string;
