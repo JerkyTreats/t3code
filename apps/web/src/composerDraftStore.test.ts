@@ -14,7 +14,9 @@ import {
   ThreadId,
   type ModelSelection,
   type ProviderOptionSelection,
+  type ServerProvider,
 } from "@t3tools/contracts";
+import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
 
 // The composer draft's `modelSelectionByProvider` and
@@ -66,6 +68,7 @@ import {
   markPromotedDraftThreads,
   markPromotedDraftThreadsByRef,
   type ComposerImageAttachment,
+  deriveEffectiveComposerModelState,
   useComposerDraftStore,
   DraftId,
 } from "./composerDraftStore";
@@ -76,6 +79,142 @@ import {
   type TerminalContextDraft,
 } from "./lib/terminalContext";
 import { createDebouncedStorage } from "./lib/storage";
+
+describe("deriveEffectiveComposerModelState", () => {
+  it("uses only model candidates owned by the exact routed instance", () => {
+    const selectedInstanceId = ProviderInstanceId.make("codex_personal");
+    const explicitModel = "gpt-personal";
+    const legacyModel = "gpt-default";
+    const draft = {
+      activeProvider: selectedInstanceId,
+      modelSelectionByProvider: {
+        [ProviderInstanceId.make("codex")]: createModelSelection(
+          ProviderInstanceId.make("codex"),
+          legacyModel,
+        ),
+      },
+    };
+    const threadModelSelection = createModelSelection(selectedInstanceId, explicitModel);
+    const errorSnapshot = {
+      instanceId: selectedInstanceId,
+      driver: CODEX_DRIVER,
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "error",
+      auth: { status: "unknown" },
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      models: [
+        {
+          slug: "error-catalog-model",
+          name: "Error Catalog Model",
+          isCustom: false,
+          capabilities: {},
+        },
+      ],
+      slashCommands: [],
+      skills: [],
+    } satisfies ServerProvider;
+
+    for (const providers of [[], [errorSnapshot]] as const) {
+      expect(
+        deriveEffectiveComposerModelState({
+          draft,
+          providers,
+          selectedProvider: CODEX_DRIVER,
+          selectedInstanceId,
+          threadModelSelection,
+          projectModelSelection: createModelSelection(
+            ProviderInstanceId.make("codex"),
+            legacyModel,
+          ),
+          settings: DEFAULT_UNIFIED_SETTINGS,
+        }).selectedModel,
+      ).toBe(explicitModel);
+    }
+  });
+
+  it("marks a ready exact instance without a usable model as unavailable", () => {
+    const selectedInstanceId = ProviderInstanceId.make("codex_empty");
+    const readyEmptySnapshot = {
+      instanceId: selectedInstanceId,
+      driver: CODEX_DRIVER,
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      models: [],
+      slashCommands: [],
+      skills: [],
+    } satisfies ServerProvider;
+
+    expect(
+      deriveEffectiveComposerModelState({
+        draft: {
+          activeProvider: selectedInstanceId,
+          modelSelectionByProvider: {
+            [selectedInstanceId]: createModelSelection(selectedInstanceId, "stale-model"),
+          },
+        },
+        providers: [readyEmptySnapshot],
+        selectedProvider: CODEX_DRIVER,
+        selectedInstanceId,
+        threadModelSelection: createModelSelection(selectedInstanceId, "stale-model"),
+        projectModelSelection: null,
+        settings: DEFAULT_UNIFIED_SETTINGS,
+      }),
+    ).toMatchObject({
+      selectedModel: "",
+      modelUnavailable: true,
+    });
+  });
+
+  it("does not replace a stale exact model from a non-empty ready catalog", () => {
+    const selectedInstanceId = ProviderInstanceId.make("codex_current");
+    const readySnapshot = {
+      instanceId: selectedInstanceId,
+      driver: CODEX_DRIVER,
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      models: [
+        {
+          slug: "current-model",
+          name: "Current Model",
+          isCustom: false,
+          capabilities: {},
+        },
+      ],
+      slashCommands: [],
+      skills: [],
+    } satisfies ServerProvider;
+
+    expect(
+      deriveEffectiveComposerModelState({
+        draft: {
+          activeProvider: selectedInstanceId,
+          modelSelectionByProvider: {
+            [selectedInstanceId]: createModelSelection(selectedInstanceId, "stale-model"),
+          },
+        },
+        providers: [readySnapshot],
+        selectedProvider: CODEX_DRIVER,
+        selectedInstanceId,
+        threadModelSelection: createModelSelection(selectedInstanceId, "stale-model"),
+        projectModelSelection: null,
+        settings: DEFAULT_UNIFIED_SETTINGS,
+      }),
+    ).toMatchObject({
+      selectedModel: "",
+      modelUnavailable: true,
+    });
+  });
+});
 
 function makeImage(input: {
   id: string;

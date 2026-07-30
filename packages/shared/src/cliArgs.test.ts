@@ -1,6 +1,27 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseCliArgs } from "./cliArgs.ts";
+import { parseCliArgs, tokenizeCliArgs } from "./cliArgs.ts";
+
+describe("tokenizeCliArgs", () => {
+  it("preserves quoted values and escaped spaces", () => {
+    expect(
+      tokenizeCliArgs(
+        String.raw`--config model="gpt 5" --enable foo\ bar --config=profile='work profile'`,
+      ),
+    ).toEqual(["--config", "model=gpt 5", "--enable", "foo bar", "--config=profile=work profile"]);
+  });
+
+  it("preserves literal backslashes in path values", () => {
+    expect(
+      tokenizeCliArgs(String.raw`--config cacheDir=C:\Users\me --config "quoted=C:\Users\me"`),
+    ).toEqual([
+      "--config",
+      String.raw`cacheDir=C:\Users\me`,
+      "--config",
+      String.raw`quoted=C:\Users\me`,
+    ]);
+  });
+});
 
 describe("parseCliArgs", () => {
   it("returns empty result for empty string", () => {
@@ -15,63 +36,70 @@ describe("parseCliArgs", () => {
     expect(parseCliArgs([])).toEqual({ flags: {}, positionals: [] });
   });
 
-  it("parses --chrome boolean flag", () => {
+  it("parses a boolean flag", () => {
     expect(parseCliArgs("--chrome")).toEqual({
       flags: { chrome: null },
       positionals: [],
     });
   });
 
-  it("parses --chrome with --verbose", () => {
+  it("parses multiple boolean flags", () => {
     expect(parseCliArgs("--chrome --verbose")).toEqual({
       flags: { chrome: null, verbose: null },
       positionals: [],
     });
   });
 
-  it("parses --effort with a value", () => {
+  it("parses a flag with a value", () => {
     expect(parseCliArgs("--effort high")).toEqual({
       flags: { effort: "high" },
       positionals: [],
     });
   });
 
-  it("parses --chrome --effort high --debug", () => {
+  it("parses mixed boolean and valued flags", () => {
     expect(parseCliArgs("--chrome --effort high --debug")).toEqual({
       flags: { chrome: null, effort: "high", debug: null },
       positionals: [],
     });
   });
 
-  it("parses --model with full model name", () => {
+  it("parses model names", () => {
     expect(parseCliArgs("--model claude-sonnet-4-6")).toEqual({
       flags: { model: "claude-sonnet-4-6" },
       positionals: [],
     });
   });
 
-  it("parses --append-system-prompt with value and --chrome", () => {
+  it("parses a prompt flag with an unquoted value", () => {
     expect(parseCliArgs("--append-system-prompt always-think-step-by-step --chrome")).toEqual({
       flags: { "append-system-prompt": "always-think-step-by-step", chrome: null },
       positionals: [],
     });
   });
 
-  it("parses --max-budget-usd with numeric value", () => {
+  it("parses quoted values through the shared tokenizer", () => {
+    expect(parseCliArgs(`--append-system-prompt "always think step by step" --chrome`)).toEqual({
+      flags: { "append-system-prompt": "always think step by step", chrome: null },
+      positionals: [],
+    });
+  });
+
+  it("parses numeric values", () => {
     expect(parseCliArgs("--chrome --max-budget-usd 5.00")).toEqual({
       flags: { chrome: null, "max-budget-usd": "5.00" },
       positionals: [],
     });
   });
 
-  it("parses --effort=high syntax", () => {
+  it("parses equals syntax", () => {
     expect(parseCliArgs("--effort=high")).toEqual({
       flags: { effort: "high" },
       positionals: [],
     });
   });
 
-  it("parses --key=value mixed with boolean flags", () => {
+  it("mixes equals syntax with boolean flags", () => {
     expect(parseCliArgs("--chrome --model=claude-sonnet-4-6 --debug")).toEqual({
       flags: { chrome: null, model: "claude-sonnet-4-6", debug: null },
       positionals: [],
@@ -85,25 +113,25 @@ describe("parseCliArgs", () => {
     });
   });
 
-  it("collects positionals mixed with flags (argv array)", () => {
+  it("collects positionals mixed with flags", () => {
     expect(parseCliArgs(["1.2.3", "--root", "/path", "--github-output"])).toEqual({
       flags: { root: "/path", "github-output": null },
       positionals: ["1.2.3"],
     });
   });
 
-  it("handles extra whitespace between tokens", () => {
+  it("handles extra whitespace", () => {
     expect(parseCliArgs("  --chrome   --verbose  ")).toEqual({
       flags: { chrome: null, verbose: null },
       positionals: [],
     });
   });
 
-  it("ignores bare -- with no flag name", () => {
+  it("ignores a bare double dash", () => {
     expect(parseCliArgs("--")).toEqual({ flags: {}, positionals: [] });
   });
 
-  it("boolean flag does not consume next token as value", () => {
+  it("does not let a known boolean flag consume the next token", () => {
     expect(parseCliArgs(["--github-output", "1.2.3"], { booleanFlags: ["github-output"] })).toEqual(
       {
         flags: { "github-output": null },
@@ -112,7 +140,7 @@ describe("parseCliArgs", () => {
     );
   });
 
-  it("non-boolean flag still consumes next token", () => {
+  it("lets an ordinary flag consume the next token", () => {
     expect(parseCliArgs(["--root", "/path", "1.2.3"], { booleanFlags: ["github-output"] })).toEqual(
       {
         flags: { root: "/path" },
@@ -121,7 +149,7 @@ describe("parseCliArgs", () => {
     );
   });
 
-  it("mixes boolean and value flags with positionals", () => {
+  it("mixes known boolean flags, valued flags, and positionals", () => {
     expect(
       parseCliArgs(["--github-output", "--root", "/path", "1.2.3"], {
         booleanFlags: ["github-output"],

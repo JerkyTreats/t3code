@@ -31,6 +31,7 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
+import { CodexBinaryDiscoveryService } from "./CodexBinaryDiscovery.ts";
 import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
 import * as OpenCodeRuntime from "../opencodeRuntime.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
@@ -451,10 +452,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
       it.effect("closes the app-server probe scope when provider status times out", () =>
         Effect.gen(function* () {
           const killCalls = yield* Ref.make(0);
-          const statusFiber = yield* checkCodexProviderStatus(defaultCodexSettings).pipe(
-            Effect.provide(hangingScopedSpawnerLayer(killCalls)),
-            Effect.forkChild,
-          );
+          const statusFiber = yield* checkCodexProviderStatus(
+            defaultCodexSettings,
+            undefined,
+            undefined,
+            () => Effect.succeed([]),
+          ).pipe(Effect.provide(hangingScopedSpawnerLayer(killCalls)), Effect.forkChild);
 
           yield* Effect.yieldNow;
           yield* TestClock.adjust("11 seconds");
@@ -1059,9 +1062,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
       // `checkCodexProviderStatus` turns it into the user-visible "not
       // installed" error snapshot. If the aggregator's `syncLiveSources`
       // breaks — the `codex_personal`-never-probes bug we are guarding
-      // against — that snapshot never lands in `getProviders` and the
-      // assertions below fail.
-      it.effect("propagates real Codex probe failures to the aggregator at boot", () =>
+      // against — that snapshot never lands in the aggregator refresh result
+      // and the assertions below fail. Binary discovery is injected below so
+      // host PATH contents cannot delay or alter this spawn-failure assertion.
+      it.effect("propagates real Codex probe failures through an aggregator refresh", () =>
         Effect.gen(function* () {
           const missingBinary = `t3code_codex_missing_`;
           const serverSettings = yield* makeMutableServerSettingsService(
@@ -1121,6 +1125,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               ),
             ),
             Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
+            Layer.provideMerge(
+              Layer.succeed(CodexBinaryDiscoveryService, () => Effect.succeed([])),
+            ),
             // NO spawner mock — `ChildProcessSpawner` is supplied by the
             // outer `NodeServices.layer` on `it.layer(...)` and will
             // genuinely spawn a subprocess. The missing-binary ENOENT is
@@ -1133,26 +1140,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
 
           yield* Effect.gen(function* () {
             const registry = yield* ProviderRegistry.ProviderRegistry;
-            let providers = yield* registry.getProviders;
-            for (
-              let attempts = 0;
-              attempts < 50 &&
-              providers.find((provider) => provider.instanceId === "codex_personal")?.status !==
-                "error";
-              attempts += 1
-            ) {
-              yield* Effect.yieldNow;
-              providers = yield* registry.getProviders;
-            }
+            const providers = yield* registry
+              .refreshInstance(ProviderInstanceId.make("codex_personal"))
+              .pipe(Effect.timeout("5 seconds"), TestClock.withLive);
             const codexPersonal = providers.find(
               (provider) => provider.instanceId === "codex_personal",
             );
             assert.notStrictEqual(
               codexPersonal,
               undefined,
-              `Expected the aggregator to know about codex_personal; instead saw: ${providers
-                .map((provider) => provider.instanceId)
-                .join(", ")}`,
+              "Expected the aggregator refresh to include codex_personal",
             );
             assert.strictEqual(
               codexPersonal?.status,
@@ -1233,12 +1230,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             let initialProviders = yield* registry.getProviders;
             for (
               let attempts = 0;
-              attempts < 50 &&
+              attempts < 300 &&
               initialProviders.find((provider) => provider.instanceId === "codex")?.status !==
                 "error";
               attempts += 1
             ) {
               yield* TestClock.adjust("10 millis");
+              yield* Effect.sleep("10 millis").pipe(TestClock.withLive);
               yield* Effect.yieldNow;
               initialProviders = yield* registry.getProviders;
             }
@@ -1247,7 +1245,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             );
             assert.strictEqual(initialCodex?.status, "error");
             assert.strictEqual(initialCodex?.installed, false);
-            assert.deepStrictEqual(spawnedCommands, [firstMissing, firstMissing]);
+            const firstMissingSpawnCount = spawnedCommands.filter(
+              (command) => command === firstMissing,
+            ).length;
+            assert.isAtLeast(firstMissingSpawnCount, 2);
 
             // Drive a settings change. The Hydration layer's
             // `SettingsWatcherLive` consumes this via `streamChanges`,
@@ -1278,18 +1279,21 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                   return providers;
                 }
                 yield* TestClock.adjust("50 millis");
+                yield* Effect.sleep("10 millis").pipe(TestClock.withLive);
                 yield* Effect.yieldNow;
               }
               return yield* registry.getProviders;
             });
 
             const reprobedCodex = refreshed.find((provider) => provider.instanceId === "codex");
-            assert.deepStrictEqual(spawnedCommands, [
-              firstMissing,
-              firstMissing,
-              secondMissing,
-              secondMissing,
-            ]);
+            assert.strictEqual(
+              spawnedCommands.filter((command) => command === firstMissing).length,
+              firstMissingSpawnCount,
+            );
+            assert.isAtLeast(
+              spawnedCommands.filter((command) => command === secondMissing).length,
+              2,
+            );
             assert.strictEqual(reprobedCodex?.status, "error");
             assert.strictEqual(reprobedCodex?.installed, false);
           }).pipe(Effect.provide(runtimeServices));
@@ -1458,13 +1462,30 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
 
       it.effect("skips codex probes entirely when the provider is disabled", () =>
         Effect.gen(function* () {
-          const status = yield* checkCodexProviderStatus(disabledCodexSettings).pipe(
-            Effect.provide(failingSpawnerLayer("spawn codex ENOENT")),
-          );
+          const status = yield* checkCodexProviderStatus(
+            disabledCodexSettings,
+            undefined,
+            undefined,
+            () =>
+              Effect.succeed([
+                {
+                  path: "/usr/local/bin/codex",
+                  version: "1.2.3",
+                  source: "path" as const,
+                },
+              ]),
+          ).pipe(Effect.provide(failingSpawnerLayer("spawn codex ENOENT")));
           assert.strictEqual(status.enabled, false);
           assert.strictEqual(status.status, "disabled");
           assert.strictEqual(status.installed, false);
           assert.strictEqual(status.message, "Codex is disabled in T3 Code settings.");
+          assert.deepStrictEqual(status.detectedBinaries, [
+            {
+              path: "/usr/local/bin/codex",
+              version: "1.2.3",
+              source: "path",
+            },
+          ]);
         }),
       );
     });

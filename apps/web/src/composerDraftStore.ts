@@ -32,7 +32,11 @@ import { DeepMutable } from "effect/Types";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import { useMemo } from "react";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
-import { resolveAppModelSelection, resolveAppModelSelectionForInstance } from "./modelSelection";
+import {
+  isAppModelSelectionUnavailableForInstance,
+  resolveAppModelSelection,
+  resolveAppModelSelectionForInstance,
+} from "./modelSelection";
 import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE, type ChatImageAttachment } from "./types";
 import {
   type TerminalContextDraft,
@@ -493,6 +497,7 @@ interface ComposerDraftStoreState {
 
 export interface EffectiveComposerModelState {
   selectedModel: string;
+  modelUnavailable: boolean;
   modelOptions: ProviderOptionSelectionsByProvider | null;
 }
 
@@ -966,25 +971,33 @@ export function deriveEffectiveComposerModelState(input: {
   projectModelSelection: ModelSelection | null | undefined;
   settings: UnifiedSettings;
 }): EffectiveComposerModelState {
-  const baseModelCandidate =
-    input.threadModelSelection?.model ?? input.projectModelSelection?.model ?? null;
-  const baseModel =
-    (input.selectedInstanceId
-      ? resolveAppModelSelectionForInstance(
-          input.selectedInstanceId,
-          input.settings,
-          input.providers,
-          baseModelCandidate,
-        )
-      : null) ??
-    resolveAppModelSelection(
-      input.selectedProvider,
-      input.settings,
-      input.providers,
-      baseModelCandidate,
-    ) ??
-    normalizeModelSlug(baseModelCandidate, input.selectedProvider) ??
-    getDefaultServerModel(input.providers, input.selectedProvider);
+  const defaultInstanceId = defaultInstanceIdForDriver(input.selectedProvider);
+  const targetInstanceId = input.selectedInstanceId ?? defaultInstanceId;
+  const threadModelSelection =
+    input.threadModelSelection?.instanceId === targetInstanceId ? input.threadModelSelection : null;
+  const projectModelSelection =
+    input.projectModelSelection?.instanceId === targetInstanceId
+      ? input.projectModelSelection
+      : null;
+  const baseModelCandidate = threadModelSelection?.model ?? projectModelSelection?.model ?? null;
+  const baseModel = input.selectedInstanceId
+    ? (resolveAppModelSelectionForInstance(
+        input.selectedInstanceId,
+        input.settings,
+        input.providers,
+        baseModelCandidate,
+      ) ??
+      normalizeModelSlug(baseModelCandidate, input.selectedProvider) ??
+      DEFAULT_MODEL_BY_PROVIDER[input.selectedProvider] ??
+      DEFAULT_MODEL)
+    : (resolveAppModelSelection(
+        input.selectedProvider,
+        input.settings,
+        input.providers,
+        baseModelCandidate,
+      ) ??
+      normalizeModelSlug(baseModelCandidate, input.selectedProvider) ??
+      getDefaultServerModel(input.providers, input.selectedProvider));
   // Look up the instance's saved selection first; fall back to the
   // driver-kind bucket so legacy kind-keyed drafts still resolve. Every
   // `ProviderDriverKind` literal is a valid `ProviderInstanceId` slug, so the
@@ -993,25 +1006,42 @@ export function deriveEffectiveComposerModelState(input: {
     ? input.draft?.modelSelectionByProvider?.[input.selectedInstanceId]
     : undefined;
   const legacySelection =
-    input.draft?.modelSelectionByProvider?.[ProviderInstanceId.make(input.selectedProvider)];
+    targetInstanceId === defaultInstanceId
+      ? input.draft?.modelSelectionByProvider?.[defaultInstanceId]
+      : undefined;
   const activeSelection = instanceSelection ?? legacySelection;
-  const activeSelectionInstanceId = instanceSelection
-    ? (input.selectedInstanceId ?? ProviderInstanceId.make(input.selectedProvider))
-    : ProviderInstanceId.make(input.selectedProvider);
-  const selectedModel = activeSelection?.model
-    ? (resolveAppModelSelectionForInstance(
-        activeSelectionInstanceId,
-        input.settings,
-        input.providers,
-        activeSelection.model,
-      ) ??
-      resolveAppModelSelection(
-        input.selectedProvider,
-        input.settings,
-        input.providers,
-        activeSelection.model,
-      ))
-    : baseModel;
+  const resolvedExactModel =
+    input.selectedInstanceId && activeSelection?.model
+      ? resolveAppModelSelectionForInstance(
+          input.selectedInstanceId,
+          input.settings,
+          input.providers,
+          activeSelection.model,
+        )
+      : null;
+  const modelUnavailable =
+    input.selectedInstanceId !== null &&
+    input.selectedInstanceId !== undefined &&
+    isAppModelSelectionUnavailableForInstance(
+      input.selectedInstanceId,
+      input.settings,
+      input.providers,
+      activeSelection?.model ?? baseModelCandidate,
+    );
+  const selectedModel = modelUnavailable
+    ? ""
+    : activeSelection?.model
+      ? input.selectedInstanceId
+        ? (resolvedExactModel ??
+          normalizeModelSlug(activeSelection.model, input.selectedProvider) ??
+          activeSelection.model)
+        : resolveAppModelSelection(
+            input.selectedProvider,
+            input.settings,
+            input.providers,
+            activeSelection.model,
+          )
+      : baseModel;
   const modelOptions =
     modelSelectionByProviderToOptions(input.draft?.modelSelectionByProvider) ??
     providerSelectionsFromModelSelection(input.threadModelSelection) ??
@@ -1020,6 +1050,7 @@ export function deriveEffectiveComposerModelState(input: {
 
   return {
     selectedModel,
+    modelUnavailable,
     modelOptions,
   };
 }

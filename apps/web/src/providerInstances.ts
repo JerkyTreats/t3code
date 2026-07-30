@@ -14,9 +14,10 @@
  */
 import {
   defaultInstanceIdForDriver,
+  isProviderDriverKind,
   PROVIDER_DISPLAY_NAMES,
+  ProviderInstanceId,
   type ProviderDriverKind,
-  type ProviderInstanceId,
   type ServerProvider,
   type ServerProviderModel,
   type ServerSettings,
@@ -53,6 +54,27 @@ export interface ProviderInstanceEntry {
 }
 
 /**
+ * Local-only composer sentinel used when no provider can accept a new turn.
+ * It must never be persisted or sent across the wire.
+ */
+export const NO_PROVIDER_INSTANCE_ID = ProviderInstanceId.make("no_provider");
+
+/** Resolve a configured target even while its live snapshot is absent. */
+export function getConfiguredProviderInstanceDriver(
+  settings: Pick<ServerSettings, "providerInstances" | "providers">,
+  instanceId: ProviderInstanceId,
+): ProviderDriverKind | undefined {
+  const explicit = settings.providerInstances?.[instanceId];
+  if (explicit) return explicit.enabled === false ? undefined : explicit.driver;
+  if (!isProviderDriverKind(instanceId)) return undefined;
+  const driver = instanceId as ProviderDriverKind;
+  const legacyProviders = settings.providers as Readonly<
+    Record<string, { readonly enabled?: boolean } | undefined>
+  >;
+  return legacyProviders[driver]?.enabled === false ? undefined : driver;
+}
+
+/**
  * Whether an instance can currently contribute models to an interactive picker.
  *
  * Disabling an instance updates `enabled` independently, while its previous
@@ -65,6 +87,13 @@ export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boo
 /** Picker rails contain configured, enabled instances only. */
 export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): boolean {
   return entry.enabled;
+}
+
+/** Interaction controls belong to the exact routed instance snapshot. */
+export function getProviderInstanceInteractionModeToggle(
+  entry: ProviderInstanceEntry | undefined,
+): boolean {
+  return entry?.snapshot.showInteractionModeToggle ?? true;
 }
 
 /**
@@ -253,6 +282,33 @@ export function getProviderInstanceModels(
   return getProviderInstanceEntry(providers, instanceId)?.models ?? [];
 }
 
+/** Return the default model declared by this exact provider instance. */
+export function getDefaultProviderInstanceModel(
+  entry: ProviderInstanceEntry,
+): ServerProviderModel | undefined {
+  return entry.models.find((model) => model.isDefault) ?? entry.models[0];
+}
+
+/**
+ * Resolve an exact requested instance or choose a deterministic fallback.
+ * Ready instances win. When none are ready, a non-error instance may be
+ * selected so transient initialization states remain usable.
+ */
+export function resolveSelectableProviderInstanceEntry(
+  providers: ReadonlyArray<ServerProvider>,
+  instanceId: ProviderInstanceId | undefined,
+): ProviderInstanceEntry | undefined {
+  const entries = deriveProviderInstanceEntries(providers);
+  const requested = entries.find((entry) => entry.instanceId === instanceId);
+  if (requested && requested.enabled && requested.isAvailable) {
+    return requested;
+  }
+  return (
+    entries.find((entry) => entry.enabled && entry.isAvailable && entry.status === "ready") ??
+    entries.find((entry) => entry.enabled && entry.isAvailable && entry.status !== "error")
+  );
+}
+
 /**
  * Resolve the routing key for a selection that may reference an instance
  * id that no longer exists (e.g. a persisted thread selection after the
@@ -263,17 +319,7 @@ export function resolveSelectableProviderInstance(
   providers: ReadonlyArray<ServerProvider>,
   instanceId: ProviderInstanceId | undefined,
 ): ProviderInstanceId | undefined {
-  if (instanceId === undefined) {
-    return deriveProviderInstanceEntries(providers).find(
-      (entry) => entry.enabled && entry.isAvailable,
-    )?.instanceId;
-  }
-  const entries = deriveProviderInstanceEntries(providers);
-  const requested = entries.find((entry) => entry.instanceId === instanceId);
-  if (requested && requested.enabled && requested.isAvailable) {
-    return instanceId;
-  }
-  return entries.find((entry) => entry.enabled && entry.isAvailable)?.instanceId;
+  return resolveSelectableProviderInstanceEntry(providers, instanceId)?.instanceId;
 }
 
 /**
@@ -292,4 +338,18 @@ export function resolveProviderDriverKindForInstanceSelection(
     return matchedEntry.driverKind;
   }
   return undefined;
+}
+
+/** Derive composer behavior from the final routed instance, including pre-hydration settings. */
+export function resolveProviderDriverKindForTarget(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+  settings: Pick<ServerSettings, "providerInstances" | "providers">,
+  selection: ProviderInstanceId,
+  fallback: ProviderDriverKind,
+): ProviderDriverKind {
+  return (
+    entries.find((entry) => entry.instanceId === selection)?.driverKind ??
+    getConfiguredProviderInstanceDriver(settings, selection) ??
+    fallback
+  );
 }

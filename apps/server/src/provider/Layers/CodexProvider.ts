@@ -34,6 +34,8 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import { CodexBinaryDiscoveryService, discoverCodexBinaries } from "./CodexBinaryDiscovery.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 
@@ -196,6 +198,7 @@ function parseCodexModelListResponse(
     slug: model.model,
     name: toDisplayName(model),
     isCustom: false,
+    ...(model.isDefault ? { isDefault: true } : {}),
     capabilities: mapCodexModelCapabilities(model),
   }));
 }
@@ -368,6 +371,7 @@ export function buildCodexInitializeParams(
 const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (input: {
   readonly binaryPath: string;
   readonly homePath?: string;
+  readonly launchArgs?: string;
   readonly cwd: string;
   readonly customModels?: ReadonlyArray<string>;
   readonly environment?: NodeJS.ProcessEnv;
@@ -387,10 +391,14 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     cwd: input.cwd,
     environment,
   });
-  const spawnCommand = yield* resolveSpawnCommand(input.binaryPath, ["app-server"], {
-    env: environment,
-    extendEnv: true,
-  });
+  const spawnCommand = yield* resolveSpawnCommand(
+    input.binaryPath,
+    codexAppServerArgs(input.launchArgs),
+    {
+      env: environment,
+      extendEnv: true,
+    },
+  );
   const child = yield* spawner
     .spawn(
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
@@ -543,6 +551,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   probe: (input: {
     readonly binaryPath: string;
     readonly homePath?: string;
+    readonly launchArgs?: string;
     readonly cwd: string;
     readonly customModels: ReadonlyArray<string>;
     readonly environment?: NodeJS.ProcessEnv;
@@ -552,6 +561,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
   > = probeCodexAppServerProvider,
   environment?: NodeJS.ProcessEnv,
+  discover?: typeof discoverCodexBinaries,
 ): Effect.fn.Return<
   ServerProviderDraft,
   ServerSettingsError,
@@ -560,7 +570,11 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const emptyModels = emptyCodexModelsFromSettings(codexSettings);
-
+  const binaryDiscovery = discover ?? (yield* CodexBinaryDiscoveryService);
+  const detectedBinaries = yield* binaryDiscovery({
+    configuredBinaryPath: codexSettings.binaryPath,
+    environment: resolvedEnvironment,
+  });
   if (!codexSettings.enabled) {
     return buildServerProvider({
       presentation: CODEX_PRESENTATION,
@@ -568,6 +582,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       checkedAt,
       models: emptyModels,
       skills: [],
+      detectedBinaries,
       probe: {
         installed: false,
         version: null,
@@ -581,6 +596,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   const probeResult = yield* probe({
     binaryPath: codexSettings.binaryPath,
     homePath: codexSettings.homePath,
+    launchArgs: resolveCodexLaunchArgs(codexSettings.launchArgs, resolvedEnvironment),
     cwd: process.cwd(),
     customModels: codexSettings.customModels,
     environment: resolvedEnvironment,
@@ -599,6 +615,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       checkedAt,
       models: emptyModels,
       skills: [],
+      detectedBinaries,
       probe: {
         installed,
         version: null,
@@ -618,6 +635,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       checkedAt,
       models: emptyModels,
       skills: [],
+      detectedBinaries,
       probe: {
         installed: true,
         version: null,
@@ -630,13 +648,13 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
 
   const snapshot = probeResult.success.value;
   const accountStatus = accountProbeStatus(snapshot.account);
-
   return buildServerProvider({
     presentation: CODEX_PRESENTATION,
     enabled: codexSettings.enabled,
     checkedAt,
     models: snapshot.models,
     skills: snapshot.skills,
+    detectedBinaries,
     probe: {
       installed: true,
       version: snapshot.version ?? null,

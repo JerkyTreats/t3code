@@ -16,6 +16,8 @@ import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import type { ProviderClientDefinition } from "./providerDriverMeta";
 
+const EMPTY_SUGGESTIONS: ReadonlyArray<string> = [];
+
 export interface ProviderSettingsFieldModel {
   readonly key: string;
   readonly control: ProviderSettingsFormControl;
@@ -159,6 +161,7 @@ interface ProviderSettingsFormProps {
   readonly value: unknown;
   readonly idPrefix: string;
   readonly variant: "card" | "dialog";
+  readonly suggestionsByField?: Readonly<Record<string, ReadonlyArray<string>>>;
   readonly onChange: (nextConfig: Record<string, unknown> | undefined) => void;
 }
 
@@ -178,6 +181,7 @@ interface ProviderSettingsFieldRowProps {
   readonly idPrefix: string;
   readonly variant: ProviderSettingsFormProps["variant"];
   readonly onChange: ProviderSettingsFormProps["onChange"];
+  readonly suggestions?: ReadonlyArray<string> | undefined;
 }
 
 function ProviderSettingsFieldRow({
@@ -186,8 +190,10 @@ function ProviderSettingsFieldRow({
   idPrefix,
   variant,
   onChange,
+  suggestions = EMPTY_SUGGESTIONS,
 }: ProviderSettingsFieldRowProps) {
   const inputId = `${idPrefix}-${field.key}`;
+  const suggestionsId = suggestions.length > 0 ? `${inputId}-suggestions` : undefined;
   const descriptionClassName =
     variant === "card"
       ? "mt-1 block text-xs text-muted-foreground"
@@ -253,6 +259,7 @@ function ProviderSettingsFieldRow({
             onCommit={(next) => onChange(nextProviderConfigWithFieldValue(value, field, next))}
             placeholder={field.placeholder}
             spellCheck={false}
+            list={suggestionsId}
           />
         ) : (
           <Input
@@ -266,8 +273,16 @@ function ProviderSettingsFieldRow({
             }
             placeholder={field.placeholder}
             spellCheck={false}
+            list={suggestionsId}
           />
         )}
+        {suggestionsId ? (
+          <datalist id={suggestionsId}>
+            {suggestions.map((suggestion) => (
+              <option key={suggestion} value={suggestion} />
+            ))}
+          </datalist>
+        ) : null}
         {description}
       </label>
     </FieldFrame>
@@ -279,6 +294,7 @@ export function ProviderSettingsForm({
   value,
   idPrefix,
   variant,
+  suggestionsByField,
   onChange,
 }: ProviderSettingsFormProps) {
   const fields = useMemo(() => deriveProviderSettingsFields(definition), [definition]);
@@ -296,6 +312,7 @@ export function ProviderSettingsForm({
           value={value}
           idPrefix={idPrefix}
           variant={variant}
+          suggestions={suggestionsByField?.[field.key]}
           onChange={onChange}
         />
       ))}

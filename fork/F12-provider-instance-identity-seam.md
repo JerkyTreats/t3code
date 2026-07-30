@@ -1,6 +1,6 @@
 # F12 Provider Instance Identity Seam
 
-Date: 2026-06-02
+Date: 2026-07-29
 Status: active
 
 ## Intent
@@ -12,12 +12,24 @@ Provider status and settings can carry provider instance identity without collap
 - Provider snapshots preserve legacy `provider` while carrying additive `instanceId` and `driver` fields when available.
 - Provider status aggregation keys snapshots by instance identity so two snapshots with the same driver kind do not overwrite each other.
 - Server settings accept and preserve the `providerInstances` envelope for custom instance definitions.
-- Web provider instance projection uses `instanceId` as the routing identity and `driver` as presentation and capability context, with legacy provider kind fallback for older snapshots.
+- Web provider instance projection uses `instanceId` as the routing identity and derives `driver`
+  presentation and capability context from the final routed instance after fallback, with legacy provider
+  kind fallback for older snapshots.
 - Provider adapter routing, provider sessions, runtime events, recovery, and stop flows carry `providerInstanceId` while preserving legacy provider kind fallback.
 - Custom provider instances materialize as provider registry snapshots without duplicating singleton adapter event streams.
+- Singleton adapters receive one runtime event subscription by adapter object identity.
+- Shared adapter events with an explicit instance id route exactly once. Ambiguous untagged shared events are rejected.
+- Legacy untagged shared-adapter sessions recover only through a matching persisted exact-instance binding.
+- Shared-adapter routing and recovery reject active sessions explicitly tagged to another instance.
+- Ordinary and resumed adapter start results reject explicit instance ids that differ from the request or binding.
+- Provider fallback keeps an explicit enabled available instance, then prefers ready instances over non-error instances.
+- A local no-provider state disables dispatch only when no configured target exists and is never persisted or sent.
+- Instance-local model resolution never borrows another same-driver instance model.
 - Provider settings expose custom instance add, enable, disable, and delete controls in the fork settings layout.
 - Provider snapshots may carry provider slash commands, and the composer slash command menu must read commands from the active provider instance snapshot.
 - Provider snapshots may carry provider skills, and the composer skill menu must read skills from the active provider instance snapshot.
+- Claude skill discovery bounds directory iteration and file reads before allocation across user and
+  project roots, skips malformed entries, and gives project entries collision precedence.
 - Composer skill tokens render as `$skill` chips when metadata is available while preserving the raw prompt token value.
 - Full custom adapter materialization and turn routing remain owned by the provider runtime seam and must preserve fork composer draft ownership plus Codex model and binary selection behavior.
 
@@ -39,6 +51,7 @@ Provider status and settings can carry provider instance identity without collap
 - `apps/server/src/provider/Layers/ProviderService.ts`
 - `apps/server/src/provider/Layers/ProviderSessionDirectory.ts`
 - `apps/server/src/provider/Layers/ClaudeProvider.ts`
+- `apps/server/src/provider/Drivers/ClaudeSkills.ts`
 - `apps/server/src/provider/Layers/CodexAdapter.ts`
 - `apps/server/src/provider/Layers/ClaudeAdapter.ts`
 - `apps/server/src/provider/Layers/CursorAdapter.ts`
@@ -62,6 +75,8 @@ Provider status and settings can carry provider instance identity without collap
 - provider snapshot projection
 - provider status aggregation
 - provider adapter routing
+- adapter object identity subscription ownership
+- deterministic instance fallback and local no-provider state
 - web provider instance helpers
 - composer command and skill presentation
 
@@ -72,6 +87,10 @@ Provider status and settings can carry provider instance identity without collap
 - Preserve unknown instance data during settings decode.
 - Rebuild composer command and skill menus from active instance snapshots.
 - Keep provider instance routing compatible with Codex model discovery and composer draft ownership.
+- Preserve explicit configured instance and exact model intent while snapshots are absent or transiently
+  errored until the exact instance reports a ready authoritative model catalog.
+- Correlate thread, project, draft, and legacy model candidates to the final routed instance before
+  resolution, and read interaction controls from that exact instance snapshot.
 
 ## Origin Rebuild Rule
 
@@ -86,6 +105,9 @@ Provider status and settings can carry provider instance identity without collap
 - Provider status cache and aggregation preserve distinct snapshots that share a driver kind.
 - Web provider instance helpers keep custom instances distinct from default instances.
 - Provider service routes start, send, recover, and stop flows through `providerInstanceId`.
+- Two instance ids sharing one adapter produce one event, one session listing call, and one shutdown call.
+- Ready fallback wins over an earlier warning instance, while an explicit errored target remains durable for offline retry.
+- No configured target renders a disabled no-provider composer state and cannot dispatch the sentinel.
 - Composer model selection preserves custom instance ids across draft and persisted selections.
 - Settings can create, enable, disable, and delete custom provider instances.
 - Claude slash commands discovered from provider capabilities appear in the composer slash command menu for the active provider instance.
@@ -99,3 +121,4 @@ Provider status and settings can carry provider instance identity without collap
 - Settings decode remains tolerant of older and newer provider instance envelopes.
 - Persisted model selection does not collapse custom instances to provider kind.
 - Runtime recovery and stop flows preserve `providerInstanceId`.
+- Durable outbox retry preserves exact instance id and model across disconnect and reconnect.

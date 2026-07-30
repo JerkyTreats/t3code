@@ -57,7 +57,10 @@ import {
 } from "../../persistence/Layers/Sqlite.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
-import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
+import {
+  makeAdapterRegistryMock,
+  makeInstanceAdapterRegistryMock,
+} from "../testUtils/providerAdapterRegistryMock.ts";
 
 const defaultServerSettingsLayer = ServerSettings.ServerSettingsService.layerTest();
 
@@ -70,6 +73,7 @@ const claudeAgentInstanceId = ProviderInstanceId.make("claudeAgent");
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
+const codexPersonalInstanceId = ProviderInstanceId.make("codex_personal");
 
 type LegacyProviderRuntimeEvent = {
   readonly type: string;
@@ -315,6 +319,46 @@ function makeProviderServiceLayer() {
   };
 }
 
+function makeSharedAdapterProviderServiceLayer() {
+  const shared = makeFakeCodexAdapter();
+  const registry = makeInstanceAdapterRegistryMock([
+    { instanceId: codexInstanceId, driverKind: CODEX_DRIVER, adapter: shared.adapter },
+    {
+      instanceId: codexPersonalInstanceId,
+      driverKind: CODEX_DRIVER,
+      adapter: shared.adapter,
+    },
+  ]);
+  const providerAdapterLayer = Layer.succeed(
+    ProviderAdapterRegistry.ProviderAdapterRegistry,
+    registry,
+  );
+  const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+    Layer.provide(SqlitePersistenceMemory),
+  );
+  const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
+  const layer = it.layer(
+    Layer.mergeAll(
+      makeProviderServiceLive().pipe(
+        Layer.provide(providerAdapterLayer),
+        Layer.provide(directoryLayer),
+        Layer.provide(defaultServerSettingsLayer),
+        Layer.provideMerge(AnalyticsService.layerTest),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      ),
+      directoryLayer,
+      runtimeRepositoryLayer,
+      NodeServices.layer,
+    ),
+  );
+  return { shared, layer };
+}
+
 it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
   Effect.gen(function* () {
     const codex = makeFakeCodexAdapter();
@@ -327,9 +371,14 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
         }),
       ),
     );
-    const registry = makeAdapterRegistryMock({
-      [CODEX_DRIVER]: codex.adapter,
-    });
+    const registry = makeInstanceAdapterRegistryMock([
+      { instanceId: codexInstanceId, driverKind: CODEX_DRIVER, adapter: codex.adapter },
+      {
+        instanceId: codexPersonalInstanceId,
+        driverKind: CODEX_DRIVER,
+        adapter: codex.adapter,
+      },
+    ]);
     const providerAdapterLayer = Layer.succeed(
       ProviderAdapterRegistry.ProviderAdapterRegistry,
       registry,
@@ -359,9 +408,15 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
     const runtimeServices = yield* Layer.build(providerLayer).pipe(Scope.provide(scope));
 
     yield* ProviderService.ProviderService.pipe(Effect.provide(runtimeServices));
+    yield* codex.startSession({
+      provider: CODEX_DRIVER,
+      threadId: asThreadId("legacy-untagged-shared-session"),
+      runtimeMode: "full-access",
+    });
     const closeExit = yield* Scope.close(scope, Exit.void).pipe(Effect.exit);
 
     assert.equal(Exit.isSuccess(closeExit), true);
+    assert.equal(codex.listSessions.mock.calls.length, 1);
     assert.equal(codex.stopAll.mock.calls.length, 1);
   }),
 );
@@ -1778,6 +1833,211 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
           true,
         );
       }),
+  );
+});
+
+const sharedAdapter = makeSharedAdapterProviderServiceLayer();
+sharedAdapter.layer("ProviderServiceLive shared adapter identity", (it) => {
+  it.effect("subscribes and lists once while preserving exact instance identity", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-shared-adapter");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexPersonalInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const received = yield* Ref.make<Array<ProviderRuntimeEvent>>([]);
+      const consumer = yield* Stream.runForEach(provider.streamEvents, (event) =>
+        Ref.update(received, (events) => [...events, event]),
+      ).pipe(Effect.forkChild);
+      yield* advanceTestClock(50);
+      sharedAdapter.shared.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-shared-adapter"),
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexPersonalInstanceId,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId: asTurnId("turn-shared-adapter"),
+        status: "completed",
+      });
+      yield* advanceTestClock(50);
+      yield* Fiber.interrupt(consumer);
+
+      const events = yield* Ref.get(received);
+      assert.equal(
+        events.filter((event) => event.eventId === asEventId("evt-shared-adapter")).length,
+        1,
+      );
+      sharedAdapter.shared.listSessions.mockClear();
+      const sessions = yield* provider.listSessions();
+      assert.equal(sharedAdapter.shared.listSessions.mock.calls.length, 1);
+      assert.equal(sessions[0]?.providerInstanceId, codexPersonalInstanceId);
+    }),
+  );
+
+  it.effect("recovers a legacy untagged shared session from its persisted binding", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-shared-adapter-legacy");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexPersonalInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      sharedAdapter.shared.updateSession(threadId, (session) => {
+        const { providerInstanceId: _providerInstanceId, ...legacySession } = session;
+        return legacySession;
+      });
+
+      const sessions = yield* provider.listSessions();
+      const recovered = sessions.find((session) => session.threadId === threadId);
+
+      assert.equal(recovered?.threadId, threadId);
+      assert.equal(recovered?.providerInstanceId, codexPersonalInstanceId);
+    }),
+  );
+
+  it.effect("rejects routing when a shared session is tagged to another instance", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-shared-adapter-mismatch");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexPersonalInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      sharedAdapter.shared.updateSession(threadId, (session) => ({
+        ...session,
+        providerInstanceId: codexInstanceId,
+      }));
+      sharedAdapter.shared.sendTurn.mockClear();
+
+      const failure = yield* Effect.flip(
+        provider.sendTurn({
+          threadId,
+          input: "must not route",
+          attachments: [],
+        }),
+      );
+
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.include(failure.issue, String(codexInstanceId));
+      assert.include(failure.issue, String(codexPersonalInstanceId));
+      assert.equal(sharedAdapter.shared.sendTurn.mock.calls.length, 0);
+      yield* sharedAdapter.shared.stopSession(threadId);
+    }),
+  );
+
+  it.effect("rejects recovery when a shared session is tagged to another instance", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-shared-adapter-recovery-mismatch");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexPersonalInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      sharedAdapter.shared.updateSession(threadId, (session) => ({
+        ...session,
+        providerInstanceId: codexInstanceId,
+      }));
+      sharedAdapter.shared.hasSession.mockImplementationOnce(() => Effect.succeed(false));
+      sharedAdapter.shared.sendTurn.mockClear();
+
+      const failure = yield* Effect.flip(
+        provider.sendTurn({
+          threadId,
+          input: "must not recover",
+          attachments: [],
+        }),
+      );
+
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.include(failure.issue, String(codexInstanceId));
+      assert.include(failure.issue, String(codexPersonalInstanceId));
+      assert.equal(sharedAdapter.shared.sendTurn.mock.calls.length, 0);
+      yield* sharedAdapter.shared.stopSession(threadId);
+    }),
+  );
+
+  it.effect("rejects an ordinary shared-adapter start result tagged to another instance", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-shared-adapter-start-result-mismatch");
+      sharedAdapter.shared.startSession.mockImplementationOnce((input) =>
+        Effect.succeed({
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          status: "ready",
+          runtimeMode: input.runtimeMode,
+          threadId,
+          cwd: input.cwd,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      );
+
+      const failure = yield* Effect.flip(
+        provider.startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexPersonalInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        }),
+      );
+
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.include(failure.issue, String(codexInstanceId));
+      assert.include(failure.issue, String(codexPersonalInstanceId));
+    }),
+  );
+
+  it.effect("rejects a shared-adapter recovery result tagged to another instance", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-shared-adapter-resume-result-mismatch");
+      const initial = yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexPersonalInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      yield* sharedAdapter.shared.stopAll();
+      sharedAdapter.shared.startSession.mockImplementationOnce((input) =>
+        Effect.succeed({
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          status: "ready",
+          runtimeMode: input.runtimeMode,
+          threadId,
+          resumeCursor: initial.resumeCursor,
+          cwd: input.cwd,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      );
+      sharedAdapter.shared.sendTurn.mockClear();
+
+      const failure = yield* Effect.flip(
+        provider.sendTurn({
+          threadId,
+          input: "must not use conflicting recovery",
+          attachments: [],
+        }),
+      );
+
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.include(failure.issue, String(codexInstanceId));
+      assert.include(failure.issue, String(codexPersonalInstanceId));
+      assert.equal(sharedAdapter.shared.sendTurn.mock.calls.length, 0);
+    }),
   );
 });
 

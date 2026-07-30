@@ -5,7 +5,7 @@ import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import { describe, expect } from "vite-plus/test";
 
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 
 import type { ProviderInstance } from "../provider/ProviderDriver.ts";
@@ -27,6 +27,7 @@ const makeStubTextGeneration = (
 const makeStubInstance = (
   instanceId: ProviderInstanceId,
   textGeneration: TextGeneration.TextGeneration["Service"],
+  models: ReadonlyArray<string> = ["gpt-5"],
 ): ProviderInstance =>
   ({
     instanceId,
@@ -37,7 +38,33 @@ const makeStubInstance = (
     },
     displayName: undefined,
     enabled: true,
-    snapshot: {} as ProviderInstance["snapshot"],
+    snapshot: {
+      maintenanceCapabilities: {
+        provider: ProviderDriverKind.make("codex"),
+        packageName: null,
+        update: null,
+      },
+      getSnapshot: Effect.succeed({
+        instanceId,
+        driver: ProviderDriverKind.make("codex"),
+        enabled: true,
+        installed: true,
+        version: "1.0.0",
+        status: "ready",
+        auth: { status: "authenticated" },
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        models: models.map((model) => ({
+          slug: model,
+          name: model,
+          isCustom: false,
+          capabilities: {},
+        })),
+        slashCommands: [],
+        skills: [],
+      } satisfies ServerProvider),
+      refresh: Effect.die("refresh stub not configured for this test"),
+      streamChanges: Stream.empty,
+    },
     adapter: {} as ProviderInstance["adapter"],
     textGeneration,
   }) satisfies ProviderInstance;
@@ -116,6 +143,39 @@ describe("makeTextGenerationFromRegistry", () => {
         expect(result.failure.operation).toBe("generateBranchName");
         expect(result.failure.detail).toContain("missing_instance");
       }
+    }),
+  );
+
+  it.effect("rejects dispatch when a ready exact instance has no usable model", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("codex_empty");
+      let dispatched = false;
+      const instance = makeStubInstance(
+        instanceId,
+        makeStubTextGeneration({
+          generateBranchName: () => {
+            dispatched = true;
+            return Effect.succeed({ branch: "should-not-run" });
+          },
+        }),
+        [],
+      );
+      const tg = TextGeneration.makeTextGenerationFromRegistry(makeStubRegistry([instance]));
+
+      const result = yield* tg
+        .generateBranchName({
+          cwd: process.cwd(),
+          message: "anything",
+          modelSelection: createModelSelection(instanceId, "stale-model"),
+        })
+        .pipe(Effect.result);
+
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) {
+        expect(result.failure.detail).toContain("stale-model");
+        expect(result.failure.detail).toContain("codex_empty");
+      }
+      expect(dispatched).toBe(false);
     }),
   );
 });

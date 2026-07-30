@@ -120,6 +120,32 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Keep paired-client managed tunnels live across shutdown until a restart reprovision credential path exists.
 - Keep Linux Secret Service selection explicit in both launcher and app startup.
 
+## Provider Runtime And Binary Selection
+
+- Route provider work by exact instance id and use driver kind only for capabilities and presentation.
+- Preserve an explicit configured target and model through missing snapshots, transient errors, reconnect,
+  and durable outbox retry until the exact instance reports a ready authoritative model catalog.
+- Accept thread, project, draft, and legacy model candidates only when their owning instance matches the
+  final routed instance.
+- Choose fallback instances deterministically with ready instances first, then enabled available non-error instances.
+- Derive composer capabilities and controls from the final routed instance after fallback.
+- Use a local non-dispatchable no-provider state only when no configured target can accept dispatch.
+- Resolve default models from the selected instance and never borrow a model from another instance of the same driver.
+- Treat a ready exact instance with an empty catalog or a missing selected slug as non-dispatchable,
+  including background text generation.
+- Keep live Codex models and skills authoritative and discover Claude skills from user and project roots
+  with directory iteration and file reads bounded before allocation.
+- Pass quote-aware Codex launch arguments through health probes, sessions, and text generation.
+- Discover Codex binary choices only from the configured path and normalized process PATH entries,
+  including quoted Windows paths, command shims, and hydrated desktop and WSL environments.
+- Bound and continuously drain output from every Codex binary version probe.
+- Keep an explicit configured Codex binary path pinned until the user selects another candidate.
+- Subscribe once per adapter object even when multiple instance ids share a singleton adapter.
+- Recover legacy untagged shared-adapter sessions only from a matching persisted exact-instance binding.
+- Reject shared-adapter routing and recovery when an active session carries a different explicit instance id.
+- Reject ordinary and resumed adapter start results that carry a different explicit instance id.
+- Parse Claude skill frontmatter with the workspace catalog `yaml` runtime dependency.
+
 ## Feature Spec Contract
 
 Every spec under `fork/` must include:

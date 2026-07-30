@@ -31,6 +31,7 @@ import {
 } from "./TextGenerationUtils.ts";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
+import { codexExecLaunchArgs, resolveCodexLaunchArgs } from "../provider/Layers/codexLaunchArgs.ts";
 
 const CODEX_GIT_TEXT_GENERATION_REASONING_EFFORT = "low";
 const CODEX_TIMEOUT_MS = 180_000;
@@ -181,6 +182,9 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       const spawnCommand = yield* resolveSpawnCommand(
         codexConfig.binaryPath || "codex",
         [
+          ...codexExecLaunchArgs(
+            resolveCodexLaunchArgs(codexConfig.launchArgs, resolvedEnvironment),
+          ),
           "exec",
           "--ephemeral",
           "--skip-git-repo-check",

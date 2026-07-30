@@ -1,7 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { ChatAttachment, ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
+import type { ChatAttachment, ModelSelection } from "@t3tools/contracts";
 import { TextGenerationError } from "@t3tools/contracts";
 
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
@@ -124,16 +124,28 @@ type TextGenerationOp =
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
   operation: TextGenerationOp,
-  instanceId: ProviderInstanceId,
+  modelSelection: ModelSelection,
 ): Effect.Effect<ProviderInstance["textGeneration"], TextGenerationError> =>
-  registry.getInstance(instanceId).pipe(
+  registry.getInstance(modelSelection.instanceId).pipe(
     Effect.flatMap((instance) =>
       instance
-        ? Effect.succeed(instance.textGeneration)
+        ? instance.snapshot.getSnapshot.pipe(
+            Effect.flatMap((snapshot) =>
+              snapshot.status === "ready" &&
+              !snapshot.models.some((model) => model.slug === modelSelection.model)
+                ? Effect.fail(
+                    new TextGenerationError({
+                      operation,
+                      detail: `Model '${modelSelection.model}' is unavailable for provider instance '${modelSelection.instanceId}'.`,
+                    }),
+                  )
+                : Effect.succeed(instance.textGeneration),
+            ),
+          )
         : Effect.fail(
             new TextGenerationError({
               operation,
-              detail: `No provider instance registered for id '${instanceId}'.`,
+              detail: `No provider instance registered for id '${modelSelection.instanceId}'.`,
             }),
           ),
     ),
@@ -144,19 +156,19 @@ export const makeTextGenerationFromRegistry = (
 ): TextGeneration["Service"] =>
   TextGeneration.of({
     generateCommitMessage: (input) =>
-      resolveInstance(registry, "generateCommitMessage", input.modelSelection.instanceId).pipe(
+      resolveInstance(registry, "generateCommitMessage", input.modelSelection).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateCommitMessage(input)),
       ),
     generatePrContent: (input) =>
-      resolveInstance(registry, "generatePrContent", input.modelSelection.instanceId).pipe(
+      resolveInstance(registry, "generatePrContent", input.modelSelection).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generatePrContent(input)),
       ),
     generateBranchName: (input) =>
-      resolveInstance(registry, "generateBranchName", input.modelSelection.instanceId).pipe(
+      resolveInstance(registry, "generateBranchName", input.modelSelection).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateBranchName(input)),
       ),
     generateThreadTitle: (input) =>
-      resolveInstance(registry, "generateThreadTitle", input.modelSelection.instanceId).pipe(
+      resolveInstance(registry, "generateThreadTitle", input.modelSelection).pipe(
         Effect.flatMap((textGeneration) => textGeneration.generateThreadTitle(input)),
       ),
   });

@@ -109,6 +109,28 @@ describe("web thread outbox", () => {
     expect(retryAttempt.message.attachments).toEqual(firstAttempt.message.attachments);
   });
 
+  it("preserves exact custom provider and model intent across offline retry", async () => {
+    const { storage } = memoryStorage();
+    const queued = {
+      ...message({ messageId: "message-custom", createdAt: "2026-07-11T10:00:00.000Z" }),
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("claude_openrouter"),
+        model: "openai/gpt-5.5",
+      },
+    };
+    const disconnected = createWebThreadOutboxManager(storage);
+    await disconnected.enqueue(queued);
+    disconnected.markRetrying(queued.messageId, "Socket is not connected", 0);
+
+    const reconnected = createWebThreadOutboxManager(storage);
+    await reconnected.load();
+    const recovered = reconnected.getSnapshot().entries[0]!.message;
+    const input = buildThreadOutboxStartTurnInput(recovered);
+
+    expect(recovered.modelSelection).toEqual(queued.modelSelection);
+    expect(input.modelSelection).toEqual(queued.modelSelection);
+  });
+
   it("classifies an ambiguous transport acknowledgement for retry", () => {
     expect(
       classifyThreadOutboxFailure({

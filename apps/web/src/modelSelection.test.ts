@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { deriveProviderInstanceEntries } from "./providerInstances";
 import {
   getAppModelOptionsForInstance,
+  isAppModelSelectionUnavailableForInstance,
   resolveAppModelSelectionForInstance,
   resolveAppModelSelectionState,
 } from "./modelSelection";
@@ -99,6 +100,34 @@ describe("instance-scoped model selection", () => {
         "openai/gpt-5.5",
       ),
     ).toBe("openai/gpt-5.5");
+  });
+
+  it("preserves an explicit model until the exact instance snapshot is ready", () => {
+    const instanceId = ProviderInstanceId.make("claude_openrouter");
+    const explicitModel = "openai/gpt-5.5";
+
+    expect(
+      resolveAppModelSelectionForInstance(
+        instanceId,
+        settingsWithProviderInstances(),
+        [provider({ instanceId: "codex", models: ["gpt-5.6-codex"] })],
+        explicitModel,
+      ),
+    ).toBe(explicitModel);
+
+    expect(
+      resolveAppModelSelectionForInstance(
+        instanceId,
+        settingsWithProviderInstances(),
+        [
+          {
+            ...provider({ instanceId, models: ["unrelated-error-model"] }),
+            status: "error",
+          },
+        ],
+        explicitModel,
+      ),
+    ).toBe(explicitModel);
   });
 
   it("includes Grok custom models from the selected provider instance", () => {
@@ -267,6 +296,133 @@ describe("instance-scoped model selection", () => {
     expect(resolveAppModelSelectionState(settings, providers)).toEqual({
       instanceId: ProviderInstanceId.make("claude_openrouter"),
       model: "openai/gpt-5.5",
+    });
+  });
+
+  it("does not borrow or invent a model for an empty custom instance", () => {
+    const providers = [
+      provider({
+        instanceId: "claudeAgent",
+        models: ["claude-sonnet-4-6"],
+      }),
+      provider({
+        instanceId: "claude_empty",
+        models: [],
+      }),
+    ];
+    const settings: UnifiedSettings = {
+      ...settingsWithProviderInstances(),
+      providerInstances: {
+        ...settingsWithProviderInstances().providerInstances,
+        [ProviderInstanceId.make("claude_empty")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          config: { customModels: [] },
+        },
+      },
+      textGenerationModelSelection: {
+        instanceId: ProviderInstanceId.make("claude_empty"),
+        model: "removed-model",
+      },
+    };
+
+    expect(resolveAppModelSelectionState(settings, providers)).toEqual(
+      settings.textGenerationModelSelection,
+    );
+    expect(
+      isAppModelSelectionUnavailableForInstance(
+        ProviderInstanceId.make("claude_empty"),
+        settings,
+        providers,
+        "removed-model",
+      ),
+    ).toBe(true);
+  });
+
+  it("marks a removed exact model unavailable before applying a ready default", () => {
+    const instanceId = ProviderInstanceId.make("codex_personal");
+    const providers = [provider({ instanceId, models: ["current-model"] })];
+    const settings = settingsWithProviderInstances();
+
+    expect(
+      isAppModelSelectionUnavailableForInstance(instanceId, settings, providers, "removed-model"),
+    ).toBe(true);
+    expect(
+      isAppModelSelectionUnavailableForInstance(instanceId, settings, providers, "current-model"),
+    ).toBe(false);
+  });
+
+  it("preserves explicit custom intent through disconnect and late snapshot hydration", () => {
+    const instanceId = ProviderInstanceId.make("claude_openrouter");
+    const settings: UnifiedSettings = {
+      ...settingsWithProviderInstances(),
+      textGenerationModelSelection: {
+        instanceId,
+        model: "openai/gpt-5.5",
+      },
+    };
+    const disconnected = resolveAppModelSelectionState(settings, []);
+    const transientError = resolveAppModelSelectionState(settings, [
+      {
+        ...provider({ instanceId, models: [] }),
+        status: "error",
+      },
+    ]);
+    const hydrated = resolveAppModelSelectionState(settings, [
+      provider({ instanceId, models: ["openai/gpt-5.5"] }),
+    ]);
+
+    expect(disconnected).toEqual({ instanceId, model: "openai/gpt-5.5" });
+    expect(transientError).toEqual({ instanceId, model: "openai/gpt-5.5" });
+    expect(hydrated).toEqual({ instanceId, model: "openai/gpt-5.5" });
+  });
+
+  it("preserves a built-in target before its snapshot arrives", () => {
+    const selection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.6-codex",
+    };
+    const settings: UnifiedSettings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      providerInstances: {},
+      textGenerationModelSelection: selection,
+    };
+
+    expect(resolveAppModelSelectionState(settings, [])).toEqual(selection);
+  });
+
+  it("does not reaccept a known unavailable custom instance from settings", () => {
+    const selection = {
+      instanceId: ProviderInstanceId.make("claude_openrouter"),
+      model: "openai/gpt-5.5",
+    };
+    const settings: UnifiedSettings = {
+      ...settingsWithProviderInstances(),
+      textGenerationModelSelection: selection,
+    };
+    const unavailable = {
+      ...provider({ instanceId: "claude_openrouter", models: ["openai/gpt-5.5"] }),
+      availability: "unavailable" as const,
+    };
+
+    expect(resolveAppModelSelectionState(settings, [unavailable])).toEqual(selection);
+  });
+
+  it("preserves a removed selection without inventing a dispatch target", () => {
+    expect(
+      resolveAppModelSelectionState(
+        {
+          ...settingsWithProviderInstances(),
+          providerInstances: {},
+          textGenerationModelSelection: {
+            instanceId: ProviderInstanceId.make("removed"),
+            model: "removed-model",
+          },
+        },
+        [],
+      ),
+    ).toEqual({
+      instanceId: ProviderInstanceId.make("removed"),
+      model: "removed-model",
     });
   });
 });

@@ -6,7 +6,11 @@ import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
   resolveSelectableProviderInstance,
+  getDefaultProviderInstanceModel,
+  getConfiguredProviderInstanceDriver,
+  getProviderInstanceInteractionModeToggle,
   resolveProviderDriverKindForInstanceSelection,
+  resolveProviderDriverKindForTarget,
 } from "./providerInstances";
 
 function provider(input: {
@@ -15,6 +19,8 @@ function provider(input: {
   enabled?: boolean;
   availability?: ServerProvider["availability"];
   displayName?: string;
+  status?: ServerProvider["status"];
+  models?: ServerProvider["models"];
 }): ServerProvider {
   return {
     instanceId: ProviderInstanceId.make(input.instanceId),
@@ -23,11 +29,11 @@ function provider(input: {
     enabled: input.enabled ?? true,
     installed: true,
     version: null,
-    status: "ready",
+    status: input.status ?? "ready",
     ...(input.availability ? { availability: input.availability } : {}),
     auth: { status: "authenticated" },
     checkedAt: "2026-01-01T00:00:00.000Z",
-    models: [],
+    models: input.models ?? [],
     slashCommands: [],
     skills: [],
   };
@@ -53,6 +59,33 @@ describe("isProviderInstancePickerReady", () => {
     ]);
 
     expect(entry && isProviderInstancePickerReady(entry)).toBe(true);
+  });
+});
+
+describe("getProviderInstanceInteractionModeToggle", () => {
+  it("uses the exact custom instance instead of the driver default", () => {
+    const entries = deriveProviderInstanceEntries([
+      {
+        ...provider({
+          provider: ProviderDriverKind.make("codex"),
+          instanceId: "codex",
+        }),
+        showInteractionModeToggle: true,
+      },
+      {
+        ...provider({
+          provider: ProviderDriverKind.make("codex"),
+          instanceId: "codex_personal",
+        }),
+        showInteractionModeToggle: false,
+      },
+    ]);
+
+    expect(
+      getProviderInstanceInteractionModeToggle(
+        entries.find((entry) => entry.instanceId === "codex_personal"),
+      ),
+    ).toBe(false);
   });
 });
 
@@ -131,7 +164,7 @@ describe("resolveSelectableProviderInstance", () => {
     expect(resolveSelectableProviderInstance(providers, requested)).toBe(requested);
   });
 
-  it("falls back to the first enabled and available instance", () => {
+  it("prefers a ready fallback over an earlier initializing instance", () => {
     const disabled = ProviderInstanceId.make("codex");
     const fallback = ProviderInstanceId.make("claudeAgent");
     const providers = [
@@ -139,6 +172,11 @@ describe("resolveSelectableProviderInstance", () => {
         provider: ProviderDriverKind.make("codex"),
         instanceId: disabled,
         enabled: false,
+      }),
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex_starting",
+        status: "warning",
       }),
       provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: fallback }),
     ];
@@ -166,6 +204,76 @@ describe("resolveSelectableProviderInstance", () => {
     expect(resolveSelectableProviderInstance(providers, disabled)).toBeUndefined();
     expect(resolveSelectableProviderInstance(providers, unavailable)).toBeUndefined();
     expect(resolveSelectableProviderInstance(providers, unknown)).toBeUndefined();
+  });
+
+  it("does not invent a fallback when only errored instances remain", () => {
+    const errored = ProviderInstanceId.make("codex");
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: errored,
+        status: "error",
+      }),
+    ];
+
+    expect(resolveSelectableProviderInstance(providers, undefined)).toBeUndefined();
+    expect(resolveSelectableProviderInstance(providers, errored)).toBe(errored);
+  });
+});
+
+describe("getDefaultProviderInstanceModel", () => {
+  it("uses the default declared by the exact instance", () => {
+    const [entry] = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex",
+        models: [
+          { slug: "first", name: "First", isCustom: false, capabilities: null },
+          {
+            slug: "preferred",
+            name: "Preferred",
+            isCustom: false,
+            capabilities: null,
+            isDefault: true,
+          },
+        ],
+      }),
+    ]);
+
+    expect(entry && getDefaultProviderInstanceModel(entry)?.slug).toBe("preferred");
+  });
+});
+
+describe("getConfiguredProviderInstanceDriver", () => {
+  it("recognizes a legacy built-in target before snapshots arrive", () => {
+    expect(
+      getConfiguredProviderInstanceDriver(
+        {
+          providerInstances: {},
+          providers: {
+            codex: { enabled: true },
+          } as never,
+        },
+        ProviderInstanceId.make("codex"),
+      ),
+    ).toBe("codex");
+  });
+
+  it("does not recognize a disabled explicit instance", () => {
+    expect(
+      getConfiguredProviderInstanceDriver(
+        {
+          providerInstances: {
+            [ProviderInstanceId.make("claude_work")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: false,
+            },
+          },
+          providers: {} as never,
+        },
+        ProviderInstanceId.make("claude_work"),
+      ),
+    ).toBeUndefined();
   });
 });
 
@@ -204,5 +312,46 @@ describe("resolveProviderDriverKindForInstanceSelection", () => {
         ProviderInstanceId.make("removed_instance"),
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("resolveProviderDriverKindForTarget", () => {
+  it("uses the final fallback instance driver instead of the rejected target driver", () => {
+    const entries = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+      }),
+    ]);
+
+    expect(
+      resolveProviderDriverKindForTarget(
+        entries,
+        {
+          providerInstances: {},
+          providers: {} as never,
+        },
+        ProviderInstanceId.make("claudeAgent"),
+        ProviderDriverKind.make("codex"),
+      ),
+    ).toBe("claudeAgent");
+  });
+
+  it("uses configured instance identity before snapshot hydration", () => {
+    expect(
+      resolveProviderDriverKindForTarget(
+        [],
+        {
+          providerInstances: {
+            [ProviderInstanceId.make("claude_work")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+            },
+          },
+          providers: {} as never,
+        },
+        ProviderInstanceId.make("claude_work"),
+        ProviderDriverKind.make("codex"),
+      ),
+    ).toBe("claudeAgent");
   });
 });

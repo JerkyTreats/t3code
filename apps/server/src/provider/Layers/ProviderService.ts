@@ -27,6 +27,7 @@ import {
 import { causeErrorTag } from "@t3tools/shared/observability";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -84,6 +85,31 @@ function toValidationError(
     issue,
     ...(cause !== undefined ? { cause } : {}),
   });
+}
+
+function validateStartedSessionIdentity(input: {
+  readonly operation: string;
+  readonly context: string;
+  readonly session: ProviderSession;
+  readonly expectedProvider: ProviderDriverKind;
+  readonly expectedInstanceId: ProviderInstanceId;
+}): ProviderValidationError | undefined {
+  if (input.session.provider !== input.expectedProvider) {
+    return toValidationError(
+      input.operation,
+      `${input.context}: expected provider '${input.expectedProvider}', received '${input.session.provider}'.`,
+    );
+  }
+  if (
+    input.session.providerInstanceId !== undefined &&
+    input.session.providerInstanceId !== input.expectedInstanceId
+  ) {
+    return toValidationError(
+      input.operation,
+      `${input.context}: expected provider instance '${input.expectedInstanceId}', received '${input.session.providerInstanceId}'.`,
+    );
+  }
+  return undefined;
 }
 
 const decodeInputOrValidationError = <S extends Schema.Top>(input: {
@@ -312,6 +338,56 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const getAdapterEntries = Ref.get(subscribedAdapters).pipe(
     Effect.map((map) => Array.from(map.entries())),
   );
+  const getAdapterGroups = getAdapterEntries.pipe(
+    Effect.map((entries) => {
+      const groups = new Map<
+        ProviderAdapterShape<ProviderAdapterError>,
+        Array<ProviderInstanceId>
+      >();
+      for (const [instanceId, adapter] of entries) {
+        const ids = groups.get(adapter);
+        if (ids) ids.push(instanceId);
+        else groups.set(adapter, [instanceId]);
+      }
+      return Array.from(groups.entries());
+    }),
+  );
+  const subscriptionFibers = yield* Ref.make(
+    new Map<ProviderAdapterShape<ProviderAdapterError>, Fiber.Fiber<void, ProviderAdapterError>>(),
+  );
+
+  const processAdapterRuntimeEvent = (
+    adapter: ProviderAdapterShape<ProviderAdapterError>,
+    event: ProviderRuntimeEvent,
+  ) =>
+    Effect.gen(function* () {
+      const entries = yield* getAdapterEntries;
+      const instanceIds = entries.flatMap(([instanceId, candidate]) =>
+        candidate === adapter ? [instanceId] : [],
+      );
+      const instanceId =
+        event.providerInstanceId !== undefined
+          ? instanceIds.includes(event.providerInstanceId)
+            ? event.providerInstanceId
+            : undefined
+          : instanceIds.length === 1
+            ? instanceIds[0]
+            : undefined;
+      if (!instanceId) {
+        yield* Effect.logWarning("provider.runtime-event.ambiguous-instance", {
+          provider: event.provider,
+          configuredInstanceCount: instanceIds.length,
+        });
+        return;
+      }
+      yield* processRuntimeEvent(
+        {
+          instanceId,
+          provider: adapter.provider,
+        },
+        event,
+      );
+    });
 
   // Rebuild the map of id → adapter from the registry and fork a new event
   // subscription for every instance that is either brand new or whose adapter
@@ -320,7 +396,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   // fibers for removed/replaced instances exit on their own because their
   // adapter's `streamEvents` source terminates when the old scope closes.
   const reconcileInstanceSubscriptions = Effect.gen(function* () {
-    const previous = yield* Ref.get(subscribedAdapters);
     const currentIds = yield* registry.listInstances();
     const next = new Map<ProviderInstanceId, ProviderAdapterShape<ProviderAdapterError>>();
     for (const id of currentIds) {
@@ -330,19 +405,27 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       if (Option.isNone(adapterOption)) continue;
       const adapter = adapterOption.value;
       next.set(id, adapter);
-      if (previous.get(id) !== adapter) {
-        yield* Stream.runForEach(adapter.streamEvents, (event) =>
-          processRuntimeEvent(
-            {
-              instanceId: id,
-              provider: adapter.provider,
-            },
-            event,
-          ),
-        ).pipe(Effect.forkScoped);
-      }
     }
     yield* Ref.set(subscribedAdapters, next);
+    const previousFibers = yield* Ref.get(subscriptionFibers);
+    const nextAdapters = new Set(next.values());
+    for (const [adapter, fiber] of previousFibers) {
+      if (!nextAdapters.has(adapter)) yield* Fiber.interrupt(fiber);
+    }
+    const nextFibers = new Map<
+      ProviderAdapterShape<ProviderAdapterError>,
+      Fiber.Fiber<void, ProviderAdapterError>
+    >();
+    for (const adapter of nextAdapters) {
+      const existing = previousFibers.get(adapter);
+      const fiber =
+        existing ??
+        (yield* Stream.runForEach(adapter.streamEvents, (event) =>
+          processAdapterRuntimeEvent(adapter, event),
+        ).pipe(Effect.forkScoped));
+      nextFibers.set(adapter, fiber);
+    }
+    yield* Ref.set(subscriptionFibers, nextFibers);
   });
 
   const instanceChanges = yield* registry.subscribeChanges;
@@ -374,16 +457,32 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           (session) => session.threadId === input.binding.threadId,
         );
         if (existing) {
-          yield* upsertSessionBinding(
-            { ...existing, providerInstanceId: bindingInstanceId },
-            input.binding.threadId,
-          );
+          if (existing.provider !== input.binding.provider) {
+            return yield* toValidationError(
+              input.operation,
+              `Cannot recover thread '${input.binding.threadId}' because its active session belongs to provider '${existing.provider}', not '${input.binding.provider}'.`,
+            );
+          }
+          if (
+            existing.providerInstanceId !== undefined &&
+            existing.providerInstanceId !== bindingInstanceId
+          ) {
+            return yield* toValidationError(
+              input.operation,
+              `Cannot recover thread '${input.binding.threadId}' because its active session belongs to provider instance '${existing.providerInstanceId}', not '${bindingInstanceId}'.`,
+            );
+          }
+          const recoveredSession = {
+            ...existing,
+            providerInstanceId: bindingInstanceId,
+          };
+          yield* upsertSessionBinding(recoveredSession, input.binding.threadId);
           yield* analytics.record("provider.session.recovered", {
             provider: existing.provider,
             strategy: "adopt-existing",
             hasResumeCursor: existing.resumeCursor !== undefined,
           });
-          return { adapter, session: existing } as const;
+          return { adapter, session: recoveredSession } as const;
         }
       }
 
@@ -409,24 +508,29 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           runtimeMode: input.binding.runtimeMode ?? "full-access",
         })
         .pipe(Effect.onError(() => clearMcpSession(input.binding.threadId)));
-      if (resumed.provider !== adapter.provider) {
+      const resumedIdentityError = validateStartedSessionIdentity({
+        operation: input.operation,
+        context: `Adapter identity mismatch while recovering thread '${input.binding.threadId}'`,
+        session: resumed,
+        expectedProvider: adapter.provider,
+        expectedInstanceId: bindingInstanceId,
+      });
+      if (resumedIdentityError) {
         yield* clearMcpSession(input.binding.threadId);
-        return yield* toValidationError(
-          input.operation,
-          `Adapter/provider mismatch while recovering thread '${input.binding.threadId}'. Expected '${adapter.provider}', received '${resumed.provider}'.`,
-        );
+        return yield* resumedIdentityError;
       }
 
-      yield* upsertSessionBinding(
-        { ...resumed, providerInstanceId: bindingInstanceId },
-        input.binding.threadId,
-      );
+      const resumedWithInstance = {
+        ...resumed,
+        providerInstanceId: bindingInstanceId,
+      };
+      yield* upsertSessionBinding(resumedWithInstance, input.binding.threadId);
       yield* analytics.record("provider.session.recovered", {
         provider: resumed.provider,
         strategy: "resume-thread",
         hasResumeCursor: resumed.resumeCursor !== undefined,
       });
-      return { adapter, session: resumed } as const;
+      return { adapter, session: resumedWithInstance } as const;
     }).pipe(
       withMetrics({
         counter: providerSessionsTotal,
@@ -455,12 +559,32 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
     const hasRequestedSession = yield* adapter.hasSession(input.threadId);
     if (hasRequestedSession) {
-      return {
-        adapter,
-        instanceId,
-        threadId: input.threadId,
-        isActive: true,
-      } as const;
+      const existing = (yield* adapter.listSessions()).find(
+        (session) => session.threadId === input.threadId,
+      );
+      if (existing) {
+        if (existing.provider !== binding.provider) {
+          return yield* toValidationError(
+            input.operation,
+            `Cannot route thread '${input.threadId}' because its active session belongs to provider '${existing.provider}', not '${binding.provider}'.`,
+          );
+        }
+        if (
+          existing.providerInstanceId !== undefined &&
+          existing.providerInstanceId !== instanceId
+        ) {
+          return yield* toValidationError(
+            input.operation,
+            `Cannot route thread '${input.threadId}' because its active session belongs to provider instance '${existing.providerInstanceId}', not '${instanceId}'.`,
+          );
+        }
+        return {
+          adapter,
+          instanceId,
+          threadId: input.threadId,
+          isActive: true,
+        } as const;
+      }
     }
 
     if (!input.allowRecovery) {
@@ -488,11 +612,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     readonly threadId: ThreadId;
     readonly currentInstanceId: ProviderInstanceId;
   }) {
-    const currentAdapters = yield* getAdapterEntries;
+    const currentAdapters = yield* getAdapterGroups;
     yield* Effect.forEach(
       currentAdapters,
-      ([instanceId, adapter]) =>
-        instanceId === input.currentInstanceId
+      ([adapter, instanceIds]) =>
+        instanceIds.includes(input.currentInstanceId)
           ? Effect.void
           : Effect.gen(function* () {
               const hasSession = yield* adapter.hasSession(input.threadId);
@@ -600,12 +724,16 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           })
           .pipe(Effect.onError(() => clearMcpSession(threadId)));
 
-        if (session.provider !== adapter.provider) {
+        const sessionIdentityError = validateStartedSessionIdentity({
+          operation: "ProviderService.startSession",
+          context: "Adapter identity mismatch",
+          session,
+          expectedProvider: adapter.provider,
+          expectedInstanceId: resolvedInstanceId,
+        });
+        if (sessionIdentityError) {
           yield* clearMcpSession(threadId);
-          return yield* toValidationError(
-            "ProviderService.startSession",
-            `Adapter/provider mismatch: requested '${adapter.provider}', received '${session.provider}'.`,
-          );
+          return yield* sessionIdentityError;
         }
         const sessionWithInstance = {
           ...session,
@@ -876,18 +1004,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const listSessions: ProviderServiceMethod<"listSessions"> = Effect.fn("listSessions")(
     function* () {
-      const currentAdapters = yield* getAdapterEntries;
-      const sessionsByProvider = yield* Effect.forEach(currentAdapters, ([instanceId, adapter]) =>
-        adapter.listSessions().pipe(
-          Effect.map((sessions) =>
-            sessions.map((session) => ({
-              ...session,
-              providerInstanceId: instanceId,
-            })),
-          ),
-        ),
-      );
-      const activeSessions = sessionsByProvider.flatMap((sessions) => sessions);
+      const currentAdapters = yield* getAdapterGroups;
       const persistedBindings = yield* directory.listThreadIds().pipe(
         Effect.flatMap((threadIds) =>
           Effect.forEach(
@@ -918,6 +1035,34 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }
       }
 
+      const sessionsByProvider = yield* Effect.forEach(currentAdapters, ([adapter, instanceIds]) =>
+        adapter.listSessions().pipe(
+          Effect.map((sessions) =>
+            sessions.map((session) => {
+              const binding = bindingsByThreadId.get(session.threadId);
+              const boundInstanceId =
+                binding?.provider === adapter.provider ? binding.providerInstanceId : undefined;
+              const instanceId =
+                session.providerInstanceId !== undefined
+                  ? instanceIds.includes(session.providerInstanceId)
+                    ? session.providerInstanceId
+                    : undefined
+                  : instanceIds.length === 1
+                    ? instanceIds[0]
+                    : boundInstanceId !== undefined && instanceIds.includes(boundInstanceId)
+                      ? boundInstanceId
+                      : undefined;
+              if (!instanceId) {
+                throw new Error(
+                  `ProviderService.listSessions: shared adapter session '${session.threadId}' omitted an exact provider instance id.`,
+                );
+              }
+              return { ...session, providerInstanceId: instanceId };
+            }),
+          ),
+        ),
+      );
+      const activeSessions = sessionsByProvider.flatMap((sessions) => sessions);
       const sessions: ProviderSession[] = [];
       for (const session of activeSessions) {
         const binding = bindingsByThreadId.get(session.threadId);
@@ -1010,15 +1155,30 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
   const runStopAll = Effect.fn("runStopAll")(function* () {
     const threadIds = yield* directory.listThreadIds();
-    const currentAdapters = yield* getAdapterEntries;
-    const activeSessions = yield* Effect.forEach(currentAdapters, ([instanceId, adapter]) =>
+    const currentAdapters = yield* getAdapterGroups;
+    const activeSessions = yield* Effect.forEach(currentAdapters, ([adapter, instanceIds]) =>
       adapter.listSessions().pipe(
-        Effect.map((sessions) =>
-          sessions.map((session) => ({
-            ...session,
-            providerInstanceId: instanceId,
-          })),
+        Effect.flatMap((sessions) =>
+          Effect.forEach(sessions, (session) => {
+            const instanceId =
+              session.providerInstanceId !== undefined
+                ? instanceIds.includes(session.providerInstanceId)
+                  ? session.providerInstanceId
+                  : undefined
+                : instanceIds.length === 1
+                  ? instanceIds[0]
+                  : undefined;
+            if (instanceId) {
+              return Effect.succeed([{ ...session, providerInstanceId: instanceId }]);
+            }
+            return Effect.logWarning("provider.stop-all.ambiguous-session-instance", {
+              provider: adapter.provider,
+              threadId: session.threadId,
+              configuredInstanceCount: instanceIds.length,
+            }).pipe(Effect.as([] as Array<ProviderSession>));
+          }),
         ),
+        Effect.map((sessions) => sessions.flatMap((session) => session)),
       ),
     ).pipe(Effect.map((sessionsByAdapter) => sessionsByAdapter.flatMap((sessions) => sessions)));
     yield* Effect.forEach(activeSessions, (session) =>
@@ -1029,7 +1189,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }),
       ),
     ).pipe(Effect.asVoid);
-    yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
+    yield* Effect.forEach(currentAdapters, ([adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
     yield* McpSessionRegistry.revokeAllActiveMcpCredentials();
     McpProviderSession.clearAllMcpProviderSessions();
     const bindings = yield* directory.listBindings().pipe(Effect.orElseSucceed(() => []));

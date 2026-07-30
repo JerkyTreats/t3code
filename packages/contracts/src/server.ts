@@ -69,9 +69,20 @@ export const ServerProviderModel = Schema.Struct({
   shortName: Schema.optional(TrimmedNonEmptyString),
   subProvider: Schema.optional(TrimmedNonEmptyString),
   isCustom: Schema.Boolean,
+  isDefault: Schema.optional(Schema.Boolean),
   capabilities: Schema.NullOr(ModelCapabilities),
 });
 export type ServerProviderModel = typeof ServerProviderModel.Type;
+
+export const ServerProviderBinarySource = Schema.Literals(["configured", "path", "wsl-path"]);
+export type ServerProviderBinarySource = typeof ServerProviderBinarySource.Type;
+
+export const ServerProviderBinary = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  version: TrimmedNonEmptyString,
+  source: ServerProviderBinarySource,
+});
+export type ServerProviderBinary = typeof ServerProviderBinary.Type;
 
 export const ServerProviderSlashCommandInput = Schema.Struct({
   hint: TrimmedNonEmptyString,
@@ -186,6 +197,7 @@ const ServerProviderPayloadFields = {
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  detectedBinaries: Schema.optionalKey(Schema.Array(ServerProviderBinary)),
   versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
   updateState: Schema.optionalKey(ServerProviderUpdateState),
 } as const;

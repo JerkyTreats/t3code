@@ -216,6 +216,7 @@ export function buildServerProvider(input: {
   models: ReadonlyArray<ServerProviderModel>;
   slashCommands?: ReadonlyArray<ServerProviderSlashCommand>;
   skills?: ReadonlyArray<ServerProviderSkill>;
+  detectedBinaries?: ServerProviderDraft["detectedBinaries"];
   probe: ProviderProbeResult;
 }): ServerProviderDraft {
   const versionAdvisory = input.driver
@@ -244,6 +245,7 @@ export function buildServerProvider(input: {
     models: input.models,
     slashCommands: [...(input.slashCommands ?? [])],
     skills: [...(input.skills ?? [])],
+    ...(input.detectedBinaries ? { detectedBinaries: [...input.detectedBinaries] } : {}),
     ...(versionAdvisory ? { versionAdvisory } : {}),
   };
 }

@@ -1,6 +1,6 @@
 # F4 Composer Draft Autonomy And Composer Chrome
 
-Date: 2026-06-02
+Date: 2026-07-29
 Status: active
 
 ## Intent
@@ -12,6 +12,8 @@ The composer owns its local draft state and preserves rich draft behavior under 
 - Draft text, images, screenshots, attachments, terminal context chips, and local thread draft state remain under composer ownership until explicit user action changes them.
 - Runtime access control and screenshot actions stay in the floating top action chrome.
 - Rich draft controls remain available and are not flattened into a generic reference composer layout.
+- Missing provider snapshots and transient provider errors do not erase explicit provider instance or model intent.
+- A true no-provider state disables new dispatch without clearing prompt text or attachments.
 - Attachment previews and local persistence warnings remain visible when relevant.
 - A global provider-agnostic prompt stash stores text and image attachments independently from any thread.
 - Stashing succeeds only after durable persistence. A failed or memory-only write leaves the active draft intact.
@@ -66,6 +68,7 @@ Planned owner modules:
 - Convert all decodable legacy queues in memory, persist the complete global queue, verify that write, and only then remove the legacy key.
 - Apply the specified migration ordering, de-duplication, field stripping, and cap before the single durable write.
 - Keep the active draft unchanged unless stash persistence is durable.
+- Keep explicit provider and model intent outside the local no-provider presentation state.
 
 ## Origin Rebuild Rule
 
@@ -90,5 +93,6 @@ Planned owner modules:
 
 - Persisted local draft keys remain compatible or receive a migration.
 - Provider and model selection changes do not clear draft state.
+- Disconnect, reconnect, and late provider hydration do not replace explicit custom instance intent.
 - Prompt stash persistence remains compatible with storage-constrained browser and desktop contexts.
 - Provider instance identity never enters the global stash schema.

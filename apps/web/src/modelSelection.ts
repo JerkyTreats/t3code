@@ -1,6 +1,5 @@
 import {
   DEFAULT_GIT_TEXT_GENERATION_MODEL,
-  DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   type ModelSelection,
   ProviderDriverKind,
@@ -22,13 +21,18 @@ import {
   resolveSelectableProvider,
 } from "./providerModels";
 import { ModelEsque } from "./components/chat/providerIconUtils";
-import { type ProviderInstanceEntry, deriveProviderInstanceEntries } from "./providerInstances";
+import {
+  type ProviderInstanceEntry,
+  deriveProviderInstanceEntries,
+  getConfiguredProviderInstanceDriver,
+  getDefaultProviderInstanceModel,
+  resolveSelectableProviderInstanceEntry,
+} from "./providerInstances";
 import { sortModelsForProviderInstance } from "./modelOrdering";
 
 const MAX_CUSTOM_MODEL_COUNT = 32;
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
 const DEFAULT_TEXT_GENERATION_INSTANCE_ID = ProviderInstanceId.make("codex");
-
 /**
  * Resolve the custom-model list for a given instance, preferring the
  * instance's own `providerInstances[id].config.customModels` blob when
@@ -242,16 +246,40 @@ export function resolveAppModelSelectionForInstance(
   providers: ReadonlyArray<ServerProvider>,
   selectedModel: string | null | undefined,
 ): string | null {
+  const preservedModel = selectedModel?.trim() || null;
   const entry = deriveProviderInstanceEntries(providers).find(
     (candidate) => candidate.instanceId === instanceId,
   );
-  if (!entry) return null;
+  if (!entry || !entry.enabled || !entry.isAvailable || entry.status !== "ready") {
+    return preservedModel;
+  }
   const options = getAppModelOptionsForInstance(settings, entry);
+  const instanceDefault = getDefaultProviderInstanceModel(entry)?.slug;
   return (
-    resolveSelectableModel(entry.driverKind, selectedModel, options) ??
+    resolveSelectableModel(entry.driverKind, preservedModel, options) ??
+    options.find((option) => option.slug === instanceDefault)?.slug ??
     options[0]?.slug ??
-    entry.models[0]?.slug ??
     null
+  );
+}
+
+export function isAppModelSelectionUnavailableForInstance(
+  instanceId: ProviderInstanceId,
+  settings: UnifiedSettings,
+  providers: ReadonlyArray<ServerProvider>,
+  selectedModel: string | null | undefined,
+): boolean {
+  const entry = deriveProviderInstanceEntries(providers).find(
+    (candidate) => candidate.instanceId === instanceId,
+  );
+  if (!entry || !entry.enabled || !entry.isAvailable || entry.status !== "ready") {
+    return false;
+  }
+  const options = getAppModelOptionsForInstance(settings, entry);
+  const preservedModel = selectedModel?.trim() || null;
+  return (
+    options.length === 0 ||
+    (preservedModel !== null && !options.some((option) => option.slug === preservedModel))
   );
 }
 
@@ -285,18 +313,26 @@ export function resolveAppModelSelectionState(
   const selectedEntry = entries.find(
     (entry) => entry.instanceId === selection.instanceId && entry.enabled && entry.isAvailable,
   );
-  const entry =
-    selectedEntry ?? entries.find((candidate) => candidate.enabled && candidate.isAvailable);
+  const entry = resolveSelectableProviderInstanceEntry(providers, selection.instanceId);
+  const hasKnownSnapshot = entries.some(
+    (candidate) => candidate.instanceId === selection.instanceId,
+  );
+  const configuredDriver = getConfiguredProviderInstanceDriver(settings, selection.instanceId);
+  if (!entry && !hasKnownSnapshot && configuredDriver) {
+    return selection;
+  }
   if (entry) {
     // When the instance changed due to fallback (e.g. selected instance was disabled),
     // don't carry over the old instance's model — use the fallback instance's default.
     const selectedModel = selectedEntry ? selection.model : null;
     const model =
       resolveAppModelSelectionForInstance(entry.instanceId, settings, providers, selectedModel) ??
-      entry.models[0]?.slug ??
-      DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[entry.driverKind];
+      getDefaultProviderInstanceModel(entry)?.slug;
     if (!model) {
-      return createModelSelection(entry.instanceId, "", []);
+      if (selectedEntry && selectedEntry.status !== "ready") {
+        return selection;
+      }
+      return selection;
     }
     const provider = entry.driverKind;
     const { modelOptionsForDispatch } = getComposerProviderState({
@@ -309,19 +345,5 @@ export function resolveAppModelSelectionState(
     return createModelSelection(entry.instanceId, model, modelOptionsForDispatch);
   }
 
-  const provider = resolveSelectableProvider(providers, null);
-  const keptSelectedProvider = false;
-
-  // When the provider changed due to fallback (e.g. selected provider was disabled),
-  // don't carry over the old provider's model — use the fallback provider's default.
-  const selectedModel = keptSelectedProvider ? selection.model : null;
-  const model = resolveAppModelSelection(provider, settings, providers, selectedModel);
-  const { modelOptionsForDispatch } = getComposerProviderState({
-    provider,
-    model,
-    models: getProviderModels(providers, provider),
-    modelOptions: keptSelectedProvider ? selection.options : undefined,
-  });
-
-  return createModelSelection(defaultInstanceIdForDriver(provider), model, modelOptionsForDispatch);
+  return selection;
 }

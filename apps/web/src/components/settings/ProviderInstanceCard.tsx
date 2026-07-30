@@ -770,6 +770,9 @@ export function ProviderInstanceCard({
                 value={instance.config}
                 idPrefix={`provider-instance-${instanceId}`}
                 variant="card"
+                suggestionsByField={{
+                  binaryPath: (liveProvider?.detectedBinaries ?? []).map((binary) => binary.path),
+                }}
                 onChange={updateConfig}
               />
             ) : null}

@@ -118,11 +118,15 @@ import {
   XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
-import { getProviderDisplayName, getProviderInteractionModeToggle } from "../../providerModels";
+import { getProviderDisplayName } from "../../providerModels";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  getConfiguredProviderInstanceDriver,
+  getProviderInstanceInteractionModeToggle,
+  NO_PROVIDER_INSTANCE_ID,
   resolveProviderDriverKindForInstanceSelection,
+  resolveProviderDriverKindForTarget,
   sortProviderInstanceEntries,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
@@ -384,6 +388,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isSendBusy: boolean;
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
+  isProviderUnavailable: boolean;
   canQueueOffline: boolean;
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
@@ -411,6 +416,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         isSendBusy={props.isSendBusy}
         isConnecting={props.isConnecting}
         isEnvironmentUnavailable={props.isEnvironmentUnavailable}
+        isProviderUnavailable={props.isProviderUnavailable}
         canQueueOffline={props.canQueueOffline}
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
@@ -739,8 +745,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       providerInstanceEntries,
       providerStatuses,
       explicitSelectedInstanceId,
-    ) ?? ProviderDriverKind.make("codex");
-  const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
+    ) ??
+    (explicitSelectedInstanceId
+      ? getConfiguredProviderInstanceDriver(
+          settings,
+          ProviderInstanceId.make(explicitSelectedInstanceId),
+        )
+      : undefined) ??
+    ProviderDriverKind.make("codex");
+  const preferredProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
   const lockedContinuationGroupKey = useMemo((): string | null => {
     if (!lockedProvider || !activeThread) return null;
     const lockedInstanceId =
@@ -767,7 +780,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   //   4. First enabled entry matching the current driver kind.
   //   5. First enabled entry overall / default instance for the kind.
   //
-  const selectedInstanceId = useMemo<ProviderInstanceId>(() => {
+  const selectedProviderTarget = useMemo<{
+    readonly instanceId: ProviderInstanceId;
+    readonly unavailable: boolean;
+  }>(() => {
     const candidates: Array<string | null | undefined> = [
       composerDraft.activeProvider,
       activeThread?.session?.providerInstanceId,
@@ -777,7 +793,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     for (const candidate of candidates) {
       if (!candidate) continue;
       const match = providerInstanceEntries.find(
-        (entry) => entry.instanceId === candidate && entry.enabled,
+        (entry) => entry.instanceId === candidate && entry.enabled && entry.isAvailable,
       );
       if (match) {
         // When locked to a specific driver kind, ignore persisted instance
@@ -789,27 +805,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ) {
           continue;
         }
-        return match.instanceId;
+        return { instanceId: match.instanceId, unavailable: false };
+      }
+      const candidateId = ProviderInstanceId.make(candidate);
+      const hasKnownSnapshot = providerInstanceEntries.some(
+        (entry) => entry.instanceId === candidateId,
+      );
+      const configuredDriver = getConfiguredProviderInstanceDriver(settings, candidateId);
+      if (
+        !hasKnownSnapshot &&
+        configuredDriver &&
+        (!lockedProvider || configuredDriver === lockedProvider)
+      ) {
+        return { instanceId: candidateId, unavailable: false };
       }
     }
-    if (explicitSelectedInstanceId) {
-      return ProviderInstanceId.make(explicitSelectedInstanceId);
-    }
-    const byKind = providerInstanceEntries.find(
+    const eligibleEntries = providerInstanceEntries.filter(
       (entry) =>
         entry.enabled &&
-        entry.driverKind === selectedProvider &&
+        entry.isAvailable &&
+        (!lockedProvider || entry.driverKind === preferredProvider) &&
         (!lockedContinuationGroupKey || entry.continuationGroupKey === lockedContinuationGroupKey),
     );
-    if (byKind) return byKind.instanceId;
-    const anyEnabled = providerInstanceEntries.find((entry) => entry.enabled);
-    return (
-      anyEnabled?.instanceId ??
-      providerInstanceEntries[0]?.instanceId ??
-      activeThreadModelSelection?.instanceId ??
-      activeProjectDefaultModelSelection?.instanceId ??
-      ProviderInstanceId.make("codex")
-    );
+    const ready = eligibleEntries.find((entry) => entry.status === "ready");
+    const nonError = eligibleEntries.find((entry) => entry.status !== "error");
+    return ready
+      ? { instanceId: ready.instanceId, unavailable: false }
+      : nonError
+        ? { instanceId: nonError.instanceId, unavailable: false }
+        : { instanceId: NO_PROVIDER_INSTANCE_ID, unavailable: true };
   }, [
     activeProjectDefaultModelSelection?.instanceId,
     activeThread?.session?.providerInstanceId,
@@ -819,10 +843,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     lockedContinuationGroupKey,
     lockedProvider,
     providerInstanceEntries,
-    selectedProvider,
+    preferredProvider,
+    settings.providerInstances,
+    settings.providers,
   ]);
+  const selectedInstanceId = selectedProviderTarget.instanceId;
+  const noProviderAvailable = selectedProviderTarget.unavailable;
+  const selectedProvider = lockedProvider
+    ? lockedProvider
+    : resolveProviderDriverKindForTarget(
+        providerInstanceEntries,
+        settings,
+        selectedInstanceId,
+        preferredProvider,
+      );
 
-  const { modelOptions: composerModelOptions, selectedModel } = useEffectiveComposerModelState({
+  const {
+    modelOptions: composerModelOptions,
+    modelUnavailable,
+    selectedModel,
+  } = useEffectiveComposerModelState({
     threadRef: composerDraftTarget,
     providers: providerStatuses,
     selectedProvider,
@@ -831,6 +871,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     projectModelSelection: activeProjectDefaultModelSelection,
     settings,
   });
+  const composerTargetUnavailable = noProviderAvailable || modelUnavailable;
 
   // Resolve the active instance's snapshot by `instanceId` so a custom
   // instance gets its own slash commands, skills, and model list — not
@@ -875,12 +916,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
   const composerProviderControls = useMemo(
     () => ({
-      showInteractionModeToggle: getProviderInteractionModeToggle(
-        providerStatuses,
-        selectedProvider,
-      ),
+      showInteractionModeToggle: getProviderInstanceInteractionModeToggle(selectedProviderEntry),
     }),
-    [providerStatuses, selectedProvider],
+    [selectedProviderEntry],
   );
   const selectedModelSelection = useMemo<ModelSelection>(
     () => createModelSelection(selectedInstanceId, selectedModel, selectedModelOptionsForDispatch),
@@ -1199,6 +1237,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const collapsedComposerPrimaryActionDisabled =
     phase === "running" ||
+    composerTargetUnavailable ||
     isSendBusy ||
     (!canQueueOffline && (isConnecting || environmentUnavailable !== null)) ||
     !composerSendState.hasSendableContent;
@@ -1799,12 +1838,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const submitComposer = useCallback(
     (event?: { preventDefault: () => void }) => {
+      if (composerTargetUnavailable) {
+        event?.preventDefault();
+        return;
+      }
       onSend(event);
       if (shouldBlurMobileComposerOnSubmit()) {
         blurMobileComposerAfterSend();
       }
     },
-    [blurMobileComposerAfterSend, onSend, shouldBlurMobileComposerOnSubmit],
+    [
+      blurMobileComposerAfterSend,
+      composerTargetUnavailable,
+      onSend,
+      shouldBlurMobileComposerOnSubmit,
+    ],
   );
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {
@@ -2396,6 +2444,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       isSendBusy={isSendBusy}
                       isConnecting={isConnecting}
                       isEnvironmentUnavailable={environmentUnavailable !== null}
+                      isProviderUnavailable={noProviderAvailable}
                       canQueueOffline={false}
                       isPreparingWorktree={false}
                       hasSendableContent={false}
@@ -2677,6 +2726,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isSendBusy={isSendBusy}
                     isConnecting={isConnecting}
                     isEnvironmentUnavailable={environmentUnavailable !== null}
+                    isProviderUnavailable={noProviderAvailable}
                     canQueueOffline={false}
                     isPreparingWorktree={false}
                     hasSendableContent={false}
@@ -2712,28 +2762,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               )}
             >
               <div className="-m-1 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <ProviderModelPicker
-                  compact={isComposerFooterCompact}
-                  activeInstanceId={selectedInstanceId}
-                  model={selectedModelForPickerWithCustomFallback}
-                  lockedProvider={lockedProvider}
-                  lockedContinuationGroupKey={lockedContinuationGroupKey}
-                  instanceEntries={providerInstanceEntries}
-                  keybindings={keybindings}
-                  modelOptionsByInstance={modelOptionsByInstance}
-                  terminalOpen={terminalOpen}
-                  open={isComposerModelPickerOpen}
-                  {...(composerProviderState.modelPickerIconClassName
-                    ? {
-                        activeProviderIconClassName: composerProviderState.modelPickerIconClassName,
-                      }
-                    : {})}
-                  onOpenChange={(open) => {
-                    setIsComposerModelPickerOpen(open);
-                  }}
-                  getModelDisabledReason={getModelDisabledReason}
-                  onInstanceModelChange={onProviderModelSelect}
-                />
+                {composerTargetUnavailable ? (
+                  <Button type="button" variant="ghost" size="sm" disabled>
+                    {noProviderAvailable ? "No provider available" : "No model available"}
+                  </Button>
+                ) : (
+                  <ProviderModelPicker
+                    compact={isComposerFooterCompact}
+                    activeInstanceId={selectedInstanceId}
+                    model={selectedModelForPickerWithCustomFallback}
+                    lockedProvider={lockedProvider}
+                    lockedContinuationGroupKey={lockedContinuationGroupKey}
+                    instanceEntries={providerInstanceEntries}
+                    keybindings={keybindings}
+                    modelOptionsByInstance={modelOptionsByInstance}
+                    terminalOpen={terminalOpen}
+                    open={isComposerModelPickerOpen}
+                    {...(composerProviderState.modelPickerIconClassName
+                      ? {
+                          activeProviderIconClassName:
+                            composerProviderState.modelPickerIconClassName,
+                        }
+                      : {})}
+                    onOpenChange={(open) => {
+                      setIsComposerModelPickerOpen(open);
+                    }}
+                    getModelDisabledReason={getModelDisabledReason}
+                    onInstanceModelChange={onProviderModelSelect}
+                  />
+                )}
 
                 {isComposerFooterCompact ? (
                   <ComposerCompactFooterControls
@@ -2809,6 +2866,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   isSendBusy={isSendBusy}
                   isConnecting={isConnecting}
                   isEnvironmentUnavailable={environmentUnavailable !== null}
+                  isProviderUnavailable={composerTargetUnavailable}
                   canQueueOffline={canQueueOffline}
                   isPreparingWorktree={isPreparingWorktree}
                   hasSendableContent={composerSendState.hasSendableContent}

@@ -5,6 +5,7 @@ import {
   ProviderDriverKind,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
+  type ServerProviderSkill,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -37,7 +38,8 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
-import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
+import { makeClaudeEnvironment, resolveClaudeHomePath } from "../Drivers/ClaudeHome.ts";
+import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -657,6 +659,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     claudeSettings: ClaudeSettings,
   ) => Effect.Effect<ClaudeCapabilitiesProbe | undefined>,
   environment?: NodeJS.ProcessEnv,
+  discoveryCwd: string = process.cwd(),
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -774,6 +777,12 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     : undefined;
   const slashCommands = capabilities?.slashCommands ?? [];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
+  const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, resolvedEnvironment);
+  const configuredEnvironmentHome = claudeEnvironment.HOME?.trim();
+  const homePath = configuredEnvironmentHome || (yield* resolveClaudeHomePath(claudeSettings));
+  const skills: ReadonlyArray<ServerProviderSkill> = yield* Effect.promise(() =>
+    discoverClaudeSkills({ homePath, cwd: discoveryCwd }),
+  );
 
   if (!capabilities) {
     return buildServerProvider({
@@ -782,6 +791,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       checkedAt,
       models,
       slashCommands: dedupedSlashCommands,
+      skills,
       probe: {
         installed: true,
         version: parsedVersion,
@@ -802,6 +812,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     checkedAt,
     models,
     slashCommands: dedupedSlashCommands,
+    skills,
     probe: {
       installed: true,
       version: parsedVersion,

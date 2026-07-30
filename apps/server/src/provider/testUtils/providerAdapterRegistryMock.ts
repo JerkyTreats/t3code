@@ -20,8 +20,6 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
-import * as Record from "effect/Record";
-import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 
 import { ProviderUnsupportedError, type ProviderAdapterError } from "../Errors.ts";
@@ -32,6 +30,52 @@ export type KindAdapterMap = Partial<
   Record<ProviderDriverKind, ProviderAdapterShape<ProviderAdapterError>>
 >;
 
+export interface InstanceAdapterMockEntry {
+  readonly instanceId: ProviderInstanceId;
+  readonly driverKind: ProviderDriverKind;
+  readonly adapter: ProviderAdapterShape<ProviderAdapterError>;
+}
+
+export const makeInstanceAdapterRegistryMock = (
+  entries: ReadonlyArray<InstanceAdapterMockEntry>,
+): ProviderAdapterRegistryShape => {
+  const byInstanceId = new Map(entries.map((entry) => [entry.instanceId, entry]));
+  const getEntry = (
+    instanceId: ProviderInstanceId,
+  ): Effect.Effect<InstanceAdapterMockEntry, ProviderUnsupportedError> => {
+    const entry = byInstanceId.get(instanceId);
+    return entry
+      ? Effect.succeed(entry)
+      : Effect.fail(
+          new ProviderUnsupportedError({
+            provider: ProviderDriverKind.make(instanceId),
+          }),
+        );
+  };
+  return {
+    getByInstance: (instanceId) => getEntry(instanceId).pipe(Effect.map((entry) => entry.adapter)),
+    getInstanceInfo: (instanceId) =>
+      getEntry(instanceId).pipe(
+        Effect.map((entry) => ({
+          instanceId,
+          driverKind: entry.driverKind,
+          displayName: undefined,
+          enabled: true,
+          continuationIdentity: {
+            driverKind: entry.driverKind,
+            continuationKey: `${entry.driverKind}:instance:${instanceId}`,
+          },
+        })),
+      ),
+    listInstances: () => Effect.succeed(entries.map((entry) => entry.instanceId)),
+    listProviders: () => Effect.succeed([...new Set(entries.map((entry) => entry.driverKind))]),
+    streamChanges: Stream.empty,
+    subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), (pubsub) =>
+      PubSub.subscribe(pubsub),
+    ),
+  };
+};
+
 /**
  * Build a `ProviderAdapterRegistryShape` from a kind-keyed adapter map.
  * Every adapter present in the map is addressable via both the legacy
@@ -39,61 +83,15 @@ export type KindAdapterMap = Partial<
  * `id = defaultInstanceIdForDriver(kind)`).
  */
 export const makeAdapterRegistryMock = (adapters: KindAdapterMap): ProviderAdapterRegistryShape => {
-  const byInstanceId = new Map<ProviderInstanceId, ProviderAdapterShape<ProviderAdapterError>>();
+  const entries: InstanceAdapterMockEntry[] = [];
   for (const [kind, adapter] of Object.entries(adapters)) {
     if (!adapter) continue;
     const driverKind = ProviderDriverKind.make(kind);
-    byInstanceId.set(defaultInstanceIdForDriver(driverKind), adapter);
+    entries.push({
+      instanceId: defaultInstanceIdForDriver(driverKind),
+      driverKind,
+      adapter,
+    });
   }
-
-  const getByInstance: ProviderAdapterRegistryShape["getByInstance"] = (instanceId) => {
-    const adapter = byInstanceId.get(instanceId);
-    return adapter
-      ? Effect.succeed(adapter)
-      : Effect.fail(
-          new ProviderUnsupportedError({
-            provider: ProviderDriverKind.make(instanceId),
-          }),
-        );
-  };
-
-  return {
-    getByInstance,
-    getInstanceInfo: (instanceId) => {
-      const adapter = byInstanceId.get(instanceId);
-      if (!adapter) {
-        return Effect.fail(
-          new ProviderUnsupportedError({
-            provider: ProviderDriverKind.make(instanceId),
-          }),
-        );
-      }
-      return Effect.succeed({
-        instanceId,
-        driverKind: ProviderDriverKind.make(adapter.provider),
-        displayName: undefined,
-        enabled: true,
-        continuationIdentity: {
-          driverKind: ProviderDriverKind.make(adapter.provider),
-          continuationKey: `${adapter.provider}:instance:${instanceId}`,
-        },
-      });
-    },
-    listInstances: () => Effect.succeed(Array.from(byInstanceId.keys())),
-    listProviders: () =>
-      Effect.succeed(
-        Record.keys(
-          Record.filterMap(adapters, (adapter, kind) =>
-            adapter !== undefined ? Result.succeed(kind) : Result.failVoid,
-          ),
-        ),
-      ),
-    // Static test fixtures don't reload; an empty stream is enough to
-    // satisfy the shape. Tests exercising hot-reload build their own
-    // stream via the real `ProviderInstanceRegistry`.
-    streamChanges: Stream.empty,
-    subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), (pubsub) =>
-      PubSub.subscribe(pubsub),
-    ),
-  };
+  return makeInstanceAdapterRegistryMock(entries);
 };

@@ -400,7 +400,7 @@ export function readEnvironmentFromWindowsShell(
   return {};
 }
 
-function stripWrappingQuotes(value: string): string {
+export function stripWrappingQuotes(value: string): string {
   return value.replace(/^"+|"+$/g, "");
 }
 
