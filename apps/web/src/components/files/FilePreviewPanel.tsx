@@ -14,7 +14,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { ChevronRight, Code2, Eye, FolderTree, Globe2, LoaderCircle } from "lucide-react";
 import * as Schema from "effect/Schema";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { DocumentMarkdownRenderer } from "~/components/DocumentMarkdownRenderer";
@@ -50,10 +50,12 @@ import {
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
 import {
-  claimFileRevealGeneration,
   clampFileLine,
   centeredFileRevealScrollTop,
+  createFileRevealIncarnation,
   FILE_LINK_REVEAL_ATTRIBUTE,
+  type FileRevealIncarnation,
+  ownsFileRevealIncarnation,
   updateFileLinkReveal,
 } from "./fileLineReveal";
 import { installFileEditorDismissal } from "./fileEditorDismissal";
@@ -125,45 +127,66 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
 type FilePostRender = NonNullable<FileOptions<unknown>["onPostRender"]>;
 interface PendingFileRevealFrame {
   frameId: number;
-  revealRequestId: number;
+  incarnation: FileRevealIncarnation;
 }
 
 function useFileLineReveal(
+  threadRef: ScopedThreadRef,
   relativePath: string | null,
   revealLine: number | null,
   revealRequestId: number,
 ): FilePostRender {
-  const [handledRequestIdsByPath] = useState(() => new Map<string, number>());
-  const [latestRequestIdsByPath] = useState(() => new Map<string, number>());
-  const [pendingFramesByPath] = useState(() => new Map<string, PendingFileRevealFrame>());
+  const ownerKey = scopedThreadKey(threadRef);
+  const incarnation = useMemo(
+    () =>
+      createFileRevealIncarnation({
+        ownerKey,
+        relativePath,
+        revealRequestId,
+      }),
+    [ownerKey, relativePath, revealRequestId],
+  );
+  const currentIncarnationRef = useRef<FileRevealIncarnation | null>(incarnation);
+  currentIncarnationRef.current = incarnation;
+  useLayoutEffect(
+    () => () => {
+      if (ownsFileRevealIncarnation(currentIncarnationRef.current, incarnation)) {
+        currentIncarnationRef.current = null;
+      }
+    },
+    [incarnation],
+  );
+  const [handledIncarnations] = useState(() => new WeakSet<FileRevealIncarnation>());
+  const pendingFrameRef = useRef<PendingFileRevealFrame | null>(null);
 
   return useCallback<FilePostRender>(
     (fileContainer, instance, phase) => {
-      if (relativePath === null) return;
+      if (
+        relativePath === null ||
+        !ownsFileRevealIncarnation(currentIncarnationRef.current, incarnation)
+      ) {
+        return;
+      }
 
-      const generationOwnership = claimFileRevealGeneration(
-        latestRequestIdsByPath,
-        relativePath,
-        revealRequestId,
-      );
-      if (generationOwnership === "stale") return;
-
-      const cancelPendingReveal = () => {
-        const pendingFrame = pendingFramesByPath.get(relativePath);
-        if (pendingFrame !== undefined) {
+      const cancelPendingReveal = (includeCurrentIncarnation: boolean) => {
+        if (!ownsFileRevealIncarnation(currentIncarnationRef.current, incarnation)) {
+          return;
+        }
+        const pendingFrame = pendingFrameRef.current;
+        if (
+          pendingFrame !== null &&
+          (includeCurrentIncarnation || pendingFrame.incarnation !== incarnation)
+        ) {
           cancelAnimationFrame(pendingFrame.frameId);
-          pendingFramesByPath.delete(relativePath);
+          pendingFrameRef.current = null;
         }
       };
 
-      if (generationOwnership === "advanced") {
-        cancelPendingReveal();
-      }
-
       if (phase === "unmount") {
-        cancelPendingReveal();
+        cancelPendingReveal(true);
         return;
       }
+      cancelPendingReveal(false);
 
       const targetLine =
         revealLine === null ? null : clampFileLine(instance.file?.contents ?? "", revealLine);
@@ -182,21 +205,18 @@ function useFileLineReveal(
         Math.max(instance.height, scrollContainer.clientHeight),
       )}px`;
 
-      if (
-        handledRequestIdsByPath.get(relativePath) === revealRequestId ||
-        pendingFramesByPath.has(relativePath)
-      ) {
+      if (handledIncarnations.has(incarnation) || pendingFrameRef.current !== null) {
         return;
       }
 
       const reveal = () => {
         if (
-          latestRequestIdsByPath.get(relativePath) !== revealRequestId ||
-          pendingFramesByPath.get(relativePath)?.revealRequestId !== revealRequestId
+          !ownsFileRevealIncarnation(currentIncarnationRef.current, incarnation) ||
+          pendingFrameRef.current?.incarnation !== incarnation
         ) {
           return;
         }
-        pendingFramesByPath.delete(relativePath);
+        pendingFrameRef.current = null;
         if (!fileContainer.isConnected) return;
 
         const linePosition = instance.getLinePosition(targetLine);
@@ -212,21 +232,21 @@ function useFileLineReveal(
           lineTop: linePosition.top,
           lineHeight: linePosition.height,
         });
-        handledRequestIdsByPath.set(relativePath, revealRequestId);
+        handledIncarnations.add(incarnation);
       };
 
-      pendingFramesByPath.set(relativePath, {
+      pendingFrameRef.current = {
         frameId: requestAnimationFrame(reveal),
-        revealRequestId,
-      });
+        incarnation,
+      };
     },
     [
-      handledRequestIdsByPath,
-      latestRequestIdsByPath,
-      pendingFramesByPath,
+      currentIncarnationRef,
+      handledIncarnations,
+      incarnation,
+      pendingFrameRef,
       relativePath,
       revealLine,
-      revealRequestId,
     ],
   );
 }
@@ -641,7 +661,7 @@ export default function FilePreviewPanel({
     () => (relativePath ? fileBreadcrumbs(projectName, relativePath) : []),
     [projectName, relativePath],
   );
-  const onFilePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
+  const onFilePostRender = useFileLineReveal(threadRef, relativePath, revealLine, revealRequestId);
 
   useEffect(() => {
     const currentCrumb = breadcrumbRef.current?.querySelector<HTMLElement>(

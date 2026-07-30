@@ -1,21 +1,20 @@
 export const FILE_LINK_REVEAL_ATTRIBUTE = "data-file-link-reveal";
 
-export type FileRevealGenerationOwnership = "advanced" | "current" | "stale";
+export interface FileRevealIncarnation {
+  readonly ownerKey: string;
+  readonly relativePath: string | null;
+  readonly revealRequestId: number;
+}
 
-export function claimFileRevealGeneration(
-  latestRequestIdsByPath: Map<string, number>,
-  relativePath: string,
-  revealRequestId: number,
-): FileRevealGenerationOwnership {
-  const latestRequestId = latestRequestIdsByPath.get(relativePath);
-  if (latestRequestId !== undefined && revealRequestId < latestRequestId) {
-    return "stale";
-  }
-  if (latestRequestId === revealRequestId) {
-    return "current";
-  }
-  latestRequestIdsByPath.set(relativePath, revealRequestId);
-  return "advanced";
+export function createFileRevealIncarnation(input: FileRevealIncarnation): FileRevealIncarnation {
+  return { ...input };
+}
+
+export function ownsFileRevealIncarnation(
+  current: FileRevealIncarnation | null,
+  candidate: FileRevealIncarnation,
+): boolean {
+  return current === candidate;
 }
 
 export function clampFileLine(contents: string, requestedLine: number): number {

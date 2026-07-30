@@ -6,10 +6,12 @@ import {
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
 import {
-  claimFileRevealGeneration,
   clampFileLine,
   centeredFileRevealScrollTop,
+  createFileRevealIncarnation,
   FILE_LINK_REVEAL_ATTRIBUTE,
+  type FileRevealIncarnation,
+  ownsFileRevealIncarnation,
   updateFileLinkReveal,
 } from "./fileLineReveal";
 import {
@@ -91,25 +93,75 @@ describe("resolveFilePreviewMode", () => {
 });
 
 describe("file line reveal", () => {
-  it("rejects superseded callbacks before they can reclaim generation ownership", () => {
-    const latestRequestIdsByPath = new Map<string, number>();
-    const applyRevealSideEffects = vi.fn();
-    const runPostRenderCallback = (revealRequestId: number) => {
-      const ownership = claimFileRevealGeneration(
-        latestRequestIdsByPath,
-        "src/index.ts",
-        revealRequestId,
-      );
-      if (ownership === "stale") return;
-      applyRevealSideEffects(ownership);
-    };
+  const runRevealCallback = (
+    current: FileRevealIncarnation | null,
+    candidate: FileRevealIncarnation,
+    applyRevealSideEffects: () => void,
+  ) => {
+    if (!ownsFileRevealIncarnation(current, candidate)) return;
+    applyRevealSideEffects();
+  };
 
-    runPostRenderCallback(8);
-    applyRevealSideEffects.mockClear();
-    runPostRenderCallback(7);
+  it("accepts request one after close and reopen while the old request stays inert", () => {
+    const applyOldRevealSideEffects = vi.fn();
+    const applyReopenedRevealSideEffects = vi.fn();
+    const oldIncarnation = createFileRevealIncarnation({
+      ownerKey: "local:thread-one",
+      relativePath: "src/index.ts",
+      revealRequestId: 8,
+    });
+    const reopenedIncarnation = createFileRevealIncarnation({
+      ownerKey: "local:thread-one",
+      relativePath: "src/index.ts",
+      revealRequestId: 1,
+    });
 
-    expect(applyRevealSideEffects).not.toHaveBeenCalled();
-    expect(latestRequestIdsByPath.get("src/index.ts")).toBe(8);
+    runRevealCallback(reopenedIncarnation, oldIncarnation, applyOldRevealSideEffects);
+    runRevealCallback(reopenedIncarnation, reopenedIncarnation, applyReopenedRevealSideEffects);
+
+    expect(applyOldRevealSideEffects).not.toHaveBeenCalled();
+    expect(applyReopenedRevealSideEffects).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  it("rejects old callbacks when switching threads inside the same project", () => {
+    const applyOldThreadSideEffects = vi.fn();
+    const applyCurrentThreadSideEffects = vi.fn();
+    const oldThreadIncarnation = createFileRevealIncarnation({
+      ownerKey: "local:thread-one",
+      relativePath: "src/index.ts",
+      revealRequestId: 4,
+    });
+    const currentThreadIncarnation = createFileRevealIncarnation({
+      ownerKey: "local:thread-two",
+      relativePath: "src/index.ts",
+      revealRequestId: 1,
+    });
+
+    runRevealCallback(currentThreadIncarnation, oldThreadIncarnation, applyOldThreadSideEffects);
+    runRevealCallback(
+      currentThreadIncarnation,
+      currentThreadIncarnation,
+      applyCurrentThreadSideEffects,
+    );
+
+    expect(applyOldThreadSideEffects).not.toHaveBeenCalled();
+    expect(applyCurrentThreadSideEffects).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  it("distinguishes repeated lifetimes even when every persisted field matches", () => {
+    const firstIncarnation = createFileRevealIncarnation({
+      ownerKey: "local:thread-one",
+      relativePath: "src/index.ts",
+      revealRequestId: 1,
+    });
+    const reopenedIncarnation = createFileRevealIncarnation({
+      ownerKey: "local:thread-one",
+      relativePath: "src/index.ts",
+      revealRequestId: 1,
+    });
+
+    expect(ownsFileRevealIncarnation(reopenedIncarnation, firstIncarnation)).toBe(false);
+    expect(ownsFileRevealIncarnation(reopenedIncarnation, reopenedIncarnation)).toBe(true);
   });
 
   it("clamps requested lines across Unix and Windows line endings", () => {

@@ -289,6 +289,42 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("starts a new reveal request lifetime after a file surface is closed and reopened", () => {
+    for (let line = 1; line <= 8; line += 1) {
+      useRightPanelStore.getState().openFile(refA, "src/index.ts", line);
+    }
+    useRightPanelStore.getState().closeSurface(refA, "file:src/index.ts");
+    useRightPanelStore.getState().openFile(refA, "src/index.ts", 42);
+
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+    ).toMatchObject({
+      relativePath: "src/index.ts",
+      revealLine: 42,
+      revealRequestId: 1,
+    });
+  });
+
+  it("keeps reveal request lifetimes independent across same-project thread switches", () => {
+    for (let line = 1; line <= 4; line += 1) {
+      useRightPanelStore.getState().openFile(refA, "src/index.ts", line);
+    }
+    useRightPanelStore.getState().openFile(refB, "src/index.ts", 42);
+
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+    ).toMatchObject({
+      revealRequestId: 4,
+    });
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refB),
+    ).toMatchObject({
+      relativePath: "src/index.ts",
+      revealLine: 42,
+      revealRequestId: 1,
+    });
+  });
+
   it("removes persisted file surfaces when their workspace no longer exists", () => {
     useRightPanelStore.getState().openFile(refA, "src/index.ts");
     useRightPanelStore.getState().open(refA, "plan");
