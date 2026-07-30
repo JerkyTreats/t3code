@@ -136,6 +136,7 @@ export const make = Effect.gen(function* () {
     capabilities: {
       repositoryIdentity: true,
       threadSyncV2: true,
+      threadSettlement: true,
     },
   };
 

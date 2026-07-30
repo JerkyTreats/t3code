@@ -25,6 +25,9 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadSyncV2: Schema.optionalKey(Schema.Boolean).pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
   ),
+  threadSettlement: Schema.optionalKey(Schema.Boolean).pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

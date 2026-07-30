@@ -11,6 +11,9 @@ import {
   isContextMenuPointerDown,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
+  paginateSidebarV2Threads,
+  resolveSidebarV2BulkSettleTargets,
+  resolveSidebarV2SettledTimestamp,
   resolveProjectStatusIndicator,
   resolveSidebarNewThreadSeedContext,
   resolveSidebarNewThreadEnvMode,
@@ -19,6 +22,8 @@ import {
   resolveThreadStatusPill,
   shouldClearThreadSelectionOnMouseDown,
   sortProjectsForSidebar,
+  sortSettledThreadsForSidebarV2,
+  sortThreadsForSidebarV2,
   THREAD_JUMP_HINT_SHOW_DELAY_MS,
 } from "./Sidebar.logic";
 import {
@@ -33,6 +38,7 @@ import {
   DEFAULT_RUNTIME_MODE,
   type Project,
   type Thread,
+  type ThreadShell,
 } from "../types";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
@@ -911,6 +917,36 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
   };
 }
 
+function makeThreadShell(overrides: Partial<ThreadShell> = {}): ThreadShell {
+  const thread = makeThread(overrides);
+  return {
+    id: thread.id,
+    environmentId: thread.environmentId,
+    projectId: thread.projectId,
+    title: thread.title,
+    modelSelection: thread.modelSelection,
+    runtimeMode: thread.runtimeMode,
+    interactionMode: thread.interactionMode,
+    branch: thread.branch,
+    worktreePath: thread.worktreePath,
+    latestTurn: thread.latestTurn,
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+    archivedAt: thread.archivedAt,
+    settledOverride: thread.settledOverride,
+    settledAt: thread.settledAt,
+    session: thread.session,
+    latestUserMessageAt: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    hasActionableProposedPlan: false,
+    activePlanProgress: null,
+    latestRuntimeActivityAt: null,
+    statusSummaryUpdatedAt: null,
+    ...overrides,
+  };
+}
+
 describe("getFallbackThreadIdAfterDelete", () => {
   it("returns the top remaining thread in the deleted thread's project sidebar order", () => {
     const fallbackThreadId = getFallbackThreadIdAfterDelete({
@@ -1134,5 +1170,120 @@ describe("sortProjectsForSidebar", () => {
     );
 
     expect(timestamp).toBe(Date.parse("2026-03-09T10:10:00.000Z"));
+  });
+});
+
+describe("Sidebar V2 ordering and pagination", () => {
+  it("keeps active work in stable creation order", () => {
+    const sorted = sortThreadsForSidebarV2([
+      makeThreadShell({
+        id: ThreadId.make("thread-older"),
+        createdAt: "2026-03-09T10:00:00.000Z",
+      }),
+      makeThreadShell({
+        id: ThreadId.make("thread-newer"),
+        createdAt: "2026-03-09T11:00:00.000Z",
+      }),
+    ]);
+
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      ThreadId.make("thread-newer"),
+      ThreadId.make("thread-older"),
+    ]);
+  });
+
+  it("orders settled work by accepted settlement time", () => {
+    const sorted = sortSettledThreadsForSidebarV2([
+      makeThreadShell({
+        id: ThreadId.make("thread-recent-activity"),
+        settledAt: "2026-03-09T10:00:00.000Z",
+        updatedAt: "2026-03-09T13:00:00.000Z",
+      }),
+      makeThreadShell({
+        id: ThreadId.make("thread-recent-settle"),
+        settledAt: "2026-03-09T12:00:00.000Z",
+        updatedAt: "2026-03-09T11:00:00.000Z",
+      }),
+    ]);
+
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      ThreadId.make("thread-recent-settle"),
+      ThreadId.make("thread-recent-activity"),
+    ]);
+  });
+
+  it("falls back to the latest valid activity for auto-settled work", () => {
+    const timestamp = resolveSidebarV2SettledTimestamp(
+      makeThreadShell({
+        settledAt: null,
+        updatedAt: "2026-03-09T10:00:00.000Z",
+        latestTurn: {
+          ...makeLatestTurn(),
+          completedAt: "2026-03-09T12:00:00.000Z",
+        },
+      }),
+    );
+
+    expect(timestamp).toBe(Date.parse("2026-03-09T12:00:00.000Z"));
+  });
+
+  it("keeps the routed thread visible outside the current page", () => {
+    const threads = [
+      makeThreadShell({ id: ThreadId.make("thread-1") }),
+      makeThreadShell({ id: ThreadId.make("thread-2") }),
+      makeThreadShell({ id: ThreadId.make("thread-3") }),
+    ];
+    const result = paginateSidebarV2Threads({
+      threads,
+      visibleCount: 1,
+      activeThread: threads[2]!,
+    });
+
+    expect(result.visibleThreads.map((thread) => thread.id)).toEqual([
+      ThreadId.make("thread-1"),
+      ThreadId.make("thread-3"),
+    ]);
+    expect(result.hiddenCount).toBe(1);
+  });
+});
+
+describe("resolveSidebarV2BulkSettleTargets", () => {
+  it("keeps concrete supported and unblocked selections only", () => {
+    const eligible = makeThreadShell({
+      id: ThreadId.make("thread-eligible"),
+      environmentId: EnvironmentId.make("environment-supported"),
+    });
+    const waiting = makeThreadShell({
+      id: ThreadId.make("thread-waiting"),
+      environmentId: EnvironmentId.make("environment-supported"),
+      session: {
+        threadId: ThreadId.make("thread-waiting"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        providerName: "Codex",
+        status: "running",
+        activeTurnId: "turn-active" as never,
+        runtimeMode: DEFAULT_RUNTIME_MODE,
+        updatedAt: "2026-03-09T10:00:00.000Z",
+        lastError: null,
+      },
+    });
+    const unsupported = makeThreadShell({
+      id: ThreadId.make("thread-unsupported"),
+      environmentId: EnvironmentId.make("environment-legacy"),
+    });
+    const selectedThreadKeys = new Set([
+      `${eligible.environmentId}:${eligible.id}`,
+      `${waiting.environmentId}:${waiting.id}`,
+      `${unsupported.environmentId}:${unsupported.id}`,
+    ]);
+
+    const targets = resolveSidebarV2BulkSettleTargets({
+      threads: [eligible, waiting, unsupported],
+      selectedThreadKeys,
+      now: "2026-03-09T12:00:00.000Z",
+      supportsSettlement: (environmentId) => environmentId === eligible.environmentId,
+    });
+
+    expect(targets.map((thread) => thread.id)).toEqual([eligible.id]);
   });
 });

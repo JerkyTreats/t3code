@@ -1,5 +1,6 @@
 import * as React from "react";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+import { canSettle } from "@t3tools/client-runtime/state/thread-settled";
 import {
   getThreadSortTimestamp,
   sortThreads,
@@ -16,6 +17,9 @@ export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 100;
 // Visible sidebar rows are prewarmed into the thread-detail cache so opening a
 // nearby thread usually reuses an already-hot subscription.
 export const SIDEBAR_THREAD_PREWARM_LIMIT = 10;
+export const SIDEBAR_V2_ACTIVE_PAGE_SIZE = 50;
+export const SIDEBAR_V2_SETTLED_INITIAL_COUNT = 10;
+export const SIDEBAR_V2_SETTLED_PAGE_SIZE = 25;
 export type SidebarNewThreadEnvMode = "local" | "worktree";
 type SidebarProject = {
   id: string;
@@ -465,6 +469,150 @@ export function resolveProjectStatusIndicator(
   }
 
   return highestPriorityStatus;
+}
+
+export function parseSidebarTimestamp(timestamp: string | null | undefined): number {
+  if (!timestamp) return 0;
+  const parsed = Date.parse(timestamp);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function resolveSidebarV2SettledTimestamp(
+  thread: Pick<
+    SidebarThreadSummary,
+    "settledAt" | "latestUserMessageAt" | "latestTurn" | "updatedAt"
+  >,
+): number {
+  const settledAt = parseSidebarTimestamp(thread.settledAt);
+  if (settledAt > 0) return settledAt;
+  return Math.max(
+    parseSidebarTimestamp(thread.latestUserMessageAt),
+    parseSidebarTimestamp(thread.latestTurn?.requestedAt),
+    parseSidebarTimestamp(thread.latestTurn?.startedAt),
+    parseSidebarTimestamp(thread.latestTurn?.completedAt),
+    parseSidebarTimestamp(thread.updatedAt),
+  );
+}
+
+export function sortThreadsForSidebarV2<T extends Pick<SidebarThreadSummary, "id" | "createdAt">>(
+  threads: readonly T[],
+): T[] {
+  return [...threads].toSorted(
+    (left, right) =>
+      parseSidebarTimestamp(right.createdAt) - parseSidebarTimestamp(left.createdAt) ||
+      left.id.localeCompare(right.id),
+  );
+}
+
+export function sortSettledThreadsForSidebarV2<
+  T extends Pick<
+    SidebarThreadSummary,
+    "id" | "settledAt" | "latestUserMessageAt" | "latestTurn" | "updatedAt"
+  >,
+>(threads: readonly T[]): T[] {
+  return [...threads].toSorted(
+    (left, right) =>
+      resolveSidebarV2SettledTimestamp(right) - resolveSidebarV2SettledTimestamp(left) ||
+      left.id.localeCompare(right.id),
+  );
+}
+
+export function sortProjectGroupsForSidebarV2<
+  TProject extends {
+    readonly projectKey: string;
+    readonly displayName: string;
+    readonly memberProjectRefs: readonly {
+      readonly environmentId: string;
+      readonly projectId: string;
+    }[];
+  },
+  TThread extends ThreadSortInput & {
+    readonly environmentId: string;
+    readonly projectId: string;
+  },
+>(input: {
+  projects: readonly TProject[];
+  threads: readonly TThread[];
+  sortOrder: SidebarProjectSortOrder;
+}): TProject[] {
+  if (input.sortOrder === "manual") return [...input.projects];
+  const sortOrder = input.sortOrder;
+  const groupKeyByProject = new Map(
+    input.projects.flatMap((project) =>
+      project.memberProjectRefs.map(
+        (projectRef) =>
+          [`${projectRef.environmentId}:${projectRef.projectId}`, project.projectKey] as const,
+      ),
+    ),
+  );
+  const latestByGroup = new Map<string, number>();
+  for (const thread of input.threads) {
+    const groupKey = groupKeyByProject.get(`${thread.environmentId}:${thread.projectId}`);
+    if (!groupKey) continue;
+    latestByGroup.set(
+      groupKey,
+      Math.max(
+        latestByGroup.get(groupKey) ?? Number.NEGATIVE_INFINITY,
+        getThreadSortTimestamp(thread, sortOrder),
+      ),
+    );
+  }
+  return [...input.projects].toSorted((left, right) => {
+    const leftTimestamp = latestByGroup.get(left.projectKey) ?? Number.NEGATIVE_INFINITY;
+    const rightTimestamp = latestByGroup.get(right.projectKey) ?? Number.NEGATIVE_INFINITY;
+    return (
+      rightTimestamp - leftTimestamp ||
+      left.displayName.localeCompare(right.displayName) ||
+      left.projectKey.localeCompare(right.projectKey)
+    );
+  });
+}
+
+export function paginateSidebarV2Threads<T>(input: {
+  threads: readonly T[];
+  visibleCount: number;
+  activeThread?: T | null;
+}): {
+  visibleThreads: T[];
+  hiddenCount: number;
+} {
+  const page = input.threads.slice(0, Math.max(0, input.visibleCount));
+  const activeThread = input.activeThread ?? null;
+  const visibleThreads =
+    activeThread !== null && !page.includes(activeThread) && input.threads.includes(activeThread)
+      ? [...page, activeThread]
+      : page;
+  return {
+    visibleThreads,
+    hiddenCount: Math.max(0, input.threads.length - visibleThreads.length),
+  };
+}
+
+export function resolveSidebarV2BulkSettleTargets<
+  T extends Pick<
+    SidebarThreadSummary,
+    | "environmentId"
+    | "id"
+    | "hasPendingApprovals"
+    | "hasPendingUserInput"
+    | "session"
+    | "latestUserMessageAt"
+    | "latestTurn"
+  >,
+>(input: {
+  threads: readonly T[];
+  selectedThreadKeys: ReadonlySet<string>;
+  now: string;
+  supportsSettlement: (environmentId: T["environmentId"]) => boolean;
+}): T[] {
+  return input.threads.filter((thread) => {
+    const threadKey = `${thread.environmentId}:${thread.id}`;
+    return (
+      input.selectedThreadKeys.has(threadKey) &&
+      input.supportsSettlement(thread.environmentId) &&
+      canSettle(thread, { now: input.now })
+    );
+  });
 }
 
 export function getVisibleThreadsForProject<T extends Pick<Thread, "id">>(input: {
