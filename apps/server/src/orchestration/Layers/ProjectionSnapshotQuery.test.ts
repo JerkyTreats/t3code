@@ -1361,6 +1361,10 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         ThreadId.make("thread-1"),
         { activities: 2 },
       );
+      const untrimmedActivityPage = yield* snapshotQuery.getThreadActivityPage({
+        threadId: ThreadId.make("thread-1"),
+        limit: 100,
+      });
 
       assert.equal(threadDetail._tag, "Some");
       if (threadDetail._tag === "Some") {
@@ -1377,16 +1381,52 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
       if (boundedThreadDetailV2._tag === "Some") {
         assert.deepEqual(
           boundedThreadDetailV2.value.thread.activities.map((activity) => activity.id),
-          [asEventId("context-crowd-valid"), asEventId("context-crowd-malformed-4")],
+          [
+            asEventId("context-crowd-valid"),
+            asEventId("context-crowd-malformed-1"),
+            asEventId("context-crowd-malformed-2"),
+            asEventId("context-crowd-malformed-3"),
+            asEventId("context-crowd-malformed-4"),
+          ],
         );
-        assert.equal(boundedThreadDetailV2.value.windows.activities.returned, 2);
-        assert.equal(boundedThreadDetailV2.value.windows.activities.limit, 2);
+        assert.equal(boundedThreadDetailV2.value.windows.activities.returned, 5);
+        assert.equal(boundedThreadDetailV2.value.windows.activities.limit, 5);
         assert.equal(boundedThreadDetailV2.value.windows.activities.hasMoreBefore, true);
         assert.deepEqual(boundedThreadDetailV2.value.thread.activities[0]?.payload, {
           usedTokens: 6_000,
           totalProcessedTokens: 70_000,
         });
+        const firstRetainedActivity = boundedThreadDetailV2.value.thread.activities[0];
+        assert.isDefined(firstRetainedActivity);
+        if (firstRetainedActivity) {
+          const precedingActivityPage = yield* snapshotQuery.getThreadActivityPage({
+            threadId: ThreadId.make("thread-1"),
+            limit: 100,
+            cursor: {
+              direction: "before",
+              position: {
+                activityId: firstRetainedActivity.id,
+                createdAt: firstRetainedActivity.createdAt,
+                sequence: firstRetainedActivity.sequence ?? null,
+              },
+            },
+          });
+          assert.deepEqual(
+            [...precedingActivityPage.items, ...boundedThreadDetailV2.value.thread.activities].map(
+              (activity) => activity.id,
+            ),
+            untrimmedActivityPage.items.map((activity) => activity.id),
+          );
+        }
       }
+      assert.isTrue(
+        untrimmedActivityPage.items.some((activity) => activity.id === asEventId("context-stale")),
+      );
+      assert.isTrue(
+        untrimmedActivityPage.items.some(
+          (activity) => activity.id === asEventId("context-crowd-malformed-2"),
+        ),
+      );
 
       assert.deepEqual(snapshot.threads[0]?.activities ?? [], [
         {
@@ -1531,6 +1571,153 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           createdAt: "2026-04-01T00:00:17.000Z",
         },
       ]);
+    }),
+  );
+
+  it.effect("shrinks other snapshot categories before a large reserved context row", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const threadId = ThreadId.make("thread-reserved-context");
+      const largeContextSummary = "c".repeat(6_000_000);
+      const largeMessage = "m".repeat(3_000_000);
+
+      yield* sql`DELETE FROM projection_projects`;
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_thread_messages`;
+      yield* sql`DELETE FROM projection_thread_activities`;
+      yield* sql`DELETE FROM projection_state`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id,
+          title,
+          workspace_root,
+          default_model_selection_json,
+          scripts_json,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          'project-reserved-context',
+          'Reserved Context',
+          '/tmp/project-reserved-context',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          '[]',
+          '2026-04-02T00:00:00.000Z',
+          '2026-04-02T00:00:01.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id,
+          project_id,
+          title,
+          model_selection_json,
+          runtime_mode,
+          interaction_mode,
+          branch,
+          worktree_path,
+          latest_turn_id,
+          latest_user_message_at,
+          pending_approval_count,
+          pending_user_input_count,
+          has_actionable_proposed_plan,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          ${threadId},
+          'project-reserved-context',
+          'Reserved Context Thread',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          'full-access',
+          'default',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          0,
+          0,
+          0,
+          '2026-04-02T00:00:02.000Z',
+          '2026-04-02T00:00:03.000Z',
+          NULL
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_thread_messages (
+          message_id,
+          thread_id,
+          turn_id,
+          role,
+          text,
+          is_streaming,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          'message-reserved-context',
+          ${threadId},
+          'turn-reserved-context',
+          'assistant',
+          ${largeMessage},
+          0,
+          '2026-04-02T00:00:04.000Z',
+          '2026-04-02T00:00:04.000Z'
+        )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id,
+          thread_id,
+          turn_id,
+          tone,
+          kind,
+          summary,
+          payload_json,
+          sequence,
+          created_at
+        )
+        VALUES (
+          'activity-reserved-context',
+          ${threadId},
+          'turn-reserved-context',
+          'info',
+          'context-window.updated',
+          ${largeContextSummary},
+          '{"usedTokens":7000,"totalProcessedTokens":80000}',
+          1,
+          '2026-04-02T00:00:05.000Z'
+        )
+      `;
+
+      const snapshot = yield* snapshotQuery.getThreadDetailV2ById(threadId, {
+        messages: 1,
+        activities: 1,
+      });
+
+      assert.equal(snapshot._tag, "Some");
+      if (snapshot._tag === "Some") {
+        assert.deepEqual(snapshot.value.thread.messages, []);
+        assert.equal(snapshot.value.windows.messages.hasMoreBefore, true);
+        assert.equal(
+          snapshot.value.thread.activities[0]?.id,
+          asEventId("activity-reserved-context"),
+        );
+        assert.equal(snapshot.value.thread.activities[0]?.summary.length, 6_000_000);
+        assert.deepEqual(snapshot.value.thread.activities[0]?.payload, {
+          usedTokens: 7_000,
+          totalProcessedTokens: 80_000,
+        });
+        assert.isTrue(snapshot.value.estimatedSerializedBytes <= 8 * 1024 * 1024);
+      }
     }),
   );
 

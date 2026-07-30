@@ -205,9 +205,10 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 
 - Retain only the latest resolvable context-window row per turn in V1 and V2 initial snapshot payloads.
 - Preserve malformed rows, provider processed totals, activity pages, and live events.
-- Apply V2 retention before bounded activity limits so stale rows cannot displace usable state.
+- Expand the bounded V2 activity suffix contiguously when malformed rows would displace usable state.
 - Keep one usable row for every surviving turn so a turn revert can reveal older context state.
-- Reserve one bounded V2 activity slot for the newest usable context row when later malformed rows fill the tail.
+- Preserve complete before-cursor recovery and keep no-cursor explicit activity pages untrimmed.
+- Protect the reserved usable row during byte trimming while eligible peer categories remain.
 - Treat every null-turn context row as an independent activity identity in V1 and V2.
 
 ## Feature Spec Contract

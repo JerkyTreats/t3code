@@ -28,7 +28,8 @@ Connection failures, restarts, partial streams, renderer crashes, and transport 
 - Server projection owns context-window row trimming and retains the latest resolvable row for each turn with provider processed totals intact.
 - V1 and V2 initial thread snapshots apply the same per-turn retention rule before publication.
 - Malformed context-window rows remain visible and cannot shadow an older usable row.
-- Bounded V2 snapshots reserve capacity for the newest usable context row when a later malformed tail would otherwise fill the activity window.
+- Bounded V2 snapshots expand a contiguous retained suffix back to the newest usable context row when a later malformed tail would otherwise fill the requested activity window.
+- Expanded retained suffixes keep before-cursor paging complete and fail instead of publishing a gap when the usable row falls outside the bounded maximum.
 - Context rows without a turn id retain independent activity identity and are never collapsed into one synthetic turn.
 - Activity pages and live activity events remain untrimmed so replay and ongoing usage updates preserve their event semantics.
 - Connection diagnostics and the persistent flight recorder remain bounded, structured, sanitized, and free of credentials.
@@ -96,8 +97,9 @@ Current owner modules:
 - Restore outbox persistence and stable identities before changing transport dispatch.
 - Restore subscribe-first synchronization and dropped-event recovery before adding compression.
 - Keep server projection as the only owner of context-window activity trimming.
-- Apply retention before the V2 activity limit so stale rows cannot displace the latest usable row from bounded hydration.
-- Keep the reserved usable row through response byte trimming and fail explicitly if the reserved row alone cannot fit.
+- Apply retention before selecting a contiguous V2 suffix and expose the effective expanded activity window.
+- Keep explicit activity pages on a dedicated untrimmed query path, including requests without a cursor.
+- Keep the reserved usable row through response byte trimming, remove every eligible peer category first, and fail explicitly only when the reserved row and metadata cannot fit.
 - Add compression through narrow HTTP and WebSocket seams without replacing the connection driver, supervisor, outbox, thread synchronization, or diagnostics subtrees.
 - Patch only the selected Effect platform package behavior needed for WebSocket compression and register the patch explicitly.
 - Preserve every diagnostic redaction boundary while adding compression and replay metrics.
@@ -118,6 +120,7 @@ Current owner modules:
 - Reconnect never duplicates an accepted turn or provider dispatch.
 - Retriable and terminal failures retain distinct retry and discard behavior.
 - Snapshot, replay, and live event boundary tests prove no gap and no duplicate application.
+- Expanded V2 context retention reconstructs the complete untrimmed history through before-cursor paging.
 - Dropped-event tests prove bounded recovery.
 - V2 paging, hydration, and Unicode-safe chunk tests continue to pass.
 - Reverting the newest turn reveals the latest retained usable row from an older surviving turn.

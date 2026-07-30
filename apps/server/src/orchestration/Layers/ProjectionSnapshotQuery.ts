@@ -490,20 +490,6 @@ function takeLimitedRows<T>(
   };
 }
 
-function compareRawActivityRowsDescending(
-  left: ProjectionThreadActivityRawDbRow,
-  right: ProjectionThreadActivityRawDbRow,
-): number {
-  if (left.sequence === null && right.sequence !== null) return 1;
-  if (left.sequence !== null && right.sequence === null) return -1;
-  if (left.sequence !== null && right.sequence !== null && left.sequence !== right.sequence) {
-    return right.sequence - left.sequence;
-  }
-  return (
-    right.createdAt.localeCompare(left.createdAt) || right.activityId.localeCompare(left.activityId)
-  );
-}
-
 function takeInitialActivityRows(input: {
   readonly rows: ReadonlyArray<ProjectionThreadActivityRawDbRow>;
   readonly latestResolvableContextRow: ProjectionThreadActivityRawDbRow | null;
@@ -511,30 +497,25 @@ function takeInitialActivityRows(input: {
 }): {
   readonly rows: ReadonlyArray<ProjectionThreadActivityRawDbRow>;
   readonly hasMore: boolean;
+  readonly effectiveLimit: number;
   readonly reservedActivityId: EventId | null;
 } {
-  const limitedRows = input.rows.slice(0, input.limit);
   const latestContext = input.latestResolvableContextRow;
-  if (
-    latestContext !== null &&
-    !limitedRows.some((row) => row.activityId === latestContext.activityId)
-  ) {
-    if (limitedRows.length >= input.limit) {
-      limitedRows.pop();
-    }
-    limitedRows.push(latestContext);
-    limitedRows.sort(compareRawActivityRowsDescending);
-  }
+  const latestContextIndex =
+    latestContext === null
+      ? -1
+      : input.rows.findIndex((row) => row.activityId === latestContext.activityId);
+  const effectiveLimit =
+    latestContextIndex < 0 ? input.limit : Math.max(input.limit, latestContextIndex + 1);
+  const limitedRows = input.rows.slice(0, effectiveLimit);
   const reservedActivityId =
     latestContext !== null && limitedRows.some((row) => row.activityId === latestContext.activityId)
       ? latestContext.activityId
       : null;
   return {
     rows: limitedRows.toReversed(),
-    hasMore:
-      input.rows.length > input.limit ||
-      (latestContext !== null &&
-        !input.rows.some((row) => row.activityId === latestContext.activityId)),
+    hasMore: input.rows.length > effectiveLimit,
+    effectiveLimit,
     reservedActivityId,
   };
 }
@@ -1623,7 +1604,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
-  const listTailThreadActivityRawRowsByThread = SqlSchema.findAll({
+  const listTailRetainedThreadActivityRawRowsByThread = SqlSchema.findAll({
     Request: ThreadLimitLookupInput,
     Result: ProjectionThreadActivityRawDbRowSchema,
     execute: ({ threadId, limit }) =>
@@ -1672,6 +1653,42 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             OR COALESCE(CAST(json_extract(payload_json, '$.usedTokens') AS REAL) < 0, 1)
             OR activity_id IN (SELECT activity_id FROM latest_context_activity_ids)
           )
+          AND EXISTS (
+            SELECT 1
+            FROM projection_threads
+            WHERE projection_threads.thread_id = projection_thread_activities.thread_id
+              AND projection_threads.deleted_at IS NULL
+          )
+        ORDER BY
+          sequence DESC,
+          created_at DESC,
+          activity_id DESC
+        LIMIT ${limit}
+      `,
+  });
+
+  const listTailThreadActivityRawRowsByThread = SqlSchema.findAll({
+    Request: ThreadLimitLookupInput,
+    Result: ProjectionThreadActivityRawDbRowSchema,
+    execute: ({ threadId, limit }) =>
+      sql`
+        SELECT
+          activity_id AS "activityId",
+          thread_id AS "threadId",
+          turn_id AS "turnId",
+          tone,
+          kind,
+          summary,
+          CASE
+            WHEN length(CAST(payload_json AS BLOB)) <= ${THREAD_SYNC_V2_INLINE_ACTIVITY_PAYLOAD_BYTES}
+              THEN payload_json
+            ELSE NULL
+          END AS "payloadJson",
+          length(CAST(payload_json AS BLOB)) AS "payloadByteLength",
+          sequence,
+          created_at AS "createdAt"
+        FROM projection_thread_activities
+        WHERE thread_id = ${threadId}
           AND EXISTS (
             SELECT 1
             FROM projection_threads
@@ -3290,9 +3307,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             ),
           ),
         ),
-        listTailThreadActivityRawRowsByThread({
+        listTailRetainedThreadActivityRawRowsByThread({
           threadId,
-          limit: limits.activities + 1,
+          limit: THREAD_SYNC_V2_MAX_LIMITS.activities + 1,
         }).pipe(
           Effect.mapError(
             toPersistenceSqlOrDecodeError(
@@ -3341,6 +3358,24 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       if (Option.isNone(threadRow)) {
         return Option.none<OrchestrationThreadDetailV2Snapshot>();
       }
+      const latestResolvableContextRow = Option.getOrNull(latestResolvableContextActivityRow);
+      const latestResolvableContextIndex =
+        latestResolvableContextRow === null
+          ? -1
+          : activityRows.findIndex(
+              (row) => row.activityId === latestResolvableContextRow.activityId,
+            );
+      if (
+        latestResolvableContextRow !== null &&
+        (latestResolvableContextIndex < 0 ||
+          latestResolvableContextIndex >= THREAD_SYNC_V2_MAX_LIMITS.activities)
+      ) {
+        return yield* new PersistenceDecodeError({
+          operation: "ProjectionSnapshotQuery.getThreadDetailV2ById:contiguousContextWindow",
+          issue: `Latest usable context activity falls outside the bounded ${THREAD_SYNC_V2_MAX_LIMITS.activities} row tail`,
+          correlation: { threadId },
+        });
+      }
 
       const messageWindow = takeLimitedRows(messageRows, limits.messages, { reverse: true });
       const proposedPlanWindow = takeLimitedRows(proposedPlanRows, limits.proposedPlans, {
@@ -3348,7 +3383,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       });
       const activityWindow = takeInitialActivityRows({
         rows: activityRows,
-        latestResolvableContextRow: Option.getOrNull(latestResolvableContextActivityRow),
+        latestResolvableContextRow,
         limit: limits.activities,
       });
       const checkpointWindow = takeLimitedRows(checkpointRows, limits.checkpoints, {
@@ -3383,7 +3418,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           },
           activities: {
             returned: activityMappings.length,
-            limit: limits.activities,
+            limit: activityWindow.effectiveLimit,
             hasMoreBefore: activitiesHaveMoreBefore,
             hasMoreAfter: false,
           },
@@ -3442,6 +3477,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           });
         }
 
+        const removableActivity = activityMappings.find(
+          (mapping) => mapping.activity.id !== reservedContextActivityId,
+        );
         const candidates = [
           messages[0] === undefined
             ? null
@@ -3449,11 +3487,11 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           proposedPlans[0] === undefined
             ? null
             : { kind: "plans" as const, bytes: estimatedSerializedBytes(proposedPlans[0]) },
-          activityMappings[0] === undefined
+          removableActivity === undefined
             ? null
             : {
                 kind: "activities" as const,
-                bytes: estimatedSerializedBytes(activityMappings[0].activity),
+                bytes: estimatedSerializedBytes(removableActivity.activity),
               },
           checkpoints[0] === undefined
             ? null
@@ -3462,8 +3500,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         const largest = candidates.toSorted((left, right) => right.bytes - left.bytes)[0];
         if (largest === undefined) {
           return yield* new PersistenceDecodeError({
-            operation: "ProjectionSnapshotQuery.getThreadDetailV2ById:responseBound",
-            issue: `Snapshot metadata exceeds ${THREAD_SYNC_V2_MAX_PAGE_RESPONSE_BYTES} bytes`,
+            operation: "ProjectionSnapshotQuery.getThreadDetailV2ById:reservedContextResponseBound",
+            issue: `Reserved context activity and snapshot metadata exceed ${THREAD_SYNC_V2_MAX_PAGE_RESPONSE_BYTES} bytes`,
             correlation: { threadId },
           });
         }
@@ -3479,7 +3517,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           case "activities":
             {
               const removableIndex = activityMappings.findIndex(
-                (mapping) => mapping.activity.id !== reservedContextActivityId,
+                (mapping) => mapping.activity.id === removableActivity?.activity.id,
               );
               if (removableIndex < 0) {
                 return yield* new PersistenceDecodeError({
