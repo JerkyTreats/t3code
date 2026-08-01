@@ -1112,26 +1112,28 @@ export default function SidebarV2() {
               <PlusIcon className="size-4" />
             </MenuTrigger>
             <MenuPopup align="end" className="w-64">
-              <MenuGroupLabel>New thread in</MenuGroupLabel>
-              {newThreadMembers.map(({ group, member }) => (
-                <MenuItem
-                  key={member.physicalProjectKey}
-                  onClick={() =>
-                    void createProjectThread(scopeProjectRef(member.environmentId, member.id))
-                  }
-                >
-                  <ProjectFavicon
-                    environmentId={member.environmentId}
-                    cwd={member.workspaceRoot}
-                    className="size-3.5"
-                  />
-                  <span className="min-w-0 flex-1 truncate">
-                    {group.groupedProjectCount > 1
-                      ? `${group.displayName} · ${member.environmentLabel ?? member.workspaceRoot}`
-                      : member.title}
-                  </span>
-                </MenuItem>
-              ))}
+              <MenuGroup>
+                <MenuGroupLabel>New thread in</MenuGroupLabel>
+                {newThreadMembers.map(({ group, member }) => (
+                  <MenuItem
+                    key={member.physicalProjectKey}
+                    onClick={() =>
+                      void createProjectThread(scopeProjectRef(member.environmentId, member.id))
+                    }
+                  >
+                    <ProjectFavicon
+                      environmentId={member.environmentId}
+                      cwd={member.workspaceRoot}
+                      className="size-3.5"
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {group.groupedProjectCount > 1
+                        ? `${group.displayName} · ${member.environmentLabel ?? member.workspaceRoot}`
+                        : member.title}
+                    </span>
+                  </MenuItem>
+                ))}
+              </MenuGroup>
             </MenuPopup>
           </Menu>
         </div>
@@ -1374,26 +1376,28 @@ export default function SidebarV2() {
               New thread
             </MenuTrigger>
             <MenuPopup align="start" side="top" className="w-64">
-              <MenuGroupLabel>New thread in</MenuGroupLabel>
-              {newThreadMembers.map(({ group, member }) => (
-                <MenuItem
-                  key={member.physicalProjectKey}
-                  onClick={() =>
-                    void createProjectThread(scopeProjectRef(member.environmentId, member.id))
-                  }
-                >
-                  <ProjectFavicon
-                    environmentId={member.environmentId}
-                    cwd={member.workspaceRoot}
-                    className="size-3.5"
-                  />
-                  <span className="min-w-0 flex-1 truncate">
-                    {group.groupedProjectCount > 1
-                      ? `${group.displayName} · ${member.environmentLabel ?? member.workspaceRoot}`
-                      : member.title}
-                  </span>
-                </MenuItem>
-              ))}
+              <MenuGroup>
+                <MenuGroupLabel>New thread in</MenuGroupLabel>
+                {newThreadMembers.map(({ group, member }) => (
+                  <MenuItem
+                    key={member.physicalProjectKey}
+                    onClick={() =>
+                      void createProjectThread(scopeProjectRef(member.environmentId, member.id))
+                    }
+                  >
+                    <ProjectFavicon
+                      environmentId={member.environmentId}
+                      cwd={member.workspaceRoot}
+                      className="size-3.5"
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {group.groupedProjectCount > 1
+                        ? `${group.displayName} · ${member.environmentLabel ?? member.workspaceRoot}`
+                        : member.title}
+                    </span>
+                  </MenuItem>
+                ))}
+              </MenuGroup>
             </MenuPopup>
           </Menu>
           <Button
