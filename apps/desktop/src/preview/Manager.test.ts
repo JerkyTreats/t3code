@@ -654,6 +654,12 @@ describe("PreviewManager", () => {
           }
           return undefined;
         });
+        const restoreFocus = vi.fn();
+        getFocusedWebContents.mockReturnValue({
+          id: 7,
+          isDestroyed: () => false,
+          focus: restoreFocus,
+        } as never);
         fromId.mockReturnValue({
           id: 42,
           isDestroyed: () => false,
@@ -712,6 +718,7 @@ describe("PreviewManager", () => {
           button: "left",
           clickCount: 1,
         });
+        expect(restoreFocus).toHaveBeenCalledOnce();
       }),
     ),
   );

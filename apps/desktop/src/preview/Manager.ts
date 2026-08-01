@@ -870,6 +870,31 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
+  const restorePreviouslyFocusedWebContents = Effect.fn(
+    "PreviewManager.restorePreviouslyFocusedWebContents",
+  )(function* (
+    operation: string,
+    tabId: string,
+    target: Electron.WebContents,
+    previouslyFocused: Electron.WebContents | null,
+  ) {
+    if (
+      !previouslyFocused ||
+      previouslyFocused.id === target.id ||
+      previouslyFocused.isDestroyed()
+    ) {
+      return;
+    }
+    yield* attempt(
+      {
+        operation: `${operation}.restoreFocusedWebContents`,
+        tabId,
+        webContentsId: previouslyFocused.id,
+      },
+      () => previouslyFocused.focus(),
+    ).pipe(Effect.ignore);
+  });
+
   const withControlSession = Effect.fn("PreviewManager.withControlSession")(function* <A>(
     tabId: string,
     wc: Electron.WebContents,
@@ -2089,8 +2114,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     input: PreviewAutomationClickInput,
   ) {
     const wc = yield* requireWebContents(tabId);
+    const previouslyFocused = yield* attempt(
+      { operation: "automationClick.getFocusedWebContents", tabId, webContentsId: wc.id },
+      () => webContents.getFocusedWebContents(),
+    );
     yield* withControlSession(tabId, wc, "click", (send) =>
       performAutomationClick(tabId, input, send),
+    ).pipe(
+      Effect.ensuring(
+        restorePreviouslyFocusedWebContents("automationClick", tabId, wc, previouslyFocused),
+      ),
     );
   });
 
@@ -2243,16 +2276,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       yield* sendCleanup("Emulation.setFocusEmulationEnabled", { enabled: false }).pipe(
         Effect.ignore,
       );
-      if (previouslyFocused && previouslyFocused.id !== wc.id && !previouslyFocused.isDestroyed()) {
-        yield* attempt(
-          {
-            operation: "automationPress.restoreFocusedWebContents",
-            tabId,
-            webContentsId: previouslyFocused.id,
-          },
-          () => previouslyFocused.focus(),
-        ).pipe(Effect.ignore);
-      }
+      yield* restorePreviouslyFocusedWebContents("automationPress", tabId, wc, previouslyFocused);
     });
 
     // Focus the guest WebContents itself, not its containing BrowserWindow. This
