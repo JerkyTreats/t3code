@@ -906,8 +906,27 @@ describe("composerDraftStore review comments", () => {
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.reviewComments).toEqual([
       { ...comment, text: "Updated comment." },
     ]);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.reviewMode).toBe(true);
 
     store.removeReviewComment(threadRef, comment.id);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      reviewComments: [],
+      reviewMode: true,
+    });
+    store.setReviewMode(threadRef, false);
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
+  });
+
+  it("persists an empty review session until it is cancelled", () => {
+    const store = useComposerDraftStore.getState();
+    store.setReviewMode(threadRef, true);
+
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toMatchObject({
+      reviewComments: [],
+      reviewMode: true,
+    });
+
+    store.setReviewMode(threadRef, false);
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
   });
 
@@ -920,13 +939,19 @@ describe("composerDraftStore review comments", () => {
       };
     };
     const persisted = persistApi.getOptions().partialize(useComposerDraftStore.getState()) as {
-      draftsByThreadKey?: Record<string, { reviewComments?: Array<Record<string, unknown>> }>;
+      draftsByThreadKey?: Record<
+        string,
+        { reviewComments?: Array<Record<string, unknown>>; reviewMode?: boolean }
+      >;
     };
 
     expect(
       persisted.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]
         ?.reviewComments?.[0],
     ).toMatchObject(comment);
+    expect(
+      persisted.draftsByThreadKey?.[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]?.reviewMode,
+    ).toBe(true);
 
     store.clearComposerContent(threadRef);
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)).toBeUndefined();
@@ -939,6 +964,7 @@ describe("composerDraftStore review comments", () => {
     expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.reviewComments).toEqual([
       comment,
     ]);
+    expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.reviewMode).toBe(true);
   });
 });
 

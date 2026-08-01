@@ -152,6 +152,7 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   runtimeMode: Schema.optionalKey(RuntimeMode),
   interactionMode: Schema.optionalKey(ProviderInteractionMode),
   richDraftMode: Schema.optionalKey(Schema.Boolean),
+  reviewMode: Schema.optionalKey(Schema.Boolean),
 });
 type PersistedComposerThreadDraftState = typeof PersistedComposerThreadDraftState.Type;
 
@@ -281,6 +282,7 @@ export interface ComposerThreadDraftState {
   runtimeMode: RuntimeMode | null;
   interactionMode: ProviderInteractionMode | null;
   richDraftMode: boolean;
+  reviewMode: boolean;
 }
 
 /**
@@ -441,6 +443,7 @@ interface ComposerDraftStoreState {
     interactionMode: ProviderInteractionMode | null | undefined,
   ) => void;
   setRichDraftMode: (threadRef: ComposerThreadTarget, enabled: boolean) => void;
+  setReviewMode: (threadRef: ComposerThreadTarget, enabled: boolean) => void;
   addImage: (threadRef: ComposerThreadTarget, image: ComposerImageAttachment) => void;
   addImages: (threadRef: ComposerThreadTarget, images: ComposerImageAttachment[]) => void;
   removeImage: (threadRef: ComposerThreadTarget, imageId: string) => void;
@@ -595,6 +598,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   runtimeMode: null,
   interactionMode: null,
   richDraftMode: false,
+  reviewMode: false,
 });
 
 /**
@@ -618,6 +622,7 @@ export function createEmptyThreadDraft(): ComposerThreadDraftState {
     runtimeMode: null,
     interactionMode: null,
     richDraftMode: false,
+    reviewMode: false,
   };
 }
 
@@ -691,7 +696,8 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
     draft.interactionMode === null &&
-    draft.richDraftMode === false
+    draft.richDraftMode === false &&
+    draft.reviewMode === false
   );
 }
 
@@ -1707,6 +1713,7 @@ function normalizePersistedDraftsByThreadId(
         ? draftCandidate.interactionMode
         : null;
     const richDraftMode = draftCandidate.richDraftMode === true;
+    const reviewMode = draftCandidate.reviewMode === true || reviewComments.length > 0;
     const prompt = ensureInlineTerminalContextPlaceholders(
       promptCandidate,
       terminalContexts.length,
@@ -1768,7 +1775,8 @@ function normalizePersistedDraftsByThreadId(
       !hasModelData &&
       !runtimeMode &&
       !interactionMode &&
-      !richDraftMode
+      !richDraftMode &&
+      !reviewMode
     ) {
       continue;
     }
@@ -1799,6 +1807,7 @@ function normalizePersistedDraftsByThreadId(
       ...(runtimeMode ? { runtimeMode } : {}),
       ...(interactionMode ? { interactionMode } : {}),
       ...(richDraftMode ? { richDraftMode: true } : {}),
+      ...(reviewMode ? { reviewMode: true } : {}),
     };
   }
 
@@ -1879,7 +1888,8 @@ function partializeComposerDraftStoreState(
       !hasModelData &&
       draft.runtimeMode === null &&
       draft.interactionMode === null &&
-      draft.richDraftMode === false
+      draft.richDraftMode === false &&
+      draft.reviewMode === false
     ) {
       continue;
     }
@@ -1939,6 +1949,7 @@ function partializeComposerDraftStoreState(
       ...(draft.runtimeMode ? { runtimeMode: draft.runtimeMode } : {}),
       ...(draft.interactionMode ? { interactionMode: draft.interactionMode } : {}),
       ...(draft.richDraftMode ? { richDraftMode: true } : {}),
+      ...(draft.reviewMode ? { reviewMode: true } : {}),
     };
     persistedDraftsByThreadKey[threadKey] = persistedDraft;
   }
@@ -2177,6 +2188,8 @@ function toHydratedThreadDraft(
     runtimeMode: persistedDraft.runtimeMode ?? null,
     interactionMode: persistedDraft.interactionMode ?? null,
     richDraftMode: persistedDraft.richDraftMode === true,
+    reviewMode:
+      persistedDraft.reviewMode === true || (persistedDraft.reviewComments?.length ?? 0) > 0,
   };
 }
 
@@ -2907,6 +2920,34 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             return { draftsByThreadKey: nextDraftsByThreadKey };
           });
         },
+        setReviewMode: (threadRef, enabled) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0) {
+            return;
+          }
+          const nextReviewMode = enabled === true;
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey];
+            if (!existing && !nextReviewMode) {
+              return state;
+            }
+            const base = existing ?? createEmptyThreadDraft();
+            if (base.reviewMode === nextReviewMode) {
+              return state;
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...base,
+              reviewMode: nextReviewMode,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
         addImage: (threadRef, image) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef);
           const threadId = resolveComposerThreadId(get(), threadRef);
@@ -3288,6 +3329,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 ...state.draftsByThreadKey,
                 [threadKey]: {
                   ...existing,
+                  reviewMode: true,
                   reviewComments: [...reviewComments, { ...comment }],
                 },
               },
@@ -3302,7 +3344,11 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             .map((comment) => ({ ...comment }));
           set((state) => {
             const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
-            const nextDraft = { ...existing, reviewComments };
+            const nextDraft = {
+              ...existing,
+              reviewMode: reviewComments.length > 0 || existing.reviewMode,
+              reviewComments,
+            };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) delete nextDraftsByThreadKey[threadKey];
             else nextDraftsByThreadKey[threadKey] = nextDraft;
@@ -3429,6 +3475,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               elementContexts: [],
               previewAnnotations: [],
               reviewComments: [],
+              reviewMode: false,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {

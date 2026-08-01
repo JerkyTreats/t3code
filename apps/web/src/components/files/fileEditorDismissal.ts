@@ -7,12 +7,11 @@ interface FileEditorDismissalOptions {
   onDismiss: () => void;
 }
 
-function dismissFileEditorInteraction({
+export function dismissFileEditorInteraction({
   root,
   editor,
   onDismiss,
 }: Pick<FileEditorDismissalOptions, "root" | "editor" | "onDismiss">): void {
-  onDismiss();
   editor.setSelections([]);
 
   const file = root.querySelector<HTMLElement>("diffs-container");
@@ -20,6 +19,8 @@ function dismissFileEditorInteraction({
   if (activeElement instanceof HTMLElement) {
     activeElement.blur();
   }
+
+  onDismiss();
 }
 
 function isFileEditorFocused(root: HTMLElement): boolean {

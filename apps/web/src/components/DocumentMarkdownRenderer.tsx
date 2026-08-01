@@ -3,6 +3,7 @@ import { PanelRightIcon } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { documentMarkdownLinkCwd, extractDocumentMarkdownOutline } from "~/documentMarkdown";
+import type { DocumentReviewController } from "~/documentReview";
 import { cn } from "~/lib/utils";
 
 import ChatMarkdown from "./ChatMarkdown";
@@ -25,6 +26,7 @@ export function DocumentMarkdownRenderer(props: {
   showSourceFooter?: boolean;
   onOpenFileInEditor?: (relativePath: string) => void;
   onTaskListChange?: ((input: { markerOffset: number; checked: boolean }) => void) | undefined;
+  documentReview?: DocumentReviewController | undefined;
 }) {
   const outline = useMemo(() => extractDocumentMarkdownOutline(props.markdown), [props.markdown]);
   const markdownLinkCwd = useMemo(
@@ -88,6 +90,7 @@ export function DocumentMarkdownRenderer(props: {
             threadRef={props.threadRef}
             isStreaming={false}
             documentMode
+            documentReview={props.documentReview}
             onTaskListChange={props.onTaskListChange}
             className="document-markdown-content"
           />

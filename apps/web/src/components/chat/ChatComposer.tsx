@@ -697,6 +697,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerElementContexts = composerDraft.elementContexts;
   const composerPreviewAnnotations = composerDraft.previewAnnotations;
   const composerReviewComments = composerDraft.reviewComments;
+  const reviewMode = composerDraft.reviewMode;
   const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
   const richDraftMode = composerDraft.richDraftMode;
   const [isCapturingDesktopScreenshot, setIsCapturingDesktopScreenshot] = useState(false);
@@ -726,6 +727,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const removeComposerDraftReviewComment = useComposerDraftStore(
     (store) => store.removeReviewComment,
   );
+  const setComposerDraftReviewComments = useComposerDraftStore((store) => store.setReviewComments);
+  const setComposerDraftReviewMode = useComposerDraftStore((store) => store.setReviewMode);
   const clearComposerDraftPersistedAttachments = useComposerDraftStore(
     (store) => store.clearPersistedAttachments,
   );
@@ -2847,12 +2850,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             {!isComposerCollapsedMobile &&
               !isComposerApprovalState &&
               pendingUserInputs.length === 0 &&
-              composerReviewComments.length > 0 && (
+              (reviewMode || composerReviewComments.length > 0) && (
                 <ComposerPendingReviewComments
                   comments={composerReviewComments}
+                  active={reviewMode}
                   onRemove={(commentId) =>
                     removeComposerDraftReviewComment(composerDraftTarget, commentId)
                   }
+                  onCancelReview={() => {
+                    setComposerDraftReviewComments(composerDraftTarget, []);
+                    setComposerDraftReviewMode(composerDraftTarget, false);
+                  }}
+                  onSubmitReview={() => submitComposer()}
+                  submitDisabled={collapsedComposerPrimaryActionDisabled}
                   className="mb-3"
                 />
               )}

@@ -12,7 +12,15 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronRight, Code2, Eye, FolderTree, Globe2, LoaderCircle } from "lucide-react";
+import {
+  ChevronRight,
+  Code2,
+  Eye,
+  FolderTree,
+  Globe2,
+  LoaderCircle,
+  MessageCircle,
+} from "lucide-react";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -27,11 +35,13 @@ import { cn } from "~/lib/utils";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { resolvePathLinkTarget } from "~/terminal-links";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { Button } from "~/components/ui/button";
 import { Toggle } from "~/components/ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
-import { buildFileReviewComment } from "~/reviewCommentContext";
+import type { DocumentReviewAnnotation, DocumentReviewController } from "~/documentReview";
+import { buildFileReviewComment, type ReviewCommentContext } from "~/reviewCommentContext";
 import { assetEnvironment } from "~/state/assets";
 import { useEnvironmentHttpBaseUrl, usePrimaryEnvironmentId } from "~/state/environments";
 import { previewEnvironment } from "~/state/preview";
@@ -48,6 +58,7 @@ import {
   nextFileCommentId,
   normalizeFileCommentRange,
   remapFileCommentAnnotations,
+  restoreFileCommentAnnotations,
 } from "./fileCommentAnnotations";
 import {
   clampFileLine,
@@ -97,6 +108,7 @@ interface FilePreviewPanelProps {
 
 const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
 const FILE_SAVE_DEBOUNCE_MS = 500;
+const EMPTY_REVIEW_COMMENTS: ReadonlyArray<ReviewCommentContext> = [];
 const FILE_LINK_REVEAL_UNSAFE_CSS = `
   [${FILE_LINK_REVEAL_ATTRIBUTE}][data-line] {
     background-color: light-dark(
@@ -305,6 +317,13 @@ function EditableFileSurface({
 }: EditableFileSurfaceProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
+  const reviewComments = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_REVIEW_COMMENTS,
+  );
+  const fileReviewComments = useMemo(
+    () => reviewComments.filter((comment) => comment.sectionId === `file:${relativePath}`),
+    [relativePath, reviewComments],
+  );
   const [lineAnnotations, setLineAnnotations] = useState<FileCommentLineAnnotation[]>([]);
   const [selectionOverride, setSelectionOverride] = useState<FileSelectionOverride | null>(null);
   const selectedRange =
@@ -323,6 +342,26 @@ function EditableFileSurface({
     relativePath,
     onPendingChange,
   });
+
+  useEffect(() => {
+    setLineAnnotations((current) => {
+      const restored = restoreFileCommentAnnotations(fileReviewComments);
+      const draftEntries = current.flatMap((annotation) =>
+        annotation.metadata.entries
+          .filter((entry) => entry.kind === "draft")
+          .map((entry) => ({ lineNumber: annotation.lineNumber, entry })),
+      );
+      for (const { lineNumber, entry } of draftEntries) {
+        const existing = restored.find((annotation) => annotation.lineNumber === lineNumber);
+        if (existing) {
+          existing.metadata.entries.push(entry);
+        } else {
+          restored.push({ lineNumber, metadata: { entries: [entry] } });
+        }
+      }
+      return restored;
+    });
+  }, [fileReviewComments]);
   const editor = useMemo(
     () =>
       new Editor<FileCommentAnnotationGroup>({
@@ -556,28 +595,93 @@ function RenderedMarkdownSurface({
   environmentId,
   cwd,
   relativePath,
+  composerDraftTarget,
   contents,
   threadRef,
   onOpenSource,
   onPendingChange,
 }: Omit<
   EditableFileSurfaceProps,
-  | "resolvedTheme"
-  | "composerDraftTarget"
-  | "revealLine"
-  | "revealRequestId"
-  | "wordWrap"
-  | "onPostRender"
+  "resolvedTheme" | "revealLine" | "revealRequestId" | "wordWrap" | "onPostRender"
 > & {
   threadRef: ScopedThreadRef;
   onOpenSource: () => void;
 }) {
+  const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
+  const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
+  const reviewComments = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_REVIEW_COMMENTS,
+  );
+  const [draftAnnotation, setDraftAnnotation] = useState<DocumentReviewAnnotation | null>(null);
   const saveCoordinator = useFileSaveCoordinator({
     environmentId,
     cwd,
     relativePath,
     onPendingChange,
   });
+  const reviewAnnotations = useMemo<DocumentReviewAnnotation[]>(
+    () => [
+      ...reviewComments
+        .filter((comment) => comment.sectionId === `file:${relativePath}`)
+        .map((comment) => ({
+          id: comment.id,
+          kind: "comment" as const,
+          startLine: comment.startIndex + 1,
+          endLine: comment.endIndex + 1,
+          rangeLabel: comment.rangeLabel,
+          text: comment.text,
+        })),
+      ...(draftAnnotation ? [draftAnnotation] : []),
+    ],
+    [draftAnnotation, relativePath, reviewComments],
+  );
+  const documentReview = useMemo<DocumentReviewController>(
+    () => ({
+      annotations: reviewAnnotations,
+      onStartComment: (range) => {
+        setDraftAnnotation({
+          id: nextFileCommentId(),
+          kind: "draft",
+          ...range,
+          rangeLabel:
+            range.startLine === range.endLine
+              ? `L${range.startLine}`
+              : `L${range.startLine} to L${range.endLine}`,
+          text: "",
+        });
+      },
+      onCancelComment: (commentId) => {
+        if (draftAnnotation?.id === commentId) setDraftAnnotation(null);
+      },
+      onComment: (commentId, text) => {
+        if (!draftAnnotation || draftAnnotation.id !== commentId) return;
+        addReviewComment(
+          composerDraftTarget,
+          buildFileReviewComment({
+            id: commentId,
+            filePath: relativePath,
+            startLine: draftAnnotation.startLine,
+            endLine: draftAnnotation.endLine,
+            text,
+            contents,
+          }),
+        );
+        setDraftAnnotation(null);
+      },
+      onDeleteComment: (commentId) => {
+        removeReviewComment(composerDraftTarget, commentId);
+      },
+    }),
+    [
+      addReviewComment,
+      composerDraftTarget,
+      contents,
+      draftAnnotation,
+      relativePath,
+      removeReviewComment,
+      reviewAnnotations,
+    ],
+  );
 
   return (
     <DocumentMarkdownRenderer
@@ -586,6 +690,7 @@ function RenderedMarkdownSurface({
       workspaceCwd={cwd}
       threadRef={threadRef}
       onOpenFileInEditor={onOpenSource}
+      documentReview={documentReview}
       onTaskListChange={({ markerOffset, checked }) => {
         const currentContents =
           getOptimisticProjectFileQueryData(environmentId, cwd, relativePath)?.contents ?? contents;
@@ -627,6 +732,13 @@ export default function FilePreviewPanel({
 }: FilePreviewPanelProps) {
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
+  const reviewMode = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.reviewMode ?? false,
+  );
+  const reviewCommentCount = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments.length ?? 0,
+  );
+  const setReviewMode = useComposerDraftStore((store) => store.setReviewMode);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
@@ -789,6 +901,32 @@ export default function FilePreviewPanel({
               enableShortcut={false}
             />
           ) : null}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  aria-label={
+                    reviewMode ? `Review active, ${reviewCommentCount} comments` : "Start review"
+                  }
+                  disabled={reviewMode}
+                  onClick={() => setReviewMode(composerDraftTarget, true)}
+                />
+              }
+            >
+              <MessageCircle className="size-3.5" />
+              <span className="hidden 2xl:inline">
+                {reviewMode ? `Review · ${reviewCommentCount}` : "Start review"}
+              </span>
+            </TooltipTrigger>
+            <TooltipPopup>
+              {reviewMode
+                ? `${reviewCommentCount} local ${reviewCommentCount === 1 ? "comment" : "comments"} in this review`
+                : "Start a multi-comment review"}
+            </TooltipPopup>
+          </Tooltip>
           {isMarkdown ? (
             <Tooltip>
               <TooltipTrigger
@@ -879,6 +1017,7 @@ export default function FilePreviewPanel({
                 environmentId={environmentId}
                 cwd={cwd}
                 relativePath={relativePath}
+                composerDraftTarget={composerDraftTarget}
                 threadRef={threadRef}
                 contents={file.data.contents}
                 onOpenSource={() => setMarkdownSourcePath(relativePath)}

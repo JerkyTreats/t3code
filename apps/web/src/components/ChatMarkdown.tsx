@@ -7,6 +7,7 @@ import {
   GlobeIcon,
   Maximize2Icon,
   Minimize2Icon,
+  PlusIcon,
   WrapTextIcon,
 } from "lucide-react";
 import type { AssetResource, ScopedThreadRef, ServerProviderSkill } from "@t3tools/contracts";
@@ -91,6 +92,14 @@ import {
   openUrlInPreview,
   BrowserPreviewUnavailableError,
 } from "../browser/openFileInPreview";
+import {
+  formatDocumentReviewRange,
+  readDocumentReviewRange,
+  rehypeDocumentReviewBlocks,
+  type DocumentReviewController,
+  type DocumentReviewRange,
+} from "../documentReview";
+import { LocalCommentAnnotation } from "./files/LocalCommentAnnotation";
 
 class CodeHighlightErrorBoundary extends React.Component<
   { fallback: ReactNode; children: ReactNode },
@@ -126,6 +135,7 @@ interface ChatMarkdownProps {
   lineBreaks?: boolean;
   /** Adds document-specific affordances such as stable heading ids and image preview. */
   documentMode?: boolean;
+  documentReview?: DocumentReviewController | undefined;
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
@@ -1588,6 +1598,56 @@ function DocumentMarkdownImage({
   );
 }
 
+function DocumentReviewBlock({
+  range,
+  review,
+  children,
+}: {
+  range: DocumentReviewRange;
+  review: DocumentReviewController;
+  children: ReactNode;
+}) {
+  const annotations = review.annotations.filter(
+    (annotation) =>
+      annotation.startLine === range.startLine && annotation.endLine === range.endLine,
+  );
+  const hasOpenDraft = review.annotations.some((annotation) => annotation.kind === "draft");
+  const rangeLabel = formatDocumentReviewRange(range);
+
+  return (
+    <div
+      className="group/document-review relative"
+      data-document-review-block={`${range.startLine}:${range.endLine}`}
+    >
+      <button
+        type="button"
+        className="absolute -left-7 top-1 z-2 flex size-5 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground opacity-0 shadow-sm transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none group-hover/document-review:opacity-100"
+        aria-label={`Add local comment on ${rangeLabel}`}
+        disabled={hasOpenDraft}
+        onClick={() => review.onStartComment(range)}
+      >
+        <PlusIcon className="size-3" aria-hidden />
+      </button>
+      {children}
+      {annotations.length > 0 ? (
+        <div className="my-2 grid gap-2">
+          {annotations.map((annotation) => (
+            <LocalCommentAnnotation
+              key={annotation.id}
+              kind={annotation.kind}
+              rangeLabel={annotation.rangeLabel}
+              text={annotation.text}
+              onCancel={() => review.onCancelComment(annotation.id)}
+              onComment={(text) => review.onComment(annotation.id, text)}
+              onDelete={() => review.onDeleteComment(annotation.id)}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ChatMarkdown({
   text,
   cwd,
@@ -1599,6 +1659,7 @@ function ChatMarkdown({
   className,
   lineBreaks = false,
   documentMode = false,
+  documentReview,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
@@ -1751,9 +1812,50 @@ function ChatMarkdown({
       );
     };
 
+    const reviewableBlock = (node: unknown, content: ReactNode) => {
+      const range = documentReview ? readDocumentReviewRange(node) : null;
+      return range && documentReview ? (
+        <DocumentReviewBlock range={range} review={documentReview}>
+          {content}
+        </DocumentReviewBlock>
+      ) : (
+        content
+      );
+    };
+
     return {
-      p({ node: _node, children, ...props }) {
-        return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>;
+      p({ node, children, ...props }) {
+        return reviewableBlock(
+          node,
+          <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>,
+        );
+      },
+      h1({ node, children, ...props }) {
+        return reviewableBlock(node, <h1 {...props}>{children}</h1>);
+      },
+      h2({ node, children, ...props }) {
+        return reviewableBlock(node, <h2 {...props}>{children}</h2>);
+      },
+      h3({ node, children, ...props }) {
+        return reviewableBlock(node, <h3 {...props}>{children}</h3>);
+      },
+      h4({ node, children, ...props }) {
+        return reviewableBlock(node, <h4 {...props}>{children}</h4>);
+      },
+      h5({ node, children, ...props }) {
+        return reviewableBlock(node, <h5 {...props}>{children}</h5>);
+      },
+      h6({ node, children, ...props }) {
+        return reviewableBlock(node, <h6 {...props}>{children}</h6>);
+      },
+      blockquote({ node, children, ...props }) {
+        return reviewableBlock(node, <blockquote {...props}>{children}</blockquote>);
+      },
+      ul({ node, children, ...props }) {
+        return reviewableBlock(node, <ul {...props}>{children}</ul>);
+      },
+      ol({ node, children, ...props }) {
+        return reviewableBlock(node, <ol {...props}>{children}</ol>);
       },
       li({ node, children, ...props }) {
         const listItemStart = node?.position?.start.offset;
@@ -1898,8 +2000,8 @@ function ChatMarkdown({
           </code>
         );
       },
-      table({ node: _node, ...props }) {
-        return <MarkdownTable {...props} />;
+      table({ node, ...props }) {
+        return reviewableBlock(node, <MarkdownTable {...props} />);
       },
       img({ node: _node, src, alt, ...props }) {
         if (!documentMode || !src) {
@@ -1923,12 +2025,13 @@ function ChatMarkdown({
       pre({ node, children, ...props }) {
         const codeBlock = extractCodeBlock(children);
         if (!codeBlock) {
-          return <pre {...props}>{children}</pre>;
+          return reviewableBlock(node, <pre {...props}>{children}</pre>);
         }
 
         const language = extractFenceLanguage(codeBlock.className);
         const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
-        return (
+        return reviewableBlock(
+          node,
           <MarkdownCodeBlock
             code={codeBlock.code}
             language={language}
@@ -1946,13 +2049,14 @@ function ChatMarkdown({
                 />
               </Suspense>
             </CodeHighlightErrorBoundary>
-          </MarkdownCodeBlock>
+          </MarkdownCodeBlock>,
         );
       },
     };
   }, [
     cwd,
     documentMode,
+    documentReview,
     diffThemeName,
     inlineCodeRenderState,
     inlineCodeWorkspaceRoot,
@@ -1986,7 +2090,11 @@ function ChatMarkdown({
     >
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA]]}
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA],
+          ...(documentMode && documentReview ? [rehypeDocumentReviewBlocks] : []),
+        ]}
         components={markdownComponents}
         urlTransform={markdownUrlTransform}
       >

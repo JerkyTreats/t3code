@@ -52,3 +52,35 @@ export function remapFileCommentAnnotations(
     },
   }));
 }
+
+export function restoreFileCommentAnnotations(
+  comments: ReadonlyArray<{
+    readonly id: string;
+    readonly startIndex: number;
+    readonly endIndex: number;
+    readonly text: string;
+  }>,
+): FileCommentLineAnnotation[] {
+  const annotationsByEndLine = new Map<number, FileCommentLineAnnotation>();
+  for (const comment of comments) {
+    const startLine = Math.max(1, Math.min(comment.startIndex, comment.endIndex) + 1);
+    const endLine = Math.max(startLine, Math.max(comment.startIndex, comment.endIndex) + 1);
+    const entry: FileCommentAnnotationEntry = {
+      id: comment.id,
+      kind: "comment",
+      startLine,
+      endLine,
+      text: comment.text,
+    };
+    const existing = annotationsByEndLine.get(endLine);
+    if (existing) {
+      existing.metadata.entries.push(entry);
+    } else {
+      annotationsByEndLine.set(endLine, {
+        lineNumber: endLine,
+        metadata: { entries: [entry] },
+      });
+    }
+  }
+  return [...annotationsByEndLine.values()];
+}
