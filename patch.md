@@ -216,6 +216,15 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Route Sidebar V1, Sidebar V2, and command palette project-panel actions through one concrete project launcher.
 - Filter launcher threads by exact environment and project identity before opening the right panel or navigating.
 
+## F4 And F9 Inline File Review Submission
+
+- Start a review from the first inline comment instead of from a separate file-header action.
+- When no review is active, offer distinct actions to start a multi-comment review or immediately send one isolated comment.
+- When a review is active, label the inline action `Add to review` and keep every queued comment local until explicit review submission.
+- Keep the composer review tray authoritative for pending count, cancellation, and one explicit `Submit review` action.
+- Preserve unrelated composer text, attachments, and contextual drafts when an isolated inline comment is sent.
+- Apply the same submission state machine to source files, diffs, and rendered Markdown annotations.
+
 ## Unified Project Surface Safety
 
 - Validate persisted Git and Inference surface descriptors by exact environment plus project identity.

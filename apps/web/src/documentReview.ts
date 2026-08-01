@@ -43,9 +43,12 @@ export interface DocumentReviewAnnotation extends DocumentReviewRange {
 
 export interface DocumentReviewController {
   readonly annotations: ReadonlyArray<DocumentReviewAnnotation>;
+  readonly reviewActive: boolean;
+  readonly submitDisabled: boolean;
   readonly onStartComment: (range: DocumentReviewRange) => void;
   readonly onCancelComment: (commentId: string) => void;
-  readonly onComment: (commentId: string, text: string) => void;
+  readonly onAddToReview: (commentId: string, text: string) => void;
+  readonly onSubmitComment: (commentId: string, text: string) => Promise<boolean>;
   readonly onDeleteComment: (commentId: string) => void;
 }
 

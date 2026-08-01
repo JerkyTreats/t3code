@@ -1,4 +1,4 @@
-import { MessageCircle, Trash2 } from "lucide-react";
+import { ArrowUp, LoaderCircle, MessageCircle, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -6,22 +6,40 @@ import { Textarea } from "~/components/ui/textarea";
 
 interface LocalCommentAnnotationProps {
   kind: "draft" | "comment";
+  reviewActive: boolean;
   rangeLabel: string;
   text: string;
   onCancel: () => void;
-  onComment: (text: string) => void;
+  onAddToReview: (text: string) => void;
+  onSubmitComment: (text: string) => Promise<boolean>;
   onDelete: () => void;
+  submitDisabled?: boolean;
 }
 
 export function LocalCommentAnnotation({
   kind,
+  reviewActive,
   rangeLabel,
   text: savedText,
   onCancel,
-  onComment,
+  onAddToReview,
+  onSubmitComment,
   onDelete,
+  submitDisabled = false,
 }: LocalCommentAnnotationProps) {
   const [text, setText] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const trimmedText = text.trim();
+  const submitComment = async () => {
+    if (!trimmedText || submitDisabled || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await onSubmitComment(trimmedText);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (kind === "comment") {
     return (
@@ -71,19 +89,53 @@ export function LocalCommentAnnotation({
             event.preventDefault();
             onCancel();
           }
-          if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && text.trim()) {
+          if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && trimmedText) {
             event.preventDefault();
-            onComment(text.trim());
+            if (reviewActive) {
+              onAddToReview(trimmedText);
+            } else {
+              void submitComment();
+            }
           }
         }}
       />
       <div className="mt-3 flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onCancel}>
+        <Button variant="ghost" size="sm" disabled={isSubmitting} onClick={onCancel}>
           Cancel
         </Button>
-        <Button size="sm" disabled={!text.trim()} onClick={() => onComment(text.trim())}>
-          Comment
-        </Button>
+        {reviewActive ? (
+          <Button
+            size="sm"
+            disabled={!trimmedText || isSubmitting}
+            onClick={() => onAddToReview(trimmedText)}
+          >
+            Add to review
+          </Button>
+        ) : (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!trimmedText || isSubmitting}
+              onClick={() => onAddToReview(trimmedText)}
+            >
+              Start review
+            </Button>
+            <Button
+              size="icon-sm"
+              aria-label="Send comment now"
+              title="Send comment now"
+              disabled={!trimmedText || submitDisabled || isSubmitting}
+              onClick={() => void submitComment()}
+            >
+              {isSubmitting ? (
+                <LoaderCircle className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <ArrowUp className="size-4" aria-hidden />
+              )}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );

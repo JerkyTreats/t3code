@@ -80,6 +80,8 @@ interface AnnotatableCodeViewProps {
   sectionId: string;
   sectionTitle: string;
   composerDraftTarget: ScopedThreadRef | DraftId;
+  onSubmitSingleReviewComment: (comment: ReviewCommentContext) => Promise<boolean>;
+  reviewSubmissionDisabled: boolean;
   options: NonNullable<CodeViewProps<DiffCommentAnnotationGroup>["options"]>;
   viewerRef?: Ref<AnnotatableCodeViewHandle>;
   className?: string;
@@ -99,6 +101,8 @@ export function AnnotatableCodeView({
   sectionId,
   sectionTitle,
   composerDraftTarget,
+  onSubmitSingleReviewComment,
+  reviewSubmissionDisabled,
   options,
   viewerRef,
   className,
@@ -108,6 +112,9 @@ export function AnnotatableCodeView({
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
   const reviewComments = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_REVIEW_COMMENTS,
+  );
+  const reviewMode = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.reviewMode ?? false,
   );
   const [selectedLines, setSelectedLines] = useState<{
     id: string;
@@ -174,7 +181,7 @@ export function AnnotatableCodeView({
     [composerDraftTarget, draft, removeReviewComment],
   );
 
-  const submitEntry = useCallback(
+  const addEntryToReview = useCallback(
     (entryId: string, text: string) => {
       const entry = draft?.annotation.metadata.entries.find(
         (candidate) => candidate.id === entryId,
@@ -195,6 +202,30 @@ export function AnnotatableCodeView({
       setDraft(null);
     },
     [addReviewComment, composerDraftTarget, draft, filesByKey, sectionId, sectionTitle],
+  );
+
+  const submitEntry = useCallback(
+    async (entryId: string, text: string) => {
+      const entry = draft?.annotation.metadata.entries.find(
+        (candidate) => candidate.id === entryId,
+      );
+      const file = draft ? filesByKey.get(draft.fileKey) : undefined;
+      if (!entry || !file) return false;
+      const comment = buildDiffReviewComment({
+        id: entry.id,
+        sectionId,
+        sectionTitle,
+        filePath: file.filePath,
+        fileDiff: file.fileDiff,
+        range: entry.range,
+        text,
+      });
+      if (!comment || !(await onSubmitSingleReviewComment(comment))) return false;
+      setSelectedLines(null);
+      setDraft(null);
+      return true;
+    },
+    [draft, filesByKey, onSubmitSingleReviewComment, sectionId, sectionTitle],
   );
 
   const beginComment = useCallback(
@@ -254,11 +285,14 @@ export function AnnotatableCodeView({
             <LocalCommentAnnotation
               key={entry.id}
               kind={entry.kind}
+              reviewActive={reviewMode}
               rangeLabel={entry.rangeLabel}
               text={entry.text}
               onCancel={() => removeEntry(entry.id)}
-              onComment={(text) => submitEntry(entry.id, text)}
+              onAddToReview={(text) => addEntryToReview(entry.id, text)}
+              onSubmitComment={(text) => submitEntry(entry.id, text)}
               onDelete={() => removeEntry(entry.id)}
+              submitDisabled={reviewSubmissionDisabled}
             />
           ))}
         </div>

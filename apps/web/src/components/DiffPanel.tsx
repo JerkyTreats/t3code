@@ -67,6 +67,7 @@ import { serverEnvironment } from "../state/server";
 import { reviewEnvironment } from "../state/review";
 import { vcsEnvironment } from "../state/vcs";
 import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices";
+import type { ReviewCommentContext } from "../reviewCommentContext";
 
 type DiffRenderMode = "stacked" | "split";
 type DiffThemeType = "light" | "dark";
@@ -181,11 +182,18 @@ const DIFF_PANEL_UNSAFE_CSS = `
 interface DiffPanelProps {
   mode?: DiffPanelMode;
   composerDraftTarget: ScopedThreadRef | DraftId;
+  onSubmitSingleReviewComment: (comment: ReviewCommentContext) => Promise<boolean>;
+  reviewSubmissionDisabled: boolean;
 }
 
 export { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 
-export default function DiffPanel({ mode = "inline", composerDraftTarget }: DiffPanelProps) {
+export default function DiffPanel({
+  mode = "inline",
+  composerDraftTarget,
+  onSubmitSingleReviewComment,
+  reviewSubmissionDisabled,
+}: DiffPanelProps) {
   const { resolvedTheme } = useTheme();
   const settings = useClientSettings();
   const [diffRenderMode, setDiffRenderMode] = useState<DiffRenderMode>("stacked");
@@ -810,6 +818,8 @@ export default function DiffPanel({ mode = "inline", composerDraftTarget }: Diff
                   sectionId={reviewSectionId}
                   sectionTitle={reviewSectionTitle}
                   composerDraftTarget={composerDraftTarget}
+                  onSubmitSingleReviewComment={onSubmitSingleReviewComment}
+                  reviewSubmissionDisabled={reviewSubmissionDisabled}
                   renderHeaderPrefix={(fileDiff, fileKey, collapsed) => {
                     const filePath = resolveFileDiffPath(fileDiff);
                     return (

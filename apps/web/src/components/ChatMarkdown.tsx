@@ -1635,11 +1635,14 @@ function DocumentReviewBlock({
             <LocalCommentAnnotation
               key={annotation.id}
               kind={annotation.kind}
+              reviewActive={review.reviewActive}
               rangeLabel={annotation.rangeLabel}
               text={annotation.text}
               onCancel={() => review.onCancelComment(annotation.id)}
-              onComment={(text) => review.onComment(annotation.id, text)}
+              onAddToReview={(text) => review.onAddToReview(annotation.id, text)}
+              onSubmitComment={(text) => review.onSubmitComment(annotation.id, text)}
               onDelete={() => review.onDeleteComment(annotation.id)}
+              submitDisabled={review.submitDisabled}
             />
           ))}
         </div>

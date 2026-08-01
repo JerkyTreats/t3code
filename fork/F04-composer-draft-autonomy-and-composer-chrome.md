@@ -30,6 +30,10 @@ The composer owns its local draft state and preserves rich draft behavior under 
 - Image finalization reports an explicit saved, missing entry, dropped, or persistence failure outcome.
 - Images that finish after their stash entry is restored or deleted are named in a visible warning.
 - The stash menu uses one focused listbox with active-descendant navigation, Enter restore, Delete removal, and one focus-restoring close path.
+- Inline file review sessions remain in composer-owned draft state until the user cancels or submits them.
+- The first inline comment offers separate `Start review` and immediate-send actions. An active review changes the queued action to `Add to review`.
+- The composer review tray identifies comments as not submitted, shows the pending count, and owns the explicit cancel and submit-review actions.
+- Sending one inline comment immediately does not consume or clear unrelated composer text, attachments, terminal context, element context, preview annotations, or queued review comments.
 
 ## Owner Modules
 
@@ -49,6 +53,9 @@ Current owner modules:
 - `apps/web/src/lib/stashImageCompression.ts`
 - `apps/web/src/components/chat/ComposerStashBadge.tsx`
 - `apps/web/src/components/chat/ComposerStashMenu.tsx`
+- `apps/web/src/components/chat/ComposerPendingReviewComments.tsx`
+- `apps/web/src/components/files/LocalCommentAnnotation.tsx`
+- `apps/web/src/reviewCommentContext.ts`
 - `apps/web/src/components/chat/composerStashMenuKeyboard.ts`
 - `apps/web/src/components/chat/composerStashMenuFocus.ts`
 - `apps/web/src/lib/composerPathSearchState.ts`
@@ -77,6 +84,7 @@ Current owner modules:
 - Convert all decodable legacy queues in memory, persist the complete global queue, verify that write, and only then remove the legacy key.
 - Apply the specified migration ordering, de-duplication, field stripping, and cap before the single durable write.
 - Keep the active draft unchanged unless stash persistence is durable.
+- Keep isolated inline comment dispatch separate from normal composer submission so unrelated draft content remains owned by the composer.
 - Keep explicit provider and model intent outside the local no-provider presentation state.
 - Keep exact stash budgets in one neutral policy module shared by persistence and image normalization.
 - Treat an existing global payload plus a remaining legacy payload as an interrupted migration.
@@ -102,6 +110,9 @@ Current owner modules:
 - Entry, image, and attachment budgets enforce the exact documented limits and evict only the oldest persisted entry.
 - Failed legacy conversion or persistence retains the legacy payload and leaves the global queue unchanged.
 - An interrupted migration with both storage keys preserves every unique entry within the global cap.
+- Starting a review queues the first comment and changes later inline actions to `Add to review`.
+- Immediate-send dispatches only the selected inline comment and leaves unrelated composer content intact.
+- The review tray clearly distinguishes pending comments and exposes one cancel path and one submit path.
 
 ## Compatibility Checks
 
@@ -110,3 +121,4 @@ Current owner modules:
 - Disconnect, reconnect, and late provider hydration do not replace explicit custom instance intent.
 - Prompt stash persistence remains compatible with storage-constrained browser and desktop contexts.
 - Provider instance identity never enters the global stash schema.
+- Persisted review mode and comments remain compatible across navigation, source/rendered Markdown toggles, reconnects, and application restarts.

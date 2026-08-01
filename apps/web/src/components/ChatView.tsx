@@ -4132,7 +4132,10 @@ function ChatViewContent(props: ChatViewProps) {
     ],
   );
 
-  const onSend = async (e?: { preventDefault: () => void }) => {
+  const onSend = async (
+    e?: { preventDefault: () => void },
+    singleReviewComment?: ReviewCommentContext,
+  ): Promise<boolean> => {
     e?.preventDefault();
     const canQueueNormalServerMessage =
       isServerThread && activePendingProgress === null && !showPlanFollowUpPrompt;
@@ -4142,26 +4145,37 @@ function ChatViewContent(props: ChatViewProps) {
       ((isConnecting || activeEnvironmentUnavailable) && !canQueueNormalServerMessage) ||
       sendInFlightRef.current
     )
-      return;
+      return false;
     if (activePendingProgress) {
+      if (singleReviewComment) return false;
       onAdvanceActivePendingUserInput();
-      return;
+      return true;
     }
     const sendCtx = composerRef.current?.getSendContext();
-    if (!sendCtx) return;
+    if (!sendCtx) return false;
     const {
-      images: composerImages,
-      terminalContexts: composerTerminalContexts,
-      elementContexts: composerElementContexts,
-      previewAnnotations: composerPreviewAnnotations,
-      reviewComments: composerReviewComments,
+      images: draftComposerImages,
+      terminalContexts: draftComposerTerminalContexts,
+      elementContexts: draftComposerElementContexts,
+      previewAnnotations: draftComposerPreviewAnnotations,
+      reviewComments: draftComposerReviewComments,
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
       selectedProviderModels: ctxSelectedProviderModels,
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
-    const promptForSend = promptRef.current;
+    const isolatedReviewSubmission = singleReviewComment !== undefined;
+    const composerImages = isolatedReviewSubmission ? [] : draftComposerImages;
+    const composerTerminalContexts = isolatedReviewSubmission ? [] : draftComposerTerminalContexts;
+    const composerElementContexts = isolatedReviewSubmission ? [] : draftComposerElementContexts;
+    const composerPreviewAnnotations = isolatedReviewSubmission
+      ? []
+      : draftComposerPreviewAnnotations;
+    const composerReviewComments = singleReviewComment
+      ? [singleReviewComment]
+      : draftComposerReviewComments;
+    const promptForSend = isolatedReviewSubmission ? "" : promptRef.current;
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
@@ -4176,7 +4190,7 @@ function ChatViewContent(props: ChatViewProps) {
         composerPreviewAnnotations.length +
         composerReviewComments.length,
     });
-    if (showPlanFollowUpPrompt && activeProposedPlan) {
+    if (!isolatedReviewSubmission && showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
         draftText: trimmed,
         planMarkdown: activeProposedPlan.planMarkdown,
@@ -4188,7 +4202,7 @@ function ChatViewContent(props: ChatViewProps) {
         text: followUp.text,
         interactionMode: followUp.interactionMode,
       });
-      return;
+      return true;
     }
     const standaloneSlashCommand =
       composerImages.length === 0 &&
@@ -4203,7 +4217,7 @@ function ChatViewContent(props: ChatViewProps) {
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
-      return;
+      return true;
     }
     if (!hasSendableContent) {
       if (expiredTerminalContextCount > 0) {
@@ -4219,9 +4233,9 @@ function ChatViewContent(props: ChatViewProps) {
           }),
         );
       }
-      return;
+      return false;
     }
-    if (!activeProject) return;
+    if (!activeProject) return false;
     const threadIdForSend = activeThread.id;
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
     const baseBranchForWorktree =
@@ -4235,14 +4249,14 @@ function ChatViewContent(props: ChatViewProps) {
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath;
     if (shouldCreateWorktree && !activeThreadBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
-      return;
+      return false;
     }
     if (shouldCreateWorktree && (isConnecting || activeEnvironmentUnavailable)) {
       setThreadError(
         threadIdForSend,
         "Reconnect before starting a new worktree. Your draft remains saved.",
       );
-      return;
+      return false;
     }
 
     sendInFlightRef.current = true;
@@ -4300,7 +4314,7 @@ function ChatViewContent(props: ChatViewProps) {
           error instanceof Error ? error.message : "Failed to save message attachments.",
         );
         sendInFlightRef.current = false;
-        return;
+        return false;
       }
 
       const firstImageName = composerImagesSnapshot[0]?.name;
@@ -4312,7 +4326,9 @@ function ChatViewContent(props: ChatViewProps) {
               ? formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!)
               : composerElementContextsSnapshot.length > 0
                 ? formatElementContextLabel(composerElementContextsSnapshot[0]!)
-                : "New thread"),
+                : composerReviewCommentsSnapshot.length > 0
+                  ? composerReviewCommentsSnapshot[0]!.text
+                  : "New thread"),
       );
       try {
         // Persist text, attachment data URLs, and command identity before any
@@ -4339,7 +4355,7 @@ function ChatViewContent(props: ChatViewProps) {
           error instanceof Error ? error.message : "Failed to save the queued message.",
         );
         sendInFlightRef.current = false;
-        return;
+        return false;
       }
 
       isAtEndRef.current = true;
@@ -4367,11 +4383,13 @@ function ChatViewContent(props: ChatViewProps) {
           }),
         );
       }
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
+      if (!isolatedReviewSubmission) {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+      }
       sendInFlightRef.current = false;
-      return;
+      return true;
     }
 
     beginLocalDispatch({ preparingWorktree: Boolean(baseBranchForWorktree) });
@@ -4416,9 +4434,11 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     }
-    promptRef.current = "";
-    clearComposerDraftContent(composerDraftTarget);
-    composerRef.current?.resetCursorState();
+    if (!isolatedReviewSubmission) {
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+    }
 
     let firstComposerImageName: string | null = null;
     if (composerImagesSnapshot.length > 0) {
@@ -4435,6 +4455,8 @@ function ChatViewContent(props: ChatViewProps) {
         titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
       } else if (composerElementContextsSnapshot.length > 0) {
         titleSeed = formatElementContextLabel(composerElementContextsSnapshot[0]!);
+      } else if (composerReviewCommentsSnapshot.length > 0) {
+        titleSeed = composerReviewCommentsSnapshot[0]!.text;
       } else {
         titleSeed = "New thread";
       }
@@ -4538,7 +4560,11 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     if (failure !== null) {
-      if (
+      if (isolatedReviewSubmission) {
+        setOptimisticUserMessages((existing) =>
+          existing.filter((message) => message.id !== messageIdForSend),
+        );
+      } else if (
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
         composerTerminalContextsRef.current.length === 0 &&
@@ -4585,7 +4611,15 @@ function ChatViewContent(props: ChatViewProps) {
     if (!turnStartSucceeded) {
       resetLocalDispatch();
     }
+    return turnStartSucceeded;
   };
+
+  const submitSingleReviewComment = (comment: ReviewCommentContext) => onSend(undefined, comment);
+  const reviewSubmissionDisabled =
+    isSendBusy ||
+    activePendingProgress !== null ||
+    showPlanFollowUpPrompt ||
+    (!isServerThread && (isConnecting || activeEnvironmentUnavailable));
 
   const onInterrupt = async () => {
     if (!activeThread) return;
@@ -5336,7 +5370,12 @@ function ChatViewContent(props: ChatViewProps) {
       />
     ) : activeRightPanelSurface?.kind === "diff" ? (
       <Suspense fallback={null}>
-        <DiffPanel mode="embedded" composerDraftTarget={composerDraftTarget} />
+        <DiffPanel
+          mode="embedded"
+          composerDraftTarget={composerDraftTarget}
+          onSubmitSingleReviewComment={submitSingleReviewComment}
+          reviewSubmissionDisabled={reviewSubmissionDisabled}
+        />
       </Suspense>
     ) : activeRightPanelSurface?.kind === "plan" ? (
       <PlanSidebar
@@ -5411,6 +5450,8 @@ function ChatViewContent(props: ChatViewProps) {
           onOpenDirectory={openDirectorySurface}
           onExpandedDirectoryPathsChange={setFileTreeExpandedDirectoryPaths}
           onPendingChange={handleFilePendingChange}
+          onSubmitSingleReviewComment={submitSingleReviewComment}
+          reviewSubmissionDisabled={reviewSubmissionDisabled}
         />
       </Suspense>
     ) : null

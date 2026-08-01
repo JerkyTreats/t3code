@@ -40,8 +40,8 @@ export function ComposerPendingReviewComments({
       <div className="flex items-center gap-2">
         <MessageCircle className="size-4 text-muted-foreground" />
         <span className="text-xs font-semibold">Review in progress</span>
-        <span className="text-xs text-muted-foreground">
-          {comments.length} {comments.length === 1 ? "comment" : "comments"}
+        <span className="text-xs text-muted-foreground" data-review-submission-status>
+          {comments.length} {comments.length === 1 ? "comment" : "comments"} not submitted
         </span>
       </div>
       {comments.length > 0 ? (
@@ -81,7 +81,7 @@ export function ComposerPendingReviewComments({
         </div>
       ) : (
         <p className="mt-2 text-xs text-muted-foreground">
-          Add local comments from a code or rendered Markdown file.
+          Add a local comment from a code or rendered Markdown file, then submit the review here.
         </p>
       )}
       <div className="mt-3 flex justify-end gap-2">
@@ -94,7 +94,7 @@ export function ComposerPendingReviewComments({
           disabled={submitDisabled || comments.length === 0}
           onClick={onSubmitReview}
         >
-          Submit review
+          Submit review{comments.length > 0 ? ` (${comments.length})` : ""}
         </Button>
       </div>
     </div>

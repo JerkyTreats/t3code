@@ -12,15 +12,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import {
-  ChevronRight,
-  Code2,
-  Eye,
-  FolderTree,
-  Globe2,
-  LoaderCircle,
-  MessageCircle,
-} from "lucide-react";
+import { ChevronRight, Code2, Eye, FolderTree, Globe2, LoaderCircle } from "lucide-react";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -35,7 +27,6 @@ import { cn } from "~/lib/utils";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { resolvePathLinkTarget } from "~/terminal-links";
 import { ScrollArea } from "~/components/ui/scroll-area";
-import { Button } from "~/components/ui/button";
 import { Toggle } from "~/components/ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -104,6 +95,8 @@ interface FilePreviewPanelProps {
   onOpenDirectory: (relativePath: string | null) => void;
   onExpandedDirectoryPathsChange: (paths: readonly string[]) => void;
   onPendingChange: (relativePath: string, pending: boolean) => void;
+  onSubmitSingleReviewComment: (comment: ReviewCommentContext) => Promise<boolean>;
+  reviewSubmissionDisabled: boolean;
 }
 
 const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
@@ -265,6 +258,8 @@ interface EditableFileSurfaceProps {
   wordWrap: boolean;
   onPostRender: FilePostRender;
   onPendingChange: (relativePath: string, pending: boolean) => void;
+  onSubmitSingleReviewComment: (comment: ReviewCommentContext) => Promise<boolean>;
+  reviewSubmissionDisabled: boolean;
 }
 
 interface FileSelectionOverride {
@@ -314,11 +309,16 @@ function EditableFileSurface({
   wordWrap,
   onPostRender,
   onPendingChange,
+  onSubmitSingleReviewComment,
+  reviewSubmissionDisabled,
 }: EditableFileSurfaceProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
   const reviewComments = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_REVIEW_COMMENTS,
+  );
+  const reviewMode = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.reviewMode ?? false,
   );
   const fileReviewComments = useMemo(
     () => reviewComments.filter((comment) => comment.sectionId === `file:${relativePath}`),
@@ -416,7 +416,7 @@ function EditableFileSurface({
     [composerDraftTarget, removeReviewComment, setSelectedRange],
   );
 
-  const submitAnnotationEntry = useCallback(
+  const addAnnotationEntryToReview = useCallback(
     (entryId: string, text: string) => {
       setSelectedRange(null);
       const entry = lineAnnotations
@@ -456,6 +456,35 @@ function EditableFileSurface({
       relativePath,
       setSelectedRange,
     ],
+  );
+
+  const submitAnnotationEntry = useCallback(
+    async (entryId: string, text: string) => {
+      const entry = lineAnnotations
+        .flatMap((annotation) => annotation.metadata.entries)
+        .find((candidate) => candidate.id === entryId);
+      if (!entry) return false;
+      const submitted = await onSubmitSingleReviewComment(
+        buildFileReviewComment({
+          id: entry.id,
+          filePath: relativePath,
+          startLine: entry.startLine,
+          endLine: entry.endLine,
+          text,
+          contents,
+        }),
+      );
+      if (!submitted) return false;
+      setSelectedRange(null);
+      setLineAnnotations((current) =>
+        current.flatMap((annotation) => {
+          const entries = annotation.metadata.entries.filter((entry) => entry.id !== entryId);
+          return entries.length > 0 ? [{ ...annotation, metadata: { entries } }] : [];
+        }),
+      );
+      return true;
+    },
+    [contents, lineAnnotations, onSubmitSingleReviewComment, relativePath, setSelectedRange],
   );
 
   const beginComment = useCallback((range: SelectedLineRange) => {
@@ -573,11 +602,14 @@ function EditableFileSurface({
                   <LocalCommentAnnotation
                     key={entry.id}
                     kind={entry.kind}
+                    reviewActive={reviewMode}
                     rangeLabel={formatFileCommentRange(entry.startLine, entry.endLine)}
                     text={entry.text}
                     onCancel={() => removeAnnotationEntry(entry.id)}
-                    onComment={(text) => submitAnnotationEntry(entry.id, text)}
+                    onAddToReview={(text) => addAnnotationEntryToReview(entry.id, text)}
+                    onSubmitComment={(text) => submitAnnotationEntry(entry.id, text)}
                     onDelete={() => removeAnnotationEntry(entry.id)}
+                    submitDisabled={reviewSubmissionDisabled}
                   />
                 ))}
               </div>
@@ -600,6 +632,8 @@ function RenderedMarkdownSurface({
   threadRef,
   onOpenSource,
   onPendingChange,
+  onSubmitSingleReviewComment,
+  reviewSubmissionDisabled,
 }: Omit<
   EditableFileSurfaceProps,
   "resolvedTheme" | "revealLine" | "revealRequestId" | "wordWrap" | "onPostRender"
@@ -611,6 +645,9 @@ function RenderedMarkdownSurface({
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
   const reviewComments = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_REVIEW_COMMENTS,
+  );
+  const reviewMode = useComposerDraftStore(
+    (store) => store.getComposerDraft(composerDraftTarget)?.reviewMode ?? false,
   );
   const [draftAnnotation, setDraftAnnotation] = useState<DocumentReviewAnnotation | null>(null);
   const saveCoordinator = useFileSaveCoordinator({
@@ -638,6 +675,8 @@ function RenderedMarkdownSurface({
   const documentReview = useMemo<DocumentReviewController>(
     () => ({
       annotations: reviewAnnotations,
+      reviewActive: reviewMode,
+      submitDisabled: reviewSubmissionDisabled,
       onStartComment: (range) => {
         setDraftAnnotation({
           id: nextFileCommentId(),
@@ -653,7 +692,7 @@ function RenderedMarkdownSurface({
       onCancelComment: (commentId) => {
         if (draftAnnotation?.id === commentId) setDraftAnnotation(null);
       },
-      onComment: (commentId, text) => {
+      onAddToReview: (commentId, text) => {
         if (!draftAnnotation || draftAnnotation.id !== commentId) return;
         addReviewComment(
           composerDraftTarget,
@@ -668,6 +707,21 @@ function RenderedMarkdownSurface({
         );
         setDraftAnnotation(null);
       },
+      onSubmitComment: async (commentId, text) => {
+        if (!draftAnnotation || draftAnnotation.id !== commentId) return false;
+        const submitted = await onSubmitSingleReviewComment(
+          buildFileReviewComment({
+            id: commentId,
+            filePath: relativePath,
+            startLine: draftAnnotation.startLine,
+            endLine: draftAnnotation.endLine,
+            text,
+            contents,
+          }),
+        );
+        if (submitted) setDraftAnnotation(null);
+        return submitted;
+      },
       onDeleteComment: (commentId) => {
         removeReviewComment(composerDraftTarget, commentId);
       },
@@ -677,9 +731,12 @@ function RenderedMarkdownSurface({
       composerDraftTarget,
       contents,
       draftAnnotation,
+      onSubmitSingleReviewComment,
       relativePath,
       removeReviewComment,
       reviewAnnotations,
+      reviewMode,
+      reviewSubmissionDisabled,
     ],
   );
 
@@ -729,16 +786,11 @@ export default function FilePreviewPanel({
   onOpenDirectory,
   onExpandedDirectoryPathsChange,
   onPendingChange,
+  onSubmitSingleReviewComment,
+  reviewSubmissionDisabled,
 }: FilePreviewPanelProps) {
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
-  const reviewMode = useComposerDraftStore(
-    (store) => store.getComposerDraft(composerDraftTarget)?.reviewMode ?? false,
-  );
-  const reviewCommentCount = useComposerDraftStore(
-    (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments.length ?? 0,
-  );
-  const setReviewMode = useComposerDraftStore((store) => store.setReviewMode);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
@@ -901,32 +953,6 @@ export default function FilePreviewPanel({
               enableShortcut={false}
             />
           ) : null}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  aria-label={
-                    reviewMode ? `Review active, ${reviewCommentCount} comments` : "Start review"
-                  }
-                  disabled={reviewMode}
-                  onClick={() => setReviewMode(composerDraftTarget, true)}
-                />
-              }
-            >
-              <MessageCircle className="size-3.5" />
-              <span className="hidden 2xl:inline">
-                {reviewMode ? `Review · ${reviewCommentCount}` : "Start review"}
-              </span>
-            </TooltipTrigger>
-            <TooltipPopup>
-              {reviewMode
-                ? `${reviewCommentCount} local ${reviewCommentCount === 1 ? "comment" : "comments"} in this review`
-                : "Start a multi-comment review"}
-            </TooltipPopup>
-          </Tooltip>
           {isMarkdown ? (
             <Tooltip>
               <TooltipTrigger
@@ -1022,6 +1048,8 @@ export default function FilePreviewPanel({
                 contents={file.data.contents}
                 onOpenSource={() => setMarkdownSourcePath(relativePath)}
                 onPendingChange={onPendingChange}
+                onSubmitSingleReviewComment={onSubmitSingleReviewComment}
+                reviewSubmissionDisabled={reviewSubmissionDisabled}
               />
             ) : file.data.truncated ? (
               <Virtualizer
@@ -1062,6 +1090,8 @@ export default function FilePreviewPanel({
                 wordWrap={wordWrap}
                 onPostRender={onFilePostRender}
                 onPendingChange={onPendingChange}
+                onSubmitSingleReviewComment={onSubmitSingleReviewComment}
+                reviewSubmissionDisabled={reviewSubmissionDisabled}
               />
             )
           ) : null}

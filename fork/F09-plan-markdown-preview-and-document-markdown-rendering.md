@@ -35,6 +35,9 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Code files remain code previews and never enter rendered document mode.
 - Line-qualified Markdown links enter source mode so file-link reveals can clamp and center the requested line while clearing stale highlights from earlier reveals.
 - Diff virtualization keeps a stable selection key and uses the measured header height of `33`, top padding of `0`, bottom padding of `8`, and item gap of `8`.
+- Source files, diffs, and rendered Markdown expose the same inline comment submission state machine.
+- Without an active review, an inline comment can either start a review or send immediately. During an active review, the action is labeled `Add to review` and queues locally for composer submission.
+- Review initiation belongs to the first inline comment box rather than a separate file-header action.
 
 ## Owner Modules
 
@@ -54,6 +57,9 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - `apps/web/src/markdown-links.ts`
 - `apps/web/src/routes/_chat.$environmentId.$threadId.tsx`
 - `apps/web/src/index.css`
+- `apps/web/src/components/files/LocalCommentAnnotation.tsx`
+- `apps/web/src/components/diffs/AnnotatableCodeView.tsx`
+- `apps/web/src/documentReview.ts`
 
 ## Fork Seams
 
@@ -106,6 +112,8 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Code files keep the code preview surface.
 - Line-qualified Markdown links open source, and repeated file-link reveals center the clamped target line and remove stale highlight state.
 - Diff selection remains stable while virtual measurements retain header height `33`, top padding `0`, bottom padding `8`, and item gap `8`.
+- Inline review actions match across source, diff, and rendered Markdown views, including `Start review`, immediate send, and `Add to review` states.
+- Pending review comments remain visibly unsubmitted until the composer submits the review, while cancellation removes them from every file presentation.
 
 ## Compatibility Checks
 
