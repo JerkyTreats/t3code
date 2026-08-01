@@ -27,6 +27,15 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 
 const PROJECT_READ_FILE_MAX_BYTES = 1024 * 1024;
 
+function isResolvedPathOutsideRoot(path: Path.Path, root: string, target: string): boolean {
+  const relativePath = path.relative(root, target);
+  return (
+    relativePath.startsWith(`..${path.sep}`) ||
+    relativePath === ".." ||
+    path.isAbsolute(relativePath)
+  );
+}
+
 export class WorkspaceFileSystemOperationError extends Schema.TaggedErrorClass<WorkspaceFileSystemOperationError>()(
   "WorkspaceFileSystemOperationError",
   {
@@ -164,12 +173,29 @@ export const make = Effect.gen(function* () {
           cause,
         }),
     });
-    const relativeRealPath = path.relative(realWorkspaceRoot, realTargetPath);
-    if (
-      relativeRealPath.startsWith(`..${path.sep}`) ||
-      relativeRealPath === ".." ||
-      path.isAbsolute(relativeRealPath)
-    ) {
+    const targetOutsideWorkspace = isResolvedPathOutsideRoot(
+      path,
+      realWorkspaceRoot,
+      realTargetPath,
+    );
+    const realTargetParent = targetOutsideWorkspace
+      ? yield* Effect.tryPromise({
+          try: () => NodeFSP.realpath(path.dirname(target.absolutePath)),
+          catch: (cause) =>
+            new WorkspaceFileSystemOperationError({
+              workspaceRoot: input.cwd,
+              relativePath: input.relativePath,
+              resolvedPath: target.absolutePath,
+              operationPath: path.dirname(target.absolutePath),
+              operation: "realpath-target",
+              cause,
+            }),
+        })
+      : null;
+    const traversesExternalLinkedDirectory =
+      realTargetParent !== null &&
+      isResolvedPathOutsideRoot(path, realWorkspaceRoot, realTargetParent);
+    if (targetOutsideWorkspace && !traversesExternalLinkedDirectory) {
       return yield* new WorkspaceFilePathEscapeError({
         workspaceRoot: input.cwd,
         relativePath: input.relativePath,
