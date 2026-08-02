@@ -225,6 +225,11 @@ Do not mark a rebuild ready if any linked feature spec is unreviewed, stale, or 
 - Preserve unrelated composer text, attachments, and contextual drafts when an isolated inline comment is sent.
 - Apply the same submission state machine to source files, diffs, and rendered Markdown annotations.
 
+## F9 Mermaid Rendering Stability
+
+- Keep Mermaid fences behind a stable diagram placeholder while chat content streams instead of flashing raw source before rendering.
+- Preserve the reader's timeline position when a completed off-screen Mermaid diagram changes height, while leaving live-edge following to the timeline.
+
 ## Unified Project Surface Safety
 
 - Validate persisted Git and Inference surface descriptors by exact environment plus project identity.

@@ -100,6 +100,7 @@ import {
   type DocumentReviewRange,
 } from "../documentReview";
 import { LocalCommentAnnotation } from "./files/LocalCommentAnnotation";
+import { usePreserveScrollOnMermaidResize } from "./mermaidScrollStability";
 
 class CodeHighlightErrorBoundary extends React.Component<
   { fallback: ReactNode; children: ReactNode },
@@ -667,18 +668,25 @@ function MarkdownCodeBlockTitleContent({
 }
 
 type MermaidRenderState =
-  | { status: "loading" }
-  | { status: "rendered"; svg: string; bindFunctions: RenderResult["bindFunctions"] }
-  | { status: "error"; message: string };
+  | { status: "loading"; renderKey: string | null }
+  | {
+      status: "rendered";
+      renderKey: string;
+      svg: string;
+      bindFunctions: RenderResult["bindFunctions"];
+    }
+  | { status: "error"; renderKey: string; message: string };
 
 function MermaidDiagramBlock({
   code,
   fallback,
   theme,
+  isStreaming,
 }: {
   code: string;
   fallback: ReactNode;
   theme: "light" | "dark";
+  isStreaming: boolean;
 }) {
   const reactId = useId();
   const renderSequenceRef = useRef(0);
@@ -687,19 +695,26 @@ function MermaidDiagramBlock({
     () => `chat-mermaid-${reactId.replaceAll(/[^a-zA-Z0-9_-]/g, "")}`,
     [reactId],
   );
-  const [renderState, setRenderState] = useState<MermaidRenderState>({ status: "loading" });
+  const renderKey = `${theme}\0${code}`;
+  const [renderState, setRenderState] = useState<MermaidRenderState>({
+    status: "loading",
+    renderKey: null,
+  });
 
   useEffect(() => {
+    if (isStreaming) return;
+
     let cancelled = false;
     const renderId = `${mermaidIdPrefix}-${renderSequenceRef.current}`;
     renderSequenceRef.current += 1;
-    setRenderState({ status: "loading" });
+    setRenderState({ status: "loading", renderKey });
 
     void renderMermaidDiagram({ id: renderId, code, theme }).then(
       (result) => {
         if (cancelled) return;
         setRenderState({
           status: "rendered",
+          renderKey,
           svg: result.svg,
           bindFunctions: result.bindFunctions,
         });
@@ -708,6 +723,7 @@ function MermaidDiagramBlock({
         if (cancelled) return;
         setRenderState({
           status: "error",
+          renderKey,
           message: formatRenderErrorMessage(error),
         });
       },
@@ -716,16 +732,18 @@ function MermaidDiagramBlock({
     return () => {
       cancelled = true;
     };
-  }, [code, mermaidIdPrefix, theme]);
+  }, [code, isStreaming, mermaidIdPrefix, renderKey, theme]);
 
   useEffect(() => {
-    if (renderState.status !== "rendered") return;
+    if (renderState.status !== "rendered" || renderState.renderKey !== renderKey) return;
     const container = containerRef.current;
     if (!container) return;
     renderState.bindFunctions?.(container);
-  }, [renderState]);
+  }, [renderKey, renderState]);
 
-  if (renderState.status === "error") {
+  const hasCurrentResult = !isStreaming && renderState.renderKey === renderKey;
+
+  if (hasCurrentResult && renderState.status === "error") {
     return (
       <div className="chat-markdown-mermaid-error">
         <div className="chat-markdown-mermaid-error-copy">
@@ -743,12 +761,14 @@ function MermaidDiagramBlock({
         ref={containerRef}
         className="chat-markdown-mermaid-viewport"
         dangerouslySetInnerHTML={
-          renderState.status === "rendered" ? { __html: renderState.svg } : undefined
+          hasCurrentResult && renderState.status === "rendered"
+            ? { __html: renderState.svg }
+            : undefined
         }
       />
-      {renderState.status === "loading" ? (
+      {!hasCurrentResult || renderState.status === "loading" ? (
         <div className="chat-markdown-mermaid-loading" role="status">
-          Rendering diagram...
+          {isStreaming ? "Waiting for diagram..." : "Rendering diagram..."}
         </div>
       ) : null}
     </figure>
@@ -773,6 +793,9 @@ function MarkdownCodeBlock({
   const [copied, setCopied] = useState(false);
   const [wrapped, setWrapped] = useState(readInitialWordWrapSetting);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const codeBlockRef = useRef<HTMLDivElement>(null);
+  const isMermaid = isMermaidLanguage(language);
+  usePreserveScrollOnMermaidResize(codeBlockRef, isMermaid);
   const wrapLabel = wrapped ? "Disable line wrap" : "Wrap lines";
   const copyLabel = copied ? "Copied" : "Copy code";
   const mermaidFallback = (
@@ -821,6 +844,7 @@ function MarkdownCodeBlock({
 
   return (
     <div
+      ref={codeBlockRef}
       className="chat-markdown-codeblock leading-snug"
       data-language={language}
       data-wrap={wrapped ? "true" : "false"}
@@ -871,8 +895,13 @@ function MarkdownCodeBlock({
           </Tooltip>
         </span>
       </div>
-      {isMermaidLanguage(language) && !isStreaming ? (
-        <MermaidDiagramBlock code={code} fallback={mermaidFallback} theme={theme} />
+      {isMermaid ? (
+        <MermaidDiagramBlock
+          code={code}
+          fallback={mermaidFallback}
+          theme={theme}
+          isStreaming={isStreaming}
+        />
       ) : (
         children
       )}

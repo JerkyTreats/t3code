@@ -15,6 +15,7 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Chat markdown, plan preview markdown, and project document markdown all preserve horizontal overflow handling for wide tables and code blocks.
 - Document markdown owns a richer rendering surface than chat markdown, including stable heading ids, local heading anchors, code copy controls, syntax highlighting, safe raw HTML support for document oriented tags, and readable document typography.
 - Mermaid fenced code blocks render as diagrams in document preview surfaces, with a readable failure state that can expose source when rendering fails.
+- Mermaid fences keep a stable diagram placeholder while chat content streams, and off-screen diagram resize preserves the reader's timeline position after rendering.
 - Markdown image links in document previews resolve through the document asset pipeline when possible and support image preview or lightbox behavior without breaking external image links.
 - Plan preview and project document links keep fork specific navigation behavior for workspace paths, local anchors, and external links.
 - Workspace relative links navigate within the document preview or files preview route instead of forcing an editor open when an in app preview target exists.
@@ -99,6 +100,7 @@ Plan review, project document preview, and markdown presentation preserve fork s
 - Nested document-relative links keep correct workspace relative paths for file panel and preview routing.
 - Local heading links scroll to generated heading anchors inside the current document preview.
 - Mermaid fenced code renders a diagram or a readable source backed failure state.
+- Streaming Mermaid fences do not flash raw source, and a completed off-screen diagram does not displace the current reading position.
 - Markdown images in document previews resolve through the asset pipeline and can open in a preview or lightbox when available.
 - Document outline entries reflect rendered heading structure and navigate to the selected heading.
 - Virtual plan preview hides source file footer while real project document previews keep source open behavior available.

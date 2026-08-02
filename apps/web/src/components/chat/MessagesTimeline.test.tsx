@@ -502,6 +502,36 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Work Log");
   });
 
+  it("keeps streaming Mermaid source behind a stable diagram placeholder", async () => {
+    const { MessagesTimeline } = await import("./MessagesTimeline");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        isWorking
+        timelineEntries={[
+          {
+            id: "entry-mermaid",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: MessageId.make("message-mermaid"),
+              role: "assistant",
+              text: "```mermaid\ngraph TD\nrawSourceNode --> B\n```",
+              turnId: null,
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: MESSAGE_CREATED_AT,
+              streaming: true,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Waiting for diagram...");
+    expect(markup).toContain("chat-markdown-mermaid-viewport");
+    expect(markup).not.toContain("rawSourceNode");
+  });
+
   it("formats changed file paths from the workspace root", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
     const markup = renderToStaticMarkup(
