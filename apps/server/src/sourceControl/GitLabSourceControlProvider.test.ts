@@ -8,11 +8,50 @@ import * as GitLabCli from "./GitLabCli.ts";
 import { parseGitLabAuthStatusHosts } from "./gitLabAuthStatus.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
 
+const originContext = {
+  provider: {
+    kind: "gitlab" as const,
+    name: "GitLab",
+    baseUrl: "https://gitlab.com",
+  },
+  remoteName: "origin",
+  remoteUrl: "git@gitlab.com:fork/project.git",
+};
+
 function makeProvider(gitlab: Partial<GitLabCli.GitLabCli["Service"]>) {
   return GitLabSourceControlProvider.make.pipe(
     Effect.provide(Layer.mock(GitLabCli.GitLabCli)(gitlab)),
   );
 }
+
+it.effect("binds repository lookup to the explicit GitLab endpoint", () =>
+  Effect.gen(function* () {
+    let received: Parameters<GitLabCli.GitLabCli["Service"]["getRepositoryCloneUrls"]>[0] | null =
+      null;
+    const provider = yield* makeProvider({
+      getRepositoryCloneUrls: (input) => {
+        received = input;
+        return Effect.succeed({
+          nameWithOwner: "group/repo",
+          url: "https://gitlab.example.test/group/repo",
+          sshUrl: "git@gitlab.example.test:group/repo.git",
+        });
+      },
+    });
+
+    yield* provider.getRepositoryCloneUrls({
+      cwd: "/repo",
+      providerBaseUrl: "https://gitlab.example.test",
+      repository: "group/repo",
+    });
+
+    assert.deepStrictEqual(received, {
+      cwd: "/repo",
+      host: "gitlab.example.test",
+      repository: "group/repo",
+    });
+  }),
+);
 
 it.effect("maps GitLab MR summaries into provider-neutral change requests", () =>
   Effect.gen(function* () {
@@ -33,6 +72,7 @@ it.effect("maps GitLab MR summaries into provider-neutral change requests", () =
 
     const changeRequest = yield* provider.getChangeRequest({
       cwd: "/repo",
+      context: originContext,
       reference: "42",
     });
 
@@ -67,6 +107,7 @@ it.effect("adds repository context while retaining GitLab CLI causes", () =>
     const error = yield* provider
       .createRepository({
         cwd: "/repo",
+        providerBaseUrl: "https://gitlab.com",
         repository: "owner/repo",
         visibility: "private",
       })
@@ -107,6 +148,7 @@ it.effect("lists GitLab MRs through provider-neutral input names", () =>
 
     yield* provider.listChangeRequests({
       cwd: "/repo",
+      context: originContext,
       headSelector: "feature/provider",
       state: "all",
       limit: 10,
@@ -114,6 +156,8 @@ it.effect("lists GitLab MRs through provider-neutral input names", () =>
 
     assert.deepStrictEqual(listInput, {
       cwd: "/repo",
+      host: "gitlab.com",
+      repository: "fork/project",
       headSelector: "feature/provider",
       state: "all",
       limit: 10,
@@ -121,7 +165,55 @@ it.effect("lists GitLab MRs through provider-neutral input names", () =>
   }),
 );
 
-it.effect("creates GitLab MRs through provider-neutral input names", () =>
+it.effect("pins GitLab lookup and checkout to origin when another remote may be present", () =>
+  Effect.gen(function* () {
+    let getInput: Parameters<GitLabCli.GitLabCli["Service"]["getMergeRequest"]>[0] | null = null;
+    let checkoutInput:
+      | Parameters<GitLabCli.GitLabCli["Service"]["checkoutMergeRequest"]>[0]
+      | null = null;
+    const provider = yield* makeProvider({
+      getMergeRequest: (input) => {
+        getInput = input;
+        return Effect.succeed({
+          number: 42,
+          title: "Origin MR",
+          url: "https://gitlab.com/fork/project/-/merge_requests/42",
+          baseRefName: "main",
+          headRefName: "feature/origin",
+          state: "open",
+        });
+      },
+      checkoutMergeRequest: (input) => {
+        checkoutInput = input;
+        return Effect.void;
+      },
+    });
+
+    yield* provider.getChangeRequest({ cwd: "/repo", context: originContext, reference: "42" });
+    yield* provider.checkoutChangeRequest({
+      cwd: "/repo",
+      context: originContext,
+      reference: "42",
+    });
+
+    assert.deepStrictEqual(getInput, {
+      cwd: "/repo",
+      context: originContext,
+      host: "gitlab.com",
+      repository: "fork/project",
+      reference: "42",
+    });
+    assert.deepStrictEqual(checkoutInput, {
+      cwd: "/repo",
+      context: originContext,
+      host: "gitlab.com",
+      repository: "fork/project",
+      reference: "42",
+    });
+  }),
+);
+
+it.effect("pins GitLab MR creation to origin when another remote may be present", () =>
   Effect.gen(function* () {
     let createInput: Parameters<GitLabCli.GitLabCli["Service"]["createMergeRequest"]>[0] | null =
       null;
@@ -134,6 +226,7 @@ it.effect("creates GitLab MRs through provider-neutral input names", () =>
 
     yield* provider.createChangeRequest({
       cwd: "/repo",
+      context: originContext,
       baseRefName: "main",
       headSelector: "owner:feature/provider",
       title: "Provider MR",
@@ -142,6 +235,8 @@ it.effect("creates GitLab MRs through provider-neutral input names", () =>
 
     assert.deepStrictEqual(createInput, {
       cwd: "/repo",
+      host: "gitlab.com",
+      repository: "fork/project",
       baseBranch: "main",
       headSelector: "owner:feature/provider",
       source: {
@@ -151,6 +246,27 @@ it.effect("creates GitLab MRs through provider-neutral input names", () =>
       title: "Provider MR",
       bodyFile: "/tmp/body.md",
     });
+  }),
+);
+
+it.effect("rejects GitLab MR creation without an exact origin context", () =>
+  Effect.gen(function* () {
+    const provider = yield* makeProvider({
+      createMergeRequest: () => Effect.die("must not be called"),
+    });
+
+    const error = yield* provider
+      .createChangeRequest({
+        cwd: "/repo",
+        context: { ...originContext, remoteName: "upstream" },
+        baseRefName: "main",
+        headSelector: "feature/provider",
+        title: "Provider MR",
+        bodyFile: "/tmp/body.md",
+      })
+      .pipe(Effect.flip);
+
+    assert.include(error.detail, "exact GitLab origin");
   }),
 );
 

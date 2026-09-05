@@ -110,22 +110,42 @@ export const make = Effect.gen(function* () {
           ),
         );
     },
-    getRepositoryCloneUrls: (input) =>
-      bitbucket.getRepositoryCloneUrls(input).pipe(
-        Effect.mapError(
-          (error) =>
-            new SourceControlProviderError({
-              provider: "bitbucket",
-              operation: "getRepositoryCloneUrls",
-              cwd: input.cwd,
-              repository: SourceControlProvider.transportSafeSourceControlErrorValue(
-                input.repository,
-              ),
-              detail: "Failed to get repository clone URLs.",
-              cause: error,
-            }),
-        ),
-      ),
+    getRepositoryCloneUrls: (input) => {
+      const context =
+        input.context ??
+        (input.providerBaseUrl
+          ? {
+              provider: {
+                kind: "bitbucket" as const,
+                name: "Bitbucket",
+                baseUrl: input.providerBaseUrl,
+              },
+              remoteName: "origin",
+              remoteUrl: input.providerBaseUrl,
+            }
+          : undefined);
+      return bitbucket
+        .getRepositoryCloneUrls({
+          cwd: input.cwd,
+          repository: input.repository,
+          ...(context ? { context } : {}),
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: "bitbucket",
+                operation: "getRepositoryCloneUrls",
+                cwd: input.cwd,
+                repository: SourceControlProvider.transportSafeSourceControlErrorValue(
+                  input.repository,
+                ),
+                detail: "Failed to get repository clone URLs.",
+                cause: error,
+              }),
+          ),
+        );
+    },
     createRepository: (input) =>
       bitbucket.createRepository(input).pipe(
         Effect.mapError(

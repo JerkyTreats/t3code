@@ -18,6 +18,14 @@ import {
   type SourceControlRepositoryLookupInput,
 } from "@t3tools/contracts";
 
+import {
+  validateProviderEndpoint,
+  publicationRepositoryTarget,
+  validateRepositoryCloneUrls,
+  exactRepositorySelector,
+  preflightPublication,
+} from "../fork/originRepositoryPublicationPolicy.ts";
+import { ORIGIN_REMOTE_NAME } from "../fork/originOnlySourceControlPolicy.ts";
 import { ServerConfig } from "../config.ts";
 import { expandHomePathWith } from "../pathExpansion.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -108,11 +116,41 @@ export const make = Effect.gen(function* () {
       operation: "lookupRepository",
       provider: input.provider,
     });
-    const provider = yield* providers.get(providerKind);
-    const urls = yield* provider.getRepositoryCloneUrls({
-      cwd: input.cwd ?? config.cwd,
-      repository: input.repository.trim(),
+    const providerEndpoint = yield* validateProviderEndpoint({
+      operation: "lookupRepository",
+      provider: providerKind,
+      providerBaseUrl: input.providerBaseUrl,
     });
+    const requestedTarget = publicationRepositoryTarget({
+      provider: providerKind,
+      providerBaseUrl: providerEndpoint.baseUrl,
+      repository: input.repository,
+    });
+    if (requestedTarget === null) {
+      return yield* new SourceControlRepositoryError({
+        operation: "lookupRepository",
+        provider: providerKind,
+        detail:
+          "The selected provider endpoint and repository do not identify an exact repository target.",
+      });
+    }
+    const provider = yield* providers.get(providerKind);
+    const urls = yield* provider
+      .getRepositoryCloneUrls({
+        cwd: input.cwd ?? config.cwd,
+        providerBaseUrl: providerEndpoint.baseUrl,
+        repository: input.repository.trim(),
+      })
+      .pipe(
+        Effect.flatMap((urls) =>
+          validateRepositoryCloneUrls({
+            operation: "lookupRepository",
+            provider: providerKind,
+            requestedTarget,
+            urls,
+          }),
+        ),
+      );
     return toRepositoryInfo(providerKind, urls);
   });
 
@@ -176,8 +214,16 @@ export const make = Effect.gen(function* () {
     let provider: SourceControlProviderKind = input.provider ?? "unknown";
 
     if (input.provider && input.repository) {
+      if (!input.providerBaseUrl) {
+        return yield* new SourceControlRepositoryError({
+          operation: "cloneRepository",
+          provider: input.provider,
+          detail: "Choose the exact provider endpoint before cloning by repository path.",
+        });
+      }
       repository = yield* lookupRepository({
         provider: input.provider,
+        providerBaseUrl: input.providerBaseUrl,
         repository: input.repository,
         cwd: preparedDestination.parentPath,
       });
@@ -214,18 +260,57 @@ export const make = Effect.gen(function* () {
         operation: "publishRepository",
         provider: input.provider,
       });
+      const publicationProvider = yield* validateProviderEndpoint({
+        operation: "publishRepository",
+        provider: providerKind,
+        providerBaseUrl: input.providerBaseUrl,
+      });
+      const requestedTarget = publicationRepositoryTarget({
+        provider: providerKind,
+        providerBaseUrl: publicationProvider.baseUrl,
+        repository: input.repository,
+      });
+      if (requestedTarget === null) {
+        return yield* new SourceControlRepositoryError({
+          operation: "publishRepository",
+          provider: providerKind,
+          detail:
+            "The selected provider endpoint and repository do not identify an exact publication target.",
+        });
+      }
       const provider = yield* providers.get(providerKind);
-      const urls = yield* provider.createRepository({
-        cwd: input.cwd,
-        repository: input.repository.trim(),
-        visibility: input.visibility,
+      const { existingOriginUrl, existingOriginTarget, existingOriginContext } =
+        yield* preflightPublication(git, input, requestedTarget);
+      const urls =
+        existingOriginUrl === null
+          ? yield* provider.createRepository({
+              cwd: input.cwd,
+              providerBaseUrl: publicationProvider.baseUrl,
+              repository: input.repository.trim(),
+              visibility: input.visibility,
+            })
+          : yield* provider.getRepositoryCloneUrls({
+              cwd: input.cwd,
+              context: existingOriginContext!,
+              repository: exactRepositorySelector(existingOriginTarget!),
+            });
+      yield* validateRepositoryCloneUrls({
+        operation: "publishRepository",
+        provider: providerKind,
+        requestedTarget,
+        urls,
       });
       const remoteUrl = selectRemoteUrl(urls, input.protocol);
-      const remoteName = yield* git.ensureRemote({
-        cwd: input.cwd,
-        preferredName: input.remoteName?.trim() || "origin",
-        url: remoteUrl,
-      });
+      if (existingOriginUrl === null) {
+        yield* git.execute({
+          operation: "SourceControlRepositoryService.publishRepository.addOrigin",
+          cwd: input.cwd,
+          args: ["remote", "add", ORIGIN_REMOTE_NAME, remoteUrl],
+          timeoutMs: 5_000,
+          maxOutputBytes: 64 * 1024,
+        });
+      }
+      const remoteName = ORIGIN_REMOTE_NAME;
 
       // An empty local repo (no commits) would make `git push HEAD:...` fail
       // with an opaque "src refspec HEAD does not match any". Treat this as a
@@ -252,7 +337,9 @@ export const make = Effect.gen(function* () {
         };
       }
 
-      const pushResult = yield* git.pushCurrentBranch(input.cwd, null, { remoteName });
+      const pushResult = yield* git.pushCurrentBranch(input.cwd, null, {
+        remoteName: ORIGIN_REMOTE_NAME,
+      });
 
       return {
         repository: toRepositoryInfo(providerKind, urls),

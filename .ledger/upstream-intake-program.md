@@ -92,6 +92,14 @@ Use a clean test environment for subsequent gates. Do not waive baseline failure
 
 If applied, this commit preserves the fork’s repository rules, onboarding, and delivery records during upstream reconciliation.
 
+### Exact-origin source control
+
+If applied, this commit binds repository discovery, change requests, and Git publication to exact origin, including automatic pulls and hosted URL selectors.
+
+Compatibility: source-control provider lookup and publication require the explicit provider base URL. Use matching client and server builds. Missing origin and foreign hosted selectors fail closed. Supported numeric and branch selectors remain available.
+
+Governance delivery commit: `ed1f5ebb7`.
+
 ## Review Findings
 
 S12 logical review passes persistence and all 46 selected exact hunk roles. Bounded correction reviews close F17-R1 through R3, F06-R1, F20-R1 and S12-SUP-R1. Ordered Style Assurance closes SA1 through SA5 after correcting active documentation, shared contract comments, runtime error wording, remaining Settings pairing guidance and the current provider checklist. No blocking findings remain for this group. Later product obligations remain pending. Detailed evidence follows in the execution record.

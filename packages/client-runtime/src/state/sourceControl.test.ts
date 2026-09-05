@@ -139,6 +139,7 @@ describe("source control environment atoms", () => {
             input: {
               cwd: "/repo",
               provider: "github",
+              providerBaseUrl: "https://github.com",
               repository: "t3tools/t3code",
               visibility: "private",
             },
@@ -155,6 +156,7 @@ describe("source control environment atoms", () => {
             input: {
               cwd: "/repo",
               provider: "github",
+              providerBaseUrl: "https://github.com",
               repository: "t3tools/t3code",
               visibility: "private",
             },

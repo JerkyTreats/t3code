@@ -268,6 +268,7 @@ export function useSourceControlPublishRepositoryAction(scope: SourceControlActi
   const action = useCallback(
     async (input: {
       provider: "github" | "gitlab" | "bitbucket" | "azure-devops";
+      providerBaseUrl: string;
       repository: string;
       visibility: SourceControlRepositoryVisibility;
       remoteName: string;

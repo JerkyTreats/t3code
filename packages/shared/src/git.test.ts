@@ -5,6 +5,7 @@ import {
   applyGitStatusStreamEvent,
   buildTemporaryWorktreeBranchName,
   isTemporaryWorktreeBranch,
+  normalizeGitRemoteMutationTarget,
   normalizeGitRemoteUrl,
   parseGitHubRepositoryNameWithOwnerFromRemoteUrl,
   WORKTREE_BRANCH_PREFIX,
@@ -48,6 +49,29 @@ describe("normalizeGitRemoteUrl", () => {
     expect(normalizeGitRemoteUrl("deploy@bitbucket.org:workspace/repo.git")).toBe(
       "bitbucket.org/workspace/repo",
     );
+  });
+});
+
+describe("normalizeGitRemoteMutationTarget", () => {
+  it("canonicalizes equivalent default-port protocol variants", () => {
+    expect(normalizeGitRemoteMutationTarget("git@github.com:T3Tools/T3Code.git")).toBe(
+      "github.com/t3tools/t3code",
+    );
+    expect(normalizeGitRemoteMutationTarget("ssh://git@github.com:22/T3Tools/T3Code.git")).toBe(
+      "github.com/t3tools/t3code",
+    );
+    expect(normalizeGitRemoteMutationTarget("https://github.com:443/T3Tools/T3Code.git")).toBe(
+      "github.com/t3tools/t3code",
+    );
+  });
+
+  it("preserves non-default ports as distinct mutation targets", () => {
+    expect(
+      normalizeGitRemoteMutationTarget("https://github.example.test:8443/team/project.git"),
+    ).toBe("github.example.test:8443/team/project");
+    expect(
+      normalizeGitRemoteMutationTarget("https://github.example.test:9443/team/project.git"),
+    ).toBe("github.example.test:9443/team/project");
   });
 });
 

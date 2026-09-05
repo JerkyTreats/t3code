@@ -94,7 +94,7 @@ export function addProjectRemoteSourcePathHint(source: AddProjectRemoteSource): 
     case "bitbucket":
       return "workspace/repository";
     case "azure-devops":
-      return "project/repository";
+      return "organization/project/repository";
     case "url":
       return "URL";
   }
@@ -122,6 +122,31 @@ export function getDefaultCloneUrl(
   repository: Pick<SourceControlRepositoryInfo, "provider" | "url" | "sshUrl">,
 ): string {
   return repository.provider === "github" ? repository.url : repository.sshUrl;
+}
+
+export function resolveAddProjectRepositoryLookupTarget(input: {
+  readonly source: AddProjectRemoteProviderKind;
+  readonly repository: string;
+  readonly discovery: SourceControlDiscoveryResult | null;
+}): { readonly providerBaseUrl: string; readonly repository: string } | null {
+  const provider = input.discovery?.sourceControlProviders.find(
+    (candidate) => candidate.kind === input.source,
+  );
+  const host = provider ? Option.getOrNull(provider.auth.host) : null;
+  if (!host) return null;
+
+  const repository = input.repository.trim().replace(/^\/+|\/+$/gu, "");
+  if (input.source !== "azure-devops") {
+    return repository.length > 0 ? { providerBaseUrl: `https://${host}`, repository } : null;
+  }
+
+  const [organization, project, ...repositoryParts] = repository.split("/");
+  const azureRepository = repositoryParts.join("/");
+  if (!organization || !project || azureRepository.length === 0) return null;
+  return {
+    providerBaseUrl: `https://${host}/${organization}`,
+    repository: `${project}/${azureRepository}`,
+  };
 }
 
 export function sortAddProjectProviderSources(
@@ -182,6 +207,13 @@ export function buildAddProjectRemoteSourceReadiness(
         hint:
           Option.getOrNull(provider.auth.detail) ??
           `${provider.label} is not authenticated. Open Source Control settings for setup guidance.`,
+      };
+      continue;
+    }
+    if (Option.isNone(provider.auth.host)) {
+      readiness[source] = {
+        ready: false,
+        hint: `${provider.label} did not report an authenticated endpoint. Rescan after signing in.`,
       };
       continue;
     }

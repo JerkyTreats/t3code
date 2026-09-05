@@ -60,6 +60,12 @@ import * as ServerSettings from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
+import {
+  isOriginRemoteName,
+  isOriginRemoteRef,
+  selectOriginRemoteName,
+  canUseOriginBranchTracking,
+} from "../fork/originOnlySourceControlPolicy.ts";
 import { detectPrTemplate } from "../sourceControl/PrTemplateDetection.ts";
 import type { ChangeRequest } from "@t3tools/contracts";
 
@@ -1114,6 +1120,8 @@ export const make = Effect.gen(function* () {
     },
     refreshMissingPullRequest = false,
   ) {
+    const trackingRemote = yield* readConfigValueNullable(cwd, `branch.${details.branch}.remote`);
+    if (!canUseOriginBranchTracking(trackingRemote)) return null;
     // Keyed by (cwd, branch) only: the upstream ref changing (e.g. a first
     // `push -u`) must not orphan the fallback value for the same branch.
     const branchKey = `${cwd}\u0000${details.branch}`;
@@ -1226,15 +1234,9 @@ export const make = Effect.gen(function* () {
 
   const resolveHostingProvider = Effect.fn("resolveHostingProvider")(function* (
     cwd: string,
-    branch: string | null,
+    _branch: string | null,
   ) {
-    const preferredRemoteName =
-      branch === null
-        ? "origin"
-        : ((yield* readConfigValueNullable(cwd, `branch.${branch}.remote`)) ?? "origin");
-    const remoteUrl =
-      (yield* readConfigValueNullable(cwd, `remote.${preferredRemoteName}.url`)) ??
-      (yield* readConfigValueNullable(cwd, "remote.origin.url"));
+    const remoteUrl = yield* readConfigValueNullable(cwd, "remote.origin.url");
 
     return remoteUrl ? detectSourceControlProviderFromGitRemoteUrl(remoteUrl) : null;
   });
@@ -1243,7 +1245,7 @@ export const make = Effect.gen(function* () {
     cwd: string,
     remoteName: string | null,
   ) {
-    if (!remoteName) {
+    if (!isOriginRemoteName(remoteName)) {
       return {
         remoteUrlKey: null,
         repositoryNameWithOwner: null,
@@ -1284,10 +1286,8 @@ export const make = Effect.gen(function* () {
     cwd: string,
     details: { branch: string; upstreamRef: string | null; remoteName?: string },
   ) {
-    const remoteName =
-      details.remoteName ??
-      (yield* readConfigValueNullable(cwd, `branch.${details.branch}.remote`));
-    const headBranchFromUpstream = details.upstreamRef
+    const remoteName = "origin";
+    const headBranchFromUpstream = isOriginRemoteRef(details.upstreamRef)
       ? extractBranchNameFromRemoteRef(details.upstreamRef, { remoteName })
       : "";
     const headBranch = headBranchFromUpstream.length > 0 ? headBranchFromUpstream : details.branch;
@@ -1359,12 +1359,11 @@ export const make = Effect.gen(function* () {
 
   // The remote that holds a ref named after the local branch, or null when
   // none does. Remote names may contain slashes, so refs are matched literally
-  // per remote instead of with a glob. When several remotes hold the name, the
-  // preferred remote wins, then origin, then the first configured remote.
+  // per remote instead of with a glob. Product lookup selects origin from the matches.
   const findRemoteTrackingRemote = Effect.fn("findRemoteTrackingRemote")(function* (
     cwd: string,
     branch: string,
-    preferredRemoteName: string | null,
+    _preferredRemoteName: string | null,
   ) {
     if (branch.length === 0) return null;
     return yield* Effect.gen(function* () {
@@ -1394,11 +1393,7 @@ export const make = Effect.gen(function* () {
           .filter((ref) => ref.length > 0),
       );
       const matching = remoteNames.filter((name) => refs.has(`refs/remotes/${name}/${branch}`));
-      if (preferredRemoteName !== null && matching.includes(preferredRemoteName)) {
-        return preferredRemoteName;
-      }
-      if (matching.includes("origin")) return "origin";
-      return matching[0] ?? null;
+      return selectOriginRemoteName(matching);
     }).pipe(Effect.orElseSucceed(() => null));
   });
 
@@ -1485,12 +1480,12 @@ export const make = Effect.gen(function* () {
         ],
         { concurrency: "unbounded" },
       );
-      if (configuredRemote !== null && configuredMerge !== null) {
+      if (isOriginRemoteName(configuredRemote) && configuredMerge !== null) {
         return false;
       }
 
       const [tracksAnyRemote, tracksThisBranch] = yield* Effect.all(
-        [matchesRef("refs/remotes"), matchesRef(`refs/remotes/*/${headContext.headBranch}`)],
+        [matchesRef("refs/remotes"), matchesRef(`refs/remotes/origin/${headContext.headBranch}`)],
         { concurrency: "unbounded" },
       );
       return tracksAnyRemote && !tracksThisBranch;
@@ -1887,7 +1882,7 @@ export const make = Effect.gen(function* () {
     fallbackBranch: string | null,
     emit: GitActionProgressEmitter,
   ) {
-    const provider = yield* sourceControlProvider(cwd);
+    const { provider } = yield* sourceControlProviders.resolveChangeRequestHandle({ cwd });
     const terms = getChangeRequestTerminologyForKind(provider.kind);
     const details = yield* gitCore.statusDetails(cwd);
     const branch = details.branch ?? fallbackBranch;
@@ -1903,6 +1898,15 @@ export const make = Effect.gen(function* () {
         operation: "runPrStep",
         cwd,
         detail: "Current branch has not been pushed. Push before creating a PR.",
+      });
+    }
+    const trackingRemote = yield* gitCore.readConfigValue(cwd, `branch.${branch}.remote`);
+    if (!isOriginRemoteName(trackingRemote) || !isOriginRemoteRef(details.upstreamRef)) {
+      return yield* new GitManagerError({
+        operation: "runPrStep",
+        cwd,
+        detail:
+          "Origin-only policy requires the current branch to track origin before creating a PR.",
       });
     }
 
@@ -2033,8 +2037,8 @@ export const make = Effect.gen(function* () {
       .split("\n")
       .map((remoteName) => remoteName.trim())
       .filter((remoteName) => remoteName.length > 0);
-    const [firstRemoteName] = remoteNames;
-    if (firstRemoteName === undefined) return null;
+    const originRemoteName = selectOriginRemoteName(remoteNames);
+    if (originRemoteName === null) return null;
     const branchRef = yield* gitCore.execute({
       operation: "GitManager.branchPullRequest.branchRef",
       cwd: cacheCwd,
@@ -2054,6 +2058,7 @@ export const make = Effect.gen(function* () {
     let upstreamRef: string | null = null;
     let remoteName: string | null = null;
     if (savedUpstream.length > 0) {
+      if (!isOriginRemoteName(savedRemoteName)) return null;
       if (savedRemoteName.length === 0 || savedRemoteRef.length === 0) {
         return yield* new GitManagerError({
           operation: "branchPullRequest",
@@ -2076,9 +2081,9 @@ export const make = Effect.gen(function* () {
           .map((remoteRef) => remoteRef.trim())
           .filter((remoteRef) => remoteRef.length > 0),
       );
-      const matchingRemoteNames = remoteNames.filter((candidate) =>
-        refNames.has(`refs/remotes/${candidate}/${branch}`),
-      );
+      const matchingRemoteNames = remoteNames
+        .filter(isOriginRemoteName)
+        .filter((candidate) => refNames.has(`refs/remotes/${candidate}/${branch}`));
       if (matchingRemoteNames.length > 1) {
         return yield* new GitManagerError({
           operation: "branchPullRequest",
@@ -2091,7 +2096,7 @@ export const make = Effect.gen(function* () {
         upstreamRef = `${remoteName}/${branch}`;
       }
     }
-    const defaultRemoteName = remoteNames.includes("origin") ? "origin" : firstRemoteName;
+    const defaultRemoteName = originRemoteName;
     const defaultBranch = yield* gitCore
       .resolveDefaultBranchName(cacheCwd, defaultRemoteName)
       .pipe(Effect.orElseSucceed(() => null));

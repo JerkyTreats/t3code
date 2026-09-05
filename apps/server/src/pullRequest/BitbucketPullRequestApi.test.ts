@@ -11,6 +11,7 @@ const layer = it.layer(
   BitbucketPullRequestApi.layer.pipe(
     Layer.provide(
       Layer.mock(BitbucketApi.BitbucketApi)({
+        authorizeOriginHost: () => Effect.void,
         request: mockedRequest,
       }),
     ),
@@ -80,6 +81,62 @@ function filterOfCall(index: number): string | null {
 
 afterEach(() => {
   mockedRequest.mockReset();
+});
+
+function mismatchedHostLayer(request: typeof mockedRequest) {
+  return BitbucketPullRequestApi.layer.pipe(
+    Layer.provide(
+      Layer.mock(BitbucketApi.BitbucketApi)({
+        authorizeOriginHost: ({ originHost }) =>
+          Effect.fail(
+            new BitbucketApi.BitbucketOriginHostError({
+              reason: "origin-host-mismatch",
+              ...(originHost === undefined ? {} : { originHost }),
+              apiHost: "api.bitbucket.org",
+            }),
+          ),
+        request,
+      }),
+    ),
+  );
+}
+
+it.effect("rejects an Admin read with a mismatched origin before any request", () => {
+  const request = vi.fn<BitbucketApi.BitbucketApi["Service"]["request"]>();
+
+  return Effect.gen(function* () {
+    const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
+    const error = yield* api
+      .listPullRequests({
+        originHost: "bitbucket.internal.example",
+        repository: "acme/web",
+        state: "open",
+        limit: 20,
+      })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketOriginHostError);
+    assert.strictEqual(request.mock.calls.length, 0);
+  }).pipe(Effect.provide(mismatchedHostLayer(request)));
+});
+
+it.effect("rejects an Admin write with a mismatched origin before any request", () => {
+  const request = vi.fn<BitbucketApi.BitbucketApi["Service"]["request"]>();
+
+  return Effect.gen(function* () {
+    const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
+    const error = yield* api
+      .comment({
+        originHost: "bitbucket.internal.example",
+        repository: "acme/web",
+        number: 7,
+        body: "This must not leave the process.",
+      })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketOriginHostError);
+    assert.strictEqual(request.mock.calls.length, 0);
+  }).pipe(Effect.provide(mismatchedHostLayer(request)));
 });
 
 layer("BitbucketPullRequestApi.layer", (it) => {

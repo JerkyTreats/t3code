@@ -18,6 +18,7 @@ import {
   getCloneDirectoryName,
   getDefaultCloneUrl,
   normalizePastedCloneUrl,
+  resolveAddProjectRepositoryLookupTarget,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
 } from "./projects.ts";
@@ -215,6 +216,88 @@ describe("add project shared logic", () => {
     expect(readiness.github.ready).toBe(true);
     expect(readiness.gitlab).toEqual({ ready: false, hint: "Run glab auth login" });
     expect(sortAddProjectProviderSources(readiness)[0]).toBe("github");
+
+    expect(
+      resolveAddProjectRepositoryLookupTarget({
+        source: "github",
+        repository: "octocat/t3code",
+        discovery,
+      }),
+    ).toEqual({
+      providerBaseUrl: "https://github.com",
+      repository: "octocat/t3code",
+    });
+  });
+
+  it("binds Azure lookup to the discovered host and entered organization", () => {
+    const discovery: SourceControlDiscoveryResult = {
+      versionControlSystems: [],
+      sourceControlProviders: [
+        {
+          kind: "azure-devops",
+          label: "Azure DevOps",
+          status: "available",
+          installHint: "Install az",
+          version: Option.some("1.0.0"),
+          detail: Option.none(),
+          auth: {
+            status: "authenticated",
+            account: Option.some("user"),
+            host: Option.some("dev.azure.com"),
+            detail: Option.none(),
+          },
+        },
+      ],
+    };
+
+    expect(
+      resolveAddProjectRepositoryLookupTarget({
+        source: "azure-devops",
+        repository: "acme/platform/t3code",
+        discovery,
+      }),
+    ).toEqual({
+      providerBaseUrl: "https://dev.azure.com/acme",
+      repository: "platform/t3code",
+    });
+    expect(
+      resolveAddProjectRepositoryLookupTarget({
+        source: "azure-devops",
+        repository: "platform/t3code",
+        discovery,
+      }),
+    ).toBeNull();
+  });
+
+  it("does not enable provider lookup without an authenticated endpoint", () => {
+    const discovery: SourceControlDiscoveryResult = {
+      versionControlSystems: [],
+      sourceControlProviders: [
+        {
+          kind: "github",
+          label: "GitHub",
+          status: "available",
+          installHint: "Install gh",
+          version: Option.some("1.0.0"),
+          detail: Option.none(),
+          auth: {
+            status: "authenticated",
+            account: Option.some("octo"),
+            host: Option.none(),
+            detail: Option.none(),
+          },
+        },
+      ],
+    };
+
+    expect(buildAddProjectRemoteSourceReadiness(discovery).github.ready).toBe(false);
+    expect(
+      resolveAddProjectRepositoryLookupTarget({
+        source: "github",
+        repository: "octocat/t3code",
+        discovery,
+      }),
+    ).toBeNull();
   });
 
   it("finds existing projects by normalized path in the target environment", () => {

@@ -10,6 +10,16 @@ import * as GitHubCli from "./GitHubCli.ts";
 import { parseGitHubAuthStatus } from "./gitHubAuthStatus.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
 
+const ORIGIN_CONTEXT = {
+  provider: {
+    kind: "github" as const,
+    name: "GitHub",
+    baseUrl: "https://github.com",
+  },
+  remoteName: "origin",
+  remoteUrl: "git@github.com:pingdotgg/t3code.git",
+};
+
 const processResult = (
   stdout: string,
   options?: {
@@ -30,6 +40,35 @@ function makeProvider(github: Partial<GitHubCli.GitHubCli["Service"]>) {
   );
 }
 
+it.effect("binds repository lookup to the explicit GitHub endpoint", () =>
+  Effect.gen(function* () {
+    let received: Parameters<GitHubCli.GitHubCli["Service"]["getRepositoryCloneUrls"]>[0] | null =
+      null;
+    const provider = yield* makeProvider({
+      getRepositoryCloneUrls: (input) => {
+        received = input;
+        return Effect.succeed({
+          nameWithOwner: "owner/repo",
+          url: "https://github.example.test/owner/repo",
+          sshUrl: "git@github.example.test:owner/repo.git",
+        });
+      },
+    });
+
+    yield* provider.getRepositoryCloneUrls({
+      cwd: "/repo",
+      providerBaseUrl: "https://github.example.test",
+      repository: "owner/repo",
+    });
+
+    assert.deepStrictEqual(received, {
+      cwd: "/repo",
+      host: "github.example.test",
+      repository: "owner/repo",
+    });
+  }),
+);
+
 it.effect("maps GitHub PR summaries into provider-neutral change requests", () =>
   Effect.gen(function* () {
     const provider = yield* makeProvider({
@@ -49,6 +88,7 @@ it.effect("maps GitHub PR summaries into provider-neutral change requests", () =
 
     const changeRequest = yield* provider.getChangeRequest({
       cwd: "/repo",
+      context: ORIGIN_CONTEXT,
       reference: "42",
     });
 
@@ -82,6 +122,7 @@ it.effect("adds safe request context while retaining GitHub CLI causes", () =>
     const error = yield* provider
       .getChangeRequest({
         cwd: "/repo",
+        context: ORIGIN_CONTEXT,
         reference: "https://user:secret@github.com/pingdotgg/t3code/pull/42?token=secret#diff",
       })
       .pipe(Effect.flip);
@@ -135,6 +176,7 @@ it.effect("uses gh json listing for non-open change request state queries", () =
 
     const changeRequests = yield* provider.listChangeRequests({
       cwd: "/repo",
+      context: ORIGIN_CONTEXT,
       headSelector: "feature/merged",
       state: "all",
       limit: 10,
@@ -143,6 +185,8 @@ it.effect("uses gh json listing for non-open change request state queries", () =
     assert.deepStrictEqual(executeArgs, [
       "pr",
       "list",
+      "--repo",
+      "github.com/pingdotgg/t3code",
       "--head",
       "feature/merged",
       "--state",
@@ -169,6 +213,7 @@ it.effect("treats empty non-open change request listing output as no results", (
 
     const changeRequests = yield* provider.listChangeRequests({
       cwd: "/repo",
+      context: ORIGIN_CONTEXT,
       headSelector: "feature/empty",
       state: "all",
       limit: 10,
@@ -191,6 +236,7 @@ it.effect("creates GitHub PRs through provider-neutral input names", () =>
 
     yield* provider.createChangeRequest({
       cwd: "/repo",
+      context: ORIGIN_CONTEXT,
       baseRefName: "main",
       headSelector: "owner:feature/provider",
       title: "Provider PR",
@@ -199,11 +245,43 @@ it.effect("creates GitHub PRs through provider-neutral input names", () =>
 
     assert.deepStrictEqual(createInput, {
       cwd: "/repo",
+      repository: "github.com/pingdotgg/t3code",
       baseBranch: "main",
       headSelector: "owner:feature/provider",
       title: "Provider PR",
       bodyFile: "/tmp/body.md",
     });
+  }),
+);
+
+it.effect("preserves a non-default GitHub port in explicit repository selectors", () =>
+  Effect.gen(function* () {
+    let repository: string | null = null;
+    const provider = yield* makeProvider({
+      createPullRequest: (input) => {
+        repository = input.repository;
+        return Effect.void;
+      },
+    });
+
+    yield* provider.createChangeRequest({
+      cwd: "/repo",
+      context: {
+        provider: {
+          kind: "github",
+          name: "GitHub Self-Hosted",
+          baseUrl: "https://github.example.test:8443",
+        },
+        remoteName: "origin",
+        remoteUrl: "https://github.example.test:8443/acme/project.git",
+      },
+      baseRefName: "main",
+      headSelector: "feature/port",
+      title: "Port-aware PR",
+      bodyFile: "/tmp/body.md",
+    });
+
+    assert.strictEqual(repository, "github.example.test:8443/acme/project");
   }),
 );
 

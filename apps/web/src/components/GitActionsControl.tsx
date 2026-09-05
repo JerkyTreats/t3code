@@ -407,6 +407,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     useState<SourceControlRepositoryVisibility>("private");
   const [publishRemoteName, setPublishRemoteName] = useState("origin");
   const [publishProtocol, setPublishProtocol] = useState<SourceControlCloneProtocol>("ssh");
+  const [azureOrganizationEndpoint, setAzureOrganizationEndpoint] = useState("");
   const [publishWizardStep, setPublishWizardStep] = useState(0);
   const [publishAdvancedOpen, setPublishAdvancedOpen] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -434,6 +435,20 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
       }
     }
     return accounts;
+  }, [sourceControlDiscovery.data]);
+  const publishHostByProvider = useMemo(() => {
+    const hosts: Record<PublishProviderKind, string | null> = {
+      github: null,
+      gitlab: null,
+      bitbucket: null,
+      "azure-devops": null,
+    };
+    for (const provider of sourceControlDiscovery.data?.sourceControlProviders ?? []) {
+      if (isPublishProviderKind(provider.kind)) {
+        hosts[provider.kind] = Option.getOrNull(provider.auth.host);
+      }
+    }
+    return hosts;
   }, [sourceControlDiscovery.data]);
   const publishProviderReadiness = useMemo(() => {
     const sourceControlProviders = sourceControlDiscovery.data?.sourceControlProviders ?? [];
@@ -476,7 +491,11 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     : "";
   const publishRepository = publishRepositoryOverride ?? publishRepositoryPrefill;
   const currentPublishProvider = publishProviderOption(publishProvider);
-  const publishHost = currentPublishProvider.host;
+  const publishHost = publishHostByProvider[publishProvider] ?? currentPublishProvider.host;
+  const publishProviderBaseUrl =
+    publishProvider === "azure-devops"
+      ? azureOrganizationEndpoint.trim()
+      : `https://${publishHost}`;
   const publishPathPlaceholder = currentPublishProvider.pathPlaceholder;
   const publishProviderLabel = currentPublishProvider.label;
   const publishWizardSteps = ["Provider", "Repository", "Summary"] as const;
@@ -489,12 +508,33 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
   const canSubmitPublishRepository = useMemo(() => {
     if (!selectedPublishProviderReadiness.ready) return false;
     if (publishRepositoryAction.isPending) return false;
+    if (publishHostByProvider[publishProvider] === null) return false;
+    if (publishProvider === "azure-devops") {
+      try {
+        const endpoint = new URL(publishProviderBaseUrl);
+        if (
+          endpoint.hostname.toLowerCase() === "dev.azure.com" &&
+          endpoint.pathname.split("/").filter(Boolean).length !== 1
+        ) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
     const repositoryParts = publishRepository.trim().split("/");
     const owner = repositoryParts[0]?.trim() ?? "";
     const rest = repositoryParts.slice(1);
     const name = rest.join("/").trim();
     return owner.length > 0 && name.length > 0;
-  }, [publishRepository, publishRepositoryAction.isPending, selectedPublishProviderReadiness]);
+  }, [
+    publishHostByProvider,
+    publishProvider,
+    publishProviderBaseUrl,
+    publishRepository,
+    publishRepositoryAction.isPending,
+    selectedPublishProviderReadiness,
+  ]);
 
   const submitPublishRepository = useCallback(() => {
     if (!canSubmitPublishRepository) {
@@ -506,6 +546,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     void (async () => {
       const result = await publishRepositoryAction.run({
         provider: publishProvider,
+        providerBaseUrl: publishProviderBaseUrl.trim(),
         repository: publishRepository.trim(),
         visibility: publishVisibility,
         remoteName: publishRemoteName.trim() || "origin",
@@ -531,6 +572,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     props.gitCwd,
     publishProtocol,
     publishProvider,
+    publishProviderBaseUrl,
     publishRemoteName,
     publishRepository,
     publishRepositoryAction,
@@ -539,6 +581,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
 
   const resetState = useCallback(() => {
     setPublishRemoteName("origin");
+    setAzureOrganizationEndpoint("");
     setPublishRepositoryOverride(null);
     setPublishWizardStep(0);
     setPublishAdvancedOpen(false);
@@ -634,6 +677,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                   value={publishProvider}
                   onValueChange={(value) => {
                     setSelectedPublishProvider(value as PublishProviderKind);
+                    setAzureOrganizationEndpoint("");
                     setPublishRepositoryOverride(null);
                   }}
                   aria-labelledby="publish-provider-cards-label"
@@ -704,6 +748,23 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
               </div>
 
               <div className={cn("space-y-5", publishWizardStep !== 1 && "hidden")}>
+                {publishProvider === "azure-devops" ? (
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="publish-azure-organization"
+                      className="text-xs font-medium text-foreground"
+                    >
+                      Organization endpoint
+                    </label>
+                    <Input
+                      id="publish-azure-organization"
+                      value={azureOrganizationEndpoint}
+                      onChange={(event) => setAzureOrganizationEndpoint(event.target.value)}
+                      placeholder="https://dev.azure.com/organization"
+                      disabled={publishRepositoryAction.isPending}
+                    />
+                  </div>
+                ) : null}
                 <div className="space-y-2">
                   <label
                     htmlFor="publish-repository-path"

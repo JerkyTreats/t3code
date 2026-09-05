@@ -230,6 +230,13 @@ export interface ProviderRepositoryRef {
    * one a project's remote points at.
    */
   readonly host: string;
+  /** Exact Git origin locator used to derive any provider-specific target selectors. */
+  readonly origin?:
+    | {
+        readonly remoteName: string;
+        readonly remoteUrl: string;
+      }
+    | undefined;
 }
 
 /**
@@ -244,6 +251,7 @@ export interface PullRequestProviderApi {
   /** The signed-in account, which is what involvement filtering compares against. */
   readonly getViewer: (input: {
     readonly cwd: string;
+    readonly host: string;
   }) => Effect.Effect<string, PullRequestProviderError>;
 
   readonly listChangeRequests: (

@@ -64,7 +64,10 @@ function makeLayer(input: {
     request: HttpClientRequest.HttpClientRequest,
   ) => HttpClientError.HttpClientError;
   readonly git?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
+  readonly apiBaseUrl?: string;
+  readonly originRemoteUrl?: string;
 }) {
+  const originRemoteUrl = input.originRemoteUrl ?? "git@api.test.local:pingdotgg/t3code.git";
   const execute = vi.fn((request: HttpClientRequest.HttpClientRequest) =>
     input.requestFailure
       ? Effect.fail(input.requestFailure(request))
@@ -72,7 +75,7 @@ function makeLayer(input: {
   );
   const gitMock = {
     readConfigValue: vi.fn<GitVcsDriver.GitVcsDriver["Service"]["readConfigValue"]>(() =>
-      Effect.succeed<string | null>("git@bitbucket.org:pingdotgg/t3code.git"),
+      Effect.succeed<string | null>(originRemoteUrl),
     ),
     resolvePrimaryRemoteName: vi.fn<
       GitVcsDriver.GitVcsDriver["Service"]["resolvePrimaryRemoteName"]
@@ -107,7 +110,7 @@ function makeLayer(input: {
         remotes: [
           {
             name: "origin",
-            url: "git@bitbucket.org:pingdotgg/t3code.git",
+            url: originRemoteUrl,
             pushUrl: Option.none(),
             isPrimary: true,
           },
@@ -151,7 +154,7 @@ function makeLayer(input: {
       ConfigProvider.layer(
         ConfigProvider.fromEnv({
           env: {
-            T3CODE_BITBUCKET_API_BASE_URL: "https://api.test.local/2.0",
+            T3CODE_BITBUCKET_API_BASE_URL: input.apiBaseUrl ?? "https://api.test.local/2.0",
             T3CODE_BITBUCKET_EMAIL: "user@example.com",
             T3CODE_BITBUCKET_API_TOKEN: "token",
           },
@@ -163,6 +166,90 @@ function makeLayer(input: {
 
   return { execute, git: gitMock, layer };
 }
+
+const mismatchedOriginContext = {
+  provider: {
+    kind: "bitbucket" as const,
+    name: "Bitbucket",
+    baseUrl: "https://bitbucket.internal.example",
+  },
+  remoteName: "origin",
+  remoteUrl: "ssh://git@bitbucket.internal.example/team/repo.git",
+};
+
+it.effect("refuses a source-control read when exact origin does not match the API host", () => {
+  const { execute, layer } = makeLayer({ response: () => Response.json({ values: [] }) });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const error = yield* bitbucket
+      .listPullRequests({
+        cwd: "/repo",
+        context: mismatchedOriginContext,
+        headSelector: "feature/host-boundary",
+        state: "open",
+      })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketOriginHostError);
+    assert.strictEqual(error.reason, "origin-host-mismatch");
+    assert.strictEqual(execute.mock.calls.length, 0);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("refuses a source-control write before reading its body or sending a request", () => {
+  const { execute, layer } = makeLayer({ response: () => Response.json(bitbucketPullRequest) });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    const error = yield* bitbucket
+      .createPullRequest({
+        cwd: "/repo",
+        context: mismatchedOriginContext,
+        baseBranch: "main",
+        headSelector: "feature/host-boundary",
+        title: "Host-bound write",
+        bodyFile: "/does/not/exist.md",
+      })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketOriginHostError);
+    assert.strictEqual(error.reason, "origin-host-mismatch");
+    assert.strictEqual(execute.mock.calls.length, 0);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("accepts the Bitbucket Cloud origin for the Cloud API host", () => {
+  const { layer } = makeLayer({
+    apiBaseUrl: "https://api.bitbucket.org/2.0",
+    originRemoteUrl: "git@bitbucket.org:team/repo.git",
+    response: () => Response.json({}),
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    yield* bitbucket.authorizeOriginHost({ originHost: "bitbucket.org" });
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("requires an exact port match for a configured self-hosted API", () => {
+  const { layer } = makeLayer({
+    apiBaseUrl: "https://bitbucket.internal.example:8443/2.0",
+    originRemoteUrl: "ssh://git@bitbucket.internal.example:8443/team/repo.git",
+    response: () => Response.json({}),
+  });
+
+  return Effect.gen(function* () {
+    const bitbucket = yield* BitbucketApi.BitbucketApi;
+    yield* bitbucket.authorizeOriginHost({ originHost: "bitbucket.internal.example:8443" });
+    const error = yield* bitbucket
+      .authorizeOriginHost({ originHost: "bitbucket.internal.example" })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketOriginHostError);
+    assert.strictEqual(error.reason, "origin-host-mismatch");
+  }).pipe(Effect.provide(layer));
+});
 
 it.effect("parses pull request responses from the Bitbucket REST API", () => {
   const { execute, layer } = makeLayer({
@@ -424,6 +511,7 @@ it.effect("creates repositories through the Bitbucket REST API", () => {
     const bitbucket = yield* BitbucketApi.BitbucketApi;
     const cloneUrls = yield* bitbucket.createRepository({
       cwd: "/repo",
+      providerBaseUrl: "https://api.test.local",
       repository: "pingdotgg/t3code",
       visibility: "private",
     });
@@ -620,6 +708,8 @@ it.effect("preserves Bitbucket response body read failures as their immediate ca
 
 it.effect("checks out same-repository pull requests with the existing Bitbucket remote", () => {
   const { git, layer } = makeLayer({
+    apiBaseUrl: "https://api.bitbucket.org/2.0",
+    originRemoteUrl: "git@bitbucket.org:pingdotgg/t3code.git",
     response: () =>
       Response.json({
         ...bitbucketPullRequest,

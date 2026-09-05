@@ -5,6 +5,13 @@ import * as Layer from "effect/Layer";
 import * as GitLabPullRequestCli from "./GitLabPullRequestCli.ts";
 import { gitLabViewerPermissions, make } from "./GitLabPullRequestProvider.ts";
 
+const exactOrigin = {
+  origin: {
+    remoteName: "origin",
+    remoteUrl: "ssh://git@gitlab.internal.test:2222/acme/web.git",
+  },
+} as const;
+
 describe("gitLabViewerPermissions", () => {
   it("offers everything to a viewer GitLab says can merge", () => {
     expect(gitLabViewerPermissions({ viewerCanMerge: true })).toEqual({
@@ -95,6 +102,7 @@ describe("getChangeRequest base freshness", () => {
         cwd: "/w",
         repository: "acme/web",
         host: "gitlab.com",
+        ...exactOrigin,
         number: 7,
       });
     }).pipe(
@@ -154,8 +162,9 @@ describe("rewriting what has already been said", () => {
 
       yield* provider.updateChangeRequest({
         cwd: "/w",
-        repository: "acme/web",
+        repository: "upstream/other",
         host: "gitlab.com",
+        ...exactOrigin,
         number: 7,
         body: "What this changes.",
       });
@@ -163,6 +172,7 @@ describe("rewriting what has already been said", () => {
       // GitLab calls it the description, and the title stays out of the request entirely.
       expect(updateMergeRequest).toHaveBeenCalledWith({
         cwd: "/w",
+        host: "gitlab.internal.test:2222",
         repository: "acme/web",
         number: 7,
         description: "What this changes.",
@@ -179,6 +189,7 @@ describe("rewriting what has already been said", () => {
         cwd: "/w",
         repository: "acme/web",
         host: "gitlab.com",
+        ...exactOrigin,
         number: 7,
         commentId: "42",
         kind: "review-comment",
@@ -187,6 +198,7 @@ describe("rewriting what has already been said", () => {
 
       expect(updateNote).toHaveBeenCalledWith({
         cwd: "/w",
+        host: "gitlab.internal.test:2222",
         repository: "acme/web",
         number: 7,
         noteId: "42",

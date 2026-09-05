@@ -7,6 +7,11 @@ import * as GitLabCli from "../sourceControl/GitLabCli.ts";
 import * as GitLabPullRequestCli from "./GitLabPullRequestCli.ts";
 
 const mockedExecute = vi.fn<GitLabCli.GitLabCli["Service"]["execute"]>();
+const exactTarget = {
+  host: "gitlab.internal.test:8443",
+  repository: "acme/web",
+} as const;
+const exactRepositorySelector = `https://${exactTarget.host}/${exactTarget.repository}`;
 
 const layer = it.layer(
   GitLabPullRequestCli.layer.pipe(
@@ -109,7 +114,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const batch = yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal",
@@ -135,7 +140,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const batch = yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal",
@@ -159,7 +164,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal",
@@ -179,7 +184,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal",
@@ -206,7 +211,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const batch = yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal",
@@ -236,7 +241,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const batch = yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal",
@@ -256,7 +261,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal",
@@ -278,7 +283,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal",
@@ -297,7 +302,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const batch = yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal",
@@ -321,7 +326,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const batch = yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal",
@@ -341,7 +346,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "all",
         involvement: "all",
         viewer: "bilal",
@@ -359,7 +364,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.listMergeRequests({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         state: "open",
         involvement: "reviewing",
         viewer: "bilal",
@@ -377,6 +382,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.listMergeRequests({
         cwd: "/w",
+        host: exactTarget.host,
         repository: "acme/platform/web",
         state: "open",
         involvement: "all",
@@ -395,7 +401,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.runMergeRequestAction({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         action: "merge",
         mergeMethod: "squash",
@@ -405,8 +411,10 @@ layer("GitLabPullRequestCli.layer", (it) => {
         "mr",
         "merge",
         "7",
+        "--hostname",
+        exactTarget.host,
         "--repo",
-        "acme/web",
+        exactRepositorySelector,
         "--auto-merge=false",
         "--yes",
         "--squash",
@@ -421,7 +429,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.runMergeRequestAction({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         action: "enable-auto-merge",
         mergeMethod: "squash",
@@ -431,8 +439,10 @@ layer("GitLabPullRequestCli.layer", (it) => {
         "mr",
         "merge",
         "7",
+        "--hostname",
+        exactTarget.host,
         "--repo",
-        "acme/web",
+        exactRepositorySelector,
         "--auto-merge=true",
         "--yes",
         "--squash",
@@ -447,6 +457,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.runMergeRequestAction({
         cwd: "/w",
+        host: exactTarget.host,
         repository: "acme/platform/web",
         number: 7,
         action: "disable-auto-merge",
@@ -455,6 +466,8 @@ layer("GitLabPullRequestCli.layer", (it) => {
       expect(argsOfCall(0)).toEqual([
         "api",
         "projects/acme%2Fplatform%2Fweb/merge_requests/7/cancel_merge_when_pipeline_succeeds",
+        "--hostname",
+        exactTarget.host,
         "--method",
         "POST",
       ]);
@@ -468,12 +481,20 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.runMergeRequestAction({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         action: "update-branch",
       });
 
-      expect(argsOfCall(0)).toEqual(["mr", "rebase", "7", "--repo", "acme/web"]);
+      expect(argsOfCall(0)).toEqual([
+        "mr",
+        "rebase",
+        "7",
+        "--hostname",
+        exactTarget.host,
+        "--repo",
+        exactRepositorySelector,
+      ]);
     }),
   );
 
@@ -484,12 +505,21 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.runMergeRequestAction({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         action: "draft",
       });
 
-      expect(argsOfCall(0)).toEqual(["mr", "update", "7", "--repo", "acme/web", "--draft"]);
+      expect(argsOfCall(0)).toEqual([
+        "mr",
+        "update",
+        "7",
+        "--hostname",
+        exactTarget.host,
+        "--repo",
+        exactRepositorySelector,
+        "--draft",
+      ]);
     }),
   );
 
@@ -500,7 +530,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.commentOnMergeRequest({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         body: "true",
       });
@@ -510,6 +540,8 @@ layer("GitLabPullRequestCli.layer", (it) => {
       expect(call[0].args).toEqual([
         "api",
         "projects/acme%2Fweb/merge_requests/7/notes",
+        "--hostname",
+        exactTarget.host,
         "--method",
         "POST",
         "--input",
@@ -529,7 +561,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const diff = yield* cli.getMergeRequestDiff({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
       });
 
@@ -548,7 +580,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
         .mockReturnValueOnce(Effect.succeed(output(diffPage(0))))
         .mockReturnValueOnce(Effect.succeed(output(diffPage(100, 3))));
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
-      const target = { cwd: "/w", repository: "acme/web", number: 7 };
+      const target = { cwd: "/w", ...exactTarget, number: 7 };
 
       const first = yield* cli.getMergeRequestDiff(target);
       assert.isNotNull(first.nextCursor);
@@ -568,7 +600,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       const error = yield* Effect.flip(
         cli.getMergeRequestDiff({
           cwd: "/w",
-          repository: "acme/web",
+          ...exactTarget,
           number: 7,
           cursor: "1&per_page=1",
         }),
@@ -587,7 +619,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
       const target = {
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         commit: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
       };
@@ -613,7 +645,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       const error = yield* Effect.flip(
         cli.getMergeRequestDiff({
           cwd: "/w",
-          repository: "acme/web",
+          ...exactTarget,
           number: 7,
           commit: "../../merge_requests/8/diffs",
         }),
@@ -635,7 +667,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       const error = yield* Effect.flip(
         cli.getMergeRequestDiffFileContents({
           cwd: "/w",
-          repository: "acme/web",
+          ...exactTarget,
           number: 7,
           commit: "a1b2c3d",
           changeType: "change",
@@ -662,7 +694,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const contents = yield* cli.getMergeRequestDiffFileContents({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         commit: "a1b2c3d",
         changeType: "new",
@@ -697,7 +729,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       const error = yield* Effect.flip(
         cli.getMergeRequestDiffFileContents({
           cwd: "/w",
-          repository: "acme/web",
+          ...exactTarget,
           number: 7,
           changeType: "deleted",
           oldPath: "src/large.ts",
@@ -737,7 +769,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       const error = yield* Effect.flip(
         cli.getMergeRequestDiffFileContents({
           cwd: "/w",
-          repository: "acme/web",
+          ...exactTarget,
           number: 7,
           changeType: "deleted",
           oldPath: "assets/logo.png",
@@ -774,7 +806,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const contents = yield* cli.getMergeRequestDiffFileContents({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         changeType: "deleted",
         oldPath: "docs/encoding.md",
@@ -792,7 +824,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const diff = yield* cli.getMergeRequestDiff({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         cursor: "4",
       });
@@ -811,7 +843,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
 
       const error = yield* Effect.flip(
-        cli.getMergeRequestDiff({ cwd: "/w", repository: "acme/web", number: 7 }),
+        cli.getMergeRequestDiff({ cwd: "/w", ...exactTarget, number: 7 }),
       );
 
       // An empty slice with no cursor would report every file from this page on as already
@@ -830,7 +862,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const capabilities = yield* cli.getProjectMergeCapabilities({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
       });
 
       assert.deepStrictEqual(capabilities, { merge: true, squash: false, rebase: false });
@@ -847,7 +879,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const capabilities = yield* cli.getProjectMergeCapabilities({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
       });
 
       assert.deepStrictEqual(capabilities, { merge: false, squash: false, rebase: true });
@@ -859,9 +891,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(Effect.succeed(output('{"message":"404 Not Found"}')));
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
 
-      yield* Effect.ignore(
-        cli.getMergeRequestDetail({ cwd: "/w", repository: "acme/web", number: 7 }),
-      );
+      yield* Effect.ignore(cli.getMergeRequestDetail({ cwd: "/w", ...exactTarget, number: 7 }));
 
       expect(argsOfCall(0)[1]).toBe(
         "projects/acme%2Fweb/merge_requests/7?include_diverged_commits_count=true",
@@ -875,7 +905,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
 
       const error = yield* Effect.flip(
-        cli.getMergeRequestDetail({ cwd: "/w", repository: "acme/web", number: 7 }),
+        cli.getMergeRequestDetail({ cwd: "/w", ...exactTarget, number: 7 }),
       );
 
       assert.strictEqual(error._tag, "GitLabMergeRequestReadError");
@@ -888,7 +918,9 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(Effect.succeed(output(JSON.stringify({ username: "" }))));
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
 
-      const error = yield* Effect.flip(cli.getViewerUsername({ cwd: "/w" }));
+      const error = yield* Effect.flip(
+        cli.getViewerUsername({ cwd: "/w", host: exactTarget.host }),
+      );
 
       assert.strictEqual(error._tag, "GitLabViewerUnavailableError");
     }),
@@ -902,7 +934,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const { comments, truncated } = yield* cli.listNotes({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
       });
 
@@ -921,7 +953,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const { truncated } = yield* cli.listNotes({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
       });
 
@@ -973,7 +1005,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const { threads } = yield* cli.listDiscussions({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
       });
 
@@ -1013,7 +1045,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.submitReview({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         verdict: "approve",
         body: "Looks right.",
@@ -1058,7 +1090,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.submitReview({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         verdict: "comment",
         body: "One thought.",
@@ -1077,7 +1109,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.setDiscussionResolution({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         discussionId: "abc123",
         resolved: true,
@@ -1098,7 +1130,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.setReaction({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         content: "thumbs-up",
         reacted: true,
@@ -1108,6 +1140,8 @@ layer("GitLabPullRequestCli.layer", (it) => {
       expect(argsOfCall(0)).toEqual([
         "api",
         "projects/acme%2Fweb/merge_requests/7/award_emoji?name=thumbsup",
+        "--hostname",
+        exactTarget.host,
         "--method",
         "POST",
       ]);
@@ -1136,7 +1170,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.setReaction({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         content: "thumbs-up",
         reacted: false,
@@ -1146,6 +1180,8 @@ layer("GitLabPullRequestCli.layer", (it) => {
       expect(argsOfCall(2)).toEqual([
         "api",
         "projects/acme%2Fweb/merge_requests/7/award_emoji/5",
+        "--hostname",
+        exactTarget.host,
         "--method",
         "DELETE",
       ]);
@@ -1163,7 +1199,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.setReaction({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         content: "thumbs-up",
         reacted: false,
@@ -1198,7 +1234,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       const error = yield* Effect.flip(
         cli.submitReview({
           cwd: "/w",
-          repository: "acme/web",
+          ...exactTarget,
           number: 7,
           verdict: "comment",
           body: "",
@@ -1226,7 +1262,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       const list = yield* cli.listReviewerCandidates({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
       });
 
@@ -1249,7 +1285,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.setReviewerRequest({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         reviewers: [{ id: "9" }],
         requested: true,
@@ -1276,7 +1312,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.setReviewerRequest({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         reviewers: [{ id: "9" }],
         requested: false,
@@ -1296,7 +1332,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.setReviewerRequest({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         reviewers: [{ id: "octocat" }],
         requested: true,
@@ -1315,7 +1351,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.updateMergeRequest({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         title: "A better title",
       });
@@ -1323,6 +1359,8 @@ layer("GitLabPullRequestCli.layer", (it) => {
       expect(argsOfCall(0)).toEqual([
         "api",
         "projects/acme%2Fweb/merge_requests/7",
+        "--hostname",
+        exactTarget.host,
         "--method",
         "PUT",
         "--input",
@@ -1342,7 +1380,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.updateMergeRequest({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         description: "What this changes.",
       });
@@ -1360,7 +1398,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.updateMergeRequest({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         title: "A better title",
         description: "What this changes.",
@@ -1382,7 +1420,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
       yield* cli.updateNote({
         cwd: "/w",
-        repository: "acme/web",
+        ...exactTarget,
         number: 7,
         noteId: "42",
         body: "true",
@@ -1391,6 +1429,8 @@ layer("GitLabPullRequestCli.layer", (it) => {
       expect(argsOfCall(0)).toEqual([
         "api",
         "projects/acme%2Fweb/merge_requests/7/notes/42",
+        "--hostname",
+        exactTarget.host,
         "--method",
         "PUT",
         "--input",

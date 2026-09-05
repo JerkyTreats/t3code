@@ -31,6 +31,107 @@ afterEach(() => {
 });
 
 describe("GitHubCli.layer", () => {
+  it.effect(
+    "normalizes matching origin URLs before view and checkout while retaining branch selectors",
+    () =>
+      Effect.gen(function* () {
+        const cli = yield* GitHubCli.GitHubCli;
+        const referenceUrl = "https://github.example.test:8443/acme/web/pull/42";
+        for (const reference of [
+          referenceUrl,
+          "42",
+          "feature/origin-branch",
+          "owner:feature/origin-branch",
+        ]) {
+          mockRun.mockReturnValueOnce(
+            Effect.succeed(
+              processOutput(
+                // @effect-diagnostics-next-line preferSchemaOverJson:off
+                JSON.stringify({
+                  number: 42,
+                  title: "Origin PR",
+                  url: referenceUrl,
+                  baseRefName: "main",
+                  headRefName: "feature/origin-branch",
+                  state: "OPEN",
+                  isDraft: true,
+                  mergedAt: null,
+                }),
+              ),
+            ),
+          );
+          const result = yield* cli.getPullRequest({
+            cwd: "/repo",
+            repository: "github.example.test:8443/acme/web",
+            reference,
+          });
+          assert.equal(result.number, 42);
+          assert.equal(result.url, referenceUrl);
+          mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+          yield* cli.checkoutPullRequest({
+            cwd: "/repo",
+            repository: "github.example.test:8443/acme/web",
+            reference,
+          });
+        }
+        const commands = mockRun.mock.calls.map(([input]) => input.args);
+        assert.deepStrictEqual(
+          commands.map((args) => args.slice(0, 5)),
+          [
+            ["pr", "view", "42", "--repo", "github.example.test:8443/acme/web"],
+            ["pr", "checkout", "42", "--repo", "github.example.test:8443/acme/web"],
+            ["pr", "view", "42", "--repo", "github.example.test:8443/acme/web"],
+            ["pr", "checkout", "42", "--repo", "github.example.test:8443/acme/web"],
+            ["pr", "view", "feature/origin-branch", "--repo", "github.example.test:8443/acme/web"],
+            [
+              "pr",
+              "checkout",
+              "feature/origin-branch",
+              "--repo",
+              "github.example.test:8443/acme/web",
+            ],
+            [
+              "pr",
+              "view",
+              "owner:feature/origin-branch",
+              "--repo",
+              "github.example.test:8443/acme/web",
+            ],
+            [
+              "pr",
+              "checkout",
+              "owner:feature/origin-branch",
+              "--repo",
+              "github.example.test:8443/acme/web",
+            ],
+          ],
+        );
+      }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("rejects foreign URL targets before view or checkout executes the CLI", () =>
+    Effect.gen(function* () {
+      const cli = yield* GitHubCli.GitHubCli;
+      for (const reference of [
+        "https://github.example.test:8443/foreign/web/pull/42",
+        "https://foreign.example.test:8443/acme/web/pull/42",
+        "https://github.example.test:9443/acme/web/pull/42",
+        "https://github.example.test/acme/web/pull/42",
+        "https://[invalid",
+      ]) {
+        for (const action of [cli.getPullRequest, cli.checkoutPullRequest]) {
+          const error = yield* action({
+            cwd: "/repo",
+            repository: "github.example.test:8443/acme/web",
+            reference,
+          }).pipe(Effect.flip);
+          assert.equal(error._tag, "GitHubCliCommandError");
+        }
+      }
+      expect(mockRun).not.toHaveBeenCalled();
+    }).pipe(Effect.provide(layer)),
+  );
+
   it("does not classify a missing cwd as an unavailable gh executable", () => {
     const context = { command: "gh", cwd: "/repo" } as const;
     const missingCwd = new VcsProcessSpawnError({
@@ -83,6 +184,7 @@ describe("GitHubCli.layer", () => {
       const gh = yield* GitHubCli.GitHubCli;
       const result = yield* gh.getPullRequest({
         cwd: "/repo",
+        repository: "pingdotgg/codething-mvp",
         reference: "#42",
       });
 
@@ -106,6 +208,8 @@ describe("GitHubCli.layer", () => {
           "pr",
           "view",
           "#42",
+          "--repo",
+          "pingdotgg/codething-mvp",
           "--json",
           "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
         ],
@@ -144,6 +248,7 @@ describe("GitHubCli.layer", () => {
       const gh = yield* GitHubCli.GitHubCli;
       const result = yield* gh.getPullRequest({
         cwd: "/repo",
+        repository: "pingdotgg/codething-mvp",
         reference: "#42",
       });
 
@@ -196,6 +301,7 @@ describe("GitHubCli.layer", () => {
       const gh = yield* GitHubCli.GitHubCli;
       const result = yield* gh.listOpenPullRequests({
         cwd: "/repo",
+        repository: "pingdotgg/codething-mvp",
         headSelector: "feature/pr-list",
       });
 
@@ -248,6 +354,7 @@ describe("GitHubCli.layer", () => {
       const gh = yield* GitHubCli.GitHubCli;
       const result = yield* gh.listOpenPullRequests({
         cwd: "/repo",
+        repository: "pingdotgg/codething-mvp",
         headSelector: "t3code/codex-turn-mapping",
       });
 
@@ -285,6 +392,7 @@ describe("GitHubCli.layer", () => {
       const gh = yield* GitHubCli.GitHubCli;
       const result = yield* gh.getRepositoryCloneUrls({
         cwd: "/repo",
+        host: "github.example.test",
         repository: "octocat/codething-mvp",
       });
 
@@ -293,49 +401,39 @@ describe("GitHubCli.layer", () => {
         url: "https://github.com/octocat/codething-mvp",
         sshUrl: "git@github.com:octocat/codething-mvp.git",
       });
-    }).pipe(Effect.provide(layer)),
-  );
-
-  it.effect("creates repositories and parses clone URLs from create output", () =>
-    Effect.gen(function* () {
-      mockRun.mockReturnValueOnce(
-        Effect.succeed(
-          processOutput(
-            "✓ Created repository octocat/codething-mvp on github.com\nhttps://github.com/octocat/codething-mvp\n",
-          ),
-        ),
-      );
-
-      const gh = yield* GitHubCli.GitHubCli;
-      const result = yield* gh.createRepository({
-        cwd: "/repo",
-        repository: "octocat/codething-mvp",
-        visibility: "private",
-      });
-
-      assert.deepStrictEqual(result, {
-        nameWithOwner: "octocat/codething-mvp",
-        url: "https://github.com/octocat/codething-mvp",
-        sshUrl: "git@github.com:octocat/codething-mvp.git",
-      });
-      expect(mockRun).toHaveBeenCalledTimes(1);
-      expect(mockRun).toHaveBeenNthCalledWith(1, {
+      expect(mockRun).toHaveBeenCalledWith({
         operation: "GitHubCli.execute",
         command: "gh",
-        args: ["repo", "create", "octocat/codething-mvp", "--private"],
+        args: [
+          "api",
+          "--hostname",
+          "github.example.test",
+          "repos/octocat/codething-mvp",
+          "--jq",
+          "{nameWithOwner: .full_name, url: .html_url, sshUrl: .ssh_url}",
+        ],
         cwd: "/repo",
         timeoutMs: 30_000,
       });
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect("falls back to constructed URLs when create output omits a URL", () =>
+  it.effect("creates private user repositories through the explicitly hosted API", () =>
     Effect.gen(function* () {
-      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+      mockRun
+        .mockReturnValueOnce(Effect.succeed(processOutput("octocat\n")))
+        .mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              '{"nameWithOwner":"octocat/codething-mvp","url":"https://github.com/octocat/codething-mvp","sshUrl":"git@github.com:octocat/codething-mvp.git"}\n',
+            ),
+          ),
+        );
 
       const gh = yield* GitHubCli.GitHubCli;
       const result = yield* gh.createRepository({
         cwd: "/repo",
+        host: "github.com",
         repository: "octocat/codething-mvp",
         visibility: "private",
       });
@@ -345,6 +443,137 @@ describe("GitHubCli.layer", () => {
         url: "https://github.com/octocat/codething-mvp",
         sshUrl: "git@github.com:octocat/codething-mvp.git",
       });
+      expect(mockRun).toHaveBeenCalledTimes(2);
+      expect(mockRun).toHaveBeenNthCalledWith(1, {
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: ["api", "--hostname", "github.com", "user", "--jq", ".login"],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+      expect(mockRun).toHaveBeenNthCalledWith(2, {
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "api",
+          "--hostname",
+          "github.com",
+          "--method",
+          "POST",
+          "user/repos",
+          "--raw-field",
+          "name=codething-mvp",
+          "--field",
+          "private=true",
+          "--jq",
+          "{nameWithOwner: .full_name, url: .html_url, sshUrl: .ssh_url}",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("creates private organization repositories through an Enterprise host", () =>
+    Effect.gen(function* () {
+      mockRun
+        .mockReturnValueOnce(Effect.succeed(processOutput("service-user\n")))
+        .mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              '{"nameWithOwner":"acme/codething-mvp","url":"https://github.acme.test/acme/codething-mvp","sshUrl":"git@github.acme.test:acme/codething-mvp.git"}\n',
+            ),
+          ),
+        );
+
+      const gh = yield* GitHubCli.GitHubCli;
+      const result = yield* gh.createRepository({
+        cwd: "/repo",
+        host: "github.acme.test",
+        repository: "acme/codething-mvp",
+        visibility: "private",
+      });
+
+      assert.deepStrictEqual(result, {
+        nameWithOwner: "acme/codething-mvp",
+        url: "https://github.acme.test/acme/codething-mvp",
+        sshUrl: "git@github.acme.test:acme/codething-mvp.git",
+      });
+      expect(mockRun).toHaveBeenCalledTimes(2);
+      expect(mockRun).toHaveBeenNthCalledWith(1, {
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: ["api", "--hostname", "github.acme.test", "user", "--jq", ".login"],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+      expect(mockRun).toHaveBeenNthCalledWith(2, {
+        operation: "GitHubCli.execute",
+        command: "gh",
+        args: [
+          "api",
+          "--hostname",
+          "github.acme.test",
+          "--method",
+          "POST",
+          "orgs/acme/repos",
+          "--raw-field",
+          "name=codething-mvp",
+          "--raw-field",
+          "visibility=private",
+          "--jq",
+          "{nameWithOwner: .full_name, url: .html_url, sshUrl: .ssh_url}",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("pins pull request mutations and repository reads to the explicit repository", () =>
+    Effect.gen(function* () {
+      mockRun
+        .mockReturnValueOnce(Effect.succeed(processOutput("")))
+        .mockReturnValueOnce(Effect.succeed(processOutput("main\n")))
+        .mockReturnValueOnce(Effect.succeed(processOutput("")));
+
+      const gh = yield* GitHubCli.GitHubCli;
+      yield* gh.createPullRequest({
+        cwd: "/repo",
+        repository: "octocat/codething-mvp",
+        baseBranch: "main",
+        headSelector: "feature/exact-origin",
+        title: "Exact origin",
+        bodyFile: "/tmp/body.md",
+      });
+      assert.strictEqual(
+        yield* gh.getDefaultBranch({
+          cwd: "/repo",
+          repository: "octocat/codething-mvp",
+        }),
+        "main",
+      );
+      yield* gh.checkoutPullRequest({
+        cwd: "/repo",
+        repository: "octocat/codething-mvp",
+        reference: "42",
+      });
+
+      const calls = mockRun.mock.calls.map(([input]) => input.args);
+      assert.deepStrictEqual(calls[0]?.slice(0, 4), [
+        "pr",
+        "create",
+        "--repo",
+        "octocat/codething-mvp",
+      ]);
+      assert.deepStrictEqual(calls[1]?.slice(0, 3), ["repo", "view", "octocat/codething-mvp"]);
+      assert.deepStrictEqual(calls[2]?.slice(0, 5), [
+        "pr",
+        "checkout",
+        "42",
+        "--repo",
+        "octocat/codething-mvp",
+      ]);
     }).pipe(Effect.provide(layer)),
   );
 
@@ -365,6 +594,7 @@ describe("GitHubCli.layer", () => {
       const error = yield* gh
         .getPullRequest({
           cwd: "/repo",
+          repository: "pingdotgg/codething-mvp",
           reference: "4888",
         })
         .pipe(Effect.flip);
@@ -396,6 +626,7 @@ describe("GitHubCli.layer", () => {
       const error = yield* gh
         .listOpenPullRequests({
           cwd: "/repo",
+          repository: "pingdotgg/codething-mvp",
           headSelector: "feature/rate-limited",
         })
         .pipe(Effect.flip);

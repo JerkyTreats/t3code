@@ -1,3 +1,7 @@
+import {
+  REVIEW_THREAD_PULL_REQUEST_GRAPHQL_QUERY,
+  requireOriginReviewThread,
+} from "../fork/originReviewThreadPolicy.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -408,6 +412,7 @@ export class GitHubPullRequestCli extends Context.Service<
   {
     readonly getViewerLogin: (input: {
       readonly cwd: string;
+      readonly host: string;
     }) => Effect.Effect<string, GitHubPullRequestCliError>;
 
     readonly listPullRequests: (input: {
@@ -652,6 +657,7 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly cwd: string;
       readonly repository: string;
       readonly host: string;
+      readonly number: number;
       readonly threadId: string;
       readonly body: string;
     }) => Effect.Effect<void, GitHubPullRequestCliError>;
@@ -660,6 +666,7 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly cwd: string;
       readonly repository: string;
       readonly host: string;
+      readonly number: number;
       readonly threadId: string;
       readonly resolved: boolean;
     }) => Effect.Effect<void, GitHubPullRequestCliError>;
@@ -805,8 +812,8 @@ function matchesFilters(
   viewer: string,
 ): boolean {
   if (filters === undefined) return true;
-  const labels = item.labels.map((label) => label.name.trim().toLowerCase());
-  const holds = (label: string) => labels.includes(label.trim().toLowerCase());
+  const labels = new Set(item.labels.map((label) => label.name.trim().toLowerCase()));
+  const holds = (label: string) => labels.has(label.trim().toLowerCase());
   return (
     (filters.draft === undefined || item.isDraft === (filters.draft === "only")) &&
     (filters.review === undefined ||
@@ -1036,6 +1043,30 @@ export const make = Effect.gen(function* () {
         ["-f", `subjectId=${input.subjectId}`],
       ],
       query: REACTION_SUBJECT_PULL_REQUEST_GRAPHQL_QUERY,
+      decode: decodeReactionSubjectScopeJson,
+    });
+  };
+
+  const reviewThreadBelongsToPullRequest = (input: {
+    readonly cwd: string;
+    readonly repository: string;
+    readonly host: string;
+    readonly number: number;
+    readonly threadId: string;
+    readonly operation: string;
+  }) => {
+    const { owner, name } = parseRepositorySelector(input.repository);
+    return graphqlRead({
+      cwd: input.cwd,
+      host: input.host,
+      operation: input.operation,
+      variables: [
+        ["-f", `owner=${owner}`],
+        ["-f", `name=${name}`],
+        ["-F", `number=${input.number}`],
+        ["-f", `subjectId=${input.threadId}`],
+      ],
+      query: REVIEW_THREAD_PULL_REQUEST_GRAPHQL_QUERY,
       decode: decodeReactionSubjectScopeJson,
     });
   };
@@ -1459,14 +1490,21 @@ export const make = Effect.gen(function* () {
 
   return GitHubPullRequestCli.of({
     getViewerLogin: (input) =>
-      github.execute({ cwd: input.cwd, args: ["api", "user", "--jq", ".login"] }).pipe(
-        Effect.flatMap((result) => {
-          const login = result.stdout.trim();
-          return login.length > 0
-            ? Effect.succeed(login)
-            : Effect.fail(new GitHubViewerLoginUnavailableError({ command: "gh", cwd: input.cwd }));
-        }),
-      ),
+      github
+        .execute({
+          cwd: input.cwd,
+          args: ["api", "user", "--hostname", input.host, "--jq", ".login"],
+        })
+        .pipe(
+          Effect.flatMap((result) => {
+            const login = result.stdout.trim();
+            return login.length > 0
+              ? Effect.succeed(login)
+              : Effect.fail(
+                  new GitHubViewerLoginUnavailableError({ command: "gh", cwd: input.cwd }),
+                );
+          }),
+        ),
 
     listPullRequests: (input) => {
       const fallbackMaxRows = Math.max(input.limit + 1, PULL_REQUEST_FALLBACK_MAX_ROWS);
@@ -1631,6 +1669,7 @@ export const make = Effect.gen(function* () {
       github
         .getPullRequest({
           cwd: input.cwd,
+          repository: `${input.host}/${input.repository}`,
           reference: `https://${input.host}/${input.repository}/pull/${input.number}`,
         })
         .pipe(
@@ -2211,22 +2250,44 @@ export const make = Effect.gen(function* () {
     },
 
     replyToReviewThread: (input) =>
-      graphql({
-        cwd: input.cwd,
-        host: input.host,
-        query: REVIEW_THREAD_REPLY_GRAPHQL_MUTATION,
-        variables: { threadId: input.threadId, body: input.body },
-      }),
+      requireOriginReviewThread(
+        reviewThreadBelongsToPullRequest({ ...input, operation: "replyToReviewThread" }),
+        new GitHubSubjectScopeError({
+          command: "gh",
+          cwd: input.cwd,
+          operation: "replyToReviewThread",
+        }),
+      ).pipe(
+        Effect.flatMap(() =>
+          graphql({
+            cwd: input.cwd,
+            host: input.host,
+            query: REVIEW_THREAD_REPLY_GRAPHQL_MUTATION,
+            variables: { threadId: input.threadId, body: input.body },
+          }),
+        ),
+      ),
 
     setReviewThreadResolution: (input) =>
-      graphql({
-        cwd: input.cwd,
-        host: input.host,
-        query: input.resolved
-          ? RESOLVE_REVIEW_THREAD_GRAPHQL_MUTATION
-          : UNRESOLVE_REVIEW_THREAD_GRAPHQL_MUTATION,
-        variables: { threadId: input.threadId },
-      }),
+      requireOriginReviewThread(
+        reviewThreadBelongsToPullRequest({ ...input, operation: "setReviewThreadResolution" }),
+        new GitHubSubjectScopeError({
+          command: "gh",
+          cwd: input.cwd,
+          operation: "setReviewThreadResolution",
+        }),
+      ).pipe(
+        Effect.flatMap(() =>
+          graphql({
+            cwd: input.cwd,
+            host: input.host,
+            query: input.resolved
+              ? RESOLVE_REVIEW_THREAD_GRAPHQL_MUTATION
+              : UNRESOLVE_REVIEW_THREAD_GRAPHQL_MUTATION,
+            variables: { threadId: input.threadId },
+          }),
+        ),
+      ),
 
     setReaction: (input) => {
       const givenSubjectId = input.subjectId;

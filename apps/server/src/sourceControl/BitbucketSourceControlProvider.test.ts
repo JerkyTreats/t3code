@@ -12,6 +12,44 @@ function makeProvider(bitbucket: Partial<BitbucketApi.BitbucketApi["Service"]>) 
   );
 }
 
+it.effect("binds repository lookup to the explicit Bitbucket endpoint", () =>
+  Effect.gen(function* () {
+    let received:
+      | Parameters<BitbucketApi.BitbucketApi["Service"]["getRepositoryCloneUrls"]>[0]
+      | null = null;
+    const provider = yield* makeProvider({
+      getRepositoryCloneUrls: (input) => {
+        received = input;
+        return Effect.succeed({
+          nameWithOwner: "owner/repo",
+          url: "https://bitbucket.org/owner/repo",
+          sshUrl: "git@bitbucket.org:owner/repo.git",
+        });
+      },
+    });
+
+    yield* provider.getRepositoryCloneUrls({
+      cwd: "/repo",
+      providerBaseUrl: "https://api.bitbucket.org/2.0",
+      repository: "owner/repo",
+    });
+
+    assert.deepStrictEqual(received, {
+      cwd: "/repo",
+      repository: "owner/repo",
+      context: {
+        provider: {
+          kind: "bitbucket",
+          name: "Bitbucket",
+          baseUrl: "https://api.bitbucket.org/2.0",
+        },
+        remoteName: "origin",
+        remoteUrl: "https://api.bitbucket.org/2.0",
+      },
+    });
+  }),
+);
+
 it.effect("maps Bitbucket PR summaries into provider-neutral change requests", () =>
   Effect.gen(function* () {
     const provider = yield* makeProvider({

@@ -12,6 +12,7 @@ import {
   getCloneDirectoryName,
   getDefaultCloneUrl,
   normalizePastedCloneUrl,
+  resolveAddProjectRepositoryLookupTarget,
 } from "@t3tools/client-runtime/operations/projects";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
@@ -273,7 +274,7 @@ function remoteProjectSourcePathHint(source: AddProjectRemoteSource): string {
     case "bitbucket":
       return "workspace/repository";
     case "azure-devops":
-      return "project/repository";
+      return "organization/project/repository";
     case "url":
       return "URL";
   }
@@ -373,6 +374,13 @@ function buildAddProjectRemoteSourceReadiness(
         hint:
           Option.getOrNull(provider.auth.detail) ??
           `${provider.label} is not authenticated. Open Settings -> Source Control for setup guidance.`,
+      };
+      continue;
+    }
+    if (Option.isNone(provider.auth.host)) {
+      readiness[source] = {
+        ready: false,
+        hint: `${provider.label} did not report an authenticated endpoint. Rescan after signing in.`,
       };
       continue;
     }
@@ -2020,12 +2028,32 @@ function OpenCommandPaletteDialog(props: {
         return;
       }
 
+      const lookupTarget = resolveAddProjectRepositoryLookupTarget({
+        source: provider,
+        repository: rawRepository,
+        discovery: sourceControlDiscovery.data,
+      });
+      if (!lookupTarget) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Repository endpoint unavailable",
+            description:
+              provider === "azure-devops"
+                ? "Enter an Azure repository as organization/project/repository."
+                : "Rescan Source Control after signing in to the intended provider endpoint.",
+          }),
+        );
+        return;
+      }
+
       setIsRemoteProjectLookingUp(true);
       const lookupResult = await lookupRepository({
         environmentId: addProjectCloneFlow.environmentId,
         input: {
           provider,
-          repository: rawRepository,
+          providerBaseUrl: lookupTarget.providerBaseUrl,
+          repository: lookupTarget.repository,
         },
       });
       setIsRemoteProjectLookingUp(false);

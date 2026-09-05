@@ -144,6 +144,56 @@ export function normalizeGitRemoteUrl(value: string): string {
 }
 
 /**
+ * Normalize a Git remote for mutation authorization.
+ *
+ * Unlike the broader repository-grouping key above, this preserves non-default
+ * ports because two services on the same host and path are distinct mutation
+ * targets.
+ */
+export function normalizeGitRemoteMutationTarget(value: string): string {
+  const normalized = value
+    .trim()
+    .replace(/\/+$/g, "")
+    .replace(/\.git$/i, "")
+    .toLowerCase();
+
+  if (/^(?:ssh|https?|git):\/\//i.test(normalized)) {
+    try {
+      const url = new URL(normalized);
+      const repositoryPath = url.pathname
+        .split("/")
+        .filter((segment) => segment.length > 0)
+        .join("/");
+      if (url.hostname && repositoryPath.includes("/")) {
+        const defaultPort =
+          url.protocol === "ssh:"
+            ? "22"
+            : url.protocol === "https:"
+              ? "443"
+              : url.protocol === "http:"
+                ? "80"
+                : url.protocol === "git:"
+                  ? "9418"
+                  : "";
+        const port = url.port.length > 0 && url.port !== defaultPort ? `:${url.port}` : "";
+        return `${url.hostname}${port}/${repositoryPath}`;
+      }
+    } catch {
+      return normalized;
+    }
+  }
+
+  const scpStyleHostAndPath = /^[a-zA-Z0-9._-]+@([^:/\s]+):([^/\s]+(?:\/[^/\s]+)+)$/i.exec(
+    normalized,
+  );
+  if (scpStyleHostAndPath?.[1] && scpStyleHostAndPath[2]) {
+    return `${scpStyleHostAndPath[1]}/${scpStyleHostAndPath[2]}`;
+  }
+
+  return normalized;
+}
+
+/**
  * Best-effort parse of a GitHub `owner/repo` identifier from common remote URL shapes.
  */
 export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {

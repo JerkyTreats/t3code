@@ -1,3 +1,8 @@
+import {
+  requireAzureDevOpsPullRequestTarget,
+  requireAzurePullRequestMembership,
+  requireAzureThreadsMembership,
+} from "../fork/originHostedProviderPolicy.ts";
 import * as Effect from "effect/Effect";
 import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@t3tools/contracts";
 
@@ -121,6 +126,24 @@ export const make = Effect.gen(function* () {
       }),
     );
 
+  const getOriginPullRequest = (input: {
+    readonly cwd: string;
+    readonly number: number;
+    readonly operation: string;
+    readonly origin?: { readonly remoteName: string; readonly remoteUrl: string } | undefined;
+  }) =>
+    requireAzureDevOpsPullRequestTarget(input).pipe(
+      Effect.flatMap((target) =>
+        cli.getPullRequest({ cwd: input.cwd, ...target, number: input.number }).pipe(
+          Effect.mapError(fail(input.operation)),
+          Effect.flatMap((pullRequest) =>
+            requireAzurePullRequestMembership({ operation: input.operation, target, pullRequest }),
+          ),
+          Effect.map((pullRequest) => ({ pullRequest, target })),
+        ),
+      ),
+    );
+
   const provider: PullRequestProviderApi = {
     kind: "azure-devops",
     capabilities: CAPABILITIES,
@@ -132,32 +155,37 @@ export const make = Effect.gen(function* () {
     // reviewer and branch, and has nothing that matches text. Sending it as one of those would
     // narrow by the wrong thing, so the page comes back unnarrowed and the caller filters it.
     listChangeRequests: (input) =>
-      cli
-        .listPullRequests({
-          cwd: input.cwd,
-          repository: input.repository,
-          state: input.state,
-          involvement: input.involvement,
-          viewer: input.viewer,
-          limit: input.limit,
-          cursor: input.cursor,
-        })
-        .pipe(
-          Effect.mapError(fail("listChangeRequests")),
-          Effect.map((batch) => ({
-            items: batch.items.map(toChangeRequest),
-            truncated: batch.truncated,
-            cursorAdvance: batch.cursorAdvance,
-            // Azure answers in one order whether or not it is being carried on from, so a slice
-            // can always be stepped past — by counting, which is all Azure offers.
-            continues: true,
-          })),
+      requireAzureDevOpsPullRequestTarget({
+        cwd: input.cwd,
+        operation: "listChangeRequests",
+        origin: input.origin,
+      }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .listPullRequests({
+              cwd: input.cwd,
+              ...target,
+              state: input.state,
+              involvement: input.involvement,
+              viewer: input.viewer,
+              limit: input.limit,
+              cursor: input.cursor,
+            })
+            .pipe(Effect.mapError(fail("listChangeRequests"))),
         ),
+        Effect.map((batch) => ({
+          items: batch.items.map(toChangeRequest),
+          truncated: batch.truncated,
+          cursorAdvance: batch.cursorAdvance,
+          // Azure answers in one order whether or not it is being carried on from, so a slice
+          // can always be stepped past — by counting, which is all Azure offers.
+          continues: true,
+        })),
+      ),
 
     getChangeRequest: (input) =>
-      cli.getPullRequest({ cwd: input.cwd, number: input.number }).pipe(
-        Effect.mapError(fail("getChangeRequest")),
-        Effect.map((pullRequest): ProviderChangeRequestDetail => ({
+      getOriginPullRequest({ ...input, operation: "getChangeRequest" }).pipe(
+        Effect.map(({ pullRequest }): ProviderChangeRequestDetail => ({
           ...toChangeRequest(pullRequest),
           body: pullRequest.body,
           changedFiles: 0,
@@ -175,14 +203,22 @@ export const make = Effect.gen(function* () {
       ),
 
     getChangeRequestActivity: (input) =>
-      cli.getPullRequest({ cwd: input.cwd, number: input.number }).pipe(
-        Effect.mapError(fail("getChangeRequestActivity")),
-        Effect.flatMap((pullRequest) =>
+      getOriginPullRequest({ ...input, operation: "getChangeRequestActivity" }).pipe(
+        Effect.flatMap(({ pullRequest, target }) =>
           (pullRequest.threadsUrl === null
             ? Effect.succeed({ comments: [], truncated: true })
-            : cli.listThreads({ cwd: input.cwd, threadsUrl: pullRequest.threadsUrl }).pipe(
-                Effect.map((comments) => ({ comments, truncated: false })),
-                Effect.orElseSucceed(() => ({ comments: [], truncated: true })),
+            : requireAzureThreadsMembership({
+                operation: "getChangeRequestActivity",
+                target,
+                pullRequest,
+                threadsUrl: pullRequest.threadsUrl,
+              }).pipe(
+                Effect.flatMap((threadsUrl) =>
+                  cli.listThreads({ cwd: input.cwd, threadsUrl }).pipe(
+                    Effect.map((comments) => ({ comments, truncated: false })),
+                    Effect.orElseSucceed(() => ({ comments: [], truncated: true })),
+                  ),
+                ),
               )
           ).pipe(
             Effect.map((conversation): ProviderChangeRequestActivity => ({
@@ -212,24 +248,34 @@ export const make = Effect.gen(function* () {
       ),
 
     runAction: (input) =>
-      cli
-        .runPullRequestAction({
-          cwd: input.cwd,
-          number: input.number,
-          action: input.action,
-          ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
-        })
-        .pipe(Effect.mapError(fail("runAction"))),
+      getOriginPullRequest({ ...input, operation: "runAction" }).pipe(
+        Effect.flatMap(({ target }) =>
+          cli
+            .runPullRequestAction({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              action: input.action,
+              ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
+            })
+            .pipe(Effect.mapError(fail("runAction"))),
+        ),
+      ),
 
     updateChangeRequest: (input) =>
-      cli
-        .updatePullRequest({
-          cwd: input.cwd,
-          number: input.number,
-          title: input.title,
-          body: input.body,
-        })
-        .pipe(Effect.mapError(fail("updateChangeRequest"))),
+      getOriginPullRequest({ ...input, operation: "updateChangeRequest" }).pipe(
+        Effect.flatMap(({ target }) =>
+          cli
+            .updatePullRequest({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              title: input.title,
+              body: input.body,
+            })
+            .pipe(Effect.mapError(fail("updateChangeRequest"))),
+        ),
+      ),
 
     // Never called: `capabilities.reviewers.listCandidates` is false, and the service refuses the
     // list without it.
@@ -244,16 +290,21 @@ export const make = Effect.gen(function* () {
       ),
 
     setReviewerRequest: (input) =>
-      cli
-        .setPullRequestReviewers({
-          cwd: input.cwd,
-          number: input.number,
-          // Azure names an identity by an email address or a guid, and has no team to ask, so a
-          // candidate's id is the whole of what it takes.
-          reviewers: input.reviewers.map((reviewer) => reviewer.id),
-          requested: input.requested,
-        })
-        .pipe(Effect.mapError(fail("setReviewerRequest"))),
+      getOriginPullRequest({ ...input, operation: "setReviewerRequest" }).pipe(
+        Effect.flatMap(({ target }) =>
+          cli
+            .setPullRequestReviewers({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              // Azure names an identity by an email address or a guid, and has no team to ask, so a
+              // candidate's id is the whole of what it takes.
+              reviewers: input.reviewers.map((reviewer) => reviewer.id),
+              requested: input.requested,
+            })
+            .pipe(Effect.mapError(fail("setReviewerRequest"))),
+        ),
+      ),
 
     // Never called: `capabilities.comment` is false, and the service refuses a comment without it.
     comment: () => unsupported("comment"),

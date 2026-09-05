@@ -61,6 +61,7 @@ describe("AzureDevOpsCli.layer", () => {
       const az = yield* AzureDevOpsCli.AzureDevOpsCli;
       const result = yield* az.getPullRequest({
         cwd: "/repo",
+        organization: "https://dev.azure.com/acme",
         reference: "#42",
       });
 
@@ -78,8 +79,8 @@ describe("AzureDevOpsCli.layer", () => {
           "repos",
           "pr",
           "show",
-          "--detect",
-          "true",
+          "--organization",
+          "https://dev.azure.com/acme",
           "--id",
           "42",
           "--only-show-errors",
@@ -119,6 +120,7 @@ describe("AzureDevOpsCli.layer", () => {
       const az = yield* AzureDevOpsCli.AzureDevOpsCli;
       const result = yield* az.getPullRequest({
         cwd: "/repo",
+        organization: "https://dev.azure.com/saplyai",
         reference: "863",
       });
 
@@ -157,6 +159,9 @@ describe("AzureDevOpsCli.layer", () => {
       const az = yield* AzureDevOpsCli.AzureDevOpsCli;
       const result = yield* az.listPullRequests({
         cwd: "/repo",
+        organization: "https://dev.azure.com/acme",
+        project: "project",
+        repository: "repo",
         headSelector: "origin:feature/merged",
         state: "merged",
         limit: 10,
@@ -170,8 +175,12 @@ describe("AzureDevOpsCli.layer", () => {
           "repos",
           "pr",
           "list",
-          "--detect",
-          "true",
+          "--organization",
+          "https://dev.azure.com/acme",
+          "--project",
+          "project",
+          "--repository",
+          "repo",
           "--source-branch",
           "feature/merged",
           "--status",
@@ -221,6 +230,55 @@ describe("AzureDevOpsCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
+  it.effect("pins default branch lookup to the origin Azure repository", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
+            JSON.stringify({
+              name: "repository",
+              webUrl: "https://dev.azure.com/fork/project/_git/repository",
+              remoteUrl: "https://dev.azure.com/fork/project/_git/repository",
+              sshUrl: "git@ssh.dev.azure.com:v3/fork/project/repository",
+              defaultBranch: "refs/heads/main",
+              project: { name: "project" },
+            }),
+          ),
+        ),
+      );
+
+      const az = yield* AzureDevOpsCli.AzureDevOpsCli;
+      const branch = yield* az.getDefaultBranch({
+        cwd: "/repo",
+        organization: "https://dev.azure.com/fork",
+        project: "project",
+        repository: "repository",
+      });
+
+      assert.strictEqual(branch, "main");
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "AzureDevOpsCli.execute",
+        command: "az",
+        args: [
+          "repos",
+          "show",
+          "--organization",
+          "https://dev.azure.com/fork",
+          "--project",
+          "project",
+          "--repository",
+          "repository",
+          "--only-show-errors",
+          "--output",
+          "json",
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
+    }).pipe(Effect.provide(layer)),
+  );
+
   it.effect("creates repositories through Azure Repos", () =>
     Effect.gen(function* () {
       mockRun.mockReturnValueOnce(
@@ -243,7 +301,9 @@ describe("AzureDevOpsCli.layer", () => {
       const az = yield* AzureDevOpsCli.AzureDevOpsCli;
       const result = yield* az.createRepository({
         cwd: "/repo",
-        repository: "project/repo",
+        organization: "https://dev.azure.com/acme",
+        project: "project",
+        repository: "repo",
         visibility: "private",
       });
 
@@ -258,12 +318,12 @@ describe("AzureDevOpsCli.layer", () => {
         args: [
           "repos",
           "create",
-          "--detect",
-          "true",
-          "--name",
-          "repo",
+          "--organization",
+          "https://dev.azure.com/acme",
           "--project",
           "project",
+          "--name",
+          "repo",
           "--only-show-errors",
           "--output",
           "json",
@@ -274,7 +334,7 @@ describe("AzureDevOpsCli.layer", () => {
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect("creates pull requests using the body file as the Azure description", () =>
+  it.effect("pins pull request creation to the origin repository target", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const bodyFile = `/tmp/t3code-azure-devops-cli-.md`;
@@ -284,19 +344,41 @@ describe("AzureDevOpsCli.layer", () => {
       const az = yield* AzureDevOpsCli.AzureDevOpsCli;
       yield* az.createPullRequest({
         cwd: "/repo",
+        organization: "https://dev.azure.com/fork",
+        project: "project",
+        repository: "repository",
         baseBranch: "main",
         headSelector: "feature/provider",
         title: "Provider PR",
         bodyFile,
       });
 
-      expect(mockRun).toHaveBeenCalledWith(
-        expect.objectContaining({
-          command: "az",
-          cwd: "/repo",
-          args: expect.arrayContaining(["--description", `@${bodyFile}`]),
-        }),
-      );
+      expect(mockRun).toHaveBeenCalledWith({
+        operation: "AzureDevOpsCli.execute",
+        command: "az",
+        args: [
+          "repos",
+          "pr",
+          "create",
+          "--only-show-errors",
+          "--organization",
+          "https://dev.azure.com/fork",
+          "--project",
+          "project",
+          "--repository",
+          "repository",
+          "--target-branch",
+          "main",
+          "--source-branch",
+          "feature/provider",
+          "--title",
+          "Provider PR",
+          "--description",
+          `@${bodyFile}`,
+        ],
+        cwd: "/repo",
+        timeoutMs: 30_000,
+      });
       expect(mockRun.mock.calls[0]?.[0].args).not.toContain("--output");
     }).pipe(Effect.provide(layer)),
   );
@@ -308,6 +390,7 @@ describe("AzureDevOpsCli.layer", () => {
       const az = yield* AzureDevOpsCli.AzureDevOpsCli;
       yield* az.checkoutPullRequest({
         cwd: "/repo",
+        organization: "https://dev.azure.com/fork",
         reference: "42",
       });
 
@@ -319,8 +402,8 @@ describe("AzureDevOpsCli.layer", () => {
           "pr",
           "checkout",
           "--only-show-errors",
-          "--detect",
-          "true",
+          "--organization",
+          "https://dev.azure.com/fork",
           "--id",
           "42",
           "--remote-name",
@@ -412,7 +495,13 @@ describe("AzureDevOpsCli.layer", () => {
       mockRun.mockReturnValueOnce(Effect.succeed(processOutput("not-json")));
 
       const az = yield* AzureDevOpsCli.AzureDevOpsCli;
-      const error = yield* az.getPullRequest({ cwd: "/repo", reference: "42" }).pipe(Effect.flip);
+      const error = yield* az
+        .getPullRequest({
+          cwd: "/repo",
+          organization: "https://dev.azure.com/acme",
+          reference: "42",
+        })
+        .pipe(Effect.flip);
 
       assert.instanceOf(error, AzureDevOpsCli.AzureDevOpsPullRequestDecodeError);
       assert.strictEqual(error.operation, "getPullRequest");

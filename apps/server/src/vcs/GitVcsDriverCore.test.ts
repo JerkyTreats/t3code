@@ -1101,7 +1101,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
       }),
     );
 
-    it.effect("uses origin HEAD for default-branch detection with a non-origin upstream", () =>
+    it.effect("ignores a non-origin tracking branch in product status", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
         const origin = yield* makeTmpDir("git-vcs-driver-origin-");
@@ -1126,11 +1126,50 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           "refs/remotes/upstream/release",
         ]);
 
-        const status = yield* (yield* GitVcsDriver.GitVcsDriver).statusDetailsRemote(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const localStatus = yield* driver.statusDetails(cwd);
+        const remoteStatus = yield* driver.statusDetailsRemote(cwd);
+
+        for (const status of [localStatus, remoteStatus]) {
+          assert.equal(status.branch, "release");
+          assert.equal(status.upstreamRef, null);
+          assert.equal(status.hasUpstream, false);
+          assert.equal(status.aheadCount, 1);
+          assert.equal(status.isDefaultBranch, false);
+        }
+      }),
+    );
+
+    it.effect("does not treat a nested remote name as origin in product status", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const origin = yield* makeTmpDir("git-vcs-driver-origin-");
+        const nested = yield* makeTmpDir("git-vcs-driver-nested-origin-");
+        yield* initRepoWithCommit(cwd);
+        yield* git(origin, ["init", "--bare"]);
+        yield* git(nested, ["init", "--bare"]);
+        yield* git(cwd, ["branch", "-M", "main"]);
+        yield* git(cwd, ["remote", "add", "origin", origin]);
+        yield* git(cwd, ["config", "remote.origin/evil.url", nested]);
+        yield* git(cwd, [
+          "config",
+          "remote.origin/evil.fetch",
+          "+refs/heads/*:refs/remotes/origin/evil/*",
+        ]);
+        yield* git(cwd, ["push", "origin", "main"]);
+        yield* git(cwd, ["checkout", "-b", "release"]);
+        yield* writeTextFile(cwd, "release.txt", "release\n");
+        yield* git(cwd, ["add", "release.txt"]);
+        yield* git(cwd, ["commit", "-m", "release commit"]);
+        yield* git(cwd, ["update-ref", "refs/remotes/origin/evil/release", "HEAD"]);
+        yield* git(cwd, ["config", "branch.release.remote", "origin/evil"]);
+        yield* git(cwd, ["config", "branch.release.merge", "refs/heads/release"]);
+
+        const status = yield* (yield* GitVcsDriver.GitVcsDriver).statusDetails(cwd);
 
         assert.equal(status.branch, "release");
-        assert.equal(status.upstreamRef, "upstream/release");
-        assert.equal(status.isDefaultBranch, false);
+        assert.equal(status.upstreamRef, null);
+        assert.equal(status.hasUpstream, false);
       }),
     );
 
@@ -1281,10 +1320,14 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
         const remote = yield* makeTmpDir("git-vcs-driver-remote-");
+        const upstream = yield* makeTmpDir("git-vcs-driver-upstream-");
         const { initialBranch } = yield* initRepoWithCommit(cwd);
         yield* git(remote, ["init", "--bare"]);
+        yield* git(upstream, ["init", "--bare"]);
         yield* git(cwd, ["remote", "add", "origin", remote]);
+        yield* git(cwd, ["remote", "add", "upstream", upstream]);
         yield* git(cwd, ["push", "-u", "origin", initialBranch]);
+        yield* git(cwd, ["push", "upstream", initialBranch]);
         const driver = yield* GitVcsDriver.GitVcsDriver;
 
         const deduplicated = yield* driver.listRefs({ cwd });
@@ -1302,6 +1345,10 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           complete.refs.some((ref) => ref.name === `origin/${initialBranch}`),
           true,
         );
+        assert.equal(
+          complete.refs.some((ref) => ref.name.startsWith("upstream/")),
+          false,
+        );
 
         const remoteOnly = yield* driver.listRefs({
           cwd,
@@ -1312,6 +1359,45 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         assert.equal(remoteOnly.refs.length, 1);
         assert.equal(remoteOnly.refs[0]?.name, `origin/${initialBranch}`);
         assert.equal(remoteOnly.refs[0]?.isRemote, true);
+      }),
+    );
+
+    it.effect("excludes refs owned by a nested remote named under origin", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const origin = yield* makeTmpDir("git-vcs-driver-origin-");
+        const nested = yield* makeTmpDir("git-vcs-driver-nested-origin-");
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* git(origin, ["init", "--bare"]);
+        yield* git(nested, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", origin]);
+        yield* git(cwd, ["config", "remote.origin/evil.url", nested]);
+        yield* git(cwd, [
+          "config",
+          "remote.origin/evil.fetch",
+          "+refs/heads/*:refs/remotes/origin/evil/*",
+        ]);
+        yield* git(cwd, ["push", "origin", initialBranch]);
+        yield* git(cwd, ["update-ref", `refs/remotes/origin/evil/${initialBranch}`, "HEAD"]);
+
+        const refs = yield* (yield* GitVcsDriver.GitVcsDriver).listRefs({
+          cwd,
+          includeMatchingRemoteRefs: true,
+          refKind: "remote",
+        });
+
+        assert.equal(
+          refs.refs.some((ref) => ref.remoteName === "origin/evil"),
+          false,
+        );
+        assert.equal(
+          refs.refs.some((ref) => ref.name.startsWith("origin/evil/")),
+          false,
+        );
+        assert.equal(
+          refs.refs.some((ref) => ref.remoteName === "origin"),
+          true,
+        );
       }),
     );
 
@@ -1988,7 +2074,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
       }),
     );
 
-    it.effect("still pushes a git-mangled tracking alias to its upstream head", () =>
+    it.effect("rejects a git-mangled tracking alias on a non-origin remote", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
         const remote = yield* makeTmpDir("git-remote-");
@@ -2011,22 +2097,16 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         yield* driver.prepareCommitContext(cwd);
         yield* driver.commit(cwd, "Add alias update", "");
 
-        const pushed = yield* driver.pushCurrentBranch(cwd, null);
-
-        assert.deepInclude(pushed, {
-          status: "pushed",
-          branch: "upstream/effect-atom",
-          upstreamBranch: "my-org/upstream/effect-atom",
-          setUpstream: false,
-        });
+        const error = yield* driver.pushCurrentBranch(cwd, null).pipe(Effect.flip);
+        assert.include(error.detail, "not origin");
         assert.equal(
           yield* git(remote, ["log", "-1", "--pretty=%s", "effect-atom"]),
-          "Add alias update",
+          "initial commit",
         );
       }),
     );
 
-    it.effect("pushes to the requested remote instead of the primary remote", () =>
+    it.effect("rejects a requested remote other than origin", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
         const originRemote = yield* makeTmpDir("git-origin-remote-");
@@ -2039,17 +2119,13 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         yield* git(cwd, ["remote", "add", "origin", originRemote]);
         yield* git(cwd, ["remote", "add", "origin-1", publishRemote]);
 
-        const pushed = yield* driver.pushCurrentBranch(cwd, null, { remoteName: "origin-1" });
+        const error = yield* driver
+          .pushCurrentBranch(cwd, null, { remoteName: "origin-1" })
+          .pipe(Effect.flip);
 
-        assert.deepInclude(pushed, {
-          status: "pushed",
-          branch: "main",
-          upstreamBranch: "origin-1/main",
-          setUpstream: true,
-        });
         assert.equal(
-          yield* git(publishRemote, ["log", "-1", "--pretty=%s", "main"]),
-          "initial commit",
+          error.detail,
+          "Origin-only policy permits publishing only through the origin remote.",
         );
         const originMain = yield* driver.execute({
           operation: "GitVcsDriver.test.originMainMissing",
@@ -2059,6 +2135,129 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
           timeoutMs: 10_000,
         });
         assert.notEqual(originMain.exitCode, 0);
+        const publishMain = yield* driver.execute({
+          operation: "GitVcsDriver.test.publishMainMissing",
+          cwd: publishRemote,
+          args: ["show-ref", "--verify", "--quiet", "refs/heads/main"],
+          allowNonZeroExit: true,
+          timeoutMs: 10_000,
+        });
+        assert.notEqual(publishMain.exitCode, 0);
+      }),
+    );
+
+    it.effect("rejects a configured non-origin upstream for push and pull", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const originRemote = yield* makeTmpDir("git-origin-remote-");
+        const upstreamRemote = yield* makeTmpDir("git-upstream-remote-");
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(cwd, ["branch", "-M", "main"]);
+        yield* git(originRemote, ["init", "--bare"]);
+        yield* git(upstreamRemote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", originRemote]);
+        yield* git(cwd, ["remote", "add", "upstream", upstreamRemote]);
+        yield* git(cwd, ["push", "-u", "upstream", "main"]);
+
+        const pushError = yield* driver.pushCurrentBranch(cwd, null).pipe(Effect.flip);
+        const pullError = yield* driver.pullCurrentBranch(cwd).pipe(Effect.flip);
+
+        assert.equal(
+          pushError.detail,
+          "Origin-only policy rejected the configured upstream because it is not origin.",
+        );
+        assert.equal(
+          pullError.detail,
+          "Origin-only policy rejected the configured upstream because it is not origin.",
+        );
+      }),
+    );
+
+    it.effect("rejects every origin push URL that disagrees with the fetch URL", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const originRemote = yield* makeTmpDir("git-origin-remote-");
+        const redirectedRemote = yield* makeTmpDir("git-redirected-remote-");
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(cwd, ["branch", "-M", "main"]);
+        yield* git(originRemote, ["init", "--bare"]);
+        yield* git(redirectedRemote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", originRemote]);
+        yield* git(cwd, ["push", "-u", "origin", "main"]);
+        yield* git(cwd, ["config", "--add", "remote.origin.pushurl", originRemote]);
+        yield* git(cwd, ["config", "--add", "remote.origin.pushurl", redirectedRemote]);
+
+        const pushError = yield* driver.pushCurrentBranch(cwd, null).pipe(Effect.flip);
+        const pullError = yield* driver.pullCurrentBranch(cwd).pipe(Effect.flip);
+
+        for (const error of [pushError, pullError]) {
+          assert.equal(
+            error.detail,
+            "Origin-only policy rejected origin because its push URL differs from its fetch URL.",
+          );
+        }
+      }),
+    );
+
+    it.effect("rejects an origin push URL on a different non-default port", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        yield* git(cwd, [
+          "remote",
+          "add",
+          "origin",
+          "https://github.example.test:8443/acme/project.git",
+        ]);
+        yield* git(cwd, [
+          "remote",
+          "set-url",
+          "--add",
+          "--push",
+          "origin",
+          "https://github.example.test:9443/acme/project.git",
+        ]);
+
+        const pushError = yield* driver.pushCurrentBranch(cwd, null).pipe(Effect.flip);
+
+        assert.equal(
+          pushError.detail,
+          "Origin-only policy rejected origin because its push URL differs from its fetch URL.",
+        );
+      }),
+    );
+
+    it.effect("rejects push remote configuration redirects", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const originRemote = yield* makeTmpDir("git-origin-remote-");
+        const upstreamRemote = yield* makeTmpDir("git-upstream-remote-");
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const branch = yield* git(cwd, ["branch", "--show-current"]);
+        yield* git(originRemote, ["init", "--bare"]);
+        yield* git(upstreamRemote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", originRemote]);
+        yield* git(cwd, ["remote", "add", "upstream", upstreamRemote]);
+        yield* git(cwd, ["config", `branch.${branch}.pushRemote`, "upstream"]);
+
+        const branchRedirectError = yield* driver.pushCurrentBranch(cwd, null).pipe(Effect.flip);
+        assert.equal(
+          branchRedirectError.detail,
+          "Origin-only policy rejected the branch pushRemote redirect.",
+        );
+
+        yield* git(cwd, ["config", "--unset", `branch.${branch}.pushRemote`]);
+        yield* git(cwd, ["config", "remote.pushDefault", "upstream"]);
+
+        const defaultRedirectError = yield* driver.pushCurrentBranch(cwd, null).pipe(Effect.flip);
+        assert.equal(
+          defaultRedirectError.detail,
+          "Origin-only policy rejected the remote.pushDefault redirect.",
+        );
       }),
     );
   });

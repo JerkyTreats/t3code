@@ -1,3 +1,4 @@
+import { originChangeRequestSelector } from "../fork/originHostedProviderPolicy.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -273,6 +274,8 @@ export class GitLabCli extends Context.Service<
 
     readonly listMergeRequests: (input: {
       readonly cwd: string;
+      readonly host: string;
+      readonly repository: string;
       readonly headSelector: string;
       readonly source?: SourceControlProvider.SourceControlRefSelector;
       readonly state: "open" | "closed" | "merged" | "all";
@@ -281,22 +284,28 @@ export class GitLabCli extends Context.Service<
 
     readonly getMergeRequest: (input: {
       readonly cwd: string;
+      readonly host: string;
+      readonly repository: string;
       readonly reference: string;
     }) => Effect.Effect<GitLabMergeRequestSummary, GitLabCliError>;
 
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
+      readonly host?: string;
       readonly repository: string;
     }) => Effect.Effect<GitLabRepositoryCloneUrls, GitLabCliError>;
 
     readonly createRepository: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly visibility: SourceControlRepositoryVisibility;
     }) => Effect.Effect<GitLabRepositoryCloneUrls, GitLabCliError>;
 
     readonly createMergeRequest: (input: {
       readonly cwd: string;
+      readonly host: string;
+      readonly repository: string;
       readonly baseBranch: string;
       readonly headSelector: string;
       readonly source?: SourceControlProvider.SourceControlRefSelector;
@@ -307,10 +316,14 @@ export class GitLabCli extends Context.Service<
 
     readonly getDefaultBranch: (input: {
       readonly cwd: string;
+      readonly host: string;
+      readonly repository: string;
     }) => Effect.Effect<string | null, GitLabCliError>;
 
     readonly checkoutMergeRequest: (input: {
       readonly cwd: string;
+      readonly host: string;
+      readonly repository: string;
       readonly reference: string;
       readonly force?: boolean;
     }) => Effect.Effect<void, GitLabCliError>;
@@ -451,6 +464,34 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  const repositorySelector = (input: { readonly host: string; readonly repository: string }) =>
+    `https://${input.host}/${input.repository}`;
+
+  const changeRequestSelector = (input: {
+    readonly cwd: string;
+    readonly repository: string;
+    readonly reference: string;
+    readonly host: string;
+  }): Effect.Effect<string, GitLabCliCommandError> => {
+    const selector = originChangeRequestSelector({
+      provider: "gitlab",
+      repository: `${input.host}/${input.repository}`,
+      reference: input.reference,
+    });
+    return selector === null
+      ? Effect.fail(
+          new GitLabCliCommandError({
+            operation: "execute",
+            command: "glab",
+            cwd: input.cwd,
+            cause: new Error(
+              "Origin-only policy rejected a change-request URL outside the exact origin repository.",
+            ),
+          }),
+        )
+      : Effect.succeed(selector);
+  };
+
   return GitLabCli.of({
     execute,
     listMergeRequests: (input) =>
@@ -459,6 +500,8 @@ export const make = Effect.gen(function* () {
         args: [
           "mr",
           "list",
+          "--repo",
+          repositorySelector(input),
           "--source-branch",
           sourceRefName(input),
           ...stateArgs(input.state),
@@ -491,11 +534,22 @@ export const make = Effect.gen(function* () {
         ),
       ),
     getMergeRequest: (input) =>
-      executeMergeRequest({
-        cwd: input.cwd,
-        reference: input.reference,
-        args: ["mr", "view", input.reference, "--output", "json"],
-      }).pipe(
+      changeRequestSelector(input).pipe(
+        Effect.flatMap((reference) =>
+          executeMergeRequest({
+            cwd: input.cwd,
+            reference: input.reference,
+            args: [
+              "mr",
+              "view",
+              reference,
+              "--repo",
+              repositorySelector(input),
+              "--output",
+              "json",
+            ],
+          }),
+        ),
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
           Effect.sync(() => decodeGitLabMergeRequestJson(raw)).pipe(
@@ -520,7 +574,11 @@ export const make = Effect.gen(function* () {
     getRepositoryCloneUrls: (input) =>
       execute({
         cwd: input.cwd,
-        args: ["api", `projects/${encodeURIComponent(input.repository)}`],
+        args: [
+          "api",
+          ...(input.host ? ["--hostname", input.host] : []),
+          `projects/${encodeURIComponent(input.repository)}`,
+        ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
@@ -544,7 +602,12 @@ export const make = Effect.gen(function* () {
       const namespaceId: Effect.Effect<number | null, GitLabCliError> = namespacePath
         ? execute({
             cwd: input.cwd,
-            args: ["api", `namespaces/${encodeURIComponent(namespacePath)}`],
+            args: [
+              "api",
+              "--hostname",
+              input.host,
+              `namespaces/${encodeURIComponent(namespacePath)}`,
+            ],
           }).pipe(
             Effect.map((result) => result.stdout.trim()),
             Effect.flatMap((raw) =>
@@ -571,6 +634,8 @@ export const make = Effect.gen(function* () {
             cwd: input.cwd,
             args: [
               "api",
+              "--hostname",
+              input.host,
               "--method",
               "POST",
               "projects",
@@ -610,9 +675,11 @@ export const make = Effect.gen(function* () {
         cwd: input.cwd,
         args: [
           "api",
+          "--hostname",
+          input.host,
           "--method",
           "POST",
-          "projects/:fullpath/merge_requests",
+          `projects/${encodeURIComponent(input.repository)}/merge_requests`,
           "--raw-field",
           `source_branch=${sourceRefName(input)}`,
           "--raw-field",
@@ -628,7 +695,7 @@ export const make = Effect.gen(function* () {
     getDefaultBranch: (input) =>
       execute({
         cwd: input.cwd,
-        args: ["api", "projects/:fullpath"],
+        args: ["api", "--hostname", input.host, `projects/${encodeURIComponent(input.repository)}`],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
@@ -647,11 +714,16 @@ export const make = Effect.gen(function* () {
         Effect.map((value) => value.default_branch ?? null),
       ),
     checkoutMergeRequest: (input) =>
-      executeMergeRequest({
-        cwd: input.cwd,
-        reference: input.reference,
-        args: ["mr", "checkout", input.reference],
-      }).pipe(Effect.asVoid),
+      changeRequestSelector(input).pipe(
+        Effect.flatMap((reference) =>
+          executeMergeRequest({
+            cwd: input.cwd,
+            reference: input.reference,
+            args: ["mr", "checkout", reference, "--repo", repositorySelector(input)],
+          }),
+        ),
+        Effect.asVoid,
+      ),
   });
 });
 

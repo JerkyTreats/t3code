@@ -37,6 +37,12 @@ import {
   parseRemoteRefWithRemoteNames,
 } from "../git/remoteRefs.ts";
 import { ServerConfig } from "../config.ts";
+import {
+  requireOriginProductRemote,
+  requireOriginTracking,
+  requireOriginRequestedRemote,
+} from "../fork/originGitPolicy.ts";
+import { isOriginRemoteName, ORIGIN_REMOTE_NAME } from "../fork/originOnlySourceControlPolicy.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 // `git worktree add` checks out the full tree, so on large repositories it can
@@ -1017,6 +1023,38 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     );
   });
 
+  const resolveProductOriginUpstream = Effect.fn("resolveProductOriginUpstream")(function* (
+    cwd: string,
+  ) {
+    const configuredUpstream = yield* resolveCurrentUpstream(cwd);
+    if (configuredUpstream && isOriginRemoteName(configuredUpstream.remoteName)) {
+      return configuredUpstream;
+    }
+
+    const branchName = yield* runGitStdout(
+      "GitVcsDriver.resolveProductOriginUpstream.branch",
+      cwd,
+      ["branch", "--show-current"],
+      true,
+    ).pipe(Effect.map((stdout) => stdout.trim()));
+    if (!branchName) return null;
+
+    const originRef = `${ORIGIN_REMOTE_NAME}/${branchName}`;
+    const originRefResult = yield* executeGit(
+      "GitVcsDriver.resolveProductOriginUpstream.ref",
+      cwd,
+      ["show-ref", "--verify", "--quiet", `refs/remotes/${originRef}`],
+      { allowNonZeroExit: true },
+    );
+    return originRefResult.exitCode === 0
+      ? {
+          upstreamRef: originRef,
+          remoteName: ORIGIN_REMOTE_NAME,
+          branchName,
+        }
+      : null;
+  });
+
   const fetchRemoteForStatus = (
     gitCommonDir: string,
     remoteName: string,
@@ -1267,7 +1305,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const refreshStatusUpstreamIfStale = Effect.fn("refreshStatusUpstreamIfStale")(function* (
     cwd: string,
   ) {
-    const upstream = yield* resolveCurrentUpstream(cwd);
+    const upstream = yield* resolveProductOriginUpstream(cwd);
     if (!upstream) return;
     const gitCommonDir = yield* resolveGitCommonDir(cwd);
     yield* Cache.get(
@@ -1333,46 +1371,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     if (yield* originRemoteExists(cwd)) {
       return "origin";
     }
-    const remotes = yield* listRemoteNames(cwd);
-    const [firstRemote] = remotes;
-    if (firstRemote) {
-      return firstRemote;
-    }
     return yield* new GitCommandError({
       ...gitCommandContext({
         operation: "GitVcsDriver.resolvePrimaryRemoteName",
         cwd,
         args: ["remote"],
       }),
-      detail: "No git remote is configured for this repository.",
+      detail: "Origin-only policy requires a literal origin remote.",
     });
-  });
-
-  const resolvePushRemoteName = Effect.fn("resolvePushRemoteName")(function* (
-    cwd: string,
-    refName: string,
-  ) {
-    const branchPushRemote = yield* runGitStdout(
-      "GitVcsDriver.resolvePushRemoteName.branchPushRemote",
-      cwd,
-      ["config", "--get", `branch.${refName}.pushRemote`],
-      true,
-    ).pipe(Effect.map((stdout) => stdout.trim()));
-    if (branchPushRemote.length > 0) {
-      return branchPushRemote;
-    }
-
-    const pushDefaultRemote = yield* runGitStdout(
-      "GitVcsDriver.resolvePushRemoteName.remotePushDefault",
-      cwd,
-      ["config", "--get", "remote.pushDefault"],
-      true,
-    ).pipe(Effect.map((stdout) => stdout.trim()));
-    if (pushDefaultRemote.length > 0) {
-      return pushDefaultRemote;
-    }
-
-    return yield* resolvePrimaryRemoteName(cwd).pipe(Effect.orElseSucceed(() => null));
   });
 
   const ensureRemote: GitVcsDriver.GitVcsDriver["Service"]["ensureRemote"] = Effect.fn(
@@ -1533,7 +1539,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const branchValue = branchResult.stdout.trim();
       branch = branchValue.length > 0 && branchValue !== "HEAD" ? branchValue : null;
     }
-    const upstream = yield* resolveCurrentUpstream(cwd);
+    const upstream = yield* resolveProductOriginUpstream(cwd);
     const upstreamRef = upstream?.upstreamRef ?? null;
     let aheadCount = 0;
     let behindCount = 0;
@@ -1721,6 +1727,45 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         hasWorkingTreeChanges = true;
         const pathValue = parsePorcelainPath(line);
         if (pathValue) changedFilesWithoutNumstat.add(pathValue);
+      }
+    }
+
+    if (upstreamRef) {
+      const remoteNames = yield* listRemoteNames(cwd).pipe(
+        Effect.orElseSucceed((): ReadonlyArray<string> => []),
+      );
+      const parsedUpstream = parseRemoteRefWithRemoteNames(
+        upstreamRef,
+        remoteNames.toSorted((left, right) => right.length - left.length),
+      );
+      if (!parsedUpstream || !isOriginRemoteName(parsedUpstream.remoteName)) {
+        upstreamRef = null;
+        aheadCount = 0;
+        behindCount = 0;
+      }
+    }
+
+    if (!upstreamRef && refName && hasPrimaryRemote) {
+      const hasOriginBranch = yield* remoteBranchExists({
+        cwd,
+        remoteName: ORIGIN_REMOTE_NAME,
+        refName,
+      }).pipe(Effect.orElseSucceed(() => false));
+      if (hasOriginBranch) {
+        upstreamRef = `${ORIGIN_REMOTE_NAME}/${refName}`;
+        const divergence = yield* executeGit(
+          "GitVcsDriver.statusDetails.originDivergence",
+          cwd,
+          ["rev-list", "--left-right", "--count", `HEAD...${upstreamRef}`],
+          { allowNonZeroExit: true },
+        );
+        if (divergence.exitCode === 0) {
+          const [aheadRaw, behindRaw] = divergence.stdout.trim().split(/\s+/);
+          const parsedAhead = Number.parseInt(aheadRaw ?? "0", 10);
+          const parsedBehind = Number.parseInt(behindRaw ?? "0", 10);
+          aheadCount = Number.isFinite(parsedAhead) ? Math.max(0, parsedAhead) : 0;
+          behindCount = Number.isFinite(parsedBehind) ? Math.max(0, parsedBehind) : 0;
+        }
       }
     }
 
@@ -1930,18 +1975,38 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     const requestedRemoteName = options?.remoteName?.trim() || null;
+    yield* requireOriginRequestedRemote({
+      cwd,
+      operation: "GitVcsDriver.pushCurrentBranch",
+      remoteName: requestedRemoteName,
+    });
+    const currentUpstream = yield* resolveCurrentUpstream(cwd);
+    yield* requireOriginTracking({
+      cwd,
+      operation: "GitVcsDriver.pushCurrentBranch",
+      remoteName: currentUpstream?.remoteName,
+    });
+
+    const originRemoteName = yield* requireOriginProductRemote(
+      runGitStdout,
+      cwd,
+      branch,
+      "GitVcsDriver.pushCurrentBranch",
+      ["push", ORIGIN_REMOTE_NAME],
+    );
+
     if (requestedRemoteName) {
       const publishBranch = yield* resolvePublishBranchName(cwd, branch);
       yield* runGit(
         "GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote",
         cwd,
-        ["push", "-u", requestedRemoteName, `HEAD:refs/heads/${publishBranch}`],
+        ["push", "-u", originRemoteName, `HEAD:refs/heads/${publishBranch}`],
         { timeoutMs: null },
       );
       return {
         status: "pushed" as const,
         branch,
-        upstreamBranch: `${requestedRemoteName}/${publishBranch}`,
+        upstreamBranch: `${originRemoteName}/${publishBranch}`,
         setUpstream: true,
       };
     }
@@ -1960,9 +2025,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         Effect.orElseSucceed(() => null),
       );
       if (comparableBaseBranch) {
-        const publishRemoteName = yield* resolvePushRemoteName(cwd, branch).pipe(
-          Effect.orElseSucceed(() => null),
-        );
+        const publishRemoteName = originRemoteName;
         if (!publishRemoteName) {
           return {
             status: "skipped_up_to_date" as const,
@@ -1985,7 +2048,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     if (!details.hasUpstream) {
-      const publishRemoteName = yield* resolvePushRemoteName(cwd, branch);
+      const publishRemoteName = originRemoteName;
       if (!publishRemoteName) {
         return yield* new GitCommandError({
           ...gitCommandContext({
@@ -2011,9 +2074,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       };
     }
 
-    const currentUpstream = yield* resolveCurrentUpstream(cwd).pipe(
-      Effect.orElseSucceed(() => null),
-    );
     if (currentUpstream) {
       // A branch tracking a differently named ref was cut from it, the way
       // `git checkout -b feature origin/dev` and our own worktree flow leave
@@ -2029,9 +2089,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         (branch.endsWith(`/${currentUpstream.branchName}`) &&
           currentUpstream.upstreamRef.endsWith(`/${branch}`));
       if (!isAliasOfUpstreamHead) {
-        const publishRemoteName = yield* resolvePushRemoteName(cwd, branch).pipe(
-          Effect.orElseSucceed(() => null),
-        );
+        const publishRemoteName = originRemoteName;
         const remoteName = publishRemoteName ?? currentUpstream.remoteName;
         const publishBranch = yield* resolvePublishBranchName(cwd, branch);
         // `-u` retargets the upstream to the published branch, so keep the
@@ -2078,7 +2136,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       };
     }
 
-    yield* runGit("GitVcsDriver.pushCurrentBranch.push", cwd, ["push"], { timeoutMs: null });
+    yield* runGit(
+      "GitVcsDriver.pushCurrentBranch.push",
+      cwd,
+      ["push", originRemoteName, `HEAD:refs/heads/${branch}`],
+      { timeoutMs: null },
+    );
     return {
       status: "pushed" as const,
       branch,
@@ -2102,7 +2165,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         detail: "Cannot pull from detached HEAD.",
       });
     }
-    if (!details.hasUpstream) {
+    const currentUpstream = yield* resolveCurrentUpstream(cwd);
+    if (!currentUpstream) {
       return yield* new GitCommandError({
         ...gitCommandContext({
           operation: "GitVcsDriver.pullCurrentBranch",
@@ -2112,16 +2176,34 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         detail: "Current branch has no upstream configured. Push with upstream first.",
       });
     }
+    yield* requireOriginTracking({
+      cwd,
+      operation: "GitVcsDriver.pullCurrentBranch",
+      remoteName: currentUpstream.remoteName,
+      required: true,
+    });
+    const originRemoteName = yield* requireOriginProductRemote(
+      runGitStdout,
+      cwd,
+      refName,
+      "GitVcsDriver.pullCurrentBranch",
+      ["pull", "--ff-only", ORIGIN_REMOTE_NAME],
+    );
     const beforeSha = yield* runGitStdout(
       "GitVcsDriver.pullCurrentBranch.beforeSha",
       cwd,
       ["rev-parse", "HEAD"],
       true,
     ).pipe(Effect.map((stdout) => stdout.trim()));
-    yield* executeGit("GitVcsDriver.pullCurrentBranch.pull", cwd, ["pull", "--ff-only"], {
-      timeoutMs: 30_000,
-      fallbackErrorDetail: "git pull failed",
-    });
+    yield* executeGit(
+      "GitVcsDriver.pullCurrentBranch.pull",
+      cwd,
+      ["pull", "--ff-only", originRemoteName, currentUpstream.branchName],
+      {
+        timeoutMs: 30_000,
+        fallbackErrorDetail: "git pull failed",
+      },
+    );
     const afterSha = yield* runGitStdout(
       "GitVcsDriver.pullCurrentBranch.afterSha",
       cwd,
@@ -2636,6 +2718,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
       const name = fullRefName.slice("refs/remotes/".length);
       const parsedRemoteRef = parseRemoteRefWithRemoteNames(name, remoteNames);
+      if (!parsedRemoteRef || !isOriginRemoteName(parsedRemoteRef.remoteName)) continue;
       const remoteBranch: VcsRef = {
         name,
         current: false,

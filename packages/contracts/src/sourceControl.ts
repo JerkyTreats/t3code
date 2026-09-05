@@ -61,6 +61,7 @@ export type SourceControlRepositoryInfo = typeof SourceControlRepositoryInfo.Typ
 
 export const SourceControlRepositoryLookupInput = Schema.Struct({
   provider: SourceControlProviderKind,
+  providerBaseUrl: TrimmedNonEmptyString,
   repository: TrimmedNonEmptyString,
   cwd: Schema.optional(TrimmedNonEmptyString),
 });
@@ -68,6 +69,7 @@ export type SourceControlRepositoryLookupInput = typeof SourceControlRepositoryL
 
 export const SourceControlCloneRepositoryInput = Schema.Struct({
   provider: Schema.optional(SourceControlProviderKind),
+  providerBaseUrl: Schema.optional(TrimmedNonEmptyString),
   repository: Schema.optional(TrimmedNonEmptyString),
   remoteUrl: Schema.optional(TrimmedNonEmptyString),
   destinationPath: TrimmedNonEmptyString,
@@ -85,6 +87,7 @@ export type SourceControlCloneRepositoryResult = typeof SourceControlCloneReposi
 export const SourceControlPublishRepositoryInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   provider: SourceControlProviderKind,
+  providerBaseUrl: TrimmedNonEmptyString,
   repository: TrimmedNonEmptyString,
   visibility: SourceControlRepositoryVisibility,
   remoteName: Schema.optional(TrimmedNonEmptyString),

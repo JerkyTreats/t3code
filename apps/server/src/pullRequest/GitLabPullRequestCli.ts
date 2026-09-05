@@ -219,10 +219,12 @@ export class GitLabPullRequestCli extends Context.Service<
   {
     readonly getViewerUsername: (input: {
       readonly cwd: string;
+      readonly host: string;
     }) => Effect.Effect<string, GitLabPullRequestCliError>;
 
     readonly listMergeRequests: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly state: PullRequestListState;
       readonly involvement: PullRequestInvolvement;
@@ -236,12 +238,14 @@ export class GitLabPullRequestCli extends Context.Service<
 
     readonly getMergeRequestDetail: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
     }) => Effect.Effect<GitLabMergeRequestDetail, GitLabPullRequestCliError>;
 
     readonly listNotes: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
     }) => Effect.Effect<
@@ -251,12 +255,14 @@ export class GitLabPullRequestCli extends Context.Service<
 
     readonly listCommits: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
     }) => Effect.Effect<ReadonlyArray<PullRequestCommit>, GitLabPullRequestCliError>;
 
     readonly getMergeRequestDiff: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
       /** Absent asks for the first slice; anything else is a cursor a slice handed back. */
@@ -267,6 +273,7 @@ export class GitLabPullRequestCli extends Context.Service<
 
     readonly getMergeRequestDiffFileContents: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
       readonly commit?: string | undefined;
@@ -280,6 +287,7 @@ export class GitLabPullRequestCli extends Context.Service<
 
     readonly getProjectMergeCapabilities: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
     }) => Effect.Effect<PullRequestMergeCapabilities, GitLabPullRequestCliError>;
 
@@ -290,12 +298,14 @@ export class GitLabPullRequestCli extends Context.Service<
      */
     readonly listReviewerCandidates: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
     }) => Effect.Effect<PullRequestReviewerCandidateList, GitLabPullRequestCliError>;
 
     readonly setReviewerRequest: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
       readonly reviewers: ReadonlyArray<{ readonly id: string }>;
@@ -304,6 +314,7 @@ export class GitLabPullRequestCli extends Context.Service<
 
     readonly runMergeRequestAction: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
       readonly action: PullRequestAction;
@@ -313,6 +324,7 @@ export class GitLabPullRequestCli extends Context.Service<
     /** Whichever of the two is given is sent. GitLab calls a merge request's body its description. */
     readonly updateMergeRequest: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
       readonly title?: string | undefined;
@@ -321,6 +333,7 @@ export class GitLabPullRequestCli extends Context.Service<
 
     readonly commentOnMergeRequest: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
       readonly body: string;
@@ -328,6 +341,7 @@ export class GitLabPullRequestCli extends Context.Service<
 
     readonly updateNote: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
       readonly noteId: string;
@@ -336,6 +350,7 @@ export class GitLabPullRequestCli extends Context.Service<
 
     readonly listDiscussions: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
     }) => Effect.Effect<
@@ -345,6 +360,7 @@ export class GitLabPullRequestCli extends Context.Service<
 
     readonly submitReview: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
       readonly verdict: PullRequestReviewVerdict;
@@ -354,6 +370,7 @@ export class GitLabPullRequestCli extends Context.Service<
 
     readonly replyToDiscussion: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
       readonly discussionId: string;
@@ -362,6 +379,7 @@ export class GitLabPullRequestCli extends Context.Service<
 
     readonly setDiscussionResolution: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
       readonly discussionId: string;
@@ -371,6 +389,7 @@ export class GitLabPullRequestCli extends Context.Service<
     /** The awards on the merge request and on every note of it, keyed by the note's REST id. */
     readonly listReactions: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
     }) => Effect.Effect<
@@ -387,6 +406,7 @@ export class GitLabPullRequestCli extends Context.Service<
      */
     readonly setReaction: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly number: number;
       readonly noteId?: string | undefined;
@@ -516,6 +536,7 @@ export const make = Effect.gen(function* () {
 
   const api = (input: {
     readonly cwd: string;
+    readonly host: string;
     readonly path: string;
     readonly method?: string;
     readonly stdin?: string;
@@ -527,6 +548,8 @@ export const make = Effect.gen(function* () {
       args: [
         "api",
         input.path,
+        "--hostname",
+        input.host,
         ...(input.method === undefined ? [] : ["--method", input.method]),
         // A raw body from stdin: argv is visible in process listings and is echoed back
         // inside process-runner failure messages. Unlike `gh`, `glab api --input` sends no
@@ -549,6 +572,7 @@ export const make = Effect.gen(function* () {
    */
   const listPage = (input: {
     readonly cwd: string;
+    readonly host: string;
     readonly repository: string;
     readonly state: PullRequestListState;
     readonly involvement: PullRequestInvolvement;
@@ -573,6 +597,7 @@ export const make = Effect.gen(function* () {
     const lastPage = Math.floor((delivered + input.limit) / perPage) + 1;
     return api({
       cwd: input.cwd,
+      host: input.host,
       path: `projects/${projectPath(input.repository)}/merge_requests?${query([
         ["state", stateParam(input.state)],
         ...involvementParams(input),
@@ -665,6 +690,7 @@ export const make = Effect.gen(function* () {
    */
   const diffPage = (input: {
     readonly cwd: string;
+    readonly host: string;
     readonly repository: string;
     readonly number: number;
     readonly page: number;
@@ -672,6 +698,7 @@ export const make = Effect.gen(function* () {
   }): Effect.Effect<GitLabMergeRequestDiffSlice, GitLabPullRequestCliError> =>
     api({
       cwd: input.cwd,
+      host: input.host,
       path: `projects/${projectPath(input.repository)}/${
         input.commit === undefined
           ? `merge_requests/${input.number}/diffs`
@@ -732,6 +759,7 @@ export const make = Effect.gen(function* () {
    */
   const notesPage = (input: {
     readonly cwd: string;
+    readonly host: string;
     readonly repository: string;
     readonly number: number;
     readonly page: number;
@@ -742,6 +770,7 @@ export const make = Effect.gen(function* () {
   > =>
     api({
       cwd: input.cwd,
+      host: input.host,
       path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/notes?${query(
         [
           ["per_page", String(MAX_PAGE_SIZE)],
@@ -776,6 +805,7 @@ export const make = Effect.gen(function* () {
   /** The positioned discussions, walked the same way and stopped by the same bound. */
   const discussionsPage = (input: {
     readonly cwd: string;
+    readonly host: string;
     readonly repository: string;
     readonly number: number;
     readonly page: number;
@@ -786,6 +816,7 @@ export const make = Effect.gen(function* () {
   > =>
     api({
       cwd: input.cwd,
+      host: input.host,
       path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/discussions?${query(
         [
           ["per_page", String(MAX_PAGE_SIZE)],
@@ -823,11 +854,13 @@ export const make = Effect.gen(function* () {
    */
   const getDiffRefs = (input: {
     readonly cwd: string;
+    readonly host: string;
     readonly repository: string;
     readonly number: number;
   }): Effect.Effect<GitLabDiffRefs, GitLabPullRequestCliError> =>
     api({
       cwd: input.cwd,
+      host: input.host,
       path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}`,
     }).pipe(
       Effect.flatMap((result): Effect.Effect<GitLabDiffRefs, GitLabPullRequestCliError> => {
@@ -858,12 +891,14 @@ export const make = Effect.gen(function* () {
 
   const getCommitDiffRefs = (input: {
     readonly cwd: string;
+    readonly host: string;
     readonly repository: string;
     readonly commit: string;
     readonly allowRoot: boolean;
   }): Effect.Effect<GitLabDiffRefs, GitLabPullRequestCliError> =>
     api({
       cwd: input.cwd,
+      host: input.host,
       path: `projects/${projectPath(input.repository)}/repository/commits/${input.commit}`,
     }).pipe(
       Effect.flatMap((result): Effect.Effect<GitLabDiffRefs, GitLabPullRequestCliError> => {
@@ -902,11 +937,13 @@ export const make = Effect.gen(function* () {
    */
   const mergeRequestDetail = (input: {
     readonly cwd: string;
+    readonly host: string;
     readonly repository: string;
     readonly number: number;
   }): Effect.Effect<GitLabMergeRequestDetail, GitLabPullRequestCliError> =>
     api({
       cwd: input.cwd,
+      host: input.host,
       // How far behind the target branch this one is comes only when asked for by name, and it
       // is asked for here rather than on a second read because it is the same merge request.
       path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}?${query([
@@ -931,10 +968,12 @@ export const make = Effect.gen(function* () {
   /** The people with access to the project, one page deep. */
   const projectUsers = (input: {
     readonly cwd: string;
+    readonly host: string;
     readonly repository: string;
   }): Effect.Effect<GitLabProjectUsers, GitLabPullRequestCliError> =>
     api({
       cwd: input.cwd,
+      host: input.host,
       path: `projects/${projectPath(input.repository)}/users?${query([
         ["per_page", String(MAX_PAGE_SIZE)],
       ])}`,
@@ -973,6 +1012,7 @@ export const make = Effect.gen(function* () {
    */
   const awardsPage = (input: {
     readonly cwd: string;
+    readonly host: string;
     readonly repository: string;
     readonly number: number;
     readonly cursor: string | null;
@@ -990,6 +1030,7 @@ export const make = Effect.gen(function* () {
   > =>
     api({
       cwd: input.cwd,
+      host: input.host,
       path: "graphql",
       method: "POST",
       stdin: JSON.stringify({
@@ -1030,8 +1071,8 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const viewerUsername = (input: { readonly cwd: string }) =>
-    api({ cwd: input.cwd, path: "user" }).pipe(
+  const viewerUsername = (input: { readonly cwd: string; readonly host: string }) =>
+    api({ cwd: input.cwd, host: input.host, path: "user" }).pipe(
       Effect.flatMap((result): Effect.Effect<string, GitLabPullRequestCliError> => {
         const decoded = decodeViewerJson(result.stdout.trim());
         if (!Result.isSuccess(decoded)) {
@@ -1071,6 +1112,7 @@ export const make = Effect.gen(function* () {
         if (input.reacted) {
           yield* api({
             cwd: input.cwd,
+            host: input.host,
             path: `${subject}?${query([["name", gitLabAwardName(input.content)]])}`,
             method: "POST",
           });
@@ -1079,8 +1121,8 @@ export const make = Effect.gen(function* () {
         // GitLab deletes an award by its id and takes no emoji name there, so the reader's own
         // award of that name is looked up first. Nothing to delete is success: the reaction the
         // caller asked to take back is already gone.
-        const viewer = yield* viewerUsername({ cwd: input.cwd });
-        const listed = yield* api({ cwd: input.cwd, path: subject });
+        const viewer = yield* viewerUsername({ cwd: input.cwd, host: input.host });
+        const listed = yield* api({ cwd: input.cwd, host: input.host, path: subject });
         const own = decodeOwnAwardIdJson(listed.stdout.trim(), {
           content: input.content,
           viewer,
@@ -1096,6 +1138,7 @@ export const make = Effect.gen(function* () {
         if (own.success === null) return;
         yield* api({
           cwd: input.cwd,
+          host: input.host,
           path: `${subject}/${own.success}`,
           method: "DELETE",
         });
@@ -1104,6 +1147,7 @@ export const make = Effect.gen(function* () {
     listCommits: (input) =>
       api({
         cwd: input.cwd,
+        host: input.host,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/commits?${query(
           [
             ["per_page", String(COMMIT_PAGE_SIZE)],
@@ -1132,6 +1176,7 @@ export const make = Effect.gen(function* () {
       }
       const target = {
         cwd: input.cwd,
+        host: input.host,
         repository: input.repository,
         number: input.number,
         ...(input.commit === undefined ? {} : { commit: input.commit }),
@@ -1154,6 +1199,7 @@ export const make = Effect.gen(function* () {
           ? getDiffRefs(input)
           : getCommitDiffRefs({
               cwd: input.cwd,
+              host: input.host,
               repository: input.repository,
               commit: input.commit,
               allowRoot: input.changeType === "new",
@@ -1162,6 +1208,7 @@ export const make = Effect.gen(function* () {
         const readFile = (revision: string, filePath: string) =>
           api({
             cwd: input.cwd,
+            host: input.host,
             path: `projects/${projectPath(input.repository)}/repository/files/${encodeURIComponent(
               filePath,
             )}/raw?ref=${encodeURIComponent(revision)}`,
@@ -1199,6 +1246,7 @@ export const make = Effect.gen(function* () {
     getProjectMergeCapabilities: (input) =>
       api({
         cwd: input.cwd,
+        host: input.host,
         path: `projects/${projectPath(input.repository)}?license=false`,
       }).pipe(
         Effect.flatMap((result) => {
@@ -1252,6 +1300,7 @@ export const make = Effect.gen(function* () {
           }
           return api({
             cwd: input.cwd,
+            host: input.host,
             path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}`,
             method: "PUT",
             stdin: JSON.stringify({ reviewer_ids: [...ids] }),
@@ -1267,6 +1316,7 @@ export const make = Effect.gen(function* () {
       if (input.action === "disable-auto-merge") {
         return api({
           cwd: input.cwd,
+          host: input.host,
           path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/cancel_merge_when_pipeline_succeeds`,
           method: "POST",
         }).pipe(Effect.asVoid);
@@ -1275,7 +1325,16 @@ export const make = Effect.gen(function* () {
       return gitlab
         .execute({
           cwd: input.cwd,
-          args: ["mr", subcommand!, String(input.number), "--repo", input.repository, ...flags],
+          args: [
+            "mr",
+            subcommand!,
+            String(input.number),
+            "--hostname",
+            input.host,
+            "--repo",
+            `https://${input.host}/${input.repository}`,
+            ...flags,
+          ],
         })
         .pipe(Effect.asVoid);
     },
@@ -1283,6 +1342,7 @@ export const make = Effect.gen(function* () {
     updateMergeRequest: (input) =>
       api({
         cwd: input.cwd,
+        host: input.host,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}`,
         method: "PUT",
         // Only the fields the caller asked to change: GitLab leaves out what it is not sent, and
@@ -1297,6 +1357,7 @@ export const make = Effect.gen(function* () {
     commentOnMergeRequest: (input) =>
       api({
         cwd: input.cwd,
+        host: input.host,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/notes`,
         method: "POST",
         // A JSON body rather than a `--raw-field`: glab coerces a field that reads as a
@@ -1307,6 +1368,7 @@ export const make = Effect.gen(function* () {
     updateNote: (input) =>
       api({
         cwd: input.cwd,
+        host: input.host,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/notes/${encodeURIComponent(
           input.noteId,
         )}`,
@@ -1331,6 +1393,7 @@ export const make = Effect.gen(function* () {
             (comment) =>
               api({
                 cwd: input.cwd,
+                host: input.host,
                 path: `${mergeRequest}/discussions`,
                 method: "POST",
                 stdin: JSON.stringify({
@@ -1355,6 +1418,7 @@ export const make = Effect.gen(function* () {
         if (input.body.trim().length > 0) {
           yield* api({
             cwd: input.cwd,
+            host: input.host,
             path: `${mergeRequest}/notes`,
             method: "POST",
             // A JSON body rather than a `--raw-field`, for the reason the plain comment gives:
@@ -1364,13 +1428,19 @@ export const make = Effect.gen(function* () {
           });
         }
         if (input.verdict === "approve") {
-          yield* api({ cwd: input.cwd, path: `${mergeRequest}/approve`, method: "POST" });
+          yield* api({
+            cwd: input.cwd,
+            host: input.host,
+            path: `${mergeRequest}/approve`,
+            method: "POST",
+          });
         }
       }),
 
     replyToDiscussion: (input) =>
       api({
         cwd: input.cwd,
+        host: input.host,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/discussions/${encodeURIComponent(
           input.discussionId,
         )}/notes`,
@@ -1381,6 +1451,7 @@ export const make = Effect.gen(function* () {
     setDiscussionResolution: (input) =>
       api({
         cwd: input.cwd,
+        host: input.host,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/discussions/${encodeURIComponent(
           input.discussionId,
         )}`,

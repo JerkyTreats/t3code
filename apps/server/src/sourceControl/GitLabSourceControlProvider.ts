@@ -1,3 +1,4 @@
+import { requireGitLabRepositoryTarget } from "../fork/originHostedProviderPolicy.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -108,34 +109,47 @@ export const make = Effect.gen(function* () {
     kind: "gitlab",
     listChangeRequests: (input) => {
       const source = SourceControlProvider.sourceControlRefFromInput(input);
-      return gitlab
-        .listMergeRequests({
-          cwd: input.cwd,
-          headSelector: input.headSelector,
-          ...(source ? { source } : {}),
-          state: input.state,
-          ...(input.limit !== undefined ? { limit: input.limit } : {}),
-        })
-        .pipe(
-          Effect.map((items) => items.map(toChangeRequest)),
-          Effect.mapError(
-            (error) =>
-              new SourceControlProviderError({
-                provider: "gitlab",
-                operation: "listChangeRequests",
-                command: error.command,
-                cwd: input.cwd,
-                reference: SourceControlProvider.transportSafeSourceControlErrorValue(
-                  input.headSelector,
-                ),
-                detail: error.detail,
-                cause: error,
-              }),
-          ),
-        );
+      return requireGitLabRepositoryTarget({
+        cwd: input.cwd,
+        context: input.context,
+        operation: "listChangeRequests",
+        reference: input.headSelector,
+      }).pipe(
+        Effect.flatMap((target) =>
+          gitlab.listMergeRequests({
+            cwd: input.cwd,
+            ...target,
+            headSelector: input.headSelector,
+            ...(source ? { source } : {}),
+            state: input.state,
+            ...(input.limit !== undefined ? { limit: input.limit } : {}),
+          }),
+        ),
+        Effect.map((items) => items.map(toChangeRequest)),
+        Effect.mapError(
+          (error) =>
+            new SourceControlProviderError({
+              provider: "gitlab",
+              operation: "listChangeRequests",
+              command: error.command,
+              cwd: input.cwd,
+              reference: SourceControlProvider.transportSafeSourceControlErrorValue(
+                input.headSelector,
+              ),
+              detail: error.detail,
+              cause: error,
+            }),
+        ),
+      );
     },
     getChangeRequest: (input) =>
-      gitlab.getMergeRequest(input).pipe(
+      requireGitLabRepositoryTarget({
+        cwd: input.cwd,
+        context: input.context,
+        operation: "getChangeRequest",
+        reference: input.reference,
+      }).pipe(
+        Effect.flatMap((target) => gitlab.getMergeRequest({ ...input, ...target })),
         Effect.map(toChangeRequest),
         Effect.mapError(
           (error) =>
@@ -154,35 +168,72 @@ export const make = Effect.gen(function* () {
       ),
     createChangeRequest: (input) => {
       const source = SourceControlProvider.sourceControlRefFromInput(input);
-      return gitlab
-        .createMergeRequest({
-          cwd: input.cwd,
-          baseBranch: input.baseRefName,
-          headSelector: input.headSelector,
-          ...(source ? { source } : {}),
-          ...(input.target ? { target: input.target } : {}),
-          title: input.title,
-          bodyFile: input.bodyFile,
-        })
-        .pipe(
-          Effect.mapError(
-            (error) =>
-              new SourceControlProviderError({
-                provider: "gitlab",
-                operation: "createChangeRequest",
-                command: error.command,
-                cwd: input.cwd,
-                reference: SourceControlProvider.transportSafeSourceControlErrorValue(
-                  input.headSelector,
-                ),
-                detail: error.detail,
-                cause: error,
-              }),
-          ),
-        );
+      return requireGitLabRepositoryTarget({
+        cwd: input.cwd,
+        context: input.context,
+        operation: "createChangeRequest",
+        reference: input.headSelector,
+      }).pipe(
+        Effect.flatMap((target) =>
+          gitlab.createMergeRequest({
+            cwd: input.cwd,
+            ...target,
+            baseBranch: input.baseRefName,
+            headSelector: input.headSelector,
+            ...(source ? { source } : {}),
+            ...(input.target ? { target: input.target } : {}),
+            title: input.title,
+            bodyFile: input.bodyFile,
+          }),
+        ),
+        Effect.mapError(
+          (error) =>
+            new SourceControlProviderError({
+              provider: "gitlab",
+              operation: "createChangeRequest",
+              command: error.command,
+              cwd: input.cwd,
+              reference: SourceControlProvider.transportSafeSourceControlErrorValue(
+                input.headSelector,
+              ),
+              detail: error.detail,
+              cause: error,
+            }),
+        ),
+      );
     },
-    getRepositoryCloneUrls: (input) =>
-      gitlab.getRepositoryCloneUrls(input).pipe(
+    getRepositoryCloneUrls: (input) => {
+      const target: Effect.Effect<
+        { readonly repository: string; readonly host?: string },
+        SourceControlProviderError
+      > = input.context
+        ? requireGitLabRepositoryTarget({
+            cwd: input.cwd,
+            context: input.context,
+            operation: "getRepositoryCloneUrls",
+          }).pipe(Effect.map((target) => ({ host: target.host, repository: input.repository })))
+        : (() => {
+            const host = input.providerBaseUrl
+              ? SourceControlProvider.providerHostFromBaseUrl(input.providerBaseUrl)
+              : null;
+            return host
+              ? Effect.succeed({ host, repository: input.repository })
+              : Effect.fail(
+                  new SourceControlProviderError({
+                    provider: "gitlab",
+                    operation: "getRepositoryCloneUrls",
+                    cwd: input.cwd,
+                    repository: SourceControlProvider.transportSafeSourceControlErrorValue(
+                      input.repository,
+                    ),
+                    detail: "An explicit GitLab provider endpoint is required.",
+                  }),
+                );
+          })();
+      return target.pipe(
+        Effect.flatMap((resolvedTarget) =>
+          gitlab.getRepositoryCloneUrls({ cwd: input.cwd, ...resolvedTarget }),
+        ),
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
@@ -197,9 +248,24 @@ export const make = Effect.gen(function* () {
               cause: error,
             }),
         ),
-      ),
-    createRepository: (input) =>
-      gitlab.createRepository(input).pipe(
+      );
+    },
+    createRepository: (input) => {
+      const host = SourceControlProvider.providerHostFromBaseUrl(input.providerBaseUrl);
+      if (host === null) {
+        return Effect.fail(
+          new SourceControlProviderError({
+            provider: "gitlab",
+            operation: "createRepository",
+            cwd: input.cwd,
+            repository: SourceControlProvider.transportSafeSourceControlErrorValue(
+              input.repository,
+            ),
+            detail: "The GitLab provider endpoint is invalid.",
+          }),
+        );
+      }
+      return gitlab.createRepository({ ...input, host }).pipe(
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
@@ -214,9 +280,15 @@ export const make = Effect.gen(function* () {
               cause: error,
             }),
         ),
-      ),
+      );
+    },
     getDefaultBranch: (input) =>
-      gitlab.getDefaultBranch(input).pipe(
+      requireGitLabRepositoryTarget({
+        cwd: input.cwd,
+        context: input.context,
+        operation: "getDefaultBranch",
+      }).pipe(
+        Effect.flatMap((target) => gitlab.getDefaultBranch({ cwd: input.cwd, ...target })),
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
@@ -230,7 +302,13 @@ export const make = Effect.gen(function* () {
         ),
       ),
     checkoutChangeRequest: (input) =>
-      gitlab.checkoutMergeRequest(input).pipe(
+      requireGitLabRepositoryTarget({
+        cwd: input.cwd,
+        context: input.context,
+        operation: "checkoutChangeRequest",
+        reference: input.reference,
+      }).pipe(
+        Effect.flatMap((target) => gitlab.checkoutMergeRequest({ ...input, ...target })),
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({

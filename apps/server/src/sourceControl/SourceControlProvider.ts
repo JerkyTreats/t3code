@@ -16,6 +16,15 @@ export interface SourceControlProviderContext {
   readonly remoteUrl: string;
 }
 
+export function providerHostFromBaseUrl(baseUrl: string): string | null {
+  try {
+    const parsed = new URL(baseUrl);
+    return parsed.host.length > 0 ? parsed.host : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface SourceControlRefSelector {
   readonly refName: string;
   readonly owner?: string;
@@ -109,10 +118,12 @@ export class SourceControlProvider extends Context.Service<
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;
+      readonly providerBaseUrl?: string;
       readonly repository: string;
     }) => Effect.Effect<SourceControlRepositoryCloneUrls, SourceControlProviderError>;
     readonly createRepository: (input: {
       readonly cwd: string;
+      readonly providerBaseUrl: string;
       readonly repository: string;
       readonly visibility: SourceControlRepositoryVisibility;
     }) => Effect.Effect<SourceControlRepositoryCloneUrls, SourceControlProviderError>;

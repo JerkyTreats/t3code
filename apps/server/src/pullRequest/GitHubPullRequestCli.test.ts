@@ -125,6 +125,15 @@ function threadCommentsPage(
   });
 }
 
+function threadScopePage(expectedPullRequestId: string, actualPullRequestId: string): string {
+  return JSON.stringify({
+    data: {
+      repository: { pullRequest: { id: expectedPullRequestId } },
+      node: { id: "PRRT_1", pullRequest: { id: actualPullRequestId } },
+    },
+  });
+}
+
 /** What `gh pr diff` answers on a pull request GitHub will not serve a diff for. */
 const diffRefused = new GitHubCli.GitHubCliCommandError({
   command: "gh",
@@ -218,6 +227,7 @@ layer("GitHubPullRequestCli.layer", (it) => {
       expect(mockedGetPullRequest).toHaveBeenCalledWith({
         cwd: "/w",
         reference: "https://github.com/acme/web/pull/7",
+        repository: "github.com/acme/web",
       });
       expect(mockedExecute).not.toHaveBeenCalled();
     }),
@@ -2077,9 +2087,31 @@ layer("GitHubPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(Effect.succeed(output("  ")));
       const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
 
-      const error = yield* Effect.flip(cli.getViewerLogin({ cwd: "/w" }));
+      const error = yield* Effect.flip(cli.getViewerLogin({ cwd: "/w", host: "github.com" }));
 
       assert.strictEqual(error._tag, "GitHubViewerLoginUnavailableError");
+    }),
+  );
+
+  it.effect("asks a GitHub Enterprise host for its own viewer", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValueOnce(Effect.succeed(output("enterprise-user\n")));
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      const viewer = yield* cli.getViewerLogin({
+        cwd: "/w",
+        host: "github.acme.dev",
+      });
+
+      assert.strictEqual(viewer, "enterprise-user");
+      expect(callAt(0).args).toEqual([
+        "api",
+        "user",
+        "--hostname",
+        "github.acme.dev",
+        "--jq",
+        ".login",
+      ]);
     }),
   );
 
@@ -2121,19 +2153,27 @@ layer("GitHubPullRequestCli.layer", (it) => {
 
   it.effect("sends a reply body over stdin, never in argv", () =>
     Effect.gen(function* () {
-      mockedExecute.mockReturnValue(Effect.succeed(output("{}")));
+      mockedExecute.mockReturnValueOnce(
+        Effect.succeed(output(threadScopePage("PR_expected", "PR_expected"))),
+      );
+      mockedExecute.mockReturnValueOnce(Effect.succeed(output("{}")));
       const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
 
       yield* cli.replyToReviewThread({
         cwd: "/w",
         repository: "acme/web",
         host: "github.com",
+        number: 7,
         threadId: "PRRT_1",
         body: "Fixed in 42ff8ec.",
       });
 
+      expect(callAt(0).args).toContain("owner=acme");
+      expect(callAt(0).args).toContain("name=web");
+      expect(callAt(0).args).toContain("number=7");
+      expect(callAt(0).args).toContain("subjectId=PRRT_1");
       // A reply is the reader's own words, so it travels the same way a comment body does.
-      expect(callAt(0).args).toEqual([
+      expect(callAt(1).args).toEqual([
         "api",
         "graphql",
         "--hostname",
@@ -2142,25 +2182,53 @@ layer("GitHubPullRequestCli.layer", (it) => {
         "-",
       ]);
       // @effect-diagnostics-next-line preferSchemaOverJson:off
-      const request = JSON.parse(callAt(0).stdin ?? "") as {
+      const request = JSON.parse(callAt(1).stdin ?? "") as {
         query: string;
         variables: Record<string, string>;
       };
       expect(request.query).toContain("addPullRequestReviewThreadReply");
       expect(request.variables).toEqual({ threadId: "PRRT_1", body: "Fixed in 42ff8ec." });
-      expect(callAt(0).args.join(" ")).not.toContain("Fixed in 42ff8ec.");
+      expect(callAt(1).args.join(" ")).not.toContain("Fixed in 42ff8ec.");
+    }),
+  );
+
+  it.effect("refuses a reply to a review thread from another pull request", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValueOnce(
+        Effect.succeed(output(threadScopePage("PR_expected", "PR_elsewhere"))),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      const error = yield* Effect.flip(
+        cli.replyToReviewThread({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+          threadId: "PRRT_1",
+          body: "Cross-repository reply",
+        }),
+      );
+
+      assert.strictEqual(error._tag, "GitHubSubjectScopeError");
+      assert.strictEqual(mockedExecute.mock.calls.length, 1);
     }),
   );
 
   it.effect("resolves and unresolves through the mutation each one needs", () =>
     Effect.gen(function* () {
-      mockedExecute.mockReturnValue(Effect.succeed(output("{}")));
+      mockedExecute
+        .mockReturnValueOnce(Effect.succeed(output(threadScopePage("PR_expected", "PR_expected"))))
+        .mockReturnValueOnce(Effect.succeed(output("{}")))
+        .mockReturnValueOnce(Effect.succeed(output(threadScopePage("PR_expected", "PR_expected"))))
+        .mockReturnValueOnce(Effect.succeed(output("{}")));
       const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
 
       yield* cli.setReviewThreadResolution({
         cwd: "/w",
         repository: "acme/web",
         host: "github.acme.dev",
+        number: 7,
         threadId: "PRRT_1",
         resolved: true,
       });
@@ -2168,15 +2236,39 @@ layer("GitHubPullRequestCli.layer", (it) => {
         cwd: "/w",
         repository: "acme/web",
         host: "github.acme.dev",
+        number: 7,
         threadId: "PRRT_1",
         resolved: false,
       });
 
       const parse = (index: number) => JSON.parse(callAt(index).stdin ?? "") as { query: string };
-      expect(parse(0).query).toContain("resolveReviewThread(");
-      expect(parse(1).query).toContain("unresolveReviewThread(");
+      expect(parse(1).query).toContain("resolveReviewThread(");
+      expect(parse(3).query).toContain("unresolveReviewThread(");
       // A GitHub Enterprise thread is resolved on its own host, not on github.com.
-      expect(callAt(0).args).toContain("github.acme.dev");
+      expect(callAt(1).args).toContain("github.acme.dev");
+    }),
+  );
+
+  it.effect("refuses to resolve a review thread from another pull request", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValueOnce(
+        Effect.succeed(output(threadScopePage("PR_expected", "PR_elsewhere"))),
+      );
+      const cli = yield* GitHubPullRequestCli.GitHubPullRequestCli;
+
+      const error = yield* Effect.flip(
+        cli.setReviewThreadResolution({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+          threadId: "PRRT_1",
+          resolved: true,
+        }),
+      );
+
+      assert.strictEqual(error._tag, "GitHubSubjectScopeError");
+      assert.strictEqual(mockedExecute.mock.calls.length, 1);
     }),
   );
 

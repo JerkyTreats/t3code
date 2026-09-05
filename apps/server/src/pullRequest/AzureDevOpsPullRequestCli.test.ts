@@ -9,6 +9,19 @@ import * as AzureDevOpsPullRequestProvider from "./AzureDevOpsPullRequestProvide
 
 const mockedExecute = vi.fn<AzureDevOpsCli.AzureDevOpsCli["Service"]["execute"]>();
 
+const exactTarget = {
+  organization: "https://dev.azure.com/acme",
+  project: "platform",
+  repository: "web",
+} as const;
+
+const exactOrigin = {
+  origin: {
+    remoteName: "origin",
+    remoteUrl: "https://dev.azure.com/acme/platform/_git/web",
+  },
+} as const;
+
 const layer = it.layer(
   AzureDevOpsPullRequestCli.layer.pipe(
     Layer.provide(
@@ -68,7 +81,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       const batch = yield* cli.listPullRequests({
         cwd: "/w",
-        repository: "web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal@acme.dev",
@@ -81,8 +94,10 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         "repos",
         "pr",
         "list",
-        "--detect",
-        "true",
+        "--organization",
+        "https://dev.azure.com/acme",
+        "--project",
+        "platform",
         "--repository",
         "web",
         "--status",
@@ -125,6 +140,8 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       const batch = yield* cli.listPullRequests({
         cwd: "/w",
+        organization: "https://dev.azure.com/acme",
+        project: "project",
         repository: "web",
         state: "merged",
         involvement: "all",
@@ -146,6 +163,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         cwd: "/w",
         repository: "web",
         host: "dev.azure.com",
+        ...exactOrigin,
         state: "open",
         involvement: "all",
         viewer: "bilal@acme.dev",
@@ -161,8 +179,10 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         "repos",
         "pr",
         "list",
-        "--detect",
-        "true",
+        "--organization",
+        "https://dev.azure.com/acme",
+        "--project",
+        "platform",
         "--repository",
         "web",
         "--status",
@@ -177,6 +197,31 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect("pins a listing to origin when another repository selector is present", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValueOnce(Effect.succeed(output("[]")));
+      const provider = yield* AzureDevOpsPullRequestProvider.make;
+
+      yield* provider.listChangeRequests({
+        cwd: "/w",
+        repository: "upstream-shadow",
+        host: "dev.azure.com",
+        ...exactOrigin,
+        state: "open",
+        involvement: "all",
+        viewer: "bilal@acme.dev",
+        limit: 10,
+      });
+
+      const args = argsOfCall(0);
+      assert.strictEqual(args[args.indexOf("--organization") + 1], exactTarget.organization);
+      assert.strictEqual(args[args.indexOf("--project") + 1], exactTarget.project);
+      assert.strictEqual(args[args.indexOf("--repository") + 1], exactTarget.repository);
+      expect(args).not.toContain("upstream-shadow");
+      expect(args).not.toContain("--detect");
+    }),
+  );
+
   it.effect("steps over what it has already handed over, which is all Azure can be told", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(Effect.succeed(output(pullRequests(3, 1))));
@@ -184,7 +229,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       yield* cli.listPullRequests({
         cwd: "/w",
-        repository: "web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal@acme.dev",
@@ -208,7 +253,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       const batch = yield* cli.listPullRequests({
         cwd: "/w",
-        repository: "web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal@acme.dev",
@@ -241,7 +286,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       const batch = yield* cli.listPullRequests({
         cwd: "/w",
-        repository: "web",
+        ...exactTarget,
         state: "open",
         involvement: "all",
         viewer: "bilal@acme.dev",
@@ -265,7 +310,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       yield* cli.listPullRequests({
         cwd: "/w",
-        repository: "web",
+        ...exactTarget,
         state: "closed",
         involvement: "authored",
         viewer: "bilal@acme.dev",
@@ -286,7 +331,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       yield* cli.listPullRequests({
         cwd: "/w",
-        repository: "web",
+        ...exactTarget,
         state: "all",
         involvement: "all",
         viewer: "bilal@acme.dev",
@@ -305,7 +350,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       yield* cli.listPullRequests({
         cwd: "/w",
-        repository: "web",
+        ...exactTarget,
         state: "open",
         involvement: "reviewing",
         viewer: "bilal@acme.dev",
@@ -358,6 +403,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       yield* cli.runPullRequestAction({
         cwd: "/w",
+        ...exactTarget,
         number: 42,
         action: "merge",
         mergeMethod: "squash",
@@ -367,8 +413,8 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         "repos",
         "pr",
         "update",
-        "--detect",
-        "true",
+        "--organization",
+        "https://dev.azure.com/acme",
         "--id",
         "42",
         "--status",
@@ -389,6 +435,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       yield* cli.runPullRequestAction({
         cwd: "/w",
+        ...exactTarget,
         number: 42,
         action: "enable-auto-merge",
         mergeMethod: "squash",
@@ -398,8 +445,8 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         "repos",
         "pr",
         "update",
-        "--detect",
-        "true",
+        "--organization",
+        "https://dev.azure.com/acme",
         "--id",
         "42",
         "--auto-complete",
@@ -425,14 +472,14 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValue(Effect.succeed(output("{}")));
       const cli = yield* AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli;
 
-      yield* cli.runPullRequestAction({ cwd: "/w", number: 42, action });
+      yield* cli.runPullRequestAction({ cwd: "/w", ...exactTarget, number: 42, action });
 
       expect(argsOfCall(0)).toEqual([
         "repos",
         "pr",
         "update",
-        "--detect",
-        "true",
+        "--organization",
+        "https://dev.azure.com/acme",
         "--id",
         "42",
         ...expected,
@@ -460,14 +507,14 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValue(Effect.succeed(output("{}")));
       const cli = yield* AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli;
 
-      yield* cli.updatePullRequest({ cwd: "/w", number: 42, ...rewrite });
+      yield* cli.updatePullRequest({ cwd: "/w", ...exactTarget, number: 42, ...rewrite });
 
       expect(argsOfCall(0)).toEqual([
         "repos",
         "pr",
         "update",
-        "--detect",
-        "true",
+        "--organization",
+        "https://dev.azure.com/acme",
         "--id",
         "42",
         ...expected,
@@ -485,6 +532,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       yield* cli.updatePullRequest({
         cwd: "/w",
+        ...exactTarget,
         number: 42,
         body: "- rewrote the page\n- kept the rest",
       });
@@ -497,7 +545,10 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
   it.effect("rewrites through the provider, which says it takes one", () =>
     Effect.gen(function* () {
-      mockedExecute.mockReturnValue(Effect.succeed(output("{}")));
+      mockedExecute
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
+        .mockReturnValueOnce(Effect.succeed(output(JSON.stringify(pullRequestRows(1, 42)[0]))))
+        .mockReturnValueOnce(Effect.succeed(output("{}")));
       const provider = yield* AzureDevOpsPullRequestProvider.make;
 
       // False for a remark because nothing here can post one, so there is none to rewrite.
@@ -507,12 +558,54 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         cwd: "/w",
         repository: "web",
         host: "dev.azure.com",
+        ...exactOrigin,
         number: 42,
         title: "Add the page",
       });
 
-      expect(argsOfCall(0)).toContain("--title=Add the page");
-      expect(argsOfCall(0)).not.toContain("--description");
+      expect(argsOfCall(1)).toContain("--title=Add the page");
+      expect(argsOfCall(1)).not.toContain("--description");
+    }),
+  );
+
+  it.effect("rejects a cross-repository action before the mutation command", () =>
+    Effect.gen(function* () {
+      const row = {
+        ...pullRequestRows(1, 42)[0],
+        url: "https://dev.azure.com/upstream/_apis/git/repositories/web/pullRequests/42",
+      };
+      mockedExecute.mockReturnValueOnce(
+        // @effect-diagnostics-next-line preferSchemaOverJson:off
+        Effect.succeed(output(JSON.stringify(row))),
+      );
+      const provider = yield* AzureDevOpsPullRequestProvider.make;
+
+      const error = yield* Effect.flip(
+        provider.runAction({
+          cwd: "/w",
+          repository: "web",
+          host: "dev.azure.com",
+          ...exactOrigin,
+          number: 42,
+          action: "close",
+        }),
+      );
+
+      assert.strictEqual(error.reason, "failed");
+      expect(error.detail).toContain("outside origin");
+      assert.strictEqual(mockedExecute.mock.calls.length, 1);
+      expect(argsOfCall(0)).toEqual([
+        "repos",
+        "pr",
+        "show",
+        "--organization",
+        exactTarget.organization,
+        "--id",
+        "42",
+        "--only-show-errors",
+        "--output",
+        "json",
+      ]);
     }),
   );
 
@@ -569,7 +662,9 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
       );
       const cli = yield* AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli;
 
-      const error = yield* Effect.flip(cli.getPullRequest({ cwd: "/w", number: 42 }));
+      const error = yield* Effect.flip(
+        cli.getPullRequest({ cwd: "/w", ...exactTarget, number: 42 }),
+      );
 
       assert.strictEqual(error._tag, "AzureDevOpsPullRequestIncompleteError");
     }),
@@ -580,7 +675,9 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(Effect.succeed(output('{"message":"not found"}')));
       const cli = yield* AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli;
 
-      const error = yield* Effect.flip(cli.getPullRequest({ cwd: "/w", number: 42 }));
+      const error = yield* Effect.flip(
+        cli.getPullRequest({ cwd: "/w", ...exactTarget, number: 42 }),
+      );
 
       assert.strictEqual(error._tag, "AzureDevOpsPullRequestReadError");
     }),
@@ -593,6 +690,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       yield* cli.setPullRequestReviewers({
         cwd: "/w",
+        ...exactTarget,
         number: 42,
         reviewers: ["octocat@acme.test", "hubot@acme.test"],
         requested: true,
@@ -603,8 +701,8 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         "pr",
         "reviewer",
         "add",
-        "--detect",
-        "true",
+        "--organization",
+        "https://dev.azure.com/acme",
         "--id",
         "42",
         "--reviewers",
@@ -624,6 +722,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
 
       yield* cli.setPullRequestReviewers({
         cwd: "/w",
+        ...exactTarget,
         number: 42,
         reviewers: ["octocat@acme.test"],
         requested: false,
@@ -640,6 +739,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
       const error = yield* Effect.flip(
         cli.setPullRequestReviewers({
           cwd: "/w",
+          ...exactTarget,
           number: 42,
           reviewers: ["--query"],
           requested: true,

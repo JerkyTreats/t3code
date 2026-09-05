@@ -122,6 +122,8 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
 
     readonly listPullRequests: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
       readonly repository: string;
       readonly state: PullRequestListState;
       readonly involvement: PullRequestInvolvement;
@@ -144,6 +146,9 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
 
     readonly getPullRequest: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
+      readonly repository: string;
       readonly number: number;
     }) => Effect.Effect<AzureDevOpsPullRequest, AzureDevOpsPullRequestCliError>;
 
@@ -155,6 +160,9 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
 
     readonly runPullRequestAction: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
+      readonly repository: string;
       readonly number: number;
       readonly action: PullRequestAction;
       readonly mergeMethod?: PullRequestMergeMethod;
@@ -163,6 +171,9 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
     /** Rewrites the pull request's own words, through the same command that moves it. */
     readonly updatePullRequest: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
+      readonly repository: string;
       readonly number: number;
       readonly title?: string | undefined;
       readonly body?: string | undefined;
@@ -175,6 +186,9 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
      */
     readonly setPullRequestReviewers: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
+      readonly repository: string;
       readonly number: number;
       readonly reviewers: ReadonlyArray<string>;
       readonly requested: boolean;
@@ -264,11 +278,6 @@ function isReviewerName(value: string): boolean {
 export const make = Effect.gen(function* () {
   const azure = yield* AzureDevOpsCli.AzureDevOpsCli;
 
-  // Every command resolves the organization, project and repository from the checkout, which is
-  // what the rest of the Azure wrapper does. The remote takes three shapes and only `az` knows
-  // how to read all of them.
-  const detectArgs = ["--detect", "true"] as const;
-
   const executeJson = (input: {
     readonly cwd: string;
     readonly args: ReadonlyArray<string>;
@@ -286,6 +295,8 @@ export const make = Effect.gen(function* () {
    */
   const listPullRequestPage = (input: {
     readonly cwd: string;
+    readonly organization: string;
+    readonly project: string;
     readonly repository: string;
     readonly state: PullRequestListState;
     readonly involvement: PullRequestInvolvement;
@@ -311,7 +322,10 @@ export const make = Effect.gen(function* () {
         "repos",
         "pr",
         "list",
-        ...detectArgs,
+        "--organization",
+        input.organization,
+        "--project",
+        input.project,
         "--repository",
         input.repository,
         ...statusArgs(input.state),
@@ -399,6 +413,8 @@ export const make = Effect.gen(function* () {
     listPullRequests: (input) =>
       listPullRequestPage({
         cwd: input.cwd,
+        organization: input.organization,
+        project: input.project,
         repository: input.repository,
         state: input.state,
         involvement: input.involvement,
@@ -416,7 +432,15 @@ export const make = Effect.gen(function* () {
     getPullRequest: (input) =>
       executeJson({
         cwd: input.cwd,
-        args: ["repos", "pr", "show", ...detectArgs, "--id", String(input.number)],
+        args: [
+          "repos",
+          "pr",
+          "show",
+          "--organization",
+          input.organization,
+          "--id",
+          String(input.number),
+        ],
       }).pipe(
         Effect.flatMap(
           (result): Effect.Effect<AzureDevOpsPullRequest, AzureDevOpsPullRequestCliError> => {
@@ -483,7 +507,8 @@ export const make = Effect.gen(function* () {
                 "pr",
                 "reviewer",
                 input.requested ? "add" : "remove",
-                ...detectArgs,
+                "--organization",
+                input.organization,
                 "--id",
                 String(input.number),
                 // One `--reviewers` takes them all, because az reads the flag as a list and a
@@ -505,7 +530,8 @@ export const make = Effect.gen(function* () {
             "repos",
             "pr",
             "update",
-            ...detectArgs,
+            "--organization",
+            input.organization,
             "--id",
             String(input.number),
             ...actionArgs(input.action, input.mergeMethod),
@@ -524,7 +550,8 @@ export const make = Effect.gen(function* () {
             "repos",
             "pr",
             "update",
-            ...detectArgs,
+            "--organization",
+            input.organization,
             "--id",
             String(input.number),
             // One argument rather than a flag and a value beside it: a description usually opens

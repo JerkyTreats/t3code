@@ -141,56 +141,77 @@ export interface BitbucketPullRequestBatch {
   readonly truncated: boolean;
 }
 
+export interface BitbucketOriginTarget {
+  /** Exact origin host. A missing host is rejected before any HTTP request. */
+  readonly originHost?: string;
+}
+
 export class BitbucketPullRequestApi extends Context.Service<
   BitbucketPullRequestApi,
   {
     /** A function rather than a value, so the request is built per call and not at layer time. */
-    readonly getViewer: () => Effect.Effect<string, BitbucketPullRequestApiError>;
+    readonly getViewer: (
+      input?: BitbucketOriginTarget,
+    ) => Effect.Effect<string, BitbucketPullRequestApiError>;
 
-    readonly listPullRequests: (input: {
-      readonly repository: string;
-      readonly state: PullRequestListState;
-      readonly limit: number;
-      /** Free text, matched against a pull request's title and description. */
-      readonly query?: string | undefined;
-      /** Where to carry on from, as a predicate on `updated_on` beside any other. */
-      readonly cursor?: ProviderListCursor | undefined;
-    }) => Effect.Effect<BitbucketPullRequestBatch, BitbucketPullRequestApiError>;
+    readonly listPullRequests: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly state: PullRequestListState;
+        readonly limit: number;
+        /** Free text, matched against a pull request's title and description. */
+        readonly query?: string | undefined;
+        /** Where to carry on from, as a predicate on `updated_on` beside any other. */
+        readonly cursor?: ProviderListCursor | undefined;
+      },
+    ) => Effect.Effect<BitbucketPullRequestBatch, BitbucketPullRequestApiError>;
 
-    readonly getPullRequest: (input: {
-      readonly repository: string;
-      readonly number: number;
-    }) => Effect.Effect<BitbucketPullRequest, BitbucketPullRequestApiError>;
+    readonly getPullRequest: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+      },
+    ) => Effect.Effect<BitbucketPullRequest, BitbucketPullRequestApiError>;
 
     /** True where the credentials can write to the repository, which is what merging needs. */
-    readonly getRepositoryPermission: (input: {
-      readonly repository: string;
-    }) => Effect.Effect<boolean, BitbucketPullRequestApiError>;
+    readonly getRepositoryPermission: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+      },
+    ) => Effect.Effect<boolean, BitbucketPullRequestApiError>;
 
-    readonly getPullRequestDiff: (input: {
-      readonly repository: string;
-      readonly number: number;
-      /** One commit's own changes, rather than everything the pull request carries. */
-      readonly commit?: string | undefined;
-    }) => Effect.Effect<
+    readonly getPullRequestDiff: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+        /** One commit's own changes, rather than everything the pull request carries. */
+        readonly commit?: string | undefined;
+      },
+    ) => Effect.Effect<
       { readonly patch: string; readonly truncated: boolean },
       BitbucketPullRequestApiError
     >;
 
-    readonly getDiffStat: (input: {
-      readonly repository: string;
-      readonly number: number;
-    }) => Effect.Effect<BitbucketDiffStat, BitbucketPullRequestApiError>;
+    readonly getDiffStat: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+      },
+    ) => Effect.Effect<BitbucketDiffStat, BitbucketPullRequestApiError>;
 
-    readonly getMergeability: (input: {
-      readonly repository: string;
-      readonly number: number;
-    }) => Effect.Effect<PullRequestMergeability, BitbucketPullRequestApiError>;
+    readonly getMergeability: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+      },
+    ) => Effect.Effect<PullRequestMergeability, BitbucketPullRequestApiError>;
 
-    readonly listComments: (input: {
-      readonly repository: string;
-      readonly number: number;
-    }) => Effect.Effect<
+    readonly listComments: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+      },
+    ) => Effect.Effect<
       {
         readonly comments: ReadonlyArray<PullRequestComment>;
         readonly threads: ReadonlyArray<PullRequestReviewThread>;
@@ -199,81 +220,103 @@ export class BitbucketPullRequestApi extends Context.Service<
       BitbucketPullRequestApiError
     >;
 
-    readonly listCommits: (input: {
-      readonly repository: string;
-      readonly number: number;
-    }) => Effect.Effect<ReadonlyArray<PullRequestCommit>, BitbucketPullRequestApiError>;
+    readonly listCommits: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+      },
+    ) => Effect.Effect<ReadonlyArray<PullRequestCommit>, BitbucketPullRequestApiError>;
 
-    readonly listChecks: (input: {
-      readonly repository: string;
-      readonly number: number;
-    }) => Effect.Effect<ReadonlyArray<PullRequestCheck>, BitbucketPullRequestApiError>;
+    readonly listChecks: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+      },
+    ) => Effect.Effect<ReadonlyArray<PullRequestCheck>, BitbucketPullRequestApiError>;
 
     /**
      * Who this pull request may be sent to, and who it has already been sent to. Two reads at
      * once, because Bitbucket keeps the people on the workspace and the reviewers on the pull
      * request, and neither answers for the other.
      */
-    readonly listReviewerCandidates: (input: {
-      readonly repository: string;
-      readonly number: number;
-    }) => Effect.Effect<PullRequestReviewerCandidateList, BitbucketPullRequestApiError>;
+    readonly listReviewerCandidates: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+      },
+    ) => Effect.Effect<PullRequestReviewerCandidateList, BitbucketPullRequestApiError>;
 
-    readonly setReviewerRequest: (input: {
-      readonly repository: string;
-      readonly number: number;
-      readonly reviewers: ReadonlyArray<{ readonly id: string }>;
-      readonly requested: boolean;
-    }) => Effect.Effect<void, BitbucketPullRequestApiError>;
+    readonly setReviewerRequest: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+        readonly reviewers: ReadonlyArray<{ readonly id: string }>;
+        readonly requested: boolean;
+      },
+    ) => Effect.Effect<void, BitbucketPullRequestApiError>;
 
-    readonly runAction: (input: {
-      readonly repository: string;
-      readonly number: number;
-      readonly action: PullRequestAction;
-      readonly mergeMethod?: PullRequestMergeMethod;
-    }) => Effect.Effect<void, BitbucketPullRequestApiError>;
+    readonly runAction: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+        readonly action: PullRequestAction;
+        readonly mergeMethod?: PullRequestMergeMethod;
+      },
+    ) => Effect.Effect<void, BitbucketPullRequestApiError>;
 
-    readonly updateChangeRequest: (input: {
-      readonly repository: string;
-      readonly number: number;
-      readonly title?: string | undefined;
-      readonly body?: string | undefined;
-    }) => Effect.Effect<void, BitbucketPullRequestApiError>;
+    readonly updateChangeRequest: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+        readonly title?: string | undefined;
+        readonly body?: string | undefined;
+      },
+    ) => Effect.Effect<void, BitbucketPullRequestApiError>;
 
-    readonly comment: (input: {
-      readonly repository: string;
-      readonly number: number;
-      readonly body: string;
-    }) => Effect.Effect<void, BitbucketPullRequestApiError>;
+    readonly comment: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+        readonly body: string;
+      },
+    ) => Effect.Effect<void, BitbucketPullRequestApiError>;
 
-    readonly updateComment: (input: {
-      readonly repository: string;
-      readonly number: number;
-      readonly commentId: string;
-      readonly body: string;
-    }) => Effect.Effect<void, BitbucketPullRequestApiError>;
+    readonly updateComment: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+        readonly commentId: string;
+        readonly body: string;
+      },
+    ) => Effect.Effect<void, BitbucketPullRequestApiError>;
 
-    readonly submitReview: (input: {
-      readonly repository: string;
-      readonly number: number;
-      readonly verdict: PullRequestReviewVerdict;
-      readonly body: string;
-      readonly comments: ReadonlyArray<PullRequestReviewCommentDraft>;
-    }) => Effect.Effect<void, BitbucketPullRequestApiError>;
+    readonly submitReview: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+        readonly verdict: PullRequestReviewVerdict;
+        readonly body: string;
+        readonly comments: ReadonlyArray<PullRequestReviewCommentDraft>;
+      },
+    ) => Effect.Effect<void, BitbucketPullRequestApiError>;
 
-    readonly replyToComment: (input: {
-      readonly repository: string;
-      readonly number: number;
-      readonly commentId: string;
-      readonly body: string;
-    }) => Effect.Effect<void, BitbucketPullRequestApiError>;
+    readonly replyToComment: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+        readonly commentId: string;
+        readonly body: string;
+      },
+    ) => Effect.Effect<void, BitbucketPullRequestApiError>;
 
-    readonly setCommentResolution: (input: {
-      readonly repository: string;
-      readonly number: number;
-      readonly commentId: string;
-      readonly resolved: boolean;
-    }) => Effect.Effect<void, BitbucketPullRequestApiError>;
+    readonly setCommentResolution: (
+      input: BitbucketOriginTarget & {
+        readonly repository: string;
+        readonly number: number;
+        readonly commentId: string;
+        readonly resolved: boolean;
+      },
+    ) => Effect.Effect<void, BitbucketPullRequestApiError>;
   }
 >()("t3/pullRequest/BitbucketPullRequestApi") {}
 
@@ -386,13 +429,17 @@ export const make = Effect.gen(function* () {
    * kept on rather than on the repository, so both are handed over at once.
    */
   const withRepository = <A>(
-    repository: string,
+    input: BitbucketOriginTarget & { readonly repository: string },
     use: (path: string, workspace: string) => Effect.Effect<A, BitbucketPullRequestApiError>,
   ): Effect.Effect<A, BitbucketPullRequestApiError> => {
-    const segments = repositorySegments(repository);
-    return Result.isSuccess(segments)
-      ? use(repositoryPathOf(segments.success), segments.success.workspace)
-      : Effect.fail(segments.failure);
+    return bitbucket.authorizeOriginHost(input).pipe(
+      Effect.flatMap(() => {
+        const segments = repositorySegments(input.repository);
+        return Result.isSuccess(segments)
+          ? use(repositoryPathOf(segments.success), segments.success.workspace)
+          : Effect.fail(segments.failure);
+      }),
+    );
   };
 
   /**
@@ -525,13 +572,17 @@ export const make = Effect.gen(function* () {
     );
 
   return BitbucketPullRequestApi.of({
-    getViewer: () =>
-      bitbucket.request({ method: "GET", url: "/user" }).pipe(
+    getViewer: (input) =>
+      bitbucket.authorizeOriginHost(input ?? {}).pipe(
+        Effect.flatMap(() => bitbucket.request({ method: "GET", url: "/user" })),
         Effect.flatMap((response): Effect.Effect<string, BitbucketPullRequestApiError> => {
           const decoded = decodeViewerJson(response.body);
           if (!Result.isSuccess(decoded)) {
             return Effect.fail(
-              new BitbucketPullRequestReadError({ operation: "getViewer", cause: decoded.failure }),
+              new BitbucketPullRequestReadError({
+                operation: "getViewer",
+                cause: decoded.failure,
+              }),
             );
           }
           return decoded.success === null
@@ -541,7 +592,7 @@ export const make = Effect.gen(function* () {
       ),
 
     listPullRequests: (input) =>
-      withRepository(input.repository, (path) => {
+      withRepository(input, (path) => {
         const search = input.query?.trim() ?? "";
         // Both narrowings share the one `q` Bitbucket takes, so they are ANDed rather than one
         // replacing the other. The boundary instant is read inclusively — the rows already sent
@@ -566,7 +617,7 @@ export const make = Effect.gen(function* () {
       }),
 
     getPullRequest: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         readPage({
           operation: "getPullRequest",
           url: `${path}/pullrequests/${input.number}`,
@@ -585,7 +636,7 @@ export const make = Effect.gen(function* () {
     // leaves the actual merge or write to say why if the account may not do it. Any other failure
     // (a bad token, a network fault, an unreadable body) still fails as it did before.
     getRepositoryPermission: (input) =>
-      withRepository(input.repository, () =>
+      withRepository(input, () =>
         readPage({
           operation: "getRepositoryPermission",
           url: `/user/permissions/repositories?q=${encodeURIComponent(
@@ -598,7 +649,7 @@ export const make = Effect.gen(function* () {
     getPullRequestDiff: (input) =>
       input.commit !== undefined && !isCommitSha(input.commit)
         ? Effect.fail(new BitbucketDiffCommitError())
-        : withRepository(input.repository, (path) =>
+        : withRepository(input, (path) =>
             // Already a unified patch, so it needs no decoding at all — only a bound, which a
             // diff of any size would otherwise ignore. A commit's own patch sits beside the pull
             // request's at `/diff/{sha}` and reads the same way.
@@ -617,7 +668,7 @@ export const make = Effect.gen(function* () {
           ),
 
     getDiffStat: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         diffStatPages({
           url: `${path}/pullrequests/${input.number}/diffstat?pagelen=${MAX_PAGE_SIZE}`,
           totals: { additions: 0, deletions: 0, changedFiles: 0 },
@@ -625,7 +676,7 @@ export const make = Effect.gen(function* () {
       ),
 
     getMergeability: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         readPage({
           operation: "getMergeability",
           url: `${path}/pullrequests/${input.number}/conflicts`,
@@ -634,7 +685,7 @@ export const make = Effect.gen(function* () {
       ),
 
     listComments: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         commentsPage({
           url: `${path}/pullrequests/${input.number}/comments?pagelen=${CONVERSATION_PAGE_SIZE}`,
           page: 1,
@@ -644,7 +695,7 @@ export const make = Effect.gen(function* () {
       ),
 
     listCommits: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         itemPages({
           operation: "listCommits",
           url: `${path}/pullrequests/${input.number}/commits?pagelen=${CONVERSATION_PAGE_SIZE}`,
@@ -655,7 +706,7 @@ export const make = Effect.gen(function* () {
       ),
 
     listChecks: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         itemPages({
           operation: "listChecks",
           url: `${path}/pullrequests/${input.number}/statuses?pagelen=${CONVERSATION_PAGE_SIZE}`,
@@ -666,7 +717,7 @@ export const make = Effect.gen(function* () {
       ),
 
     listReviewerCandidates: (input) =>
-      withRepository(input.repository, (path, workspace) =>
+      withRepository(input, (path, workspace) =>
         Effect.all(
           [
             readPage({
@@ -700,7 +751,7 @@ export const make = Effect.gen(function* () {
       ),
 
     setReviewerRequest: (input) =>
-      withRepository(input.repository, (path) => {
+      withRepository(input, (path) => {
         const pullRequest = `${path}/pullrequests/${input.number}`;
         return readPage({
           operation: "getPullRequest",
@@ -728,7 +779,7 @@ export const make = Effect.gen(function* () {
       }),
 
     runAction: (input) =>
-      withRepository(input.repository, (path) => {
+      withRepository(input, (path) => {
         const pullRequest = `${path}/pullrequests/${input.number}`;
         // Only merge and close reach here: the provider declares the others unsupported, so the
         // surface never offers them.
@@ -747,7 +798,7 @@ export const make = Effect.gen(function* () {
       }),
 
     updateChangeRequest: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         // Only the words this call rewrites travel in the body: as `setReviewerRequest` above
         // relies on, Bitbucket's PUT is a partial update, so any field left out is left as it
         // was — sending `reviewers` back here would overwrite a change another user made to it
@@ -765,7 +816,7 @@ export const make = Effect.gen(function* () {
       ),
 
     comment: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         bitbucket
           .request({
             method: "POST",
@@ -777,7 +828,7 @@ export const make = Effect.gen(function* () {
       ),
 
     updateComment: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         bitbucket
           .request({
             // Bitbucket keeps a pull request's remarks and its line comments in the one
@@ -792,7 +843,7 @@ export const make = Effect.gen(function* () {
       ),
 
     submitReview: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         Effect.gen(function* () {
           const pullRequest = `${path}/pullrequests/${input.number}`;
           // Bitbucket has no pending review, so a review is replayed as the requests it is
@@ -832,7 +883,7 @@ export const make = Effect.gen(function* () {
       ),
 
     replyToComment: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         bitbucket
           .request({
             method: "POST",
@@ -846,7 +897,7 @@ export const make = Effect.gen(function* () {
       ),
 
     setCommentResolution: (input) =>
-      withRepository(input.repository, (path) =>
+      withRepository(input, (path) =>
         bitbucket
           .request({
             // Resolving is a sub-resource that is created and deleted, rather than a field.

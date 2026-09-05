@@ -12,6 +12,7 @@ import {
   getCloneDirectoryName,
   getDefaultCloneUrl,
   normalizePastedCloneUrl,
+  resolveAddProjectRepositoryLookupTarget,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
   type AddProjectRemoteSource,
@@ -661,6 +662,14 @@ export function AddProjectRepositoryScreen(props: {
   const navigation = useNavigation();
   const environment = useEnvironmentFromParam(props.environmentId);
   const source = sourceFromParam(props.source);
+  const discoveryState = useEnvironmentQuery(
+    environment === null
+      ? null
+      : sourceControlEnvironment.discovery({
+          environmentId: environment.environmentId,
+          input: {},
+        }),
+  );
   const [repositoryInput, setRepositoryInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -685,11 +694,27 @@ export function AddProjectRepositoryScreen(props: {
       return;
     }
 
+    const lookupTarget = resolveAddProjectRepositoryLookupTarget({
+      source: provider,
+      repository: repositoryInput,
+      discovery: discoveryState.data,
+    });
+    if (!lookupTarget) {
+      setError(
+        provider === "azure-devops"
+          ? "Enter an Azure repository as organization/project/repository."
+          : "Rescan Source Control after signing in to the intended provider endpoint.",
+      );
+      setIsSubmitting(false);
+      return;
+    }
+
     const result = await lookupRepositoryQuery({
       environmentId: environment.environmentId,
       input: {
         provider,
-        repository: repositoryInput.trim(),
+        providerBaseUrl: lookupTarget.providerBaseUrl,
+        repository: lookupTarget.repository,
       },
     });
     if (AsyncResult.isFailure(result)) {
@@ -707,7 +732,15 @@ export function AddProjectRepositoryScreen(props: {
       );
     }
     setIsSubmitting(false);
-  }, [environment, isSubmitting, lookupRepositoryQuery, repositoryInput, navigation, source]);
+  }, [
+    discoveryState.data,
+    environment,
+    isSubmitting,
+    lookupRepositoryQuery,
+    repositoryInput,
+    navigation,
+    source,
+  ]);
 
   return (
     <AddProjectShell>

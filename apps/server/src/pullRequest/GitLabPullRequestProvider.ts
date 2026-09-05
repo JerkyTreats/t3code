@@ -1,3 +1,4 @@
+import { requireGitLabPullRequestTarget } from "../fork/originHostedProviderPolicy.ts";
 import * as Effect from "effect/Effect";
 import type {
   PullRequestCapabilities,
@@ -117,36 +118,45 @@ export const make = Effect.gen(function* () {
     capabilities: CAPABILITIES,
 
     getViewer: (input) =>
-      cli.getViewerUsername({ cwd: input.cwd }).pipe(Effect.mapError(fail("getViewer"))),
+      cli
+        .getViewerUsername({ cwd: input.cwd, host: input.host })
+        .pipe(Effect.mapError(fail("getViewer"))),
 
     listChangeRequests: (input) =>
-      cli
-        .listMergeRequests({
-          cwd: input.cwd,
-          repository: input.repository,
-          state: input.state,
-          involvement: input.involvement,
-          viewer: input.viewer,
-          limit: input.limit,
-          query: input.query,
-          cursor: input.cursor,
-        })
-        .pipe(
-          Effect.mapError(fail("listChangeRequests")),
-          // GitLab is asked for its merge requests by update, newest first, whether or not it is
-          // being carried on from — so every page it answers is one a cursor can continue.
-          Effect.map((batch) => ({ ...batch, continues: true })),
+      requireGitLabPullRequestTarget({
+        operation: "listChangeRequests",
+        origin: input.origin,
+      }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .listMergeRequests({
+              cwd: input.cwd,
+              ...target,
+              state: input.state,
+              involvement: input.involvement,
+              viewer: input.viewer,
+              limit: input.limit,
+              query: input.query,
+              cursor: input.cursor,
+            })
+            .pipe(Effect.mapError(fail("listChangeRequests"))),
         ),
+        // GitLab is asked for its merge requests by update, newest first, whether or not it is
+        // being carried on from — so every page it answers is one a cursor can continue.
+        Effect.map((batch) => ({ ...batch, continues: true })),
+      ),
 
     getChangeRequest: (input) =>
-      Effect.all(
-        [
-          cli.getMergeRequestDetail(input),
-          cli.getProjectMergeCapabilities({ cwd: input.cwd, repository: input.repository }),
-        ],
-        { concurrency: 2 },
-      ).pipe(
-        Effect.mapError(fail("getChangeRequest")),
+      requireGitLabPullRequestTarget({ operation: "getChangeRequest", origin: input.origin }).pipe(
+        Effect.flatMap((target) =>
+          Effect.all(
+            [
+              cli.getMergeRequestDetail({ cwd: input.cwd, ...target, number: input.number }),
+              cli.getProjectMergeCapabilities({ cwd: input.cwd, ...target }),
+            ],
+            { concurrency: 2 },
+          ).pipe(Effect.mapError(fail("getChangeRequest"))),
+        ),
         Effect.map(([mergeRequest, mergeCapabilities]): ProviderChangeRequestDetail => ({
           ...mergeRequest,
           mergeCapabilities,
@@ -166,27 +176,33 @@ export const make = Effect.gen(function* () {
       ),
 
     getChangeRequestActivity: (input) =>
-      Effect.all(
-        [
-          cli
-            .listNotes(input)
-            .pipe(Effect.orElseSucceed(() => ({ comments: [], truncated: true }))),
-          cli.listCommits(input).pipe(Effect.orElseSucceed(() => [])),
-          cli
-            .listDiscussions(input)
-            .pipe(Effect.orElseSucceed(() => ({ threads: [], truncated: true }))),
-          // The notes endpoint carries no award of any kind, so they are read alongside it. A
-          // failed read costs the conversation its reactions rather than its words.
-          cli.listReactions(input).pipe(
-            Effect.orElseSucceed(() => ({
-              reactions: [] as ReadonlyArray<PullRequestReaction>,
-              reactionsByNoteId: new Map<string, ReadonlyArray<PullRequestReaction>>(),
-            })),
-          ),
-        ],
-        { concurrency: 4 },
-      ).pipe(
-        Effect.mapError(fail("getChangeRequestActivity")),
+      requireGitLabPullRequestTarget({
+        operation: "getChangeRequestActivity",
+        origin: input.origin,
+      }).pipe(
+        Effect.flatMap((target) => {
+          const exactInput = { cwd: input.cwd, ...target, number: input.number };
+          return Effect.all(
+            [
+              cli
+                .listNotes(exactInput)
+                .pipe(Effect.orElseSucceed(() => ({ comments: [], truncated: true }))),
+              cli.listCommits(exactInput).pipe(Effect.orElseSucceed(() => [])),
+              cli
+                .listDiscussions(exactInput)
+                .pipe(Effect.orElseSucceed(() => ({ threads: [], truncated: true }))),
+              // The notes endpoint carries no award of any kind, so they are read alongside it. A
+              // failed read costs the conversation its reactions rather than its words.
+              cli.listReactions(exactInput).pipe(
+                Effect.orElseSucceed(() => ({
+                  reactions: [] as ReadonlyArray<PullRequestReaction>,
+                  reactionsByNoteId: new Map<string, ReadonlyArray<PullRequestReaction>>(),
+                })),
+              ),
+            ],
+            { concurrency: 4 },
+          );
+        }),
         Effect.map(([notes, commits, discussions, awards]): ProviderChangeRequestActivity => ({
           reactions: awards.reactions,
           comments: notes.comments.map((comment) => ({
@@ -212,106 +228,193 @@ export const make = Effect.gen(function* () {
     // The same read the detail takes it from, on its own: `user.can_merge` lives on the merge
     // request, so there is no cheaper thing to ask GitLab.
     getViewerPermissions: (input) =>
-      cli
-        .getMergeRequestDetail(input)
-        .pipe(Effect.mapError(fail("getViewerPermissions")), Effect.map(gitLabViewerPermissions)),
+      requireGitLabPullRequestTarget({
+        operation: "getViewerPermissions",
+        origin: input.origin,
+      }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .getMergeRequestDetail({ cwd: input.cwd, ...target, number: input.number })
+            .pipe(Effect.mapError(fail("getViewerPermissions"))),
+        ),
+        Effect.map(gitLabViewerPermissions),
+      ),
 
-    getDiff: (input) => cli.getMergeRequestDiff(input).pipe(Effect.mapError(fail("getDiff"))),
+    getDiff: (input) =>
+      requireGitLabPullRequestTarget({ operation: "getDiff", origin: input.origin }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .getMergeRequestDiff({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+              ...(input.commit === undefined ? {} : { commit: input.commit }),
+            })
+            .pipe(Effect.mapError(fail("getDiff"))),
+        ),
+      ),
 
     // Users only: GitLab requests a review of a person, and the groups that can stand in for one
     // appear in approval rules rather than in a merge request's reviewers.
     listReviewerCandidates: (input) =>
-      cli
-        .listReviewerCandidates({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-        })
-        .pipe(Effect.mapError(fail("listReviewerCandidates"))),
+      requireGitLabPullRequestTarget({
+        operation: "listReviewerCandidates",
+        origin: input.origin,
+      }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .listReviewerCandidates({ cwd: input.cwd, ...target, number: input.number })
+            .pipe(Effect.mapError(fail("listReviewerCandidates"))),
+        ),
+      ),
 
     setReviewerRequest: (input) =>
-      cli
-        .setReviewerRequest({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          reviewers: input.reviewers,
-          requested: input.requested,
-        })
-        .pipe(Effect.mapError(fail("setReviewerRequest"))),
+      requireGitLabPullRequestTarget({
+        operation: "setReviewerRequest",
+        origin: input.origin,
+      }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .setReviewerRequest({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              reviewers: input.reviewers,
+              requested: input.requested,
+            })
+            .pipe(Effect.mapError(fail("setReviewerRequest"))),
+        ),
+      ),
 
     runAction: (input) =>
-      cli
-        .runMergeRequestAction({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          action: input.action,
-          ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
-        })
-        .pipe(Effect.mapError(fail("runAction"))),
+      requireGitLabPullRequestTarget({ operation: "runAction", origin: input.origin }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .runMergeRequestAction({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              action: input.action,
+              ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
+            })
+            .pipe(Effect.mapError(fail("runAction"))),
+        ),
+      ),
 
     updateChangeRequest: (input) =>
-      cli
-        .updateMergeRequest({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          ...(input.title === undefined ? {} : { title: input.title }),
-          ...(input.body === undefined ? {} : { description: input.body }),
-        })
-        .pipe(Effect.mapError(fail("updateChangeRequest"))),
+      requireGitLabPullRequestTarget({
+        operation: "updateChangeRequest",
+        origin: input.origin,
+      }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .updateMergeRequest({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              ...(input.title === undefined ? {} : { title: input.title }),
+              ...(input.body === undefined ? {} : { description: input.body }),
+            })
+            .pipe(Effect.mapError(fail("updateChangeRequest"))),
+        ),
+      ),
 
-    comment: (input) => cli.commentOnMergeRequest(input).pipe(Effect.mapError(fail("comment"))),
+    comment: (input) =>
+      requireGitLabPullRequestTarget({ operation: "comment", origin: input.origin }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .commentOnMergeRequest({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              body: input.body,
+            })
+            .pipe(Effect.mapError(fail("comment"))),
+        ),
+      ),
 
     // The kind is not read: every comment this provider hands out, positioned or not, carries a
     // plain REST note id, and one endpoint rewrites both.
     updateComment: (input) =>
-      cli
-        .updateNote({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          noteId: input.commentId,
-          body: input.body,
-        })
-        .pipe(Effect.mapError(fail("updateComment"))),
+      requireGitLabPullRequestTarget({ operation: "updateComment", origin: input.origin }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .updateNote({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              noteId: input.commentId,
+              body: input.body,
+            })
+            .pipe(Effect.mapError(fail("updateComment"))),
+        ),
+      ),
 
-    submitReview: (input) => cli.submitReview(input).pipe(Effect.mapError(fail("submitReview"))),
+    submitReview: (input) =>
+      requireGitLabPullRequestTarget({ operation: "submitReview", origin: input.origin }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .submitReview({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              verdict: input.verdict,
+              body: input.body,
+              comments: input.comments,
+            })
+            .pipe(Effect.mapError(fail("submitReview"))),
+        ),
+      ),
 
     replyToThread: (input) =>
-      cli
-        .replyToDiscussion({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          discussionId: input.threadId,
-          body: input.body,
-        })
-        .pipe(Effect.mapError(fail("replyToThread"))),
+      requireGitLabPullRequestTarget({ operation: "replyToThread", origin: input.origin }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .replyToDiscussion({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              discussionId: input.threadId,
+              body: input.body,
+            })
+            .pipe(Effect.mapError(fail("replyToThread"))),
+        ),
+      ),
 
     setReaction: (input) =>
-      cli
-        .setReaction({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          ...(input.subjectId === undefined ? {} : { noteId: input.subjectId }),
-          content: input.content,
-          reacted: input.reacted,
-        })
-        .pipe(Effect.mapError(fail("setReaction"))),
+      requireGitLabPullRequestTarget({ operation: "setReaction", origin: input.origin }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .setReaction({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              ...(input.subjectId === undefined ? {} : { noteId: input.subjectId }),
+              content: input.content,
+              reacted: input.reacted,
+            })
+            .pipe(Effect.mapError(fail("setReaction"))),
+        ),
+      ),
 
     setThreadResolution: (input) =>
-      cli
-        .setDiscussionResolution({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          discussionId: input.threadId,
-          resolved: input.resolved,
-        })
-        .pipe(Effect.mapError(fail("setThreadResolution"))),
+      requireGitLabPullRequestTarget({
+        operation: "setThreadResolution",
+        origin: input.origin,
+      }).pipe(
+        Effect.flatMap((target) =>
+          cli
+            .setDiscussionResolution({
+              cwd: input.cwd,
+              ...target,
+              number: input.number,
+              discussionId: input.threadId,
+              resolved: input.resolved,
+            })
+            .pipe(Effect.mapError(fail("setThreadResolution"))),
+        ),
+      ),
   };
 
   return provider;

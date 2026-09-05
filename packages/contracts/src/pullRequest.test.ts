@@ -7,6 +7,7 @@ import {
   PullRequestListInput,
   PullRequestListResult,
   PullRequestReviewerRequestInput,
+  pullRequestHostOf,
   resolvePullRequestAuthorFilter,
 } from "./pullRequest.ts";
 
@@ -86,6 +87,53 @@ describe("PullRequestListResult", () => {
 
     expect(decoded.viewers["github.com"]).toBe("bilal");
     expect(decoded.viewers["github.acme.dev"]).toBe("b.hassan");
+  });
+});
+
+describe("pullRequestHostOf", () => {
+  it("preserves the exact origin port for self-hosted GitHub", () => {
+    expect(
+      pullRequestHostOf(
+        {
+          canonicalKey: "github.example.test/acme/web",
+          locator: {
+            remoteName: "origin",
+            remoteUrl: "https://github.example.test:8443/acme/web.git",
+          },
+        },
+        "github",
+      ),
+    ).toBe("github.example.test:8443");
+  });
+
+  it("preserves the exact origin port for self-hosted GitLab", () => {
+    expect(
+      pullRequestHostOf(
+        {
+          canonicalKey: "gitlab.example.test/acme/web",
+          locator: {
+            remoteName: "origin",
+            remoteUrl: "https://gitlab.example.test:9443/acme/web.git",
+          },
+        },
+        "gitlab",
+      ),
+    ).toBe("gitlab.example.test:9443");
+  });
+
+  it("does not let a non-origin locator override the canonical host", () => {
+    expect(
+      pullRequestHostOf(
+        {
+          canonicalKey: "github.com/acme/web",
+          locator: {
+            remoteName: "upstream",
+            remoteUrl: "https://github.example.test:8443/acme/web.git",
+          },
+        },
+        "github",
+      ),
+    ).toBe("github.com");
   });
 });
 

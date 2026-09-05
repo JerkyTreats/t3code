@@ -1,3 +1,4 @@
+import { requireGitHubRepository } from "../fork/originHostedProviderPolicy.ts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -115,81 +116,21 @@ export const make = Effect.gen(function* () {
   const listChangeRequests: SourceControlProvider.SourceControlProvider["Service"]["listChangeRequests"] =
     (input) => {
       if (input.state === "open") {
-        return github
-          .listOpenPullRequests({
-            cwd: input.cwd,
-            headSelector: input.headSelector,
-            ...(input.limit !== undefined ? { limit: input.limit } : {}),
-          })
-          .pipe(
-            Effect.map((items) => items.map(toChangeRequest)),
-            Effect.mapError(
-              (error) =>
-                new SourceControlProviderError({
-                  provider: "github",
-                  operation: "listChangeRequests",
-                  command: error.command,
-                  cwd: input.cwd,
-                  reference: SourceControlProvider.transportSafeSourceControlErrorValue(
-                    input.headSelector,
-                  ),
-                  detail: error.detail,
-                  cause: error,
-                }),
-            ),
-          );
-      }
-
-      const stateArg: ChangeRequestState | "all" = input.state;
-      return github
-        .execute({
+        return requireGitHubRepository({
           cwd: input.cwd,
-          args: [
-            "pr",
-            "list",
-            "--head",
-            input.headSelector,
-            "--state",
-            stateArg,
-            "--limit",
-            String(input.limit ?? 20),
-            "--json",
-            "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
-          ],
-        })
-        .pipe(
-          Effect.flatMap((result) => {
-            const raw = result.stdout.trim();
-            if (raw.length === 0) {
-              return Effect.succeed([]);
-            }
-            return Effect.sync(() => decodeGitHubPullRequestListJson(raw)).pipe(
-              Effect.flatMap((decoded) =>
-                Result.isSuccess(decoded)
-                  ? Effect.succeed(
-                      decoded.success.map((item) => {
-                        const { updatedAt, ...summary } = item;
-                        return {
-                          ...toChangeRequest({
-                            ...summary,
-                            ...(Option.isSome(updatedAt)
-                              ? { updatedAt: DateTime.formatIso(updatedAt.value) }
-                              : {}),
-                          }),
-                          updatedAt,
-                        };
-                      }),
-                    )
-                  : Effect.fail(
-                      new GitHubCli.GitHubChangeRequestListDecodeError({
-                        command: "gh",
-                        cwd: input.cwd,
-                        cause: decoded.failure,
-                      }),
-                    ),
-              ),
-            );
-          }),
+          operation: "listChangeRequests",
+          context: input.context,
+          reference: input.headSelector,
+        }).pipe(
+          Effect.flatMap((repository) =>
+            github.listOpenPullRequests({
+              cwd: input.cwd,
+              repository,
+              headSelector: input.headSelector,
+              ...(input.limit !== undefined ? { limit: input.limit } : {}),
+            }),
+          ),
+          Effect.map((items) => items.map(toChangeRequest)),
           Effect.mapError(
             (error) =>
               new SourceControlProviderError({
@@ -205,13 +146,94 @@ export const make = Effect.gen(function* () {
               }),
           ),
         );
+      }
+
+      const stateArg: ChangeRequestState | "all" = input.state;
+      return requireGitHubRepository({
+        cwd: input.cwd,
+        operation: "listChangeRequests",
+        context: input.context,
+        reference: input.headSelector,
+      }).pipe(
+        Effect.flatMap((repository) =>
+          github.execute({
+            cwd: input.cwd,
+            args: [
+              "pr",
+              "list",
+              "--repo",
+              repository,
+              "--head",
+              input.headSelector,
+              "--state",
+              stateArg,
+              "--limit",
+              String(input.limit ?? 20),
+              "--json",
+              "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+            ],
+          }),
+        ),
+        Effect.flatMap((result) => {
+          const raw = result.stdout.trim();
+          if (raw.length === 0) {
+            return Effect.succeed([]);
+          }
+          return Effect.sync(() => decodeGitHubPullRequestListJson(raw)).pipe(
+            Effect.flatMap((decoded) =>
+              Result.isSuccess(decoded)
+                ? Effect.succeed(
+                    decoded.success.map((item) => {
+                      const { updatedAt, ...summary } = item;
+                      return {
+                        ...toChangeRequest({
+                          ...summary,
+                          ...(Option.isSome(updatedAt)
+                            ? { updatedAt: DateTime.formatIso(updatedAt.value) }
+                            : {}),
+                        }),
+                        updatedAt,
+                      };
+                    }),
+                  )
+                : Effect.fail(
+                    new GitHubCli.GitHubChangeRequestListDecodeError({
+                      command: "gh",
+                      cwd: input.cwd,
+                      cause: decoded.failure,
+                    }),
+                  ),
+            ),
+          );
+        }),
+        Effect.mapError(
+          (error) =>
+            new SourceControlProviderError({
+              provider: "github",
+              operation: "listChangeRequests",
+              command: error.command,
+              cwd: input.cwd,
+              reference: SourceControlProvider.transportSafeSourceControlErrorValue(
+                input.headSelector,
+              ),
+              detail: error.detail,
+              cause: error,
+            }),
+        ),
+      );
     };
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: "github",
     listChangeRequests,
     getChangeRequest: (input) =>
-      github.getPullRequest(input).pipe(
+      requireGitHubRepository({
+        cwd: input.cwd,
+        operation: "getChangeRequest",
+        context: input.context,
+        reference: input.reference,
+      }).pipe(
+        Effect.flatMap((repository) => github.getPullRequest({ ...input, repository })),
         Effect.map(toChangeRequest),
         Effect.mapError(
           (error) =>
@@ -229,49 +251,95 @@ export const make = Effect.gen(function* () {
         ),
       ),
     createChangeRequest: (input) =>
-      github
-        .createPullRequest({
-          cwd: input.cwd,
-          baseBranch: input.baseRefName,
-          headSelector: input.headSelector,
-          title: input.title,
-          bodyFile: input.bodyFile,
-        })
-        .pipe(
-          Effect.mapError(
-            (error) =>
-              new SourceControlProviderError({
-                provider: "github",
-                operation: "createChangeRequest",
-                command: error.command,
-                cwd: input.cwd,
-                reference: SourceControlProvider.transportSafeSourceControlErrorValue(
-                  input.headSelector,
-                ),
-                detail: error.detail,
-                cause: error,
-              }),
-          ),
+      requireGitHubRepository({
+        cwd: input.cwd,
+        operation: "createChangeRequest",
+        context: input.context,
+        reference: input.headSelector,
+      }).pipe(
+        Effect.flatMap((repository) =>
+          github.createPullRequest({
+            cwd: input.cwd,
+            repository,
+            baseBranch: input.baseRefName,
+            headSelector: input.headSelector,
+            title: input.title,
+            bodyFile: input.bodyFile,
+          }),
         ),
-    getRepositoryCloneUrls: (input) =>
-      github.getRepositoryCloneUrls(input).pipe(
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
               provider: "github",
-              operation: "getRepositoryCloneUrls",
+              operation: "createChangeRequest",
               command: error.command,
               cwd: input.cwd,
-              repository: SourceControlProvider.transportSafeSourceControlErrorValue(
-                input.repository,
+              reference: SourceControlProvider.transportSafeSourceControlErrorValue(
+                input.headSelector,
               ),
               detail: error.detail,
               cause: error,
             }),
         ),
       ),
-    createRepository: (input) =>
-      github.createRepository(input).pipe(
+    getRepositoryCloneUrls: (input) => {
+      const contextHost = input.context
+        ? SourceControlProvider.providerHostFromBaseUrl(input.context.provider.baseUrl)
+        : input.providerBaseUrl
+          ? SourceControlProvider.providerHostFromBaseUrl(input.providerBaseUrl)
+          : null;
+      if (contextHost === null) {
+        return Effect.fail(
+          new SourceControlProviderError({
+            provider: "github",
+            operation: "getRepositoryCloneUrls",
+            cwd: input.cwd,
+            repository: SourceControlProvider.transportSafeSourceControlErrorValue(
+              input.repository,
+            ),
+            detail: "An explicit GitHub provider endpoint is required.",
+          }),
+        );
+      }
+      return github
+        .getRepositoryCloneUrls({
+          cwd: input.cwd,
+          host: contextHost,
+          repository: input.repository,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: "github",
+                operation: "getRepositoryCloneUrls",
+                command: error.command,
+                cwd: input.cwd,
+                repository: SourceControlProvider.transportSafeSourceControlErrorValue(
+                  input.repository,
+                ),
+                detail: error.detail,
+                cause: error,
+              }),
+          ),
+        );
+    },
+    createRepository: (input) => {
+      const host = SourceControlProvider.providerHostFromBaseUrl(input.providerBaseUrl);
+      if (host === null) {
+        return Effect.fail(
+          new SourceControlProviderError({
+            provider: "github",
+            operation: "createRepository",
+            cwd: input.cwd,
+            repository: SourceControlProvider.transportSafeSourceControlErrorValue(
+              input.repository,
+            ),
+            detail: "The GitHub provider endpoint is invalid.",
+          }),
+        );
+      }
+      return github.createRepository({ ...input, host }).pipe(
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
@@ -286,9 +354,16 @@ export const make = Effect.gen(function* () {
               cause: error,
             }),
         ),
-      ),
+      );
+    },
     getDefaultBranch: (input) =>
-      github.getDefaultBranch(input).pipe(
+      requireGitHubRepository({
+        cwd: input.cwd,
+        operation: "getDefaultBranch",
+        context: input.context,
+        reference: undefined,
+      }).pipe(
+        Effect.flatMap((repository) => github.getDefaultBranch({ ...input, repository })),
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({
@@ -302,7 +377,13 @@ export const make = Effect.gen(function* () {
         ),
       ),
     checkoutChangeRequest: (input) =>
-      github.checkoutPullRequest(input).pipe(
+      requireGitHubRepository({
+        cwd: input.cwd,
+        operation: "checkoutChangeRequest",
+        context: input.context,
+        reference: input.reference,
+      }).pipe(
+        Effect.flatMap((repository) => github.checkoutPullRequest({ ...input, repository })),
         Effect.mapError(
           (error) =>
             new SourceControlProviderError({

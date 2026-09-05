@@ -1,3 +1,4 @@
+import { originChangeRequestSelector } from "../fork/originHostedProviderPolicy.ts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -240,28 +241,33 @@ export class GitHubCli extends Context.Service<
 
     readonly listOpenPullRequests: (input: {
       readonly cwd: string;
+      readonly repository: string;
       readonly headSelector: string;
       readonly limit?: number;
     }) => Effect.Effect<ReadonlyArray<GitHubPullRequestSummary>, GitHubCliError>;
 
     readonly getPullRequest: (input: {
       readonly cwd: string;
+      readonly repository: string;
       readonly reference: string;
     }) => Effect.Effect<GitHubPullRequestSummary, GitHubCliError>;
 
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
     }) => Effect.Effect<GitHubRepositoryCloneUrls, GitHubCliError>;
 
     readonly createRepository: (input: {
       readonly cwd: string;
+      readonly host: string;
       readonly repository: string;
       readonly visibility: SourceControlRepositoryVisibility;
     }) => Effect.Effect<GitHubRepositoryCloneUrls, GitHubCliError>;
 
     readonly createPullRequest: (input: {
       readonly cwd: string;
+      readonly repository: string;
       readonly baseBranch: string;
       readonly headSelector: string;
       readonly title: string;
@@ -270,10 +276,12 @@ export class GitHubCli extends Context.Service<
 
     readonly getDefaultBranch: (input: {
       readonly cwd: string;
+      readonly repository: string;
     }) => Effect.Effect<string | null, GitHubCliError>;
 
     readonly checkoutPullRequest: (input: {
       readonly cwd: string;
+      readonly repository: string;
       readonly reference: string;
       readonly force?: boolean;
     }) => Effect.Effect<void, GitHubCliError>;
@@ -299,43 +307,6 @@ function normalizeRepositoryCloneUrls(
   };
 }
 
-/**
- * `gh repo create` prints the canonical URL of the new repository on stdout
- * (e.g. `https://github.com/owner/repo`). Reading it back here avoids a
- * follow-up `gh repo view`, which can race GitHub's GraphQL eventual
- * consistency window and falsely report the just-created repo as missing.
- */
-function deriveRepositoryCloneUrlsFromCreateOutput(
-  stdout: string,
-  repository: string,
-): GitHubRepositoryCloneUrls {
-  const fallbackHost = "github.com";
-  const match = stdout.match(/https?:\/\/[^\s]+/);
-  if (match) {
-    const cleaned = match[0].replace(/\.git$/, "");
-    try {
-      const parsed = new URL(cleaned);
-      const pathname = parsed.pathname.replace(/^\/+|\/+$/g, "");
-      const segments = pathname.split("/").filter(Boolean);
-      if (segments.length === 2) {
-        const nameWithOwner = `${segments[0]}/${segments[1]}`;
-        return {
-          nameWithOwner,
-          url: `${parsed.origin}/${nameWithOwner}`,
-          sshUrl: `git@${parsed.host}:${nameWithOwner}.git`,
-        };
-      }
-    } catch {
-      // Fall through to the input-derived defaults below.
-    }
-  }
-  return {
-    nameWithOwner: repository,
-    url: `https://${fallbackHost}/${repository}`,
-    sshUrl: `git@${fallbackHost}:${repository}.git`,
-  };
-}
-
 export const make = Effect.gen(function* () {
   const process = yield* VcsProcess.VcsProcess;
 
@@ -352,6 +323,29 @@ export const make = Effect.gen(function* () {
       })
       .pipe(Effect.mapError((error) => fromVcsError({ command: "gh", cwd: input.cwd }, error)));
 
+  const changeRequestSelector = (input: {
+    readonly cwd: string;
+    readonly repository: string;
+    readonly reference: string;
+  }): Effect.Effect<string, GitHubCliCommandError> => {
+    const selector = originChangeRequestSelector({
+      provider: "github",
+      repository: input.repository,
+      reference: input.reference,
+    });
+    return selector === null
+      ? Effect.fail(
+          new GitHubCliCommandError({
+            command: "gh",
+            cwd: input.cwd,
+            cause: new Error(
+              "Origin-only policy rejected a change-request URL outside the exact origin repository.",
+            ),
+          }),
+        )
+      : Effect.succeed(selector);
+  };
+
   return GitHubCli.of({
     execute,
     listOpenPullRequests: (input) =>
@@ -360,6 +354,8 @@ export const make = Effect.gen(function* () {
         args: [
           "pr",
           "list",
+          "--repo",
+          input.repository,
           "--head",
           input.headSelector,
           "--state",
@@ -392,16 +388,21 @@ export const make = Effect.gen(function* () {
         ),
       ),
     getPullRequest: (input) =>
-      execute({
-        cwd: input.cwd,
-        args: [
-          "pr",
-          "view",
-          input.reference,
-          "--json",
-          "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
-        ],
-      }).pipe(
+      changeRequestSelector(input).pipe(
+        Effect.flatMap((reference) =>
+          execute({
+            cwd: input.cwd,
+            args: [
+              "pr",
+              "view",
+              reference,
+              "--repo",
+              input.repository,
+              "--json",
+              "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
+            ],
+          }),
+        ),
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
           Effect.sync(() => decodeGitHubPullRequestJson(raw)).pipe(
@@ -424,7 +425,14 @@ export const make = Effect.gen(function* () {
     getRepositoryCloneUrls: (input) =>
       execute({
         cwd: input.cwd,
-        args: ["repo", "view", input.repository, "--json", "nameWithOwner,url,sshUrl"],
+        args: [
+          "api",
+          "--hostname",
+          input.host,
+          `repos/${input.repository}`,
+          "--jq",
+          "{nameWithOwner: .full_name, url: .html_url, sshUrl: .ssh_url}",
+        ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
@@ -441,21 +449,76 @@ export const make = Effect.gen(function* () {
         ),
         Effect.map(normalizeRepositoryCloneUrls),
       ),
-    createRepository: (input) =>
-      execute({
+    createRepository: (input) => {
+      const repositorySegments = input.repository.split("/");
+      const owner = repositorySegments[0];
+      const name = repositorySegments[1];
+      if (
+        repositorySegments.length !== 2 ||
+        owner === undefined ||
+        owner.length === 0 ||
+        name === undefined ||
+        name.length === 0
+      ) {
+        return Effect.fail(
+          new GitHubCliCommandError({
+            command: "gh",
+            cwd: input.cwd,
+            cause: new Error("GitHub repository must use owner/name syntax."),
+          }),
+        );
+      }
+
+      return execute({
         cwd: input.cwd,
-        args: ["repo", "create", input.repository, `--${input.visibility}`],
+        args: ["api", "--hostname", input.host, "user", "--jq", ".login"],
       }).pipe(
-        Effect.map((result) =>
-          deriveRepositoryCloneUrlsFromCreateOutput(result.stdout, input.repository),
+        Effect.flatMap((viewerResult) => {
+          const isUserRepository = viewerResult.stdout.trim().toLowerCase() === owner.toLowerCase();
+          const endpoint = isUserRepository ? "user/repos" : `orgs/${owner}/repos`;
+          return execute({
+            cwd: input.cwd,
+            args: [
+              "api",
+              "--hostname",
+              input.host,
+              "--method",
+              "POST",
+              endpoint,
+              "--raw-field",
+              `name=${name}`,
+              ...(isUserRepository
+                ? ["--field", `private=${input.visibility === "private"}`]
+                : ["--raw-field", `visibility=${input.visibility}`]),
+              "--jq",
+              "{nameWithOwner: .full_name, url: .html_url, sshUrl: .ssh_url}",
+            ],
+          });
+        }),
+        Effect.map((result) => result.stdout.trim()),
+        Effect.flatMap((raw) =>
+          decodeRawGitHubRepositoryCloneUrls(raw).pipe(
+            Effect.mapError(
+              (cause) =>
+                new GitHubRepositoryDecodeError({
+                  command: "gh",
+                  cwd: input.cwd,
+                  cause,
+                }),
+            ),
+          ),
         ),
-      ),
+        Effect.map(normalizeRepositoryCloneUrls),
+      );
+    },
     createPullRequest: (input) =>
       execute({
         cwd: input.cwd,
         args: [
           "pr",
           "create",
+          "--repo",
+          input.repository,
           "--base",
           input.baseBranch,
           "--head",
@@ -469,7 +532,15 @@ export const make = Effect.gen(function* () {
     getDefaultBranch: (input) =>
       execute({
         cwd: input.cwd,
-        args: ["repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"],
+        args: [
+          "repo",
+          "view",
+          input.repository,
+          "--json",
+          "defaultBranchRef",
+          "--jq",
+          ".defaultBranchRef.name",
+        ],
       }).pipe(
         Effect.map((value) => {
           const trimmed = value.stdout.trim();
@@ -477,10 +548,22 @@ export const make = Effect.gen(function* () {
         }),
       ),
     checkoutPullRequest: (input) =>
-      execute({
-        cwd: input.cwd,
-        args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
-      }).pipe(Effect.asVoid),
+      changeRequestSelector(input).pipe(
+        Effect.flatMap((reference) =>
+          execute({
+            cwd: input.cwd,
+            args: [
+              "pr",
+              "checkout",
+              reference,
+              "--repo",
+              input.repository,
+              ...(input.force ? ["--force"] : []),
+            ],
+          }),
+        ),
+        Effect.asVoid,
+      ),
   });
 });
 

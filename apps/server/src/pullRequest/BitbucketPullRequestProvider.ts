@@ -123,11 +123,13 @@ export const make = Effect.gen(function* () {
 
     // Bitbucket credentials come from the server's environment rather than a checkout, so the
     // account is the same whichever workspace asks.
-    getViewer: () => api.getViewer().pipe(Effect.mapError(fail("getViewer"))),
+    getViewer: (input) =>
+      api.getViewer({ originHost: input.host }).pipe(Effect.mapError(fail("getViewer"))),
 
     listChangeRequests: (input) =>
       api
         .listPullRequests({
+          originHost: input.host,
           repository: input.repository,
           state: input.state,
           limit: input.limit,
@@ -146,7 +148,11 @@ export const make = Effect.gen(function* () {
         ),
 
     getChangeRequest: (input) => {
-      const target = { repository: input.repository, number: input.number };
+      const target = {
+        originHost: input.host,
+        repository: input.repository,
+        number: input.number,
+      };
       return Effect.all(
         [
           api.getPullRequest(target),
@@ -189,7 +195,11 @@ export const make = Effect.gen(function* () {
     },
 
     getChangeRequestActivity: (input) => {
-      const target = { repository: input.repository, number: input.number };
+      const target = {
+        originHost: input.host,
+        repository: input.repository,
+        number: input.number,
+      };
       return Effect.all(
         [
           // Reviews ride on the pull request itself, so this inexpensive core read is repeated
@@ -216,15 +226,21 @@ export const make = Effect.gen(function* () {
     },
 
     getViewerPermissions: (input) =>
-      api.getRepositoryPermission({ repository: input.repository }).pipe(
-        Effect.mapError(fail("getViewerPermissions")),
-        Effect.map((canWrite) => bitbucketViewerPermissions({ canWrite })),
-      ),
+      api
+        .getRepositoryPermission({
+          originHost: input.host,
+          repository: input.repository,
+        })
+        .pipe(
+          Effect.mapError(fail("getViewerPermissions")),
+          Effect.map((canWrite) => bitbucketViewerPermissions({ canWrite })),
+        ),
 
     // `/diff` answers with the whole patch and pages nothing, so the first slice is the last.
     getDiff: (input) =>
       api
         .getPullRequestDiff({
+          originHost: input.host,
           repository: input.repository,
           number: input.number,
           ...(input.commit === undefined ? {} : { commit: input.commit }),
@@ -238,12 +254,17 @@ export const make = Effect.gen(function* () {
     // one on a pull request.
     listReviewerCandidates: (input) =>
       api
-        .listReviewerCandidates({ repository: input.repository, number: input.number })
+        .listReviewerCandidates({
+          originHost: input.host,
+          repository: input.repository,
+          number: input.number,
+        })
         .pipe(Effect.mapError(fail("listReviewerCandidates"))),
 
     setReviewerRequest: (input) =>
       api
         .setReviewerRequest({
+          originHost: input.host,
           repository: input.repository,
           number: input.number,
           reviewers: input.reviewers,
@@ -254,6 +275,7 @@ export const make = Effect.gen(function* () {
     runAction: (input) =>
       api
         .runAction({
+          originHost: input.host,
           repository: input.repository,
           number: input.number,
           action: input.action,
@@ -264,6 +286,7 @@ export const make = Effect.gen(function* () {
     updateChangeRequest: (input) =>
       api
         .updateChangeRequest({
+          originHost: input.host,
           repository: input.repository,
           number: input.number,
           title: input.title,
@@ -273,12 +296,18 @@ export const make = Effect.gen(function* () {
 
     comment: (input) =>
       api
-        .comment({ repository: input.repository, number: input.number, body: input.body })
+        .comment({
+          originHost: input.host,
+          repository: input.repository,
+          number: input.number,
+          body: input.body,
+        })
         .pipe(Effect.mapError(fail("comment"))),
 
     updateComment: (input) =>
       api
         .updateComment({
+          originHost: input.host,
           repository: input.repository,
           number: input.number,
           commentId: input.commentId,
@@ -289,6 +318,7 @@ export const make = Effect.gen(function* () {
     submitReview: (input) =>
       api
         .submitReview({
+          originHost: input.host,
           repository: input.repository,
           number: input.number,
           verdict: input.verdict,
@@ -300,6 +330,7 @@ export const make = Effect.gen(function* () {
     replyToThread: (input) =>
       api
         .replyToComment({
+          originHost: input.host,
           repository: input.repository,
           number: input.number,
           commentId: input.threadId,
@@ -321,6 +352,7 @@ export const make = Effect.gen(function* () {
     setThreadResolution: (input) =>
       api
         .setCommentResolution({
+          originHost: input.host,
           repository: input.repository,
           number: input.number,
           commentId: input.threadId,

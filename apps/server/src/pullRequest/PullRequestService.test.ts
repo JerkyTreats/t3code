@@ -14,6 +14,7 @@ import type {
   SourceControlProviderKind,
 } from "@t3tools/contracts";
 
+import * as OriginRepositoryMutationAuthority from "../fork/OriginRepositoryMutationAuthority.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
@@ -32,10 +33,12 @@ function project(input: {
   readonly repository?: string;
   readonly provider?: string;
   readonly host?: string;
+  readonly remoteHost?: string;
 }): OrchestrationProjectShell {
   // The host defaults from the provider, so a fixture only names one when the point of the
   // test is two hosts of the same kind.
   const host = input.host ?? (input.provider === "gitlab" ? "gitlab.com" : "github.com");
+  const remoteHost = input.remoteHost ?? host;
   return {
     id: input.id as ProjectId,
     title: input.title,
@@ -47,7 +50,7 @@ function project(input: {
             locator: {
               source: "git-remote" as const,
               remoteName: "origin",
-              remoteUrl: `https://${host}/${input.repository}.git`,
+              remoteUrl: `https://${remoteHost}/${input.repository}.git`,
             },
             provider: input.provider ?? "github",
             displayName: input.repository,
@@ -178,11 +181,15 @@ function makeService(input: {
   readonly projects: ReadonlyArray<OrchestrationProjectShell>;
   readonly providers: ReadonlyArray<PullRequestProviderApi>;
   readonly resolveHandle?: SourceControlProviderRegistry.SourceControlProviderRegistry["Service"]["resolveHandle"];
+  readonly authorizeMutation?: OriginRepositoryMutationAuthority.OriginRepositoryMutationAuthority["Service"]["authorize"];
 }) {
   return PullRequestService.make.pipe(
     Effect.provide(
       Layer.mergeAll(
         Layer.succeed(PullRequestProviderRegistry, fromProviders(input.providers)),
+        Layer.mock(OriginRepositoryMutationAuthority.OriginRepositoryMutationAuthority)({
+          authorize: input.authorizeMutation ?? (() => Effect.void),
+        }),
         Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
           resolveHandle:
             input.resolveHandle ?? (() => Effect.die("Unexpected provider refinement")),
@@ -962,6 +969,158 @@ it.effect("tries another workspace on the same host for the viewer", () =>
 
     assert.strictEqual(result.entries.length, 2);
     assert.strictEqual(result.viewers["github.com"], "bilal");
+  }),
+);
+
+it.effect(
+  "blocks every hosted mutation before any provider call when origin is not authoritative",
+  () =>
+    Effect.gen(function* () {
+      let authorityCalls = 0;
+      const provider = fakeProvider("github", {
+        getViewerPermissions: () => Effect.die("must not be called"),
+        runAction: () => Effect.die("must not be called"),
+        updateChangeRequest: () => Effect.die("must not be called"),
+        comment: () => Effect.die("must not be called"),
+        updateComment: () => Effect.die("must not be called"),
+        submitReview: () => Effect.die("must not be called"),
+        replyToThread: () => Effect.die("must not be called"),
+        setThreadResolution: () => Effect.die("must not be called"),
+        setReaction: () => Effect.die("must not be called"),
+        setReviewerRequest: () => Effect.die("must not be called"),
+      });
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+        ],
+        providers: [provider],
+        authorizeMutation: (input) => {
+          authorityCalls += 1;
+          assert.strictEqual(input.cwd, "/a");
+          assert.strictEqual(input.expectedIdentity.canonicalKey, "github.com/acme/web");
+          assert.strictEqual(input.expectedIdentity.locator.remoteName, "origin");
+          return Effect.fail(
+            new OriginRepositoryMutationAuthority.OriginRepositoryMutationAuthorityError({
+              reason: "push-url-disagrees",
+              detail: "Origin fetch and push repository identities disagree.",
+            }),
+          );
+        },
+      });
+      const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+      const mutations = [
+        service.runAction({ ...reference, action: "merge" }),
+        service.update({ ...reference, title: "New title" }),
+        service.comment({ ...reference, body: "Comment" }),
+        service.updateComment({
+          ...reference,
+          commentId: "IC_1",
+          kind: "issue-comment",
+          body: "Updated comment",
+        }),
+        service.submitReview({ ...reference, verdict: "approve", body: "", comments: [] }),
+        service.replyToThread({ ...reference, threadId: "t1", body: "Reply" }),
+        service.setThreadResolution({ ...reference, threadId: "t1", resolved: true }),
+        service.setReaction({ ...reference, content: "heart", reacted: true }),
+        service.requestReviewers({
+          ...reference,
+          reviewers: [{ id: "octocat", kind: "user" }],
+          requested: true,
+        }),
+      ];
+
+      const errors = yield* Effect.forEach(mutations, Effect.flip);
+
+      assert.strictEqual(authorityCalls, mutations.length);
+      assert.isTrue(errors.every((error) => error._tag === "PullRequestOperationError"));
+      for (const error of errors) {
+        if (error._tag === "PullRequestOperationError") {
+          assert.strictEqual(error.operation, "authorizeMutation");
+        }
+      }
+    }),
+);
+
+it.effect("preserves self-hosted origin ports on GitHub and GitLab admin mutations", () =>
+  Effect.gen(function* () {
+    const mutationHosts = new Map<string, string>();
+    const service = yield* makeService({
+      projects: [
+        project({
+          id: "github-project",
+          title: "GitHub web",
+          workspaceRoot: "/github",
+          repository: "acme/web",
+          host: "github.example.test",
+          remoteHost: "github.example.test:8443",
+        }),
+        project({
+          id: "gitlab-project",
+          title: "GitLab web",
+          workspaceRoot: "/gitlab",
+          repository: "acme/platform",
+          provider: "gitlab",
+          host: "gitlab.example.test",
+          remoteHost: "gitlab.example.test:9443",
+        }),
+      ],
+      providers: [
+        fakeProvider("github", {
+          comment: (input) =>
+            Effect.sync(() => {
+              mutationHosts.set("github", input.host);
+            }),
+        }),
+        fakeProvider("gitlab", {
+          comment: (input) =>
+            Effect.sync(() => {
+              mutationHosts.set("gitlab", input.host);
+            }),
+        }),
+      ],
+    });
+
+    yield* service.comment({
+      projectId: "github-project" as ProjectId,
+      repository: "acme/web",
+      number: 1,
+      body: "GitHub comment",
+    });
+    yield* service.comment({
+      projectId: "gitlab-project" as ProjectId,
+      repository: "acme/platform",
+      number: 2,
+      body: "GitLab comment",
+    });
+
+    assert.strictEqual(mutationHosts.get("github"), "github.example.test:8443");
+    assert.strictEqual(mutationHosts.get("gitlab"), "gitlab.example.test:9443");
+  }),
+);
+
+it.effect("does not require mutation authority to read reviewer candidates", () =>
+  Effect.gen(function* () {
+    let listed = false;
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          listReviewerCandidates: () => {
+            listed = true;
+            return Effect.succeed({ candidates: [], truncated: false });
+          },
+        }),
+      ],
+      authorizeMutation: () => Effect.die("must not be called"),
+    });
+
+    yield* service.reviewerCandidates({
+      projectId: "p1" as ProjectId,
+      repository: "acme/web",
+      number: 1,
+    });
+
+    assert.isTrue(listed);
   }),
 );
 
@@ -3594,6 +3753,10 @@ it("names an Azure DevOps repository by its own name, not its project path", () 
   const selector = PullRequestService.repositoryIdentityOf({
     repositoryIdentity: {
       provider: "azure-devops",
+      locator: {
+        remoteName: "origin",
+        remoteUrl: "https://dev.azure.com/contoso/payments/_git/checkout",
+      },
       displayName: "contoso/payments/_git/checkout",
       owner: "contoso",
       name: "checkout",
@@ -3602,10 +3765,14 @@ it("names an Azure DevOps repository by its own name, not its project path", () 
   assert.strictEqual(selector, "checkout");
 });
 
-it("falls back to the path's last segment where an Azure identity has no name", () => {
+it("derives the Azure repository from origin when display metadata has no name", () => {
   const selector = PullRequestService.repositoryIdentityOf({
     repositoryIdentity: {
       provider: "azure-devops",
+      locator: {
+        remoteName: "origin",
+        remoteUrl: "https://dev.azure.com/contoso/payments/_git/checkout",
+      },
       displayName: "contoso/payments/_git/checkout",
     },
   } as never);
@@ -3616,6 +3783,7 @@ it("keeps a GitLab identity's whole path, because a nested group is part of the 
   const selector = PullRequestService.repositoryIdentityOf({
     repositoryIdentity: {
       provider: "gitlab",
+      locator: { remoteName: "origin", remoteUrl: "https://gitlab.com/group/subgroup/service.git" },
       displayName: "group/subgroup/service",
       owner: "group",
       name: "service",
