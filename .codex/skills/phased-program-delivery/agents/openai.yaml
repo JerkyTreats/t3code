@@ -1,0 +1,7 @@
+interface:
+  display_name: "Phased Program Delivery"
+  short_description: "Multi-phase delivery orchestration"
+  default_prompt: "Use $phased-program-delivery to implement this phased plan end to end by orchestrating authorized vertical deliveries, dependency waves, reviews, gates, commits, and final reconciliation."
+
+policy:
+  allow_implicit_invocation: true

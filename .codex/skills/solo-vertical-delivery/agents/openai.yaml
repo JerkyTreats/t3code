@@ -1,0 +1,7 @@
+interface:
+  display_name: "Solo Vertical Delivery"
+  short_description: "Parallel delivery with fresh reviews"
+  default_prompt: "Use $solo-vertical-delivery to implement this change end to end with authorized parallel workers, fresh reviews, quality gates, commits, and final reconciliation."
+
+policy:
+  allow_implicit_invocation: true
