@@ -1,0 +1,923 @@
+{
+  "format": "t3code-intake-hunk-dispositions-v1",
+  "baseline_sha256": "500abe6378142d01537c45c48f829f248bc1a04d9fcca5218f47b8dcea43d8f5",
+  "origin": "9c80a4c63bb0d8391301e6e17bc7afe5226dbce5",
+  "upstream": "761d4bac1c238ea7af4dd36b56719ad5e30771c3",
+  "frozen_denominator": 175,
+  "recorded_rows": 46,
+  "scope": "S12 selected exact roles and concern-level reviews pass. Forty-six of the immutable 175 rows are recorded; mixed later obligations and unrecorded rows remain pending, not waived.",
+  "entries": [
+    {
+      "path": "apps/server/src/auth/EnvironmentAuth.ts",
+      "hunk_number": 1,
+      "sha256": "671e8bc3ecdf379e73e83943c84a2857fce688f344d4edab03710f596b5aef26",
+      "candidate_concern_id": "F17",
+      "classification": "semantic",
+      "decision": "Remove upstream ordinary-client session inventory and revoke surfaces; external portal lifecycle remains the only protected product boundary.",
+      "source_evidence_rationale": "Origin side is empty. Upstream adds listClientSessions and broad session revoke helpers. F17 explicitly removes legacy access inventory and requires a private managed-device projection.",
+      "unresolved": false,
+      "candidate_role": "retired-exclusive-surface-removed",
+      "candidate_owners": [
+        "apps/server/src/auth/SessionAuthorityPolicy.ts",
+        "apps/server/src/auth/DeviceAdministratorPolicy.ts",
+        "apps/server/src/auth/AdminAccess.ts"
+      ],
+      "candidate_evidence": [
+        "apps/server/src/auth/SessionAuthorityPolicy.test.ts",
+        "apps/server/src/auth/DeviceAdministratorAuthority.test.ts",
+        "packages/contracts/src/adminAccess.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/auth/SessionStore.ts",
+      "hunk_number": 1,
+      "sha256": "db6c9ec647ff4dff197b9826faa01dc2abc86d631b58b0b3e6063f8176a2c2fb",
+      "candidate_concern_id": "F17",
+      "classification": "semantic",
+      "decision": "Persisted authority class must survive session reconstruction; upstream disconnected-expiry filtering may remain internal substrate.",
+      "source_evidence_rationale": "Origin reconstructs authorityClass with client default. Upstream omits that field and switches to its legacy access projection. Portal privacy cannot be inferred from the name AuthClientSession.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": [
+        "apps/server/src/auth/SessionAuthorityPolicy.ts",
+        "apps/server/src/auth/DeviceAdministratorPolicy.ts",
+        "apps/server/src/auth/AdminAccess.ts"
+      ],
+      "candidate_evidence": [
+        "apps/server/src/auth/SessionAuthorityPolicy.test.ts",
+        "apps/server/src/auth/DeviceAdministratorAuthority.test.ts",
+        "packages/contracts/src/adminAccess.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/auth/SessionStore.ts",
+      "hunk_number": 2,
+      "sha256": "1cfa7a6369e95d9c6fc77c8fe7cbd87cb61b1a85c5d929e5d68bd7ebf2cc168d",
+      "candidate_concern_id": "F17",
+      "classification": "semantic",
+      "decision": "Session persistence includes durable client identity, signed authority class and server-issued management class while accepting compatible upstream session replacement mechanics.",
+      "source_evidence_rationale": "Origin create supplies clientId, authorityClass and managementClass. Upstream supplies replacement-by-subject behavior but lacks these protected fields.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": [
+        "apps/server/src/auth/SessionAuthorityPolicy.ts",
+        "apps/server/src/auth/DeviceAdministratorPolicy.ts",
+        "apps/server/src/auth/AdminAccess.ts"
+      ],
+      "candidate_evidence": [
+        "apps/server/src/auth/SessionAuthorityPolicy.test.ts",
+        "apps/server/src/auth/DeviceAdministratorAuthority.test.ts",
+        "packages/contracts/src/adminAccess.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/persistence/Migrations.ts",
+      "hunk_number": 1,
+      "sha256": "58a23fe98fa278b937765c9fba859cc3ea61ad3817d901e820509b16544d5aa1",
+      "candidate_concern_id": "PERSIST",
+      "classification": "mechanical/substrate",
+      "decision": "S1 migration runner retains the Effect SQL layer needed to load and run the fork migration journal.",
+      "source_evidence_rationale": "The hunk is import-only. Its substrate role is supported by the S1 disposition and PERSIST.D1/PERSIST.D2, but it does not itself encode a product behavior.",
+      "unresolved": false,
+      "candidate_role": "accepted-substrate-or-wiring",
+      "candidate_owners": ["apps/server/src/persistence/ForkMigrationPlan.ts"],
+      "candidate_evidence": [
+        "apps/server/src/persistence/ForkMigrationPlan.test.ts",
+        "apps/server/src/persistence/ForkMigrationUpgrade.test.ts",
+        "apps/server/src/persistence/ForkMigrationContinuation.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/persistence/Migrations.ts",
+      "hunk_number": 2,
+      "sha256": "41ef015377bcbc850a9f31b6661260b127a0ee6fe0cd8028add825581c92a219",
+      "candidate_concern_id": "PERSIST",
+      "classification": "semantic",
+      "decision": "S1 preserves the fork migration lineage, including settings-admin reconciliation, board posts, revisions, collective expeditions, and thread-adapter retirement, while retaining the retired fresh-schema boundary at 50.",
+      "source_evidence_rationale": "The hunk changes the registered migration identities and retiredFreshSchemaMigrationId; the baseline assigns PERSIST.D1 through PERSIST.D4 and explicitly says S1 moves and extends this responsibility.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": ["apps/server/src/persistence/ForkMigrationPlan.ts"],
+      "candidate_evidence": [
+        "apps/server/src/persistence/ForkMigrationPlan.test.ts",
+        "apps/server/src/persistence/ForkMigrationUpgrade.test.ts",
+        "apps/server/src/persistence/ForkMigrationContinuation.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/persistence/Migrations.ts",
+      "hunk_number": 3,
+      "sha256": "59e2b0f916e03e52627ffa4f14607464317440934998350946277d75c751cdf0",
+      "candidate_concern_id": "PERSIST",
+      "classification": "semantic",
+      "decision": "Deployed journals must continue to apply migration 50 and 51 under their exact historical identities, alongside the retained fork migrations.",
+      "source_evidence_rationale": "The origin side contains the explicit historical identity comment and registrations for 50 and 51; this is the reviewed S1 decision recorded as PERSIST.D1 through PERSIST.D4.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": ["apps/server/src/persistence/ForkMigrationPlan.ts"],
+      "candidate_evidence": [
+        "apps/server/src/persistence/ForkMigrationPlan.test.ts",
+        "apps/server/src/persistence/ForkMigrationUpgrade.test.ts",
+        "apps/server/src/persistence/ForkMigrationContinuation.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/pullRequest/AzureDevOpsPullRequestCli.ts",
+      "hunk_number": 1,
+      "sha256": "5d2e994485944d2b94177fc2df6bbbb35919e0f961a3813bf7a3f970512df2e0",
+      "candidate_concern_id": "F06",
+      "classification": "semantic",
+      "decision": "Resolve Azure organization, project and repository from exact origin explicitly; do not let CLI checkout autodetection select another remote.",
+      "source_evidence_rationale": "Origin lacks detectArgs. Upstream adds --detect true. Maximum output size is accepted transport substrate, not a fork identity decision.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": [
+        "apps/server/src/fork/originHostedProviderPolicy.ts",
+        "apps/server/src/sourceControl/AzureDevOpsRepositoryTarget.ts"
+      ],
+      "candidate_evidence": ["apps/server/src/pullRequest/AzureDevOpsPullRequestCli.test.ts"],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/pullRequest/AzureDevOpsPullRequestProvider.ts",
+      "hunk_number": 1,
+      "sha256": "6a3de8f09642e0d53d4d99477570e2e9ad7807320a765b8d9fe42765e4de41f1",
+      "candidate_concern_id": "F06",
+      "classification": "semantic",
+      "decision": "Route Azure detail lookup through origin validation and retain upstream auto-merge detail fields.",
+      "source_evidence_rationale": "Origin uses getOriginPullRequest. Upstream calls the CLI directly and adds optional autoMergeMethod, which is accepted substrate.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": [
+        "apps/server/src/fork/originHostedProviderPolicy.ts",
+        "apps/server/src/sourceControl/AzureDevOpsRepositoryTarget.ts"
+      ],
+      "candidate_evidence": ["apps/server/src/pullRequest/AzureDevOpsPullRequestCli.test.ts"],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/pullRequest/PullRequestService.ts",
+      "hunk_number": 1,
+      "sha256": "b04fde3d4e26bd75a3bf951f8799d77994ccf32df473778474c52d16e6ca72c4",
+      "candidate_concern_id": "F06",
+      "classification": "mechanical/substrate",
+      "decision": "Accept upstream viewer request coalescing without claiming a distinct fork product decision.",
+      "source_evidence_rationale": "Origin uses direct first-success lookup and timestamp caching. Upstream adds host/provider/root flight keys. Both consume already-selected context; this hunk does not establish origin selection.",
+      "unresolved": false,
+      "candidate_role": "accepted-substrate-or-wiring",
+      "candidate_owners": ["apps/server/src/fork/OriginRepositoryMutationAuthority.ts"],
+      "candidate_evidence": [
+        "apps/server/src/fork/OriginRepositoryMutationAuthority.test.ts",
+        "apps/server/src/pullRequest/PullRequestService.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/pullRequest/PullRequestService.ts",
+      "hunk_number": 2,
+      "sha256": "ad9af70dc4691d0fe7fe591a7eebd2c4cca539c8a335a60b6cbc61d1cd19af03",
+      "candidate_concern_id": "F06",
+      "classification": "semantic",
+      "decision": "Authorize pull-request mutation through exact-origin project validation while preserving the upstream action result contract.",
+      "source_evidence_rationale": "Origin calls requireMutationProject and returns void. Upstream calls requireProject and returns string. The guard is the protected decision; return-shape adaptation belongs to current API substrate.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": ["apps/server/src/fork/OriginRepositoryMutationAuthority.ts"],
+      "candidate_evidence": [
+        "apps/server/src/fork/OriginRepositoryMutationAuthority.test.ts",
+        "apps/server/src/pullRequest/PullRequestService.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/serverRuntimeStartup.ts",
+      "hunk_number": 1,
+      "sha256": "8dc1c3dd363cfc236712ac048fb6da97ece6e869d38fe2affb72101d2b54b665",
+      "candidate_concern_id": "F06",
+      "classification": "mechanical/substrate",
+      "decision": "Startup imports are wiring for two separate obligations: origin-guarded auto-pull and removal of public-registry service installation.",
+      "source_evidence_rationale": "Origin side is empty; upstream imports ServiceLauncherClient and GitVcsDriver. F06 attribution alone is incomplete because the service launcher intersects F20 runtime provenance.",
+      "unresolved": false,
+      "additional_concerns": ["F20"],
+      "candidate_role": "accepted-substrate-or-wiring",
+      "candidate_owners": [
+        "apps/server/src/fork/originOnlySourceControlPolicy.ts",
+        "apps/server/src/fork/originGitPolicy.ts",
+        "apps/server/src/fork/sourceControlContextPolicy.ts",
+        "apps/server/src/fork/officialRuntimeUpdatePolicy.ts"
+      ],
+      "candidate_evidence": [
+        "apps/server/src/fork/originAutoPull.test.ts",
+        "apps/server/src/cloud/selfUpdate.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/sourceControl/GitHubSourceControlProvider.ts",
+      "hunk_number": 1,
+      "sha256": "54b2094e744b9360fc4495be2e9f8da20afdeaa77af2ce711b2c77180fdfe05b",
+      "candidate_concern_id": "F06",
+      "classification": "semantic",
+      "decision": "Use exact-origin provider context for GitHub listing while preserving upstream query states and decoded timestamps.",
+      "source_evidence_rationale": "Origin validates operation/context/reference and passes explicit repository to github.listOpenPullRequests. Upstream constructs an unqualified gh call and adds richer result decoding.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": [
+        "apps/server/src/fork/originOnlySourceControlPolicy.ts",
+        "apps/server/src/fork/originGitPolicy.ts",
+        "apps/server/src/fork/sourceControlContextPolicy.ts"
+      ],
+      "candidate_evidence": [
+        "apps/server/src/sourceControl/GitHubSourceControlProvider.test.ts",
+        "apps/server/src/fork/sourceControlContextPolicy.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/sourceControl/SourceControlRepositoryService.ts",
+      "hunk_number": 1,
+      "sha256": "358c998b22f844261062df7cfc33a6b1190583db43b47b20c109d5a9f84a5331",
+      "candidate_concern_id": "F06",
+      "classification": "mechanical/substrate",
+      "decision": "Source-control repository service imports both origin policy helpers and home-path expansion support.",
+      "source_evidence_rationale": "The hunk only swaps imports. The origin policy import is relevant to F06, but no decision is expressed until the referenced calls are inspected; classify the conflict itself as substrate.",
+      "unresolved": false,
+      "candidate_role": "accepted-substrate-or-wiring",
+      "candidate_owners": ["apps/server/src/fork/originRepositoryPublicationPolicy.ts"],
+      "candidate_evidence": [
+        "apps/server/src/fork/originRepositoryPublicationPolicy.test.ts",
+        "apps/server/src/sourceControl/SourceControlRepositoryService.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/sourceControl/SourceControlRepositoryService.ts",
+      "hunk_number": 2,
+      "sha256": "610fea5c9ea8071b5061b8f85b62d462be20d9e79d131f17c5d1c8273279ed3b",
+      "candidate_concern_id": "F06",
+      "classification": "semantic",
+      "decision": "Validate provider-returned clone URLs against the requested exact repository and derive provider context from origin.",
+      "source_evidence_rationale": "Origin defines normalization, Azure service matching, returned URL validation and origin context. Its home expansion helper is replaceable by the upstream pathExpansion substrate. Decision logic must leave this broad service host.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": ["apps/server/src/fork/originRepositoryPublicationPolicy.ts"],
+      "candidate_evidence": [
+        "apps/server/src/fork/originRepositoryPublicationPolicy.test.ts",
+        "apps/server/src/sourceControl/SourceControlRepositoryService.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/vcs/GitVcsDriverCore.ts",
+      "hunk_number": 1,
+      "sha256": "ae751400397e98de7ca24f57fd01acda9d9a81a798e92c95b3d15390ade92641",
+      "candidate_concern_id": "F06",
+      "classification": "semantic",
+      "decision": "Use exact origin for remote branch checks and publication; configured publish-remote resolution cannot select a different repository.",
+      "source_evidence_rationale": "Origin uses originRemoteName. Upstream resolves publishRemoteName from Git configuration. The new remoteBranchExists object argument is mechanical API adaptation.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": [
+        "apps/server/src/fork/originOnlySourceControlPolicy.ts",
+        "apps/server/src/fork/originGitPolicy.ts",
+        "apps/server/src/fork/sourceControlContextPolicy.ts"
+      ],
+      "candidate_evidence": [
+        "apps/server/src/fork/originGitPolicy.test.ts",
+        "apps/server/src/vcs/GitVcsDriverCore.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/vcs/GitVcsDriverCore.ts",
+      "hunk_number": 2,
+      "sha256": "a0076b8cf282138fd02c24b80cc50a03a9e51bf6f49c6d7d72511da845027257",
+      "candidate_concern_id": "F06",
+      "classification": "semantic",
+      "decision": "Keep all push paths explicitly bound to validated origin, including differently named tracking refs and no-tracking branches.",
+      "source_evidence_rationale": "Origin side is empty because its surrounding push implementation already owns the decision. Upstream adds configured-remote, tracking-remote and bare push branches that must not bypass origin policy. Base-ref and alias handling remain compatible mechanics only under origin validation.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": [
+        "apps/server/src/fork/originOnlySourceControlPolicy.ts",
+        "apps/server/src/fork/originGitPolicy.ts",
+        "apps/server/src/fork/sourceControlContextPolicy.ts"
+      ],
+      "candidate_evidence": [
+        "apps/server/src/fork/originGitPolicy.test.ts",
+        "apps/server/src/vcs/GitVcsDriverCore.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/vcs/GitVcsDriverCore.ts",
+      "hunk_number": 3,
+      "sha256": "465745eb0874fa25d01bed8116350e91cbdeca7437122e758a24c16abce42b0d",
+      "candidate_concern_id": "F06",
+      "classification": "mechanical/substrate",
+      "decision": "Accept upstream submodule initialization and equivalent local worktree base metadata; this hunk implements no distinct origin-authority rule.",
+      "source_evidence_rationale": "Accepted origin configureWorktreeBaseRef has the same remote parsing and gh-merge-base write as the inline upstream block. Root compared the actual helper body at pinned origin lines2917 through2933. The selected hunk is helper-call versus inline substrate, not an origin selection policy.",
+      "unresolved": false,
+      "candidate_role": "accepted-substrate-or-wiring",
+      "candidate_owners": [
+        "apps/server/src/fork/originOnlySourceControlPolicy.ts",
+        "apps/server/src/fork/originGitPolicy.ts",
+        "apps/server/src/fork/sourceControlContextPolicy.ts"
+      ],
+      "candidate_evidence": [
+        "apps/server/src/fork/originGitPolicy.test.ts",
+        "apps/server/src/vcs/GitVcsDriverCore.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/web/src/components/desktopUpdate.logic.ts",
+      "hunk_number": 1,
+      "sha256": "892b8513d02ef04be29549db0ccf5c59b59102cca307eaf75c76dfa3713bfbac",
+      "candidate_concern_id": "F01",
+      "classification": "semantic",
+      "decision": "Desktop release history and tag links resolve exclusively to JerkyTreats/t3code.",
+      "source_evidence_rationale": "The origin side directly hardcodes the exact origin release URL required by F01; the upstream side points at pingdotgg/t3code.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": ["packages/shared/src/forkReleaseIdentity.ts"],
+      "candidate_evidence": [
+        "packages/shared/src/forkReleaseIdentity.test.ts",
+        "apps/web/src/components/desktopUpdate.logic.test.ts",
+        "scripts/build-desktop-artifact.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "packages/contracts/src/auth.ts",
+      "hunk_number": 1,
+      "sha256": "8d653855caf0e01ab5a13296f05e3a1dd35ed30f711648f1111e744ea635c718",
+      "candidate_concern_id": "F17",
+      "classification": "mechanical/substrate",
+      "decision": "Combine current client metadata imports with the fork authority contracts while removing exclusive legacy access dependencies.",
+      "source_evidence_rationale": "Origin imports ClientSurface and TrimmedNonEmptyString. Upstream adds AuthSessionId for its removed access schemas and ClientWebDeployment for accepted metadata. No import itself grants authority.",
+      "unresolved": false,
+      "candidate_role": "accepted-substrate-or-wiring",
+      "candidate_owners": [
+        "apps/server/src/auth/SessionAuthorityPolicy.ts",
+        "apps/server/src/auth/DeviceAdministratorPolicy.ts",
+        "apps/server/src/auth/AdminAccess.ts"
+      ],
+      "candidate_evidence": [
+        "apps/server/src/auth/SessionAuthorityPolicy.test.ts",
+        "apps/server/src/auth/DeviceAdministratorAuthority.test.ts",
+        "packages/contracts/src/adminAccess.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "packages/contracts/src/auth.ts",
+      "hunk_number": 2,
+      "sha256": "99c4a7f978d645a9d1138e88a6dbf18f5f535eaec3b832069961f00a2dcd03e7",
+      "candidate_concern_id": "F17",
+      "classification": "semantic",
+      "decision": "Keep upstream legacy access inventory schemas absent from the retained external portal surface.",
+      "source_evidence_rationale": "Origin side is empty. Upstream AuthPairingLink includes subject and scopes, which are explicitly excluded from the F17 portal inventory. Omitting credentials alone does not satisfy that privacy contract.",
+      "unresolved": false,
+      "candidate_role": "schema-adapter",
+      "candidate_owners": [
+        "apps/server/src/auth/SessionAuthorityPolicy.ts",
+        "apps/server/src/auth/DeviceAdministratorPolicy.ts",
+        "apps/server/src/auth/AdminAccess.ts"
+      ],
+      "candidate_evidence": [
+        "apps/server/src/auth/SessionAuthorityPolicy.test.ts",
+        "apps/server/src/auth/DeviceAdministratorAuthority.test.ts",
+        "packages/contracts/src/adminAccess.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "packages/contracts/src/environmentHttp.ts",
+      "hunk_number": 1,
+      "sha256": "db43aa5c746136b2d9f926440cdc7bcdad62a6300dce1d4c4338cef8dc0c64b2",
+      "candidate_concern_id": "F17",
+      "classification": "mechanical/substrate",
+      "decision": "Retain both AuthClientId identity and upstream DPoP failure categories in the HTTP contract.",
+      "source_evidence_rationale": "Origin imports AuthClientId; upstream imports DpopFailureReason. Both are needed by their surviving consumers. Import composition alone is not authorization policy.",
+      "unresolved": false,
+      "candidate_role": "accepted-substrate-or-wiring",
+      "candidate_owners": [
+        "apps/server/src/auth/SessionAuthorityPolicy.ts",
+        "apps/server/src/auth/DeviceAdministratorPolicy.ts",
+        "apps/server/src/auth/AdminAccess.ts"
+      ],
+      "candidate_evidence": [
+        "apps/server/src/auth/SessionAuthorityPolicy.test.ts",
+        "apps/server/src/auth/DeviceAdministratorAuthority.test.ts",
+        "packages/contracts/src/adminAccess.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "packages/ssh/src/tunnel.ts",
+      "hunk_number": 1,
+      "sha256": "25e26a11c9259690be4d450c6df6f847c9ed83749001d2ffd84d993db2ddde22",
+      "candidate_concern_id": "F01",
+      "classification": "semantic",
+      "decision": "Packaged SSH fails with a clear instruction if a compatible preinstalled runtime is absent; public-registry fallback stays removed.",
+      "source_evidence_rationale": "Origin reports missing fork CLI. Upstream adds npm/npx installation and executable diagnostics. F01 forbids the installation behavior regardless of improved diagnostics.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": ["packages/ssh/src/officialRuntimeAcquisition.ts"],
+      "candidate_evidence": [
+        "packages/ssh/src/officialRuntimeAcquisition.test.ts",
+        "packages/ssh/src/runnerProcess.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "scripts/build-desktop-artifact.ts",
+      "hunk_number": 1,
+      "sha256": "35f2ae10cd187d146a59ea19b3144d5d8970d36379b1cb9d1e5479a59e104f55",
+      "candidate_concern_id": "F01",
+      "classification": "semantic",
+      "decision": "Official desktop metadata resolves exact origin, preserving explicit local mock behavior and compatible upstream preview packaging.",
+      "source_evidence_rationale": "Origin always selects exact validated GitHub config outside mock mode. Upstream conditionally omits metadata for preview or unresolved repository. Exact-origin production validation is the protected rule; preview packaging is upstream substrate.",
+      "unresolved": false,
+      "candidate_role": "mechanical-adapter",
+      "candidate_owners": ["packages/shared/src/forkReleaseIdentity.ts"],
+      "candidate_evidence": [
+        "packages/shared/src/forkReleaseIdentity.test.ts",
+        "apps/web/src/components/desktopUpdate.logic.test.ts",
+        "scripts/build-desktop-artifact.test.ts"
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "note": "Initial exact-role review and bounded concern correction reviews pass. Later product and installed obligations remain pending; no global preservation acceptance is implied."
+    },
+    {
+      "path": "apps/server/src/auth/RpcAuthorization.ts",
+      "hunk_number": 1,
+      "sha256": "8ab8a89c896d9aedc8b60798e486830c753e9f89bcefaaaa9b6888c4fc2b0f2c",
+      "candidate_concern_id": "UPSTREAM.SUBSTRATE",
+      "classification": "upstream-substrate",
+      "decision_ids": [],
+      "candidate_role": "unchanged_upstream_substrate",
+      "candidate_evidence": [
+        "apps/server/src/auth/RpcAuthorization.ts:37-49 retains operate scope for provider authentication, reset credit, install mutations and all three update RPCs; install subscribe is read. Exhaustive WsRpcGroup satisfies check and RpcAuthorization.test.ts:14 enforce coverage.",
+        "apps/server/src/ws.ts:569-609 rechecks persisted admission before required-scope checks and handler evaluation. Provider/update handlers at 1779-1898 use those wrappers. No auth-access subscription remains in contracts or host."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/server.test.ts",
+      "hunk_number": 10,
+      "sha256": "96dc2b40eb5e9af323e276fead49deb7510ec54a1d811a951c488a7c265bf28b",
+      "candidate_concern_id": "F17.D04",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F17.D04"],
+      "candidate_role": "mixed_mechanical_test_adapter_and_upstream_substrate",
+      "candidate_evidence": [
+        "apps/server/src/server.test.ts:2413 checks three bootstrap exchanges, invalid prior credentials and authenticated latest credential without public inventory. At 2439 the token metadata test issues via PairingGrantStore and reads internal EnvironmentAuth.listSessions. Both executed successfully in this review.",
+        "AdminAccess.ts:92-124 owns privacy-safe external inventory; DeviceAdministratorPolicy.ts:3-10 owns the six-route admission boundary. Public client inventory absence test at server.test.ts:4633 passes."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/server.test.ts",
+      "hunk_number": 11,
+      "sha256": "72d7e465155c7fbfa3062a1accb4c1b7dfcaaff2c2388787cba5241d04a1fc12",
+      "candidate_concern_id": "F17.D04",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F17.D04"],
+      "candidate_role": "retired_exclusive_inventory_test_removed",
+      "candidate_evidence": [
+        "apps/server/src/server.test.ts:4633 proves retired pairing creation/list/revoke and client list/revoke routes unavailable; requests receive auth denial or ordinary missing-route fallback, never an inventory payload.",
+        "AdminAccess.test.ts:146,239,319,363,382,423 directly exercises committed disable/delete, enable, stale revisions, private pairing summaries and ineligible clients. DeviceAdministratorPolicy.test.ts:24 uses two replacement HTTP hosts to prove exact six-route authority. ws.ts and rpc.ts contain no subscribeAuthAccess."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/server.test.ts",
+      "hunk_number": 12,
+      "sha256": "62e4122ce1be401dc4a8a8796243e161278b0ac8712667ea6626ecf5d75ab86a",
+      "candidate_concern_id": "F17.D04",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F17.D04"],
+      "candidate_role": "retired_exclusive_inventory_parser_removed",
+      "candidate_evidence": [
+        "The legacy listedLinks parser is absent with its removed public route test. Current private parsing is the explicit AdminAccessWireSnapshot/decodeAdminAccessSnapshot at server.test.ts:98-118, consumed by the real six-route integration at 4350 and 4381.",
+        "AdminAccess.test.ts:363 inspects safe issuance/inventory keys, and DeviceAdministratorAuthority.test.ts:169 checks revisioned revocation and inaccessible ordinary pairing grants."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/server.test.ts",
+      "hunk_number": 1,
+      "sha256": "310630d7870609b50784babe6f3d083395cc2687fc43f0e7fe83a254e8157230",
+      "candidate_concern_id": "UPSTREAM.SUBSTRATE",
+      "classification": "upstream-substrate",
+      "decision_ids": [],
+      "candidate_role": "unchanged_upstream_substrate",
+      "candidate_evidence": [
+        "apps/server/src/server.test.ts:10 imports AuthStandardClientScopes; helper at 1656-1658 calls PairingGrantStore.issueOneTimeToken with the fixed ordinary scope set. Consumers include metadata and DPoP pairing tests at 2447 and 2480.",
+        "This does not create an embedded inventory surface. PairingGrantStore.ts:421 persists selected scopes, defaulting to AuthStandardClientScopes; legacy public inventory remains absent."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/server.test.ts",
+      "hunk_number": 4,
+      "sha256": "d20c729617af7244eebda8002265b4852ec328b9116dc75748d8dec385926d5a",
+      "candidate_concern_id": "F17.D03,F17.D05",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F17.D03", "F17.D05"],
+      "candidate_role": "mechanical_test_composition_and_upstream_substrate",
+      "candidate_evidence": [
+        "apps/server/src/server.test.ts:194,619-630 builds and shares real EnvironmentAuth, PairingGrantStore, SessionStore and SQL services; generic pairing helpers use that shared store. Historical adjacent imports do not own the current decisions.",
+        "SessionAuthorityPolicy.test.ts:33,90,176 executes issuance, replacement record/claim verification and lifecycle admission directly. ClientConnectionRegistry.test.ts exercises exact client/session teardown and bounded persisted revalidation. server.test.ts:4552 executes independent real database runtimes over an existing RPC connection and subscription; passed in this review."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/server.test.ts",
+      "hunk_number": 7,
+      "sha256": "f99d74dd931fa30f61012e5fc190ea5784e528719859e2d9e454439812c89bd1",
+      "candidate_concern_id": "F20.D4",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F20.D4"],
+      "candidate_role": "mechanical_current_http_test_host",
+      "candidate_evidence": [
+        "apps/server/src/server.test.ts:779-785 retains HTTP_ROUTER_CONFIG and supplies the shared auth services to makeRoutesLayer. Neither this host nor server.ts references ServiceLauncherClient or HostProcessEnvironment.",
+        "apps/server/src/server.ts:574 supplies ServerSelfUpdate.layer with DesktopAppUpdate; cloud/selfUpdate.ts:162-190 delegates only when officialRuntimeUpdateCapability returns desktop-managed and a desktop control channel is available. invocation.ts:40-86 quotes the existing runtime executable and entry rather than fetching a package."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/server.test.ts",
+      "hunk_number": 9,
+      "sha256": "b911f6f6ca6c1b9cd4e4707b3f1abc30bcb09264e44e51088e1a9474f988574f",
+      "candidate_concern_id": "F17.D04",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F17.D04"],
+      "candidate_role": "retired_exclusive_pairing_stream_override_removed",
+      "candidate_evidence": [
+        "apps/server/src/server.test.ts:415-429 and 619-630 retain current shared auth test layer composition. The pairing change-stream override is absent.",
+        "PairingGrantStore has no streamChanges API and ws.ts has no pairing store acquisition, listPairingLinks, listClientSessions or auth-access subscription. AdminAccess.test.ts directly proves private lifecycle instead; internal SessionStore revocation events remain in ClientConnectionRegistry.ts:105-137."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/ws.ts",
+      "hunk_number": 11,
+      "sha256": "410c3be1e044bf9fa01261e1115ce99df5e6542cac1a7d38d7a2c72a5af8664a",
+      "candidate_concern_id": "UPSTREAM.SUBSTRATE",
+      "classification": "upstream-substrate",
+      "decision_ids": [],
+      "candidate_role": "unchanged_upstream_service_acquisition",
+      "candidate_evidence": [
+        "apps/server/src/ws.ts:478-481 acquires ProviderAuthService, ProviderInstanceRegistry, providerInstallation and ServerSelfUpdate. Each is used by the surviving handlers at 1779-1898.",
+        "server.ts:574 supplies the current policy-controlled self-update implementation. cloud/selfUpdate.test.ts:203 injects a fully available desktop adapter into a headless runtime and proves both update and commit still reject; passed in this review."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/ws.ts",
+      "hunk_number": 12,
+      "sha256": "a22ed4dabfad63bcb1618556e844aa60a7b232974a58fd8b29a849c7dcec1e9c",
+      "candidate_concern_id": "F17.D04,S4.CHAT.FOUNDATION",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F17.D04", "S4.CHAT.FOUNDATION"],
+      "candidate_role": "mixed_retired_inventory_and_upstream_chat_substrate",
+      "candidate_evidence": [
+        "apps/server/src/ws.ts:633-696 retains UUID command/event allocation, setup activity, bootstrap error normalization and lightweight shell projection. Actual consumers occur at 866,932,970,978,1118 and 1406.",
+        "The interleaved loadAuthAccessSnapshot and its listPairingLinks/listClientSessions calls are absent. AdminAccess remains the inventory owner. These are accepted ordinary orchestration mechanics; full S4 chat/send/render acceptance remains pending and receives no completion credit here."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": ["S4.CHAT.FOUNDATION"]
+    },
+    {
+      "path": "apps/server/src/ws.ts",
+      "hunk_number": 16,
+      "sha256": "d9cf6a4dfd50848d25163c313365ba96a993e8e3b185f0f84ea3b7783a7ac922",
+      "candidate_concern_id": "UPSTREAM.SUBSTRATE",
+      "classification": "upstream-substrate",
+      "decision_ids": [],
+      "candidate_role": "unchanged_upstream_provider_and_update_transport",
+      "candidate_evidence": [
+        "apps/server/src/ws.ts:1779-1814 refuses absent or disabled provider instances before consumeResetCredit is called, rejects missing reset-credit support, and maps provider errors. Provider auth/installation handlers use their dedicated services with currentSessionId where required.",
+        "ws.ts:1861-1898 adapts update effects, progress queue and desktop commit through observeRpcEffect/Stream. RpcAuthorization.ts:37-49 and ws.ts:569 enforce scope/admission before evaluation. The injected self-update owner rejects headless invocation, including a maliciously available desktop adapter in cloud/selfUpdate.test.ts:203."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/ws.ts",
+      "hunk_number": 17,
+      "sha256": "2ab2781a3758ea256cbaf2d2f79bd601b858a1cc4064e5e42fd90f1e89455ab5",
+      "candidate_concern_id": "UPSTREAM.SUBSTRATE",
+      "classification": "upstream-substrate",
+      "decision_ids": [],
+      "candidate_role": "unchanged_upstream_continuation_adapter",
+      "candidate_evidence": [
+        "apps/server/src/ws.ts:2778-2802 wraps the policy-controlled self-update service with startup prepare/clear effects and passes that wrapped instance to RPC at 2840.",
+        "cloud/selfUpdate.ts:49-159 defers desktop marker preparation until commit, clears markers on failed handoff and retains markers on accepted interrupt-only handoff. selfUpdate.test.ts:40,89,112,147 executes these branches. The wrapper does not grant capability or bypass the rejecting base implementation."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/ws.ts",
+      "hunk_number": 1,
+      "sha256": "d444e6557726cb9fb555af3d8e911ee3d727a72866e6960022250610c7e1f6bd",
+      "candidate_concern_id": "F17.D04",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F17.D04"],
+      "candidate_role": "mixed_retired_converter_import_and_upstream_metadata",
+      "candidate_evidence": [
+        "apps/server/src/ws.ts:15-17 retains connection method/device/OS schemas, validated at 346-418 and passed into recordClientConnection at 2879. AuthSessionId import used solely by the retired access converter is absent.",
+        "Metadata is recorded only after authenticateWebSocketUpgrade and sessions.assertClientAdmission inside exact client/session guards at 2807-2887. Authority comes from persisted SessionAuthorityPolicy, not metadata."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/ws.ts",
+      "hunk_number": 3,
+      "sha256": "7ae265f5459034de48adb7bb302b2d7eca5605ff638310023c9d1ffea7797599",
+      "candidate_concern_id": "UPSTREAM.SUBSTRATE",
+      "classification": "upstream-substrate",
+      "decision_ids": [],
+      "candidate_role": "unchanged_upstream_update_lifecycle_types",
+      "candidate_evidence": [
+        "ServerSelfUpdateError and progress type serve update stream error/progress adaptation at ws.ts:1868-1890 and continuation errors at 2784-2800. ServerLifecycleStreamEvent serves lifecycle snapshot/live streaming at 2714.",
+        "The lifecycle route is read-scoped; update methods are operate-scoped. Types confer no alternate runtime acquisition path; cloud/selfUpdate.ts retains desktop-managed-or-null control."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/ws.ts",
+      "hunk_number": 5,
+      "sha256": "7153a8db490c1bdb741dddec3dfd32088168867088ea34e5b0d981af220dad42",
+      "candidate_concern_id": "UPSTREAM.SUBSTRATE",
+      "classification": "upstream-substrate",
+      "decision_ids": [],
+      "candidate_role": "unchanged_upstream_provider_and_update_imports",
+      "candidate_evidence": [
+        "ProviderAuthService, ProviderInstanceRegistry, makeProviderInstallation and ServerSelfUpdate imports are acquired at ws.ts:478-481 and consumed in handlers at 1779-1898.",
+        "The runtime implementation is supplied by server.ts:574 and protected by officialRuntimeUpdatePolicy.ts plus cloud/selfUpdate.test.ts:203. These imports are transport substrate, not F20 semantic ownership."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/ws.ts",
+      "hunk_number": 6,
+      "sha256": "8b17472555c163a911c071e02180d62e3987939af2cd9aed57aa9d9db804dfb9",
+      "candidate_concern_id": "F17.D04",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F17.D04"],
+      "candidate_role": "retired_pairing_stream_import_and_current_vcs_composition",
+      "candidate_evidence": [
+        "The provisional statement that ws.ts retains a direct VcsProcess import is inaccurate: both sides of this historical import conflict are absent in the current host. The pairing-store/access-stream import is deliberately gone.",
+        "Current VCS mechanics remain through ws.ts:143-144,467-469,2491 and 2855-2857. GitVcsDriver.ts:39,460 acquires VcsProcess; server.ts:777 supplies its layer. Thus ordinary VCS is retained through current upstream service composition, not a direct ws.ts VcsProcess import. This row earns no new F06 decision credit."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": []
+    },
+    {
+      "path": "apps/server/src/ws.ts",
+      "hunk_number": 7,
+      "sha256": "1b03532eee0c0936d114230b9a22b1ccc166927b222bb3220a2a3b67fdeb3bcc",
+      "candidate_concern_id": "F17.D04,S4.CHAT.FOUNDATION",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F17.D04", "S4.CHAT.FOUNDATION"],
+      "candidate_role": "mixed_retired_converter_and_upstream_replay_substrate",
+      "candidate_evidence": [
+        "apps/server/src/ws.ts:339-343 retains 1000 thread events and 8 MiB serialized payload budget; at 1596-1617 getThreadReplayStats measures a bounded per-thread range and both limits gate readThreadEvents. Oversized ranges fall back to snapshots.",
+        "server.test.ts:8577 proves replay across large unrelated global gaps, and 8933 proves oversized payloads avoid decoding. No toAuthAccessStreamEvent or auth-access subscription remains. Source substrate passes this row; final S4 chat acceptance remains pending."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": ["S4.CHAT.FOUNDATION"]
+    },
+    {
+      "path": "apps/web/src/components/ChatView.tsx",
+      "hunk_number": 10,
+      "sha256": "4583393a7ea921e1491e1d26bd16bcf987aebee990de682494a92f4f93082b66",
+      "candidate_concern_id": "F20.D3,F20.D4",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F20.D3", "F20.D4"],
+      "candidate_role": "mechanical_update_notice_memo_dependencies",
+      "candidate_evidence": [
+        "apps/web/src/components/ChatView.tsx:2472-2486 includes failed-attempt dismissal, update state, environment identity, resolved capability, desktop support, continuation support and version label. The memo reads these same values; no missing dependency found in this exact row.",
+        "versionSkew.test.ts:32,52 verifies attempt-scoped failure dismissal without clearing retry state. This dependency row does not cure the separately blocking hunk-8 reconnect predicate."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": ["S5.CHAT.APPEARANCE"]
+    },
+    {
+      "path": "apps/web/src/components/ChatView.tsx",
+      "hunk_number": 3,
+      "sha256": "4a6e1e1477471aa7f0f39204667c2a502b579405db69d96244e5a69c84d5c5f7",
+      "candidate_concern_id": "UPSTREAM.SUBSTRATE",
+      "classification": "upstream-substrate",
+      "decision_ids": [],
+      "candidate_role": "unchanged_upstream_update_presentation_imports",
+      "candidate_evidence": [
+        "ServerUpdateAction and ComposerServerUpdateIcon/Status imports are actually used at ChatView.tsx:2404,2407,2443. The action invokes the current runtimeUpdateGuidance owner before rendering or dispatching an update.",
+        "ServerUpdateAction.test.tsx directly proves desktop update dispatch and null/legacy manual guidance without a button or update call; 31 combined web tests passed. S5 styling/icon/spacing acceptance remains deferred."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": ["S5.CHAT.APPEARANCE"]
+    },
+    {
+      "path": "apps/web/src/components/ChatView.tsx",
+      "hunk_number": 4,
+      "sha256": "c6aa34adce45f97bac0e97e231283bc7bf470ef1c90ff3d2617785a4b18a266f",
+      "candidate_concern_id": "F20.D3,F20.D4",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F20.D3", "F20.D4"],
+      "candidate_role": "mechanical_capability_and_guidance_adapters",
+      "candidate_evidence": [
+        "ChatView.tsx imports and calls versionSkew.ts:114-138 capability/support adapters. resolveServerSelfUpdateCapability delegates to runtimeUpdateGuidance.ts:4, which accepts only desktop-managed.",
+        "ServerUpdateAction.tsx rechecks the same owner in its click handler and render branch and renders deployment-manager guidance for null/legacy capability. versionSkew.test.ts:178-209 and ServerUpdateAction.test.tsx:111-125 exercise those boundaries. Reconnect use of these owners is the distinct blocking hunk-8 finding."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": ["S5.CHAT.APPEARANCE"]
+    },
+    {
+      "path": "apps/web/src/components/ChatView.tsx",
+      "hunk_number": 7,
+      "sha256": "2b536e71e0011052f9b7ce0736133ff3f63cb570d483f5f6f5d0ee557ad4421f",
+      "candidate_concern_id": "F20.D3,F20.D4",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F20.D3", "F20.D4"],
+      "candidate_role": "mechanical_environment_update_state_wiring",
+      "candidate_evidence": [
+        "ChatView.tsx:2306-2318 derives current environment, resolves filtered capability, reads desktop/continuation support and subscribes to that environment update atom. Dismissal is keyed by the current failed state identity.",
+        "versionSkew tests exercise desktop-managed, null and legacy descriptors; ServerUpdateAction tests prove only supported desktop capability creates an update action. State transport and status display remain upstream substrate. Full final ChatView behavior is subject to blocking hunk 8."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": ["S5.CHAT.APPEARANCE"]
+    },
+    {
+      "path": "apps/web/src/components/ChatView.tsx",
+      "hunk_number": 8,
+      "sha256": "589be2cf99960a1cb39f8908041564e1f70069816cebbb4cb91886bff837ecaf",
+      "candidate_concern_id": "F20.D3,F20.D4",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F20.D3", "F20.D4"],
+      "candidate_role": "mechanical_reconnect_adapter_to_f20_runtime_update_owner",
+      "candidate_evidence": [
+        "apps/web/src/fork/runtimeUpdateGuidance.ts:16 owns isDesktopUpdateReconnect. It accepts only capability normalized to desktop-managed, idle state, active reconnect and version mismatch. Null, absent and legacy capabilities fail closed.",
+        "apps/web/src/components/ChatView.tsx:433 imports the owner and at 2329 mechanically passes the filtered capability, update status, reconnect state and mismatch. Existing memo dependencies already include all source values.",
+        "The frozen current host decision statements and update-notice branch were executed directly for 240 combinations of capability, update status, connection phase, mismatch and warning grace. Unsupported idle reconnect retains the ordinary warning after grace and the version notice containing manual deployment guidance. Actual running and failed notices survive descriptor loss; hard failure retains connection controls.",
+        "Two replacement-owner executions of the exact host statements verify both true and false outputs drive the host, with the expected normalized inputs. No duplicate semantic decision remains in ChatView.",
+        "runtimeUpdateGuidance.test.ts, versionSkew.test.ts and ServerUpdateAction.test.tsx execute 39 passing tests, including all eight new owner tests, supported desktop actions, null/legacy manual guidance, failure dismissal, retry state and progress.",
+        "fork/F20-origin-server-image.md:46 and patch.md:25 accurately document the implemented owner/adapter split and descriptor-loss continuity."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": ["S5.CHAT.APPEARANCE"]
+    },
+    {
+      "path": "apps/web/src/components/ChatView.tsx",
+      "hunk_number": 9,
+      "sha256": "6125b62348a3755595369a94afe8686249fa96392f90419652cf12d46a7d415c",
+      "candidate_concern_id": "F20.D3,F20.D4",
+      "classification": "mixed-owner-adapter-substrate",
+      "decision_ids": ["F20.D3", "F20.D4"],
+      "candidate_role": "mechanical_update_notice_action_retry_and_dismissal",
+      "candidate_evidence": [
+        "ChatView.tsx:2400-2467 renders update status, routes the filtered capability to ServerUpdateAction, preserves retry labels and dismisses only the relevant failure/version notice. ServerUpdateAction.tsx returns deployment-manager guidance when capability is null and blocks update dispatch in its handler.",
+        "Existing component tests execute supported desktop update, failure, interruption and null/legacy guidance. The row itself introduces no package-registry action. Its manual guidance is incorrectly hidden by the separately blocking hunk-8 condition; final group acceptance waits on that correction. S5 visual treatment remains pending."
+      ],
+      "status": "s12_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
+      "note": "Supplemental exact-role review and bounded reconnect correction pass. Mixed S4 chat foundation and later S5/S6 obligations remain pending without S12 blockers.",
+      "pending_obligations": ["S5.CHAT.APPEARANCE"]
+    }
+  ]
+}

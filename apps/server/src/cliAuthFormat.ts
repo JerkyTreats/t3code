@@ -1,4 +1,4 @@
-import type { AuthClientMetadata, AuthClientSession, AuthPairingLink } from "@t3tools/contracts";
+import type { AuthClientMetadata } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
 import type { IssuedBearerSession, IssuedPairingLink } from "./auth/EnvironmentAuth.ts";
@@ -67,7 +67,7 @@ export function formatIssuedPairingCredential(
 }
 
 export function formatPairingCredentialList(
-  credentials: ReadonlyArray<AuthPairingLink>,
+  credentials: ReadonlyArray<import("./auth/PairingGrantStore.ts").ActivePairingLink>,
   options?: {
     readonly json?: boolean;
   },
@@ -144,7 +144,7 @@ export function formatIssuedSession(
 }
 
 export function formatSessionList(
-  sessions: ReadonlyArray<AuthClientSession>,
+  sessions: ReadonlyArray<import("./auth/SessionStore.ts").ActiveClientSession>,
   options?: {
     readonly json?: boolean;
   },

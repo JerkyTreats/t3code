@@ -44,7 +44,10 @@
     "dist:desktop:win:x64": "node scripts/build-desktop-artifact.ts --platform win --target nsis --arch x64",
     "release:smoke": "node scripts/release-smoke.ts",
     "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/dist apps/*/dist-electron packages/*/dist .vite-plus apps/*/.vite-plus packages/*/.vite-plus",
-    "sync:repos": "node scripts/sync-reference-repos.ts"
+    "sync:repos": "node scripts/sync-reference-repos.ts",
+    "test:desktop-artifact-smoke": "node scripts/desktop-artifact-smoke.ts",
+    "test:server-image-smoke": "node scripts/server-image-smoke.ts",
+    "test:release-safety": "node scripts/lib/release-workflow-safety.ts && node scripts/lib/server-image-workflow-safety.ts"
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",

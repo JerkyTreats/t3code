@@ -5,6 +5,8 @@ import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import type { SqlError } from "effect/unstable/sql/SqlError";
 
+import { backupDatabaseBeforeMigration42 } from "../Migration42Backup.ts";
+
 import { runMigrations } from "../Migrations.ts";
 import { ServerConfig } from "../../config.ts";
 
@@ -30,16 +32,18 @@ const makeRuntimeSqliteLayer = Effect.fn("makeRuntimeSqliteLayer")(function* (
   return clientModule.layer(config);
 }, Layer.unwrap);
 
-const setup = Layer.effectDiscard(
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    // CLI and server write from separate processes; wait rather than fail with SQLITE_BUSY.
-    yield* sql`PRAGMA busy_timeout = 5000;`;
-    yield* sql`PRAGMA foreign_keys = ON;`;
-    yield* sql`PRAGMA journal_mode = WAL;`;
-    yield* runMigrations();
-  }),
-);
+const setup = <E, R>(beforeMigrations: Effect.Effect<void, E, R>) =>
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      // CLI and server write from separate processes; wait rather than fail with SQLITE_BUSY.
+      yield* sql`PRAGMA busy_timeout = 5000;`;
+      yield* sql`PRAGMA foreign_keys = ON;`;
+      yield* sql`PRAGMA journal_mode = WAL;`;
+      yield* beforeMigrations;
+      yield* runMigrations();
+    }),
+  );
 
 export const makeSqlitePersistenceLive = Effect.fn("makeSqlitePersistenceLive")(function* (
   dbPath: string,
@@ -49,7 +53,7 @@ export const makeSqlitePersistenceLive = Effect.fn("makeSqlitePersistenceLive")(
   yield* fs.makeDirectory(path.dirname(dbPath), { recursive: true });
 
   return Layer.provideMerge(
-    setup,
+    setup(backupDatabaseBeforeMigration42(dbPath)),
     makeRuntimeSqliteLayer({
       filename: dbPath,
       spanAttributes: {
@@ -61,7 +65,7 @@ export const makeSqlitePersistenceLive = Effect.fn("makeSqlitePersistenceLive")(
 }, Layer.unwrap);
 
 export const SqlitePersistenceMemory = Layer.provideMerge(
-  setup,
+  setup(Effect.void),
   makeRuntimeSqliteLayer({ filename: ":memory:" }),
 );
 

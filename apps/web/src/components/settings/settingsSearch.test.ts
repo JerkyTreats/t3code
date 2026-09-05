@@ -78,7 +78,7 @@ describe("searchSettings", () => {
       searchSettings("remote pairing")
         .slice(0, 2)
         .map((item) => item.id),
-    ).toEqual(["network-access", "connections-environment"]);
+    ).toEqual(["network-access"]);
   });
 
   it("finds settings that used to be reachable only through their section", () => {
@@ -89,8 +89,12 @@ describe("searchSettings", () => {
     expect(searchSettings("binary path")[0]?.id).toBe("providers");
     expect(searchSettings("Antigravity")[0]?.id).toBe("providers");
     expect(searchSettings("Google sign in")[0]?.id).toBe("providers");
-    expect(searchSettings("authorized clients")[0]?.id).toBe("connections-environment");
-    expect(searchSettings("administrative access")[0]?.id).toBe("connections-environment");
+  });
+
+  it("does not advertise retired access administration", () => {
+    expect(searchSettings("authorized clients")).toEqual([]);
+    expect(searchSettings("administrative access")).toEqual([]);
+    expect(searchSettings("revoke client session")).toEqual([]);
   });
 
   it("lists thread confirmations in panel order", () => {

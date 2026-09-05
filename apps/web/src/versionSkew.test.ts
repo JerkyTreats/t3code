@@ -193,6 +193,22 @@ describe("versionSkew", () => {
     expect(resolveServerSelfUpdateCapability(null)).toBeNull();
   });
 
+  it("does not expose legacy registry-backed update modes", () => {
+    for (const serverSelfUpdate of ["boot-service", "respawn"] as const) {
+      expect(
+        resolveServerSelfUpdateCapability({
+          environment: {
+            environmentId: EnvironmentId.make("environment-legacy"),
+            label: "Legacy",
+            platform: { os: "linux", arch: "x64" },
+            serverVersion: "0.0.30",
+            capabilities: { repositoryIdentity: true, serverSelfUpdate },
+          },
+        }),
+      ).toBeNull();
+    }
+  });
+
   it("detects remote desktop-app update support from config descriptors", () => {
     const descriptor = (desktopAppUpdate?: boolean) => ({
       environment: {

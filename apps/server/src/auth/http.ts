@@ -1,7 +1,6 @@
 import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
-  AuthStandardClientScopes,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
@@ -11,6 +10,8 @@ import {
   EnvironmentAuthInvalidError,
   type EnvironmentAuthInvalidReason,
   EnvironmentHttpApi,
+  EnvironmentHttpConflictError,
+  EnvironmentRateLimitError,
   EnvironmentInternalError,
   type EnvironmentInternalErrorReason,
   EnvironmentOperationForbiddenError,
@@ -25,6 +26,9 @@ import {
 import type { AuthEnvironmentScope, DpopFailureReason } from "@t3tools/contracts";
 import { parseAllowedOAuthScope } from "@t3tools/shared/oauthScope";
 import { causeErrorTag } from "@t3tools/shared/observability";
+import * as Ref from "effect/Ref";
+import * as AdminAccess from "./AdminAccess.ts";
+import * as DeviceAdministratorPolicy from "./DeviceAdministratorPolicy.ts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import { identity } from "effect/Function";
@@ -39,6 +43,7 @@ import * as SessionStore from "./SessionStore.ts";
 import { traceAuthenticatedRelayRequest, traceRelayRequest } from "../cloud/traceRelayRequest.ts";
 import { deriveAuthClientMetadata } from "./utils.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
+import { parseAuthorizationCredential } from "./authorizationCredential.ts";
 
 const CREDENTIAL_RESPONSE_HEADERS = {
   "cache-control": "no-store",
@@ -58,7 +63,7 @@ const appendDpopChallengeOnUnauthorized = (error: EnvironmentAuthInvalidError) =
     const request = yield* HttpServerRequest.HttpServerRequest;
     const usesDpop =
       (request.originalUrl.startsWith("/oauth/token") && request.headers.dpop !== undefined) ||
-      request.headers.authorization?.startsWith("DPoP ") === true;
+      parseAuthorizationCredential(request.headers.authorization)?.source === "dpop";
     if (usesDpop) {
       yield* appendDpopChallengeHeader;
     }
@@ -135,7 +140,9 @@ export function failEnvironmentScopeRequired(requiredScope: AuthEnvironmentScope
   );
 }
 
-function failEnvironmentOperationForbidden(reason: "current_session_revoke_not_allowed") {
+function failEnvironmentOperationForbidden(
+  reason: "current_client_change_not_allowed" | "authority_not_allowed",
+) {
   return currentEnvironmentTraceId.pipe(
     Effect.flatMap((traceId) =>
       Effect.fail(
@@ -164,7 +171,8 @@ export function failEnvironmentInternal(reason: EnvironmentInternalErrorReason, 
       yield* Effect.logError("environment api operation failed", {
         reason,
         traceId,
-        cause: error,
+        errorTag:
+          typeof error === "object" && error !== null && "_tag" in error ? error._tag : "unknown",
       });
     }
     return yield* new EnvironmentInternalError({ code: "internal_error", reason, traceId });
@@ -202,9 +210,16 @@ export const environmentAuthenticatedAuthLayer = Layer.effect(
   EnvironmentAuthenticatedAuth,
   Effect.gen(function* () {
     const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+    const sessions = yield* SessionStore.SessionStore;
     return (httpEffect) =>
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
+        yield* guardDeviceAdministratorHttpRequest.pipe(
+          Effect.provideService(SessionStore.SessionStore, sessions),
+          Effect.catchTag("EnvironmentOperationForbiddenError", () =>
+            failEnvironmentAuthInvalid("invalid_credential"),
+          ),
+        );
         const session = yield* serverAuth.authenticateHttpRequest(request).pipe(
           Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
             failEnvironmentAuthInvalid(
@@ -382,102 +397,242 @@ export const authHttpApiLayer = HttpApiBuilder.group(
       )
       .handle(
         "pairingCredential",
-        Effect.fn("environment.auth.pairingCredential")(
-          function* (args) {
-            yield* annotateEnvironmentRequest(args.endpoint.name);
-            const session = yield* requireEnvironmentScope(AuthAccessWriteScope);
-            const delegatedScopes = args.payload.scopes ?? AuthStandardClientScopes;
-            if (
-              delegatedScopes.length === 0 ||
-              new Set<AuthEnvironmentScope>(delegatedScopes).size !== delegatedScopes.length
-            ) {
-              return yield* failEnvironmentInvalidRequest("invalid_scope");
-            }
-            for (const delegatedScope of delegatedScopes) {
-              if (!session.scopes.has(delegatedScope)) {
-                return yield* failEnvironmentScopeRequired(delegatedScope);
-              }
-            }
-            return yield* serverAuth.issuePairingCredential(args.payload);
-          },
-          Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-            failEnvironmentInternal("pairing_credential_issuance_failed", error),
-          ),
-        ),
-      )
-      .handle(
-        "pairingLinks",
-        Effect.fn("environment.auth.pairingLinks")(
-          function* (args) {
-            yield* annotateEnvironmentRequest(args.endpoint.name);
-            yield* requireEnvironmentScope(AuthAccessReadScope);
-            return yield* serverAuth.listPairingLinks();
-          },
-          Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-            failEnvironmentInternal("pairing_links_load_failed", error),
-          ),
-        ),
-      )
-      .handle(
-        "revokePairingLink",
-        Effect.fn("environment.auth.revokePairingLink")(
-          function* (args) {
-            yield* annotateEnvironmentRequest(args.endpoint.name);
-            yield* requireEnvironmentScope(AuthAccessWriteScope);
-            const revoked = yield* serverAuth.revokePairingLink(args.payload.id);
-            return { revoked };
-          },
-          Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-            failEnvironmentInternal("pairing_link_revoke_failed", error),
-          ),
-        ),
-      )
-      .handle(
-        "clients",
-        Effect.fn("environment.auth.clients")(
-          function* (args) {
-            yield* annotateEnvironmentRequest(args.endpoint.name);
-            const session = yield* requireEnvironmentScope(AuthAccessReadScope);
-            return yield* serverAuth.listClientSessions(session.sessionId);
-          },
-          Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-            failEnvironmentInternal("client_sessions_load_failed", error),
-          ),
-        ),
-      )
-      .handle(
-        "revokeClient",
-        Effect.fn("environment.auth.revokeClient")(
-          function* (args) {
-            yield* annotateEnvironmentRequest(args.endpoint.name);
-            const session = yield* requireEnvironmentScope(AuthAccessWriteScope);
-            const revoked = yield* serverAuth.revokeClientSession(
-              session.sessionId,
-              args.payload.sessionId,
-            );
-            return { revoked };
-          },
-          Effect.catchTag("ServerAuthForbiddenOperationError", () =>
-            failEnvironmentOperationForbidden("current_session_revoke_not_allowed"),
-          ),
-          Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-            failEnvironmentInternal("client_session_revoke_failed", error),
-          ),
-        ),
-      )
-      .handle(
-        "revokeOtherClients",
-        Effect.fn("environment.auth.revokeOtherClients")(
-          function* (args) {
-            yield* annotateEnvironmentRequest(args.endpoint.name);
-            const session = yield* requireEnvironmentScope(AuthAccessWriteScope);
-            const revokedCount = yield* serverAuth.revokeOtherClientSessions(session.sessionId);
-            return { revokedCount };
-          },
-          Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-            failEnvironmentInternal("client_session_revoke_failed", error),
-          ),
-        ),
+        Effect.fn("environment.auth.pairingCredential")(function* () {
+          yield* appendCredentialResponseHeaders;
+          return yield* failEnvironmentAuthInvalid("invalid_credential");
+        }),
       );
   }),
 );
+const mapAdminMutationErrors = <A, R>(
+  effect: Effect.Effect<A, AdminAccess.AdminAccessMutationError, R>,
+  internalReason: EnvironmentInternalErrorReason,
+) =>
+  effect.pipe(
+    Effect.catchTags({
+      AdminAccessRevisionConflictError: (error) =>
+        failEnvironmentConflict(`Access state changed at revision ${error.revision}.`),
+      AdminAccessNotFoundError: (error) =>
+        failEnvironmentNotFound(
+          error.resource === "client" ? "client_not_found" : "pairing_code_not_found",
+        ),
+      AdminAccessInternalError: () => failEnvironmentInternal(internalReason),
+    }),
+  );
+
+export const adminHttpApiLayer = HttpApiBuilder.group(
+  EnvironmentHttpApi,
+  "admin",
+  Effect.fnUntraced(function* (handlers) {
+    const adminAccess = yield* AdminAccess.AdminAccess;
+    const rateLimitState = yield* Ref.make<DeviceAdministratorPolicy.DeviceAdministratorRateState>(
+      new Map(),
+    );
+    const enforceRateLimit = Effect.fn("environment.admin.enforceRateLimit")(function* (
+      sessionId: string,
+      operationClass: "read" | "write",
+    ) {
+      const now = yield* DateTime.now;
+      const allowed = yield* Ref.modify(rateLimitState, (current) =>
+        DeviceAdministratorPolicy.admitDeviceAdministratorOperation(
+          current,
+          sessionId,
+          operationClass,
+          now.epochMilliseconds,
+        ),
+      );
+      if (!allowed) {
+        return yield* failEnvironmentRateLimited(60);
+      }
+    });
+
+    return handlers
+      .handle(
+        "listClientPresence",
+        Effect.fn("environment.admin.listClientPresence")(
+          function* () {
+            const session = yield* requireDeviceAdministratorAuthority();
+            yield* enforceRateLimit(session.sessionId, "read");
+            yield* appendCredentialResponseHeaders;
+            return yield* adminAccess.snapshot(session.clientId);
+          },
+          Effect.catchTag("AdminAccessInternalError", () =>
+            failEnvironmentInternal("admin_access_load_failed"),
+          ),
+        ),
+      )
+      .handle(
+        "createClientPairingCode",
+        Effect.fn("environment.admin.createClientPairingCode")(
+          function* (args) {
+            const session = yield* requireDeviceAdministratorAuthority();
+            yield* enforceRateLimit(session.sessionId, "write");
+            yield* appendCredentialResponseHeaders;
+            return yield* adminAccess.createPairingCode({
+              ...(args.payload.label === undefined ? {} : { label: args.payload.label }),
+              ttlSeconds: args.payload.ttlSeconds,
+            });
+          },
+          Effect.catchTags({
+            AdminAccessInternalError: () =>
+              failEnvironmentInternal("pairing_credential_issuance_failed"),
+            AdminAccessOutstandingPairingLimitError: (error) =>
+              failEnvironmentConflict(
+                `At most ${error.limit} outstanding device pairing codes are allowed.`,
+              ),
+          }),
+        ),
+      )
+      .handle(
+        "revokePairingCode",
+        Effect.fn("environment.admin.revokePairingCode")(function* (args) {
+          const session = yield* requireDeviceAdministratorAuthority();
+          yield* enforceRateLimit(session.sessionId, "write");
+          yield* appendCredentialResponseHeaders;
+          return yield* mapAdminMutationErrors(
+            adminAccess.revokePairingCode(args.payload),
+            "admin_pairing_code_mutation_failed",
+          );
+        }),
+      )
+      .handle(
+        "enableClient",
+        Effect.fn("environment.admin.enableClient")(function* (args) {
+          const session = yield* requireDeviceAdministratorAuthority();
+          yield* enforceRateLimit(session.sessionId, "write");
+          yield* appendCredentialResponseHeaders;
+          return yield* mapAdminMutationErrors(
+            adminAccess.setClientEnabled({
+              currentClientId: session.clientId,
+              ...args.payload,
+              enabled: true,
+            }),
+            "admin_client_mutation_failed",
+          );
+        }),
+      )
+      .handle(
+        "disableClient",
+        Effect.fn("environment.admin.disableClient")(function* (args) {
+          const session = yield* requireDeviceAdministratorAuthority();
+          yield* enforceRateLimit(session.sessionId, "write");
+          yield* appendCredentialResponseHeaders;
+          return yield* mapAdminMutationErrors(
+            adminAccess.setClientEnabled({
+              currentClientId: session.clientId,
+              ...args.payload,
+              enabled: false,
+            }),
+            "admin_client_mutation_failed",
+          );
+        }),
+      )
+      .handle(
+        "deleteClient",
+        Effect.fn("environment.admin.deleteClient")(function* (args) {
+          const session = yield* requireDeviceAdministratorAuthority();
+          yield* enforceRateLimit(session.sessionId, "write");
+          yield* appendCredentialResponseHeaders;
+          return yield* mapAdminMutationErrors(
+            adminAccess.deleteClient({
+              currentClientId: session.clientId,
+              ...args.payload,
+            }),
+            "admin_client_mutation_failed",
+          );
+        }),
+      );
+  }),
+);
+
+function failEnvironmentRateLimited(retryAfterSeconds: number) {
+  return currentEnvironmentTraceId.pipe(
+    Effect.flatMap((traceId) =>
+      Effect.fail(
+        new EnvironmentRateLimitError({ code: "rate_limited", retryAfterSeconds, traceId }),
+      ),
+    ),
+  );
+}
+
+function failEnvironmentConflict(message: string) {
+  return Effect.fail(new EnvironmentHttpConflictError({ message }));
+}
+
+const policyRequest = (
+  request: HttpServerRequest.HttpServerRequest,
+  sessions: SessionStore.SessionStore["Service"],
+) => ({
+  method: request.method,
+  pathname: new URL(request.url, "http://environment.test").pathname,
+  headers: request.headers,
+  credentialSource: EnvironmentAuth.selectRequestCredential(
+    request,
+    sessions.cookieName,
+    sessions.legacyCookieName,
+  )?.source,
+});
+
+export const requireDeviceAdministratorAuthority = Effect.fn(
+  "environment.auth.requireDeviceAdministratorAuthority",
+)(function* () {
+  yield* appendCredentialResponseHeaders;
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const sessions = yield* SessionStore.SessionStore;
+  const principal = yield* EnvironmentAuthenticatedPrincipal;
+  if (
+    !DeviceAdministratorPolicy.permitsDeviceAdministratorRequest(
+      policyRequest(request, sessions),
+      principal,
+    )
+  ) {
+    return yield* failEnvironmentOperationForbidden("authority_not_allowed");
+  }
+  return principal;
+});
+
+/** Install before every HTTP dispatch, including unauthenticated application endpoints. */
+export const guardDeviceAdministratorHttpRequest = Effect.gen(function* () {
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const sessions = yield* SessionStore.SessionStore;
+  const input = policyRequest(request, sessions);
+  const isPortalPath = DeviceAdministratorPolicy.isDeviceAdministratorPath(input.pathname);
+  if (isPortalPath) yield* appendCredentialResponseHeaders;
+  const selected = EnvironmentAuth.selectRequestCredential(
+    request,
+    sessions.cookieName,
+    sessions.legacyCookieName,
+  );
+  // Inspect every presented session so a cookie cannot hide a portal bearer token.
+  const tokens = new Set(
+    [
+      selected?.token,
+      request.cookies[sessions.cookieName],
+      sessions.legacyCookieName === undefined
+        ? undefined
+        : request.cookies[sessions.legacyCookieName],
+      parseAuthorizationCredential(request.headers.authorization)?.token,
+    ].filter((token): token is string => token !== undefined),
+  );
+  let portalSeen = false;
+  for (const token of tokens) {
+    const authority = yield* sessions.identifySignedAuthority(token).pipe(Effect.option);
+    if (authority._tag === "Some" && authority.value === "device-administrator") {
+      yield* appendCredentialResponseHeaders;
+      if (selected?.token !== token || !isPortalPath)
+        return yield* failEnvironmentOperationForbidden("authority_not_allowed");
+      const verified = yield* sessions.verify(token).pipe(Effect.option);
+      if (
+        verified._tag !== "Some" ||
+        DeviceAdministratorPolicy.deviceAdministratorHttpDecision(input, verified.value) !==
+          "portal"
+      ) {
+        return yield* failEnvironmentOperationForbidden("authority_not_allowed");
+      }
+      portalSeen = true;
+    }
+  }
+
+  if (isPortalPath && !portalSeen)
+    return yield* failEnvironmentOperationForbidden("authority_not_allowed");
+});

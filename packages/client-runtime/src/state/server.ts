@@ -95,7 +95,7 @@ export class ServerUpdateResumeTimeoutError extends Schema.TaggedErrorClass<Serv
   },
 ) {
   override get message(): string {
-    return `The server did not resume on t3@${this.targetVersion}.`;
+    return `The server did not resume on version ${this.targetVersion}.`;
   }
 }
 
@@ -106,7 +106,7 @@ export class ServerUpdateProgressIncompleteError extends Schema.TaggedErrorClass
   },
 ) {
   override get message(): string {
-    return `The t3@${this.targetVersion} update ended before the server accepted the restart.`;
+    return `The update to version ${this.targetVersion} ended before the server accepted the restart.`;
   }
 }
 
@@ -119,12 +119,11 @@ export class ServerUpdateTerminalError extends Schema.TaggedErrorClass<ServerUpd
   },
 ) {
   override get message(): string {
-    return this.reason ?? `The t3@${this.targetVersion} update ${this.status}.`;
+    return this.reason ?? `The update to version ${this.targetVersion} ${this.status}.`;
   }
 }
 
-// Covers the 120-second trial deadline and a final restart of the previous
-// version when the trial rolls back.
+// Also covers the trial deadline and rollback reported by older peers.
 const SERVER_UPDATE_RESUME_TIMEOUT = Duration.minutes(4);
 
 export function matchesServerUpdateReadyEvent(
@@ -164,9 +163,7 @@ export function validateServerUpdateReadyEvent(
     new ServerUpdateTerminalError({
       targetVersion: result.targetVersion,
       status: outcome?.status ?? "failed",
-      reason:
-        outcome?.reason ??
-        "The service launcher resumed without committing the requested server version.",
+      reason: outcome?.reason ?? "The server resumed without committing the requested version.",
     }),
   );
 }

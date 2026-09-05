@@ -34,9 +34,14 @@ import {
 } from "./lib/cli-external-packages.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import {
+  selectSingleLinuxAppImage,
+  writeLinuxDesktopReleaseDescriptor,
+} from "./linux-desktop-release-artifact.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { officialDesktopRepository } from "@t3tools/shared/forkReleaseIdentity";
 import * as Config from "effect/Config";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -2492,24 +2497,44 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
     updateRepository: Config.string("T3CODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
     githubRepository: Config.string("GITHUB_REPOSITORY").pipe(Config.option),
   });
-  const rawRepo = (
+  const configuredRepo = (
     Option.getOrUndefined(env.updateRepository)?.trim() ||
     Option.getOrUndefined(env.githubRepository)?.trim() ||
     ""
   ).trim();
-  if (!rawRepo) return undefined;
-
-  const [owner, repo, ...rest] = rawRepo.split("/");
-  if (!owner || !repo || rest.length > 0) return undefined;
+  // This adapter owns environment precedence and publish-channel translation.
+  // Exact repository selection belongs to the portable release identity owner.
+  const repository = officialDesktopRepository(configuredRepo || undefined);
+  if (repository === null) {
+    return yield* new InvalidDesktopUpdateRepositoryError({ repository: configuredRepo });
+  }
 
   return {
     provider: "github",
-    owner,
-    repo,
+    owner: repository.owner,
+    repo: repository.repo,
     releaseType: updateChannel === "nightly" ? "prerelease" : "release",
     ...(updateChannel === "nightly" ? { channel: "nightly" as const } : {}),
   };
 });
+
+export class InvalidDesktopUpdateRepositoryError extends Schema.TaggedErrorClass<InvalidDesktopUpdateRepositoryError>()(
+  "InvalidDesktopUpdateRepositoryError",
+  { repository: Schema.String },
+) {
+  override get message(): string {
+    return "Desktop releases require the exact official updater repository.";
+  }
+}
+
+export class LinuxDesktopReleaseDescriptorGenerationError extends Schema.TaggedErrorClass<LinuxDesktopReleaseDescriptorGenerationError>()(
+  "LinuxDesktopReleaseDescriptorGenerationError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return "Linux desktop release descriptor generation failed.";
+  }
+}
 
 export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
   return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
@@ -2606,16 +2631,15 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
   if (!isDesktopPreviewVersion(version)) {
-    const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
-    if (publishConfig) {
-      buildConfig.publish = [publishConfig];
-    } else if (mockUpdates) {
+    if (mockUpdates) {
       buildConfig.publish = [
         {
           provider: "generic",
           url: resolveMockUpdateServerUrl(mockUpdateServerPort),
         },
       ];
+    } else {
+      buildConfig.publish = [yield* resolveGitHubPublishConfig(updateChannel)];
     }
   }
 
@@ -3868,6 +3892,29 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       platform: options.platform,
       arch: options.arch,
     });
+  }
+
+  if (options.platform === "linux" && options.target === "AppImage" && !options.mockUpdates) {
+    const finalOutputEntries = yield* fs.readDirectory(options.outputDir);
+    const finalOutputFiles: string[] = [];
+    for (const entry of finalOutputEntries) {
+      const outputPath = path.join(options.outputDir, entry);
+      const outputStat = yield* fs.stat(outputPath).pipe(Effect.orElseSucceed(() => null));
+      if (outputStat?.type === "File") finalOutputFiles.push(outputPath);
+    }
+    const descriptor = yield* Effect.tryPromise({
+      try: () => {
+        const appImagePath = selectSingleLinuxAppImage(finalOutputFiles);
+        return writeLinuxDesktopReleaseDescriptor({
+          artifactPath: appImagePath,
+          version: appVersion,
+          commitHash,
+          architecture: options.arch as "x64" | "arm64",
+        });
+      },
+      catch: (cause) => new LinuxDesktopReleaseDescriptorGenerationError({ cause }),
+    });
+    copiedArtifacts.push(descriptor.descriptorPath);
   }
 
   yield* Effect.log("[desktop-artifact] Done. Artifacts:").pipe(

@@ -8,6 +8,8 @@ import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
 import {
   AuthClientMetadataDeviceType,
+  AuthClientId,
+  AuthSessionAuthorityClass,
   AuthEnvironmentScopes,
   AuthSessionId,
   ClientSurface,
@@ -31,9 +33,14 @@ export const AuthSessionClientMetadataRecord = Schema.Struct({
 });
 export type AuthSessionClientMetadataRecord = typeof AuthSessionClientMetadataRecord.Type;
 
+export const AuthClientManagementClass = Schema.Literal("portal-managed-device");
+export type AuthClientManagementClass = typeof AuthClientManagementClass.Type;
+
 export const AuthSessionRecord = Schema.Struct({
   sessionId: AuthSessionId,
+  clientId: AuthClientId,
   subject: Schema.String,
+  authorityClass: Schema.NullOr(AuthSessionAuthorityClass),
   scopes: AuthEnvironmentScopes,
   method: ServerAuthSessionMethod,
   client: AuthSessionClientMetadataRecord,
@@ -41,12 +48,17 @@ export const AuthSessionRecord = Schema.Struct({
   expiresAt: Schema.DateTimeUtcFromString,
   lastConnectedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   revokedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
+  clientDisabledAt: Schema.NullOr(Schema.DateTimeUtcFromString),
+  clientDeletedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
 });
 export type AuthSessionRecord = typeof AuthSessionRecord.Type;
 
 export const CreateAuthSessionInput = Schema.Struct({
   sessionId: AuthSessionId,
+  clientId: AuthClientId,
   subject: Schema.String,
+  authorityClass: Schema.NullOr(AuthSessionAuthorityClass),
+  managementClass: Schema.NullOr(AuthClientManagementClass),
   scopes: AuthEnvironmentScopes,
   method: ServerAuthSessionMethod,
   client: AuthSessionClientMetadataRecord,
@@ -130,7 +142,9 @@ export class AuthSessionRepository extends Context.Service<
 
 const AuthSessionDbRow = Schema.Struct({
   sessionId: AuthSessionId,
+  clientId: AuthClientId,
   subject: Schema.String,
+  authorityClass: Schema.NullOr(AuthSessionAuthorityClass),
   scopes: Schema.fromJsonString(AuthEnvironmentScopes),
   method: ServerAuthSessionMethod,
   clientLabel: Schema.NullOr(Schema.String),
@@ -143,11 +157,15 @@ const AuthSessionDbRow = Schema.Struct({
   expiresAt: Schema.DateTimeUtcFromString,
   lastConnectedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   revokedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
+  clientDisabledAt: Schema.NullOr(Schema.DateTimeUtcFromString),
+  clientDeletedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
 });
 
 const AuthSessionRawDbRow = Schema.Struct({
   sessionId: Schema.String,
+  clientId: Schema.String,
   subject: Schema.Unknown,
+  authorityClass: Schema.Unknown,
   scopes: Schema.Unknown,
   method: Schema.Unknown,
   clientLabel: Schema.Unknown,
@@ -160,14 +178,19 @@ const AuthSessionRawDbRow = Schema.Struct({
   expiresAt: Schema.Unknown,
   lastConnectedAt: Schema.Unknown,
   revokedAt: Schema.Unknown,
+  clientDisabledAt: Schema.Unknown,
+  clientDeletedAt: Schema.Unknown,
 });
 
 const decodeAuthSessionDbRow = Schema.decodeUnknownEffect(AuthSessionDbRow);
+const encodeAuthEnvironmentScopes = Schema.encodeSync(Schema.fromJsonString(AuthEnvironmentScopes));
 
 function toAuthSessionRecord(row: typeof AuthSessionDbRow.Type): AuthSessionRecord {
   return {
     sessionId: row.sessionId,
+    clientId: row.clientId,
     subject: row.subject,
+    authorityClass: row.authorityClass,
     scopes: row.scopes,
     method: row.method,
     client: {
@@ -182,6 +205,8 @@ function toAuthSessionRecord(row: typeof AuthSessionDbRow.Type): AuthSessionReco
     expiresAt: row.expiresAt,
     lastConnectedAt: row.lastConnectedAt,
     revokedAt: row.revokedAt,
+    clientDisabledAt: row.clientDisabledAt,
+    clientDeletedAt: row.clientDeletedAt,
   };
 }
 
@@ -206,10 +231,41 @@ export const make = Effect.gen(function* () {
   const createSessionRow = SqlSchema.void({
     Request: CreateAuthSessionInput,
     execute: (input) =>
-      sql`
+      sql.withTransaction(
+        Effect.gen(function* () {
+          yield* sql`
+          INSERT INTO auth_clients (
+            client_id,
+            label,
+            device_type,
+            platform,
+            granted_scopes,
+            management_class,
+            created_at,
+            last_connected_at,
+            disabled_at,
+            deleted_at,
+            revision
+          ) VALUES (
+            ${input.clientId},
+            ${input.client.label},
+            ${input.client.deviceType},
+            ${input.client.os},
+            ${encodeAuthEnvironmentScopes(input.scopes)},
+            ${input.managementClass},
+            ${input.issuedAt},
+            NULL,
+            NULL,
+            NULL,
+            0
+          )
+        `;
+          yield* sql`
         INSERT INTO auth_sessions (
           session_id,
+          client_id,
           subject,
+          authority_class,
           scopes,
           method,
           client_label,
@@ -224,8 +280,10 @@ export const make = Effect.gen(function* () {
         )
         VALUES (
           ${input.sessionId},
+          ${input.clientId},
           ${input.subject},
-          ${JSON.stringify(input.scopes)},
+          ${input.authorityClass},
+          ${encodeAuthEnvironmentScopes(input.scopes)},
           ${input.method},
           ${input.client.label},
           ${input.client.ipAddress},
@@ -237,7 +295,9 @@ export const make = Effect.gen(function* () {
           ${input.expiresAt},
           NULL
         )
-      `,
+        `;
+        }),
+      ),
   });
 
   const getSessionRowById = SqlSchema.findOneOption({
@@ -247,7 +307,9 @@ export const make = Effect.gen(function* () {
       sql`
         SELECT
           session_id AS "sessionId",
+          auth_sessions.client_id AS "clientId",
           subject AS "subject",
+          authority_class AS "authorityClass",
           scopes AS "scopes",
           method AS "method",
           client_label AS "clientLabel",
@@ -258,9 +320,12 @@ export const make = Effect.gen(function* () {
           client_browser AS "clientBrowser",
           issued_at AS "issuedAt",
           expires_at AS "expiresAt",
-          last_connected_at AS "lastConnectedAt",
-          revoked_at AS "revokedAt"
+          auth_sessions.last_connected_at AS "lastConnectedAt",
+          revoked_at AS "revokedAt",
+          auth_clients.disabled_at AS "clientDisabledAt",
+          auth_clients.deleted_at AS "clientDeletedAt"
         FROM auth_sessions
+        INNER JOIN auth_clients USING (client_id)
         WHERE session_id = ${sessionId}
       `,
   });
@@ -287,7 +352,9 @@ export const make = Effect.gen(function* () {
       sql`
         SELECT
           session_id AS "sessionId",
+          auth_sessions.client_id AS "clientId",
           subject AS "subject",
+          authority_class AS "authorityClass",
           scopes AS "scopes",
           method AS "method",
           client_label AS "clientLabel",
@@ -298,9 +365,12 @@ export const make = Effect.gen(function* () {
           client_browser AS "clientBrowser",
           issued_at AS "issuedAt",
           expires_at AS "expiresAt",
-          last_connected_at AS "lastConnectedAt",
-          revoked_at AS "revokedAt"
+          auth_sessions.last_connected_at AS "lastConnectedAt",
+          revoked_at AS "revokedAt",
+          auth_clients.disabled_at AS "clientDisabledAt",
+          auth_clients.deleted_at AS "clientDeletedAt"
         FROM auth_sessions
+        INNER JOIN auth_clients USING (client_id)
         WHERE revoked_at IS NULL
           AND (expires_at > ${now} OR ${sql.in("session_id", connectedSessionIds)})
         ORDER BY issued_at DESC, session_id DESC
@@ -310,12 +380,24 @@ export const make = Effect.gen(function* () {
   const setLastConnectedAtRow = SqlSchema.void({
     Request: SetAuthSessionLastConnectedAtInput,
     execute: ({ sessionId, lastConnectedAt }) =>
-      sql`
+      sql.withTransaction(
+        Effect.gen(function* () {
+          yield* sql`
         UPDATE auth_sessions
         SET last_connected_at = ${lastConnectedAt}
         WHERE session_id = ${sessionId}
           AND revoked_at IS NULL
-      `,
+        `;
+          yield* sql`
+          UPDATE auth_clients
+          SET last_connected_at = ${lastConnectedAt}
+          WHERE client_id = (
+            SELECT client_id FROM auth_sessions WHERE session_id = ${sessionId}
+          )
+            AND deleted_at IS NULL
+        `;
+        }),
+      ),
   });
 
   // COALESCE keeps the previous value when a client reports only one field, so

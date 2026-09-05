@@ -726,7 +726,8 @@ export const ServerConfigStreamEvent = Schema.Union([
 ]);
 export type ServerConfigStreamEvent = typeof ServerConfigStreamEvent.Type;
 
-/** Terminal selection recorded by the service launcher for one update. */
+/** Update outcome supplied by older or upstream peers. Current fork desktop
+    updates use the preparation token and do not produce this correlation. */
 export const ServerSelfUpdateOutcome = Schema.Struct({
   id: TrimmedNonEmptyString,
   fromVersion: TrimmedNonEmptyString,
@@ -739,7 +740,7 @@ export type ServerSelfUpdateOutcome = typeof ServerSelfUpdateOutcome.Type;
 export const ServerLifecycleReadyPayload = Schema.Struct({
   at: IsoDateTime,
   environment: ExecutionEnvironmentDescriptor,
-  /** Present when this process resumed a launcher-managed update. */
+  /** Optional correlated outcome from an older or upstream peer. */
   updateOutcome: Schema.optionalKey(ServerSelfUpdateOutcome),
 });
 export type ServerLifecycleReadyPayload = typeof ServerLifecycleReadyPayload.Type;
@@ -803,8 +804,8 @@ export class ServerProviderUpdateError extends Schema.TaggedErrorClass<ServerPro
 }
 
 export const ServerSelfUpdateInput = Schema.Struct({
-  /** Exact npm version of the `t3` package to install (never a dist-tag, so
-      the server and the acknowledging client agree on what was requested). */
+  /** Exact target version requested from the supervising desktop app. The
+      current fork does not install a public server package through this RPC. */
   targetVersion: TrimmedNonEmptyString,
   /** Opt-in recovery for provider turns that are running when the server
       hands off to its replacement. Missing and false keep restart behavior
@@ -813,12 +814,12 @@ export const ServerSelfUpdateInput = Schema.Struct({
 });
 export type ServerSelfUpdateInput = typeof ServerSelfUpdateInput.Type;
 
-/** Acknowledgement that the update artifact is installed and the server is
-    about to restart into it — the connection will drop moments later. */
+/** Prepared update result. The current desktop-app path returns a preparation
+    token that the client must commit before the desktop and server restart. */
 export const ServerSelfUpdateResult = Schema.Struct({
   targetVersion: TrimmedNonEmptyString,
   method: ServerSelfUpdateMethod,
-  /** Launcher-generated correlation ID. Absent when talking to older servers. */
+  /** Optional update correlation from an older or upstream peer. */
   updateId: Schema.optionalKey(TrimmedNonEmptyString),
   /** Desktop preparation token. Present only for the desktop-app method. */
   desktopUpdateToken: Schema.optionalKey(TrimmedNonEmptyString),

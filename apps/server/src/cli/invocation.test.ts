@@ -2,86 +2,100 @@ import { assert, it } from "@effect/vitest";
 
 import { formatCliCommand } from "./invocation.ts";
 
-it("formats package runner commands from their cache entry paths", () => {
-  for (const [entryPath, expected] of [
-    ["/home/theo/.npm/_npx/abc123/node_modules/t3/dist/bin.mjs", "npx t3 serve"],
-    [
-      "C:\\Users\\theo\\AppData\\Local\\npm-cache\\_npx\\abc\\node_modules\\t3\\dist\\bin.mjs",
-      "npx t3 serve",
-    ],
-    ["/home/theo/.cache/pnpm/dlx/abc/node_modules/t3/dist/bin.mjs", "pnpm dlx t3 serve"],
-    [
-      "/home/theo/.local/share/pnpm/.pnpm/dlx/abc/node_modules/t3/dist/bin.mjs",
-      "pnpm dlx t3 serve",
-    ],
-    [
-      "C:\\Users\\theo\\AppData\\Local\\pnpm-cache\\dlx\\abc\\node_modules\\t3\\dist\\bin.mjs",
-      "pnpm dlx t3 serve",
-    ],
-    ["/home/theo/.bun/install/cache/t3@0.0.31/dist/bin.mjs", "bunx t3 serve"],
-    ["/tmp/bunx-1000-t3@latest/node_modules/t3/dist/bin.mjs", "bunx t3 serve"],
-    [
-      "C:\\Users\\theo\\AppData\\Local\\Temp\\bunx-0-t3@latest\\node_modules\\t3\\dist\\bin.mjs",
-      "bunx t3 serve",
-    ],
-  ] as const) {
-    assert.equal(formatCliCommand({ subcommand: "serve", entryPath, version: "0.0.31" }), expected);
+it("reuses package-runner bytes through an explicit POSIX invocation", () => {
+  for (const entryPath of [
+    "/workspace/.npm/_npx/abc123/node_modules/t3/dist/bin.mjs",
+    "/workspace/.cache/pnpm/dlx/abc/node_modules/t3/dist/bin.mjs",
+    "/workspace/.local/share/pnpm/.pnpm/dlx/abc/node_modules/t3/dist/bin.mjs",
+    "/workspace/.bun/install/cache/t3@0.0.31/dist/bin.mjs",
+    "/tmp/bunx-1000-t3@latest/node_modules/t3/dist/bin.mjs",
+  ]) {
+    const command = formatCliCommand({
+      subcommand: "serve",
+      executablePath: "/opt/node/bin/node",
+      entryPath,
+      platform: "linux",
+    });
+    assert.equal(command, `/opt/node/bin/node ${entryPath} serve`);
+    assert.notMatch(command, /^(?:npx|bunx|pnpm\s+dlx)\s/u);
   }
 });
 
-it("treats stable installs as direct invocations", () => {
+it("quotes an explicit current executable and entry for POSIX shells", () => {
+  assert.equal(
+    formatCliCommand({
+      subcommand: "serve",
+      executablePath: "/opt/Node Runtime/bin/node",
+      entryPath: "/workspace/T3 Cache/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
+      platform: "darwin",
+    }),
+    "'/opt/Node Runtime/bin/node' '/workspace/T3 Cache/.npm/_npx/abc/node_modules/t3/dist/bin.mjs' serve",
+  );
+  assert.equal(
+    formatCliCommand({
+      subcommand: "serve",
+      executablePath: "/opt/Node's Runtime/bin/node",
+      entryPath: "/workspace/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
+      platform: "linux",
+    }),
+    "'/opt/Node'\\''s Runtime/bin/node' /workspace/.npm/_npx/abc/node_modules/t3/dist/bin.mjs serve",
+  );
+});
+
+it("quotes an explicit current executable and entry for PowerShell", () => {
+  for (const entryPath of [
+    String.raw`C:\Users\User Name\npm-cache\_npx\abc\node_modules\t3\dist\bin.mjs`,
+    String.raw`C:\Users\User Name\pnpm-cache\dlx\abc\node_modules\t3\dist\bin.mjs`,
+    String.raw`C:\Users\User Name\Temp\bunx-0-t3@latest\node_modules\t3\dist\bin.mjs`,
+  ]) {
+    assert.equal(
+      formatCliCommand({
+        subcommand: "serve",
+        executablePath: String.raw`C:\Program Files\nodejs\node.exe`,
+        entryPath,
+        platform: "win32",
+      }),
+      `& 'C:\\Program Files\\nodejs\\node.exe' '${entryPath}' serve`,
+    );
+  }
+  assert.equal(
+    formatCliCommand({
+      subcommand: "serve",
+      executablePath: String.raw`C:\Node's Runtime\node.exe`,
+      entryPath: String.raw`C:\Cache\_npx\abc\node_modules\t3\dist\bin.mjs`,
+      platform: "win32",
+    }),
+    String.raw`& 'C:\Node''s Runtime\node.exe' C:\Cache\_npx\abc\node_modules\t3\dist\bin.mjs serve`,
+  );
+});
+
+it("keeps installed and checkout runtimes on the authorized t3 command", () => {
   for (const entryPath of [
     "/usr/local/lib/node_modules/t3/dist/bin.mjs",
-    "/home/theo/Code/work/t3code/apps/server/dist/bin.mjs",
-    "/home/theo/.t3/runtime/0.0.31/node_modules/t3/dist/bin.mjs",
+    "/workspace/t3code/apps/server/dist/bin.mjs",
+    "/workspace/.t3/runtime/0.0.31/node_modules/t3/dist/bin.mjs",
     "",
   ]) {
     assert.equal(
-      formatCliCommand({ subcommand: "serve", entryPath, version: "0.0.31" }),
+      formatCliCommand({
+        subcommand: "serve",
+        executablePath: "/usr/bin/node",
+        entryPath,
+        platform: "linux",
+      }),
       "t3 serve",
     );
   }
 });
 
-it("re-suggests the nightly channel only for nightly builds", () => {
-  for (const [version, expected] of [
-    ["0.0.31-nightly.20260729", "npx t3@nightly serve"],
-    ["0.0.31", "npx t3 serve"],
-  ] as const) {
-    assert.equal(
-      formatCliCommand({
-        subcommand: "serve",
-        entryPath: "/home/theo/.npm/_npx/abc123/node_modules/t3/dist/bin.mjs",
-        version,
-      }),
-      expected,
-    );
-  }
-});
-
-it("formats serve suggestions to match the launching command", () => {
+it("quotes the bounded subcommand instead of interpreting shell syntax", () => {
   assert.equal(
     formatCliCommand({
-      subcommand: "serve",
-      entryPath: "/home/theo/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
-      version: "0.0.31-nightly.20260729",
+      subcommand: "serve; echo unexpected",
+      executablePath: "/usr/bin/node",
+      entryPath: "/workspace/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
+      platform: "linux",
     }),
-    "npx t3@nightly serve",
-  );
-  assert.equal(
-    formatCliCommand({
-      subcommand: "serve",
-      entryPath: "/tmp/bunx-1000-t3@latest/node_modules/t3/dist/bin.mjs",
-      version: "0.0.31",
-    }),
-    "bunx t3 serve",
-  );
-  assert.equal(
-    formatCliCommand({
-      subcommand: "serve",
-      entryPath: "/usr/local/lib/node_modules/t3/dist/bin.mjs",
-      version: "0.0.31-nightly.20260729",
-    }),
-    "t3 serve",
+    "/usr/bin/node /workspace/.npm/_npx/abc/node_modules/t3/dist/bin.mjs 'serve; echo unexpected'",
   );
 });

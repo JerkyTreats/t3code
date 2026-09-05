@@ -1,3 +1,4 @@
+import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
 import { EnvironmentHttpApi, ProviderDriverKind } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
@@ -97,12 +98,19 @@ import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts
 import { ObservabilityLive } from "./observability/Layers/Observability.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
-import { authHttpApiLayer, environmentAuthenticatedAuthLayer } from "./auth/http.ts";
+import {
+  authHttpApiLayer,
+  adminHttpApiLayer,
+  guardDeviceAdministratorHttpRequest,
+  failEnvironmentAuthInvalid,
+  environmentAuthenticatedAuthLayer,
+} from "./auth/http.ts";
+import * as AdminAccess from "./auth/AdminAccess.ts";
+import * as ClientConnectionRegistry from "./auth/ClientConnectionRegistry.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import {
   connectHttpApiLayer,
-  pendingServiceUpdateExists,
   reconcileDesiredCloudLink,
   releaseManagedTunnelOnShutdown,
 } from "./cloud/http.ts";
@@ -113,7 +121,6 @@ import * as CloudCliTokenManager from "./cloud/CliTokenManager.ts";
 import * as CloudCliState from "./cloud/CliState.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
-import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
@@ -521,6 +528,18 @@ const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   Layer.provide(NetService.layer),
 );
 
+const deviceAdministratorBoundaryLayer = HttpRouter.middleware(
+  (httpEffect) =>
+    guardDeviceAdministratorHttpRequest.pipe(
+      Effect.catchTag("EnvironmentOperationForbiddenError", () =>
+        failEnvironmentAuthInvalid("invalid_credential"),
+      ),
+      Effect.andThen(httpEffect),
+      Effect.catchTag("EnvironmentAuthInvalidError", HttpServerRespondable.toResponse),
+    ),
+  { global: true },
+);
+
 const commandReadinessLayer = HttpRouter.middleware(
   (httpEffect) =>
     Effect.flatMap(ServerRuntimeStartup.ServerRuntimeStartup, (startup) =>
@@ -533,6 +552,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(authHttpApiLayer),
+      Layer.provide(adminHttpApiLayer.pipe(Layer.provide(AdminAccess.layer))),
       Layer.provide(connectHttpApiLayer),
       Layer.provide(orchestrationHttpApiLayer),
       Layer.provide(pullRequestHttpApiLayer),
@@ -554,7 +574,10 @@ export const makeRoutesLayer = Layer.mergeAll(
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(DesktopAppUpdateLayerLive))),
   Layer.provide(commandReadinessLayer),
   Layer.provide(browserApiCorsLayer),
+  Layer.provide(deviceAdministratorBoundaryLayer),
   Layer.provide(httpCompressionLayer),
+  Layer.provideMerge(ClientConnectionRegistry.sessionRevocationLayer),
+  Layer.provide(ClientConnectionRegistry.layer),
 );
 
 export const makeServerLayer = Layer.unwrap(
@@ -567,7 +590,6 @@ export const makeServerLayer = Layer.unwrap(
     const tailscaleParked = yield* Deferred.make<void>();
     const cloudLinkParked = yield* Deferred.make<void>();
     const routesReady = yield* Deferred.make<void>();
-    const launcherLayer = ServiceLauncherClient.layer;
 
     yield* fixPath();
 
@@ -682,21 +704,9 @@ export const makeServerLayer = Layer.unwrap(
           ),
           Effect.asVoid,
         );
-        // A launcher trial can be stopped before activation. The previous
-        // server is already gone, so the trial owns cleanup immediately; the
-        // pending-state check keeps the tunnel for normal commit or rollback,
-        // while the launcher's explicit-stop marker allows it to be released.
-        // Other runtimes wait for activation so a failed standby cannot tear
-        // down the active runtime's tunnel.
-        const cleanupBeforeActivation = yield* pendingServiceUpdateExists;
-        if (cleanupBeforeActivation) {
-          yield* Effect.addFinalizer(() => releaseManagedTunnel);
-        }
         yield* forkParked(
           Effect.gen(function* () {
-            if (!cleanupBeforeActivation) {
-              yield* Effect.addFinalizer(() => releaseManagedTunnel);
-            }
+            yield* Effect.addFinalizer(() => releaseManagedTunnel);
             if (!(yield* CloudCliState.readCliDesiredCloudLink)) return;
             const server = yield* HttpServer.HttpServer;
             const address = server.address;
@@ -742,9 +752,9 @@ export const makeServerLayer = Layer.unwrap(
         ],
         { concurrency: "unbounded" },
       ).pipe(Effect.asVoid),
-    }).pipe(Layer.provideMerge(RuntimeDependenciesLive), Layer.provide(launcherLayer));
+    }).pipe(Layer.provideMerge(RuntimeDependenciesLive));
 
-    const routesLayer = HttpRouter.serve(makeRoutesLayer.pipe(Layer.provide(launcherLayer)), {
+    const routesLayer = HttpRouter.serve(makeRoutesLayer, {
       disableLogger: !config.logWebSocketEvents,
       routerConfig: HTTP_ROUTER_CONFIG,
     }).pipe(Layer.tap(() => Deferred.succeed(routesReady, undefined).pipe(Effect.orDie)));

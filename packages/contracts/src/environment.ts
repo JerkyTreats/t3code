@@ -55,18 +55,16 @@ export const ThreadEnvMode = Schema.Literals(["local", "worktree"]);
 export type ThreadEnvMode = typeof ThreadEnvMode.Type;
 export type ExecutionEnvironmentPlatform = typeof ExecutionEnvironmentPlatform.Type;
 
-/** How a server can replace itself with another version when asked over RPC.
-    New servers only advertise the stable launcher-backed "boot-service" path;
-    "respawn" remains decodable for compatibility with older servers.
-    "desktop-app" means the supervising desktop app updated and relaunched
-    itself, bringing the server back with it. */
+/** Update outcomes represented on the wire. This fork returns "desktop-app"
+    when its supervising desktop app prepares the replacement. Other values
+    remain decodable when observing older or upstream peers. */
 export const ServerSelfUpdateMethod = Schema.Literals(["boot-service", "respawn", "desktop-app"]);
 export type ServerSelfUpdateMethod = typeof ServerSelfUpdateMethod.Type;
 
-/** What update path a client should offer for a server: one of the RPC
-    self-update methods above, or "desktop-managed" when the backend's
-    version belongs to the T3 Code desktop app supervising it — updating the
-    app on that machine is the only way to update the server. */
+/** Advertised update capability. This fork emits "desktop-managed" when the
+    supervising desktop owns the server version, or no capability for an
+    operator-managed runtime. Other wire values describe older or upstream
+    peers; decoding a value does not establish current fork support. */
 export const ServerSelfUpdateCapability = Schema.Literals([
   "boot-service",
   "respawn",

@@ -1,9 +1,7 @@
 import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/contracts";
+import { officialDesktopReleaseUrl } from "@t3tools/shared/forkReleaseIdentity";
 
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
-
-const DESKTOP_RELEASE_HISTORY_URL = "https://github.com/pingdotgg/t3code/releases";
-const DESKTOP_RELEASE_TAG_URL = `${DESKTOP_RELEASE_HISTORY_URL}/tag`;
 
 /**
  * The main process fills `downloadedVersion` from the updater's `update-downloaded`
@@ -18,11 +16,11 @@ export function getDesktopUpdateDownloadedVersion(state: DesktopUpdateState): st
 export function getDesktopUpdateReleaseUrl(version: string | null): string | null {
   const normalizedVersion = version?.trim();
   if (!normalizedVersion) return null;
-  return `${DESKTOP_RELEASE_TAG_URL}/v${encodeURIComponent(normalizedVersion)}`;
+  return officialDesktopReleaseUrl(normalizedVersion);
 }
 
 export function getDesktopUpdateReleaseHistoryUrl(): string {
-  return DESKTOP_RELEASE_HISTORY_URL;
+  return officialDesktopReleaseUrl();
 }
 
 export function resolveDesktopUpdateButtonAction(

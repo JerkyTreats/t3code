@@ -4,13 +4,16 @@ import {
   AuthStandardClientScopes,
 } from "@t3tools/contracts";
 import * as Console from "effect/Console";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
 import { Argument, Command, Flag, GlobalFlag } from "effect/unstable/cli";
+import * as CliError from "effect/unstable/cli/CliError";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import { MAX_DEVICE_ADMINISTRATOR_SESSION_TTL } from "../auth/SessionStore.ts";
 
 import {
   formatIssuedPairingCredential,
@@ -80,6 +83,19 @@ const tokenOnlyFlag = Flag.boolean("token-only").pipe(
   Flag.withDescription("Print only the issued bearer token."),
   Flag.withDefault(false),
 );
+
+const deviceAdministratorFlag = Flag.boolean("device-administrator").pipe(
+  Flag.withDescription(
+    "Issue high-value device-admission authority for the external portal. Keep the credential out of browser state.",
+  ),
+  Flag.withDefault(false),
+);
+
+class DeviceAdministratorTtlError extends CliError.UserError {
+  override get message() {
+    return String(this.cause);
+  }
+}
 
 const pairingCreateCommand = Command.make("create", {
   ...authLocationFlags,
@@ -165,6 +181,7 @@ const sessionIssueCommand = Command.make("issue", {
   label: labelFlag,
   subject: subjectFlag,
   tokenOnly: tokenOnlyFlag,
+  deviceAdministrator: deviceAdministratorFlag,
   json: jsonFlag,
 }).pipe(
   Command.withDescription("Issue a scoped bearer access token for headless or remote clients."),
@@ -173,8 +190,26 @@ const sessionIssueCommand = Command.make("issue", {
       flags,
       (environmentAuth) =>
         Effect.gen(function* () {
+          if (flags.deviceAdministrator && Option.isNone(flags.ttl)) {
+            return yield* new DeviceAdministratorTtlError({
+              cause: "Device administrator authority requires an explicit --ttl up to 7 days.",
+            });
+          }
+          if (
+            flags.deviceAdministrator &&
+            Option.isSome(flags.ttl) &&
+            Duration.toMillis(flags.ttl.value) >
+              Duration.toMillis(MAX_DEVICE_ADMINISTRATOR_SESSION_TTL)
+          ) {
+            return yield* new DeviceAdministratorTtlError({
+              cause: "Device administrator authority TTL cannot exceed 7 days.",
+            });
+          }
           const issued = yield* environmentAuth.issueSession({
-            scopes: AuthAdministrativeScopes,
+            scopes: flags.deviceAdministrator ? [] : AuthAdministrativeScopes,
+            ...(flags.deviceAdministrator
+              ? { authorityClass: "device-administrator" as const }
+              : {}),
             ...(Option.isSome(flags.ttl) ? { ttl: flags.ttl.value } : {}),
             ...(Option.isSome(flags.label) ? { label: flags.label.value } : {}),
             ...(Option.isSome(flags.subject) ? { subject: flags.subject.value } : {}),

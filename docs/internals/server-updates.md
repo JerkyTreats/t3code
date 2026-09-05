@@ -1,57 +1,67 @@
 # Server updates
 
-A [stable launcher](../../apps/server/src/serviceLauncher.ts) owns the runtime
-selected by systemd or launchd. It is the only runtime writer of durable service
-state. Server children request updates over inherited IPC; they never rewrite
-their service definition or select their own replacement. Local service commands
-may replace the launcher and state while the service is stopped. Foreground CLI
-processes do not self-update.
+Official runtimes have two update owners. The packaged desktop app owns its
+application update through the Electron updater. A standalone or headless server
+is part of an operator-managed deployment and does not replace itself.
 
-Exact-version installs keep restarts independent of npm cache eviction or a moving
-release tag. Installation and preflight happen in staging before publishing an
-immutable runtime. Preflight checks the launcher protocol because a target that
-needs new rollback guarantees cannot safely run under an older launcher. Upgrading
-that launcher requires a local service update.
+The server reports this boundary through the
+[official runtime update policy](../../apps/server/src/fork/officialRuntimeUpdatePolicy.ts).
+There is no server launcher protocol or server-side installation service.
 
-## Commit boundary
+## Desktop prepare and commit
 
-The launcher durably records the pending update before acknowledging it, then
-stops the old child and starts the target as a trial. Service-state writes use
-same-directory replacement with file and directory fsync. Invalid state stops
-startup rather than guessing which runtime to boot.
+The [desktop update bridge](../../apps/server/src/desktopUpdate/DesktopAppUpdate.ts)
+asks the desktop process to check for and download an update. Preparation returns
+a request token and target version while the current server connection is still
+alive. Receiving that response does not install the update.
 
-The trial must finish migrations, acquire dependencies, bind HTTP, and park every
-long-running root at the activation gate before reporting `prepared`. The launcher
-then commits the target version durably and replies `committed`. Only then may the
-child release its gates, accept commands, and publish ready. Keep fallible startup
-acquisitions before this boundary. A listener alone does not prove the runtime is
-ready to commit.
+The client commits the token only after it has received the preparation result.
+The [desktop update owner](../../apps/desktop/src/updates/DesktopRemoteUpdates.ts)
+accepts the commit only while the same downloaded version remains prepared. The
+prepared reservation expires after five minutes and cancellation clears an
+uncommitted reservation.
 
-A failed or timed-out trial returns to the old version. After commit, the target
-is authoritative and the service manager's ordinary restart policy applies.
+An accepted commit stops every bundled backend before the desktop updater installs
+and relaunches the app. The old server does not report success. Transport loss
+followed by a reconnect on the prepared target version is the success proof. If
+the install request fails before relaunch, the desktop app attempts to restart the
+stopped backends and reports the failure for the same request token.
 
-## Database rollback
+## Startup readiness
 
-After the old child exits, the launcher snapshots SQLite's main file, WAL, and
-shared-memory file. This makes trial migrations reversible without down
-migrations. The snapshot is made once per update and survives launcher restarts;
-replacing it during a retry could capture changes from the failed trial.
+The replacement bundled server follows the normal startup sequence. Persistence
+and migrations initialize as runtime dependencies. The HTTP listener starts, the
+long-running roots park at their activation boundary, and the server then opens
+command handling and publishes its ready event. A listening socket alone does not
+prove command readiness.
 
-Rollback stops the trial before restoring. A durable restore marker makes an
-interrupted restore finish before either version boots. Keep the snapshot until
-commit, or until both restoration and the terminal rollback state are durable.
-Attachments and other files outside SQLite are outside this rollback boundary.
+This readiness sequence is owned by
+[server runtime startup](../../apps/server/src/serverRuntimeStartup.ts) and
+[server activation](../../apps/server/src/serverActivation.ts). It is independent
+of the desktop preparation token and does not provide an application rollback.
 
-## Client acknowledgement
+## Migration 42 backup
 
-An accepted update is still pending. Clients correlate the launcher's update ID
-with the ready event after reconnecting, then check the outcome and target version.
-A reconnect alone cannot distinguish successful replacement from rollback. Older
-servers without an update ID retain version-only correlation.
+The persistence layer creates a validated, durable SQLite backup exactly once
+when migration 42 is pending. Later starts inspect the migration journal and do
+not replace that retained pre-migration image with post-migration data. Operators
+may remove the retained directory after accepting migration 42.
 
-Desktop updates have a separate two-phase handoff because installing the app stops
-its bundled backend. Preparation returns a token while the connection is alive;
-the client commits that token only after receiving it. Otherwise backend shutdown
-could lose the only successful RPC result. The client must then observe the
-prepared version after reconnecting. If installation fails, desktop restarts the
-stopped backends and replays the failure for the same token.
+This narrow safeguard is implemented by
+[Migration42Backup](../../apps/server/src/persistence/Migration42Backup.ts). It is
+not a snapshot for every update and the desktop updater does not restore it after
+an application failure. Its restore primitive requires the server and every
+SQLite client to be closed.
+
+## Operator-managed servers
+
+For a standalone or headless server, the operator selects an exact-origin runtime,
+stops it through the deployment supervisor, replaces the runtime, and starts it
+again. The normal startup readiness sequence is the acceptance boundary. Operators
+should verify the running version and application health after reconnecting.
+
+Backup retention and rollback belong to that deployment. An operator who needs a
+general rollback must preserve compatible application and database backups before
+the update, stop all database users before restoring data, and redeploy the prior
+runtime through the same supervisor. The retained pre-migration 42 image is a
+separate migration safeguard and does not replace that policy.

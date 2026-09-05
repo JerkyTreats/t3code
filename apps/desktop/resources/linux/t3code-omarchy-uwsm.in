@@ -1,0 +1,8 @@
+# T3 Code managed Omarchy adapter PATH integration.
+# UWSM establishes PATH before Hyprland and graphical menu processes start.
+t3code_omarchy_bin={{SHELL_ADAPTER_BIN}}
+case ":${PATH:-}:" in
+  *":$t3code_omarchy_bin:"*) ;;
+  *) export PATH="$t3code_omarchy_bin${PATH:+:$PATH}" ;;
+esac
+unset t3code_omarchy_bin

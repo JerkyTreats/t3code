@@ -29,6 +29,7 @@ it("formats pairing listings without exposing the secret token", () => {
   const output = formatPairingCredentialList(
     [
       {
+        revision: 0,
         id: "pairing-1",
         subject: "one-time-token",
         label: "Phone",
@@ -48,6 +49,7 @@ it("formats issued sessions with the bearer token but omits tokens from listings
   const issuedOutput = formatIssuedSession(
     {
       sessionId: "session-1" as never,
+      authorityClass: "client",
       token: "secret-session-token",
       method: "bearer-access-token",
       scopes: ["orchestration:read", "access:write"],
@@ -73,7 +75,7 @@ it("formats issued sessions with the bearer token but omits tokens from listings
           deviceType: "bot",
         },
         connected: false,
-        current: false,
+        authorityClass: "client",
         issuedAt: DateTime.makeUnsafe("2026-04-08T09:00:00.000Z"),
         expiresAt: DateTime.makeUnsafe("2026-04-08T10:00:00.000Z"),
         lastConnectedAt: null,

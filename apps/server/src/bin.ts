@@ -16,8 +16,6 @@ import { sharedServerCommandFlags } from "./cli/config.ts";
 import { isEntrypoint } from "./entrypoint.ts";
 import { projectCommand } from "./cli/project.ts";
 import { runServerCommand, serveCommand, startCommand } from "./cli/server.ts";
-import { serviceCommand } from "./cli/service.ts";
-import { servicePreflightCommand } from "./cli/servicePreflight.ts";
 import { themeCommand } from "./cli/theme.ts";
 import { triageCommand } from "./cli/triage.ts";
 
@@ -58,8 +56,6 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
       pairCommand,
       authCommand,
       projectCommand,
-      serviceCommand,
-      servicePreflightCommand,
       themeCommand,
       triageCommand,
       cloudEnabled ? connectCommand : connectUnavailableCommand,

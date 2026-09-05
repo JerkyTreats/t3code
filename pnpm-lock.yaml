@@ -972,6 +972,9 @@ importers:
       '@electron/osx-sign':
         specifier: 2.7.0
         version: 2.7.0
+      '@t3tools/contracts':
+        specifier: workspace:*
+        version: link:../packages/contracts
       '@t3tools/shared':
         specifier: workspace:*
         version: link:../packages/shared
@@ -984,6 +987,9 @@ importers:
       pngjs:
         specifier: 7.0.0
         version: 7.0.0
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     devDependencies:
       '@effect/vitest':
         specifier: 4.0.0-beta.103

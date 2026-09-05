@@ -1,4 +1,9 @@
-import { AuthSessionId, ThreadId, type AuthEnvironmentScope } from "@t3tools/contracts";
+import {
+  AuthClientId,
+  AuthSessionId,
+  ThreadId,
+  type AuthEnvironmentScope,
+} from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -35,6 +40,9 @@ describe("persistence error correlation", () => {
 
       yield* sessions.create({
         sessionId,
+        clientId: AuthClientId.make("correlation-client"),
+        authorityClass: "client",
+        managementClass: null,
         subject,
         scopes,
         method: "browser-session-cookie",
@@ -70,6 +78,9 @@ describe("persistence error correlation", () => {
       const createError = yield* Effect.flip(
         sessions.create({
           sessionId,
+          clientId: AuthClientId.make("correlation-client"),
+          authorityClass: "client",
+          managementClass: null,
           subject,
           scopes,
           method: "browser-session-cookie",
@@ -116,7 +127,7 @@ describe("persistence error correlation", () => {
       yield* sql`
         INSERT INTO auth_pairing_links (
           id,
-          credential,
+          credential_digest,
           method,
           scopes,
           subject,
@@ -142,12 +153,14 @@ describe("persistence error correlation", () => {
         )
       `;
 
-      const decodeError = yield* Effect.flip(pairingLinks.getByCredential({ credential }));
+      const decodeError = yield* Effect.flip(
+        pairingLinks.getByCredentialDigest({ credentialDigest: credential }),
+      );
       assert.instanceOf(decodeError, PersistenceErrors.PersistenceDecodeError);
       assert.deepStrictEqual(decodeError.correlation, { pairingLinkId: id });
       assert.equal(
         decodeError.message,
-        `Decode error in AuthPairingLinkRepository.getByCredential:decodeRow: ${decodeError.issue}`,
+        `Decode error in AuthPairingLinkRepository.getByCredentialDigest:decodeRow: ${decodeError.issue}`,
       );
       assert.notInclude(decodeError.issue, credential);
       assert.notInclude(decodeError.issue, subject);
@@ -158,7 +171,8 @@ describe("persistence error correlation", () => {
       const createError = yield* Effect.flip(
         pairingLinks.create({
           id,
-          credential,
+          credentialDigest: credential,
+          clientManagementClass: null,
           method: "one-time-token",
           scopes,
           subject,

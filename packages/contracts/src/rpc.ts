@@ -13,11 +13,7 @@ import {
 } from "./providerSetup.ts";
 
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
-import {
-  AuthAccessStreamError,
-  AuthAccessStreamEvent,
-  EnvironmentAuthorizationError,
-} from "./auth.ts";
+import { EnvironmentAuthorizationError } from "./auth.ts";
 import {
   BackgroundPolicySnapshot,
   ClientActivityReportInput,
@@ -373,7 +369,6 @@ export const WS_METHODS = {
   subscribeDiscoveredLocalServers: "subscribeDiscoveredLocalServers",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
-  subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
 } as const;
@@ -1181,13 +1176,6 @@ export const WsSubscribeServerLifecycleRpc = Rpc.make(WS_METHODS.subscribeServer
   stream: true,
 });
 
-export const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess, {
-  payload: Schema.Struct({}),
-  success: AuthAccessStreamEvent,
-  error: Schema.Union([AuthAccessStreamError, EnvironmentAuthorizationError]),
-  stream: true,
-});
-
 export const WsSubscribeBackgroundPolicyRpc = Rpc.make(WS_METHODS.subscribeBackgroundPolicy, {
   payload: Schema.Struct({}),
   success: BackgroundPolicySnapshot,
@@ -1312,7 +1300,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeDiscoveredLocalServersRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
-  WsSubscribeAuthAccessRpc,
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
   WsOrchestrationDispatchCommandRpc,

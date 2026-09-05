@@ -1,81 +1,71 @@
-# Running T3 Code in the background
+# Keeping a T3 Code host available
 
-On Linux and macOS, T3 Code can run as a service for your user so you do not need
-to keep a terminal open.
+A remote client can reach T3 Code only while the host runtime is running and the
+machine is awake. Choose the host process that matches your installation.
 
-## Manage the service
+## Packaged desktop host
 
-Run these commands on the machine that will host T3 Code:
+Keep the desktop app running on the host. Updating the app also updates its
+packaged server runtime.
 
-| Task                            | Command                           |
-| ------------------------------- | --------------------------------- |
-| Install and start               | `npx t3@latest service install`   |
-| Inspect status and log location | `npx t3@latest service status`    |
-| Update or repair                | `npx t3@latest service update`    |
-| Stop and remove from startup    | `npx t3@latest service uninstall` |
+The managed Linux desktop installer creates the `t3code-desktop.service` systemd
+user service as part of one verified artifact installation. Inspect that service
+with standard systemd tools:
 
-Uninstalling the service leaves your projects, threads, and settings intact.
+```sh
+systemctl --user status t3code-desktop.service
+journalctl --user -u t3code-desktop.service
+```
 
-Install and update use the version of the CLI you invoke. For nightly, use
-`npx t3@nightly service update`; replace `nightly` with an exact version to pin
-one. An older CLI refuses to replace a newer service unless you explicitly add
-`--allow-downgrade`.
+Restart it after an operator-managed configuration change with:
 
-Updating restarts the server. Finish active work first, and wait for any remote
-update already in progress. To match a remote client's version, follow
-[Updating T3 Code](./updating.md).
+```sh
+systemctl --user restart t3code-desktop.service
+```
 
-## Platform support
+The current source validates the installer and service files. Installed Linux
+acceptance remains pending, so do not treat source checks as proof that a
+particular machine completed installation successfully.
 
-Linux needs systemd user services. Setup enables lingering so T3 Code starts at
-boot and keeps running after logout. If this needs administrator permission,
-setup prints a recovery command before changing the service.
+## Command-line host
 
-macOS starts the service when you log in and stops it when you log out. Keep the
-Mac logged in and awake for unattended remote access. Installing over SSH while
-nobody is logged in at the Mac's screen can fail at the final start step; the
-service is still installed and will start at the next login.
+Run the authorized installed runtime directly:
 
-Windows background services are not supported.
+```sh
+t3 serve
+```
 
-T3 Connect can offer service installation during setup, but the two are managed
-separately. Signing out of T3 Connect does not stop or uninstall the service.
+The `t3` CLI has no built-in service-management commands. If the server must
+survive logout or restart, configure your operating system or process supervisor
+to run the absolute path to the installed `t3` executable with your normal
+`serve` options. Keep that service definition under operator control and update
+the executable through the same exact-origin installation method.
+
+Record the service name, runtime path, working directory, `T3CODE_HOME`, bind
+address, and log destination in your own runbook. Do not place pairing links,
+session credentials, or provider secrets in a published service definition.
+
+## Connection services
+
+T3 Connect exposure and the host process have separate lifecycles. Signing out
+of T3 Connect stops cloud exposure but does not stop a desktop app, systemd user
+service, or operator-managed process. Stopping the host process does not erase
+the saved T3 Connect login.
 
 ## Troubleshooting
 
-Start with `t3 service status` on the host. It prints the log path and, on Linux,
-checks whether the installed service is running, enabled, and allowed to survive
-logout.
+For the managed Linux desktop service, inspect systemd status and the journal as
+shown above. If the service stops when an SSH session closes, verify that the
+user manager and lingering policy on that host are configured by its
+administrator.
 
-If it stops when your SSH session closes, check for `linger-disabled`. An
-administrator can enable lingering with:
-
-```sh
-sudo loginctl enable-linger "$(id -un)"
-```
-
-Over SSH, allow sudo to prompt:
+For an operator-managed command-line service, use that supervisor's status and
+log commands. You can also stop the managed process and run the same installed
+command in a terminal to inspect startup output:
 
 ```sh
-ssh -t your-server 'sudo loginctl enable-linger "$(id -un)"'
+t3 serve
 ```
-
-Then retry service setup as your normal user. Run only the `loginctl` command
-with sudo; running T3 Code as root creates a separate installation and Connect
-identity. Without administrator access, run `t3 serve` in a terminal and keep
-that session open.
-
-| Status problem                          | Next step                                                                                                                      |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `linger-unavailable`                    | Run `loginctl show-user "$(id -un)" --property=Linger` and check that systemd-logind is available.                             |
-| `user-manager-unavailable`              | Run `systemctl --user status` in a login session for the service user; check your distribution's systemd user-session support. |
-| `service-disabled` or `service-stopped` | Read the log and `systemctl --user status t3code.service`, then use the repair command printed by T3 Code.                     |
-
-On macOS, check **System Settings → General → Login Items** if the service no
-longer starts at login. If agent work cannot access Desktop, Documents, or
-Downloads, it may need Full Disk Access for the Node executable listed in
-`ProgramArguments` in
-`~/Library/LaunchAgents/com.t3tools.t3code.service.plist`.
 
 For failures after signing in to T3 Connect, see
 [connection troubleshooting](./remote-access.md#t3-connect-troubleshooting).

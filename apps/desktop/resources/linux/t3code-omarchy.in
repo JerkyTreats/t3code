@@ -1,0 +1,19 @@
+#!/bin/bash
+set -euo pipefail
+
+# Bypass PATH here so every route outside the two adapters remains owned by stock Omarchy.
+if [[ ${1:-} == agent && ( $# -eq 1 || ${2:-} == --* ) ]]; then
+  [[ ${2:-} == --help || ${2:-} == -h ]] && exec {{STOCK_OMARCHY}} "$@"
+  shift
+  exec {{OMARCHY_AGENT_ADAPTER}} "$@"
+fi
+
+if [[ ${1:-} == default && ${2:-} == agent ]]; then
+  for argument in "${@:3}"; do
+    [[ $argument == --help || $argument == -h ]] && exec {{STOCK_OMARCHY}} "$@"
+  done
+  shift 2
+  exec {{OMARCHY_DEFAULT_AGENT_ADAPTER}} "$@"
+fi
+
+exec {{STOCK_OMARCHY}} "$@"

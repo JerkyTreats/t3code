@@ -29,6 +29,36 @@ it("seed prompt names the context file and embeds the playbook", () => {
   assert.include(prompt, TRIAGE_PLAYBOOK);
 });
 
+it("routes source and issue guidance only to exact origin", () => {
+  assert.include(TRIAGE_PLAYBOOK, "https://github.com/JerkyTreats/t3code");
+  assert.include(
+    TRIAGE_PLAYBOOK,
+    "https://raw.githubusercontent.com/JerkyTreats/t3code/main/.github/triage/PLAYBOOK.md",
+  );
+  assert.include(TRIAGE_PLAYBOOK, "https://github.com/JerkyTreats/t3code.git");
+  assert.include(TRIAGE_PLAYBOOK, "https://github.com/JerkyTreats/t3code/issues/new");
+  assert.notInclude(TRIAGE_PLAYBOOK, "pingdotgg/t3code");
+});
+
+it("requires exact clone approval and preserves existing source caches", () => {
+  assert.include(TRIAGE_PLAYBOOK, "exact source URL");
+  assert.include(TRIAGE_PLAYBOOK, "exact destination path");
+  assert.include(TRIAGE_PLAYBOOK, "get explicit permission for both");
+  assert.include(TRIAGE_PLAYBOOK, "verifying its exact-origin identity and matching commit");
+  assert.include(
+    TRIAGE_PLAYBOOK,
+    "Never delete, replace, or clean another source-cache entry\nautomatically.",
+  );
+});
+
+it("never suggests resolving T3 from a public package runner", () => {
+  assert.notMatch(TRIAGE_PLAYBOOK, /\b(?:npx|bunx|pnpm\s+dlx)\b/u);
+  assert.include(
+    TRIAGE_PLAYBOOK,
+    "Never suggest a package\nrunner or a public-registry T3 command.",
+  );
+});
+
 it("launch prompt stays a single argv-safe line naming the prompt file", () => {
   // The launch argument goes through cmd.exe on Windows (.cmd shims), which
   // cannot carry newlines; the playbook itself must stay on disk.
@@ -45,7 +75,7 @@ it("context file carries every path the playbook depends on", () => {
     releaseTag: "v0.0.33",
     os: "linux x64 (7.0.0)",
     nodeVersion: "v24.0.0",
-    launchedAs: "npx t3 triage",
+    launchedAs: "/usr/bin/node /workspace/t3code/apps/server/dist/bin.mjs triage",
     server: "running (pid 42, http://127.0.0.1:4501)",
     paths: {
       stateDir: "/home/u/.t3/userdata",
@@ -66,6 +96,8 @@ it("context file carries every path the playbook depends on", () => {
   assert.include(context, "/home/u/.t3/userdata/logs/provider/events.log");
   assert.include(context, "/home/u/.t3/userdata/secrets");
   assert.include(context, "/home/u/.t3/source");
-  assert.include(context, "npx t3 triage");
+  assert.include(context, "/usr/bin/node /workspace/t3code/apps/server/dist/bin.mjs triage");
   assert.include(context, "v0.0.33");
+  assert.include(context, "https://github.com/JerkyTreats/t3code");
+  assert.include(context, "exact source and destination approval");
 });

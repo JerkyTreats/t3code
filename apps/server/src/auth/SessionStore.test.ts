@@ -143,21 +143,20 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
         method: "bearer-access-token",
         subject: "repository-failure",
       });
-      const websocket = yield* sessions.issueWebSocketToken(issued.sessionId);
+      const websocketError = yield* Effect.flip(sessions.issueWebSocketToken(issued.sessionId));
 
       const sessionError = yield* Effect.flip(sessions.verify(issued.token));
-      const websocketError = yield* Effect.flip(sessions.verifyWebSocketToken(websocket.token));
       const revokeError = yield* Effect.flip(sessions.revoke(issued.sessionId));
       const revokeOthersError = yield* Effect.flip(sessions.revokeAllExcept(issued.sessionId));
 
       expect(sessionError._tag).toBe("SessionCredentialVerificationError");
-      expect(websocketError._tag).toBe("WebSocketTokenVerificationError");
+      expect(websocketError._tag).toBe("WebSocketTokenIssueError");
       expect(sessionError.cause).toBe(repositoryFailure);
       expect(websocketError.cause).toBe(repositoryFailure);
       if (sessionError._tag === "SessionCredentialVerificationError") {
         expect(sessionError.sessionId).toBe(issued.sessionId);
       }
-      if (websocketError._tag === "WebSocketTokenVerificationError") {
+      if (websocketError._tag === "WebSocketTokenIssueError") {
         expect(websocketError.sessionId).toBe(issued.sessionId);
       }
       expect(revokeError).toMatchObject({

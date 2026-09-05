@@ -26,6 +26,7 @@ import {
   DESKTOP_EXTRA_RESOURCES,
   LINUX_BROWSER_SECRET_EXTRA_RESOURCES,
   MAC_FILE_EXCLUSIONS,
+  InvalidDesktopUpdateRepositoryError,
   InvalidMacPasskeyRpDomainError,
   InvalidMacPasskeyPublishableKeyError,
   InvalidMockUpdateServerPortError,
@@ -290,7 +291,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                T3CODE_DESKTOP_UPDATE_REPOSITORY: "pingdotgg/t3code",
+                T3CODE_DESKTOP_UPDATE_REPOSITORY: "JerkyTreats/t3code",
               },
             }),
           ),
@@ -301,7 +302,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           ConfigProvider.layer(
             ConfigProvider.fromEnv({
               env: {
-                GITHUB_REPOSITORY: "pingdotgg/t3code",
+                GITHUB_REPOSITORY: "JerkyTreats/t3code",
               },
             }),
           ),
@@ -310,17 +311,46 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.deepStrictEqual(latestConfig, {
         provider: "github",
-        owner: "pingdotgg",
+        owner: "JerkyTreats",
         repo: "t3code",
         releaseType: "release",
       });
       assert.deepStrictEqual(nightlyConfig, {
         provider: "github",
-        owner: "pingdotgg",
+        owner: "JerkyTreats",
         repo: "t3code",
         releaseType: "prerelease",
         channel: "nightly",
       });
+    }),
+  );
+
+  it.effect("defaults desktop publishing to the exact origin repository", () =>
+    Effect.gen(function* () {
+      const config = yield* resolveGitHubPublishConfig("latest").pipe(
+        Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+      );
+      assert.deepStrictEqual(config, {
+        provider: "github",
+        owner: "JerkyTreats",
+        repo: "t3code",
+        releaseType: "release",
+      });
+    }),
+  );
+
+  it.effect("fails closed on a non-origin updater repository", () =>
+    Effect.gen(function* () {
+      const error = yield* Effect.flip(
+        resolveGitHubPublishConfig("latest").pipe(
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "upstream/t3code" } }),
+            ),
+          ),
+        ),
+      );
+      assert.instanceOf(error, InvalidDesktopUpdateRepositoryError);
     }),
   );
 
@@ -349,7 +379,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(release.publish, [
         {
           provider: "github",
-          owner: "pingdotgg",
+          owner: "JerkyTreats",
           repo: "t3code",
           releaseType: "release",
         },
@@ -357,7 +387,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(
       Effect.provide(
         ConfigProvider.layer(
-          ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "pingdotgg/t3code" } }),
+          ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "JerkyTreats/t3code" } }),
         ),
       ),
     ),

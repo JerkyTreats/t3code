@@ -6,8 +6,7 @@ on:
     branches:
       - main
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
@@ -16,12 +15,15 @@ concurrency:
 jobs:
   check:
     name: Check
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -75,12 +77,15 @@ jobs:
   # limit stays at the default 4 so peak load per runner is unchanged.
   test:
     name: Test
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -112,6 +117,8 @@ jobs:
   # isolation that flag buys is preserved exactly.
   test_server:
     name: Test Server ${{ matrix.shard }}
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     strategy:
@@ -122,6 +129,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -179,12 +187,15 @@ jobs:
   # for checks that take under 3s, on the critical path of every PR.
   rust:
     name: Rust
+    permissions:
+      contents: read
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -203,7 +214,7 @@ jobs:
 
   # The static analysis below needs a macOS runner, which bills ~6.7x a Linux
   # minute, so gate it on the native sources it actually lints instead of paying
-  # for it on every push. Detection is API-only (no checkout) and fails open: if
+  # for it on every push. Detection uses a credential-free local Git diff and fails open: if
   # the diff cannot be resolved, the lint runs.
   mobile_native_changes:
     name: Mobile Native Changes
@@ -211,16 +222,19 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read
     outputs:
       changed: ${{ steps.detect.outputs.changed }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
       - name: Detect mobile native changes
         id: detect
         env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          BEFORE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -uo pipefail
 
@@ -230,40 +244,13 @@ jobs:
             exit 0
           }
 
-          count_rows() {
-            printf '%s\n' "$1" | grep -c . || true
-          }
-
-          # One row per changed file, holding the new path and, for a rename,
-          # the path it replaced: renaming a matched file out of the matched
-          # paths removes a lint input just like editing it.
-          row='[.filename, (.previous_filename // empty)] | @tsv'
-
-          if [[ -n "${PR_NUMBER}" ]]; then
-            # The PR files endpoint stops at 3000 files and pagination cannot
-            # extend it, so cross-check against the count the PR itself reports.
-            expected=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.changed_files') \
-              || fail_open "Could not read the pull request."
-            rows=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate --jq ".[] | ${row}") \
-              || fail_open "Could not resolve changed files."
-
-            listed=$(count_rows "$rows")
-            if [[ "$listed" -lt "$expected" ]]; then
-              fail_open "GitHub listed only ${listed} of ${expected} changed files."
-            fi
-          else
-            rows=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${BEFORE_SHA}...${GITHUB_SHA}" --jq ".files[]? | ${row}") \
-              || fail_open "Could not resolve changed files."
-
-            # The compare endpoint reports at most 300 files and pagination does
-            # not extend that list, so a full list may be hiding native changes.
-            listed=$(count_rows "$rows")
-            if [[ "$listed" -ge 300 ]]; then
-              fail_open "GitHub listed ${listed} changed files, the compare endpoint maximum."
-            fi
+          if [[ -z "${BASE_SHA}" || "${BASE_SHA}" =~ ^0+$ ]]; then
+            fail_open "No usable comparison commit was provided."
           fi
 
-          paths=$(tr '\t' '\n' <<< "$rows")
+          rows=$(git diff --name-status --find-renames "${BASE_SHA}" "${GITHUB_SHA}") \
+            || fail_open "Could not resolve changed files from the local checkout."
+          paths=$(awk -F '\t' '{ for (index = 2; index <= NF; index += 1) print $index }' <<< "$rows")
 
           # Sources scripts/mobile-native-static-check.ts lints, plus the tool
           # and rule configuration that decides how it lints them, plus the
@@ -281,6 +268,8 @@ jobs:
 
   mobile_native_static_analysis:
     name: Mobile Native Static Analysis
+    permissions:
+      contents: read
     needs: mobile_native_changes
     # Skip only on an explicit "no": a gate job that failed or errored leaves the
     # output empty, and that must run the lint rather than silently skip it.
@@ -291,6 +280,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -311,14 +301,17 @@ jobs:
       - name: Lint mobile native sources
         run: vp run lint:mobile
 
-  release_smoke:
-    name: Release Smoke
+  release_authority:
+    name: Release Authority
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -333,5 +326,5 @@ jobs:
             args:
               - --filter=@t3tools/scripts...
 
-      - name: Exercise release-only workflow steps
-        run: node scripts/release-smoke.ts
+      - name: Verify fork release authority
+        run: node scripts/lib/release-workflow-safety.ts

@@ -7,11 +7,13 @@ import {
 import type { ComponentProps } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { manualServerUpdateCommand } from "~/versionSkew";
+import {
+  manualRuntimeUpdateGuidance,
+  supportedRuntimeUpdateCapability,
+} from "~/fork/runtimeUpdateGuidance";
 import { Button } from "./ui/button";
 import { toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -106,26 +108,11 @@ export function ServerUpdateAction({
   const updateServer = useAtomCommand(serverEnvironment.updateServer, {
     reportFailure: false,
   });
-  const { copyToClipboard } = useCopyToClipboard<{ command: string }>({
-    target: "update command",
-    onCopy: ({ command }) => {
-      toastManager.add({
-        type: "success",
-        title: "Update command copied",
-        description: `Run \`${command}\` on ${serverLabel} to update it.`,
-      });
-    },
-    onError: (error) => {
-      toastManager.add({
-        type: "error",
-        title: "Could not copy update command",
-        description: error.message,
-      });
-    },
-  });
-
   const handleUpdate = async () => {
-    if (pendingUpdateEnvironmentIds.has(environmentId)) {
+    if (
+      supportedRuntimeUpdateCapability(selfUpdate) === null ||
+      pendingUpdateEnvironmentIds.has(environmentId)
+    ) {
       return;
     }
     if (isDesktopAppUpdate) {
@@ -168,9 +155,7 @@ export function ServerUpdateAction({
       toastManager.add({
         type: "success",
         title: `${serverLabel} updated`,
-        description: isDesktopAppUpdate
-          ? `Desktop app relaunched on ${result.value.targetVersion}.`
-          : `Reconnected on t3@${result.value.targetVersion}.`,
+        description: `Desktop app relaunched on ${result.value.targetVersion}.`,
       });
     } finally {
       pendingUpdateEnvironmentIds.delete(environmentId);
@@ -185,12 +170,11 @@ export function ServerUpdateAction({
     );
   }
 
-  if (selfUpdate === null) {
-    const command = manualServerUpdateCommand(targetVersion);
+  if (supportedRuntimeUpdateCapability(selfUpdate) === null) {
     return (
-      <Button size={size} variant={variant} onClick={() => copyToClipboard(command, { command })}>
-        Copy update command
-      </Button>
+      <span className="text-muted-foreground text-xs">
+        {manualRuntimeUpdateGuidance(targetVersion)}
+      </span>
     );
   }
 

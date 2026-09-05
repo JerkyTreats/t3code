@@ -2,7 +2,13 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
-import { WsSubscribeServerConfigRpc } from "./rpc.ts";
+import { WS_METHODS, WsSubscribeServerConfigRpc } from "./rpc.ts";
+
+const oldServerPayload = Schema.Struct({});
+const decodeOldServerPayloadExit = Schema.decodeUnknownExit(oldServerPayload);
+const decodeServerConfigSubscription = Schema.decodeUnknownSync(
+  WsSubscribeServerConfigRpc.payloadSchema,
+);
 
 /**
  * The client always sends `environmentThemes`, including to servers built
@@ -12,20 +18,25 @@ import { WsSubscribeServerConfigRpc } from "./rpc.ts";
  */
 describe("subscribeServerConfig payload compatibility", () => {
   it("is accepted by a server whose schema predates the field", () => {
-    const oldServerPayload = Schema.Struct({});
-    const decoded = Schema.decodeUnknownExit(oldServerPayload)({ environmentThemes: true });
+    const decoded = decodeOldServerPayloadExit({ environmentThemes: true });
     expect(Exit.isSuccess(decoded)).toBe(true);
   });
 
   it("is carried by a server that declares it", () => {
-    const decoded = Schema.decodeUnknownSync(WsSubscribeServerConfigRpc.payloadSchema)({
+    const decoded = decodeServerConfigSubscription({
       environmentThemes: true,
     });
     expect(decoded).toEqual({ environmentThemes: true });
   });
 
   it("stays optional, so a client that never sends it still subscribes", () => {
-    const decoded = Schema.decodeUnknownSync(WsSubscribeServerConfigRpc.payloadSchema)({});
+    const decoded = decodeServerConfigSubscription({});
     expect(decoded).toEqual({});
+  });
+});
+
+describe("retired access inventory RPC", () => {
+  it("does not register the legacy access subscription", () => {
+    expect("subscribeAuthAccess" in WS_METHODS).toBe(false);
   });
 });

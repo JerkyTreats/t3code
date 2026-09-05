@@ -29,8 +29,9 @@ If you want a log message to show up in the trace file, emit it inside an active
 
 Completed spans are written as NDJSON records to `serverTracePath`. The default depends on how the
 server starts: production and explicitly configured homes use
-`<home>/userdata/logs/server.trace.ndjson` (so `~/.t3/userdata/...` by default, or
-`/custom/path/userdata/...` with `--home-dir /custom/path`), a linked worktree dev run uses
+`<home>/userdata/logs/server.trace.ndjson`. This is
+`~/.t3/userdata/...` by default, or `/custom/path/userdata/...` with
+`--home-dir /custom/path`. A linked worktree dev run uses
 `<worktree>/.t3/userdata/logs/server.trace.ndjson`, and an implicit dev run outside a linked
 worktree uses `~/.t3/dev/logs/server.trace.ndjson`.
 
@@ -85,7 +86,7 @@ You do not need any extra env vars. Just run the app normally and inspect `serve
 Examples:
 
 ```bash
-npx t3
+t3
 ```
 
 ```bash
@@ -136,8 +137,11 @@ export T3CODE_TRACE_TIMING_ENABLED=true
 CLI:
 
 ```bash
-npx t3
+t3
 ```
+
+Use the authorized installed exact-origin runtime. This fork does not acquire
+T3 Code from a public package registry for an observability launch.
 
 Monorepo web/server dev:
 

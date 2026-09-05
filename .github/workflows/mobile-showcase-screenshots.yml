@@ -46,6 +46,8 @@ jobs:
     name: iPhone 6.9, iPhone 6.5, and iPad 13
     if: inputs.platform == 'all' || inputs.platform == 'ios'
     runs-on: blacksmith-12vcpu-macos-26
+    permissions:
+      contents: read
     # Capturing every palette multiplies the device matrix by six, and only the
     # one native build is shared between them.
     timeout-minutes: ${{ inputs.theme == 'all' && 300 || 60 }}
@@ -53,6 +55,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -95,6 +98,8 @@ jobs:
     name: Android phone, 7-inch tablet, and 10-inch tablet
     if: inputs.platform == 'all' || inputs.platform == 'android'
     runs-on: blacksmith-16vcpu-ubuntu-2404
+    permissions:
+      contents: read
     # Capturing every palette multiplies the device matrix by six, and only the
     # one native build is shared between them.
     timeout-minutes: ${{ inputs.theme == 'all' && 300 || 60 }}
@@ -104,6 +109,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/

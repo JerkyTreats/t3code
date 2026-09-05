@@ -1,10 +1,11 @@
 {
   "name": "t3",
   "version": "0.0.38",
+  "private": true,
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pingdotgg/t3code",
+    "url": "git+https://github.com/JerkyTreats/t3code.git",
     "directory": "apps/server"
   },
   "bin": {
@@ -16,7 +17,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/bin.ts",
-    "build:bundle": "vp pack && vp pack src/service-launcher.ts --out-dir dist --no-clean",
+    "build:bundle": "vp pack",
     "start": "node dist/bin.mjs",
     "typecheck": "tsgo --noEmit",
     "test": "vp test run"

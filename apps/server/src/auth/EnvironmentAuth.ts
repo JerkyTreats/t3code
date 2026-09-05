@@ -1,15 +1,15 @@
 import {
   AuthAccessTokenType,
+  type AuthClientId,
+  type AuthSessionAuthorityClass,
   AuthAccessWriteScope,
   AuthAdministrativeScopes,
   AuthStandardClientScopes,
   type AuthAccessTokenResult,
   type AuthBrowserSessionResult,
   type AuthClientMetadata,
-  type AuthClientSession,
   type AuthCreatePairingCredentialInput,
   type AuthEnvironmentScope,
-  type AuthPairingLink,
   type AuthPairingCredentialResult,
   type AuthSessionId,
   type AuthSessionState,
@@ -36,6 +36,7 @@ import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
+import { parseAuthorizationCredential } from "./authorizationCredential.ts";
 import { layerConfig as SqlitePersistenceLayer } from "../persistence/Layers/Sqlite.ts";
 
 export const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
@@ -52,6 +53,7 @@ export interface IssuedPairingLink {
 }
 
 export interface IssuedBearerSession {
+  readonly authorityClass: AuthSessionAuthorityClass;
   readonly sessionId: AuthSessionId;
   readonly token: string;
   readonly method: "bearer-access-token";
@@ -62,6 +64,8 @@ export interface IssuedBearerSession {
 }
 
 export interface AuthenticatedSession {
+  readonly clientId: AuthClientId;
+  readonly authorityClass: AuthSessionAuthorityClass;
   readonly sessionId: AuthSessionId;
   readonly subject: string;
   readonly method: ServerAuthSessionMethod;
@@ -458,16 +462,20 @@ export class EnvironmentAuth extends Context.Service<
     >;
     readonly listPairingLinks: (input?: {
       readonly excludeSubjects?: ReadonlyArray<string>;
-    }) => Effect.Effect<ReadonlyArray<AuthPairingLink>, ServerAuthInternalError>;
+    }) => Effect.Effect<
+      ReadonlyArray<PairingGrantStore.ActivePairingLink>,
+      ServerAuthInternalError
+    >;
     readonly revokePairingLink: (id: string) => Effect.Effect<boolean, ServerAuthInternalError>;
     readonly issueSession: (input?: {
+      readonly authorityClass?: AuthSessionAuthorityClass;
       readonly ttl?: Duration.Duration;
       readonly subject?: string;
       readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
       readonly label?: string;
     }) => Effect.Effect<IssuedBearerSession, ServerAuthInternalError>;
     readonly listSessions: () => Effect.Effect<
-      ReadonlyArray<AuthClientSession>,
+      ReadonlyArray<SessionStore.ActiveClientSession>,
       ServerAuthInternalError
     >;
     readonly revokeSession: (
@@ -475,16 +483,6 @@ export class EnvironmentAuth extends Context.Service<
     ) => Effect.Effect<boolean, ServerAuthInternalError>;
     readonly revokeOtherSessionsExcept: (
       sessionId: AuthSessionId,
-    ) => Effect.Effect<number, ServerAuthInternalError>;
-    readonly listClientSessions: (
-      currentSessionId: AuthSessionId,
-    ) => Effect.Effect<ReadonlyArray<AuthClientSession>, ServerAuthInternalError>;
-    readonly revokeClientSession: (
-      currentSessionId: AuthSessionId,
-      targetSessionId: AuthSessionId,
-    ) => Effect.Effect<boolean, ServerAuthForbiddenOperationError | ServerAuthInternalError>;
-    readonly revokeOtherClientSessions: (
-      currentSessionId: AuthSessionId,
     ) => Effect.Effect<number, ServerAuthInternalError>;
     readonly authenticateHttpRequest: (
       request: HttpServerRequest.HttpServerRequest,
@@ -506,11 +504,12 @@ type BootstrapExchangeResult = {
   readonly sessionToken: string;
 };
 
-const AUTHORIZATION_PREFIX = "Bearer ";
-const DPOP_AUTHORIZATION_PREFIX = "DPoP ";
 const WEBSOCKET_TICKET_QUERY_PARAM = "wsTicket";
 
-const bySessionPriority = (left: AuthClientSession, right: AuthClientSession) => {
+const bySessionPriority = (
+  left: SessionStore.ActiveClientSession,
+  right: SessionStore.ActiveClientSession,
+) => {
   const leftCanManage = left.scopes.includes(AuthAccessWriteScope);
   const rightCanManage = right.scopes.includes(AuthAccessWriteScope);
   if (leftCanManage !== rightCanManage) {
@@ -546,21 +545,13 @@ const mapSessionVerificationErrors = <A, R>(
   );
 
 function parseBearerToken(request: HttpServerRequest.HttpServerRequest): string | null {
-  const header = request.headers["authorization"];
-  if (typeof header !== "string" || !header.startsWith(AUTHORIZATION_PREFIX)) {
-    return null;
-  }
-  const token = header.slice(AUTHORIZATION_PREFIX.length).trim();
-  return token.length > 0 ? token : null;
+  const credential = parseAuthorizationCredential(request.headers.authorization);
+  return credential?.source === "bearer" ? credential.token : null;
 }
 
 function parseDpopToken(request: HttpServerRequest.HttpServerRequest): string | null {
-  const header = request.headers["authorization"];
-  if (typeof header !== "string" || !header.startsWith(DPOP_AUTHORIZATION_PREFIX)) {
-    return null;
-  }
-  const token = header.slice(DPOP_AUTHORIZATION_PREFIX.length).trim();
-  return token.length > 0 ? token : null;
+  const credential = parseAuthorizationCredential(request.headers.authorization);
+  return credential?.source === "dpop" ? credential.token : null;
 }
 
 export function selectRequestCredential(
@@ -616,6 +607,8 @@ export const make = Effect.gen(function* () {
           : Effect.void,
       ),
       Effect.map((session) => ({
+        clientId: session.clientId,
+        authorityClass: session.authorityClass,
         sessionId: session.sessionId,
         subject: session.subject,
         method: session.method,
@@ -674,6 +667,10 @@ export const make = Effect.gen(function* () {
 
   const getSessionState: EnvironmentAuth["Service"]["getSessionState"] = (request) =>
     authenticateRequest(request).pipe(
+      Effect.filterOrFail(
+        (session) => session.authorityClass === "client",
+        () => new ServerAuthInvalidCredentialError({}),
+      ),
       Effect.map(
         (session) =>
           ({
@@ -704,6 +701,9 @@ export const make = Effect.gen(function* () {
           .issue({
             method: "browser-session-cookie",
             subject: grant.subject,
+            ...(grant.clientManagementClass === "portal-managed-device"
+              ? { managementClass: grant.clientManagementClass }
+              : {}),
             scopes: grant.scopes,
             client: {
               ...requestMetadata,
@@ -743,6 +743,9 @@ export const make = Effect.gen(function* () {
               .issue({
                 method: input?.proofKeyThumbprint ? "dpop-access-token" : "bearer-access-token",
                 subject: grant.subject,
+                ...(grant.clientManagementClass === "portal-managed-device"
+                  ? { managementClass: grant.clientManagementClass }
+                  : {}),
                 scopes: grantedScopes,
                 ...(input?.proofKeyThumbprint
                   ? {
@@ -862,8 +865,11 @@ export const make = Effect.gen(function* () {
     sessions
       .issue({
         subject: input?.subject ?? DEFAULT_SESSION_SUBJECT,
+        authorityClass: input?.authorityClass ?? "client",
         method: "bearer-access-token",
-        scopes: input?.scopes ?? AuthAdministrativeScopes,
+        scopes:
+          input?.scopes ??
+          (input?.authorityClass === "device-administrator" ? [] : AuthAdministrativeScopes),
         client: {
           ...(input?.label ? { label: input.label } : {}),
           deviceType: "bot",
@@ -875,6 +881,7 @@ export const make = Effect.gen(function* () {
           (issued) =>
             ({
               sessionId: issued.sessionId,
+              authorityClass: issued.authorityClass,
               token: issued.token,
               method: "bearer-access-token",
               scopes: issued.scopes,
@@ -923,33 +930,6 @@ export const make = Effect.gen(function* () {
         purpose: "startup",
       }).pipe(Effect.withSpan("EnvironmentAuth.issueStartupPairingCredential"));
 
-  const listClientSessions: EnvironmentAuth["Service"]["listClientSessions"] = (currentSessionId) =>
-    listSessions().pipe(
-      Effect.map((clientSessions) =>
-        clientSessions.map((clientSession): AuthClientSession => ({
-          ...clientSession,
-          current: clientSession.sessionId === currentSessionId,
-        })),
-      ),
-      Effect.withSpan("EnvironmentAuth.listClientSessions"),
-    );
-
-  const revokeClientSession: EnvironmentAuth["Service"]["revokeClientSession"] = Effect.fn(
-    "EnvironmentAuth.revokeClientSession",
-  )(function* (currentSessionId, targetSessionId) {
-    if (currentSessionId === targetSessionId) {
-      return yield* new ServerAuthForbiddenOperationError({});
-    }
-    return yield* revokeSession(targetSessionId);
-  });
-
-  const revokeOtherClientSessions: EnvironmentAuth["Service"]["revokeOtherClientSessions"] = (
-    currentSessionId,
-  ) =>
-    revokeOtherSessionsExcept(currentSessionId).pipe(
-      Effect.withSpan("EnvironmentAuth.revokeOtherClientSessions"),
-    );
-
   const issueStartupPairingUrl: EnvironmentAuth["Service"]["issueStartupPairingUrl"] = (baseUrl) =>
     issueStartupPairingCredential().pipe(
       Effect.map((issued) => {
@@ -988,6 +968,8 @@ export const make = Effect.gen(function* () {
         if (websocketTicket && websocketTicket.trim().length > 0) {
           return yield* sessions.verifyWebSocketToken(websocketTicket).pipe(
             Effect.map((session) => ({
+              clientId: session.clientId,
+              authorityClass: session.authorityClass,
               sessionId: session.sessionId,
               subject: session.subject,
               method: session.method,
@@ -999,7 +981,10 @@ export const make = Effect.gen(function* () {
         }
       }
 
-      return yield* authenticateRequest(request);
+      const session = yield* authenticateRequest(request);
+      if (session.authorityClass !== "client")
+        return yield* new ServerAuthInvalidCredentialError({});
+      return session;
     });
 
   return EnvironmentAuth.of({
@@ -1017,9 +1002,6 @@ export const make = Effect.gen(function* () {
     listSessions,
     revokeSession,
     revokeOtherSessionsExcept,
-    listClientSessions,
-    revokeClientSession,
-    revokeOtherClientSessions,
     authenticateHttpRequest,
     authenticateWebSocketUpgrade,
     issueWebSocketTicket,

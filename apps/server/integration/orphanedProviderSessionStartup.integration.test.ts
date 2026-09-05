@@ -20,7 +20,6 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { HttpServer } from "effect/unstable/http";
 
 import * as EnvironmentAuth from "../src/auth/EnvironmentAuth.ts";
-import * as ServiceLauncherClient from "../src/cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../src/config.ts";
 import * as ServerEnvironment from "../src/environment/ServerEnvironment.ts";
 import * as Keybindings from "../src/keybindings.ts";
@@ -92,11 +91,6 @@ const startupDependencies = Layer.mergeAll(
   }),
   Layer.mock(ExternalLauncher.ExternalLauncher)({
     launchBrowser: () => Effect.void,
-  }),
-  Layer.succeed(ServiceLauncherClient.ServiceLauncherClient, {
-    managed: false,
-    requestUpdate: () => Effect.die("unused"),
-    prepareTrial: Effect.sync(() => undefined),
   }),
   Layer.succeed(
     HttpServer.HttpServer,

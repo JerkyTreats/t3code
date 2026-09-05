@@ -430,6 +430,7 @@ import {
 } from "./ui/alert-dialog";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ServerUpdateAction } from "./ServerUpdateAction";
+import { isDesktopUpdateReconnect } from "../fork/runtimeUpdateGuidance";
 import {
   ComposerServerUpdateIcon,
   ComposerServerUpdateStatus,
@@ -2324,14 +2325,13 @@ export default function ChatView(props: ChatViewProps) {
       unavailableConnection !== null &&
       (unavailableConnection.phase === "connecting" ||
         unavailableConnection.phase === "reconnecting");
-    // Reconnecting to a version-skewed server with no update in flight
-    // usually means the server is restarting mid-update and a refresh wiped
-    // the in-memory update state. Fold the reconnect and version banners
-    // into one calm line instead of stacking "Failed to connect" on
-    // "versions differ". A failed update never folds: its error and retry
-    // action must stay visible.
-    const reconnectingThroughVersionSkew =
-      serverUpdateState.status === "idle" && environmentReconnecting && versionMismatch !== null;
+    // Only desktop update capability permits inferring progress after lost update state.
+    const reconnectingThroughVersionSkew = isDesktopUpdateReconnect({
+      capability: versionMismatchSelfUpdate,
+      updateStatus: serverUpdateState.status,
+      reconnecting: environmentReconnecting,
+      versionMismatch: versionMismatch !== null,
+    });
     // While an update runs, transient connect blips are expected (the server
     // restarts) and the update banner already shows progress. Hard failure
     // phases still surface so the Reconnect action stays reachable.

@@ -1,7 +1,6 @@
 import {
   EnvironmentAuthInvalidError,
   type AuthBrowserSessionResult,
-  type AuthCreatePairingCredentialInput,
   type AuthSessionState,
   type DesktopBridge,
 } from "@t3tools/contracts";
@@ -98,20 +97,11 @@ async function installAuthApi(input: {
   readonly browserSession?: (
     credential: string,
   ) => Effect.Effect<AuthBrowserSessionResult, EnvironmentAuthInvalidError>;
-  readonly pairingCredential?: (payload: AuthCreatePairingCredentialInput) => Effect.Effect<{
-    readonly id: string;
-    readonly credential: string;
-    readonly label?: string;
-    readonly expiresAt: DateTime.Utc;
-  }>;
 }) {
   const testApi = await installEnvironmentHttpTest({
     ...(input.session ? { session: () => Effect.succeed(input.session!()) } : {}),
     ...(input.browserSession
       ? { browserSession: (payload) => input.browserSession!(payload.credential) }
-      : {}),
-    ...(input.pairingCredential
-      ? { pairingCredential: (payload) => input.pairingCredential!(payload) }
       : {}),
   });
   disposeHttpTest = testApi.dispose;
@@ -423,14 +413,14 @@ describe("resolveInitialServerAuthGateState", () => {
     const cause = new Error("private transport detail");
     const { PrimaryEnvironmentRequestError } = await import("./environments/primary");
     const error = PrimaryEnvironmentRequestError.fromCause({
-      operation: "list-pairing-links",
+      operation: "fetch-session-state",
       cause,
     });
 
     expect(error.status).toBe(500);
     expect(error.cause).toBe(cause);
     expect(error.message).toBe(
-      "Primary environment request failed during list-pairing-links (HTTP 500).",
+      "Primary environment request failed during fetch-session-state (HTTP 500).",
     );
     expect(error.message).not.toContain(cause.message);
   });
@@ -504,32 +494,5 @@ describe("resolveInitialServerAuthGateState", () => {
       status: "authenticated",
     });
     expect(testApi.calls.session).toBe(1);
-  });
-
-  it("creates a pairing credential from the authenticated auth endpoint", async () => {
-    const testApi = await installAuthApi({
-      pairingCredential: (payload) =>
-        Effect.succeed({
-          id: "pairing-link-1",
-          credential: "pairing-token",
-          ...(payload.label === undefined ? {} : { label: payload.label }),
-          expiresAt: SESSION_EXPIRES_AT,
-        }),
-    });
-    const { createServerPairingCredential } = await import("./environments/primary");
-
-    const credential = await createServerPairingCredential({
-      label: "Julius iPhone",
-      scopes: ["orchestration:read"],
-    });
-    expect(credential).toMatchObject({
-      id: "pairing-link-1",
-      credential: "pairing-token",
-      label: "Julius iPhone",
-    });
-    expect(DateTime.formatIso(credential.expiresAt)).toBe("2026-04-05T00:00:00.000Z");
-    expect(testApi.calls.pairingCredential).toEqual([
-      { label: "Julius iPhone", scopes: ["orchestration:read"] },
-    ]);
   });
 });

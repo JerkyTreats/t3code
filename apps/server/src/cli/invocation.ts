@@ -1,22 +1,12 @@
 import * as Effect from "effect/Effect";
 
-import { HostProcessArguments } from "@t3tools/shared/hostProcess";
-
-import packageJson from "../../package.json" with { type: "json" };
+import { HostProcessArguments, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 export type CliRunner = "npx" | "pnpm dlx" | "bunx";
 
 /**
- * How the CLI was launched, judged by where its entry script lives. Each
- * package runner executes out of a distinctive cache/temp layout:
- *
- *   npx      ~/.npm/_npx/<hash>/node_modules/...
- *   pnpm dlx ~/.cache/pnpm/dlx/..., $PNPM_HOME/.pnpm/dlx/...,
- *            or %LOCALAPPDATA%/pnpm-cache/dlx/... on Windows
- *   bunx     ~/.bun/install/cache/... or $TMPDIR/bunx-<uid>-<spec>/...
- *
- * Global installs and repo checkouts match none of these and return null.
- * Detection is best-effort; callers must fail closed to a plain `t3` command.
+ * Detect public package-runner cache entries so follow-up guidance can reuse
+ * the already-running bytes without asking the runner to resolve T3 again.
  */
 function detectCliRunner(entryPath: string): CliRunner | null {
   const path = entryPath.replaceAll("\\", "/");
@@ -36,40 +26,64 @@ function detectCliRunner(entryPath: string): CliRunner | null {
   return null;
 }
 
-/**
- * The `t3` package spec to suggest. The literal spec the user typed (e.g.
- * `t3@nightly`) is resolved away before our process starts, so re-derive it
- * from the running version: nightly builds re-suggest the nightly channel,
- * anything else suggests the bare package.
- */
-function suggestedPackageSpec(version: string): string {
-  return version.includes("-nightly.") ? "t3@nightly" : "t3";
+/** Quote one copyable argument for the host's ordinary interactive shell. */
+function quoteShellWord(word: string, platform: NodeJS.Platform): string {
+  const safeWord = platform === "win32" ? /^[\w./:\\@=-]+$/u : /^[\w./:@=-]+$/u;
+  if (safeWord.test(word)) return word;
+  return platform === "win32"
+    ? `'${word.replaceAll("'", "''")}'`
+    : `'${word.replaceAll("'", "'\\''")}'`;
+}
+
+function formatExplicitNodeInvocation(input: {
+  readonly executablePath: string;
+  readonly entryPath: string;
+  readonly subcommand: string;
+  readonly platform: NodeJS.Platform;
+}): string {
+  const executable = quoteShellWord(input.executablePath, input.platform);
+  const executableCommand =
+    input.platform === "win32" && executable !== input.executablePath
+      ? `& ${executable}`
+      : executable;
+  return [
+    executableCommand,
+    quoteShellWord(input.entryPath, input.platform),
+    quoteShellWord(input.subcommand, input.platform),
+  ].join(" ");
 }
 
 /**
- * Render a `t3 <subcommand>` suggestion that matches how this process was
- * launched, so copy/pasting it actually works: `npx t3 connect` suggests
- * `npx t3 serve`, a global install suggests `t3 serve`, and a nightly build
- * keeps the `@nightly` tag.
+ * Render a follow-up command without creating a new public-registry T3
+ * resolution. Installed runtimes keep the normal `t3` command. A process that
+ * came from a transient package runner instead names its current executable
+ * and entry script exactly, with host-shell quoting.
  */
 export function formatCliCommand(input: {
   readonly subcommand: string;
+  readonly executablePath: string;
   readonly entryPath: string;
-  readonly version: string;
+  readonly platform: NodeJS.Platform;
 }): string {
-  const runner = detectCliRunner(input.entryPath);
-  if (runner === null) {
-    return `t3 ${input.subcommand}`;
+  if (
+    detectCliRunner(input.entryPath) === null ||
+    input.executablePath.length === 0 ||
+    input.entryPath.length === 0
+  ) {
+    return `t3 ${quoteShellWord(input.subcommand, input.platform)}`;
   }
-  return `${runner} ${suggestedPackageSpec(input.version)} ${input.subcommand}`;
+  return formatExplicitNodeInvocation(input);
 }
 
-/** `formatCliCommand` against this process's real entry path and version. */
+/** `formatCliCommand` against this process's real executable and entry path. */
 export const resolveCliCommand = (subcommand: string) =>
-  Effect.map(HostProcessArguments, (processArguments) =>
-    formatCliCommand({
+  Effect.gen(function* () {
+    const processArguments = yield* HostProcessArguments;
+    const platform = yield* HostProcessPlatform;
+    return formatCliCommand({
       subcommand,
+      executablePath: processArguments[0] ?? "",
       entryPath: processArguments[1] ?? "",
-      version: packageJson.version,
-    }),
-  );
+      platform,
+    });
+  });

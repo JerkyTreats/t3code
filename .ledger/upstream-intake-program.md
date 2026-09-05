@@ -2,7 +2,7 @@
 
 Date: 2026-09-05
 Status: in progress
-Readiness: S12 source gates and ordered reviews passed; local delivery commits in progress
+Readiness: S12 accepted in the completed local delivery group; S34 is next
 Branch: `reconcile/upstream-intake-20260905`
 
 ## Objective Baseline
@@ -36,15 +36,15 @@ The root owns migration identities, shared contracts, broad hosts, integration a
 
 ## Phase Inventory And Dependency Graph
 
-| Slice | Product result                                                                | Dependencies                                    | State                    | Owner and evidence                               |
-| ----- | ----------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------ | ------------------------------------------------ |
-| S1    | New persistence opens supported fork history and applies upstream corrections | Pinned baseline and historical fixture contract | Verified, commit pending | Root migration owner; two proof lanes integrated |
-| S2    | Exact-origin Git and external Admin authority                                 | S12 joint persistence acceptance                | Verified, commit pending | Four bounded implementation lanes                |
-| S3    | Global Board and truthful liaison behavior                                    | S1, S2                                          | Blocked by dependency    | Proposed S34 integration group                   |
-| S4    | Normal upstream sends/rendering and complete fork retirement                  | S1, S2                                          | Blocked by dependency    | Proposed S34 integration group                   |
-| S5    | Retained visuals and thin adapters                                            | S4                                              | Blocked by dependency    | Visual baseline and exact adapters to freeze     |
-| S6    | Independent installed Linux clients and Thread                                | S2, S4, S5                                      | Blocked by dependency    | Source and installed compatibility to prove      |
-| S7    | Integrated preservation and rollback evidence                                 | S3 through S6                                   | Blocked by dependency    | No acceptance claim                              |
+| Slice | Product result                                                                | Dependencies                                    | State                 | Owner and evidence                               |
+| ----- | ----------------------------------------------------------------------------- | ----------------------------------------------- | --------------------- | ------------------------------------------------ |
+| S1    | New persistence opens supported fork history and applies upstream corrections | Pinned baseline and historical fixture contract | Complete              | Root migration owner; two proof lanes integrated |
+| S2    | Exact-origin Git and external Admin authority                                 | S12 joint persistence acceptance                | Complete              | Four bounded implementation lanes                |
+| S3    | Global Board and truthful liaison behavior                                    | S1, S2                                          | Blocked by dependency | Proposed S34 integration group                   |
+| S4    | Normal upstream sends/rendering and complete fork retirement                  | S1, S2                                          | Blocked by dependency | Proposed S34 integration group                   |
+| S5    | Retained visuals and thin adapters                                            | S4                                              | Blocked by dependency | Visual baseline and exact adapters to freeze     |
+| S6    | Independent installed Linux clients and Thread                                | S2, S4, S5                                      | Blocked by dependency | Source and installed compatibility to prove      |
+| S7    | Integrated preservation and rollback evidence                                 | S3 through S6                                   | Blocked by dependency | No acceptance claim                              |
 
 ## Wave Plan And Agent Strength
 
@@ -100,6 +100,14 @@ Compatibility: source-control provider lookup and publication require the explic
 
 Governance delivery commit: `ed1f5ebb7`.
 
+### Persistence and runtime authority
+
+If applied, this commit opens supported fork databases through the current runtime, keeps device administration in the external portal, and confines installation and updates to exact-origin managed releases.
+
+Compatibility: upgrade clients and server together for the fixed external Admin protocol and removal of embedded access-management APIs. Existing pending grants do not gain managed enrollment from their labels or subjects; previously enrolled clients retain their explicit class. Use a newly issued portal grant for managed enrollment where needed. Preserve the matching pre-upgrade database and binary for rollback after append-only migration. Public-package T3 service installation and self-update paths are removed; operators replace headless deployments through their authorized source or image installation, and desktop-controlled updates remain supported. This local commit performs no live migration, cutover, installation or publication.
+
+Exact-origin delivery commit: `bd58fc5f9`. This persistence/runtime authority commit closes the joined local delivery gate.
+
 ## Review Findings
 
 S12 logical review passes persistence and all 46 selected exact hunk roles. Bounded correction reviews close F17-R1 through R3, F06-R1, F20-R1 and S12-SUP-R1. Ordered Style Assurance closes SA1 through SA5 after correcting active documentation, shared contract comments, runtime error wording, remaining Settings pairing guidance and the current provider checklist. No blocking findings remain for this group. Later product obligations remain pending. Detailed evidence follows in the execution record.
@@ -110,7 +118,7 @@ None accepted as a test or preservation exception.
 
 ## Phase Completion Matrix
 
-S12 source and review gates pass. Its delivery commit group is in progress; S34 activates after that group is committed. Later product proof, retirement, visuals and installed acceptance remain pending.
+S1 and S2 are complete as the joined S12 source delivery group in this commit. Governance and exact-origin commits precede this coupled persistence/runtime integration. S34 is now dependency-ready and requires its own frozen activation contract before fan-out. Later product proof, retirement, visuals and installed acceptance remain pending.
 
 ## Risks And Exceptions
 
@@ -124,7 +132,7 @@ Pending all required slices. Origin has not been mutated and no deployment has o
 
 ## Deliverable Closeout
 
-No product deliverable is accepted yet.
+Supported fork databases open through the current runtime with their retained history and explicit device authority. Repository operations use exact origin, external device administration stays with the portal, and runtime acquisition follows the managed fork installation boundary. These accepted source outcomes are prerequisites to the complete product; Board, chat retirement, visuals and installed Linux/Thread acceptance remain pending.
 
 ### S1 prerequisite handoff
 

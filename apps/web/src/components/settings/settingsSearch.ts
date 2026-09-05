@@ -495,9 +495,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "connections-environment",
     title: "This environment",
     to: "/settings/connections",
-    searchTerms: [
-      "connections server backend local remote access administrative permissions scope pairing links qr code authorized clients sessions revoke endpoint",
-    ],
+    searchTerms: ["connections server backend local remote endpoint"],
   },
   {
     id: "remote-environments",

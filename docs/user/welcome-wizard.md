@@ -8,12 +8,12 @@ hosted app for the first time. Existing workspaces skip this flow.
 - **This computer** runs agents on the computer that hosts T3 Code. It does not
   require an account.
 - **T3 Connect** connects computers that are signed in to your account. Run
-  `npx t3 connect` on each computer you want to add, then start T3 Code or run
-  `npx t3 serve` so the computer stays available.
+  `t3 connect` with the authorized installed runtime on each computer you want
+  to add, then start T3 Code or run `t3 serve` so the computer stays available.
 - **Pair a server** connects directly to a server on your network or tailnet.
-  Start the server with `npx t3 serve`, then run `npx t3 pair --tailscale` and
-  paste the pairing link. You can also run `npx t3 serve --host <address>` and
-  use `npx t3 pair` when the server is already reachable on your network.
+  Start the server with `t3 serve`, then run `t3 pair --tailscale` and paste the
+  pairing link. You can also run `t3 serve --host <address>` and use `t3 pair`
+  when the server is already reachable on your network.
 
 If T3 Code cannot confirm the workspace during startup, the setup flow shows
 **Still connecting** instead of opening the app. Select **Reload** to try again.

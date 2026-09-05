@@ -13,8 +13,8 @@ layer("042_ProjectionThreadLinkedPullRequest", (it) => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
 
-      yield* runMigrations({ toMigrationInclusive: 41 });
-      yield* runMigrations({ toMigrationInclusive: 42 });
+      yield* runMigrations({ toMigrationInclusive: 51 });
+      yield* runMigrations({ toMigrationInclusive: 52 });
 
       const columns = yield* sql<{ readonly name: string }>`
         PRAGMA table_info(projection_threads)

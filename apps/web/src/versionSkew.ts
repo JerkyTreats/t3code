@@ -3,6 +3,8 @@ import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
 
+import { supportedRuntimeUpdateCapability } from "./fork/runtimeUpdateGuidance";
+
 import { APP_VERSION } from "./branding";
 import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
 
@@ -95,7 +97,7 @@ export function resolveServerConfigVersionMismatch(
 export function resolveServerSelfUpdateCapability(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): ServerSelfUpdateCapability | null {
-  return serverConfig?.environment.capabilities.serverSelfUpdate ?? null;
+  return supportedRuntimeUpdateCapability(serverConfig?.environment.capabilities.serverSelfUpdate);
 }
 
 /** True when the desktop app supervising this server can be told to update
@@ -112,11 +114,6 @@ export function supportsServerUpdateThreadContinuation(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): boolean {
   return serverConfig?.environment.capabilities.serverUpdateThreadContinuation === true;
-}
-
-/** The command to hand users whose server cannot update itself. */
-export function manualServerUpdateCommand(targetVersion: string): string {
-  return `npx t3@${targetVersion}`;
 }
 
 export function serverUpdateGuidance(capability: ServerSelfUpdateCapability): string {

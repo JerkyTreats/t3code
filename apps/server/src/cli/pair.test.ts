@@ -6,7 +6,6 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -14,11 +13,6 @@ import * as TestConsole from "effect/testing/TestConsole";
 import { Command } from "effect/unstable/cli";
 
 import { cli } from "../bin.ts";
-import {
-  SERVICE_LAUNCHER_CONTEXT_ENV,
-  SERVICE_LAUNCHER_PROTOCOL,
-} from "../cloud/serviceProtocol.ts";
-import * as ServiceLauncherClient from "../cloud/serviceLauncherClient.ts";
 import {
   makePersistedServerRuntimeState,
   persistServerRuntimeState,
@@ -29,8 +23,6 @@ import {
   resolveDirectPairingBaseUrl,
   resolveTailscaleLocalTarget,
 } from "./pair.ts";
-
-import packageJson from "../../package.json" with { type: "json" };
 
 const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
@@ -178,22 +170,7 @@ describe("t3 pair", () => {
         assert.equal(credentials.length, 1);
         assert.equal(credentials[0]?.label, "t3 pair");
       }),
-    ).pipe(
-      Effect.provide(NodeServices.layer),
-      Effect.provideService(HostProcessEnvironment, {
-        ...process.env,
-        [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify({
-          protocol: SERVICE_LAUNCHER_PROTOCOL,
-          childVersion: packageJson.version,
-        }),
-      }),
-      Effect.provideService(ServiceLauncherClient.ServiceLauncherHostProcess, {
-        connected: false,
-        send: () => false,
-        on: () => undefined,
-        off: () => undefined,
-      }),
-    ),
+    ).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("pairs through the recorded dev web URL for dev servers", () =>
@@ -229,8 +206,8 @@ describe("t3 pair", () => {
         typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
       );
       assert.include(rendered, "No running T3 Code server found.");
-      assert.include(rendered, "npx t3 serve");
-      assert.include(rendered, "npx t3 connect");
+      assert.include(rendered, "t3 serve");
+      assert.include(rendered, "t3 connect");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

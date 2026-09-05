@@ -11,10 +11,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import {
   DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
-  AuthAccessStreamError,
-  type AuthAccessStreamEvent,
   type AuthEnvironmentScope,
-  AuthSessionId,
   ClientConnectionMethod,
   ClientDeviceType,
   ClientOs,
@@ -146,8 +143,8 @@ import * as SourceControlProviderRegistry from "./sourceControl/SourceControlPro
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
-import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
+import * as ClientConnectionRegistry from "./auth/ClientConnectionRegistry.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as RelayClient from "@t3tools/shared/relayClient";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
@@ -344,46 +341,6 @@ const THREAD_RESUME_MAX_EVENTS = 1_000;
 // payloads can decode to gigabytes. Before replaying, sum the serialized
 // payload bytes of the range in SQL and reset with a snapshot past this budget.
 const ORCHESTRATION_REPLAY_PAYLOAD_BUDGET_BYTES = 8 * 1024 * 1024;
-
-function toAuthAccessStreamEvent(
-  change: PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange,
-  revision: number,
-  currentSessionId: AuthSessionId,
-): AuthAccessStreamEvent {
-  switch (change.type) {
-    case "pairingLinkUpserted":
-      return {
-        version: 1,
-        revision,
-        type: "pairingLinkUpserted",
-        payload: change.pairingLink,
-      };
-    case "pairingLinkRemoved":
-      return {
-        version: 1,
-        revision,
-        type: "pairingLinkRemoved",
-        payload: { id: change.id },
-      };
-    case "clientUpserted":
-      return {
-        version: 1,
-        revision,
-        type: "clientUpserted",
-        payload: {
-          ...change.clientSession,
-          current: change.clientSession.sessionId === currentSessionId,
-        },
-      };
-    case "clientRemoved":
-      return {
-        version: 1,
-        revision,
-        type: "clientRemoved",
-        payload: { sessionId: change.sessionId },
-      };
-  }
-}
 
 const isClientSurface = Schema.is(ClientSurface);
 const isClientConnectionMethod = Schema.is(ClientConnectionMethod);
@@ -584,6 +541,7 @@ const makeWsRpcLayer = (
         ),
       );
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
       const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
       const automaticGitFetchInterval = serverSettings.getSettings.pipe(
         Effect.map(
@@ -598,8 +556,6 @@ const makeWsRpcLayer = (
       const sourceControlRepositories =
         yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const pullRequests = yield* PullRequestService.PullRequestService;
-      const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
-      const sessions = yield* SessionStore.SessionStore;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
@@ -614,16 +570,25 @@ const makeWsRpcLayer = (
         requiredScope: AuthEnvironmentScope,
         effect: Effect.Effect<A, E, R>,
       ): Effect.Effect<A, E | EnvironmentAuthorizationError, R> =>
-        currentSession.scopes.includes(requiredScope)
-          ? effect
-          : Effect.fail(authorizationError(requiredScope));
+        Effect.gen(function* () {
+          yield* sessions.assertClientAdmission(currentSessionId).pipe(
+            Effect.mapError(
+              () =>
+                new EnvironmentAuthorizationError({
+                  message: "The session is no longer authorized.",
+                  requiredScope,
+                }),
+            ),
+          );
+          if (!currentSession.scopes.includes(requiredScope))
+            return yield* authorizationError(requiredScope);
+          return yield* effect;
+        });
       const authorizeStream = <A, E, R>(
         requiredScope: AuthEnvironmentScope,
         stream: Stream.Stream<A, E, R>,
       ): Stream.Stream<A, E | EnvironmentAuthorizationError, R> =>
-        currentSession.scopes.includes(requiredScope)
-          ? stream
-          : Stream.fail(authorizationError(requiredScope));
+        Stream.unwrap(authorizeEffect(requiredScope, Effect.succeed(stream)));
       const observeRpcEffect = <A, E, R>(
         method: string,
         effect: Effect.Effect<A, E, R>,
@@ -673,19 +638,6 @@ const makeWsRpcLayer = (
       const serverEventId = randomUUID.pipe(Effect.map(EventId.make));
       const serverCommandId = (tag: string) =>
         randomUUID.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
-
-      const loadAuthAccessSnapshot = () =>
-        Effect.all({
-          pairingLinks: serverAuth.listPairingLinks(),
-          clientSessions: serverAuth.listClientSessions(currentSessionId),
-        }).pipe(
-          Effect.mapError(
-            (error) =>
-              new AuthAccessStreamError({
-                message: error.message,
-              }),
-          ),
-        );
 
       const appendSetupScriptActivity = (input: {
         readonly threadId: ThreadId;
@@ -2795,38 +2747,6 @@ const makeWsRpcLayer = (
             }),
             { "rpc.aggregate": "server" },
           ),
-        [WS_METHODS.subscribeAuthAccess]: (_input) =>
-          observeRpcStreamEffect(
-            WS_METHODS.subscribeAuthAccess,
-            Effect.gen(function* () {
-              const initialSnapshot = yield* loadAuthAccessSnapshot();
-              const revisionRef = yield* Ref.make(1);
-              const accessChanges: Stream.Stream<
-                PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange
-              > = Stream.merge(bootstrapCredentials.streamChanges, sessions.streamChanges);
-
-              const liveEvents: Stream.Stream<AuthAccessStreamEvent> = accessChanges.pipe(
-                Stream.mapEffect((change) =>
-                  Ref.updateAndGet(revisionRef, (revision) => revision + 1).pipe(
-                    Effect.map((revision) =>
-                      toAuthAccessStreamEvent(change, revision, currentSessionId),
-                    ),
-                  ),
-                ),
-              );
-
-              return Stream.concat(
-                Stream.make({
-                  version: 1 as const,
-                  revision: 1,
-                  type: "snapshot" as const,
-                  payload: initialSnapshot,
-                }),
-                liveEvents,
-              );
-            }),
-            { "rpc.aggregate": "auth" },
-          ),
         [WS_METHODS.subscribeBackgroundPolicy]: (_input) =>
           observeRpcStream(
             WS_METHODS.subscribeBackgroundPolicy,
@@ -2853,6 +2773,7 @@ const makeWsRpcLayer = (
 
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
+    const connections = yield* ClientConnectionRegistry.ClientConnectionRegistry;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const baseServerSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const config = yield* ServerConfig.ServerConfig;
@@ -2902,8 +2823,6 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         );
         const clientOrigin = readClientConnectionOrigin(request);
         const clientAnalyticsProps = readClientAnalyticsProps(request);
-        yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
-        yield* analytics.record("client.connected", clientAnalyticsProps);
         const rpcWebSocketHttpEffect = yield* RpcServer.toHttpEffectWebsocket(WsRpcGroup, {
           disableTracing: true,
         }).pipe(
@@ -2944,10 +2863,28 @@ export const websocketRpcRouteLayer = Layer.unwrap(
             ),
           ),
         );
-        return yield* Effect.acquireUseRelease(
-          sessions.markConnected(session.sessionId),
-          () => rpcWebSocketHttpEffect,
-          () => sessions.markDisconnected(session.sessionId),
+        return yield* connections.guard(
+          session.clientId,
+          connections.guardSession(
+            session.sessionId,
+            Effect.gen(function* () {
+              yield* sessions.assertClientAdmission(session.sessionId).pipe(
+                Effect.catchIf(SessionStore.isSessionCredentialInvalidError, () =>
+                  failEnvironmentAuthInvalid("invalid_credential"),
+                ),
+                Effect.catchIf(SessionStore.isSessionCredentialInternalError, (error) =>
+                  failEnvironmentInternal("internal_error", error),
+                ),
+              );
+              yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
+              yield* analytics.record("client.connected", clientAnalyticsProps);
+              return yield* Effect.acquireUseRelease(
+                sessions.markConnected(session.sessionId),
+                () => rpcWebSocketHttpEffect,
+                () => sessions.markDisconnected(session.sessionId),
+              );
+            }),
+          ),
         );
       }).pipe(
         Effect.catchTags({

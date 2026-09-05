@@ -2,7 +2,6 @@ import {
   AuthAdministrativeScopes,
   AuthStandardClientScopes,
   type AuthEnvironmentScope,
-  type AuthPairingLink,
   type ServerAuthBootstrapMethod,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -12,18 +11,19 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
 import * as AuthPairingLinks from "../persistence/AuthPairingLinks.ts";
+import * as ServerSecretStore from "./ServerSecretStore.ts";
+import { signPayload } from "./utils.ts";
 
 export interface BootstrapGrant {
   readonly method: ServerAuthBootstrapMethod;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
   readonly subject: string;
+  readonly clientManagementClass?: "portal-managed-device" | null;
   readonly label?: string;
   readonly proofKeyThumbprint?: string;
   readonly expiresAt: DateTime.DateTime;
@@ -175,6 +175,8 @@ export const BootstrapCredentialError = Schema.Union([
 export type BootstrapCredentialError = typeof BootstrapCredentialError.Type;
 export const isBootstrapCredentialError = Schema.is(BootstrapCredentialError);
 
+export const PORTAL_MANAGED_DEVICE_PAIRING_SUBJECT = "portal-managed-device-enrollment";
+
 export interface IssuedBootstrapCredential {
   readonly id: string;
   readonly credential: string;
@@ -183,15 +185,16 @@ export interface IssuedBootstrapCredential {
   readonly expiresAt: DateTime.Utc;
 }
 
-export type BootstrapCredentialChange =
-  | {
-      readonly type: "pairingLinkUpserted";
-      readonly pairingLink: AuthPairingLink;
-    }
-  | {
-      readonly type: "pairingLinkRemoved";
-      readonly id: string;
-    };
+export interface ActivePairingLink {
+  readonly id: string;
+  readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+  readonly subject: string;
+  readonly clientManagementClass?: "portal-managed-device" | null;
+  readonly label?: string;
+  readonly createdAt: DateTime.Utc;
+  readonly expiresAt: DateTime.Utc;
+  readonly revision: number;
+}
 
 export class PairingGrantStore extends Context.Service<
   PairingGrantStore,
@@ -200,6 +203,7 @@ export class PairingGrantStore extends Context.Service<
       readonly ttl?: Duration.Duration;
       readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
       readonly subject?: string;
+      readonly clientManagementClass?: "portal-managed-device";
       readonly label?: string;
       readonly proofKeyThumbprint?: string;
       /**
@@ -209,11 +213,17 @@ export class PairingGrantStore extends Context.Service<
       readonly purpose?: "startup";
     }) => Effect.Effect<IssuedBootstrapCredential, BootstrapCredentialInternalError>;
     readonly listActive: () => Effect.Effect<
-      ReadonlyArray<AuthPairingLink>,
+      ReadonlyArray<ActivePairingLink>,
       BootstrapCredentialInternalError
     >;
-    readonly streamChanges: Stream.Stream<BootstrapCredentialChange>;
     readonly revoke: (id: string) => Effect.Effect<boolean, BootstrapCredentialInternalError>;
+    readonly revokeAtRevision: (input: {
+      readonly id: string;
+      readonly expectedRevision: number;
+    }) => Effect.Effect<
+      AuthPairingLinks.AuthPairingLinkMutationOutcome,
+      BootstrapCredentialInternalError
+    >;
     readonly consume: (
       credential: string,
       input?: {
@@ -266,8 +276,12 @@ export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const config = yield* ServerConfig.ServerConfig;
   const pairingLinks = yield* AuthPairingLinks.AuthPairingLinkRepository;
+  const secretStore = yield* ServerSecretStore.ServerSecretStore;
+  const credentialDigestSecret = yield* secretStore.getOrCreateRandom(
+    "pairing-credential-digest-key",
+    32,
+  );
   const seededGrantsRef = yield* Ref.make(new Map<string, StoredBootstrapGrant>());
-  const changesPubSub = yield* PubSub.unbounded<BootstrapCredentialChange>();
   const generatePairingToken = Effect.gen(function* () {
     let credential = "";
     while (credential.length < PAIRING_TOKEN_LENGTH) {
@@ -291,6 +305,7 @@ export const make = Effect.gen(function* () {
     }
     return credential;
   });
+  const digestCredential = (credential: string) => signPayload(credential, credentialDigestSecret);
 
   const seedGrant = (credential: string, grant: StoredBootstrapGrant) =>
     Ref.update(seededGrantsRef, (current) => {
@@ -298,18 +313,6 @@ export const make = Effect.gen(function* () {
       next.set(credential, grant);
       return next;
     });
-
-  const emitUpsert = (pairingLink: AuthPairingLink) =>
-    PubSub.publish(changesPubSub, {
-      type: "pairingLinkUpserted",
-      pairingLink,
-    }).pipe(Effect.asVoid);
-
-  const emitRemoved = (id: string) =>
-    PubSub.publish(changesPubSub, {
-      type: "pairingLinkRemoved",
-      id,
-    }).pipe(Effect.asVoid);
 
   if (config.desktopBootstrapToken) {
     const now = yield* DateTime.now;
@@ -342,17 +345,21 @@ export const make = Effect.gen(function* () {
               id: row.id,
               scopes: row.scopes,
               subject: row.subject,
+              clientManagementClass: row.clientManagementClass,
               label: row.label,
               createdAt: row.createdAt,
               expiresAt: row.expiresAt,
-            } satisfies AuthPairingLink)
+              revision: row.revision,
+            } satisfies ActivePairingLink)
           : ({
               id: row.id,
               scopes: row.scopes,
               subject: row.subject,
+              clientManagementClass: row.clientManagementClass,
               createdAt: row.createdAt,
               expiresAt: row.expiresAt,
-            } satisfies AuthPairingLink),
+              revision: row.revision,
+            } satisfies ActivePairingLink),
       );
     },
     Effect.mapError((cause) => new ActivePairingLinksLoadError({ cause })),
@@ -367,12 +374,21 @@ export const make = Effect.gen(function* () {
           revokedAt,
         })
         .pipe(Effect.mapError((cause) => new PairingLinkRevokeError({ pairingLinkId: id, cause })));
-      if (revoked) {
-        yield* emitRemoved(id);
-      }
       return revoked;
     },
   );
+
+  const revokeAtRevision: PairingGrantStore["Service"]["revokeAtRevision"] = Effect.fn(
+    "PairingGrantStore.revokeAtRevision",
+  )(function* (input) {
+    const revokedAt = yield* DateTime.now;
+    const outcome = yield* pairingLinks
+      .revokeAtRevision({ ...input, revokedAt })
+      .pipe(
+        Effect.mapError((cause) => new PairingLinkRevokeError({ pairingLinkId: input.id, cause })),
+      );
+    return outcome;
+  });
 
   const issueOneTimeToken: PairingGrantStore["Service"]["issueOneTimeToken"] = Effect.fn(
     "PairingGrantStore.issueOneTimeToken",
@@ -400,10 +416,11 @@ export const make = Effect.gen(function* () {
     yield* pairingLinks
       .create({
         id,
-        credential,
+        credentialDigest: digestCredential(credential),
         method: "one-time-token",
         scopes: input?.scopes ?? AuthStandardClientScopes,
         subject,
+        clientManagementClass: input?.clientManagementClass ?? null,
         label: input?.label ?? null,
         proofKeyThumbprint: input?.proofKeyThumbprint ?? null,
         createdAt: now,
@@ -420,14 +437,6 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
-    yield* emitUpsert({
-      id,
-      scopes: input?.scopes ?? AuthStandardClientScopes,
-      subject: input?.subject ?? "one-time-token",
-      ...(input?.label ? { label: input.label } : {}),
-      createdAt: now,
-      expiresAt,
-    });
     return issued;
   });
 
@@ -513,7 +522,7 @@ export const make = Effect.gen(function* () {
 
       const consumed = yield* pairingLinks
         .consumeAvailable({
-          credential,
+          credentialDigest: digestCredential(credential),
           proofKeyThumbprint: input?.proofKeyThumbprint ?? null,
           consumedAt: now,
           now,
@@ -521,11 +530,11 @@ export const make = Effect.gen(function* () {
         .pipe(Effect.mapError((cause) => new BootstrapCredentialConsumeAvailableError({ cause })));
 
       if (Option.isSome(consumed)) {
-        yield* emitRemoved(consumed.value.id);
         return {
           method: consumed.value.method,
           scopes: consumed.value.scopes,
           subject: consumed.value.subject,
+          clientManagementClass: consumed.value.clientManagementClass,
           ...(consumed.value.label ? { label: consumed.value.label } : {}),
           ...(consumed.value.proofKeyThumbprint
             ? { proofKeyThumbprint: consumed.value.proofKeyThumbprint }
@@ -535,7 +544,7 @@ export const make = Effect.gen(function* () {
       }
 
       const matching = yield* pairingLinks
-        .getByCredential({ credential })
+        .getByCredentialDigest({ credentialDigest: digestCredential(credential) })
         .pipe(Effect.mapError((cause) => new BootstrapCredentialLookupError({ cause })));
       if (Option.isNone(matching)) {
         return yield* new UnknownBootstrapCredentialError({});
@@ -567,14 +576,13 @@ export const make = Effect.gen(function* () {
   return PairingGrantStore.of({
     issueOneTimeToken,
     listActive,
-    get streamChanges() {
-      return Stream.fromPubSub(changesPubSub);
-    },
     revoke,
+    revokeAtRevision,
     consume,
   });
 });
 
 export const layer = Layer.effect(PairingGrantStore, make).pipe(
   Layer.provideMerge(AuthPairingLinks.layer),
+  Layer.provide(ServerSecretStore.layer),
 );

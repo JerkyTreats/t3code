@@ -5,7 +5,6 @@ import {
   type RelayClientInstallProgressStage,
 } from "@t3tools/contracts";
 import { RelayOkResponse } from "@t3tools/contracts/relay";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as RelayClient from "@t3tools/shared/relayClient";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 import * as Cause from "effect/Cause";
@@ -32,7 +31,6 @@ import * as HttpApiClient from "effect/unstable/httpapi/HttpApiClient";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import * as BootService from "../cloud/bootService.ts";
 import * as CliState from "../cloud/CliState.ts";
 import * as CliTokenManager from "../cloud/CliTokenManager.ts";
 import { filterRelayResponse } from "../cloud/relayResponse.ts";
@@ -50,12 +48,6 @@ import * as ExternalLauncher from "../process/externalLauncher.ts";
 import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import { resolveCliCommand } from "./invocation.ts";
-import {
-  bootServiceLayer,
-  offerServiceDuringOnboarding,
-  recoverServiceOnboardingOffer,
-} from "./service.ts";
-
 const jsonFlag = Flag.boolean("json").pipe(
   Flag.withDescription("Emit JSON instead of human-readable output."),
   Flag.withDefault(false),
@@ -206,7 +198,7 @@ function formatCloudStatus(status: CloudCliStatus, options?: { readonly json?: b
     `  Publish agent activity: ${status.publishAgentActivity ? "enabled" : "disabled"}`,
     ...formatRelayClientStatus(status.relayClient),
     "",
-    "This is saved setup, not a live connection check. Check the background service with `t3 service status`.",
+    "This is saved setup. Check the running server through its deployment manager.",
     ...(nextStep ? ["", `Next: ${nextStep}`] : []),
   ].join("\n");
 }
@@ -410,9 +402,7 @@ const disconnectCloud = Effect.fn("cloud.cli.disconnect")(function* (options: {
   });
 
   if (options.clearAuthorization) {
-    yield* Console.log(
-      "Signed out of T3 Connect locally.\nThe background service is managed separately with `t3 service`.",
-    );
+    yield* Console.log("Signed out of T3 Connect locally.");
   }
 });
 
@@ -425,7 +415,6 @@ const runCloudCommand = Effect.fn("cloud.cli.run_cloud_command")(function* <A, E
     | CliTokenManager.CloudCliTokenManager
     | RelayClient.RelayClient
     | EnvironmentAuth.EnvironmentAuth
-    | BootService.BootService
     | Crypto.Crypto
     | FileSystem.FileSystem
     | HttpClient.HttpClient
@@ -448,7 +437,6 @@ const runCloudCommand = Effect.fn("cloud.cli.run_cloud_command")(function* <A, E
     ),
     RelayClient.layerCloudflared({ baseDir: config.baseDir }),
     EnvironmentAuth.runtimeLayer,
-    bootServiceLayer(config),
     headlessRelayClientTracingLayer,
   ).pipe(
     Layer.provideMerge(FetchHttpClient.layer),
@@ -690,18 +678,6 @@ export const connectCommand = Command.make("connect", {
         // machine is brought online.
         yield* Console.log(`✓ Authorized${connectedAs(linked.identity)}`);
 
-        // Authorization is stored. If service setup fails, preserve it and
-        // show how to run the server manually.
-        const background = yield* recoverServiceOnboardingOffer(offerServiceDuringOnboarding);
-        if (background) {
-          const platform = yield* HostProcessPlatform;
-          yield* Console.log(
-            platform === "darwin"
-              ? "\n✓ Background service ready\n\nT3 Code is set to run while you are logged in to this Mac. The server establishes the T3 Connect link on startup."
-              : "\n✓ Background service ready\n\nT3 Code is set to keep running after you log out. The server establishes the T3 Connect link on startup.",
-          );
-          return;
-        }
         const serveCommand = yield* resolveCliCommand("serve");
         yield* Console.log(
           `\nNext\n  Start the server with \`${serveCommand}\` to make this machine reachable.`,

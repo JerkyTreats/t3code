@@ -315,28 +315,17 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         const clientSession = yield* serverAuth.authenticateHttpRequest(
           makeCookieRequest(sessions.cookieName, clientExchange.sessionToken),
         );
-        const clientsBeforeRevoke = yield* serverAuth.listClientSessions(
+        const clientsBeforeRevoke = yield* serverAuth.listSessions();
+        const revokedCount = yield* serverAuth.revokeOtherSessionsExcept(
           administrativeSession.sessionId,
         );
-        const revokedCount = yield* serverAuth.revokeOtherClientSessions(
-          administrativeSession.sessionId,
-        );
-        const clientsAfterRevoke = yield* serverAuth.listClientSessions(
-          administrativeSession.sessionId,
-        );
+        const clientsAfterRevoke = yield* serverAuth.listSessions();
 
         expect(listedPairingLinks.map((entry) => entry.id)).toContain(pairingCredential.id);
         expect(listedPairingLinks.find((entry) => entry.id === pairingCredential.id)?.label).toBe(
           "Julius iPhone",
         );
         expect(clientsBeforeRevoke).toHaveLength(2);
-        expect(
-          clientsBeforeRevoke.find((entry) => entry.sessionId === administrativeSession.sessionId)
-            ?.current,
-        ).toBe(true);
-        expect(
-          clientsBeforeRevoke.find((entry) => entry.sessionId === clientSession.sessionId)?.current,
-        ).toBe(false);
         expect(
           clientsBeforeRevoke.find((entry) => entry.sessionId === clientSession.sessionId)?.client
             .label,

@@ -274,7 +274,8 @@
     "./dateTime": {
       "types": "./src/dateTime.ts",
       "import": "./src/dateTime.ts"
-    }
+    },
+    "./forkReleaseIdentity": "./src/forkReleaseIdentity.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

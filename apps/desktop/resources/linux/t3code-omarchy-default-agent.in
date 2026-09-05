@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+
+[[ ${1:-} == t3code ]] || exec {{STOCK_OMARCHY_DEFAULT_AGENT}} "$@"
+[[ $# -eq 1 ]] || { echo "Usage: omarchy-default-agent t3code" >&2; exit 2; }
+
+agent_file="${HOME:?HOME is required}/.config/omarchy/defaults/agent"
+mkdir -p "$(dirname "$agent_file")"
+umask 077
+temporary_file=$(mktemp "$agent_file.t3code.XXXXXX")
+trap 'rm -f -- "$temporary_file"' EXIT
+printf '%s\n' t3code >"$temporary_file"
+mv -f -- "$temporary_file" "$agent_file"
+trap - EXIT
+exec {{OMARCHY_AGENT_ADAPTER}}

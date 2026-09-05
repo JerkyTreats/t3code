@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ServerSelfUpdateCapability } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -11,9 +11,6 @@ const testState = vi.hoisted(() => ({
   continueThreadsAfterServerUpdate: false,
 }));
 
-vi.mock("~/hooks/useCopyToClipboard", () => ({
-  useCopyToClipboard: () => ({ copyToClipboard: vi.fn() }),
-}));
 vi.mock("~/hooks/useSettings", () => ({
   useEnvironmentSettings: (
     _environmentId: EnvironmentId,
@@ -40,7 +37,8 @@ function renderAction(): ActionElement {
   return ServerUpdateAction({
     environmentId: "env-test" as EnvironmentId,
     serverLabel: "Test server",
-    selfUpdate: "boot-service",
+    selfUpdate: "desktop-managed",
+    desktopAppUpdate: true,
     targetVersion: "0.0.31",
   }) as ActionElement;
 }
@@ -59,7 +57,7 @@ describe("ServerUpdateAction", () => {
 
   it("reports success only after the shared update flow reconnects", async () => {
     testState.updateServer.mockResolvedValue(
-      AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
+      AsyncResult.success({ targetVersion: "0.0.31", method: "desktop-app" as const }),
     );
 
     renderAction().props.onClick?.();
@@ -72,7 +70,7 @@ describe("ServerUpdateAction", () => {
     expect(testState.toast).toHaveBeenCalledWith({
       type: "success",
       title: "Test server updated",
-      description: "Reconnected on t3@0.0.31.",
+      description: "Desktop app relaunched on 0.0.31.",
     });
   });
 
@@ -83,7 +81,7 @@ describe("ServerUpdateAction", () => {
         new Promise((resolve) => {
           finishUpdate = () =>
             resolve(
-              AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
+              AsyncResult.success({ targetVersion: "0.0.31", method: "desktop-app" as const }),
             );
         }),
     );
@@ -92,6 +90,7 @@ describe("ServerUpdateAction", () => {
     action.props.onClick?.();
     action.props.onClick?.();
 
+    await flushPromises();
     expect(testState.updateServer).toHaveBeenCalledTimes(1);
     finishUpdate?.();
     await flushPromises();
@@ -106,6 +105,24 @@ describe("ServerUpdateAction", () => {
 
     expect(testState.toast).not.toHaveBeenCalled();
   });
+
+  it.each<ServerSelfUpdateCapability | null>([null, "boot-service", "respawn"])(
+    "shows operator guidance without an update action for %s",
+    (selfUpdate) => {
+      const markup = renderToStaticMarkup(
+        <ServerUpdateAction
+          environmentId={"env-test" as EnvironmentId}
+          serverLabel="Test server"
+          selfUpdate={selfUpdate}
+          targetVersion="0.0.31"
+        />,
+      );
+      expect(markup).toContain("Update this server to 0.0.31 through its deployment manager.");
+      expect(markup).not.toContain("<button");
+      expect(markup).not.toContain("npx");
+      expect(testState.updateServer).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps the manual instruction for desktop servers without remote update support", () => {
     const markup = renderToStaticMarkup(
@@ -152,12 +169,13 @@ describe("ServerUpdateAction", () => {
 
   it("leaves thread continuation off by default", async () => {
     testState.updateServer.mockResolvedValue(
-      AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
+      AsyncResult.success({ targetVersion: "0.0.31", method: "desktop-app" as const }),
     );
     const action = ServerUpdateAction({
       environmentId: "env-test" as EnvironmentId,
       serverLabel: "Test server",
-      selfUpdate: "boot-service",
+      selfUpdate: "desktop-managed",
+      desktopAppUpdate: true,
       threadContinuation: true,
       targetVersion: "0.0.31",
     }) as ActionElement;
@@ -173,13 +191,14 @@ describe("ServerUpdateAction", () => {
 
   it("applies the saved thread continuation preference automatically", async () => {
     testState.updateServer.mockResolvedValue(
-      AsyncResult.success({ targetVersion: "0.0.31", method: "boot-service" as const }),
+      AsyncResult.success({ targetVersion: "0.0.31", method: "desktop-app" as const }),
     );
     testState.continueThreadsAfterServerUpdate = true;
     const action = ServerUpdateAction({
       environmentId: "env-test" as EnvironmentId,
       serverLabel: "Test server",
-      selfUpdate: "boot-service",
+      selfUpdate: "desktop-managed",
+      desktopAppUpdate: true,
       threadContinuation: true,
       targetVersion: "0.0.31",
     }) as ActionElement;

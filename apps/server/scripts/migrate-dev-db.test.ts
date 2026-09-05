@@ -56,8 +56,18 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
           (event_id, aggregate_kind, stream_id, stream_version, event_type, occurred_at, actor_kind, payload_json, metadata_json)
           VALUES (${`event-${threadId}`}, 'thread', ${threadId}, 0, 'thread.created', '2026-08-01', 'user', '{}', '{}')`;
       }
-      yield* sql`INSERT INTO auth_sessions (session_id, subject, scopes, method, issued_at, expires_at)
-        VALUES ('session-1', 'user', '[]', 'pairing', '2026-08-01', '2027-08-01')`;
+      yield* sql`INSERT INTO auth_clients
+        (client_id, label, device_type, platform, granted_scopes, created_at, revision)
+        VALUES
+        ('client-1', 'Fixture client', 'desktop', 'linux', '["access:read"]', '2026-08-01', 0)`;
+      yield* sql`INSERT INTO auth_sessions
+        (session_id, client_id, subject, scopes, method, issued_at, expires_at)
+        VALUES
+        ('session-1', 'client-1', 'user', '["access:read"]', 'pairing', '2026-08-01', '2027-08-01')`;
+      yield* sql`INSERT INTO auth_pairing_links
+        (id, credential_digest, method, scopes, subject, created_at, expires_at)
+        VALUES
+        ('pairing-1', 'fixture-digest', 'pairing', '["access:read"]', 'user', '2026-08-01', '2027-08-01')`;
     }),
   );
   return databasePath;
@@ -86,9 +96,19 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             SELECT thread_id FROM projection_threads ORDER BY thread_id`;
           const events = yield* sql<{ stream_id: string }>`
             SELECT stream_id FROM orchestration_events`;
-          const [auth] = yield* sql<{ count: number }>`
+          const [clients] = yield* sql<{ count: number }>`
+            SELECT COUNT(*) AS count FROM auth_clients`;
+          const [sessions] = yield* sql<{ count: number }>`
             SELECT COUNT(*) AS count FROM auth_sessions`;
-          return { threads, events, authCount: auth?.count ?? 0 };
+          const [pairingLinks] = yield* sql<{ count: number }>`
+            SELECT COUNT(*) AS count FROM auth_pairing_links`;
+          return {
+            threads,
+            events,
+            clientCount: clients?.count ?? 0,
+            sessionCount: sessions?.count ?? 0,
+            pairingLinkCount: pairingLinks?.count ?? 0,
+          };
         }),
       );
       assert.deepStrictEqual(
@@ -99,18 +119,29 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         kept.events.map((row) => row.stream_id),
         ["stopped-thread"],
       );
-      assert.equal(kept.authCount, 0);
+      assert.equal(kept.clientCount, 0);
+      assert.equal(kept.sessionCount, 0);
+      assert.equal(kept.pairingLinkCount, 0);
     }),
   );
 
-  it.effect("fails loudly on a migration slot collision", () =>
+  it.effect("rejects an unsupported migration identity before replacing the destination", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
       const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-slot-" });
       const destDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-slot-dest-" });
       const source = yield* createFixtureSource(sourceDir);
-      // Simulate another branch having claimed slot 1 first: the id is
-      // recorded, so this checkout's migration 1 silently never runs.
+      const destination = path.join(destDir, "userdata", "state.sqlite");
+      yield* fs.makeDirectory(path.dirname(destination), { recursive: true });
+      yield* withDatabase(
+        destination,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`CREATE TABLE destination_marker (value TEXT NOT NULL)`;
+          yield* sql`INSERT INTO destination_marker VALUES ('preserved')`;
+        }),
+      );
       yield* withDatabase(
         source,
         Effect.gen(function* () {
@@ -124,11 +155,52 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { baseDir: destDir, source, projects: 5, threadsPerProject: 10 },
         { sharedHome: sourceDir },
       ).pipe(Effect.flip);
-      assert.equal(error._tag, "MigrateDevDbSlotCollisionError");
-      if (error._tag === "MigrateDevDbSlotCollisionError") {
-        assert.equal(error.slot, 1);
-        assert.equal(error.appliedName, "SomebodyElsesMigration");
+      assert.equal(error._tag, "MigrateDevDbPhaseError");
+      if (error._tag === "MigrateDevDbPhaseError") {
+        assert.equal(error.phase, "migrate");
       }
+      const marker = yield* withDatabase(
+        destination,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          return yield* sql<{ value: string }>`SELECT value FROM destination_marker`;
+        }),
+      );
+      assert.deepStrictEqual(marker, [{ value: "preserved" }]);
+      assert.equal(yield* fs.exists(`${destination}.migrate-dev-db-tmp`), false);
+    }),
+  );
+
+  it.effect("accepts a characterized historical migration prefix", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const sourceDir = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-history-" });
+      const destDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "migrate-dev-db-history-dest-",
+      });
+      const source = yield* createFixtureSource(sourceDir);
+      yield* withDatabase(
+        source,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`UPDATE effect_sql_migrations
+            SET name = 'RepairProjectionThreadShellSummary' WHERE migration_id = 31`;
+        }),
+      );
+
+      const result = yield* runMigrateDevDb(
+        { baseDir: destDir, source, projects: 5, threadsPerProject: 10 },
+        { sharedHome: sourceDir },
+      );
+      const journal = yield* withDatabase(
+        result.databasePath,
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          return yield* sql<{ name: string }>`
+            SELECT name FROM effect_sql_migrations WHERE migration_id = 31`;
+        }),
+      );
+      assert.deepStrictEqual(journal, [{ name: "RepairProjectionThreadShellSummary" }]);
     }),
   );
 

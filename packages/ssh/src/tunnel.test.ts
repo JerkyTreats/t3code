@@ -100,16 +100,14 @@ function commandArgs(command: ChildProcess.Command): ReadonlyArray<string> {
 }
 
 describe("ssh tunnel scripts", () => {
-  it("builds the remote t3 runner with npx and npm fallbacks", () => {
+  it("builds the remote t3 runner for a preinstalled CLI", () => {
     const script = buildRemoteT3RunnerScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE });
 
     assert.include(script, "T3_NODE_SCRIPT_PATH=''");
     assert.include(script, 'exec t3 "$@"');
-    assert.include(script, 'exec "$T3_CLI_PATH" "$@"');
-    assert.include(script, "could not install 't3@latest'");
-    assert.include(script, "require_installed_t3_cli npx --yes --package 't3@latest'");
-    assert.include(script, "require_installed_t3_cli npm exec --yes --package 't3@latest'");
-    assert.include(script, "npm produced no t3 executable");
+    assert.include(script, "Install this fork on the remote host");
+    assert.notInclude(script, "npx");
+    assert.notInclude(script, "npm exec");
     assert.include(script, 'prepend_path_if_dir "$HOME/.local/bin"');
     assert.include(script, `T3_NODE_ENGINE_RANGE='${TEST_NODE_ENGINE_RANGE}'`);
     assert.include(script, "remote_node_satisfies_engine()");
@@ -135,27 +133,12 @@ describe("ssh tunnel scripts", () => {
     assert.notInclude(script, TEST_NODE_ENGINE_RANGE);
   });
 
-  it("shell-quotes package specs in the remote t3 runner", () => {
-    const script = buildRemoteT3RunnerScript({
-      packageSpec: "t3@nightly; touch /tmp/t3-owned",
-    });
-
-    assert.include(
-      script,
-      "require_installed_t3_cli npx --yes --package 't3@nightly; touch /tmp/t3-owned'",
-    );
-    assert.notInclude(script, "exec npx --yes t3@nightly; touch /tmp/t3-owned");
-  });
-
   it("builds the remote t3 runner with a node script override", () => {
     const script = buildRemoteT3RunnerScript({
-      nodeScriptPath: "/Users/julius/Development/Work/codething-mvp/apps/server/dist/bin.mjs",
+      nodeScriptPath: "/workspace/project/apps/server/dist/bin.mjs",
     });
 
-    assert.include(
-      script,
-      "T3_NODE_SCRIPT_PATH='/Users/julius/Development/Work/codething-mvp/apps/server/dist/bin.mjs'",
-    );
+    assert.include(script, "T3_NODE_SCRIPT_PATH='/workspace/project/apps/server/dist/bin.mjs'");
     assert.include(script, 'exec node "$T3_NODE_SCRIPT_PATH" "$@"');
   });
 
@@ -163,7 +146,7 @@ describe("ssh tunnel scripts", () => {
     const target = {
       alias: "devbox",
       hostname: "devbox.example.com",
-      username: "julius",
+      username: "user",
       port: 2222,
     } as const;
 
@@ -191,14 +174,12 @@ describe("ssh tunnel scripts", () => {
     assert.include(buildRemoteLaunchScript(), 'wait_ready "60000"');
     assert.include(buildRemoteLaunchScript(), 'if [ -s "$LOG_FILE" ]; then');
     assert.include(buildRemoteLaunchScript(), "It wrote nothing to %s");
-    assert.include(buildRemoteLaunchScript({ packageSpec: "t3@nightly" }), "t3@nightly");
     assert.include(
       buildRemotePairingScript(target),
       '"$RUNNER_FILE" auth pairing create --base-dir "$PAIRING_BASE_DIR" --json',
     );
     assert.include(buildRemotePairingScript(target), 'PAIRING_BASE_DIR="$DEFAULT_SERVER_HOME"');
     assert.notInclude(buildRemotePairingScript(target), "server-home");
-    assert.include(buildRemotePairingScript(target, { packageSpec: "t3@nightly" }), "t3@nightly");
     assert.include(
       buildRemoteStopScript(target),
       'if [ "$REMOTE_MANAGED" != "external" ] && [ -n "$REMOTE_PID" ]',
@@ -237,7 +218,7 @@ describe("ssh tunnel scripts", () => {
     const target = {
       alias: "devbox",
       hostname: "devbox.example.com",
-      username: "julius",
+      username: "user",
       port: 2222,
     } as const;
     const spawnedCommands: Array<ReadonlyArray<string>> = [];
@@ -261,7 +242,7 @@ describe("ssh tunnel scripts", () => {
     const target = {
       alias: "devbox",
       hostname: "devbox.example.com",
-      username: "julius",
+      username: "user",
       port: 2222,
     } as const;
     const spawner = ChildProcessSpawner.make(() =>
@@ -333,7 +314,7 @@ describe("ssh tunnel scripts", () => {
     const target = {
       alias: "devbox",
       hostname: "devbox.example.com",
-      username: "julius",
+      username: "user",
       port: 2222,
     } as const;
     const spawner = ChildProcessSpawner.make(() =>
@@ -360,7 +341,7 @@ describe("ssh tunnel scripts", () => {
     const target = {
       alias: "devbox",
       hostname: "devbox.example.com",
-      username: "julius",
+      username: "user",
       port: 2222,
     } as const;
     const spawner = ChildProcessSpawner.make(() =>
@@ -418,7 +399,7 @@ describe("ssh tunnel scripts", () => {
     const target = {
       alias: "devbox",
       hostname: "devbox.example.com",
-      username: "julius",
+      username: "user",
       port: 2222,
     } as const;
 
