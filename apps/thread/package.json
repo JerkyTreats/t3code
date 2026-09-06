@@ -1,0 +1,49 @@
+{
+  "name": "@t3tools/thread",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "build": "vp pack && node scripts/check-packed-boundary.mjs",
+    "typecheck": "tsgo --noEmit",
+    "test": "vp test run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@t3tools/contracts": "workspace:*",
+    "@t3tools/shared": "workspace:*",
+    "@types/node": "catalog:",
+    "electron": "43.4.1",
+    "electron-builder": "26.15.6",
+    "vite-plus": "catalog:"
+  },
+  "build": {
+    "appId": "com.t3tools.t3code.thread",
+    "artifactName": "T3-Thread.AppImage",
+    "afterPack": "../../scripts/thread-after-pack.mjs",
+    "executableName": "t3-thread",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "category": "Development",
+      "executableArgs": [],
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  },
+  "productName": "T3 Thread"
+}

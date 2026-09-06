@@ -607,3 +607,7 @@ If applied, this commit defines validated Code and Thread launch identities and 
 ### Commit effect — S6 code
 
 If applied, this commit runs standalone Linux Code against its isolated HTTPS identity with independent launcher readiness.
+
+### Commit effect — S6 shell
+
+If applied, this commit provides one independent Thread process and profile per launch with protected reusable enrollment.
