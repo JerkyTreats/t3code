@@ -1,8 +1,8 @@
 # Upstream intake implementation
 
 Date: 2026-09-05
-Status: in progress
-Readiness: S5 complete; S6 joined source under verification
+Status: complete for local intake
+Readiness: all seven slices accepted; publication and deployment remain separate
 Branch: `reconcile/upstream-intake-20260905`
 
 ## Objective Baseline
@@ -20,7 +20,7 @@ Immutable decision inventory SHA256: `500abe6378142d01537c45c48f829f248bc1a04d9f
 
 ## Source Plan And Authority
 
-The local source plan is `.plans/57-upstream-intake-program.md`; the active group contract is `.plans/62-upstream-intake-linux-and-thread.md`. The completed S12 contract remains historical execution evidence in `.plans/59-upstream-intake-persistence-and-authority.md`, carrying `.plans/58-upstream-intake-persistence-slice.md`. Those working records remain uncommitted. This ledger owns current execution, acceptance, commit effects and continuation. The immutable inventory remains supporting evidence.
+The local source plan is `.plans/57-upstream-intake-program.md`; the final accepted group contract is `.plans/63-upstream-intake-final-preservation.md`, carrying the installed contract in `.plans/62-upstream-intake-linux-and-thread.md`. The completed S12 contract remains historical execution evidence in `.plans/59-upstream-intake-persistence-and-authority.md`, carrying `.plans/58-upstream-intake-persistence-slice.md`. Those working records remain uncommitted. This ledger owns current execution, acceptance, commit effects and continuation. The immutable inventory remains supporting evidence.
 
 The user instruction to proceed with implementation activates the full local program, the approved scope changes, the selected subagent/worktree orchestration, focused fixes, required verification and delivery commits. Activation of a later covered slice follows its dependency and contract gates without another permission request. Source changes and associated current patch/spec updates are within scope. No policy amendment is inferred.
 
@@ -30,21 +30,21 @@ Workflow owners: [phased program delivery](../.codex/skills/phased-program-deliv
 
 ## Maturity And Limits
 
-The reconciled product has first-slice maturity with operational data and identity obligations. Preserve the immutable decision denominator. New authority, unexplained data lineage, a resurrected retired writer or a changed source pin reopens the relevant contract.
+The reconciled product has passed the scoped local preservation gates with operational data and identity obligations. Preserve the immutable decision denominator. New authority, unexplained data lineage, a resurrected retired writer or a changed source pin reopens the relevant contract.
 
 The root owns migration identities, shared contracts, broad hosts, integration and gate evidence. Start with at most four workers; S1 uses two proof workers. Each worker gets exact files and a physically present prerequisite baseline. One repository-wide gate run at a time. Synthetic state only.
 
 ## Phase Inventory And Dependency Graph
 
-| Slice | Product result                                                                | Dependencies                                    | State                 | Owner and evidence                                                   |
-| ----- | ----------------------------------------------------------------------------- | ----------------------------------------------- | --------------------- | -------------------------------------------------------------------- |
-| S1    | New persistence opens supported fork history and applies upstream corrections | Pinned baseline and historical fixture contract | Complete              | Root migration owner; two proof lanes integrated                     |
-| S2    | Exact-origin Git and external Admin authority                                 | S12 joint persistence acceptance                | Complete              | Four bounded implementation lanes                                    |
-| S3    | Global Board and truthful liaison behavior                                    | S1, S2                                          | Complete              | Accepted S34 runtime, provider and client proof                      |
-| S4    | Normal upstream sends/rendering and complete fork retirement                  | S1, S2                                          | Complete              | Accepted S34 retirement and substrate proof                          |
-| S5    | Retained visuals and thin adapters                                            | S4                                              | Complete              | Source, rendered evidence, logical/style review and commit gate pass |
-| S6    | Independent installed Linux clients and Thread                                | S2, S4, S5                                      | In progress           | Shared prerequisites before source and installed compatibility proof |
-| S7    | Integrated preservation and rollback evidence                                 | S3 through S6                                   | Blocked by dependency | No acceptance claim                                                  |
+| Slice | Product result                                                                | Dependencies                                    | State    | Owner and evidence                                                   |
+| ----- | ----------------------------------------------------------------------------- | ----------------------------------------------- | -------- | -------------------------------------------------------------------- |
+| S1    | New persistence opens supported fork history and applies upstream corrections | Pinned baseline and historical fixture contract | Complete | Root migration owner; two proof lanes integrated                     |
+| S2    | Exact-origin Git and external Admin authority                                 | S12 joint persistence acceptance                | Complete | Four bounded implementation lanes                                    |
+| S3    | Global Board and truthful liaison behavior                                    | S1, S2                                          | Complete | Accepted S34 runtime, provider and client proof                      |
+| S4    | Normal upstream sends/rendering and complete fork retirement                  | S1, S2                                          | Complete | Accepted S34 retirement and substrate proof                          |
+| S5    | Retained visuals and thin adapters                                            | S4                                              | Complete | Source, rendered evidence, logical/style review and commit gate pass |
+| S6    | Independent installed Linux clients and Thread                                | S2, S4, S5                                      | Complete | Current clean artifacts, installed matrix and qualified native focus |
+| S7    | Integrated preservation and rollback evidence                                 | S3 through S6                                   | Complete | Historical restore, image runtime, final review and durable evidence |
 
 ## Wave Plan And Agent Strength
 
@@ -118,21 +118,21 @@ Provider lifecycle state retains one historical session entry per thread until e
 
 ## Phase Completion Matrix
 
-S1 and S2 are complete as the joined S12 source delivery group through `2b691e322`. S34 implementation, full gates, logical review, ordered Style Assurance and root acceptance pass; this Board commit closes its source delivery gate. S5 reference capture and adapter contracts are prepared. Final visuals and installed Linux/Thread acceptance remain pending.
+S1 and S2 are complete as the joined S12 source delivery group. S3 and S4 retain the accepted Board and retirement proof, and S5 retains the accepted presentation and adapter proof. S6 passes the current installed Code and Thread matrix. S7 joins all 21 immutable concerns and 175 hunks with current historical-state restore, image runtime, final logical review and ordered Style Assurance. The detailed chronological records below retain their original scope and limits.
 
 ## Risks And Exceptions
 
-No existing user data has been accessed and no deployed process has been changed. Five synthetic browser reference cases and preliminary candidate comparisons are captured. All 175 conflict rows are attributed; 38 retain later implementation obligations. Final same-candidate visuals and the Thread/hosted-client matrix remain prerequisites to their respective acceptance gates.
+No existing user data has been accessed and no deployed process has been changed. All 175 conflict rows are attributed with zero unresolved current source roles. Current installed Code and Thread, rendered presentation and historical-state consumers pass the scoped preservation checks. Native Wayland focus uses actual focus calls with simulated service status; the default service activation and cgroup path are not live proof. Screenshot admission uses a synthetic PNG rather than physical capture. Provider fixtures send no paid turn, and liaison instructions do not guarantee agent compliance.
 
 Local working plans are excluded from commits under repository instructions. Required durable implementation and Commit Effect evidence is recorded here under F18/F19. This does not create a second active implementation plan.
 
 ## Final Reconciliation
 
-Pending all required slices. Origin has not been mutated and no deployment has occurred.
+All required slices are reconciled locally. The tested runtime source is `246e8bcd95020ba582cd269ce3fb538f6a8eef21`; this later evidence commit changes records only. The preserved origin ref and original checkout remain untouched. Nineteen dirty worker transfer worktrees are retained and accounted for by byte audit; they are not uncommitted integration work. The integration worktree is clean at the final commit gate. Origin and upstream have not been mutated and no deployment has occurred.
 
 ## Deliverable Closeout
 
-Supported fork databases open through the current runtime with their retained history and explicit device authority. Repository operations use exact origin, external device administration stays with the portal, and runtime acquisition follows the managed fork installation boundary. These accepted source outcomes are prerequisites to the complete product; Board and chat retirement pass source acceptance, with this Board commit closing their local gate; visuals and installed Linux/Thread acceptance remain pending.
+The intake supplies current upstream sending, Markdown and client foundations with the agreed Board, chat presentation, thin Omarchy adapter, independent hosted Thread, screenshots, Mermaid, whitespace and preview behavior. Exact-origin identity, Linux operations, external Admin and repository workflows remain. The fork web outbox, custom Markdown renderer, rendered-document commenting and outbox shelf are retired. Supported server history remains usable, and rollback restores a matching database, attachments, secrets and old runtime.
 
 ### S1 prerequisite handoff
 
@@ -750,3 +750,19 @@ The new semantic regressions produce ten failures against the original source wh
 ### Commit effect — single-use connection tickets
 
 If applied, this commit permits each server-issued WebSocket ticket to authorize only one connection attempt.
+
+### Final local preservation acceptance
+
+The runtime source is `246e8bcd95020ba582cd269ce3fb538f6a8eef21`. All four repository gates pass, including 13,859 tests across fifteen workspaces and ten inherited server skips. Fresh authority review and ordered Style Assurance precede its clean commit. Actual current Code and Thread pass the full installed matrix, including exact draft staging, protected enrollment reuse, acknowledged reload, fresh reconnect, used-ticket replay denial, all six close/crash cases and managed-device authority recovery. Root inspected the actual [Thread draft](upstream-intake-evidence/thread-draft.png) and [Code draft](upstream-intake-evidence/code-draft.png).
+
+The actual current server migrates supported historical state, reads retained thread, attachment, Board and authority meaning, reopens it, then restores the exact matching backup for the qualified old runtime. The old bundle is supported by sidecar and source-map provenance, not an exact historical build claim. The current-source image passes its local runtime and signal gates. Final disjoint logical reviews join retained and retired decisions before ordered Style Assurance and root acceptance.
+
+The [durable evidence index](upstream-intake-evidence.json) records source identities, hashes, commands, results and limits. The [immutable baseline](upstream-intake-baseline.json.snapshot) is byte-identical at SHA256 `500abe6378142d01537c45c48f829f248bc1a04d9fcca5218f47b8dcea43d8f5`. All 21 concerns and 175 unique source hunks retain their frozen denominator. The 82 normalized active status values retain their prior text in separate historical snapshots; every other entry field and nested historical acceptance record remains unchanged. Every delivery commit carries its exact Commit Effect.
+
+Before any later cutover, resolve pending or ambiguous old web outbox work in the old client. A binary downgrade alone does not restore database compatibility. Historical unclassified Thread credentials require portal re-enrollment for managed-device authority. Unacknowledged staging may replay across full reload; acknowledged receipts stop replay. Connection tickets are single-use and runtime-local, while durable enrollment survives restart. Native focus and screenshot fixture limits remain explicit above. Local acceptance does not publish, deploy or touch existing user state.
+
+Final record review closes the product lane at SHA256 `f44d4316222f78d6f8f2969fb1b3e6f79a4999af02a8c88c0a065fb4e80e5ac3` and the persistence lane at SHA256 `f70ffdd6aa66d17d57c97e3725e9649c8c60e616165123e4476c731062a417ae`. Both report no remaining findings. The stale preparation disclaimer is corrected, and prior status snapshots are explicit. These receipt-only additions precede ordered Style Assurance and the final documentation commit; runtime inputs and accepted product evidence are unchanged.
+
+### Commit effect — durable intake acceptance
+
+If applied, this commit records the accepted upstream intake and durable evidence for its retained and retired fork responsibilities.

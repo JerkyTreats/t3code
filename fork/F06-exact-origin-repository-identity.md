@@ -1,6 +1,6 @@
 # F06 Exact Origin Repository Identity
 
-Status: active in the isolated intake candidate
+Status: active
 
 Product repository identity, status, ref lists, hosted targets and publication resolve exact `origin`. Missing origin fails closed. Generic Git diagnostics and local reconciliation remain available without making other remotes product authority.
 

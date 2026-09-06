@@ -93,7 +93,7 @@ Retain upstream T3 Code product identity while binding official desktop updates 
 
 Source tests cover the portable identity owner, descriptor contract, no-follow reads, byte verification before managed writes, installer and launcher decisions, exact release links, SSH runtime acquisition owner, replacement-host execution, triage routing, explicit clone authorization, safe CLI guidance, and workflow authority. Mocked artifact smoke covers extraction metadata, isolated paths, readiness, early exit, and bounded cleanup.
 
-An actual AppImage build, extraction, isolated installation, launcher readiness, and independent-client acceptance remain pending under the S6 installed Linux verification lane. The source replay does not claim that runtime evidence.
+The current clean AppImages pass extraction, isolated installation, exact packaged identity, launcher readiness and independent-client acceptance. The intake evidence records source and artifact hashes separately from later documentation commits. No installed fixture mutates an existing environment.
 
 ## Reconciliation Rule
 

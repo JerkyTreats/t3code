@@ -1,0 +1,1987 @@
+{
+  "format": "t3code-upstream-intake-evidence-v1",
+  "status": "accepted_at_containing_documentation_commit",
+  "source_commit": "246e8bcd95020ba582cd269ce3fb538f6a8eef21",
+  "source_pins": {
+    "origin": "9c80a4c63bb0d8391301e6e17bc7afe5226dbce5",
+    "upstream": "761d4bac1c238ea7af4dd36b56719ad5e30771c3"
+  },
+  "immutable_inventory": {
+    "path": ".ledger/upstream-intake-baseline.json.snapshot",
+    "sha256": "500abe6378142d01537c45c48f829f248bc1a04d9fcca5218f47b8dcea43d8f5",
+    "concerns": 21,
+    "concerns_with_current_source_disposition": 21,
+    "hunks": 175,
+    "recorded_hunk_rows": 175,
+    "unique_hunk_rows": 175,
+    "unresolved_source_role_rows": 0,
+    "normalization_boundary": "Only active top-level entry status fields may be normalized. Nested prior acceptance and historical snapshots remain unchanged."
+  },
+  "accepted_source_groups": {
+    "S12": {
+      "accepted_commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "accepted_candidate": "62bad7ee9ee318eb0b6ec5d957cd88a09632e5e6cfc2a71abd078b9b709a002f",
+      "group_claim": "Source acceptance for persistence, exact-origin identity, external Admin authority and release prerequisites.",
+      "group_limit": "No installed Linux or image acceptance and no later Board, visual, Thread or final program acceptance."
+    },
+    "S34": {
+      "accepted_commits": ["9ddd85585", "ab7599741"],
+      "accepted_candidate": "a9d62a2b60790848c8e9ed59327df1afb2950a3d4de8a20d9a121ea4d77a8f84",
+      "accepted_style_candidate": "921c2677b523a5dd2754b710df0cc6b1e4ded0125d55fd744a94623c7c2be299",
+      "group_claim": "Source acceptance for global Board behavior and approved chat retirement across 91 exact roles.",
+      "group_limit": "No installed or final product acceptance. Mixed S5 and S6 obligations remain independent."
+    },
+    "S5": {
+      "accepted_commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "accepted_candidate": "12d06046b55cdb2d66daeb3e601a3ca5b48acdd28bae87ceb7bb077ddace1003",
+      "accepted_style_candidate": "02003c0dda9780d3264f712ba895f5a411b9c3534f5bfb98d461a88d6ae6f880",
+      "group_claim": "Source, build and rendered acceptance for retained presentation and adapters across 40 exact roles.",
+      "group_limit": "No installed Linux, hosted Thread, deployment or final program acceptance."
+    }
+  },
+  "historical_receipts": [
+    {
+      "slice": "S12",
+      "kind": "candidate_manifest",
+      "basename": "t3code-intake-s12-reconnect-candidate.json",
+      "sha256": "62bad7ee9ee318eb0b6ec5d957cd88a09632e5e6cfc2a71abd078b9b709a002f",
+      "candidate": "S12 accepted candidate",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Binds the final S12 runtime candidate used by the accepted full gates and supplemental exact-role review.",
+      "limit": "A manifest proves identity only and does not itself prove behavior.",
+      "outcome": "Hash verified against the present receipt."
+    },
+    {
+      "slice": "S12",
+      "kind": "candidate_manifest",
+      "basename": "t3code-intake-s12-accepted-source-candidate.json",
+      "sha256": "5202d2bcbb166b25427c4fb1b3a4486d6a28eef19578c94c786162fad807b7f7",
+      "candidate": "S12 accepted source candidate",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Binds accepted source and requirement identities after S12 review and record reconciliation.",
+      "limit": "Later changed or removed paths require successor evidence.",
+      "outcome": "Hash verified against the present receipt."
+    },
+    {
+      "slice": "S12",
+      "kind": "format_gate",
+      "basename": "t3code-intake-s12-reconnect-fmt.log",
+      "sha256": "531e3140eade2929870b9c73f08f8ba29eb9eb784325883c13109413ed504062",
+      "candidate": "S12 accepted candidate",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Records the passing format gate.",
+      "limit": "Applies only to the bound S12 candidate.",
+      "outcome": "Ledger records exit success. Receipt hash verified."
+    },
+    {
+      "slice": "S12",
+      "kind": "lint_gate",
+      "basename": "t3code-intake-s12-reconnect-lint.log",
+      "sha256": "be047f2d16e135ee753ad2d2219067a174cd07de1056113bf031cd0d4f94537e",
+      "candidate": "S12 accepted candidate",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Records the passing lint gate.",
+      "limit": "Applies only to the bound S12 candidate.",
+      "outcome": "Ledger records exit success. Receipt hash verified."
+    },
+    {
+      "slice": "S12",
+      "kind": "typecheck_gate",
+      "basename": "t3code-intake-s12-reconnect-typecheck.log",
+      "sha256": "8dc61f5e56907659ff113a7c0870559957bdae836661476c5c5edf5ef6bd8120",
+      "candidate": "S12 accepted candidate",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Records the passing typecheck gate.",
+      "limit": "Applies only to the bound S12 candidate.",
+      "outcome": "Ledger records exit success. Receipt hash verified."
+    },
+    {
+      "slice": "S12",
+      "kind": "test_gate",
+      "basename": "t3code-intake-s12-reconnect-test.log",
+      "sha256": "a99a36c94c866ac8cce9cb77617347846a497d5173a31ddc2be1e4e29343fa1e",
+      "candidate": "S12 accepted candidate",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Records full test success across 14 workspaces with 13147 tests, including 4061 server tests and ten inherited skips.",
+      "limit": "Source tests do not establish installed behavior or later integrated acceptance.",
+      "outcome": "Ledger records full success. Receipt hash verified."
+    },
+    {
+      "slice": "S12",
+      "kind": "review_packet",
+      "basename": "t3code-intake-s12-review-persistence.txt",
+      "sha256": "d4e5a9bb3573dc9f2bec40f6f6cc5103ac4db2df3c3f61e357da3fc2d27d7b51",
+      "candidate": "S12 pre-correction logical review candidate",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Defines the persistence review scope and bound candidate supplied to the reviewer.",
+      "limit": "This file is a review packet, not a review result.",
+      "outcome": "No pass status is inferred from this packet. Later ledger prose records the persistence lane with no remaining finding."
+    },
+    {
+      "slice": "S12",
+      "kind": "review_packet",
+      "basename": "t3code-intake-s12-review-authority.txt",
+      "sha256": "18517a95c29a0ec48d55e439e920a58daa83cfab99eb1cd7536cbb947f9cd133",
+      "candidate": "S12 pre-correction logical review candidate",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Defines the external authority review scope and bound candidate supplied to the reviewer.",
+      "limit": "This file is a review packet, not a review result.",
+      "outcome": "No pass status is inferred. The initial authority review produced three blockers later covered by correction evidence."
+    },
+    {
+      "slice": "S12",
+      "kind": "review_packet",
+      "basename": "t3code-intake-s12-review-origin_release.txt",
+      "sha256": "9bd34ade21dd7e0c8b77a857a09a0abef7212226154d31b7057b2f1c2ee5e423",
+      "candidate": "S12 pre-correction logical review candidate",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Defines the exact-origin and release review scope and bound candidate supplied to the reviewer.",
+      "limit": "This file is a review packet, not a review result.",
+      "outcome": "No pass status is inferred. The initial review produced origin and image blockers later covered by correction evidence."
+    },
+    {
+      "slice": "S12",
+      "kind": "correction_review",
+      "basename": "t3code-intake-s12-correction-review-results.json",
+      "sha256": "3553bdfccd266392965b95c5ad16cf8c23f054f6209a4f1841d7113db5324f22",
+      "candidate": "S12 corrected candidate before supplemental closure",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Records passing bounded rechecks for authority, exact-origin and image corrections.",
+      "limit": "Does not replace full gates or supplemental exact-role review.",
+      "outcome": "All three recorded correction lanes have pass status."
+    },
+    {
+      "slice": "S12",
+      "kind": "supplemental_review",
+      "basename": "t3code-intake-s12-supplemental-correction-result.json",
+      "sha256": "f03aaae5c2002ef1ee76c78ec58e944acfdf2bc8647478faf0d7b68b6b4f0374",
+      "candidate": "S12 accepted candidate",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Closes supplemental exact-role coverage and joins all 46 S12 rows.",
+      "limit": "Mixed later-slice obligations remain explicit.",
+      "outcome": "No findings recorded and conclusion reports acceptance of the supplemental roles."
+    },
+    {
+      "slice": "S12",
+      "kind": "style_review",
+      "basename": "t3code-intake-s12-style-final-result.json",
+      "sha256": "68558bbc28cb057d344dfe120be79f3afc01c32a110ab913452611e645214f55",
+      "candidate": "S12 reviewed documentation candidate",
+      "commits": ["ed1f5ebb7", "bd58fc5f9", "2b691e322"],
+      "claim": "Records final S12 Style Assurance closure after bounded documentation corrections.",
+      "limit": "Style review does not prove runtime or installed behavior.",
+      "outcome": "No findings remain."
+    },
+    {
+      "slice": "S34",
+      "kind": "candidate_manifest",
+      "basename": "t3code-s34-round3-candidate.json",
+      "sha256": "a9d62a2b60790848c8e9ed59327df1afb2950a3d4de8a20d9a121ea4d77a8f84",
+      "candidate": "S34 final 103-path runtime candidate",
+      "commits": ["9ddd85585", "ab7599741"],
+      "claim": "Binds the source and test bytes used by final S34 gates and logical closure.",
+      "limit": "Later style corrections were record-only and have their own candidate identity.",
+      "outcome": "Hash verified against the present receipt."
+    },
+    {
+      "slice": "S34",
+      "kind": "gate_index",
+      "basename": "t3code-s34-round3-joined-gates.json",
+      "sha256": "afdeaadc1aef706ee395b56081b3a7b5783c527291dd1db736271c4f77b5fd55",
+      "candidate": "S34 final 103-path runtime candidate",
+      "commits": ["9ddd85585", "ab7599741"],
+      "claim": "Indexes successful format, lint, typecheck and test commands.",
+      "limit": "The index does not embed log checksums and does not independently prove log contents.",
+      "outcome": "All four entries record exit success."
+    },
+    {
+      "slice": "S34",
+      "kind": "format_gate",
+      "basename": "t3code-s34-round3-joined-fmt.log",
+      "sha256": "86fcb9cf783326cccf0064f9c8a96e2380ef33f0a88b7cc0737c1736bbbeebcf",
+      "candidate": "S34 final 103-path runtime candidate",
+      "commits": ["9ddd85585", "ab7599741"],
+      "claim": "Records the passing format gate.",
+      "limit": "Applies only to the bound candidate.",
+      "outcome": "Gate index records exit success. Receipt hash verified."
+    },
+    {
+      "slice": "S34",
+      "kind": "lint_gate",
+      "basename": "t3code-s34-round3-joined-lint.log",
+      "sha256": "c86e4dc797a4488e7eb31bfca24627c825b5d5eaeec2c676a50537c4c35970f7",
+      "candidate": "S34 final 103-path runtime candidate",
+      "commits": ["9ddd85585", "ab7599741"],
+      "claim": "Records the passing lint gate.",
+      "limit": "Applies only to the bound candidate.",
+      "outcome": "Gate index records exit success. Receipt hash verified."
+    },
+    {
+      "slice": "S34",
+      "kind": "typecheck_gate",
+      "basename": "t3code-s34-round3-joined-typecheck.log",
+      "sha256": "e1ab2b14881e96aa8b7187c30fd894aefbb03274d20f418a1d1ff7122090f8cb",
+      "candidate": "S34 final 103-path runtime candidate",
+      "commits": ["9ddd85585", "ab7599741"],
+      "claim": "Records the passing typecheck gate.",
+      "limit": "Applies only to the bound candidate.",
+      "outcome": "Gate index records exit success. Receipt hash verified."
+    },
+    {
+      "slice": "S34",
+      "kind": "test_gate",
+      "basename": "t3code-s34-round3-joined-test.log",
+      "sha256": "c0a032349dbd977284cdd0315067fbe05d544d950e742c4e337d679236fed543",
+      "candidate": "S34 final 103-path runtime candidate",
+      "commits": ["9ddd85585", "ab7599741"],
+      "claim": "Records full test success across 14 workspaces with 13296 tests, including 4151 server tests and ten inherited skips.",
+      "limit": "Source tests do not establish installed or final product behavior.",
+      "outcome": "Ledger records full success. Receipt hash verified."
+    },
+    {
+      "slice": "S34",
+      "kind": "logical_review",
+      "basename": "t3code-s34-review-runtime.json",
+      "sha256": "7e00575cc083d875af3525cc1a725e9eabba4c1b2afd6297d850954c17f77b0c",
+      "candidate": "S34 initial frozen candidate with later unchanged runtime evidence",
+      "commits": ["9ddd85585", "ab7599741"],
+      "claim": "Reviews 26 runtime exact roles and Board runtime semantics.",
+      "limit": "Covers only the assigned runtime lane and preserves later obligations.",
+      "outcome": "Passed for the activated runtime lane with no findings."
+    },
+    {
+      "slice": "S34",
+      "kind": "correction_review",
+      "basename": "t3code-s34-round2-provider-result.json",
+      "sha256": "b1da8a92343570c05a4f95c986457f768ee21bddc4298e06214e8d28c9881df2",
+      "candidate": "S34 corrected 103-path candidate",
+      "commits": ["9ddd85585", "ab7599741"],
+      "claim": "Closes the provider Plan overlap finding across all 12 provider rows.",
+      "limit": "Does not cover client persistence or later slices.",
+      "outcome": "Pass with no findings and all candidate hashes verified."
+    },
+    {
+      "slice": "S34",
+      "kind": "correction_review",
+      "basename": "t3code-s34-round3-client-result.json",
+      "sha256": "8e5b2bbf201f8626983c75b74532247dc940acbd98f4885eac70515862bed549",
+      "candidate": "S34 final 103-path runtime candidate",
+      "commits": ["9ddd85585", "ab7599741"],
+      "claim": "Closes Board panel visibility and version-12 to version-13 persistence findings across 42 client rows.",
+      "limit": "Does not provide installed acceptance.",
+      "outcome": "Pass with no findings and candidate hashes unchanged."
+    },
+    {
+      "slice": "S34",
+      "kind": "supplemental_review",
+      "basename": "t3code-s34-supplemental-11-result.json",
+      "sha256": "84247646e494a07a33fd9c3a70c315e558ca42847851db9c7e8d12cba56d2841",
+      "candidate": "S34 final 103-path runtime candidate",
+      "commits": ["9ddd85585", "ab7599741"],
+      "claim": "Reviews eleven supplemental exact roles omitted from the initial per-row record.",
+      "limit": "Mixed later obligations remain explicit.",
+      "outcome": "Pass with no findings."
+    },
+    {
+      "slice": "S34",
+      "kind": "style_review",
+      "basename": "t3code-s34-style-final-result.json",
+      "sha256": "38f72d6605c91255609f57fefbb4e379ede781bee8e461c9421593309bcebfe6",
+      "candidate": "921c2677b523a5dd2754b710df0cc6b1e4ded0125d55fd744a94623c7c2be299",
+      "commits": ["9ddd85585", "ab7599741"],
+      "claim": "Records final Style Assurance closure while confirming runtime and test hashes stayed unchanged.",
+      "limit": "Style review does not extend S34 into S5, S6 or installed acceptance.",
+      "outcome": "Pass with no findings."
+    },
+    {
+      "slice": "S5",
+      "kind": "candidate_manifest",
+      "basename": "t3code-s5-round4-candidate.json",
+      "sha256": "12d06046b55cdb2d66daeb3e601a3ca5b48acdd28bae87ceb7bb077ddace1003",
+      "candidate": "S5 final 109-path runtime candidate",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Binds the source and test bytes used by final S5 gates, build, rendered proof and reviews.",
+      "limit": "A manifest alone proves identity only.",
+      "outcome": "Hash verified against the present receipt."
+    },
+    {
+      "slice": "S5",
+      "kind": "runtime_probe",
+      "basename": "t3code-s5-preload-runtime.json",
+      "sha256": "4867ab8cc832b786c8401001740b10dfcb54c3dd4fc93f103d4f930d960e17a3",
+      "candidate": "S5 final runtime candidate",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Records successful execution of the built sandboxed preload boundary.",
+      "limit": "No private fixture or process details are reproduced here. This is not installed Linux or Thread acceptance.",
+      "outcome": "Ledger and final review accept the probe and bind its unchanged preload hash."
+    },
+    {
+      "slice": "S5",
+      "kind": "render_manifest",
+      "basename": "manifest.json",
+      "sha256": "88a1d01fa5f1712ea4867a7023e95fd542d343332acac83f452d4f6997dde1a1",
+      "candidate": "S5 final runtime candidate",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Binds five ordinary chat and draft cases plus five Mermaid or theme cases to the final candidate.",
+      "limit": "Rendered synthetic cases do not establish installed Thread or final product acceptance.",
+      "outcome": "All SVGs present, authored draft bytes survived reload, browser errors were zero and provider turn count was zero as recorded by accepted review."
+    },
+    {
+      "slice": "S5",
+      "kind": "gate_index",
+      "basename": "t3code-s5-round4-joined-gates.json",
+      "sha256": "1656c2631e78f4e6934e01bc7e781959489d1016a4f31324464338e610cbb21f",
+      "candidate": "S5 final runtime candidate",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Indexes successful format, lint, typecheck and test commands with log hashes.",
+      "limit": "Applies only to the bound candidate.",
+      "outcome": "Overall status is passed and every gate records exit success."
+    },
+    {
+      "slice": "S5",
+      "kind": "format_gate",
+      "basename": "t3code-s5-round4-joined-1-fmt.log",
+      "sha256": "b294c4f3447368abac1005a41ea30aaaf250afcfa30b4985d0d4e6d2845336a0",
+      "candidate": "S5 final runtime candidate",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Records the passing format gate.",
+      "limit": "Applies only to the bound candidate.",
+      "outcome": "Gate index records exit success. Receipt hash verified."
+    },
+    {
+      "slice": "S5",
+      "kind": "lint_gate",
+      "basename": "t3code-s5-round4-joined-2-lint.log",
+      "sha256": "9b5dfb2bfbb1d6fea4b44f6b905d6c7e9dbc189273e78bb4a11ce6413d331b31",
+      "candidate": "S5 final runtime candidate",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Records the passing lint gate.",
+      "limit": "Applies only to the bound candidate.",
+      "outcome": "Gate index records exit success. Receipt hash verified."
+    },
+    {
+      "slice": "S5",
+      "kind": "typecheck_gate",
+      "basename": "t3code-s5-round4-joined-3-typecheck.log",
+      "sha256": "d438552ed3f159c7c69adb73665269a54d2f12900da472d3802b116ae577fe87",
+      "candidate": "S5 final runtime candidate",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Records the passing typecheck gate.",
+      "limit": "Applies only to the bound candidate.",
+      "outcome": "Gate index records exit success. Receipt hash verified."
+    },
+    {
+      "slice": "S5",
+      "kind": "test_gate",
+      "basename": "t3code-s5-round4-joined-4-test.log",
+      "sha256": "4ad8b0f921ddd5174a7db6065e573f4d20e45df80d588989e17942d5fc322176",
+      "candidate": "S5 final runtime candidate",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Records full test success across 14 workspaces with 13530 tests and ten inherited server skips.",
+      "limit": "Source tests do not establish installed Linux or Thread behavior.",
+      "outcome": "Ledger records full success. Receipt hash verified."
+    },
+    {
+      "slice": "S5",
+      "kind": "production_build",
+      "basename": "t3code-s5-round4-production-build.log",
+      "sha256": "3a969f325ff646e36f79906b6c01cc00271024d308872c5e162865926db58d76",
+      "candidate": "S5 final runtime candidate",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Records a successful production build for the accepted S5 candidate.",
+      "limit": "A build is not installed product acceptance.",
+      "outcome": "Final ledger and style review record success. Receipt hash verified."
+    },
+    {
+      "slice": "S5",
+      "kind": "cleanup_receipt",
+      "basename": "t3code-s5-round4-runtime-cleanup.json",
+      "sha256": "1fcc4e94184c644e20d0acf4ec5200542824550da25527f70c45b6e698a10db0",
+      "candidate": "S5 final runtime candidate",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Records cleanup of owned synthetic runtime resources and zero provider turn requests.",
+      "limit": "No local process or fixture detail is reproduced. Cleanup does not prove feature behavior by itself.",
+      "outcome": "Accepted final review records cleanup success."
+    },
+    {
+      "slice": "S5",
+      "kind": "logical_review",
+      "basename": "t3code-s5-review-composer_context-result.json",
+      "sha256": "882d2068ca8988200493572fef39d06b904f96c1cbd8368a43bfdc8cabf8df4e",
+      "candidate": "S5 reviewed candidate before unrelated later corrections",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Reviews composer, context and authored-byte preservation roles.",
+      "limit": "Later acceptance relies on the reviewed source remaining unchanged except for separately reviewed host wiring.",
+      "outcome": "Passed source and exact-role review with no findings."
+    },
+    {
+      "slice": "S5",
+      "kind": "correction_review",
+      "basename": "t3code-s5-round3-review-native_theme-result.json",
+      "sha256": "14b1cd3d00294d27a4bc41128643b15e0ec9ffa1d37a5d3de177f3c1bd2dcf7e",
+      "candidate": "S5 round3 corrected candidate with unchanged native bytes through final acceptance",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Closes Omarchy watcher and screenshot process lifecycle findings.",
+      "limit": "Does not establish installed desktop behavior.",
+      "outcome": "No findings remain."
+    },
+    {
+      "slice": "S5",
+      "kind": "correction_review",
+      "basename": "t3code-s5-round3-review-markdown_visual-result.json",
+      "sha256": "2bd55e7cee571ad76e3f5165af2b79009246ce3599bc75f1d57504af75e8f8aa",
+      "candidate": "S5 round3 corrected candidate with unchanged Markdown bytes through final acceptance",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Closes Mermaid color-boundary rendering and verifies ordinary visual cases.",
+      "limit": "Synthetic rendering is not installed Thread acceptance.",
+      "outcome": "Accepted with no findings and all reviewed rendered artifacts verified."
+    },
+    {
+      "slice": "S5",
+      "kind": "correction_review",
+      "basename": "t3code-s5-round4-review-preview-result.json",
+      "sha256": "4a1aec50ea4d161252f902e5802a5fdc5aea35dd884f78116b8f45f4d0beb628",
+      "candidate": "S5 final runtime candidate",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Closes the final preview successor-ordering correction and verifies all ten preview roles.",
+      "limit": "Does not establish installed host behavior after S6 changes.",
+      "outcome": "Passed with no findings and all candidate hashes unchanged."
+    },
+    {
+      "slice": "S5",
+      "kind": "style_review",
+      "basename": "t3code-s5-style-final-result.json",
+      "sha256": "1e1d97f10e49aea590b280635039bb7557a5e6b8d2b32d1b80b439e55cf8be72",
+      "candidate": "02003c0dda9780d3264f712ba895f5a411b9c3534f5bfb98d461a88d6ae6f880",
+      "commits": [
+        "82d60907a",
+        "fc07ca9b2",
+        "b37019fc6",
+        "003e1b992",
+        "090221fe3",
+        "6b5bdeaf0",
+        "6f0c44294",
+        "b9c74a2a2",
+        "ab0be77be"
+      ],
+      "claim": "Records final Style Assurance, exact-role metadata closure and unchanged runtime, test, build and rendered evidence.",
+      "limit": "No installed Linux, Thread, deployment or final program acceptance.",
+      "outcome": "No findings remain and all 40 S5 rows are recorded as resolved."
+    }
+  ],
+  "source_and_runtime_catalog": {
+    "S12_SOURCE": {
+      "basename": "t3code-intake-s12-accepted-source-candidate.json",
+      "sha256": "5202d2bcbb166b25427c4fb1b3a4486d6a28eef19578c94c786162fad807b7f7",
+      "claim": "Accepted S12 source identity",
+      "limit": "Changed later bytes require successor evidence."
+    },
+    "S34_SOURCE": {
+      "basename": "t3code-s34-round3-candidate.json",
+      "sha256": "a9d62a2b60790848c8e9ed59327df1afb2950a3d4de8a20d9a121ea4d77a8f84",
+      "claim": "Accepted S34 Board and retirement source identity",
+      "limit": "Installed and later changed bytes are outside this manifest."
+    },
+    "S34_RETIREMENT": {
+      "basename": "t3code-s34-retirement-active-proof.json",
+      "sha256": "54e72824354f4626818b23ec04da2a7533ed48ef4731c7c2d4a719a92948a236",
+      "claim": "Exact 33 exclusive paths and four retired specs absent",
+      "limit": "Source absence proof only."
+    },
+    "S5_SOURCE": {
+      "basename": "t3code-s5-round4-candidate.json",
+      "sha256": "12d06046b55cdb2d66daeb3e601a3ca5b48acdd28bae87ceb7bb077ddace1003",
+      "claim": "Accepted S5 retained presentation source identity",
+      "limit": "Later changed bytes require S6 successor evidence."
+    },
+    "S6_SOURCE": {
+      "basename": "t3code-s6-round3-candidate.json",
+      "sha256": "8168e3eea6fefffeb39208f0daa4aee33cdbc0d1d1bcb08faacab845b6686c4d",
+      "claim": "Accepted S6 joined source identity",
+      "limit": "Source acceptance is not installed acceptance."
+    },
+    "INSTALLED_RUN24": {
+      "basename": "t3code-s6-installed-case-handoff-run24.json",
+      "sha256": "55d765a0c89dd2fdcbd6d31ccbaa3b7767ece8e0b16d010a73b3cc388147f0ca",
+      "claim": "Actual installed screenshot, theme and preview cases plus Electron enrollment diagnostic",
+      "limit": "Bound to c992 artifacts. Thread enrollment was blocked and broader matrix remained pending."
+    },
+    "NATIVE_FOCUS": {
+      "basename": "t3code-s6-hyprland-isolation-actual-handoff.json",
+      "sha256": "f25255df8bebafa0d22dd7bd0f0ccc88cb4c5129576b32fc5d1eea617283ae33",
+      "claim": "Actual installed Code native focus across two disposable workspaces",
+      "limit": "Bound to the c992 Code artifact. Default service activation and broader installed UI were not exercised."
+    },
+    "NATIVE_FOCUS_V3": {
+      "basename": "t3code-s6-hyprland-isolation-actual-handoff-v3.json",
+      "sha256": "8f2f6d0aa88461c6ca5a486254c60c1d11ffd0f469b20fad7ad0a79d6896f7aa",
+      "underlying_result_basename": "result.json",
+      "underlying_result_sha256": "face317d76c7db5b69d8f7b1f292de601865875870edc4e8b629708af9f6575b",
+      "claim": "Actual installed native Wayland focus on the clean 312545 Code artifact restored the same live client from two empty workspaces with runtime identity unchanged",
+      "limit": "User service active status was simulated. Default service-manager and cgroup activation, hardware input, authenticated primary WebSocket state and broader installed UI were not exercised."
+    },
+    "INSTALLER_ROLLBACK": {
+      "basename": "t3code-s6-native-focus-installed-result.json",
+      "sha256": "b94d3bd073a4c0d92674c29c798fa21a6c96ea713683b6c8a1b29838bee682dc",
+      "claim": "Actual Code artifact validation, ordinary rollback and ownership-drift preservation",
+      "limit": "Product launch was outside this receipt."
+    },
+    "HISTORICAL_RESTORE": {
+      "basename": "t3code-s7-rollback-execution-handoff.json",
+      "sha256": "10d884aaa90b1581beb92a4cd2359de7f6e18da1ee473eefe69c60fbb1f64a4b",
+      "claim": "Actual historical consumer, migration, reopen and byte-exact matching-old restore proof",
+      "limit": "Provisional final join; old build provenance remains qualified."
+    },
+    "IMAGE_FIX_COMMIT": {
+      "basename": "t3code-s7-image-fix-commit-receipt.json",
+      "sha256": "fba4b2335aa860b4622a4964f3a69c1d2c2990617dfd35645d49caf1ad0af858",
+      "claim": "Clean first Dockerfile correction commit ece730711",
+      "limit": "No corrected image runtime acceptance."
+    },
+    "IMAGE_FIX_REVIEW": {
+      "basename": "t3code-s7-image-fix-review.json",
+      "sha256": "03a4b4c9f6d8414def37e497487dc2256ede55536d4e317510cd43a436de0693",
+      "claim": "Bounded first image correction review reported no findings",
+      "limit": "Actual corrected OCI image build and runtime smoke remained required."
+    },
+    "IMAGE_FIX_STYLE": {
+      "basename": "t3code-s7-image-fix-style.json",
+      "sha256": "f22bb34975e1de338d82f228913da815b4e4c5f10d2aa85a31b0c95e4ab3b56e",
+      "claim": "Ordered style review passed for the first image correction",
+      "limit": "Style evidence does not establish image runtime."
+    },
+    "IMAGE_PIN_COMMIT": {
+      "basename": "t3code-s7-image-pin-commit-receipt.json",
+      "sha256": "7412678eb498565acf84f52e64ad1c9def4f72eb93534c48fa6c2dabacb44385",
+      "claim": "Clean helper-pin source commit 64fb036d8",
+      "limit": "Helper availability is not T3 image runtime."
+    },
+    "IMAGE_PIN_REVIEW": {
+      "basename": "t3code-s7-image-pin-review.json",
+      "sha256": "0af00c75395e90e279bb82be6eaf9aec00cb166eda84f15aa0a03e07108a2b7e",
+      "claim": "Bounded helper identity review reported no findings",
+      "limit": "Thread source was outside this lane and corrected image runtime remained pending."
+    },
+    "THREAD_RESPONSE_REVIEW": {
+      "basename": "t3code-s7-thread-response-review-final.json",
+      "sha256": "cdc314e745286dcd0d6fc0946a5ab9f2df3f9a6d8b6fab030f3692ad8b045797",
+      "claim": "Bounded Thread response-admission review found no issue and closed the joined-gate blocker",
+      "limit": "Installed Thread acceptance remained pending."
+    },
+    "CORRECTION_CHAIN": {
+      "basename": "t3code-s7-runtime-corrections-commit-receipt.json",
+      "sha256": "5a02f177d89f475b485aba9086492add7b68b6eb3bad21c24c6226cc96fcbf6c",
+      "claim": "Clean source correction chain through 312545 with zero candidate mismatches",
+      "limit": "Fresh Thread and image runtime evidence remains separate."
+    },
+    "CORRECTION_GATES": {
+      "basename": "t3code-s7-runtime-corrections-gates-v2.json",
+      "sha256": "de7bb16adc995710065008ef44dc58a12d0a99ce3fe551d379b2b5180c33b412",
+      "claim": "Joined format, lint, typecheck and 13839-test gate passed",
+      "limit": "Source gate only."
+    },
+    "CORRECTION_STYLE": {
+      "basename": "t3code-s7-runtime-corrections-style-final-v2.json",
+      "sha256": "c7867558cdc0ef10668f3f100611ec444131f0dc2e1a0465c5b90eb558104d9d",
+      "claim": "Joined ordered Style Assurance passed with ten declared hashes matched",
+      "limit": "Style review is not runtime acceptance."
+    },
+    "CLEAN_BUILD_V3": {
+      "basename": "t3code-s6-clean-build-v3.json",
+      "sha256": "1a6cf1d4a2c6d5f12a2caadbc871654acf376d7fa3e8f2758a2ef2fe083ab57e",
+      "claim": "Clean 312545 Code and Thread artifact build passed",
+      "limit": "Build and identity do not establish installed behavior. A later hosted fetch receiver blocker prevents final artifact acceptance."
+    },
+    "WORKER_BYTE_AUDIT": {
+      "basename": "t3code-s7-worker-tree-byte-audit.json",
+      "sha256": "720afbcbb9ca41e5714a3b1435864e8bfd65ae6e2d0c026b4cc1fe19658f9a2d",
+      "claim": "Nineteen dirty worker transfer trees were byte-audited and retained",
+      "limit": "Ownership accounting only. This receipt is not source, review or runtime acceptance."
+    },
+    "CLEAN_WORKTREE_CLEANUP": {
+      "basename": "t3code-s7-clean-worktree-cleanup.json",
+      "sha256": "1a280ab8c76314058fb094b6a15467bf899d3ca16ce69bb7ccf2c62b1b299d18",
+      "claim": "Ordinary removal of the clean integrated image correction worktree succeeded without force",
+      "limit": "Nineteen dirty transfer worktrees were retained and were not discarded."
+    },
+    "THREAD_PAIRING_COMMIT": {
+      "basename": "t3code-s7-thread-pairing-commit-receipt.json",
+      "sha256": "41c827ff5bc8ed5a82525c67d6eea177a3051351f0aec1a29bcf934fdf9d1780",
+      "claim": "Clean six-path Thread pairing recovery correction committed at 750c7e0f",
+      "limit": "Commit identity and source checks do not establish installed acceptance."
+    },
+    "THREAD_PAIRING_GATES": {
+      "basename": "t3code-s7-thread-pairing-gates.json",
+      "sha256": "f807fb2587a79c08ac7e109e486904e53999499c48b2b12f7cecf6cc90ffb5fc",
+      "claim": "All four repository gates passed with 13844 tests",
+      "limit": "The later wording successor changed source comments and documentation only."
+    },
+    "THREAD_PAIRING_REVIEW": {
+      "basename": "t3code-s7-thread-pairing-review.json",
+      "sha256": "8f1082cbb40e0317068e774cbae463ab36b725900d7d75c1f0b011b4b35ebd3e",
+      "claim": "Bounded six-path pairing recovery source review reported no findings",
+      "limit": "The installed handshake, exact draft and full matrix remained pending."
+    },
+    "THREAD_PAIRING_STYLE": {
+      "basename": "t3code-s7-thread-pairing-style-v2.json",
+      "sha256": "88691c0cb4c1a9e3752cec1b6f4896dc930ac1ec54630fd1a8e446d04eca3db9",
+      "claim": "Final bounded wording correction recheck passed with six matched paths",
+      "limit": "The two post-gate changes were source-comment and documentation wording only."
+    },
+    "CLEAN_BUILD_V6": {
+      "basename": "t3code-s6-clean-build-v6.json",
+      "sha256": "f535d0912ad7f9102ab39ce2a20fd744c923c91c615e2831657189253700e8f1",
+      "claim": "Clean 750c7e0f Code and Thread artifact build passed",
+      "limit": "Build identity does not establish the active installed matrix or current image runtime."
+    },
+    "TICKET_SOURCE": {
+      "basename": "commit-receipt.json",
+      "sha256": "b70c89fa50b1f4b3e5b7c2cb0de3da6586b29d62a4052061f6e6c2bcda2c8e91",
+      "claim": "Committed runtime-local one-use admission, exact final source hashes, all four gates and fresh logical/style review."
+    },
+    "TICKET_GATES": {
+      "basename": "ticket-gates.json",
+      "sha256": "d77fc0f72ebd1f1aadbbbc33110d9daf05a076f143abfbed79354becb6bd7104",
+      "claim": "All four required gates pass; 13859 tests in fifteen workspaces and ten inherited server skips."
+    },
+    "TICKET_REVIEW": {
+      "basename": "review.json",
+      "sha256": "59804d617eb0982b05392b498b2977341fdd1f718ca67b02a9646a92b2b7ded9",
+      "claim": "Fresh authority review closes all bounded source and test-context findings."
+    },
+    "TICKET_STYLE": {
+      "basename": "style-v2.json",
+      "sha256": "20ef9cecc4baed7f40323b3347c8aadf4213d3ff347ec4245e02a1ee4bfaa376",
+      "claim": "Ordered style review closes successor metadata finding with eight exact file hashes."
+    },
+    "CLEAN_BUILD_V7": {
+      "basename": "clean-build-v7.json",
+      "sha256": "0fb4cc064284787aa174b208b1eef53533cd59e9ac753f241d94aae5f6d06bee",
+      "claim": "Current clean Code and Thread artifact identities."
+    },
+    "INSTALLED_V7": {
+      "basename": "handoff-passed-v7.json",
+      "sha256": "aa2765788d2664eac76f49ac7f95764f0a048904c61ce5314df17d66c0ed0fe9",
+      "claim": "Full current installed matrix passes: real pairing, exact draft, private identities, replay denial, six close/crash cases, managed authority recovery and zero turns.",
+      "limit": "Synthetic providers and capture adapter; optional source-proven cases are not promoted into installed claims."
+    },
+    "VISUAL_V7": {
+      "basename": "visual-review-v7.json",
+      "sha256": "617000ba27b4d29822560c121403a11fb8b9bcaf7b5e08519786435c49ddc1c4",
+      "claim": "Root directly inspected actual current Thread and Code draft screenshots."
+    },
+    "HISTORICAL_RESTORE_V7": {
+      "basename": "rollback-handoff-v7.json",
+      "sha256": "78d676d0dd41117e21b790cc10529c9ebde08d7701b6144455aa2a827a9e9a21",
+      "claim": "Actual current server migrates, consumes retained state and reopens; exact backup restores into matching qualified old runtime."
+    },
+    "IMAGE_V7": {
+      "basename": "runtime-proof-246e8bcd.json",
+      "sha256": "640f4712cbf8db5209ad5859611456a085bf7afa02abebf3a66d1d151c9da2a0",
+      "claim": "Current exact-source OCI build, non-root read-only runtime, HTTP, pinned provider version, writable mounts, graceful stop and both signal cleanup probes pass.",
+      "limit": "Signal cleanup reuses verified OCI bytes; no registry publication or provider turn."
+    },
+    "FINAL_PRODUCT_SOURCE": {
+      "basename": "final-product-review.json",
+      "sha256": "427f2e4ff265e1c0a695321692a6bf45603a1d8e4d524dbd0dd461e4ac9ee5d6",
+      "claim": "Fresh bounded final product source and completed-evidence join reports no scoped finding.",
+      "limit": "Final records receive bounded successor review before the containing commit."
+    },
+    "FINAL_PERSISTENCE_SOURCE": {
+      "basename": "final-persistence-review.json",
+      "sha256": "75cadea44ef30ab73b0363bc555f62413470537807dbe3e02e13a7f8fded0c5d",
+      "claim": "Fresh bounded final persistence source and completed-evidence join reports no scoped finding.",
+      "limit": "Final records receive bounded successor review before the containing commit."
+    }
+  },
+  "concern_matrix": [
+    {
+      "concern": "F01",
+      "scope": "retained",
+      "source": "fork/F01-exact-origin-desktop-release.md",
+      "receipts": [
+        "S12_SOURCE",
+        "S6_SOURCE",
+        "CLEAN_BUILD_V3",
+        "INSTALLER_ROLLBACK",
+        "CLEAN_BUILD_V7",
+        "INSTALLED_V7",
+        "FINAL_PERSISTENCE_SOURCE"
+      ],
+      "current_disposition": "Exact-origin source, clean packaged identity and current installed release boundaries accepted; native focus remains a qualified unchanged-owner bridge.",
+      "prior_stage_disposition": "Source and clean artifact identity are accepted. Current-artifact native focus passed; broader installed acceptance remains pending."
+    },
+    {
+      "concern": "F02",
+      "scope": "retained",
+      "source": "fork/F02-omarchy-system-theme.md",
+      "receipts": [
+        "S5_SOURCE",
+        "S6_SOURCE",
+        "CLEAN_BUILD_V7",
+        "INSTALLED_V7",
+        "FINAL_PRODUCT_SOURCE"
+      ],
+      "current_disposition": "Thin Code-owned theme adapter accepted through source/host tests and actual watch, projection and clear behavior. Other palette cases remain source evidence; no Thread palette bridge added.",
+      "prior_stage_disposition": "Source accepted and bounded actual watcher projection passed. Legacy and malformed-input installed cases remain pending."
+    },
+    {
+      "concern": "F03",
+      "scope": "retained",
+      "source": "fork/F03-desktop-screenshot-capture.md",
+      "receipts": [
+        "S5_SOURCE",
+        "S6_SOURCE",
+        "CLEAN_BUILD_V7",
+        "INSTALLED_V7",
+        "FINAL_PRODUCT_SOURCE"
+      ],
+      "current_disposition": "Capture ownership and attachment budgeting accepted; actual synthetic PNG, cancellation and budget rejection pass. Physical capture and picker behavior are not claimed.",
+      "prior_stage_disposition": "Source accepted and synthetic-adapter installed case passed. Native backend, failure and picker cases remain pending."
+    },
+    {
+      "concern": "F04",
+      "scope": "retained",
+      "source": "fork/F04-composer-context-whitespace.md",
+      "receipts": [
+        "S5_SOURCE",
+        "S6_SOURCE",
+        "CLEAN_BUILD_V7",
+        "INSTALLED_V7",
+        "FINAL_PRODUCT_SOURCE"
+      ],
+      "current_disposition": "Authored-byte composition accepted through source/host tests and actual exact Thread draft staging. No automatic Thread send occurs.",
+      "prior_stage_disposition": "Source accepted. Full corrected Thread staging and send behavior remains part of the pending installed successor."
+    },
+    {
+      "concern": "F06",
+      "scope": "retained",
+      "source": "fork/F06-exact-origin-repository-identity.md",
+      "receipts": ["S12_SOURCE", "FINAL_PERSISTENCE_SOURCE"],
+      "current_disposition": "Exact-origin source selection, fail-closed provider identity and mutation routing accepted; no remote mutation performed.",
+      "prior_stage_disposition": "Source role accepted. Current status wording still calls the committed source an isolated candidate."
+    },
+    {
+      "concern": "F16",
+      "scope": "retained",
+      "source": "fork/F16-official-linux-desktop-launcher.md",
+      "receipts": [
+        "S6_SOURCE",
+        "CLEAN_BUILD_V3",
+        "INSTALLER_ROLLBACK",
+        "CLEAN_BUILD_V7",
+        "INSTALLED_V7",
+        "FINAL_PERSISTENCE_SOURCE"
+      ],
+      "current_disposition": "Current clean installed Code and Thread pass six independent close/crash cases. Native focus passes within explicit service-status limits.",
+      "prior_stage_disposition": "Source and clean build accepted with bounded installer and current-artifact native-focus proof. Full independent lifetime and default activation matrix remains pending."
+    },
+    {
+      "concern": "F17",
+      "scope": "retained",
+      "source": "fork/F17-settings-admin.md",
+      "receipts": [
+        "S12_SOURCE",
+        "CLEAN_BUILD_V7",
+        "INSTALLED_V7",
+        "HISTORICAL_RESTORE_V7",
+        "FINAL_PERSISTENCE_SOURCE"
+      ],
+      "current_disposition": "Portal separation and durable authority accepted through source tests, current historical restore and installed managed-device disable/re-enable.",
+      "prior_stage_disposition": "Source accepted. Protected authority preservation and restore passed provisionally on the exact current server bytes; final S7 join remains."
+    },
+    {
+      "concern": "F18",
+      "scope": "retained",
+      "source": "fork/F18-protected-onboarding-and-workstream-ledgers.md",
+      "receipts": ["S12_SOURCE", "FINAL_PRODUCT_SOURCE"],
+      "current_disposition": "Governance, preserved baseline and repository-backed acceptance records retained.",
+      "prior_stage_disposition": "Source and governance disposition accepted."
+    },
+    {
+      "concern": "F19",
+      "scope": "retained",
+      "source": "fork/F19-repository-delivery-skills-and-commit-effects.md",
+      "receipts": ["S12_SOURCE", "FINAL_PRODUCT_SOURCE"],
+      "current_disposition": "Delivery skills, difficulty-based orchestration and exact behavior effects retained; runtime commit audit is separate from this evidence commit.",
+      "prior_stage_disposition": "Source and governance disposition accepted."
+    },
+    {
+      "concern": "F20",
+      "scope": "retained",
+      "source": "fork/F20-origin-server-image.md",
+      "receipts": [
+        "S12_SOURCE",
+        "IMAGE_FIX_COMMIT",
+        "IMAGE_FIX_REVIEW",
+        "IMAGE_FIX_STYLE",
+        "IMAGE_PIN_COMMIT",
+        "IMAGE_PIN_REVIEW",
+        "CORRECTION_CHAIN",
+        "CORRECTION_GATES",
+        "CORRECTION_STYLE",
+        "IMAGE_V7",
+        "FINAL_PERSISTENCE_SOURCE"
+      ],
+      "current_disposition": "Exact-source local image build and runtime gates accepted, with OCI identity and signal cleanup. No publication or deployment.",
+      "prior_stage_disposition": "Corrected source, helper identity, gates and reviews are accepted. Actual current-source image build, identity, nonroot provider runtime, read-only root, mounts, signals and cleanup remain pending."
+    },
+    {
+      "concern": "F22",
+      "scope": "retained",
+      "source": "fork/F22-serialized-mermaid-rendering.md",
+      "receipts": ["S5_SOURCE", "FINAL_PRODUCT_SOURCE"],
+      "current_disposition": "Serialized Mermaid fence owner and accepted rendered/host evidence retained on upstream Markdown; no custom document renderer restored.",
+      "prior_stage_disposition": "Source and accepted rendered evidence are recorded. Final integrated S7 review remains."
+    },
+    {
+      "concern": "F23",
+      "scope": "retained",
+      "source": "fork/F23-preview-browser-controls.md",
+      "receipts": [
+        "S5_SOURCE",
+        "S6_SOURCE",
+        "CLEAN_BUILD_V7",
+        "INSTALLED_V7",
+        "FINAL_PRODUCT_SOURCE"
+      ],
+      "current_disposition": "Preview owner and source recovery evidence retained; current installed address, reload, close/reopen and retained view state pass within recorded coverage.",
+      "prior_stage_disposition": "Source accepted and bounded actual preview case passed. History eviction, overlap, reload and server-failure cases remain pending."
+    },
+    {
+      "concern": "F25",
+      "scope": "retained",
+      "source": "fork/F25-environment-global-board.md",
+      "receipts": ["S34_SOURCE", "S6_SOURCE", "HISTORICAL_RESTORE_V7", "FINAL_PRODUCT_SOURCE"],
+      "current_disposition": "Board authority, revision/history, bounded replay and current host evidence retained; actual historical snapshot and synchronization consumers pass.",
+      "prior_stage_disposition": "Source accepted and historical Board consumer evidence passed provisionally. Status header still describes joined source acceptance as pending."
+    },
+    {
+      "concern": "F27",
+      "scope": "retained",
+      "source": "fork/F27-t3-thread.md",
+      "receipts": [
+        "S12_SOURCE",
+        "S6_SOURCE",
+        "THREAD_RESPONSE_REVIEW",
+        "CORRECTION_CHAIN",
+        "CORRECTION_GATES",
+        "CORRECTION_STYLE",
+        "THREAD_PAIRING_COMMIT",
+        "THREAD_PAIRING_GATES",
+        "THREAD_PAIRING_REVIEW",
+        "THREAD_PAIRING_STYLE",
+        "CLEAN_BUILD_V6",
+        "CLEAN_BUILD_V7",
+        "INSTALLED_V7",
+        "TICKET_SOURCE",
+        "TICKET_GATES",
+        "TICKET_REVIEW",
+        "TICKET_STYLE",
+        "VISUAL_V7",
+        "FINAL_PERSISTENCE_SOURCE"
+      ],
+      "current_disposition": "Independent current hosted Thread, real protected pairing/enrollment, exact staged draft, fresh one-use tickets, acknowledged reload, six lifecycle cases and authority recovery accepted.",
+      "prior_stage_disposition": "Pairing recovery source, gates, logical review, wording successor and clean v6 artifacts are accepted. Handoff 41 remains causal failure history only. The active v6 installed matrix and final image evidence remain pending."
+    },
+    {
+      "concern": "F28",
+      "scope": "retained",
+      "source": "fork/F28-board-user-submit-liaison.md",
+      "receipts": ["S34_SOURCE", "FINAL_PRODUCT_SOURCE"],
+      "current_disposition": "Trusted root instruction cadence and opt-out retained as a prompt contract, without a compliance or exactly-once guarantee.",
+      "prior_stage_disposition": "Source role accepted. Final integrated product and review acceptance remains."
+    },
+    {
+      "concern": "F09",
+      "scope": "approved_retired",
+      "source": "fork/retired-features.md",
+      "receipts": ["S34_SOURCE", "S34_RETIREMENT", "FINAL_PRODUCT_SOURCE"],
+      "current_disposition": "Exact source retirement remains present.",
+      "prior_stage_disposition": "Exact source retirement remains present."
+    },
+    {
+      "concern": "F15",
+      "scope": "approved_retired",
+      "source": "fork/retired-features.md",
+      "receipts": ["S34_SOURCE", "S34_RETIREMENT", "FINAL_PRODUCT_SOURCE"],
+      "current_disposition": "Exact source retirement remains present. Surviving upstream mobile outbox and inline first-turn owners are intentionally retained.",
+      "prior_stage_disposition": "Exact source retirement remains present. Surviving upstream mobile outbox and inline first-turn owners are intentionally retained."
+    },
+    {
+      "concern": "F21",
+      "scope": "approved_retired",
+      "source": "fork/retired-features.md",
+      "receipts": ["S34_SOURCE", "S34_RETIREMENT", "FINAL_PRODUCT_SOURCE"],
+      "current_disposition": "Exact source retirement remains present. Surviving source and pull-request review owners are intentionally retained.",
+      "prior_stage_disposition": "Exact source retirement remains present. Surviving source and pull-request review owners are intentionally retained."
+    },
+    {
+      "concern": "F24",
+      "scope": "approved_retired",
+      "source": "fork/retired-features.md",
+      "receipts": ["S34_SOURCE", "S34_RETIREMENT", "FINAL_PRODUCT_SOURCE"],
+      "current_disposition": "Exact activity-shelf retirement remains present. The upstream plan-only tasks badge is intentionally retained.",
+      "prior_stage_disposition": "Exact activity-shelf retirement remains present. The upstream plan-only tasks badge is intentionally retained."
+    },
+    {
+      "concern": "CHAT",
+      "scope": "retained",
+      "source": "fork/chat-and-draft-presentation.md",
+      "receipts": [
+        "S5_SOURCE",
+        "S6_SOURCE",
+        "CLEAN_BUILD_V7",
+        "INSTALLED_V7",
+        "VISUAL_V7",
+        "FINAL_PRODUCT_SOURCE"
+      ],
+      "current_disposition": "Accepted chat/message presentation plus directly inspected current Code and compact Thread drafts retained on upstream send and rendering substrate.",
+      "prior_stage_disposition": "Source and rendered presentation evidence are accepted with bounded installed retained cases. Final integrated matrix remains."
+    },
+    {
+      "concern": "PERSIST",
+      "scope": "retained",
+      "source": "fork/persistence-compatibility.md",
+      "receipts": ["S12_SOURCE", "HISTORICAL_RESTORE_V7", "FINAL_PERSISTENCE_SOURCE"],
+      "current_disposition": "Current server migration, retained consumers, reopen and exact matching-old restore accepted with qualified old provenance.",
+      "prior_stage_disposition": "Source accepted and historical consumer plus restore proof passed provisionally on exact current server bytes. Two tracked status statements remain stale."
+    }
+  ],
+  "browser_fetch_correction": {
+    "commit_receipt": {
+      "basename": "t3code-s7-thread-fetch-commit-receipt.json",
+      "sha256": "7c35aa1bdcc8604bdab7f662b74e473784934568046631df86455bee610cb387",
+      "commit": "14e9108a24a20e2787ec738c2c08cfbdfd26b2f0",
+      "source_clean": true,
+      "candidate_hashes_unchanged_after_hook": true
+    },
+    "joined_gates": {
+      "basename": "t3code-s7-thread-fetch-gates.json",
+      "sha256": "990ce2391f27795fba915d1ecb3f86fd54c4646bce8666de3d736e98f5be965c",
+      "status": "passed",
+      "full_tests": 13840,
+      "workspaces": 15,
+      "inherited_server_skips": 10,
+      "logs": [
+        {
+          "role": "format",
+          "basename": "t3code-s7-thread-fetch-gate-1.log",
+          "sha256": "8f61842c98ddf2950a794338a07fb157f44679bd0146e55f218c23d47fbf254d"
+        },
+        {
+          "role": "lint",
+          "basename": "t3code-s7-thread-fetch-gate-2.log",
+          "sha256": "7e92dddff83ae5ce97ac440704d9db29a6b2cdfc0fb7dff57ee9538941026e5c"
+        },
+        {
+          "role": "typecheck",
+          "basename": "t3code-s7-thread-fetch-gate-3.log",
+          "sha256": "1675150a1dfdefb277580949e3d682dcf3ce36a87a5c1c00a1e5e8175f75e326"
+        },
+        {
+          "role": "test",
+          "basename": "t3code-s7-thread-fetch-gate-4.log",
+          "sha256": "0e9ffd9e2a88a2c4170e818628a55b6b1938cb687614072cc691e8e2041cdb54"
+        }
+      ]
+    },
+    "logical_review": {
+      "basename": "t3code-s7-thread-fetch-review.json",
+      "sha256": "9d7704afcb381d00f5067179fe6674bb1261a3e1e8f8f8f32ff4f865d4eec86e",
+      "status": "no_findings",
+      "claim": "The bounded five-path review accepted standalone captured browser fetch invocation while retaining exact-origin, credential and redirect boundaries.",
+      "limit": "A clean successor build and renewed installed Thread evidence remained independent."
+    },
+    "style_review": {
+      "basename": "t3code-s7-thread-fetch-style.json",
+      "sha256": "1007c3ffdd46e4b55c8ae5fdc07344ffbf89d8466653689b810eefd886b29fcb",
+      "status": "pass",
+      "matched_files": 5
+    },
+    "commit_effect": "If applied, this commit lets the protected Thread HTTP adapter request its enrolled session through browser fetch."
+  },
+  "loading_correction": {
+    "candidate": {
+      "basename": "t3code-s7-thread-loading-candidate.json",
+      "sha256": "dc8fe056f05c54282415b4251be1ba5d046bc15958074a828b4255f34fdbdaf2"
+    },
+    "commit_receipt": {
+      "basename": "t3code-s7-thread-loading-commit-receipt.json",
+      "sha256": "b97abe328759bed5162e5f03ee78687d338273c8e551de0e638ccfaed25eac72",
+      "commit": "8444afb2896f0623898f48b77d99eb615122172f",
+      "source_clean": true,
+      "candidate_hashes_unchanged_after_hook": true
+    },
+    "gates": {
+      "basename": "t3code-s7-thread-loading-gates.json",
+      "sha256": "d451b89a8c1ba2465bc012001aacd2bdc1f586d1f64a078f5b6c0ac115d08bb8",
+      "status": "passed",
+      "full_tests": 13841,
+      "workspaces": 15,
+      "inherited_server_skips": 10,
+      "logs": [
+        {
+          "role": "format",
+          "basename": "t3code-s7-thread-loading-gate-1.log",
+          "sha256": "ab62fb5870a2eee69edda3d06187aa6032c2ae96783d3be34c41f70ed480d136"
+        },
+        {
+          "role": "lint",
+          "basename": "t3code-s7-thread-loading-gate-2.log",
+          "sha256": "f0f7dbf2b765c3472f1091a17a75529a270e3daeb5df2da5c93be27ddd877596"
+        },
+        {
+          "role": "typecheck",
+          "basename": "t3code-s7-thread-loading-gate-3.log",
+          "sha256": "5857a8ec4081a774b4fd26ab6e8a49688711147fa95d5cbfa8479a80a71dc89e"
+        },
+        {
+          "role": "test",
+          "basename": "t3code-s7-thread-loading-gate-4.log",
+          "sha256": "5afe3a671884fb30dac380803e4e28d041aa8ad197bacfa9f93285e11be5a189"
+        }
+      ]
+    },
+    "logical_review": {
+      "basename": "t3code-s7-thread-loading-review.json",
+      "sha256": "09f5d50675f29c6375fb4ca08bfc8dea11ba52136133c0ddf24f9142e022c13d",
+      "status": "no_findings",
+      "focused_tests": 31,
+      "claim": "The bounded correction retries pending activation after Electron clears the main-frame loading flag while preserving window lifetime, loading, origin and acknowledged-completion guards.",
+      "limit": "The causal probe is diagnostic evidence. Refreshed artifact execution remains independent."
+    },
+    "style_review": {
+      "basename": "t3code-s7-thread-loading-style.json",
+      "sha256": "f08f2c1524f837df5321fddad7a4123daf8a3f6abdd8a957d2dc7e59c4080867",
+      "status": "pass",
+      "matched_files": 5
+    },
+    "delivery_candidate": {
+      "basename": "t3code-s7-thread-loading-delivery-candidate.json",
+      "sha256": "a88f9536d83082c22a99d8d68d1db8d85ff8436f84ac2750380b7940a662fa8a"
+    },
+    "commit_effect": "If applied, this commit delivers a pending Thread launch draft when Electron finishes loading its main frame.",
+    "acceptance_boundary": "Source gates and reviews passed. The loading correction is now included in the active v6 full installed matrix, which remains pending."
+  },
+  "pairing_correction": {
+    "base": "8444afb2896f0623898f48b77d99eb615122172f",
+    "commit": "750c7e0f65b2d171d7cad6c90e91b531ece8fe72",
+    "delivery_manifest": {
+      "basename": "t3code-s7-thread-pairing-delivery-candidate-v2.json",
+      "sha256": "e111f596df35c3401770c18e39be2f8d7b5d2cb3c36124691b51e730f0225f90",
+      "file_count": 6,
+      "all_hashes_matched": true
+    },
+    "commit_receipt": "THREAD_PAIRING_COMMIT",
+    "gates": "THREAD_PAIRING_GATES",
+    "logical_review": "THREAD_PAIRING_REVIEW",
+    "style_review": "THREAD_PAIRING_STYLE",
+    "comment_successor": {
+      "basename": "t3code-s7-thread-pairing-comment-successor.json",
+      "sha256": "dbd9d110c28ac490eca2951fdb8ac639e6222a7b4185f2e776ff47efb501fff5",
+      "runtime_statements_unchanged": true,
+      "format_rerun_passed": true,
+      "claim": "After the passing full gates, one source comment and one specification sentence were corrected to describe the already-denied ticket and blocked supervisor accurately.",
+      "limit": "The successor changed no runtime statement or build input."
+    },
+    "causal_failure_history": {
+      "basename": "t3code-s6-installed-case-handoff-run41.json",
+      "sha256": "8207465291d0498778255638706c1a5f362aa630bd62a51bb78b2fe6c9eba318",
+      "classification": "causal failure history only",
+      "claim": "The installed observation isolated a pre-pair ticket denial and a primary supervisor that stayed blocked after successful pairing until diagnostic reload.",
+      "limit": "Reload was diagnostic. Socket handshake, exact staged draft and installed acceptance were not awarded."
+    },
+    "outcome": "Accepted pairing reads the current primary identity, invokes the existing supervisor retry, awaits command completion and preserves ordinary browser and undiscovered-primary navigation.",
+    "acceptance_boundary": "Source correction is accepted. Active v6 installed execution remains pending."
+  },
+  "current_build": {
+    "receipt": {
+      "basename": "clean-build-v7.json",
+      "sha256": "0fb4cc064284787aa174b208b1eef53533cd59e9ac753f241d94aae5f6d06bee",
+      "claim": "Both Code and Thread clean builds pass with exact source identity before and after."
+    },
+    "source_commit": "246e8bcd95020ba582cd269ce3fb538f6a8eef21",
+    "commands": [
+      {
+        "role": "code",
+        "command": "pnpm dist:desktop:linux --output-dir <artifact-dir>",
+        "exit_code": 0,
+        "log_basename": "clean-build-v7-code.log",
+        "log_sha256": "de796f1f5f9067b9f94876a7f398f410b38693c329bc7f4bc6379e04e63d23d1"
+      },
+      {
+        "role": "thread",
+        "command": "pnpm dist:thread:linux",
+        "exit_code": 0,
+        "log_basename": "clean-build-v7-thread.log",
+        "log_sha256": "210b65d0682d0b18a4e9daef621514a9b7c2bf43ef11628182b516ab5db69520"
+      }
+    ],
+    "artifacts": [
+      {
+        "basename": "T3-Code-0.0.38-x86_64.AppImage",
+        "sha256": "22e7b32f10c3693f9a0110f1a5ce1bab2f46a3d6e97a0cbdf6f3c1b1aed78b5c",
+        "bytes": 175332827
+      },
+      {
+        "basename": "builder-debug.yml",
+        "sha256": "c50c7d30287cce180f604ce70d8cad3c8de4ee9f10a943cbc5999d435045f2dc",
+        "bytes": 1801
+      },
+      {
+        "basename": "latest-linux.yml",
+        "sha256": "c8a9b2133398398b20a811443149d1b91dd05a504cf5ae89f41936cc4f48feca",
+        "bytes": 383
+      },
+      {
+        "basename": "T3-Code-0.0.38-x86_64.AppImage.release.json",
+        "sha256": "177bbba5be42a35b4b73eef1928c33c3c4d9cd4c7ca7008e0c2c39996e310723",
+        "bytes": 364
+      },
+      {
+        "basename": "T3-Thread.AppImage",
+        "sha256": "eb1dcfab650108dbfb286f8954406bb219f47f7ce431ff75bf5ecc3bd4c31a01",
+        "bytes": 127791066
+      },
+      {
+        "basename": "t3-thread-launcher.mjs",
+        "sha256": "2f77d7cf7925aa1da2f598b99d7b4f154e7231119c7504292f51d721245596a2",
+        "bytes": 12906
+      },
+      {
+        "basename": "T3-Thread.AppImage.release.json",
+        "sha256": "4c53915e8d5ebaa7a6806904e9ac8a001efd2a11d116ba51b8640abe4a23619a",
+        "bytes": 493
+      }
+    ],
+    "runtime_entries": [
+      {
+        "path": "apps/server/dist/bin.mjs",
+        "sha256": "4d97980ebf4f88f7ea70af27cf59219262acac6c9c8c74468f1835b395682694"
+      },
+      {
+        "path": "apps/web/dist/index.html",
+        "sha256": "dae94f159cc977cdbca2d332b2a6e87511a74ee03f0e1c9066e6268ef3822434"
+      },
+      {
+        "path": "apps/desktop/dist-electron/main.cjs",
+        "sha256": "50434d91e563db53e53f4cd0f9cb3d3971f965ec196db25e3f6149ea0712d9f3"
+      },
+      {
+        "path": "apps/desktop/dist-electron/preload.cjs",
+        "sha256": "f5093696ec88375a1996e4abc82795568783b337970b5d24af5c758d2f93c1d2"
+      },
+      {
+        "path": "apps/thread/dist-electron/main.cjs",
+        "sha256": "e748fcc98efabc7f2fd23f6749ad518479c93a9def30caf7478591325ff01761"
+      },
+      {
+        "path": "apps/thread/dist-electron/preload.cjs",
+        "sha256": "f79afc7d23c946307016688ea9a771e740d0950c8afe0ff8a97880499bd6f84a"
+      }
+    ],
+    "temporary_build_root_removed": true,
+    "limit": "Build identity is separate from actual installed proof and later documentation commit identity."
+  },
+  "native_focus_bridge": {
+    "v4_handoff_basename": "t3code-s6-hyprland-isolation-actual-handoff-v4.json",
+    "v4_handoff_sha256": "5ee147e271f29f981ac59d307b787f0a7e6febadb4227e3c0554cf308a067481",
+    "v4_result_basename": "result.json",
+    "v4_result_sha256": "30bfcff786f038ddc7e3f3ca1b42af60d78ed64e96d7acba203af3ccfb6b50d7",
+    "v4_cleanup_basename": "t3code-s6-hyprland-isolation-v4-resume-cleanup.json",
+    "v4_cleanup_sha256": "b371ab628d8e382489b078029209c174d8d052338c4d0e89c2a0882d99945ba2",
+    "binding": "Two actual native Wayland Code focus calls carry to identical current Code main and preload bytes. The server entry changed in v7 and gains no identity bridge; no backend participates in this focus case.",
+    "limits": [
+      "This is unchanged-owner evidence, not execution of the exact current AppImage.",
+      "Service active status was simulated; default service activation and cgroup ownership are not live proof.",
+      "No hardware input, primary socket, whole-web or Thread runtime claim follows from native Code focus."
+    ],
+    "identical_v4_to_current_owner_entries": ["Code main", "Code preload"]
+  },
+  "historical_restore_bridge": {
+    "historical_receipt_basename": "t3code-s7-rollback-execution-handoff.json",
+    "historical_receipt_sha256": "10d884aaa90b1581beb92a4cd2359de7f6e18da1ee473eefe69c60fbb1f64a4b",
+    "exact_v6_server_sha256": "3d2e0280337f6e56f908e50d24bade35d195eb319f1609cb9239de654e4aadca",
+    "binding": "Historical v6 evidence only. The server changed in v7, so it supplies no current byte bridge; actual current historical_restore_v7 replaces that proof.",
+    "limits": [
+      "Historical receipt and old provenance remain immutable; no current server acceptance from this bridge."
+    ]
+  },
+  "source_delivery_audit": {
+    "upstream_base": "761d4bac1c238ea7af4dd36b56719ad5e30771c3",
+    "head": "246e8bcd95020ba582cd269ce3fb538f6a8eef21",
+    "runtime_delivery_commit_count": 31,
+    "commits_with_exactly_one_behavior_effect": 31,
+    "commits": [
+      {
+        "commit": "ed1f5ebb7c9701ffe425f0908a610be4e58c0476",
+        "effect": "If applied, this commit preserves the fork\u2019s repository rules, onboarding, and delivery records during upstream reconciliation."
+      },
+      {
+        "commit": "bd58fc5f9d18f0cc21feb34ea8b75a1f56ec83bb",
+        "effect": "If applied, this commit binds repository discovery, change requests, and Git publication to exact origin, including automatic pulls and hosted URL selectors."
+      },
+      {
+        "commit": "2b691e322241348d0f6ef0ce5f33b1018a93b667",
+        "effect": "If applied, this commit opens supported fork databases through the current runtime, keeps device administration in the external portal, and confines installation and updates to exact-origin managed releases."
+      },
+      {
+        "commit": "9ddd85585ee9915eab074a182f72ab785cd73054",
+        "effect": "If applied, this commit records the approved retirement of the fork web outbox, custom Markdown renderer, rendered-document comments and queue shelf."
+      },
+      {
+        "commit": "ab7599741174106f22b32249c17524bf9723bb92",
+        "effect": "If applied, this commit restores the global Board with authenticated agent posts, revisioned corrections, bounded updates and mode-aware provider access in the current client."
+      },
+      {
+        "commit": "82d60907a5edfc2d788a9421fb1ab07d75fd0fa7",
+        "effect": "If applied, this commit exposes validated local theme, screenshot and preview controls through the optional desktop bridge."
+      },
+      {
+        "commit": "fc07ca9b21eaf84b64f702ed579f65461d9d8464",
+        "effect": "If applied, this commit applies Omarchy colors transiently when the active appearance selects the system theme."
+      },
+      {
+        "commit": "b37019fc6f5828d4db06f77bc4939346eca851cb",
+        "effect": "If applied, this commit provides bounded serialized Mermaid rendering with current theme colors and retryable failures."
+      },
+      {
+        "commit": "003e1b992f7dd643c96d71ec066c3501a700ff04",
+        "effect": "If applied, this commit defines the retained conversation spacing and continuous composer checkout backdrop."
+      },
+      {
+        "commit": "090221fe33d01bc290c2c9f49763680e679f356c",
+        "effect": "If applied, this commit admits desktop screenshots through the ordinary scoped attachment budget and restores the floating permission control and retained composer geometry."
+      },
+      {
+        "commit": "6b5bdeaf0b9827874d01a4c69da506697d12b636",
+        "effect": "If applied, this commit preserves authored prompt bytes when composing and projecting generated context."
+      },
+      {
+        "commit": "6f0c44294674d8b8e4917ac866433b6b4bfa6857",
+        "effect": "If applied, this commit provides focused browser actions and bounded preview tab restoration through the current preview owners."
+      },
+      {
+        "commit": "b9c74a2a26ce75028c590fe15152faa190c07965",
+        "effect": "If applied, this commit connects current chat and Markdown hosts to the retained rendering, presentation, context and preview owners."
+      },
+      {
+        "commit": "ab0be77bec3aa2af62a091eee23b215ee2072b63",
+        "effect": "If applied, this commit records the retained adapter boundaries and their upstream intake preservation evidence."
+      },
+      {
+        "commit": "fd228f5344d27649802673b021b5e7d2df95a6bc",
+        "effect": "If applied, this commit defines validated Code and Thread launch identities and their optional bridge contracts."
+      },
+      {
+        "commit": "a6b4629d480b03b13d8b07cc24b94b8e0ce60741",
+        "effect": "If applied, this commit runs standalone Linux Code against its isolated HTTPS identity with independent launcher readiness."
+      },
+      {
+        "commit": "f7c442c0d416380592ecce02ec09c891b1d08fc4",
+        "effect": "If applied, this commit provides one independent Thread process and profile per launch with protected reusable enrollment."
+      },
+      {
+        "commit": "4ef61e58035fe4e39d5f9e4f8c071e7fdcdd4eac",
+        "effect": "If applied, this commit binds hosted client authentication to its admitted origin and obtains fresh Thread connection tickets."
+      },
+      {
+        "commit": "3321579ff05ce858624aa2b56c49db2c7c8a0169",
+        "effect": "If applied, this commit stages trusted Code launch prompts and waits for the current composer before requesting an ordinary send."
+      },
+      {
+        "commit": "71f32c48d989eba7ac323ad7dc8bc13a422b8830",
+        "effect": "If applied, this commit stages Thread launch text in the shared draft with compact presentation and visible recovery."
+      },
+      {
+        "commit": "b251734e170e5f6ff1e5de20d48c46933359c8c1",
+        "effect": "If applied, this commit installs verified Code and Thread artifacts with ownership-preserving transactional rollback."
+      },
+      {
+        "commit": "b1bed98d29f428751be6f474d22887a704514184",
+        "effect": "If applied, this commit connects the current chat and application hosts to independent Code and Thread client owners."
+      },
+      {
+        "commit": "5016de833e8adc9c68784d26f3caf9b4e5adf66a",
+        "effect": "If applied, this commit records retained Linux and Thread responsibilities with source preservation evidence and installed verification boundaries."
+      },
+      {
+        "commit": "c992307860007674ddc501ef668c343efba4c48a",
+        "effect": "If applied, this commit binds desktop packages and Linux release descriptors to the same full source revision."
+      },
+      {
+        "commit": "ece730711476a3f89db0326d36f15202f807b082",
+        "effect": "If applied, this commit lets the server image install pinned native dependency packages without requiring unprovided system libraries."
+      },
+      {
+        "commit": "64fb036d8dbf30e305abfa09f1b4a106e9894c9b",
+        "effect": "If applied, this commit binds server image verification and promotion to the same available Skopeo artifact."
+      },
+      {
+        "commit": "312545cedb98c2fdf87e622184ba602c733fccfe",
+        "effect": "If applied, this commit lets Thread accept valid Electron enrollment responses while preserving exact-origin requests and redirect rejection."
+      },
+      {
+        "commit": "14e9108a24a20e2787ec738c2c08cfbdfd26b2f0",
+        "effect": "If applied, this commit lets the protected Thread HTTP adapter request its enrolled session through browser fetch."
+      },
+      {
+        "commit": "8444afb2896f0623898f48b77d99eb615122172f",
+        "effect": "If applied, this commit delivers a pending Thread launch draft when Electron finishes loading its main frame."
+      },
+      {
+        "commit": "750c7e0f65b2d171d7cad6c90e91b531ece8fe72",
+        "effect": "If applied, this commit resumes Thread\u2019s primary connection after pairing so the launch draft can open without a reload."
+      },
+      {
+        "commit": "246e8bcd95020ba582cd269ce3fb538f6a8eef21",
+        "effect": "If applied, this commit permits each server-issued WebSocket ticket to authorize only one connection attempt."
+      }
+    ],
+    "containing_documentation_commit": "Separate final evidence commit, with its own exact Commit Effect in the ledger; no runtime inputs changed."
+  },
+  "verification": {
+    "runtime_source_commit": "246e8bcd95020ba582cd269ce3fb538f6a8eef21",
+    "final_runtime_gates_passed": true,
+    "tests_passed": 13859,
+    "workspaces": 15,
+    "inherited_server_skips": 10,
+    "clean_build_and_artifact_hashes_verified": true,
+    "actual_installed_matrix_passed": true,
+    "actual_current_historical_restore_passed": true,
+    "actual_current_image_runtime_passed": true,
+    "immutable_concerns": 21,
+    "immutable_hunks": 175,
+    "unresolved_current_source_rows": 0,
+    "active_status_normalizations": 82,
+    "historical_entry_content_preserved": true,
+    "runtime_delivery_effects_verified": 31,
+    "mismatches": [],
+    "historical_status_snapshots_added": 82
+  },
+  "current_pending": [],
+  "publication_limits": [
+    "Local acceptance applies at the containing documentation commit after final logical review, ordered Style Assurance and root commit acceptance. No remote publication or deployment is authorized by this record.",
+    "Only receipt basenames, hashes, commands, outcomes and explicit limits belong in the durable index.",
+    "Private raw fixture records and credentials remain excluded."
+  ],
+  "record_boundary": "Runtime and build inputs are the clean source commit above. This containing documentation commit adds accepted evidence and active status reconciliation only. Final logical and ordered style review are mandatory before that commit.",
+  "assembly_predecessor": {
+    "basename": "t3code-s7-durable-index-prepared-v2.json",
+    "sha256": "5a76e37c5b0796ed3a3429bb893fa415df8b1a81a4b6301913f20240507287dd",
+    "claim": "Historical flat source and evidence inventory through 750c7e0; all its original receipt limits remain historical."
+  },
+  "ticket_correction": {
+    "commit": "246e8bcd95020ba582cd269ce3fb538f6a8eef21",
+    "cause": {
+      "basename": "t3code-s6-installed-case-handoff-run44.json",
+      "sha256": "30c10c19e805d773b4c5295169a94ca0a8358446ae99d2fff71f9a74ea6e235b",
+      "claim": "Installed replay contradicts the written one-use contract; causal failure only."
+    },
+    "assessment": {
+      "basename": "t3code-s7-ticket-consumption-assessment.json",
+      "sha256": "74357ab121b8f6355982c720814a917494d94c758d4a2d524911b3de9d71fc2f",
+      "claim": "Independent bounded authority assessment; no implementation credit."
+    },
+    "worker": {
+      "basename": "worker-receipt.json",
+      "sha256": "22bccd9404fceedb7ef75a1fde140c2b33770b65bc26d5998a6e92f068f6e6a4",
+      "claim": "Initial ten genuine semantic failures and 42 focused passes before root test-only static corrections."
+    },
+    "before_log": {
+      "basename": "failing-before.log",
+      "sha256": "786fcddfd45001bfec7e872bdf0b8b597e50188a7f0c5316e7d309449481cfac",
+      "claim": "Ten new regressions fail against old source while 27 existing cases pass."
+    },
+    "focused_log": {
+      "basename": "focused-after.log",
+      "sha256": "2bb7dba91ca5d917a55b28b1ab78bc42b3a7f5ff48328904ac82fe2eaab10844",
+      "claim": "Initial corrected focused candidate passes 42 tests across three suites."
+    },
+    "final_manifest": {
+      "basename": "ticket-style-candidate-v2.json",
+      "sha256": "84008dc7a17287b467938c9117c2902522828a5b448cbebeeafaf235d7146fd8",
+      "claim": "Eight final file hashes match the committed source tree."
+    },
+    "owners": [
+      "apps/server/src/auth/WebSocketTicketAdmission.ts",
+      "apps/server/src/auth/SessionStore.ts"
+    ],
+    "decision": "Mandatory signed random nonce, finite 4096 issued-ticket capacity, atomic consume after current expiry and durable authority checks, no credential fallback.",
+    "compatibility": "One authorization attempt per ticket in the issuing runtime, even if upgrade fails. Restart or another runtime requires fresh issuance through unchanged reusable credentials. No database migration.",
+    "gates": [
+      {
+        "command": "pnpm fmt",
+        "exit_code": 0,
+        "log_basename": "ticket-gate-1.log",
+        "log_sha256": "61397d9963c0773f2b9ff7c245601e3e0ba6b9be42af6ce2efaf5cd1f6eae733"
+      },
+      {
+        "command": "pnpm lint",
+        "exit_code": 0,
+        "log_basename": "ticket-gate-2.log",
+        "log_sha256": "b83b6ff4c78e63a0ccaabac669eb3ae272f260822a8b494ea2a18b833d6735ed"
+      },
+      {
+        "command": "pnpm typecheck",
+        "exit_code": 0,
+        "log_basename": "ticket-gate-3.log",
+        "log_sha256": "c5cd59295525661f1ab1ad5b377d844a0d1ecf867cced499d3e2c65bef30079e"
+      },
+      {
+        "command": "env -u NODE_ENV pnpm test --maxWorkers=4",
+        "exit_code": 0,
+        "log_basename": "ticket-gate-4.log",
+        "log_sha256": "6e3bb395b7dff5171749dd7d7d45cb3708a3fa71743c356f714c1ffa7f3c945a"
+      }
+    ],
+    "gate_environment": "An isolated disk-backed scratch directory avoided both temporary-filesystem user quota and an ancestor node_modules. The packaging isolation guard remained intact."
+  },
+  "current_installed": {
+    "receipt": {
+      "basename": "handoff-passed-v7.json",
+      "sha256": "aa2765788d2664eac76f49ac7f95764f0a048904c61ce5314df17d66c0ed0fe9",
+      "claim": "Full current installed matrix passes: real pairing, exact draft, private identities, replay denial, six close/crash cases, managed authority recovery and zero turns.",
+      "limit": "Synthetic providers and capture adapter; optional source-proven cases are not promoted into installed claims."
+    },
+    "source_commit": "246e8bcd95020ba582cd269ce3fb538f6a8eef21",
+    "server_sha256": "4d97980ebf4f88f7ea70af27cf59219262acac6c9c8c74468f1835b395682694",
+    "initial_boundary": {
+      "protected_bearer_session": true,
+      "actual101": true,
+      "activation_retained_exact_launch_and_draft": {
+        "received": true,
+        "shape": {
+          "contractVersionOne": true,
+          "launchIdMatches": true,
+          "draftPresent": true,
+          "draftExact": true
+        }
+      },
+      "real_pairing_ui": true,
+      "no_auth_reload_workaround": true,
+      "exact_draft_bytes": {
+        "utf8Bytes": 36,
+        "sha256": "5764837f50ee1b83382444effcfc5d56c0ea37c6eb7cf2a53a0099ccb21370fc",
+        "expandedThroughUi": true
+      }
+    },
+    "core_assertions": {
+      "thread-one-composer-bytes": {
+        "utf8Bytes": 36,
+        "sha256": "5764837f50ee1b83382444effcfc5d56c0ea37c6eb7cf2a53a0099ccb21370fc",
+        "expandedThroughUi": true
+      },
+      "thread-two-composer-bytes": {
+        "utf8Bytes": 36,
+        "sha256": "5764837f50ee1b83382444effcfc5d56c0ea37c6eb7cf2a53a0099ccb21370fc",
+        "expandedThroughUi": true
+      },
+      "protected-enrollment-record": true,
+      "later-launch-shared-enrollment-with-private-process-profile-extraction": true,
+      "zero-byte-launch-reuses-enrollment-with-three-private-identities": true,
+      "main-receipt-suppresses-reload-replay": true,
+      "reconnect-distinct-one-use-tickets": {
+        "distinct": true,
+        "observedTicketCount": 3,
+        "usedSocketTicketCount": 3,
+        "replayRejectedCount": 2,
+        "disconnectedOwnedSockets": 4
+      },
+      "full-close-crash-core-role-matrix": {
+        "roles": 3,
+        "actionsPerRole": 2,
+        "verifiedCases": 6
+      },
+      "managed-device-disable-denies-session-and-ticket-then-reenable-restores": {
+        "deniedThreadProcesses": 3,
+        "codeCookieStillAuthenticated": true,
+        "processAndFixtureIdentitiesUnchanged": true,
+        "restored": true
+      },
+      "no-provider-turns": true
+    },
+    "one_use_replay": [
+      {
+        "status": 401,
+        "upgraded": false
+      },
+      {
+        "status": 401,
+        "upgraded": false
+      }
+    ],
+    "retained_adapters": {
+      "theme": {
+        "assertions": {
+          "initialRealBridgeAndRendererVariables": true,
+          "actualWatchChangeWithoutReload": true,
+          "clearDropsLocalPalette": true
+        },
+        "installed_coverage_limits": [
+          "Legacy layout, symlink replacement, partial generation, malformed palette and explicit user theme override remain separate installed cases."
+        ]
+      },
+      "screenshot": {
+        "assertions": {
+          "cancellationLeavesDraftUntouched": true,
+          "captureAndSubmitDisabledWhileCapturePending": true,
+          "realTopLevelCaptureAdmittedOneExactSyntheticPng": true,
+          "ordinaryEightAttachmentBudgetRejectsCaptureBeforeNativeCommand": true,
+          "zeroProviderTurns": true
+        },
+        "installed_coverage_limits": [
+          "Active-draft switch during pending capture is not implemented.",
+          "Native Omarchy, Wayland and X11 screen capture backends are not exercised; this is a declared synthetic grimblast adapter.",
+          "Unavailable capability, native failures and real native picker cancellation remain separate installed cases.",
+          "This fixture disables providers, so installed send disabling is observed but its transition caused solely by capture remains source-test evidence."
+        ]
+      },
+      "preview": {
+        "assertions": {
+          "guestAddressShortcutFocusesAndSelectsRealUrlField": true,
+          "guestReloadLeavesShellDocumentIntact": true,
+          "guestCloseSelectsSurvivingTabWithoutClosingCode": true,
+          "guestReopenRestoresUrlZoomColorViewportAndPartition": true,
+          "lastCloseLeavesIdleAddressSurfaceAndZeroTurns": true
+        },
+        "installed_coverage_limits": [
+          "Agent-owned close confirmation acceptance/cancellation is not implemented; ordinary human-owned tabs have no confirmation.",
+          "Per-thread history isolation, ten-entry eviction, rapid overlapping closes and server-failure rollback remain separate installed cases.",
+          "Reopen restores last URL, zoom, color scheme and viewport attribute in this case; explicit alternate profile and viewport edits are not yet implemented.",
+          "Whole-shell reload clearing memory-only closed history and focus rejection after route/epoch change remain separate cases."
+        ]
+      }
+    },
+    "coverage_interpretation": "Items described as not implemented in retained fixture notes mean fixture coverage, not absent product behavior. Accepted owner and host tests cover their declared source boundaries. Hardware and additional installed cases are not claimed.",
+    "scope_limits": [
+      "Exact selected safeStorage backend is not exposed by production IPC; successful enrollment rejects basic_text in the real main owner.",
+      "Ordinary systemd activation, Hyprland focus, descriptor mismatch rollback remain separate cases.",
+      "This case does not exercise systemd service ownership or installer rollback; separately owned receipts cover those boundaries.",
+      "F03 active-draft switch while capture is pending; unavailable capability; bounded native failure; real native screen/clipboard/picker backend behavior.",
+      "F23 actual agent-owned close confirmation accept/cancel. Human-owned close deliberately has no confirmation and cannot earn that assertion.",
+      "F23 explicit alternate profile and viewport edits; bounded ten-item and per-thread history; overlapping close order; rollback; route/epoch rejection; full shell reload clearing memory-only history.",
+      "Omarchy legacy layout, symlink replacement, partial generations, malformed palette and explicit theme overrides.",
+      "Real desktop/window-manager integration, hardware keyboard input and full welcome wizard workflow.",
+      "Legacy layout, symlink replacement, partial generation, malformed palette and explicit user theme override remain separate installed cases.",
+      "Active-draft switch during pending capture is not implemented.",
+      "Native Omarchy, Wayland and X11 screen capture backends are not exercised; this is a declared synthetic grimblast adapter.",
+      "Unavailable capability, native failures and real native picker cancellation remain separate installed cases.",
+      "This fixture disables providers, so installed send disabling is observed but its transition caused solely by capture remains source-test evidence.",
+      "Agent-owned close confirmation acceptance/cancellation is not implemented; ordinary human-owned tabs have no confirmation.",
+      "Per-thread history isolation, ten-entry eviction, rapid overlapping closes and server-failure rollback remain separate installed cases.",
+      "Reopen restores last URL, zoom, color scheme and viewport attribute in this case; explicit alternate profile and viewport edits are not yet implemented.",
+      "Whole-shell reload clearing memory-only closed history and focus rejection after route/epoch change remain separate cases."
+    ],
+    "all_owned_processes_stopped": true,
+    "command": "Hash-bound private installed fixture runner with exact Code, Thread, hosted web and server inputs; frozen full-matrix assertions retained."
+  },
+  "current_visuals": {
+    "source_commit": "246e8bcd95020ba582cd269ce3fb538f6a8eef21",
+    "actual_current_artifacts": true,
+    "root_visual_inspection": "passed",
+    "claims": [
+      "Actual compact Thread displays the exact staged synthetic draft with ordinary upstream composer and checkout presentation",
+      "Actual Code displays centered composer, retained controls, full checkout strip and admitted synthetic PNG"
+    ],
+    "limits": [
+      "Disconnected label reflects absent provider session, not primary WebSocket status; actual handshake proof is separate",
+      "Synthetic fixture sends no provider turn",
+      "Screenshot adapter uses synthetic PNG, not physical hardware capture"
+    ],
+    "screenshots": [
+      {
+        "name": "thread-draft.png",
+        "sha256": "1026de557308e8a4d05722e8b5814c3a03de882e15d7b6bbe1413ff42e222dd7"
+      },
+      {
+        "name": "code-draft.png",
+        "sha256": "937baf531340fbed1f56baedfb899e0dc18c8ea519293394ba37d3342336d94b"
+      }
+    ],
+    "installed_result_sha256": "c87f0501244bba63ba8c17b81a34b36d7acbc267bdcf69e97105022acee61564",
+    "receipt": {
+      "basename": "visual-review-v7.json",
+      "sha256": "617000ba27b4d29822560c121403a11fb8b9bcaf7b5e08519786435c49ddc1c4",
+      "claim": "Root directly inspected actual current Thread and Code draft screenshots."
+    }
+  },
+  "historical_restore_v7": {
+    "receipt": {
+      "basename": "rollback-handoff-v7.json",
+      "sha256": "78d676d0dd41117e21b790cc10529c9ebde08d7701b6144455aa2a827a9e9a21",
+      "claim": "Actual current server migrates, consumes retained state and reopens; exact backup restores into matching qualified old runtime."
+    },
+    "source_commit": "246e8bcd95020ba582cd269ce3fb538f6a8eef21",
+    "safe_assertions": {
+      "attachment_sha256": "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
+      "authority_row_equal_after_current_consumer": true,
+      "authority_row_equal_after_old_restore": true,
+      "board_history_revision_count": 2,
+      "board_stream_item_count": 2,
+      "current_consumer_attachment_sha256": "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460",
+      "current_consumer_board_matching_count": 1,
+      "current_consumer_http_matching_counts": {
+        "messages": 1,
+        "projects": 1,
+        "threads": 1
+      },
+      "current_consumer_protected_admin_read": true,
+      "current_portal_ordinary_status": 401,
+      "current_protected_admin_read": true,
+      "current_reader_authenticated": true,
+      "current_reader_scope_count": 1,
+      "current_suffix_through": 58,
+      "database_restore_byte_exact_before_old_start": true,
+      "historical_api_dispatch_count": 3,
+      "historical_event_provenance_count": 5,
+      "historical_journal_end": 51,
+      "historical_session_active_turn_absent": true,
+      "historical_session_terminal_status": "error",
+      "old_restored_protected_admin_read": true,
+      "portal_excluded_from_current_ordinary_transport": true,
+      "pre_upgrade_database_sha256": "31ecfadcac0f00069c52f9604c64ec24a91aeba149a0c08c34a4c4ad23f89b6c",
+      "preserved_secret_file_count": 3,
+      "semantic_state_equal_after_current_initialize": true,
+      "semantic_state_equal_after_current_reopen": true,
+      "semantic_state_equal_after_old_restore_start": true,
+      "signing_key_preserved_after_current": true,
+      "signing_key_restored_exactly": true
+    },
+    "limits": [
+      "This evidence is bound to the exact v7 source commit and current server bundle hash and does not independently accept S7.",
+      "Old build provenance remains qualified sidecar and source-map evidence rather than a clean historical build receipt.",
+      "The same qualified old bundle created and verified the restored fixture.",
+      "The isolated old provider attempt ended in error because the private namespace supplied no provider executable; message and attachment admission still used the actual old API.",
+      "No product runtime, existing user state, repository file, build output, commit, deployment, or remote was changed."
+    ],
+    "command": "Frozen private historical fixture with exact current server hash and source commit, qualified old runtime manifest and synthetic state only.",
+    "all_owned_processes_stopped": true
+  },
+  "current_image": {
+    "receipt": {
+      "basename": "runtime-proof-246e8bcd.json",
+      "sha256": "640f4712cbf8db5209ad5859611456a085bf7afa02abebf3a66d1d151c9da2a0",
+      "claim": "Current exact-source OCI build, non-root read-only runtime, HTTP, pinned provider version, writable mounts, graceful stop and both signal cleanup probes pass.",
+      "limit": "Signal cleanup reuses verified OCI bytes; no registry publication or provider turn."
+    },
+    "artifact": {
+      "source_revision": "246e8bcd95020ba582cd269ce3fb538f6a8eef21",
+      "source_archive_sha256": "21c2820e00dc02d270fa0ee8f9fdc2572ac689961c3bed423d980834e1098313",
+      "artifact_filename": "t3code-server-s7-246e8bcd-image.oci.tar",
+      "archive_sha256": "6b25eb03a58487860acdd9064333cac6f776331a5e5af049d17918979390a1c6",
+      "archive_bytes": 455239680,
+      "oci_index_digest": "sha256:be9713d9d629fb5bd3376cb941d3c067b098c7691a62aee7433e483aa1ccb649",
+      "image_manifest_digest": "sha256:a2562602ed84f5ed596bc2f7479f301269d931ad3bed10e009d80957cb98c578",
+      "image_config_digest": "sha256:101b67af2f61c0d3b8f3042bab9a770a9d71d6c71bb34b910f4468d86238cfa0",
+      "labels": {
+        "org.opencontainers.image.created": "2026-09-06T14:38:38Z",
+        "org.opencontainers.image.revision": "246e8bcd95020ba582cd269ce3fb538f6a8eef21",
+        "org.opencontainers.image.source": "https://github.com/JerkyTreats/t3code",
+        "org.opencontainers.image.version": "smoke-s7-246e8bcd-image"
+      },
+      "configured_user": "node",
+      "architecture": "amd64",
+      "os": "linux",
+      "attestations": [
+        {
+          "digest": "sha256:84d12912a5ba8dac276914373e5904308c77778c4cd20c2edf6b4ece29ccfd3b",
+          "predicate_type": "https://spdx.dev/Document",
+          "subject": [
+            {
+              "name": "pkg:docker/t3code-server-smoke@s7-246e8bcd-image?platform=linux%2Famd64",
+              "digest": {
+                "sha256": "a2562602ed84f5ed596bc2f7479f301269d931ad3bed10e009d80957cb98c578"
+              }
+            }
+          ]
+        },
+        {
+          "digest": "sha256:af84f0bf0aa7217114d9dfc76dc20e38669300d94076e46324d0b0e10faab15e",
+          "predicate_type": "https://slsa.dev/provenance/v1",
+          "subject": [
+            {
+              "name": "pkg:docker/t3code-server-smoke@s7-246e8bcd-image?platform=linux%2Famd64",
+              "digest": {
+                "sha256": "a2562602ed84f5ed596bc2f7479f301269d931ad3bed10e009d80957cb98c578"
+              }
+            }
+          ],
+          "build_type": "https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md",
+          "has_max_build_config": true,
+          "resolved_dependency_count": 5
+        }
+      ]
+    },
+    "ordinary_runtime": {
+      "runner_exit_code": 0,
+      "http_status": 200,
+      "configured_user": "node",
+      "non_root_uid_check": true,
+      "read_only_root_startup": true,
+      "codex_version": "0.147.0",
+      "codex_version_exit_code": 0,
+      "sqlite_state_created": true,
+      "synthetic_data_codex_workspace_write_checks": true,
+      "private_tmpfs_noexec_nosuid_nodev": true,
+      "codex_warning": "PATH alias creation denied; pinned version execution passed."
+    },
+    "graceful_stop": {
+      "elapsed_ms": 365,
+      "expected_effect_exit": 130,
+      "source_basis": ".repos/effect-smol/packages/effect/src/Runtime.ts:122; .repos/effect-smol/packages/platform-node-shared/src/NodeRuntime.ts:58"
+    },
+    "signals": [
+      {
+        "signal": "SIGINT",
+        "process_exit_code": 130,
+        "http_status": 200,
+        "cleanup_elapsed_ms": 1354,
+        "same_verified_oci_digest": "sha256:be9713d9d629fb5bd3376cb941d3c067b098c7691a62aee7433e483aa1ccb649",
+        "copied_archive_removed": true
+      },
+      {
+        "signal": "SIGTERM",
+        "process_exit_code": 143,
+        "http_status": 200,
+        "cleanup_elapsed_ms": 1253,
+        "same_verified_oci_digest": "sha256:be9713d9d629fb5bd3376cb941d3c067b098c7691a62aee7433e483aa1ccb649",
+        "copied_archive_removed": true
+      }
+    ],
+    "candidate_cleanup": [
+      {
+        "suffix": "s7-246e8bcd-image",
+        "containers_absent": true,
+        "volumes_absent": true,
+        "images_absent": true
+      },
+      {
+        "suffix": "s7-246e8bcd-sigint",
+        "containers_absent": true,
+        "volumes_absent": true,
+        "images_absent": true
+      },
+      {
+        "suffix": "s7-246e8bcd-sigterm",
+        "containers_absent": true,
+        "volumes_absent": true,
+        "images_absent": true
+      }
+    ],
+    "private_engine_cleanup": {
+      "candidate_runtime_cleanup_complete": true,
+      "all_candidate_containers_volumes_tags_removed": true,
+      "all_signal_copy_archives_removed": true,
+      "builder_container_removed": true,
+      "builder_cache_volume_removed": true,
+      "private_daemon_exit_code": 0,
+      "private_daemon_process_absent": true,
+      "private_daemon_socket_absent": true,
+      "host_daemon_untouched": true,
+      "cache_delete_client_timeout": "Client timeout occurred during deletion; subsequent empty volume inventory and absent directory verified eventual completion.",
+      "retained_task_data": [
+        "Verified read-only current OCI archive and source archive/context.",
+        "Historical OCI archive, source contexts, helper files and evidence.",
+        "Stopped private engine data containing helper-image cache and metadata; no candidate runtime resources.",
+        "Task-owned Docker client configuration, rootless binaries, logs and receipts."
+      ],
+      "retained_engine_data_bytes": "Not measured; optional cache retention is explicitly permitted by root."
+    },
+    "limits": [
+      "Image smoke checks HTTP readiness and provider CLI availability; it does not authenticate a provider session or open WebSockets.",
+      "Actual ticket replay and fresh-ticket reconnect acceptance belongs to the separate installed-runtime matrix.",
+      "Signal runs replace only the rebuild command with copying the exact verified OCI bytes; all runtime and cleanup operations and delivered signals are real.",
+      "No host Docker daemon, production services, existing user state, registry login or publication was used."
+    ],
+    "helper_sha256": {
+      "run-smoke.mjs": "a784a5c2f2e4b390bed6294b5f82fa64b1d679488e8373745315dba688b32e6b",
+      "run-signal-smoke.mjs": "d295185d46c16e9014123bcc3a65d994e517646bed7a99c5365c7d97000086bc",
+      "collect-artifact.py": "df28c934718813572c3fc9873dd45b3490cdd2ea94dd5aa1f4a5661ce5bf1428"
+    },
+    "commands": [
+      "Exact-source runServerImageSmokeWithSignals through the hash-bound temporary observer",
+      "Actual pinned Codex version invocation inside the image",
+      "Actual SIGINT and SIGTERM source-smoke cleanup on identical verified OCI bytes"
+    ]
+  },
+  "final_record_acceptance": "The containing documentation commit requires both final logical record successors, ordered Style Assurance and root commit acceptance. Runtime source and artifacts remain pinned independently above.",
+  "cutover_limits": [
+    "Resolve old pending or ambiguous fork web outbox work in the old client before cutover.",
+    "Binary downgrade alone is not database rollback; restore matching database, attachments and secrets with the qualified old runtime.",
+    "Historical unclassified Thread credentials require explicit portal re-enrollment for managed-device authority.",
+    "Unacknowledged staging may replay across a full reload; acknowledged receipts suppress replay.",
+    "WebSocket tickets authorize one attempt only in their issuing runtime; durable credentials remain reusable.",
+    "Nineteen dirty task worker transfer trees remain retained and byte-audited. Original checkout and origin preservation ref are untouched.",
+    "No production change, existing user-state access, provider turn, upstream write or origin publication occurred."
+  ],
+  "final_record_reviews": [
+    {
+      "lane": "product",
+      "basename": "final-product-record-review-v2.json",
+      "sha256": "f44d4316222f78d6f8f2969fb1b3e6f79a4999af02a8c88c0a065fb4e80e5ac3",
+      "candidate_sha256": "73cf613572333408ff0272ac1e7496dda7fd7ddca40a8f6b2953e0bcb0a53c73",
+      "result": "pass with no remaining findings",
+      "scope": "Final records before receipt-only additions for ordered style review"
+    },
+    {
+      "lane": "persistence",
+      "basename": "final-persistence-record-review.json",
+      "sha256": "f70ffdd6aa66d17d57c97e3725e9649c8c60e616165123e4476c731062a417ae",
+      "candidate_sha256": "73cf613572333408ff0272ac1e7496dda7fd7ddca40a8f6b2953e0bcb0a53c73",
+      "result": "pass with no remaining findings",
+      "scope": "Final records before receipt-only additions for ordered style review"
+    }
+  ]
+}

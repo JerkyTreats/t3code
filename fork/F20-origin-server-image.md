@@ -80,7 +80,7 @@ Reconnect presentation uses that same owner: only idle desktop-managed runtimes 
 
 Source tests cover the exact Dockerfile instruction contract, Docker-compatible recursive protected-context matching, required build-input inclusion, exact-origin workflow authority, immutable actions, build-once promotion order, provenance, SBOM, cleanup, mocked runtime command orchestration, desktop-managed-or-null update policy, direct headless update rejection, and non-registry CLI guidance.
 
-An actual image build, HTTP startup, non-root identity, pinned provider availability, read-only root operation, writable mounts, signal handling, and residue-free cleanup remain pending in the integrated runtime gate. No image has been launched or published by this source replay.
+The exact-source local image passes actual build, HTTP startup, non-root identity, pinned provider availability, read-only root operation, writable mounts, signal handling and owned cleanup. The intake evidence binds OCI identity, provenance and commands to the tested source and distinguishes reused-byte cleanup probes. No image has been published or deployed.
 
 ## Reconciliation Rule
 

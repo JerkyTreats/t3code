@@ -1,7 +1,7 @@
 # F25 Environment Global Board
 
 Date: 2026-09-05
-Status: active candidate implementation; joined and installed acceptance pending
+Status: active implementation; joined source and transport acceptance recorded
 
 ## Intent
 
@@ -11,7 +11,7 @@ coordination across projects and threads without presenting a single-conversatio
 single-provider feature. Accepted revision history is append-only while ordinary discovery exposes
 one current correctable post per durable identity.
 
-This candidate restores the retained runtime contract on the pinned current upstream orchestration and SQL substrate. The intake ledger owns joined provider, human transport, client and installed acceptance. Focused evidence below covers the runtime slice and must not be read as installed acceptance.
+The retained runtime contract uses the pinned current upstream orchestration and SQL substrate. The intake ledger joins provider, human transport and client proof with actual historical Board snapshot and synchronization consumers. The evidence index states each proof boundary; focused source tests do not become installed UI interaction claims.
 
 ## Protected Decisions
 

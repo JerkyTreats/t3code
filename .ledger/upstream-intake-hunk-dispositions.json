@@ -5,7 +5,7 @@
   "upstream": "761d4bac1c238ea7af4dd36b56719ad5e30771c3",
   "frozen_denominator": 175,
   "recorded_rows": 175,
-  "scope": "All 175 immutable rows remain recorded. S12, S34 and S5 accepted evidence survives. Eight selected S6 roles pass source review with bounded corrections, closing five previously unresolved source rows and preserving three mixed earlier roles. Installed and final program gates remain pending.",
+  "scope": "All 175 immutable rows remain recorded with zero unresolved current source roles. Accepted S12, S34 and S5 evidence joins current installed S6 and final S7 preservation. Historical snapshots retain their original state and scope.",
   "entries": [
     {
       "path": "apps/server/src/auth/EnvironmentAuth.ts",
@@ -945,7 +945,7 @@
         "apps/server/src/mcp/McpHttpServer.test.ts:415",
         "apps/server/src/mcp/McpSessionRegistry.test.ts:208"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -956,7 +956,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/orchestration/Layers/OrchestrationEngine.ts",
@@ -980,7 +981,7 @@
         "apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts",
         "apps/server/src/server.test.ts:11149"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -991,7 +992,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/orchestration/Layers/OrchestrationEngine.ts",
@@ -1012,7 +1014,7 @@
         "apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts:60",
         "apps/server/src/server.test.ts:11149"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1023,7 +1025,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts",
@@ -1048,7 +1051,7 @@
         "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts:4138",
         "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts:4318"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1059,7 +1062,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts",
@@ -1084,7 +1088,7 @@
         "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts:1047",
         "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts:1323"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1095,7 +1099,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts",
@@ -1120,7 +1125,7 @@
         "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts:1047",
         "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts:1323"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1131,7 +1136,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts",
@@ -1156,7 +1162,7 @@
         "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts:1047",
         "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts:1323"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1167,7 +1173,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/orchestration/Layers/ProjectionPipeline.ts",
@@ -1191,7 +1198,7 @@
         "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts:1047",
         "apps/server/src/orchestration/Layers/ProjectionPipeline.test.ts:1323"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1202,7 +1209,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/orchestration/decider.ts",
@@ -1226,7 +1234,7 @@
         "apps/server/src/board/CommandDecision.test.ts",
         "apps/server/src/orchestration/Layers/Board.test.ts:38"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1237,7 +1245,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/server.test.ts",
@@ -1255,7 +1264,7 @@
         "apps/server/src/server.test.ts:10486",
         "apps/server/src/server.test.ts:10700"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1266,7 +1275,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/server.test.ts",
@@ -1281,7 +1291,7 @@
       "candidate_owners": ["apps/server/src/ws.ts"],
       "candidate_hosts": ["apps/server/src/server.test.ts:11043"],
       "candidate_evidence": ["apps/server/src/server.test.ts:11043"],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1292,7 +1302,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/server.test.ts",
@@ -1307,7 +1318,7 @@
       "candidate_owners": ["apps/server/src/ws.ts", "apps/server/src/orchestration/Normalizer.ts"],
       "candidate_hosts": ["apps/server/src/ws.ts:907", "apps/server/src/server.test.ts:11043"],
       "candidate_evidence": ["apps/server/src/server.test.ts:11043"],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1318,7 +1329,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/server.test.ts",
@@ -1344,7 +1356,7 @@
         "apps/server/src/server.test.ts:11149",
         "apps/server/src/server.test.ts:11254"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1355,7 +1367,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/server.test.ts",
@@ -1378,7 +1391,7 @@
         "apps/server/src/server.test.ts:11149",
         "apps/server/src/server.test.ts:11513"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1389,7 +1402,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/server.test.ts",
@@ -1411,7 +1425,7 @@
         "apps/server/src/server.test.ts:7901",
         "apps/server/src/server.test.ts:7972"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1422,7 +1436,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/server.test.ts",
@@ -1445,7 +1460,7 @@
         "apps/server/src/server.test.ts:8089",
         "apps/server/src/server.test.ts:8264"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1456,7 +1471,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/server.test.ts",
@@ -1481,7 +1497,7 @@
         "apps/server/src/server.test.ts:7972",
         "apps/server/src/server.test.ts:11149"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1492,7 +1508,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/server.test.ts",
@@ -1521,7 +1538,7 @@
         "apps/server/src/server.test.ts:8188",
         "apps/server/src/server.test.ts:11149"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1532,7 +1549,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/ws.ts",
@@ -1547,7 +1565,7 @@
       "candidate_owners": ["apps/server/src/ws.ts"],
       "candidate_hosts": ["apps/server/src/ws.ts:452"],
       "candidate_evidence": ["apps/server/src/server.test.ts:6795"],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1558,7 +1576,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/ws.ts",
@@ -1581,7 +1600,7 @@
         "apps/server/src/server.test.ts:11149",
         "apps/server/src/server.test.ts:11254"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1592,7 +1611,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/ws.ts",
@@ -1610,7 +1630,7 @@
         "apps/server/src/server.test.ts:11043",
         "apps/server/src/orchestration/Normalizer.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1621,7 +1641,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/ws.ts",
@@ -1647,7 +1668,7 @@
         "apps/server/src/server.test.ts:8264",
         "apps/server/src/orchestration/Layers/OrchestrationEngine.test.ts:60"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1658,7 +1679,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/ws.ts",
@@ -1676,7 +1698,7 @@
         "apps/server/src/server.test.ts:10486",
         "apps/server/src/server.test.ts:6795"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1687,7 +1709,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/ws.ts",
@@ -1715,7 +1738,7 @@
         "apps/server/src/server.test.ts:8089",
         "apps/server/src/server.test.ts:11043"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1726,7 +1749,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/ws.ts",
@@ -1741,7 +1765,7 @@
       "candidate_owners": ["apps/server/src/ws.ts"],
       "candidate_hosts": ["apps/server/src/ws.ts:380"],
       "candidate_evidence": ["apps/server/src/server.test.ts:6795"],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1752,7 +1776,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/ws.ts",
@@ -1780,7 +1805,7 @@
         "apps/server/src/server.test.ts:8089",
         "apps/server/src/server.test.ts:8188"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "runtime",
       "review_report": "/tmp/t3code-s34-review-runtime.json",
@@ -1791,7 +1816,8 @@
         "S7 joined product acceptance, any mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance and delivery commit remain root responsibilities."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/server/src/provider/CodexDeveloperInstructions.ts",
@@ -1815,7 +1841,7 @@
         "apps/server/src/provider/Layers/CodexSessionRuntime.test.ts:553",
         "apps/server/src/board/InteractionPolicy.test.ts"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -1826,7 +1852,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/ClaudeAdapter.test.ts",
@@ -1851,7 +1878,7 @@
         "apps/server/src/provider/Layers/ClaudeAdapter.test.ts:313",
         "apps/server/src/mcp/McpProviderSession.test.ts:20"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -1862,7 +1889,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/ClaudeAdapter.ts",
@@ -1887,7 +1915,7 @@
         "apps/server/src/provider/Layers/ClaudeAdapter.test.ts:313",
         "apps/server/src/mcp/McpProviderSession.test.ts:20"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -1898,7 +1926,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/CodexSessionRuntime.test.ts",
@@ -1923,7 +1952,7 @@
         "apps/server/src/provider/Layers/CodexSessionRuntime.test.ts:553",
         "apps/server/src/provider/Layers/CodexSessionRuntime.test.ts:576"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -1934,7 +1963,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/CursorAdapter.test.ts",
@@ -1958,7 +1988,7 @@
         "apps/server/src/provider/Layers/CursorAdapter.test.ts:167",
         "apps/server/src/mcp/McpProviderSession.test.ts:20"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -1969,7 +1999,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/CursorAdapter.ts",
@@ -1990,7 +2021,7 @@
         "apps/server/src/provider/Layers/CursorAdapter.test.ts:228",
         "apps/server/src/provider/Layers/ProviderService.test.ts:1936"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -2001,7 +2032,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/GrokAdapter.test.ts",
@@ -2025,7 +2057,7 @@
         "apps/server/src/provider/Layers/GrokAdapter.test.ts:232",
         "apps/server/src/provider/Layers/GrokAdapter.test.ts:2538"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -2036,7 +2068,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/GrokAdapter.test.ts",
@@ -2060,7 +2093,7 @@
         "apps/server/src/provider/Layers/GrokAdapter.test.ts:232",
         "apps/server/src/provider/Layers/GrokAdapter.test.ts:2538"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -2071,7 +2104,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/OpenCodeAdapter.test.ts",
@@ -2095,7 +2129,7 @@
         "apps/server/src/provider/Layers/OpenCodeAdapter.test.ts:586",
         "apps/server/src/provider/Layers/OpenCodeAdapter.test.ts:628"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -2106,7 +2140,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/ProviderService.test.ts",
@@ -2136,7 +2171,7 @@
         "apps/server/src/provider/Layers/CodexAdapter.test.ts:2823",
         "apps/server/src/provider/Layers/GrokAdapter.test.ts:2538"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -2147,7 +2182,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/ProviderService.ts",
@@ -2181,7 +2217,7 @@
         "apps/server/src/provider/Layers/CodexAdapter.test.ts:2823",
         "apps/server/src/provider/Layers/GrokAdapter.test.ts:2538"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -2192,7 +2228,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/ProviderService.ts",
@@ -2226,7 +2263,7 @@
         "apps/server/src/provider/Layers/CodexAdapter.test.ts:2823",
         "apps/server/src/provider/Layers/GrokAdapter.test.ts:2538"
       ],
-      "status": "s34_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "providers",
       "review_report": "/tmp/t3code-s34-round2-provider-result.json",
@@ -2237,7 +2274,8 @@
         "S7 joined product acceptance, mixed later obligations in the accepted S12 ledger, root Style Assurance, Gate Acceptance, correction review and delivery commit remain root responsibilities."
       ],
       "note": "Bounded correction closes S34-PROVIDER-001 and the panel correction; joined logical review passes. Style Assurance and root acceptance pass; this Board commit closes source delivery and later obligations remain pending.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_role_review_passed_join_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2265,14 +2303,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2300,14 +2339,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2335,14 +2375,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2370,14 +2411,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2405,14 +2447,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2514,14 +2557,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2549,14 +2593,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2584,14 +2629,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2619,14 +2665,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2654,14 +2701,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2689,14 +2737,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -2724,14 +2773,15 @@
         "apps/web/src/components/ChatMarkdown.test.tsx",
         "apps/web/src/components/files/FilePreviewPanel.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -2766,7 +2816,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -2775,7 +2825,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -2810,7 +2861,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -2819,7 +2870,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -2854,7 +2906,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -2863,7 +2915,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -2898,7 +2951,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -2907,7 +2960,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -2942,7 +2996,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -2951,7 +3005,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -2986,7 +3041,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -2995,7 +3050,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3030,7 +3086,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3039,7 +3095,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3074,7 +3131,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3083,7 +3140,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3118,7 +3176,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3127,7 +3185,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3162,7 +3221,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3171,7 +3230,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3206,7 +3266,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3215,7 +3275,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3250,7 +3311,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3259,7 +3320,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3296,7 +3358,7 @@
         "apps/web/src/rightPanelStore.test.ts",
         "apps/server/src/server.test.ts"
       ],
-      "status": "logical_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-round3-client-result.json",
@@ -3306,7 +3368,8 @@
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
       "closed_findings": ["CR1", "CR1.PERSISTENCE"],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "logical_review_passed_join_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3341,7 +3404,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3350,7 +3413,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3385,7 +3449,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3394,7 +3458,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3431,7 +3496,7 @@
         "apps/web/src/rightPanelStore.test.ts",
         "apps/server/src/server.test.ts"
       ],
-      "status": "logical_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-round3-client-result.json",
@@ -3441,7 +3506,8 @@
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
       "closed_findings": ["CR1", "CR1.PERSISTENCE"],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "logical_review_passed_join_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3476,7 +3542,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3485,7 +3551,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3522,7 +3589,7 @@
         "apps/web/src/rightPanelStore.test.ts",
         "apps/server/src/server.test.ts"
       ],
-      "status": "logical_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-round3-client-result.json",
@@ -3532,7 +3599,8 @@
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
       "closed_findings": ["CR1", "CR1.PERSISTENCE"],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "logical_review_passed_join_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3567,7 +3635,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3576,7 +3644,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -3611,7 +3680,7 @@
         "apps/server/src/server.test.ts",
         "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3620,7 +3689,8 @@
         "S5 ordinary chat/draft appearance and applicable Omarchy, screenshot, Mermaid and preview controls remain unaccepted; S6 hosted Thread/installed acceptance remains unaccepted."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/RightPanelTabs.tsx",
@@ -3657,7 +3727,7 @@
         "apps/web/src/rightPanelStore.test.ts",
         "apps/server/src/server.test.ts"
       ],
-      "status": "logical_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-round3-client-result.json",
@@ -3665,7 +3735,8 @@
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
       "closed_findings": ["CR1", "CR1.PERSISTENCE"],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "logical_review_passed_join_pending"
     },
     {
       "path": "apps/web/src/components/RightPanelTabs.tsx",
@@ -3702,7 +3773,7 @@
         "apps/web/src/rightPanelStore.test.ts",
         "apps/server/src/server.test.ts"
       ],
-      "status": "logical_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-round3-client-result.json",
@@ -3710,7 +3781,8 @@
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
       "closed_findings": ["CR1", "CR1.PERSISTENCE"],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "logical_review_passed_join_pending"
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -3741,14 +3813,15 @@
         "apps/web/src/session-logic.test.ts",
         "apps/web/src/components/chat/MessagesTimeline.logic.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -3779,14 +3852,15 @@
         "apps/web/src/session-logic.test.ts",
         "apps/web/src/components/chat/MessagesTimeline.logic.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -3817,14 +3891,15 @@
         "apps/web/src/session-logic.test.ts",
         "apps/web/src/components/chat/MessagesTimeline.logic.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -3925,14 +4000,15 @@
         "apps/web/src/session-logic.test.ts",
         "apps/web/src/components/chat/MessagesTimeline.logic.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
       "deferred_later_obligations": [],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/routes/__root.tsx",
@@ -3955,7 +4031,7 @@
         "apps/mobile/src/state/thread-outbox.test.ts",
         "apps/mobile/src/state/use-thread-outbox-drain.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3964,7 +4040,8 @@
         "S6 retains hosted Thread surface selection, activation, draft staging and independent installed process behavior under the listed F27 decisions."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/web/src/routes/__root.tsx",
@@ -3987,7 +4064,7 @@
         "apps/mobile/src/state/thread-outbox.test.ts",
         "apps/mobile/src/state/use-thread-outbox-drain.test.ts"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
@@ -3996,7 +4073,8 @@
         "S6 retains hosted Thread surface selection, activation, draft staging and independent installed process behavior under the listed F27 decisions."
       ],
       "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "s34_exact_role_review_passed_concern_pending"
     },
     {
       "path": "apps/desktop/src/ipc/DesktopIpcHandlers.ts",
@@ -4285,7 +4363,7 @@
       "decision": "Pure upstream Claude scoped model catalog and filesystem dependency setup. The catalog is consumed at session/send model resolution; filesystem is passed to skill scanning and attachment message building. No Board or retirement authority in this hunk.",
       "candidate_role": "unchanged_upstream_claude_model_and_filesystem_substrate",
       "candidate_owners_and_hosts": "Upstream scopeClaudeModelCatalog and buildUserMessageEffect; ClaudeAdapter host",
-      "status": "supplemental_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S34",
@@ -4314,7 +4392,8 @@
       "deferred_later_obligations": [
         "Preserve this upstream model catalog and filesystem substrate through later provider host edits. No F03 or F28 acceptance credit is granted."
       ],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "supplemental_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/CodexAdapter.test.ts",
@@ -4326,7 +4405,7 @@
       "decision": "Pure upstream Codex regression tests for cumulative usage totals, duplicate usage, late prior-turn updates, cache/reasoning clamping, counter reset, resumed/rolled-back baselines and child model/effort task metadata. collabAgent events are provider task telemetry, not Board liaison execution.",
       "candidate_role": "unchanged_upstream_codex_usage_and_child_task_metadata_regression_tests",
       "candidate_owners_and_hosts": "Upstream CodexAdapter usage/task projection; CodexAdapter.test host",
-      "status": "supplemental_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S34",
@@ -4356,7 +4435,8 @@
       "deferred_later_obligations": [
         "Retain these provider regression tests through later harness adaptation. Do not count them as F28 Collective execution evidence."
       ],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "supplemental_role_review_passed_join_pending"
     },
     {
       "path": "apps/server/src/provider/Layers/ProviderService.ts",
@@ -4368,7 +4448,7 @@
       "decision": "Upstream send pipeline expands assistant citations, revalidates expanded input and documents generic attachment paths for provider tool access. Origin contributes only an older image-pixel attachment comment. This is ordinary send/attachment substrate, not a screenshot-capture owner.",
       "candidate_role": "upstream_send_citation_validation_and_generic_attachment_path_substrate",
       "candidate_owners_and_hosts": "Upstream assistantCitations helper and attachmentStore.resolveAttachmentPath; ProviderService.sendTurn adapter",
-      "status": "supplemental_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S34",
@@ -4397,7 +4477,8 @@
       "deferred_later_obligations": [
         "S5 F03 must enter through accepted generic attachment admission and must preserve citation expansion, provider validation, and path injection."
       ],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "supplemental_role_review_passed_join_pending"
     },
     {
       "path": "apps/web/src/browser/ElectronBrowserHost.tsx",
@@ -6664,7 +6745,7 @@
       "decision": "Origin files explorer surface constructor versus upstream generic attachment file surface constructor. No Board content in exact hunk. Current openAttachment calls constructor inside hideEnvironmentBoard wrapper, making S34 Board composition a concrete integration edge.",
       "candidate_role": "upstream_generic_attachment_surface_preserved_inside_current_board_visibility_composition",
       "candidate_owners_and_hosts": "Upstream attachmentSurface/openAttachment; current Board visibility owner; rightPanelStore host",
-      "status": "supplemental_role_review_passed_join_pending",
+      "status": "accepted-final-preservation",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S34",
@@ -6698,7 +6779,8 @@
         "Preserve generic attachment rendering and current files explorer behavior. Do not restore the old origin file-browser constructor as policy.",
         "Later S5 styling may consume this surface but does not replace its ordinary attachment role."
       ],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "historical_stage_status": "supplemental_role_review_passed_join_pending"
     },
     {
       "path": "apps/web/src/routes/__root.tsx",
@@ -7048,5 +7130,6 @@
   "unresolved_rows": 0,
   "s5_delivery_gate": "Source, built visuals and ordered Style Assurance pass; the local commit group is accepted with this record. Installed Linux and Thread remain S6; final acceptance remains S7.",
   "s6_reviewed_rows": 8,
-  "s6_delivery_gate": "Logical source reviews, bounded corrections, final required gates and ordered Style Assurance pass. Root accepts the joined source for local commits and clean artifact creation. Installed acceptance and S7 remain pending."
+  "s6_delivery_gate": "Current clean Code and Thread artifacts pass the scoped installed matrix, fresh one-use ticket replay denial, authority recovery and independent lifetimes. Native focus has its recorded unchanged-owner bridge and service-status limit. Final S7 preservation is accepted.",
+  "s7_delivery_gate": "All21 concerns and175 unique hunks join accepted source, current installed and visual proof, historical restore, current image runtime, final logical review and ordered Style Assurance. Exact identities and limits are in upstream-intake-evidence.json."
 }

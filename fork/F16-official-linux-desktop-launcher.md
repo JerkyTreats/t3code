@@ -88,7 +88,7 @@ Retain upstream Electron lifecycle and client behavior. Preserve the official ar
 
 ## Current Evidence
 
-Focused tests execute standalone selection before backend acquisition, current DesktopApp composition, Clerk and window lifecycle, preload and IPC, primary cookie transport, renderer launcher coordination and exact send completion. Installer and topology tests execute verified bytes, ownership drift, idempotency and transactional rollback. These provide source and host-replacement evidence; actual clean-build AppImage, isolated install, independent lifetime and native focus evidence remain pending in the intake ledger.
+Focused tests execute standalone selection before backend acquisition, current DesktopApp composition, Clerk and window lifecycle, preload and IPC, primary cookie transport, renderer launcher coordination and exact send completion. Installer and topology tests execute verified bytes, ownership drift, idempotency and transactional rollback. The clean current AppImages also pass isolated installation and all six client close/crash cases. Native Wayland focus passed two actual launcher focus calls on unchanged Code main and preload bytes, with simulated service status. That bounded bridge does not claim live default service activation or an identical whole AppImage. The intake evidence records both identities and limits.
 
 ## Compatibility
 
