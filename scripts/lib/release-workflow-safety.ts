@@ -49,7 +49,7 @@ const SERVER_IMAGE_ACTIONS = new Set([
   SERVER_IMAGE_LOGIN_ACTION,
 ]);
 const SERVER_IMAGE_MUTATION_RUN_DIGESTS = new Set([
-  "96a2a8a2397e79336569cb667ea3ae5f5b21e12094f551bfc7f03d4333e273cf",
+  "fe60c3cfdc5a06d53de3ff52f19335571fb0808798b51cf8e2d30937edca11f5",
 ]);
 const READ_ONLY_RUN_SOURCES = new Set([
   "brew bundle install --file apps/mobile/Brewfile",

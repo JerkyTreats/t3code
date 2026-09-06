@@ -26,7 +26,7 @@ The [retired-feature record](fork/retired-features.md) preserves the approved re
 
 The web update owner also controls inferred reconnect progress. Only desktop-managed capability may infer a lost update; unsupported runtimes retain deployment guidance, while actual running update progress survives transient descriptor loss.
 
-The server image uses the frozen dependency graph's platform packages without globally forcing native compilation. Its exact Dockerfile policy remains enforced by the image workflow scanner.
+The server image uses the frozen dependency graph's platform packages without globally forcing native compilation. Its exact Dockerfile policy remains enforced by the image workflow scanner. Local image verification and promotion share the same available digest-pinned Skopeo helper.
 
 ## External Admin
 

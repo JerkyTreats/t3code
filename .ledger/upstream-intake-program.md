@@ -674,3 +674,15 @@ The corrected scanner and image smoke suites pass 29 tests. All four required re
 ### Commit effect — native image dependency selection
 
 If applied, this commit lets the server image install pinned native dependency packages without requiring unprovided system libraries.
+
+### Server image verification helper identity correction
+
+The clean `ece730711476a3f89db0326d36f15202f807b082` image build passes frozen dependency installation, both production bundles, pinned Codex verification and OCI export with SBOM and provenance. The later verification step cannot pull the inherited Skopeo digest because the official registry returns `manifest unknown`. Source cleanup removes the unverified archive, so the successful build alone supplies no runtime acceptance.
+
+Read-only official registry inspection resolves Skopeo stable to index `sha256:8d25aabcf965e267b6a6ad02ff8da5512f77de1490063625093ff564797e88bc` and its Linux amd64 manifest. The private engine successfully pulls that exact index and executes Skopeo 1.22.2. Root updates only the shared smoke and promotion helper identity plus both exact workflow policy owners. The joined gate initially rejects the changed promotion command because its independent release-policy digest remains stale; recomputing that exact reviewed command digest restores admission without widening the allowlist. Registry login, publication targets, build-once promotion and all other pins remain unchanged. Corrected source verification and a new clean actual image run remain required.
+
+The joined image-helper and Thread-response correction candidate passes all four required gates, with 13,839 tests across fifteen workspaces and ten inherited server skips, recorded in `t3code-s7-runtime-corrections-gates-v2.json`. Fresh disjoint logical reviews find no source issue; image review independently verifies the exact promotion command digest. Ordered Style Assurance passes at SHA256 `c64bc1008d2fbbad94a2cff9598c979fdb70b8be8603110cbe4f8b73fba2ac62`. Root preserves all accepted executable bytes while splitting this group into two focused local commits. Only the complete clean group becomes the next artifact input; neither source gates nor an intermediate commit establishes installed acceptance.
+
+### Commit effect — available image verification helper
+
+If applied, this commit binds server image verification and promotion to the same available Skopeo artifact.

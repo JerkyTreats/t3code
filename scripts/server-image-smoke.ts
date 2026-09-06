@@ -17,7 +17,7 @@ export const SERVER_IMAGE_DOCKERFILE = "docker/t3code-server.Dockerfile";
 export const SERVER_IMAGE_SOURCE = "https://github.com/JerkyTreats/t3code";
 export const CODEX_CLI_VERSION = "0.147.0";
 export const SKOPEO_IMAGE =
-  "quay.io/skopeo/stable@sha256:c7d3c512612f52805023cd38351081dad7e2729fc13d14b701e47c7c8bdd6615";
+  "quay.io/skopeo/stable@sha256:8d25aabcf965e267b6a6ad02ff8da5512f77de1490063625093ff564797e88bc";
 export const SBOM_GENERATOR_IMAGE =
   "docker.io/docker/buildkit-syft-scanner@sha256:79e7b013cbec16bbb436f312819a49a4a57752b2270c1a9332ae1a10fcc82a68";
 

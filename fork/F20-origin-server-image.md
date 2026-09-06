@@ -19,6 +19,7 @@ Build and verify a standalone non-root server image, then permit publication onl
 - Publication authority exists only in the dedicated image job for exact `JerkyTreats/t3code` main.
 - The only allowed image namespace is `ghcr.io/jerkytreats/t3code-server`.
 - Registry login and publication happen only after local policy and runtime smoke checks pass.
+- Local verification and publication use the same digest-pinned Skopeo helper, verified as available for the target architecture.
 - The source server is private workspace software. It exposes no npm-backed T3 service installation or self-update path.
 - Image replacement is the supported update model for an image deployment.
 
