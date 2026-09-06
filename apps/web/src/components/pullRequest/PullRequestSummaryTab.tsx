@@ -57,7 +57,7 @@ import {
   canEditPullRequestChangeRequest,
   canEditPullRequestComment,
 } from "./pullRequestEditing.logic";
-import { PullRequestMarkdown } from "./PullRequestMarkdown";
+import { PullRequestMarkdown, pullRequestMarkdownSurfaceId } from "./PullRequestMarkdown";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
@@ -94,6 +94,7 @@ function reviewStateLabel(state: string): string {
 interface CommentEditing {
   readonly cwd: string;
   readonly environmentId: EnvironmentId;
+  readonly reference: PullRequestRef;
   readonly threadRef: ScopedThreadRef | null;
   readonly canEdit: (comment: PullRequestComment) => boolean;
   readonly editingId: string | null;
@@ -118,6 +119,12 @@ function CommentBody({
   if (editing.editingId === comment.id) {
     return (
       <PullRequestMarkdownEditor
+        surfaceId={pullRequestMarkdownSurfaceId(
+          editing.environmentId,
+          editing.reference,
+          "comment",
+          comment.id,
+        )}
         className={className}
         value={comment.body}
         cwd={editing.cwd}
@@ -133,6 +140,12 @@ function CommentBody({
   return (
     <div className={cn("flex items-start gap-1", className)}>
       <PullRequestMarkdown
+        surfaceId={pullRequestMarkdownSurfaceId(
+          editing.environmentId,
+          editing.reference,
+          "comment",
+          comment.id,
+        )}
         className="min-w-0 flex-1"
         text={comment.body}
         cwd={editing.cwd}
@@ -569,6 +582,7 @@ export function PullRequestSummaryTab({
   const commentEditing: CommentEditing = {
     cwd: detail.workspaceRoot,
     environmentId,
+    reference,
     threadRef,
     canEdit: (comment) => canEditPullRequestComment(detail, comment),
     editingId: editingCommentId,
@@ -740,6 +754,7 @@ export function PullRequestSummaryTab({
         <div className="group">
           {bodyScope === detail.url ? (
             <PullRequestMarkdownEditor
+              surfaceId={pullRequestMarkdownSurfaceId(environmentId, reference, "description")}
               // Empty is a real answer here: saving nothing is how a description is cleared.
               allowEmpty
               value={detail.body}
@@ -755,6 +770,7 @@ export function PullRequestSummaryTab({
           ) : (
             <div className="flex items-start gap-1">
               <PullRequestMarkdown
+                surfaceId={pullRequestMarkdownSurfaceId(environmentId, reference, "description")}
                 className="min-w-0 flex-1"
                 text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
                 cwd={detail.workspaceRoot}

@@ -30,7 +30,7 @@ import {
   mergePullRequestThreadComments,
 } from "./pullRequestDetail.logic";
 import { PullRequestActorLabel } from "./pullRequestPresentation";
-import { PullRequestMarkdown } from "./PullRequestMarkdown";
+import { PullRequestMarkdown, pullRequestMarkdownSurfaceId } from "./PullRequestMarkdown";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import type { PendingReviewComment } from "./pullRequestReviewStore";
@@ -270,6 +270,14 @@ export function ReviewThreadCard({
                 </div>
                 {editingId === comment.id ? (
                   <PullRequestMarkdownEditor
+                    surfaceId={pullRequestMarkdownSurfaceId(
+                      environmentId,
+                      reference,
+                      "review-thread",
+                      thread.id,
+                      "comment",
+                      comment.id,
+                    )}
                     className="mt-1"
                     value={comment.body}
                     cwd={workspaceRoot}
@@ -282,6 +290,14 @@ export function ReviewThreadCard({
                 ) : (
                   <div className="mt-1 flex items-start gap-1">
                     <PullRequestMarkdown
+                      surfaceId={pullRequestMarkdownSurfaceId(
+                        environmentId,
+                        reference,
+                        "review-thread",
+                        thread.id,
+                        "comment",
+                        comment.id,
+                      )}
                       className="min-w-0 flex-1 text-sm"
                       text={comment.body}
                       cwd={workspaceRoot}

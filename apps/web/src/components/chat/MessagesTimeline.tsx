@@ -1,3 +1,5 @@
+import { chatTimelinePresentation } from "../../fork/chatPresentation";
+import { projectChatPromptForDisplay } from "../../fork/chatPromptContext";
 import {
   type AssistantCitation,
   type EnvironmentId,
@@ -154,18 +156,9 @@ import {
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  deriveDisplayedUserMessageState,
-  type ParsedTerminalContextEntry,
-} from "~/lib/terminalContext";
-import {
-  extractTrailingElementContexts,
-  type ParsedElementContextEntry,
-} from "~/lib/elementContext";
-import {
-  extractTrailingPreviewAnnotation,
-  type ParsedPreviewAnnotation,
-} from "~/lib/previewAnnotation";
+import { type ParsedTerminalContextEntry } from "~/lib/terminalContext";
+import { type ParsedElementContextEntry } from "~/lib/elementContext";
+import { type ParsedPreviewAnnotation } from "~/lib/previewAnnotation";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
@@ -228,6 +221,27 @@ interface TimelineRowActivityState {
 const TimelineRowCtx = createContext<TimelineRowSharedState>(null!);
 const TimelineRowActivityCtx = createContext<TimelineRowActivityState>(null!);
 
+export function timelineMarkdownSurfaceId(
+  context: Pick<
+    TimelineRowSharedState,
+    "activeThreadEnvironmentId" | "routeThreadKey" | "threadRef"
+  >,
+  kind: "message" | "plan",
+  id: string,
+  ...segments: ReadonlyArray<string>
+): string {
+  return [
+    "timeline",
+    context.activeThreadEnvironmentId,
+    context.threadRef?.threadId ?? context.routeThreadKey,
+    kind,
+    id,
+    ...segments,
+  ]
+    .map((part) => encodeURIComponent(part))
+    .join(":");
+}
+
 interface WorkGroupViewState {
   scrollPositions: Map<string, WorkGroupScrollAnchor>;
   expandedEntries: Set<string>;
@@ -238,9 +252,7 @@ const WorkGroupViewCtx = createContext<{
   onToggleEntry: (collapsed: boolean) => void;
 } | null>(null);
 const TIMELINE_LIST_HEADER = <div className="h-3 sm:h-4" />;
-const TIMELINE_LIST_FADE_HEADER = (
-  <div className="h-[var(--workspace-titlebar-scroll-fade-height)]" />
-);
+const TIMELINE_LIST_FADE_HEADER = <div className={chatTimelinePresentation.fadeHeaderClassName} />;
 
 // Header row shown when older turns exist beyond the loaded window. Plain
 // button, no spinner animation; the label change is the loading indicator.
@@ -254,7 +266,7 @@ function TimelineLoadEarlierHeader({
   fade: boolean;
 }) {
   return (
-    <div className={fade ? "pt-[var(--workspace-titlebar-scroll-fade-height)]" : "pt-3 sm:pt-4"}>
+    <div className={fade ? chatTimelinePresentation.loadEarlierFadeClassName : "pt-3 sm:pt-4"}>
       <div className="mx-auto w-full max-w-3xl pb-2">
         <button
           type="button"
@@ -1295,6 +1307,7 @@ function UserVideoAttachment({ file }: { readonly file: ChatFileAttachment }) {
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
+  const markdownSurfaceId = timelineMarkdownSurfaceId(ctx, "message", row.message.id, "user");
   const resources = useMemo(
     () => selectMessageImageResources(row.message.attachments),
     [row.message.attachments],
@@ -1319,21 +1332,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const unknownAttachments = (row.message.attachments ?? []).filter(
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
-  const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
-  const terminalContexts = displayedUserMessage.contexts;
-  const previewAnnotations: ParsedPreviewAnnotation[] = [];
-  let visibleText = displayedUserMessage.visibleText;
-  while (true) {
-    const extracted = extractTrailingPreviewAnnotation(visibleText);
-    if (!extracted.annotation) break;
-    previewAnnotations.unshift(extracted.annotation);
-    visibleText = extracted.promptText;
-  }
-  const elementContextState = extractTrailingElementContexts(visibleText);
-  const elementContexts = [
-    ...displayedUserMessage.elementContexts,
-    ...elementContextState.contexts,
-  ];
+  const displayedUserMessage = projectChatPromptForDisplay(row.message.text);
+  const terminalContexts = displayedUserMessage.terminalContexts;
+  const previewAnnotations = displayedUserMessage.previewAnnotations;
+  const elementContexts = displayedUserMessage.elementContexts;
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
   const canRevertAgentWork = typeof row.revertTurnCount === "number";
@@ -1481,7 +1483,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </div>
         ) : null}
         <CollapsibleUserMessageBody
-          text={elementContextState.promptText}
+          surfaceId={markdownSurfaceId}
+          text={displayedUserMessage.visibleText}
           terminalContexts={terminalContexts}
           skills={ctx.skills}
           markdownCwd={ctx.markdownCwd}
@@ -1569,6 +1572,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           listRef={ctx.listRef}
         >
           <ChatMarkdown
+            surfaceId={timelineMarkdownSurfaceId(ctx, "message", row.message.id, "assistant")}
             text={messageText}
             cwd={ctx.markdownCwd}
             threadRef={ctx.threadRef ?? undefined}
@@ -1692,6 +1696,7 @@ function ProposedPlanTimelineRow({
   return (
     <div className="min-w-0 px-1 py-0.5">
       <ProposedPlanCard
+        surfaceId={timelineMarkdownSurfaceId(ctx, "plan", row.proposedPlan.id)}
         planMarkdown={row.proposedPlan.planMarkdown}
         environmentId={ctx.activeThreadEnvironmentId}
         threadRef={ctx.threadRef ?? undefined}
@@ -2262,6 +2267,23 @@ const UserMessageTerminalContextInlineLabel = memo(
   },
 );
 
+function renderTerminalContextInlinePrefix(
+  contexts: ReadonlyArray<ParsedTerminalContextEntry>,
+): ReactNode[] {
+  return contexts.flatMap((context) => {
+    const key = `${context.header}:${context.body}`;
+    return [
+      <UserMessageTerminalContextInlineLabel
+        key={`user-terminal-context-inline:${key}`}
+        context={context}
+      />,
+      <span key={`user-terminal-context-inline-space:${key}`} aria-hidden="true">
+        {" "}
+      </span>,
+    ];
+  });
+}
+
 const UserMessageElementContextChip = memo(function UserMessageElementContextChip(props: {
   context: ParsedElementContextEntry;
 }) {
@@ -2354,6 +2376,7 @@ function shouldCollapseUserMessage(text: string): boolean {
 }
 
 const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(props: {
+  surfaceId: string;
   text: string;
   terminalContexts: ParsedTerminalContextEntry[];
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
@@ -2384,6 +2407,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
           }
         >
           <UserMessageBody
+            surfaceId={props.surfaceId}
             text={props.text}
             terminalContexts={props.terminalContexts}
             skills={props.skills}
@@ -2422,13 +2446,14 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
 });
 
 const UserMessageBody = memo(function UserMessageBody(props: {
+  surfaceId: string;
   text: string;
   terminalContexts: ParsedTerminalContextEntry[];
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
 }) {
   const ctx = use(TimelineRowCtx);
-  const renderInlineMarkdownSegment = (text: string, key: string) => {
+  const renderInlineMarkdownSegment = (text: string, sourceStart: number, sourceEnd: number) => {
     const leadingWhitespace = /^\s+/.exec(text)?.[0] ?? "";
     const textWithoutLeadingWhitespace = text.slice(leadingWhitespace.length);
     const trailingWhitespace = /\s+$/.exec(textWithoutLeadingWhitespace)?.[0] ?? "";
@@ -2438,10 +2463,11 @@ const UserMessageBody = memo(function UserMessageBody(props: {
     );
 
     return (
-      <Fragment key={key}>
+      <Fragment key={`${sourceStart}:${sourceEnd}`}>
         {leadingWhitespace ? <span aria-hidden="true">{leadingWhitespace}</span> : null}
         {content ? (
           <ChatMarkdown
+            surfaceId={`${props.surfaceId}:segment:${sourceStart}:${sourceEnd}`}
             text={content}
             cwd={props.markdownCwd}
             threadRef={ctx.threadRef ?? undefined}
@@ -2458,14 +2484,19 @@ const UserMessageBody = memo(function UserMessageBody(props: {
 
   const reviewCommentSegments = parseReviewCommentMessageSegments(props.text);
   if (reviewCommentSegments.some((segment) => segment.kind === "review-comment")) {
+    const terminalContextPrefix = renderTerminalContextInlinePrefix(props.terminalContexts);
     return (
       <div className="space-y-3 text-message-foreground text-sm leading-relaxed">
+        {terminalContextPrefix.length > 0 ? (
+          <div className="whitespace-pre-wrap wrap-break-word">{terminalContextPrefix}</div>
+        ) : null}
         {reviewCommentSegments.map((segment) =>
           segment.kind === "text" ? (
             segment.text.trim().length > 0 ? (
               <div key={segment.id} className="wrap-break-word">
                 <ChatMarkdown
-                  text={segment.text.trim()}
+                  surfaceId={`${props.surfaceId}:segment:${encodeURIComponent(segment.id)}`}
+                  text={segment.text}
                   cwd={props.markdownCwd}
                   threadRef={ctx.threadRef ?? undefined}
                   skills={props.skills}
@@ -2476,7 +2507,11 @@ const UserMessageBody = memo(function UserMessageBody(props: {
               </div>
             ) : null
           ) : (
-            <UserMessageReviewCommentCard key={segment.comment.id} comment={segment.comment} />
+            <UserMessageReviewCommentCard
+              key={segment.comment.id}
+              comment={segment.comment}
+              surfaceId={`${props.surfaceId}:review-comment:${encodeURIComponent(segment.comment.id)}`}
+            />
           ),
         )}
       </div>
@@ -2503,10 +2538,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
         }
         if (matchIndex > cursor) {
           inlineNodes.push(
-            renderInlineMarkdownSegment(
-              props.text.slice(cursor, matchIndex),
-              `user-terminal-context-inline-before:${context.header}:${cursor}`,
-            ),
+            renderInlineMarkdownSegment(props.text.slice(cursor, matchIndex), cursor, matchIndex),
           );
         }
         inlineNodes.push(
@@ -2521,10 +2553,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       if (inlineNodes.length > 0) {
         if (cursor < props.text.length) {
           inlineNodes.push(
-            renderInlineMarkdownSegment(
-              props.text.slice(cursor),
-              `user-message-terminal-context-inline-rest:${cursor}`,
-            ),
+            renderInlineMarkdownSegment(props.text.slice(cursor), cursor, props.text.length),
           );
         }
 
@@ -2536,24 +2565,13 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       }
     }
 
-    for (const context of props.terminalContexts) {
-      inlineNodes.push(
-        <UserMessageTerminalContextInlineLabel
-          key={`user-terminal-context-inline:${context.header}`}
-          context={context}
-        />,
-      );
-      inlineNodes.push(
-        <span key={`user-terminal-context-inline-space:${context.header}`} aria-hidden="true">
-          {" "}
-        </span>,
-      );
-    }
+    inlineNodes.push(...renderTerminalContextInlinePrefix(props.terminalContexts));
 
     if (props.text.length > 0) {
       inlineNodes.push(
         <ChatMarkdown
           key="user-message-terminal-context-inline-text"
+          surfaceId={`${props.surfaceId}:body`}
           text={props.text}
           cwd={props.markdownCwd}
           threadRef={ctx.threadRef ?? undefined}
@@ -2580,6 +2598,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
 
   return (
     <ChatMarkdown
+      surfaceId={`${props.surfaceId}:body`}
       text={props.text}
       cwd={props.markdownCwd}
       threadRef={ctx.threadRef ?? undefined}
@@ -2591,7 +2610,13 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   );
 });
 
-function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentContext }) {
+function UserMessageReviewCommentCard({
+  comment,
+  surfaceId,
+}: {
+  comment: ReviewCommentContext;
+  surfaceId: string;
+}) {
   const ctx = use(TimelineRowCtx);
   const fenceLanguage = comment.fenceLanguage ?? "diff";
   const renderablePatch = getRenderablePatch(
@@ -2616,6 +2641,7 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
       )}
       {fenceLanguage !== "diff" && comment.diff.trim().length > 0 && (
         <ChatMarkdown
+          surfaceId={`${surfaceId}:fence`}
           text={formatReviewCommentFence(fenceLanguage, comment.diff)}
           cwd={ctx.markdownCwd}
           threadRef={ctx.threadRef ?? undefined}

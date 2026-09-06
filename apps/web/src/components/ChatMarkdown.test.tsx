@@ -8,6 +8,8 @@ import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { Button } from "./ui/button";
 import { setMarkdownTaskChecked } from "./files/filePreviewMode";
 
+const mermaidDiagramBlockRender = vi.hoisted(() => vi.fn());
+
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
 vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
 vi.mock("../hooks/useSettings", async (importOriginal) => {
@@ -56,6 +58,21 @@ vi.mock("~/lib/openPullRequestLink", () => ({
   parseChangeRequestUrl: () => null,
   useOpenChangeRequestLink: () => vi.fn(),
 }));
+vi.mock("../features/mermaid/MermaidDiagramBlock", () => ({
+  isMermaidFenceLanguage: (language: string) => ["mermaid", "mmd"].includes(language.toLowerCase()),
+  MermaidDiagramBlock: (props: {
+    readonly surfaceId: string;
+    readonly sourceStart: number | "unknown";
+    readonly sourceEnd: number | "unknown";
+    readonly code: string;
+    readonly fallback: ReactNode;
+    readonly theme: "light" | "dark";
+    readonly isStreaming: boolean;
+  }) => {
+    mermaidDiagramBlockRender(props);
+    return <div data-mermaid-host>{props.fallback}</div>;
+  },
+}));
 
 import ChatMarkdown, {
   canUseMarkdownFileShellActions,
@@ -71,6 +88,106 @@ function codeButton(renderer: ReactTestRenderer, label: string) {
   if (!button) throw new Error(`Missing code button: ${label}`);
   return button.props as ComponentProps<typeof Button>;
 }
+
+describe("ChatMarkdown Mermaid fence seam", () => {
+  it.each(["mermaid", "mmd"])(
+    "routes a completed %s fence with semantic identity, source range, and exact code fallback",
+    async (language) => {
+      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+      mermaidDiagramBlockRender.mockClear();
+      const text = `Before\n\n\`\`\`${language}\ngraph TD; A --> B\n\`\`\`\n\nAfter`;
+      let renderer: ReactTestRenderer | undefined;
+
+      try {
+        await act(async () => {
+          renderer = create(
+            <ChatMarkdown surfaceId="message:one" cwd="/workspace/project" text={text} />,
+          );
+        });
+
+        expect(mermaidDiagramBlockRender).toHaveBeenCalledOnce();
+        expect(mermaidDiagramBlockRender).toHaveBeenCalledWith(
+          expect.objectContaining({
+            surfaceId: "message:one",
+            sourceStart: text.indexOf("```"),
+            sourceEnd: text.lastIndexOf("```") + 3,
+            code: "graph TD; A --> B\n",
+            theme: "dark",
+            isStreaming: false,
+          }),
+        );
+        expect(renderer?.root.findByProps({ "data-mermaid-host": true })).toBeDefined();
+        expect(renderer?.root.findByProps({ "data-language": language })).toBeDefined();
+        expect(codeButton(renderer!, "Copy code")).toBeDefined();
+      } finally {
+        await act(async () => renderer?.unmount());
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
+  it("keeps non-Mermaid fences on the existing code block path", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    mermaidDiagramBlockRender.mockClear();
+    let renderer: ReactTestRenderer | undefined;
+
+    try {
+      await act(async () => {
+        renderer = create(
+          <ChatMarkdown cwd="/workspace/project" text={"```text\nunchanged\n```"} isStreaming />,
+        );
+      });
+
+      expect(mermaidDiagramBlockRender).not.toHaveBeenCalled();
+      expect(renderer?.root.findByProps({ "data-language": "text" })).toBeDefined();
+      expect(codeButton(renderer!, "Copy code")).toBeDefined();
+    } finally {
+      await act(async () => renderer?.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("passes streaming state and retains the generated surface identity across updates", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    mermaidDiagramBlockRender.mockClear();
+    let renderer: ReactTestRenderer | undefined;
+
+    try {
+      await act(async () => {
+        renderer = create(
+          <ChatMarkdown cwd="/workspace/project" text={"```mermaid\ngraph TD; A"} isStreaming />,
+        );
+      });
+      const first = mermaidDiagramBlockRender.mock.calls.at(-1)?.[0];
+      expect(first).toEqual(
+        expect.objectContaining({
+          surfaceId: expect.stringMatching(/^chat-markdown:/),
+          isStreaming: true,
+        }),
+      );
+
+      await act(async () => {
+        renderer?.update(
+          <ChatMarkdown
+            cwd="/workspace/project"
+            text={"```mermaid\ngraph TD; A --> B\n```"}
+            isStreaming={false}
+          />,
+        );
+      });
+      const second = mermaidDiagramBlockRender.mock.calls.at(-1)?.[0];
+      expect(second).toEqual(
+        expect.objectContaining({
+          surfaceId: first.surfaceId,
+          isStreaming: false,
+        }),
+      );
+    } finally {
+      await act(async () => renderer?.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe("ChatMarkdown favicon privacy", () => {
   it("suppresses private link images while preserving public links across updates", async () => {

@@ -1,3 +1,5 @@
+import { composeChatPrompt } from "../../fork/chatPromptContext";
+import { buildFileReviewComment } from "../../reviewCommentContext";
 import { CheckpointRef, EnvironmentId, MessageId, TurnId } from "@t3tools/contracts";
 import { codexFeedbackMessage } from "@t3tools/client-runtime/state/threads";
 import { act, createRef, useLayoutEffect, type ReactNode, type Ref } from "react";
@@ -1601,5 +1603,68 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("lucide-circle-alert");
     expect(markup).toContain("text-destructive");
+  });
+});
+
+describe("retained context display through the real timeline", () => {
+  it("renders mixed context chips and upstream review without leaking generated context blocks", () => {
+    const text = composeChatPrompt({
+      prompt: "  Preserve this prompt\n\n ",
+      terminalContexts: [
+        {
+          terminalId: "synthetic",
+          terminalLabel: "Synthetic terminal",
+          lineStart: 1,
+          lineEnd: 1,
+          text: "ready",
+        },
+      ],
+      elementContexts: [
+        {
+          pageUrl: "https://example.test",
+          pageTitle: "Synthetic",
+          tagName: "button",
+          selector: "#save",
+          htmlPreview: "<button>Save</button>",
+          componentName: null,
+          source: null,
+          styles: "",
+        },
+      ],
+      previewAnnotations: [
+        {
+          id: "synthetic-preview",
+          pageUrl: "https://example.test",
+          pageTitle: "Synthetic preview",
+          comment: "Adjust spacing",
+          elements: [],
+          regions: [],
+          strokes: [],
+          styleChanges: [],
+          screenshot: null,
+          createdAt: MESSAGE_CREATED_AT,
+        },
+      ],
+      reviewComments: [
+        buildFileReviewComment({
+          id: "synthetic-review",
+          filePath: "src/example.ts",
+          startLine: 1,
+          endLine: 1,
+          text: "Retain review",
+          contents: "export const value = 1;",
+        }),
+      ],
+    });
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} timelineEntries={[buildUserTimelineEntry(text)]} />,
+    );
+    expect(markup).toContain("Preserve this prompt");
+    expect(markup).toContain("Synthetic terminal");
+    expect(markup).toContain("Adjust spacing");
+    expect(markup).toContain("Retain review");
+    expect(markup).not.toContain("&lt;terminal_context&gt;");
+    expect(markup).not.toContain("&lt;element_context&gt;");
+    expect(markup).not.toContain("&lt;preview_annotation&gt;");
   });
 });

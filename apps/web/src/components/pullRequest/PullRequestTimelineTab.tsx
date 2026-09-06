@@ -39,7 +39,7 @@ import {
   type PullRequestTimelineEvent,
 } from "./pullRequestDetail.logic";
 import { canEditPullRequestComment } from "./pullRequestEditing.logic";
-import { PullRequestMarkdown } from "./PullRequestMarkdown";
+import { PullRequestMarkdown, pullRequestMarkdownSurfaceId } from "./PullRequestMarkdown";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import {
@@ -68,17 +68,20 @@ function TimelineBody({
   cwd,
   environmentId,
   threadRef,
+  surfaceId,
 }: {
   body: string;
   markdown: boolean;
   cwd: string;
   environmentId: EnvironmentId;
   threadRef: ScopedThreadRef | null;
+  surfaceId: string;
 }) {
   return (
     <div className="mt-3">
       {markdown ? (
         <PullRequestMarkdown
+          surfaceId={surfaceId}
           text={body}
           cwd={cwd}
           environmentId={environmentId}
@@ -253,6 +256,12 @@ function ConversationCard({
       {editing && editable !== null ? (
         <div className="px-2 pb-2 pt-3">
           <PullRequestMarkdownEditor
+            surfaceId={pullRequestMarkdownSurfaceId(
+              reactions.environmentId,
+              reactions.reference,
+              "timeline",
+              event.id,
+            )}
             value={editable.body}
             cwd={cwd}
             environmentId={reactions.environmentId}
@@ -266,6 +275,12 @@ function ConversationCard({
       ) : event.body ? (
         <div className="px-2 pb-2">
           <TimelineBody
+            surfaceId={pullRequestMarkdownSurfaceId(
+              reactions.environmentId,
+              reactions.reference,
+              "timeline",
+              event.id,
+            )}
             body={event.body}
             markdown={event.markdown}
             cwd={cwd}
@@ -534,6 +549,12 @@ function ReviewVerdictEvent({
               visible rather than being folded away with the ordinary conversation. */}
           {event.body ? (
             <TimelineBody
+              surfaceId={pullRequestMarkdownSurfaceId(
+                reactions.environmentId,
+                reactions.reference,
+                "timeline",
+                event.id,
+              )}
               body={event.body}
               markdown={event.markdown}
               cwd={cwd}

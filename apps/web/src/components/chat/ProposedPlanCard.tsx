@@ -34,12 +34,14 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 export const ProposedPlanCard = memo(function ProposedPlanCard({
+  surfaceId,
   planMarkdown,
   environmentId,
   threadRef,
   cwd,
   workspaceRoot,
 }: {
+  surfaceId: string;
   planMarkdown: string;
   environmentId: EnvironmentId;
   threadRef?: ScopedThreadRef | undefined;
@@ -173,6 +175,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
         <div className={cn("relative", canCollapse && !expanded && "max-h-104 overflow-hidden")}>
           {canCollapse && !expanded ? (
             <ChatMarkdown
+              surfaceId={`${surfaceId}:collapsed`}
               text={collapsedPreview ?? ""}
               cwd={cwd}
               threadRef={threadRef}
@@ -180,6 +183,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
             />
           ) : (
             <ChatMarkdown
+              surfaceId={`${surfaceId}:expanded`}
               text={displayedPlanMarkdown}
               cwd={cwd}
               threadRef={threadRef}

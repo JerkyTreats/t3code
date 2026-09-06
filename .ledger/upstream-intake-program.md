@@ -490,3 +490,7 @@ If applied, this commit preserves authored prompt bytes when composing and proje
 ### Commit effect — preview controls
 
 If applied, this commit provides focused browser actions and bounded preview tab restoration through the current preview owners.
+
+### Commit effect — host integration
+
+If applied, this commit connects current chat and Markdown hosts to the retained rendering, presentation, context and preview owners.

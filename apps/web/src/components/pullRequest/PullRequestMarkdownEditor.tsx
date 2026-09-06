@@ -17,6 +17,7 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
  * only way to see what a host's markdown will actually become before it is sent.
  */
 export function PullRequestMarkdownEditor({
+  surfaceId,
   value,
   cwd,
   environmentId,
@@ -29,6 +30,7 @@ export function PullRequestMarkdownEditor({
   onSave,
   onCancel,
 }: {
+  readonly surfaceId: string;
   readonly value: string;
   readonly cwd: string;
   readonly environmentId: EnvironmentId;
@@ -84,6 +86,7 @@ export function PullRequestMarkdownEditor({
             <p className="text-xs text-muted-foreground">Nothing to preview.</p>
           ) : (
             <PullRequestMarkdown
+              surfaceId={`${surfaceId}:preview`}
               text={draft}
               cwd={cwd}
               environmentId={environmentId}

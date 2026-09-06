@@ -3,6 +3,15 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { resolvePathLinkTarget } from "~/terminal-links";
 
+export function fileMarkdownSurfaceId(threadRef: ScopedThreadRef, relativePath: string): string {
+  return JSON.stringify([
+    "file-markdown",
+    threadRef.environmentId,
+    threadRef.threadId,
+    relativePath,
+  ]);
+}
+
 export function FileMarkdownPreview(props: {
   readonly cwd: string;
   readonly relativePath: string;
@@ -23,6 +32,7 @@ export function FileMarkdownPreview(props: {
 
   return (
     <ChatMarkdown
+      surfaceId={fileMarkdownSurfaceId(props.threadRef, props.relativePath)}
       text={props.text}
       cwd={props.cwd}
       imageBaseDir={imageBaseDir}

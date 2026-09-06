@@ -1,5 +1,5 @@
 import { ExternalLinkIcon, PaperclipIcon, PlayIcon } from "lucide-react";
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@t3tools/contracts";
 import { createContext, useContext, useMemo } from "react";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 
@@ -10,6 +10,23 @@ import { remarkPullRequestAutolinks, splitPullRequestBody } from "./pullRequestM
 
 export const PullRequestMarkdownContext = createContext<string | null>(null);
 
+export function pullRequestMarkdownSurfaceId(
+  environmentId: EnvironmentId,
+  reference: PullRequestRef,
+  ...segments: ReadonlyArray<string>
+): string {
+  return [
+    "pull-request",
+    environmentId,
+    reference.projectId,
+    reference.repository,
+    String(reference.number),
+    ...segments,
+  ]
+    .map((part) => encodeURIComponent(part))
+    .join(":");
+}
+
 /**
  * A pull request body, rendered with the app's markdown renderer plus a card for each upload
  * embedded in it, which that renderer drops on the floor.
@@ -18,12 +35,14 @@ export const PullRequestMarkdownContext = createContext<string | null>(null);
  * original upload can be opened or downloaded even when its codec cannot play in the client.
  */
 export function PullRequestMarkdown({
+  surfaceId,
   text,
   cwd,
   environmentId,
   threadRef,
   className,
 }: {
+  surfaceId: string;
   text: string;
   cwd: string;
   environmentId: EnvironmentId;
@@ -44,6 +63,7 @@ export function PullRequestMarkdown({
           return (
             <ChatMarkdown
               key={segment.id}
+              surfaceId={`${surfaceId}:segment:${encodeURIComponent(segment.id)}`}
               text={segment.text}
               cwd={cwd}
               threadRef={threadRef ?? undefined}

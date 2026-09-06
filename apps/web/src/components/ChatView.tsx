@@ -1,3 +1,4 @@
+import { composeChatPrompt } from "../fork/chatPromptContext";
 import {
   type AssistantCitation,
   type ApprovalRequestId,
@@ -69,7 +70,7 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useRouter } from "@tanstack/react-router";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
@@ -159,15 +160,23 @@ import {
 } from "../rightPanelStore";
 import {
   isPreviewSupportedInRuntime,
+  previewStateLifetimeIsCurrent,
   setActivePreviewTab,
   useThreadPreviewState,
 } from "../previewStateStore";
 import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
 import { BrowserSettingsReadError } from "../browser/openFileInPreview";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
-import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
-import { subscribePreviewAction } from "./preview/previewActionBus";
+import { dispatchPreviewAction } from "./preview/previewActionBus";
+import { closeFocusedPreviewSurface } from "./preview/closeFocusedPreviewSurface";
+import { reopenClosedPreviewSession } from "./preview/reopenClosedPreviewSession";
+import {
+  confirmPreviewHostClose,
+  closeConfirmedPreviewHostSurface,
+  guardPreviewHostMutation,
+  usePreviewHostActions,
+} from "./preview/previewHostActions";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import {
@@ -241,7 +250,11 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
-import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRoutes";
+import {
+  buildDraftThreadRouteParams,
+  buildThreadRouteParams,
+  resolveThreadRouteTarget,
+} from "../threadRoutes";
 import {
   beginBackgroundDraftSubmissionByRef,
   clearBackgroundDraftSubmissionByRef,
@@ -255,18 +268,12 @@ import {
   type DraftId,
 } from "../composerDraftStore";
 import {
-  appendTerminalContextsToPrompt,
   formatTerminalContextLabel,
   type TerminalContextDraft,
   type TerminalContextSelection,
 } from "../lib/terminalContext";
-import {
-  appendElementContextsToPrompt,
-  type ElementContextDraft,
-  formatElementContextLabel,
-} from "../lib/elementContext";
-import { appendPreviewAnnotationPrompt } from "../lib/previewAnnotation";
-import { appendReviewCommentsToPrompt, type ReviewCommentContext } from "../reviewCommentContext";
+import { type ElementContextDraft, formatElementContextLabel } from "../lib/elementContext";
+import { type ReviewCommentContext } from "../reviewCommentContext";
 import { environmentCatalog } from "../connection/catalog";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
@@ -336,6 +343,7 @@ import {
 } from "./ThreadStatusIndicators";
 import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ComposerSurface } from "./chat/ComposerSurface";
+import { chatComposerPresentation } from "../fork/chatComposerPresentation";
 import {
   hasAvailableCompactionProvider,
   hasDismissedResumeCompaction,
@@ -352,7 +360,6 @@ import {
 } from "./chat/draftHeroTransition";
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
-  agentControlledBrowserCloseConfirmation,
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
@@ -1421,6 +1428,7 @@ export default function ChatView(props: ChatViewProps) {
   });
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
+  const resizePreview = useAtomCommand(previewEnvironment.resize, "preview viewport resize");
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
@@ -1477,6 +1485,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const timestampFormat = settings.timestampFormat;
   const navigate = useNavigate();
+  const router = useRouter();
   const citationLocation = useLocation({
     select: (location) => ({
       href: location.href,
@@ -3717,12 +3726,24 @@ export default function ChatView(props: ChatViewProps) {
     },
     [environmentId, navigate],
   );
+  const isCurrentPreviewHost = useCallback(() => {
+    const current = resolveThreadRouteTarget(router.state.matches.at(-1)?.params ?? {});
+    if (!activeThreadRef || !current) return false;
+    return current.kind === "server"
+      ? scopedThreadKey(current.threadRef) === scopedThreadKey(activeThreadRef)
+      : routeKind === "draft" && current.draftId === draftId;
+  }, [activeThreadRef, draftId, routeKind, router]);
   const createBrowserSurface = useCallback(
     (profileId?: string) => {
-      if (!activeThreadRef) return;
+      if (!activeThreadRef || !isCurrentPreviewHost() || !isPreviewSupportedInRuntime()) return;
+      const sameLifetime = previewStateLifetimeIsCurrent(activeThreadRef);
       void addBrowserSurface({
         threadRef: activeThreadRef,
-        openPreview,
+        openPreview: guardPreviewHostMutation(
+          openPreview,
+          () => sameLifetime() && isCurrentPreviewHost(),
+          sameLifetime,
+        ),
         ...(profileId === undefined ? {} : { profileId }),
       }).then((result) => {
         if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
@@ -3738,7 +3759,7 @@ export default function ChatView(props: ChatViewProps) {
         }
       });
     },
-    [activeThreadRef, openPreview],
+    [activeThreadRef, isCurrentPreviewHost, openPreview],
   );
   const addDiffSurface = useCallback(() => {
     if (!activeThreadRef || !isServerThread || !isGitRepo) return;
@@ -4196,56 +4217,53 @@ export default function ChatView(props: ChatViewProps) {
     );
   }, [canMaximizeRightPanel, routeThreadKey]);
   const cleanupRightPanelSurfaces = useCallback(
-    (surfaces: readonly RightPanelSurface[]) => {
-      if (!activeThreadRef) return;
-      for (const surface of surfaces) {
-        if (surface.kind === "preview" && surface.resourceId) {
-          void closePreviewSession({
-            closePreview,
-            snapshot: activePreviewState.sessions[surface.resourceId] ?? null,
-            tabId: surface.resourceId,
-            threadRef: activeThreadRef,
-          });
-        }
-        if (surface.kind === "terminal") {
-          for (const terminalId of surface.terminalIds) {
-            storeCloseTerminal(activeThreadRef, terminalId);
-            void closeTerminalMutation({
-              environmentId: activeThreadRef.environmentId,
-              input: { threadId: activeThreadRef.threadId, terminalId, deleteHistory: true },
-            });
+    async (surfaces: readonly RightPanelSurface[]): Promise<readonly RightPanelSurface[]> => {
+      if (!activeThreadRef) return [];
+      const closed = await Promise.all(
+        surfaces.map(async (surface) => {
+          if (surface.kind === "preview") {
+            return (await closeConfirmedPreviewHostSurface({
+              threadRef: activeThreadRef,
+              surface,
+              closePreview,
+            }))
+              ? surface
+              : null;
           }
-        }
-      }
+          if (surface.kind === "terminal") {
+            for (const terminalId of surface.terminalIds) {
+              storeCloseTerminal(activeThreadRef, terminalId);
+              void closeTerminalMutation({
+                environmentId: activeThreadRef.environmentId,
+                input: { threadId: activeThreadRef.threadId, terminalId, deleteHistory: true },
+              });
+            }
+          }
+          return surface;
+        }),
+      );
+      return closed.filter((surface): surface is RightPanelSurface => surface !== null);
     },
-    [
-      activeThreadRef,
-      activePreviewState.sessions,
-      closePreview,
-      closeTerminalMutation,
-      storeCloseTerminal,
-    ],
+    [activeThreadRef, closePreview, closeTerminalMutation, storeCloseTerminal],
   );
   const closeAfterAgentBrowserConfirmation = useCallback(
-    (surfaces: readonly RightPanelSurface[], closeSurfaces: () => void) => {
-      const message = agentControlledBrowserCloseConfirmation(
-        surfaces,
-        activePreviewState.desktopByTabId,
-      );
-      if (!message) {
-        closeSurfaces();
-        return;
-      }
+    async (
+      surfaces: readonly RightPanelSurface[],
+      closeSurfaces: () => Promise<boolean>,
+    ): Promise<boolean> => {
+      if (!activeThreadRef) return false;
       const localApi = readLocalApi();
-      if (!localApi) return;
-      void localApi.dialogs.confirm(message, { variant: "destructive" }).then(
-        (confirmed) => {
-          if (confirmed) closeSurfaces();
-        },
-        () => undefined,
-      );
+      return confirmPreviewHostClose({
+        threadRef: activeThreadRef,
+        surfaces,
+        isCurrent: isCurrentPreviewHost,
+        confirm: localApi
+          ? (message) => localApi.dialogs.confirm(message, { variant: "destructive" })
+          : undefined,
+        close: closeSurfaces,
+      });
     },
-    [activePreviewState.desktopByTabId],
+    [activeThreadRef, isCurrentPreviewHost],
   );
   const syncActivePreviewSurface = useCallback(() => {
     if (!activeThreadRef) return;
@@ -4258,29 +4276,26 @@ export default function ChatView(props: ChatViewProps) {
     }
   }, [activeThreadRef]);
   const finishRightPanelSurfaceClose = useCallback(
-    (surfaces: readonly RightPanelSurface[]) => {
-      if (!activeThreadRef) return;
-      cleanupRightPanelSurfaces(surfaces);
+    async (surfaces: readonly RightPanelSurface[]): Promise<boolean> => {
+      if (!activeThreadRef || !isCurrentPreviewHost()) return false;
+      const sameLifetime = previewStateLifetimeIsCurrent(activeThreadRef);
+      const closed = await cleanupRightPanelSurfaces(surfaces);
+      if (!sameLifetime() || !isCurrentPreviewHost()) return false;
       const store = useRightPanelStore.getState();
-      for (const surface of surfaces) {
-        store.closeSurface(activeThreadRef, surface.id);
-      }
+      for (const surface of closed) store.closeSurface(activeThreadRef, surface.id);
       syncActivePreviewSurface();
+      return closed.length === surfaces.length;
     },
-    [activeThreadRef, cleanupRightPanelSurfaces, syncActivePreviewSurface],
+    [activeThreadRef, cleanupRightPanelSurfaces, isCurrentPreviewHost, syncActivePreviewSurface],
   );
   const closeRightPanelSurface = useCallback(
-    (surface: RightPanelSurface) => {
-      if (!activeThreadRef) return;
+    async (surface: RightPanelSurface): Promise<boolean> => {
+      if (!activeThreadRef) return false;
+      const sameLifetime = previewStateLifetimeIsCurrent(activeThreadRef);
       const finishClose = () => finishRightPanelSurfaceClose([surface]);
-      if (surface.kind === "preview") {
-        closeAfterAgentBrowserConfirmation([surface], finishClose);
-        return;
-      }
-      if (surface.kind !== "terminal") {
-        finishClose();
-        return;
-      }
+      if (surface.kind === "preview")
+        return closeAfterAgentBrowserConfirmation([surface], finishClose);
+      if (surface.kind !== "terminal") return finishClose();
       const activeLabel =
         activeTerminalLabelsById.get(surface.activeTerminalId) ??
         getTerminalLabel(surface.activeTerminalId);
@@ -4289,9 +4304,9 @@ export default function ChatView(props: ChatViewProps) {
         .map(
           (terminalId) => activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId),
         );
-      void confirmTerminalClose([activeLabel, ...otherLabels]).then((confirmed) => {
-        if (confirmed) finishClose();
-      });
+      if (!(await confirmTerminalClose([activeLabel, ...otherLabels])) || !sameLifetime())
+        return false;
+      return finishClose();
     },
     [
       activeThreadRef,
@@ -4305,7 +4320,7 @@ export default function ChatView(props: ChatViewProps) {
       if (!activeThreadRef) return;
       const surfaces = rightPanelState.surfaces.filter((entry) => entry.id !== surface.id);
       const finishClose = () => finishRightPanelSurfaceClose(surfaces);
-      closeAfterAgentBrowserConfirmation(surfaces, finishClose);
+      void closeAfterAgentBrowserConfirmation(surfaces, finishClose);
     },
     [
       activeThreadRef,
@@ -4321,7 +4336,7 @@ export default function ChatView(props: ChatViewProps) {
       if (surfaceIndex < 0) return;
       const surfaces = rightPanelState.surfaces.slice(surfaceIndex + 1);
       const finishClose = () => finishRightPanelSurfaceClose(surfaces);
-      closeAfterAgentBrowserConfirmation(surfaces, finishClose);
+      void closeAfterAgentBrowserConfirmation(surfaces, finishClose);
     },
     [
       activeThreadRef,
@@ -4333,7 +4348,7 @@ export default function ChatView(props: ChatViewProps) {
   const closeAllRightPanelSurfaces = useCallback(() => {
     if (!activeThreadRef) return;
     const finishClose = () => finishRightPanelSurfaceClose(rightPanelState.surfaces);
-    closeAfterAgentBrowserConfirmation(rightPanelState.surfaces, finishClose);
+    void closeAfterAgentBrowserConfirmation(rightPanelState.surfaces, finishClose);
   }, [
     activeThreadRef,
     closeAfterAgentBrowserConfirmation,
@@ -4371,13 +4386,41 @@ export default function ChatView(props: ChatViewProps) {
       },
     );
   }, []);
-  useEffect(
-    () =>
-      subscribePreviewAction((action) => {
-        if (action === "toggle-panel") togglePreviewPanel();
-      }),
-    [togglePreviewPanel],
-  );
+  usePreviewHostActions({
+    threadRef: activeThreadRef,
+    isCurrent: isCurrentPreviewHost,
+    toggle: togglePreviewPanel,
+    create: () => createBrowserSurface(),
+    close: async () => {
+      if (!activeThreadRef) return;
+      await closeFocusedPreviewSurface({
+        threadRef: activeThreadRef,
+        closeSurface: closeRightPanelSurface,
+        syncActivePreview: syncActivePreviewSurface,
+        focusUrl: () => dispatchPreviewAction("focus-url"),
+      });
+    },
+    reopen: async () => {
+      if (!activeThreadRef) return;
+      const sameLifetime = previewStateLifetimeIsCurrent(activeThreadRef);
+      const isCurrent = () => sameLifetime() && isCurrentPreviewHost();
+      await reopenClosedPreviewSession({
+        threadRef: activeThreadRef,
+        openPreview: guardPreviewHostMutation(openPreview, isCurrent),
+        resizePreview: guardPreviewHostMutation(resizePreview, sameLifetime),
+        canFocus: isCurrentPreviewHost,
+      });
+    },
+    onError: (error) =>
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Browser action failed",
+          description:
+            error instanceof Error ? error.message : "The browser action could not finish.",
+        }),
+      ),
+  });
   const persistThreadSettingsForNextTurn = useCallback(
     async (input: {
       threadId: ThreadId;
@@ -6384,18 +6427,13 @@ export default function ChatView(props: ChatViewProps) {
     const composerElementContextsSnapshot = [...composerElementContexts];
     const composerPreviewAnnotationsSnapshot = [...composerPreviewAnnotations];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
-    const messageTextWithContexts = appendElementContextsToPrompt(
-      appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
-      composerElementContextsSnapshot,
-    );
-    const messageTextWithPreviewAnnotations = composerPreviewAnnotationsSnapshot.reduce(
-      (text, annotation) => appendPreviewAnnotationPrompt(text, annotation),
-      messageTextWithContexts,
-    );
-    const messageTextForSend = appendReviewCommentsToPrompt(
-      messageTextWithPreviewAnnotations,
-      composerReviewCommentsSnapshot,
-    );
+    const messageTextForSend = composeChatPrompt({
+      prompt: promptForSend,
+      terminalContexts: composerTerminalContextsSnapshot,
+      elementContexts: composerElementContextsSnapshot,
+      previewAnnotations: composerPreviewAnnotationsSnapshot,
+      reviewComments: composerReviewCommentsSnapshot,
+    });
     const outgoingMessageText = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
@@ -7922,8 +7960,11 @@ export default function ChatView(props: ChatViewProps) {
                         : undefined
                     }
                   >
-                    <ComposerSurface.Shell contextStrip={showComposerContextStrip}>
-                      <ComposerSurface.Host>
+                    <ComposerSurface.Shell
+                      contextStrip={showComposerContextStrip}
+                      className={chatComposerPresentation.shellClassName}
+                    >
+                      <ComposerSurface.Host className={chatComposerPresentation.hostClassName}>
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
                             composerRef={composerRef}

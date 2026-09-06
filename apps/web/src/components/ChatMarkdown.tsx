@@ -61,6 +61,7 @@ import React, {
   useCallback,
   memo,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -180,8 +181,13 @@ import {
 } from "../browser/openFileInPreview";
 import { resolveLinkTarget } from "../browser/browserLinkTarget";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
+import {
+  isMermaidFenceLanguage,
+  MermaidDiagramBlock,
+} from "../features/mermaid/MermaidDiagramBlock";
 
 interface ChatMarkdownProps {
+  surfaceId?: string;
   text: string;
   cwd: string | undefined;
   threadRef?: ScopedThreadRef | undefined;
@@ -2126,6 +2132,7 @@ function areMarkdownFileLinkPropsEqual(
 }
 
 function useChatMarkdownState({
+  surfaceId,
   text,
   cwd,
   threadRef,
@@ -2137,6 +2144,8 @@ function useChatMarkdownState({
   imageBaseDir,
   onImageExpand,
 }: ChatMarkdownProps) {
+  const generatedSurfaceId = useId();
+  const resolvedSurfaceId = surfaceId ?? `chat-markdown:${generatedSurfaceId}`;
   const { resolvedTheme } = useTheme();
   const [localMediaPreview, setLocalMediaPreview] = useState<ExpandedImagePreview | null>(null);
   const expandMedia = onImageExpand ?? setLocalMediaPreview;
@@ -2553,6 +2562,7 @@ function useChatMarkdownState({
       openExternalLinkInPreview,
       openMarkdownMedia,
       projects,
+      resolvedSurfaceId,
       resolveThreadPullRequest,
       resolvedTheme,
       serverConfig,
@@ -2579,6 +2589,7 @@ function useChatMarkdownState({
       openExternalLinkInPreview,
       openMarkdownMedia,
       projects,
+      resolvedSurfaceId,
       resolveThreadPullRequest,
       resolvedTheme,
       serverConfig,
@@ -3033,7 +3044,9 @@ const CHAT_MARKDOWN_COMPONENTS = {
     return <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>;
   },
   pre: function MarkdownPre({ node, children, ...props }) {
-    const { resolvedTheme, diffThemeName, isStreaming } = use(ChatMarkdownRendererContext);
+    const { resolvedSurfaceId, resolvedTheme, diffThemeName, isStreaming } = use(
+      ChatMarkdownRendererContext,
+    );
     const codeBlock = extractCodeBlock(children);
     if (!codeBlock) {
       return <pre {...props}>{children}</pre>;
@@ -3041,7 +3054,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
 
     const language = extractFenceLanguage(codeBlock.className);
     const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
-    return (
+    const fallback = (
       <MarkdownCodeBlock
         code={codeBlock.code}
         language={language}
@@ -3062,6 +3075,21 @@ const CHAT_MARKDOWN_COMPONENTS = {
           </Suspense>
         </RenderErrorBoundary>
       </MarkdownCodeBlock>
+    );
+    if (!isMermaidFenceLanguage(language)) {
+      return fallback;
+    }
+
+    return (
+      <MermaidDiagramBlock
+        surfaceId={resolvedSurfaceId}
+        sourceStart={node?.position?.start.offset ?? "unknown"}
+        sourceEnd={node?.position?.end.offset ?? "unknown"}
+        code={codeBlock.code}
+        fallback={fallback}
+        theme={resolvedTheme}
+        isStreaming={isStreaming}
+      />
     );
   },
 } satisfies Components;
