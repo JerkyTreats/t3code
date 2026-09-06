@@ -22,7 +22,7 @@ The [retired-feature record](fork/retired-features.md) preserves the approved re
 
 [F06 exact-origin identity](fork/F06-exact-origin-repository-identity.md) owns origin selection, provider binding and mutation authorization. Current upstream Git and provider hosts call those owners, including startup and background automatic pull. Hosted URL selectors are bound to origin before CLI execution; GitHub qualified branch selectors retain their ordinary meaning.
 
-[F01 desktop release identity](fork/F01-exact-origin-desktop-release.md) owns exact-origin update metadata, verified Linux descriptors and registry-free SSH runtime acquisition. [F20 origin server image](fork/F20-origin-server-image.md) owns private build context, origin image publication rules and operator-managed headless updates. Desktop-controlled updates remain available. Installed artifact and image evidence remain pending.
+[F01 desktop release identity](fork/F01-exact-origin-desktop-release.md) owns exact-origin update metadata, verified Linux descriptors bound to the full build revision and registry-free SSH runtime acquisition. [F20 origin server image](fork/F20-origin-server-image.md) owns private build context, origin image publication rules and operator-managed headless updates. Desktop-controlled updates remain available. Installed artifact and image evidence remain pending.
 
 The web update owner also controls inferred reconnect progress. Only desktop-managed capability may infer a lost update; unsupported runtimes retain deployment guidance, while actual running update progress survives transient descriptor loss.
 

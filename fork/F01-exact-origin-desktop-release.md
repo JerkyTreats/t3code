@@ -77,7 +77,7 @@ Retain upstream T3 Code product identity while binding official desktop updates 
 
 - Build tests reject a non-origin updater repository and multiple final AppImages.
 - Portable identity tests execute repository and release-link decisions through a replacement build and presentation host.
-- Descriptor tests cover identity fields, full commit binding, checksum drift, architecture, and symlink rejection.
+- Descriptor tests cover identity fields, full commit binding, checksum drift, architecture, and symlink rejection. A producer-to-consumer build test resolves the actual full Git revision and writes and verifies the production descriptor.
 - Installer tests prove descriptor verification occurs before managed writes.
 - Artifact smoke verifies extraction identity, exact updater metadata, isolated installation, launcher manifest compatibility, readiness, early exit, and bounded cleanup.
 - Runtime acquisition tests execute the exact missing-runtime failure without the SSH tunnel host and reject every public-registry fallback.

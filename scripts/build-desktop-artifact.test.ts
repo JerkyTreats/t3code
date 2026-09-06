@@ -56,6 +56,7 @@ import {
   resolveWindowsServerAsarIgnoreGlobs,
   resourceMonitorExecutableName,
   resolveGitHubPublishConfig,
+  resolveGitCommitHash,
   resolveMockUpdateServerPort,
   resolveMockUpdateServerUrl,
   resolvePackageManagerUserAgent,
@@ -86,6 +87,11 @@ import {
   WSL_RUNTIME_EXTRA_RESOURCES,
   wslRuntimeArchiveTarTarget,
 } from "./build-desktop-artifact.ts";
+import {
+  writeLinuxDesktopReleaseDescriptor,
+  readAndVerifyLinuxDesktopReleaseDescriptor,
+} from "./linux-desktop-release-artifact.ts";
+
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
@@ -255,6 +261,33 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
 });
 
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+  it.effect("binds the actual Git revision to the production Linux descriptor", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const commitHash = yield* resolveGitCommitHash(path.resolve(import.meta.dirname, ".."));
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-full-revision-" });
+      const artifactPath = path.join(directory, "T3-Code.AppImage");
+      yield* fs.writeFileString(artifactPath, "synthetic artifact");
+      const written = yield* Effect.promise(() =>
+        writeLinuxDesktopReleaseDescriptor({
+          artifactPath,
+          version: "0.0.38",
+          commitHash,
+          architecture: "x64",
+        }),
+      );
+      const descriptor = yield* Effect.promise(() =>
+        readAndVerifyLinuxDesktopReleaseDescriptor({
+          artifactPath,
+          descriptorPath: written.descriptorPath,
+        }),
+      );
+      assert.match(commitHash, /^[0-9a-f]{40}$/u);
+      assert.equal(descriptor.commitHash, commitHash);
+    }),
+  );
+
   it("resolves the dedicated nightly updater channel from nightly versions", () => {
     assert.equal(resolveDesktopUpdateChannel("0.0.17-nightly.20260413.42"), "nightly");
     assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");

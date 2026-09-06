@@ -650,3 +650,15 @@ This records commit closes the S6 source commit gate. Root verifies every non-le
 ### Commit effect — S6 records
 
 If applied, this commit records retained Linux and Thread responsibilities with source preservation evidence and installed verification boundaries.
+
+### S6 clean artifact producer correction
+
+The first clean Code package build at `5016de833e8adc9c68784d26f3caf9b4e5adf66a` creates the AppImage but fails production descriptor validation. The upstream build producer resolves only twelve commit characters while F01 requires all forty. The descriptor correctly fails closed. Root changes the existing producer to resolve and validate the full commit object, preserving presentation shortening in the upstream About owner. A direct test composes actual Git resolution with production descriptor write and verification. The first artifact remains failed history and is not installed. Required gates, bounded fresh review and a new clean build follow this correction.
+
+### S6 full revision correction acceptance
+
+The direct build and descriptor suites pass 77 tests. All four required gates pass again, including 13,837 tests across fifteen workspaces with ten inherited server skips, recorded in `t3code-s6-build-identity-joined-gates.json`. Fresh logical review passes at SHA256 `8d126c54f6947c5f7e2834fcbb25283cf60b1dd0d0c0fb9439f809f9a1818bf9`. Ordered bounded Style Assurance passes at SHA256 `34a06380cddaaf77f02f41a0aff13cf978dc1752895bef6b25be44d72e5cc5bb`. All four correction hashes match. Root accepts this build-input correction for a clean local commit and a new artifact build. No installed acceptance is inferred from source verification.
+
+### Commit effect — full release revision
+
+If applied, this commit binds desktop packages and Linux release descriptors to the same full source revision.
