@@ -474,3 +474,7 @@ If applied, this commit applies Omarchy colors transiently when the active appea
 ### Commit effect — mermaid owner
 
 If applied, this commit provides bounded serialized Mermaid rendering with current theme colors and retryable failures.
+
+### Commit effect — chat presentation
+
+If applied, this commit defines the retained conversation spacing and continuous composer checkout backdrop.
