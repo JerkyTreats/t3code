@@ -327,6 +327,7 @@ export function buildStagingEnvironment(
   return {
     ...environment,
     T3_THREAD_SERVER_URL: config.stagingOrigin,
+    T3_THREAD_CHANNEL: "staging",
     T3_THREAD_WORKING_DIRECTORY: workingDirectory,
     T3_THREAD_PROFILE: stateDirectories.profiles,
     XDG_CONFIG_HOME: stateDirectories.config,

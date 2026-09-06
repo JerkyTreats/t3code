@@ -31,6 +31,7 @@ import {
   installThreadWindowGuards,
   isThreadApplicationTarget,
   resolveThreadApplicationUrl,
+  resolveThreadDesktopName,
   resolveThreadProfileRoot,
   threadWindowOptions,
 } from "./window.ts";
@@ -56,6 +57,9 @@ async function run(): Promise<void> {
   const readyChannel = new ThreadAppReadyChannel();
   let window: BrowserWindow | undefined;
   try {
+    const desktopName = resolveThreadDesktopName(process.env.T3_THREAD_CHANNEL);
+    // Linux identity must be set before Electron readiness, including while stdin is pending.
+    if (hostPlatform === "linux") app.setDesktopName(desktopName);
     const activation = await readThreadAppActivation();
     const applicationUrl = resolveThreadApplicationUrl(process.env.T3_THREAD_SERVER_URL);
     const applicationOrigin = new URL(applicationUrl).origin;

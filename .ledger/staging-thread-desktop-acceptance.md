@@ -69,13 +69,17 @@ Staging state was backed up after stopping only its service. Promoted live sourc
 
 Read-only desktop inventory found a missing server target on the bare installed Thread hotkey path and Code routing on current crash and wallpaper entry paths. Existing wallpaper entry scope differs from the source project requested here. These findings do not establish an installed Thread crash. Staging uses explicit client and adapter namespaces without editing packaged Omarchy or unrelated project code.
 
+The first source delivery is committed and backed up on exact origin. Rebuilt staging Code passes actual channel readiness, authenticated desktop composer, HTTPS and HMR checks on workspace 4. The first harness launches found numeric readiness ticks were incorrectly treated as strings and that Thread needs an explicit Linux desktop name for native Wayland staging identity. The harness stopped and cleaned up its owned processes, preserving Code and both servers. These installed findings are being corrected before rerunning acceptance.
+
 ## Gate evidence
 
-Final product source gates passed after all review corrections: `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test --maxWorkers=4` with 13,919 passing tests and the ten inherited server skips. Both product review lanes are closed. These results establish source acceptance, not installed staging behavior. Final harness integration will run the required gates again.
+Final product source gates passed after all review corrections: `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test --maxWorkers=4` with 13,919 passing tests and the ten inherited server skips. Both product review lanes are closed. These results establish source acceptance, not installed staging behavior. The harness and explicit Thread desktop identity also passed all four gates with 13,936 passing tests. The final browser-history observation correction passed its focused runtime tests and lint. Fresh source review is clear; installed acceptance remains pending the corrected Thread rebuild.
 
 ## Commit effects
 
 If applied, this commit preserves directory scope and independent readiness for staging desktop clients.
+
+If applied, this commit adds a real desktop harness and explicit staging identity for T3 Thread.
 
 ## Review findings
 

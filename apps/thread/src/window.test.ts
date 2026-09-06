@@ -11,11 +11,23 @@ import {
   allocateThreadProfilePath,
   installThreadWindowGuards,
   resolveThreadApplicationUrl,
+  resolveThreadDesktopName,
   resolveThreadProfileRoot,
   threadWindowOptions,
 } from "./window.ts";
 
 describe("independent T3 Thread window", () => {
+  it("selects an explicit Linux desktop identity and rejects unknown channels", () => {
+    expect(resolveThreadDesktopName()).toBe("t3-thread.desktop");
+    expect(resolveThreadDesktopName("production")).toBe("t3-thread.desktop");
+    expect(resolveThreadDesktopName("staging")).toBe("t3-thread-staging.desktop");
+    for (const channel of ["", "unknown", "STAGING", " staging "]) {
+      expect(() => resolveThreadDesktopName(channel)).toThrow(
+        "channel must be production or staging",
+      );
+    }
+  });
+
   it("loads the compact production surface", () => {
     expect(resolveThreadApplicationUrl("https://production.example.test/path?q=1")).toBe(
       "https://production.example.test/?t3-thread-client=1",

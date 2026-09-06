@@ -7,6 +7,12 @@ import type * as Electron from "electron";
 export const THREAD_WINDOW_WIDTH = 410;
 export const THREAD_WINDOW_MIN_WIDTH = 360;
 
+export function resolveThreadDesktopName(channel?: string): string {
+  if (channel === undefined || channel === "production") return "t3-thread.desktop";
+  if (channel === "staging") return "t3-thread-staging.desktop";
+  throw new Error("T3 Thread channel must be production or staging.");
+}
+
 export function resolveThreadProfileRoot(input: {
   readonly appDataPath: string;
   readonly configuredPath?: string;

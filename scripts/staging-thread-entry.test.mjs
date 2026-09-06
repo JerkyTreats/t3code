@@ -359,6 +359,7 @@ describe("staging launch conversion", () => {
     const result = await runFixture(["--config", "/private/config.json"]);
     expect(result.observed.environment).toMatchObject({
       T3_THREAD_SERVER_URL: "https://staging.example.test",
+      T3_THREAD_CHANNEL: "staging",
       T3_THREAD_WORKING_DIRECTORY: "/workspace/user-root",
       T3_THREAD_PROFILE: "/private/state/profiles",
       XDG_CONFIG_HOME: "/private/state/config",

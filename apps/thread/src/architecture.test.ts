@@ -40,9 +40,11 @@ async function launch(input: {
   loadingAtLoadResolution?: boolean;
   storageAvailable?: boolean;
   serverUrl?: string;
+  channel?: string;
 }) {
   vi.resetModules();
   vi.stubEnv("T3_THREAD_SERVER_URL", input.serverUrl ?? origin);
+  vi.stubEnv("T3_THREAD_CHANNEL", input.channel);
   vi.stubEnv("T3_THREAD_PROFILE", NodePath.join(input.root, "profiles"));
   vi.stubGlobal("__dirname", "/synthetic/thread");
   const headersListeners: Array<
@@ -63,6 +65,9 @@ async function launch(input: {
       calls.push(`path:${name}`);
     }),
     setName: vi.fn(),
+    setDesktopName: vi.fn((name: string) => {
+      calls.push(`desktop:${name}`);
+    }),
     enableSandbox: vi.fn(),
     whenReady: vi.fn(async () => {
       calls.push("ready");
@@ -103,6 +108,7 @@ async function launch(input: {
     constructor(readonly options: BrowserWindowConstructorOptions) {
       super();
       windows.push(this);
+      calls.push("window");
     }
     removeMenu = vi.fn();
     setTitle = vi.fn();
@@ -139,6 +145,10 @@ async function launch(input: {
       this.emit("ready-to-show");
     }
   }
+  vi.doMock("node:os", async () => ({
+    ...(await vi.importActual<typeof import("node:os")>("node:os")),
+    platform: () => "linux",
+  }));
   vi.doMock("electron", () => ({
     app,
     BrowserWindow: FakeWindow,
@@ -164,10 +174,12 @@ async function launch(input: {
     const actual = await vi.importActual<typeof import("./activation.ts")>("./activation.ts");
     return {
       ...actual,
-      readThreadAppActivation: () =>
-        actual.readThreadAppActivation(
+      readThreadAppActivation: () => {
+        calls.push("activation");
+        return actual.readThreadAppActivation(
           NodeStream.Readable.from([input.activationText ?? JSON.stringify(activation)]),
-        ),
+        );
+      },
       ThreadAppReadyChannel: class extends actual.ThreadAppReadyChannel {
         constructor() {
           super(3, {
@@ -189,6 +201,38 @@ async function launch(input: {
 }
 
 describe("T3 Thread main composition", () => {
+  it.each([
+    [undefined, "t3-thread.desktop"],
+    ["production", "t3-thread.desktop"],
+    ["staging", "t3-thread-staging.desktop"],
+  ])(
+    "sets channel %s desktop identity before any asynchronous startup",
+    async (channel, desktopName) => {
+      const process = await launch({
+        root: fixtureRoot(),
+        ...(channel === undefined ? {} : { channel }),
+      });
+      expect(process.app.setDesktopName).toHaveBeenCalledExactlyOnceWith(desktopName);
+      const identity = process.calls.indexOf(`desktop:${desktopName}`);
+      expect(identity).toBeGreaterThanOrEqual(0);
+      for (const boundary of ["activation", "ready", "window"]) {
+        expect(identity).toBeLessThan(process.calls.indexOf(boundary));
+      }
+      expect(process.windows).toHaveLength(1);
+    },
+  );
+
+  it("rejects an unknown channel before creating a window or acknowledging readiness", async () => {
+    const process = await launch({ root: fixtureRoot(), channel: "unknown" });
+    expect(process.app.setDesktopName).not.toHaveBeenCalled();
+    expect(process.calls).not.toContain("activation");
+    expect(process.app.whenReady).not.toHaveBeenCalled();
+    expect(process.windows).toHaveLength(0);
+    expect(process.readyBytes).toEqual([]);
+    expect(process.closeReady).toHaveBeenCalledExactlyOnceWith(3);
+    expect(process.app.exit).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
   it("owns one protected window and profile per process and isolates close and crash lifetimes", async () => {
     const root = fixtureRoot();
     const first = await launch({ root });
