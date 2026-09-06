@@ -470,3 +470,7 @@ If applied, this commit exposes validated local theme, screenshot and preview co
 ### Commit effect — omarchy projection
 
 If applied, this commit applies Omarchy colors transiently when the active appearance selects the system theme.
+
+### Commit effect — mermaid owner
+
+If applied, this commit provides bounded serialized Mermaid rendering with current theme colors and retryable failures.

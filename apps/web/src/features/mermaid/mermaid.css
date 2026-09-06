@@ -1,0 +1,46 @@
+.chat-markdown .chat-markdown-mermaid {
+  position: relative;
+  max-width: 100%;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: 0.75rem;
+  background: var(--card);
+}
+
+.chat-markdown .chat-markdown-mermaid-viewport {
+  display: flex;
+  min-height: 8rem;
+  min-width: min(100%, 18rem);
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.chat-markdown .chat-markdown-mermaid-viewport svg {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+}
+
+.chat-markdown .chat-markdown-mermaid-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--background) 72%, transparent);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.chat-markdown .chat-markdown-mermaid-error-copy {
+  margin-bottom: 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--destructive) 28%, var(--border));
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, var(--destructive) 7%, var(--background));
+  padding: 0.65rem 0.75rem;
+  color: var(--foreground);
+  font-size: 0.78rem;
+}
