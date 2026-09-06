@@ -10,6 +10,7 @@ import {
   stripPairingTokenFromUrl as stripPairingTokenUrl,
 } from "../../pairingUrl";
 
+import { submitThreadEnrollmentCredential } from "./threadAuth";
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
 import { runPrimaryHttp } from "../../lib/runtime";
 
@@ -132,6 +133,7 @@ export function takePairingTokenFromUrl(): string | null {
 }
 
 function getDesktopBootstrapCredential(): string | null {
+  if (window.t3ThreadBridge) return null;
   // Both backends share the same bootstrap token (DesktopBackendConfiguration
   // mints one tokenRef and feeds it to both resolvers), so picking the
   // primary entry is fine even when the WSL backend is also registered.
@@ -309,7 +311,20 @@ export async function submitServerAuthCredential(credential: string): Promise<vo
   }
 
   resolvedAuthenticatedGateState = null;
-  await exchangeBootstrapCredential(trimmedCredential);
+  const enrollment = await submitThreadEnrollmentCredential(trimmedCredential);
+  if (enrollment === null) {
+    await exchangeBootstrapCredential(trimmedCredential);
+  } else if (enrollment.status === "rejected") {
+    throw new PrimaryEnvironmentPairingCredentialRejectedError({
+      providedLength: trimmedCredential.length,
+      cause: new Error("Protected Thread enrollment rejected the pairing credential."),
+    });
+  } else if (enrollment.status !== "accepted") {
+    throw PrimaryEnvironmentRequestError.fromCause({
+      operation: "exchange-bootstrap-credential",
+      cause: new Error("Protected Thread enrollment is unavailable."),
+    });
+  }
   await waitForAuthenticatedSessionAfterBootstrap();
   resolvedAuthenticatedGateState = { status: "authenticated" };
   bootstrapPromise = null;

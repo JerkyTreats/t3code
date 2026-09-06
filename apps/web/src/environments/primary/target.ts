@@ -1,6 +1,8 @@
 import { PRIMARY_LOCAL_ENVIRONMENT_ID, type DesktopEnvironmentBootstrap } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
+import { readThreadPrimaryTarget } from "./threadTransport";
+
 const PrimaryEnvironmentTargetSource = Schema.Literals([
   "configured",
   "window-origin",
@@ -143,6 +145,7 @@ export function isLoopbackHostname(hostname: string): boolean {
 
 function resolveHttpRequestBaseUrl(primaryTarget: PrimaryEnvironmentTarget): string {
   const httpBaseUrl = primaryTarget.target.httpBaseUrl;
+  if (readThreadPrimaryTarget()) return httpBaseUrl;
   const configuredDevServerUrl = import.meta.env.VITE_DEV_SERVER_URL?.trim();
   if (!configuredDevServerUrl) {
     return httpBaseUrl;
@@ -289,7 +292,23 @@ export function resolvePrimaryEnvironmentHttpUrl(
   return url.toString();
 }
 
+export function isStandaloneDesktopPrimary(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.desktopBridge !== undefined &&
+    window.location?.origin.startsWith("https://") === true &&
+    window.desktopBridge.getLocalEnvironmentBootstraps().length === 0
+  );
+}
+
+export function hasBridgeBoundPrimaryTarget(): boolean {
+  return readThreadPrimaryTarget() !== null || isStandaloneDesktopPrimary();
+}
+
 export function readPrimaryEnvironmentTarget(): PrimaryEnvironmentTarget {
+  const threadTarget = readThreadPrimaryTarget();
+  if (threadTarget) return { source: "window-origin", target: threadTarget };
+  if (isStandaloneDesktopPrimary()) return resolveWindowOriginPrimaryTarget();
   return (
     resolveDesktopPrimaryTarget() ??
     resolveConfiguredPrimaryTarget() ??

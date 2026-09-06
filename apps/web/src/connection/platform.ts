@@ -43,10 +43,13 @@ import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/unstable/http";
 
 import { APP_VERSION } from "../branding";
+import { makeThreadPrimaryAuth } from "../environments/primary/threadAuth";
 import { readDesktopPrimaryBearerToken } from "../environments/primary/desktopAuth";
 import { primaryEnvironmentHttpLayer } from "../environments/primary/httpLayer";
 import {
   readPrimaryEnvironmentTarget,
+  isStandaloneDesktopPrimary,
+  hasBridgeBoundPrimaryTarget,
   type PrimaryEnvironmentTarget,
 } from "../environments/primary/target";
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
@@ -175,6 +178,24 @@ export const provisionDesktopSshEnvironment = Effect.fn(
   };
 });
 
+export function makePrimaryEnvironmentAuth(): PrimaryEnvironmentAuth["Service"] {
+  return (
+    makeThreadPrimaryAuth() ??
+    PrimaryEnvironmentAuth.of({
+      bearerToken: isStandaloneDesktopPrimary()
+        ? Effect.succeed(Option.none())
+        : Effect.tryPromise({
+            try: readDesktopPrimaryBearerToken,
+            catch: (cause) =>
+              new ConnectionTransientError({
+                reason: "remote-unavailable",
+                detail: `Could not load the desktop primary credential: ${String(cause)}`,
+              }),
+          }).pipe(Effect.map(Option.fromNullishOr)),
+    })
+  );
+}
+
 const capabilitiesLayer = Layer.effectContext(
   Effect.sync(() => {
     const presentation = ClientPresentation.of({
@@ -214,16 +235,7 @@ const capabilitiesLayer = Layer.effectContext(
     const identity = RelayDeviceIdentity.of({
       deviceId: Effect.succeed(Option.none()),
     });
-    const primaryAuth = PrimaryEnvironmentAuth.of({
-      bearerToken: Effect.tryPromise({
-        try: readDesktopPrimaryBearerToken,
-        catch: (cause) =>
-          new ConnectionTransientError({
-            reason: "remote-unavailable",
-            detail: `Could not load the desktop primary credential: ${String(cause)}`,
-          }),
-      }).pipe(Effect.map(Option.fromNullishOr)),
-    });
+    const primaryAuth = makePrimaryEnvironmentAuth();
     const ssh = SshEnvironmentGateway.of({
       provision: Effect.fn("web.connectionPlatform.ssh.provision")(function* (target) {
         const bridge = window.desktopBridge;
@@ -291,7 +303,7 @@ const capabilitiesLayer = Layer.effectContext(
   }),
 );
 
-const loadPrimaryConnectionRegistration = Effect.fn(
+export const loadPrimaryConnectionRegistration = Effect.fn(
   "web.connectionPlatform.loadPrimaryConnectionRegistration",
 )(function* (resolved: PrimaryEnvironmentTarget) {
   const descriptor = yield* fetchRemoteEnvironmentDescriptor({
@@ -461,10 +473,10 @@ export function secondaryRegistrationsToRetainAfterTopologyRead(
   );
 }
 
-const platformConnectionSourceLayer = Layer.effect(
+export const platformConnectionSourceLayer = Layer.effect(
   PlatformConnectionSource,
   Effect.gen(function* () {
-    if (isHostedStaticApp()) {
+    if (isHostedStaticApp() && !hasBridgeBoundPrimaryTarget()) {
       return PlatformConnectionSource.of({
         registrations: Stream.empty,
       });

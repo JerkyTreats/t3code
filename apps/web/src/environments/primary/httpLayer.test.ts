@@ -35,6 +35,49 @@ describe.sequential("primary environment HTTP layer", () => {
     }).pipe(Effect.provide(makePrimaryEnvironmentHttpLayer()));
   });
 
+  it.effect("uses cookies without reading a bearer for standalone Code", () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", {
+      location: new URL("https://standalone.example.test/"),
+      desktopBridge: {
+        getLocalEnvironmentBootstraps: () => [],
+        getLocalEnvironmentBearerToken: () => {
+          throw new Error("standalone has no bearer");
+        },
+      },
+    });
+    return Effect.gen(function* () {
+      yield* HttpClient.get("https://standalone.example.test/api/auth/session");
+      const request = new Request(fetchMock.mock.calls[0]?.[0], fetchMock.mock.calls[0]?.[1]);
+      expect(request.credentials).toBe("include");
+      expect(request.headers.get("authorization")).toBeNull();
+    }).pipe(Effect.provide(makePrimaryEnvironmentHttpLayer()));
+  });
+
+  it.effect("omits cookies and refuses redirects for bridge-selected Thread", () => {
+    const url = "https://thread.example.test/api/auth/session";
+    const response = Object.defineProperty(new Response(null), "url", { value: url });
+    const fetchMock = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("window", {
+      location: new URL("https://thread.example.test/"),
+      t3ThreadBridge: {},
+      desktopBridge: {
+        getLocalEnvironmentBearerToken: () => {
+          throw new Error("Thread renderer has no bearer");
+        },
+      },
+    });
+    return Effect.gen(function* () {
+      yield* HttpClient.get(url);
+      const request = new Request(fetchMock.mock.calls[0]?.[0], fetchMock.mock.calls[0]?.[1]);
+      expect(request.credentials).toBe("omit");
+      expect(request.redirect).toBe("error");
+      expect(request.headers.get("authorization")).toBeNull();
+    }).pipe(Effect.provide(makePrimaryEnvironmentHttpLayer()));
+  });
+
   it.effect("uses bearer auth without cookies for desktop-managed primaries", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);

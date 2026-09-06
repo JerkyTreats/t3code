@@ -61,6 +61,22 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
   return Effect.fn("clientRuntime.connection.broker.primary")(function* (
     target: PrimaryConnectionTarget,
   ) {
+    if (auth.webSocketTicket) {
+      const issued = yield* auth.webSocketTicket({
+        httpBaseUrl: target.httpBaseUrl,
+        wsBaseUrl: target.wsBaseUrl,
+      });
+      const socketUrl = new URL(primarySocketUrl(target, presentation.metadata));
+      socketUrl.searchParams.set("wsTicket", issued.ticket);
+      return {
+        environmentId: target.environmentId,
+        label: target.label,
+        httpBaseUrl: target.httpBaseUrl,
+        socketUrl: socketUrl.href,
+        httpAuthorization: null,
+        target,
+      } satisfies PreparedConnection;
+    }
     const bearerToken = yield* auth.bearerToken;
     if (Option.isNone(bearerToken)) {
       return {

@@ -611,3 +611,7 @@ If applied, this commit runs standalone Linux Code against its isolated HTTPS id
 ### Commit effect — S6 shell
 
 If applied, this commit provides one independent Thread process and profile per launch with protected reusable enrollment.
+
+### Commit effect — S6 transport
+
+If applied, this commit binds hosted client authentication to its admitted origin and obtains fresh Thread connection tickets.

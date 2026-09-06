@@ -1,5 +1,6 @@
 import {
   type AuthClientPresentationMetadata,
+  type AuthWebSocketTicketResult,
   type AuthEnvironmentScope,
   type DesktopSshEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
@@ -53,6 +54,10 @@ export class PrimaryEnvironmentAuth extends Context.Service<
   PrimaryEnvironmentAuth,
   {
     readonly bearerToken: Effect.Effect<Option.Option<string>, ConnectionAttemptError>;
+    readonly webSocketTicket?: (target: {
+      readonly httpBaseUrl: string;
+      readonly wsBaseUrl: string;
+    }) => Effect.Effect<AuthWebSocketTicketResult, ConnectionAttemptError>;
   }
 >()("@t3tools/client-runtime/platform/capabilities/PrimaryEnvironmentAuth") {}
 

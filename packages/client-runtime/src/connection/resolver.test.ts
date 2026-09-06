@@ -2,6 +2,7 @@ import { EnvironmentId, type DesktopSshEnvironmentTarget } from "@t3tools/contra
 import { RelayClientTracer } from "@t3tools/shared/relayTracing";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -68,6 +69,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
   readonly authorizeBearer?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeBearer"];
   readonly authorizeDpop?: RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization["Service"]["authorizeDpop"];
   readonly primaryBearerToken?: string;
+  readonly primaryAuth?: ClientCapabilities.PrimaryEnvironmentAuth["Service"];
   readonly prepareSsh?: ClientCapabilities.SshEnvironmentGateway["Service"]["prepare"];
 }) => {
   const profiles = new Map(
@@ -138,9 +140,10 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
     Layer.succeed(ConnectionCredentialStore.ConnectionCredentialStore, credentialStore),
     Layer.succeed(
       ClientCapabilities.PrimaryEnvironmentAuth,
-      ClientCapabilities.PrimaryEnvironmentAuth.of({
-        bearerToken: Effect.succeed(Option.fromNullishOr(options?.primaryBearerToken)),
-      }),
+      options?.primaryAuth ??
+        ClientCapabilities.PrimaryEnvironmentAuth.of({
+          bearerToken: Effect.succeed(Option.fromNullishOr(options?.primaryBearerToken)),
+        }),
     ),
     Layer.succeed(
       ClientCapabilities.ClientPresentation,
@@ -177,6 +180,66 @@ describe("ConnectionResolver", () => {
         httpAuthorization: null,
         target,
       });
+    }),
+  );
+
+  it.effect("acquires a fresh primary ticket before any bearer work", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ httpBaseUrl: string; wsBaseUrl: string }> = [];
+      const brokerLayer = yield* makeDependencies({
+        primaryAuth: {
+          bearerToken: Effect.die("renderer bearer must not be read"),
+          webSocketTicket: (target) =>
+            Effect.sync(() => {
+              calls.push(target);
+              return {
+                ticket: `ticket+${calls.length}`,
+                expiresAt: DateTime.makeUnsafe("2099-01-01T00:00:00.000Z"),
+              };
+            }),
+        },
+        authorizeBearer: () => Effect.die("bearer broker must not run"),
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const target = new PrimaryConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "Thread",
+        ...ENDPOINT,
+      });
+      for (const ticket of ["ticket+1", "ticket+2"]) {
+        const prepared = yield* broker.prepare(catalogEntry(target));
+        const url = new URL(prepared.socketUrl);
+        expect(url.origin).toBe("wss://environment.example.test");
+        expect(url.pathname).toBe("/ws");
+        expect(url.searchParams.getAll("wsTicket")).toEqual([ticket]);
+        expect(url.searchParams.get("clientSurface")).toBe("web");
+        expect(url.searchParams.get("connectionMethod")).toBe("direct");
+        expect(prepared.httpAuthorization).toBeNull();
+        expect(prepared.target).toBe(target);
+      }
+      expect(calls).toEqual([ENDPOINT, ENDPOINT]);
+    }),
+  );
+
+  it.effect("does not fall back after a primary ticket failure", () =>
+    Effect.gen(function* () {
+      const failure = new ConnectionTransientError({
+        reason: "network",
+        detail: "ticket unavailable",
+      });
+      const brokerLayer = yield* makeDependencies({
+        primaryAuth: {
+          bearerToken: Effect.die("no bearer fallback"),
+          webSocketTicket: () => Effect.fail(failure),
+        },
+      });
+      const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(brokerLayer));
+      const target = new PrimaryConnectionTarget({
+        environmentId: ENVIRONMENT_ID,
+        label: "Thread",
+        ...ENDPOINT,
+      });
+      expect(yield* broker.prepare(catalogEntry(target)).pipe(Effect.flip)).toBe(failure);
     }),
   );
 
