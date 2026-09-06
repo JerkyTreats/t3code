@@ -2,7 +2,7 @@
 
 Date: 2026-09-05
 Status: in progress
-Readiness: S12 accepted in the completed local delivery group; S34 is next
+Readiness: S34 source acceptance passes; local delivery commits are being recorded
 Branch: `reconcile/upstream-intake-20260905`
 
 ## Objective Baseline
@@ -20,11 +20,11 @@ Immutable decision inventory SHA256: `500abe6378142d01537c45c48f829f248bc1a04d9f
 
 ## Source Plan And Authority
 
-The local source plan is `.plans/57-upstream-intake-program.md`; the active group contract is `.plans/59-upstream-intake-persistence-and-authority.md`, carrying the persistence obligations in `.plans/58-upstream-intake-persistence-slice.md`. Those working records remain uncommitted. This ledger owns current execution, acceptance, commit effects and continuation. The immutable inventory remains supporting evidence.
+The local source plan is `.plans/57-upstream-intake-program.md`; the active group contract is `.plans/60-upstream-intake-board-and-chat.md`. The completed S12 contract remains historical execution evidence in `.plans/59-upstream-intake-persistence-and-authority.md`, carrying `.plans/58-upstream-intake-persistence-slice.md`. Those working records remain uncommitted. This ledger owns current execution, acceptance, commit effects and continuation. The immutable inventory remains supporting evidence.
 
 The user instruction to proceed with implementation activates the full local program, the approved scope changes, the selected subagent/worktree orchestration, focused fixes, required verification and delivery commits. Activation of a later covered slice follows its dependency and contract gates without another permission request. Source changes and associated current patch/spec updates are within scope. No policy amendment is inferred.
 
-Push, PR, release, deployment, live-state access and interactive browser or installed-client operations retain their separate authorization boundaries. No upstream mutation is ever authorized.
+Push, PR, release, deployment and access to existing user state retain their separate authorization boundaries. The implementation request authorizes reversible browser and desktop tests using isolated processes, temporary synthetic state and disposable profiles. Such tests do not authorize deployment or access to existing client credentials and history. No upstream mutation is ever authorized.
 
 Workflow owners: [phased program delivery](../.codex/skills/phased-program-delivery/SKILL.md) and [solo vertical delivery](../.codex/skills/solo-vertical-delivery/SKILL.md). Applicable policy is indexed by [AGENTS](../AGENTS.md), including [Commit Policy](../governance/commit_policy.md), [Fork Isolation](../governance/fork_isolation_policy.md) and [Upstream Reconciliation](../governance/upstream_merge_policy.md).
 
@@ -40,8 +40,8 @@ The root owns migration identities, shared contracts, broad hosts, integration a
 | ----- | ----------------------------------------------------------------------------- | ----------------------------------------------- | --------------------- | ------------------------------------------------ |
 | S1    | New persistence opens supported fork history and applies upstream corrections | Pinned baseline and historical fixture contract | Complete              | Root migration owner; two proof lanes integrated |
 | S2    | Exact-origin Git and external Admin authority                                 | S12 joint persistence acceptance                | Complete              | Four bounded implementation lanes                |
-| S3    | Global Board and truthful liaison behavior                                    | S1, S2                                          | Blocked by dependency | Proposed S34 integration group                   |
-| S4    | Normal upstream sends/rendering and complete fork retirement                  | S1, S2                                          | Blocked by dependency | Proposed S34 integration group                   |
+| S3    | Global Board and truthful liaison behavior                                    | S1, S2                                          | In progress           | Active S34 contract and MCP prerequisites        |
+| S4    | Normal upstream sends/rendering and complete fork retirement                  | S1, S2                                          | In progress           | Active S34 retirement and substrate proof        |
 | S5    | Retained visuals and thin adapters                                            | S4                                              | Blocked by dependency | Visual baseline and exact adapters to freeze     |
 | S6    | Independent installed Linux clients and Thread                                | S2, S4, S5                                      | Blocked by dependency | Source and installed compatibility to prove      |
 | S7    | Integrated preservation and rollback evidence                                 | S3 through S6                                   | Blocked by dependency | No acceptance claim                              |
@@ -114,15 +114,15 @@ S12 logical review passes persistence and all 46 selected exact hunk roles. Boun
 
 ## Deferred Findings
 
-None accepted as a test or preservation exception.
+Provider lifecycle state retains one historical session entry per thread until explicit stop, replacement or shutdown. This existing retention is deferred because it does not expand Board authority or waive a preservation or test requirement.
 
 ## Phase Completion Matrix
 
-S1 and S2 are complete as the joined S12 source delivery group in this commit. Governance and exact-origin commits precede this coupled persistence/runtime integration. S34 is now dependency-ready and requires its own frozen activation contract before fan-out. Later product proof, retirement, visuals and installed acceptance remain pending.
+S1 and S2 are complete as the joined S12 source delivery group through `2b691e322`. S34 implementation, full gates, logical review, ordered Style Assurance and root acceptance pass; local commits are being recorded. S5 reference capture and adapter contracts are prepared. Final visuals and installed Linux/Thread acceptance remain pending.
 
 ## Risks And Exceptions
 
-No live data, browser or installed-client evidence has been collected. The visual baseline, later conflict attribution and final Thread/hosted-client matrix remain prerequisites to their respective slices. Existing runtime assumptions are not proof of the new candidate.
+No existing user data has been accessed and no deployed process has been changed. Five synthetic browser reference cases and preliminary candidate comparisons are captured. All 175 conflict rows are attributed; 38 retain later implementation obligations. Final same-candidate visuals and the Thread/hosted-client matrix remain prerequisites to their respective acceptance gates.
 
 Local working plans are excluded from commits under repository instructions. Required durable implementation and Commit Effect evidence is recorded here under F18/F19. This does not create a second active implementation plan.
 
@@ -132,7 +132,7 @@ Pending all required slices. Origin has not been mutated and no deployment has o
 
 ## Deliverable Closeout
 
-Supported fork databases open through the current runtime with their retained history and explicit device authority. Repository operations use exact origin, external device administration stays with the portal, and runtime acquisition follows the managed fork installation boundary. These accepted source outcomes are prerequisites to the complete product; Board, chat retirement, visuals and installed Linux/Thread acceptance remain pending.
+Supported fork databases open through the current runtime with their retained history and explicit device authority. Repository operations use exact origin, external device administration stays with the portal, and runtime acquisition follows the managed fork installation boundary. These accepted source outcomes are prerequisites to the complete product; Board and chat retirement pass source acceptance and await the local commit gate; visuals and installed Linux/Thread acceptance remain pending.
 
 ### S1 prerequisite handoff
 
@@ -291,3 +291,85 @@ Fresh bounded logical verification closes S12-SUP-R1 with 39 focused tests, 240 
 Ordered Style Assurance closes SA1, SA2 and SA4, then identifies two remaining documentation contradictions. Root replaces absent Settings pairing-link creation guidance with the actual installed `t3 pair` path and `--base-dir` selector, and restores Antigravity to the upstream provider checklist. Bounded verification closes SA3-R1 and SA5-R1. Final reviewed documentation candidate SHA256 is `4ff88d128b271d6473a56eb95f20c61580d7a6238c7f461e4baa4a889d68bcef`. Only those two Markdown files differ from the passing runtime candidate. No source gate is invalidated or waived.
 
 Root accepts S12 source persistence, exact-origin identity, external authority and release prerequisites. This is not the final product preservation gate. Installed Linux/image evidence remains in S6; Board, retirement, visuals, Thread and final integrated proof remain in later slices. The local delivery group separates governance, exact-origin source control, and the coupled persistence/runtime authority integration. The joined candidate has the gate evidence; intermediate commits are not complete deployable fork products. Current acceptance metadata and exact Commit Effects are reconciled at the commit gate without changing runtime inputs.
+
+### S34 activation
+
+The S12 group is committed as `ed1f5ebb7`, `bd58fc5f9` and `2b691e322`. Root verifies a clean integration tree and unchanged reviewed runtime bytes after commit hooks. S34 activates from `2b691e322241348d0f6ef0ce5f33b1018a93b667` under the combined Board and ordinary-chat retirement contract. The immutable baseline remains unchanged and 46 exact rows carry prior S12 evidence, with mixed later obligations still explicit.
+
+A standard `gpt-5.6-sol` high worker owns the eleven-file Board schema/RPC prerequisite in `worker/intake-board-contracts`. Root owns the ten-file capability, invocation, attachment and actual credential-registry prerequisite. Both prerequisites must physically exist and pass focused checks before consumer fan-out. Later lanes are strong Board persistence/MCP runtime, standard provider adapters and standard shared client/panel work. Exact disjoint allocations are frozen in the local active contract; no worker may change a shared boundary independently.
+
+The capability contract admits Board only for Codex, Claude, Cursor, Grok and local OpenCode. Antigravity remains preview-only, and future provider kinds fail closed for Board. Browser settings control preview independently. Plan mode removes writes from existing admitted Board credentials; mode changes cannot add Board to preview-only credentials. Public human Board methods never expose trusted agent authorship. F28 remains a Codex prompt contract with first-create/later-reuse cadence and nonblocking failure.
+
+Retirement preparation identifies 33 exclusive origin paths already absent from this upstream rebuild. S34 verifies that absence and current contract removal while proving ordinary send, attachment bootstrap, upstream Markdown, mobile outbox, prompt stash and source/PR review survival. No replacement outbox, rendered comment state or reduced Thread renderer is introduced. Root retains common server, WS, auth and ChatView hosts. No interactive or installed acceptance is claimed by this source slice.
+
+Root's independent capability, interaction and attachment tests pass 14 cases. Credential-registry and invocation tests await the shared Board schema exports before joined execution. The registry now requires explicit requested capabilities, independent endpoints and guarded write-mode updates. Consumer integration is still pending; helper implementation alone is not claimed as restored Board behavior.
+
+The active retirement scan confirms all 33 exclusive paths and four retired feature specs are absent, with no references to the selected exclusive runtime symbols. The historical retirement record now includes the approved F09, F15, F21 and F24 decisions and retains earlier retirements. Its source-side evidence does not replace later integrated send and review tests. The old client's pending or ambiguous outbox work remains a cutover precondition and is not touched.
+
+Three future consumer worktrees are prepared from the accepted S12 commit. Parallel dependency installation exposed a shared Git-config lock in one setup hook; its serial retry passes and all three trees remain clean before prerequisite materialization. Future setup hooks that mutate shared Git configuration run serially. No consumer worker has been launched before the shared prerequisite gate.
+
+The eleven-file contract handoff passes 380 tests and both contract and client-runtime typechecks. Root's ten-file MCP prerequisite passes 25 joined tests, focused transitive compilation and lint. The exact 21-file prerequisite manifest has SHA256 `f2b32085430b891e220436e76ce1b01012a53fc41c54d9ab733d19f6211e8b92`; root verifies every hash and physically materializes it in all three consumer worktrees before launch. The active contract hash is `6810af1d88c71a209991dd8171cb82136360a4e8b52267a3bf9280b2b351f6f5`.
+
+Consumer fan-out now runs with `gpt-6-astra` high on Board runtime and `gpt-5.6-sol` high on provider adapters and Board client state/panel. Root integrates shared server, WS, authorization and chat hosts. Worker source grants remain disjoint, and only root runs whole-repository gates and commits.
+
+Runtime inspection finds a patch-versus-expression gap in the old Board transport: the advertised bounded event API was optional and the WS host consumed the unbounded general stream. The accepted implementation seam makes `subscribeBoardDomainEvents` required. The focused Board subscription owner admits only Board events into a sliding buffer before exposing its acquired stream; upstream lossless event APIs remain intact. Root acquires that stream before reading the initial Board snapshot under the existing authorization wrapper. The runtime lane proves overflow recovery and that unrelated traffic cannot evict the final Board wakeup; root ports actual transport tests to the same owner and updates affected test fixtures. This implements the frozen bounded-subscription requirement without changing public schemas or provider/client contracts.
+
+All three consumer lanes are integrated after root verifies their exact scopes and SHA256 hashes. Runtime contributes 34 changed files from its 35-file grant; `Schemas.ts` remains unchanged because owners consume shared contract schemas. Providers contribute nineteen files and the client twelve. The runtime handoff passes 129 focused tests, the provider handoff 480 joined tests, and the client handoff 93 tests plus both runtime and web typechecks. Root's joined web typecheck passes with actual ChatView integration.
+
+Root registers the four Board RPC handlers and scopes, acquires the bounded event subscription before snapshot, and adds nine synthetic transport tests covering reads, correction, deliberate history, stable revisions, buffered wakeups, slow-subscriber rebasing and catch-up. Standard-client proof checks authorization at effect execution; fixture call construction alone is not a runtime side effect. Five affected test fixtures now expose the required Board subscription API, with the real-engine wrapper forwarding its actual subscription. Production `server.ts` needs no duplicate service registration because the existing provider runtime exports the joined orchestration layer. Full joined verification follows.
+
+### S34 joined gates and logical review
+
+The 100-path S34 candidate is frozen at manifest SHA256 `778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922`. Formatting, lint, typecheck and the complete test gate pass, with 13,269 tests across fourteen workspaces. The server passes 4,131 tests with ten inherited skips. Gate logs use the `t3code-s34-full` stem. All candidate hashes remain unchanged through fresh review.
+
+Three fresh reviewers inspect 80 exact rows: strong runtime review covers 26, standard provider review covers twelve, and strong client/retirement review covers 42. Each independently checks exact baseline keys and current owner/host expression. Runtime finds no independent blocker. Provider finding `S34-PROVIDER-001` shows a Default follow-up can restore the shared credential while an earlier Plan turn remains live. Client finding `CR1` reproduces closing Board exposing an old panel and reopening a sole Board producing an empty panel. Passing test counts do not waive either actual host failure.
+
+Root accepts both findings for bounded correction and preserves every other exact-row result. A strong worker receives a focused Board turn-lifecycle owner and ProviderService integration, plus F25/F28 contract wording. A standard worker receives exactly the right-panel store and its tests. Root physically copies and verifies the same 100-file frozen candidate into the existing isolated provider and client worktrees before dispatch. No public schema, migration or shared prerequisite revision is authorized by these packets. Root retains integration, whole gates, bounded correction review, ordered Style Assurance and the commit gate.
+
+The hunk ledger now records 126 of the immutable 175 rows: 46 accepted S12 rows and 80 S34 reviewed rows whose joined concern acceptance remains pending correction. Mixed later visual and Thread obligations stay explicit. Source-side S5 preparation continues independently; interactive synthetic browser/desktop authorization remains pending and no such client is launched.
+
+Correction ownership is explicit: `s34_fix_provider_lifecycle` runs `gpt-6-astra` high in the provider worktree, and `s34_fix_board_visibility` runs `gpt-5.6-sol` high in the client worktree. The provider correction uses existing lifecycle signals and the unchanged registry setter. Pending and active Plan work holds conservative session-wide denial. Ambiguous send failures and uncorrelated session exits cannot prove that old work stopped, so they retain denial until credential revocation or replacement; stale generation callbacks must not alter replacement credentials. This preserves concurrency without claiming per-turn MCP identity that the protocol does not carry.
+
+Read-only later-slice preparation resolves the desktop-capture versus preview-capture API name, Mermaid fence coverage through upstream ChatMarkdown including file preview, and a residual preview-action equivalence matrix. Root separately records the missing fork-only theme generator dependency and the full whitespace composition path, including a final source-review append that would otherwise trim preserved bytes. A strong read-only Thread preflight traces future process and enrollment ownership. These preparations activate no implementation, installed operation or visual acceptance.
+
+### S34 bounded correction verification
+
+The corrected 103-path candidate has manifest SHA256 `262511b201166d02b48f58850d848f32504427d94227c120becdbc9dbe3cf894`. All four repository gates pass again under the `t3code-s34-corrected` log stem. Bounded review confirms the original overlap and panel-close cases are fixed, but finds two immediate edge cases that still prevent acceptance. A real Codex image read precedes session selection, allowing pending Plan work to cross credential replacement after its denial was reset. The panel migration mistakes the prior writer's inactive Board selection for the new intentionally retained hidden selection and hides an explicitly selected Agents panel.
+
+Root retains both original finding identities for a second bounded correction. The strong provider worker receives the real CodexAdapter and its tests in addition to the prior lifecycle grant; the standard panel worker retains its two-file grant. Both receive the exact physically copied 103-file corrected candidate. Root preserves passing exact-row evidence and requires host-level regressions, full joined gates and bounded rechecks. The reviewer notes per-thread lifecycle state retention as deferred because it does not independently reopen Board authority.
+
+The earlier interactive-test approval request was broader than the applicable authorization boundary. Root corrects that interpretation: isolated reversible synthetic tests are necessary implementation verification already authorized by the user. No response to the pending optional question is treated as approval. Existing user state, deployment and publication remain outside this implementation activity. A standard read-only preparation lane now traces a synthetic full-app visual harness while root prepares S5 owner contracts. Source snapshots remain source evidence; visual acceptance requires actual rendered cases.
+
+The remaining-hunk source audit verifies all 49 previously unrecorded exact keys and both pinned sides. The ledger now records all 175 immutable rows without changing the denominator or granting new acceptance. Eleven newly attributed rows need current exact-role review: provider model/usage/send substrate, generic attachment admission and opening, two external-Admin exclusions, and mixed Markdown substrate. The latter retains explicit S5 Mermaid surface identity obligations. Thirty-eight rows remain assigned to later implementation. Source-level feature labels are corrected where actual expression differs, including launcher activation previously labeled as theme or screenshot work. A fresh bounded supplemental review follows the joined correction gates.
+
+Read-only release inspection identifies clean installed source `74247e2db3c5d5c70e1cec048e5277070e05dc65` through the host launcher's verified release link. Twelve ordinary appearance and theme owner blobs exactly match accepted origin. Root prepares a detached origin reference checkout, empty synthetic state and an isolated browser profile. The application has not yet launched and no existing user state has been accessed. Four future adapter worktrees are prepared from S12 with successful serial frozen-lockfile dependency installation; they remain inactive until S34 acceptance and physical S5 prerequisites.
+
+The provider correction's real host tests extend the same boundary to Grok's queued preparation lock. Root grants its test file only, making nine maximum owned paths; Grok production code remains unchanged. The worker catches and fixes a local cancellation-completion stall before handoff, then proves delayed Codex image preparation and queued Grok work cannot enter replacement authority. Focused and full joined validation remain prerequisites to acceptance.
+
+Root completes the isolated visual reference using the installed built application, synthetic SQL projections and a disposable Chromium profile with loopback-only request routing. A local Codex protocol fixture answers startup, account, skills and model discovery and rejects all other requests; its recorded audit contains zero turn requests. Five inspected captures cover light and dark conversation, code and plan presentation, an empty draft, and editable drafts. Authored whitespace survives reload and no JavaScript errors occur. The reference manifest has SHA256 `0d0494ec5b43290fc9886d27f1fb2a59683ea56d83cd78e7344057ec5fe0713c`. Root reconciles these cases with the user's retained installed-appearance requirement and stops the temporary server after capture. This closes reference preparation, not candidate visual acceptance, Omarchy-specific behavior or compact Thread proof. Existing user state and deployed processes are untouched.
+
+The second corrected candidate passes all four repository gates with 13,294 tests, including 4,151 server tests and ten inherited skips. Its 103-file manifest has SHA256 `384eb8dc2a58d7656a3eaaa42bd352552b79382937d8552a268b2c46e1668b4f`; all hashes survive gates and the isolated client build. Bounded provider review closes `S34-PROVIDER-001` and all twelve provider rows. Fresh supplemental review passes all eleven added exact roles and preserves later obligations. The manifest's inherited convenience delta list was stale; the reviewers compute the correct fourteen changed paths, and the next manifest corrects that metadata without changing source evidence.
+
+Panel review rejects the second correction's version premise: exact origin already writes persistence version 12, so reusing version 12 skips Zustand migration. Root accepts the finding and requires actual persisted-envelope hydration rather than another helper-only fixture. The two-file correction advances to version 13, migrates exact origin version-12 inactive Board selection, and retains version-13 hidden Board close and reopen state. Its exported-store hydration tests and 69 focused panel tests pass. Root integrates the verified hashes after the other frozen reviews finish; full gates and bounded panel recheck follow.
+
+The preliminary built client matches the reference's broad ordinary chat and draft hierarchy. Remaining presentation differences are localized to permission-control placement, checkout strip width, composer corners and timeline top spacing. Upstream generic attachments, draft indication and send semantics remain authoritative; retired custom plan expansion is not replayed. The separate temporary candidate runtime is stopped after capture. This preparation grants no final visual, rate-limit or provider execution acceptance.
+
+### S34 final logical closure
+
+The final 103-path candidate has manifest SHA256 `a9d62a2b60790848c8e9ed59327df1afb2950a3d4de8a20d9a121ea4d77a8f84`. All four repository gates pass with 13,296 tests across fourteen workspaces. The server passes 4,151 tests with ten inherited skips. Bounded panel review closes CR1 and CR1.PERSISTENCE through actual version-12 origin hydration, version-13 roundtrip and close/reopen host checks. All 42 client rows pass, with 69 focused tests and all candidate hashes unchanged. Combined runtime, provider, client and supplemental logical review passes all 91 selected S34 roles. Mixed S5/S6 obligations remain pending. Ordered Style Assurance and local commits follow; no deployment or publication occurs.
+
+### S34 Style Assurance correction
+
+Ordered Style Assurance found four current wording issues: stale active-plan readiness, 68 stale hunk-row blocker notes, overbroad Board admission wording and missing historical provenance in the user guide. Root corrects these status and text fields only. The frozen semantic contract body, runtime source and tests remain unchanged. Original contract SHA256 `6810af1d88c71a209991dd8171cb82136360a4e8b52267a3bf9280b2b351f6f5` remains historical review evidence; current lifecycle metadata has a separately recorded revision. A bounded recheck precedes root acceptance and commits.
+
+### S34 source acceptance and commit gate
+
+Root accepts the joined S34 source group after all four gates, all 91 selected exact-role reviews, bounded provider and panel corrections, and ordered Style Assurance pass. The final style correction changes only twelve remaining provider note sentences. Every runtime and test file retains the passing 13,296-test candidate hash. All 175 immutable rows remain recorded, with 38 later implementation rows and every mixed later obligation retained. The only deferred source observation is historical per-thread provider session entry retention; it grants no test or authority exception. Synthetic reference captures are preparation for S5, not installed or final visual acceptance.
+
+Local delivery uses two focused commits: the historical retirement record and its patch index, then the atomic Board feature spanning shared contracts, runtime, providers and web consumers. Existing queued work is not inspected or migrated by this source delivery. Source and PR review, mobile outbox, prompt stash and upstream Markdown remain intact. Right-panel persistence advances from origin version 12 to version 13; forward hydration preserves the prior visible panel and new hidden Board selection. Use the matching accepted client/server build and preserve the previous browser profile for an intentional downgrade.
+
+### Approved chat retirement record
+
+If applied, this commit records the approved retirement of the fork web outbox, custom Markdown renderer, rendered-document comments and queue shelf.
+
+Compatibility: these retired fork workflows do not return in the reconciled client. Dispose of any old pending web outbox work explicitly in the old client before cutover. The source change neither resends nor removes that work and performs no live cutover. Historical retirement records create no current replay or compatibility obligation.

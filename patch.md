@@ -12,6 +12,8 @@ Upstream is a read-only intake source. Exact origin is the only product reposito
 
 [F18 protected onboarding and workstream ledgers](fork/F18-protected-onboarding-and-workstream-ledgers.md) owns fork-first documentation, clone authorization, privacy and the implementation ledger. [F19 delivery skills and Commit Effects](fork/F19-repository-delivery-skills-and-commit-effects.md) owns the local workflow and commit-effect record. Runtime and client features not indexed below remain under their pending delivery slices.
 
+The [retired-feature record](fork/retired-features.md) preserves the approved retirement decisions as history. It creates no active replay or compatibility obligation. Upstream ordinary sending, Markdown, mobile outbox, prompt stash, and source/PR review remain the intended surviving substrate; integrated S34 acceptance is tracked in the intake ledger.
+
 ## Persistence
 
 [Fork persistence compatibility](fork/persistence-compatibility.md) owns migration lineage selection, retained historical cleanup and upstream continuation identities. Keep `Migrations.ts` mechanical and preserve the single upstream transactional runner. The associated runtime features remain pending until their slices are accepted.
