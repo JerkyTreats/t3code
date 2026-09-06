@@ -21,6 +21,9 @@ import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
 
 import * as SessionAuthorityPolicy from "./SessionAuthorityPolicy.ts";
+import * as WebSocketTicketAdmission from "./WebSocketTicketAdmission.ts";
+import { UnavailableWebSocketTicketError } from "./WebSocketTicketAdmission.ts";
+export { UnavailableWebSocketTicketError } from "./WebSocketTicketAdmission.ts";
 import {
   SessionTokenExpiredError,
   UnknownSessionTokenError,
@@ -185,6 +188,7 @@ export const SessionCredentialInvalidError = Schema.Union([
   MalformedWebSocketTokenError,
   InvalidWebSocketTokenSignatureError,
   InvalidWebSocketTokenPayloadError,
+  UnavailableWebSocketTicketError,
   WebSocketTokenExpiredError,
   UnknownWebSocketSessionError,
   WebSocketSessionExpiredError,
@@ -403,6 +407,7 @@ const WebSocketClaims = Schema.Struct({
   v: Schema.Literal(1),
   kind: Schema.Literal("websocket"),
   sid: AuthSessionId,
+  nonce: Schema.String.check(Schema.isUUID(4)),
   iat: Schema.Number,
   exp: Schema.Number,
 });
@@ -449,6 +454,7 @@ export const make = Effect.gen(function* () {
   const authSessions = yield* AuthSessions.AuthSessionRepository;
   const signingSecret = yield* secretStore.getOrCreateRandom(SIGNING_SECRET_NAME, 32);
   const connectedSessionsRef = yield* Ref.make(new Map<AuthSessionId, number>());
+  const websocketTickets = yield* WebSocketTicketAdmission.make;
   const changesPubSub = yield* PubSub.unbounded<SessionCredentialChange>();
   const cookieInput = {
     mode: serverConfig.mode,
@@ -786,6 +792,9 @@ export const make = Effect.gen(function* () {
       Option.getOrUndefined(row),
       now,
     );
+    const nonce = yield* crypto.randomUUIDv4.pipe(
+      Effect.mapError((cause) => new WebSocketTokenIssueError({ sessionId, cause })),
+    );
     const issuedAt = yield* DateTime.now;
     const expiresAt = DateTime.add(issuedAt, {
       milliseconds: Duration.toMillis(input?.ttl ?? DEFAULT_WEBSOCKET_TOKEN_TTL),
@@ -794,6 +803,7 @@ export const make = Effect.gen(function* () {
       v: 1,
       kind: "websocket",
       sid: sessionId,
+      nonce,
       iat: issuedAt.epochMilliseconds,
       exp: expiresAt.epochMilliseconds,
     };
@@ -812,6 +822,10 @@ export const make = Effect.gen(function* () {
       ),
     );
     const signature = signPayload(encodedPayload, signingSecret);
+    const registeredAt = yield* DateTime.now;
+    yield* websocketTickets
+      .register({ nonce, sessionId, expiresAt: claims.exp }, registeredAt)
+      .pipe(Effect.mapError((cause) => new WebSocketTokenIssueError({ sessionId, cause })));
     return {
       token: `${encodedPayload}.${signature}`,
       expiresAt,
@@ -850,10 +864,21 @@ export const make = Effect.gen(function* () {
           (cause) => new WebSocketTokenVerificationError({ sessionId: claims.sid, cause }),
         ),
       );
+    const admittedAt = yield* DateTime.now;
+    yield* SessionAuthorityPolicy.verifyClaimExpiration(
+      claims.sid,
+      claims.exp,
+      admittedAt,
+      "websocket",
+    );
     const { state, authorityClass } = yield* SessionAuthorityPolicy.verifyWebSocketSession(
       claims.sid,
       Option.getOrUndefined(row),
-      observedAt,
+      admittedAt,
+    );
+    yield* websocketTickets.consume(
+      { nonce: claims.nonce, sessionId: claims.sid, expiresAt: claims.exp },
+      admittedAt,
     );
     return {
       clientId: state.clientId,

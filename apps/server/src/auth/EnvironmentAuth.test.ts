@@ -3,6 +3,7 @@ import { AuthAdministrativeScopes } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -72,6 +73,46 @@ const requestMetadata = {
 };
 
 it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
+  it.effect.each(["bearer", "cookie"] as const)(
+    "rejects websocket ticket replay despite a valid fallback %s credential",
+    (fallback) =>
+      Effect.gen(function* () {
+        const auth = yield* EnvironmentAuth.EnvironmentAuth;
+        const sessions = yield* SessionStore.SessionStore;
+        const issued = yield* sessions.issue({
+          method: fallback === "bearer" ? "bearer-access-token" : "browser-session-cookie",
+        });
+        const headers: Record<string, string> =
+          fallback === "bearer"
+            ? { authorization: `Bearer ${issued.token}` }
+            : { cookie: `${sessions.cookieName}=${issued.token}` };
+        const baseUrl = "http://127.0.0.1:13773/";
+        const fallbackRequest = HttpServerRequest.fromWeb(new Request(baseUrl, { headers }));
+        const session = yield* auth.authenticateHttpRequest(fallbackRequest);
+        const ticket = yield* auth.issueWebSocketTicket(session);
+        const upgrade = HttpServerRequest.fromWeb(
+          new Request(`${baseUrl}?wsTicket=${encodeURIComponent(ticket.ticket)}`, { headers }),
+        );
+        expect((yield* auth.authenticateWebSocketUpgrade(upgrade)).sessionId).toBe(
+          session.sessionId,
+        );
+        expect((yield* auth.authenticateWebSocketUpgrade(upgrade).pipe(Effect.flip))._tag).toBe(
+          "ServerAuthInvalidCredentialError",
+        );
+        expect((yield* auth.authenticateHttpRequest(fallbackRequest)).sessionId).toBe(
+          session.sessionId,
+        );
+        const fresh = yield* auth.issueWebSocketTicket(session);
+        expect(
+          (yield* auth.authenticateWebSocketUpgrade(
+            HttpServerRequest.fromWeb(
+              new Request(`${baseUrl}?wsTicket=${encodeURIComponent(fresh.ticket)}`),
+            ),
+          )).sessionId,
+        ).toBe(session.sessionId);
+      }).pipe(Effect.provide(makeEnvironmentAuthLayer())),
+  );
+
   it.effect("classifies invalid bootstrap credential failures for the HTTP boundary", () =>
     Effect.sync(() => {
       const error = EnvironmentAuth.toBootstrapExchangeError(

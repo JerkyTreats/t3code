@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -17,6 +18,8 @@ import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as AuthSessions from "../persistence/AuthSessions.ts";
 import * as SessionStore from "./SessionStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
+import * as EnvironmentAuth from "./EnvironmentAuth.ts";
+import { base64UrlDecodeUtf8, base64UrlEncode, signPayload } from "./utils.ts";
 
 const makeServerConfigLayer = (overrides?: Partial<ServerConfig.ServerConfig["Service"]>) =>
   Layer.effect(
@@ -82,6 +85,235 @@ const failingSessionLookupCredentialLayer = Layer.effect(
 );
 
 it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
+  it.effect(
+    "rejects signed legacy, unregistered and substituted websocket claims without eviction",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const secrets = yield* ServerSecretStore.ServerSecretStore;
+        const secret = yield* secrets.getOrCreateRandom("server-signing-key", 32);
+        const first = yield* sessions.issue();
+        const second = yield* sessions.issue();
+        const ticket = yield* sessions.issueWebSocketToken(first.sessionId);
+        const claimsCodec = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
+        const claims = yield* Schema.decodeUnknownEffect(claimsCodec)(
+          base64UrlDecodeUtf8(ticket.token.split(".")[0]!),
+        );
+        const legacy = { ...claims };
+        delete legacy.nonce;
+        for (const [modified, errorTag] of [
+          [legacy, "InvalidWebSocketTokenPayloadError"],
+          [
+            { ...claims, nonce: "00000000-0000-4000-8000-000000000000" },
+            "UnavailableWebSocketTicketError",
+          ],
+          [{ ...claims, sid: second.sessionId }, "UnavailableWebSocketTicketError"],
+          [
+            { ...claims, exp: ticket.expiresAt.epochMilliseconds + 1000 },
+            "UnavailableWebSocketTicketError",
+          ],
+        ] as const) {
+          const payload = base64UrlEncode(yield* Schema.encodeEffect(claimsCodec)(modified));
+          const signed = `${payload}.${signPayload(payload, secret)}`;
+          expect((yield* sessions.verifyWebSocketToken(signed).pipe(Effect.flip))._tag).toBe(
+            errorTag,
+          );
+        }
+        expect((yield* sessions.verifyWebSocketToken(ticket.token)).sessionId).toBe(
+          first.sessionId,
+        );
+      }).pipe(
+        Effect.provide(
+          EnvironmentAuth.runtimeLayer.pipe(Layer.provideMerge(makeServerConfigLayer())),
+        ),
+      ),
+  );
+
+  it.effect("issues distinct websocket tickets at the same clock instant", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const session = yield* sessions.issue({ method: "bearer-access-token" });
+      const tickets = yield* Effect.forEach(
+        Array.from({ length: 12 }),
+        () => sessions.issueWebSocketToken(session.sessionId),
+        { concurrency: "unbounded" },
+      );
+      expect(new Set(tickets.map((ticket) => ticket.token)).size).toBe(tickets.length);
+      for (const ticket of tickets) {
+        expect((yield* sessions.verifyWebSocketToken(ticket.token)).sessionId).toBe(
+          session.sessionId,
+        );
+      }
+    }).pipe(Effect.provide(Layer.merge(makeSessionStoreLayer(), TestClock.layer()))),
+  );
+
+  it.effect("admits exactly one concurrent websocket ticket attempt", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const session = yield* sessions.issue();
+      const ticket = yield* sessions.issueWebSocketToken(session.sessionId);
+      const outcomes = yield* Effect.forEach(
+        Array.from({ length: 16 }),
+        () => sessions.verifyWebSocketToken(ticket.token).pipe(Effect.result),
+        { concurrency: "unbounded" },
+      );
+      expect(outcomes.filter((outcome) => outcome._tag === "Success")).toHaveLength(1);
+      for (const outcome of outcomes) {
+        if (outcome._tag === "Failure") {
+          expect(outcome.failure._tag).toBe("UnavailableWebSocketTicketError");
+          expect(SessionStore.isSessionCredentialInvalidError(outcome.failure)).toBe(true);
+        }
+      }
+      const fresh = yield* sessions.issueWebSocketToken(session.sessionId);
+      expect((yield* sessions.verifyWebSocketToken(fresh.token)).sessionId).toBe(session.sessionId);
+    }).pipe(Effect.provide(makeSessionStoreLayer())),
+  );
+
+  it.effect("keeps unrelated tickets available after replay and malformed or forged input", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const session = yield* sessions.issue();
+      const used = yield* sessions.issueWebSocketToken(session.sessionId);
+      const unrelated = yield* sessions.issueWebSocketToken(session.sessionId);
+      yield* sessions.verifyWebSocketToken(used.token);
+      expect((yield* sessions.verifyWebSocketToken(used.token).pipe(Effect.flip))._tag).toBe(
+        "UnavailableWebSocketTicketError",
+      );
+      expect((yield* sessions.verifyWebSocketToken("malformed").pipe(Effect.flip))._tag).toBe(
+        "MalformedWebSocketTokenError",
+      );
+      const [payload] = unrelated.token.split(".");
+      expect(
+        (yield* sessions.verifyWebSocketToken(`${payload}.forged`).pipe(Effect.flip))._tag,
+      ).toBe("InvalidWebSocketTokenSignatureError");
+      expect((yield* sessions.verifyWebSocketToken(unrelated.token)).sessionId).toBe(
+        session.sessionId,
+      );
+      expect((yield* sessions.verify(session.token)).sessionId).toBe(session.sessionId);
+    }).pipe(Effect.provide(makeSessionStoreLayer())),
+  );
+
+  it.effect(
+    "bounds pending websocket tickets without evicting live tickets and reclaims expiry",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const session = yield* sessions.issue();
+        const tickets = yield* Effect.forEach(Array.from({ length: 4096 }), () =>
+          sessions.issueWebSocketToken(session.sessionId),
+        );
+        expect(
+          (yield* sessions.issueWebSocketToken(session.sessionId).pipe(Effect.flip))._tag,
+        ).toBe("WebSocketTokenIssueError");
+        yield* sessions.verifyWebSocketToken(tickets[0]!.token);
+        const replacement = yield* sessions.issueWebSocketToken(session.sessionId, {
+          ttl: Duration.hours(1),
+        });
+        expect(
+          (yield* sessions.issueWebSocketToken(session.sessionId).pipe(Effect.flip))._tag,
+        ).toBe("WebSocketTokenIssueError");
+        yield* TestClock.adjust(Duration.minutes(5));
+        expect(
+          (yield* sessions.verifyWebSocketToken(tickets[1]!.token).pipe(Effect.flip))._tag,
+        ).toBe("WebSocketTokenExpiredError");
+        const fresh = yield* sessions.issueWebSocketToken(session.sessionId);
+        yield* sessions.verifyWebSocketToken(fresh.token);
+        yield* sessions.verifyWebSocketToken(replacement.token);
+      }).pipe(Effect.provide(Layer.merge(makeSessionStoreLayer(), TestClock.layer()))),
+  );
+
+  it.effect(
+    "keeps websocket tickets local to independent stores sharing persistent dependencies",
+    () =>
+      Effect.gen(function* () {
+        const first = yield* SessionStore.SessionStore;
+        const second = yield* SessionStore.make;
+        const session = yield* first.issue({ method: "bearer-access-token" });
+        const firstTicket = yield* first.issueWebSocketToken(session.sessionId);
+        expect((yield* second.verify(session.token)).sessionId).toBe(session.sessionId);
+        expect((yield* second.verifyWebSocketToken(firstTicket.token).pipe(Effect.flip))._tag).toBe(
+          "UnavailableWebSocketTicketError",
+        );
+        const secondTicket = yield* second.issueWebSocketToken(session.sessionId);
+        expect((yield* first.verifyWebSocketToken(secondTicket.token).pipe(Effect.flip))._tag).toBe(
+          "UnavailableWebSocketTicketError",
+        );
+        yield* first.verifyWebSocketToken(firstTicket.token);
+        yield* second.verifyWebSocketToken(secondTicket.token);
+      }).pipe(
+        Effect.provide(
+          EnvironmentAuth.runtimeLayer.pipe(Layer.provideMerge(makeServerConfigLayer())),
+        ),
+      ),
+  );
+
+  it.effect(
+    "rejects pre-restart websocket tickets while the persistent bearer survives reopening",
+    () =>
+      Effect.gen(function* () {
+        const issued = yield* Effect.gen(function* () {
+          const sessions = yield* SessionStore.SessionStore;
+          const session = yield* sessions.issue({ method: "bearer-access-token" });
+          const ticket = yield* sessions.issueWebSocketToken(session.sessionId);
+          return { session, ticket };
+        }).pipe(Effect.provide(EnvironmentAuth.runtimeLayer), Effect.scoped);
+        yield* Effect.gen(function* () {
+          const sessions = yield* SessionStore.SessionStore;
+          expect((yield* sessions.verify(issued.session.token)).sessionId).toBe(
+            issued.session.sessionId,
+          );
+          expect(
+            (yield* sessions.verifyWebSocketToken(issued.ticket.token).pipe(Effect.flip))._tag,
+          ).toBe("UnavailableWebSocketTicketError");
+          const fresh = yield* sessions.issueWebSocketToken(issued.session.sessionId);
+          yield* sessions.verifyWebSocketToken(fresh.token);
+        }).pipe(Effect.provide(EnvironmentAuth.runtimeLayer), Effect.scoped);
+      }).pipe(Effect.provide(makeServerConfigLayer())),
+  );
+
+  it.effect.each(["ticket", "parent"] as const)(
+    "rechecks websocket %s expiration after delayed repository lookup",
+    (expiry) =>
+      Effect.gen(function* () {
+        let delayLookup = false;
+        const repository = Layer.effect(
+          AuthSessions.AuthSessionRepository,
+          Effect.gen(function* () {
+            const original = yield* AuthSessions.AuthSessionRepository;
+            return {
+              ...original,
+              getById: (input: Parameters<typeof original.getById>[0]) =>
+                Effect.gen(function* () {
+                  const row = yield* original.getById(input);
+                  if (delayLookup) yield* TestClock.adjust(Duration.seconds(1));
+                  return row;
+                }),
+            };
+          }),
+        ).pipe(Layer.provide(AuthSessions.layer));
+        const layer = Layer.effect(SessionStore.SessionStore, SessionStore.make).pipe(
+          Layer.provide(repository),
+          Layer.provide(ServerSecretStore.layer),
+          Layer.provide(SqlitePersistenceMemory),
+          Layer.provide(makeServerEnvironmentLayer(EnvironmentId.make("test-environment"))),
+          Layer.provide(makeServerConfigLayer()),
+        );
+        yield* Effect.gen(function* () {
+          const sessions = yield* SessionStore.SessionStore;
+          const session = yield* sessions.issue({
+            ttl: expiry === "parent" ? Duration.seconds(1) : Duration.hours(1),
+          });
+          const ticket = yield* sessions.issueWebSocketToken(session.sessionId, {
+            ttl: expiry === "ticket" ? Duration.seconds(1) : Duration.minutes(5),
+          });
+          delayLookup = true;
+          expect((yield* sessions.verifyWebSocketToken(ticket.token).pipe(Effect.flip))._tag).toBe(
+            expiry === "ticket" ? "WebSocketTokenExpiredError" : "WebSocketSessionExpiredError",
+          );
+        }).pipe(Effect.provide(layer));
+      }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("keys remote cookies by environment identity instead of state directory", () =>
     Effect.gen(function* () {
       const cookieName = (stateDir: string, environmentId: EnvironmentId) =>

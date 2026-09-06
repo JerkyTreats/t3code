@@ -40,6 +40,10 @@ The hosted `threadClientActivation.ts` owner retains one validated launch throug
 
 Focused owner tests execute policy without historical broad hosts. Main composition, preload, coordinator, primary auth and resolver tests exercise current adapter boundaries. Exact immutable conflict roles and fresh review receipts belong to the intake ledger; path names alone provide no preservation credit.
 
+Server ticket admission belongs to `apps/server/src/auth/WebSocketTicketAdmission.ts`, instantiated privately by the existing `SessionStore`. The session adapter signs a fresh random nonce for each ticket and registers it only after issuance succeeds. After signature, current expiry and durable parent-authority checks, one atomic admission consumes the issued nonce. Consumption authorizes at most one connection attempt, even if the subsequent upgrade fails. A rejected ticket never falls back to a reusable bearer or cookie.
+
+Each session-store instance retains at most 4096 pending tickets. Admission operations prune expired entries lazily; capacity exhaustion rejects new issuance without evicting live tickets. Consuming one ticket leaves other tickets for the same session usable. Tickets cannot transfer between runtime instances or survive server restart. The existing protected enrollment credential remains valid and obtains a fresh ticket from the runtime handling the connection. No database migration, persistent ticket table or additional service is introduced.
+
 ## Enrollment And Completion Boundaries
 
 Enrollment is one operating-system-encrypted V1 record per exact HTTPS origin under the Thread application data directory. Linux plain-text fallback is rejected. Main bounds pairing input and token response, rejects redirects, validates expiry on every use and injects the bearer only into exact-origin API requests. It strips prior Authorization headers before selecting a target.

@@ -736,3 +736,17 @@ All four required gates pass, including 13,844 tests across fifteen workspaces a
 ### Commit effect — pairing connection recovery
 
 If applied, this commit resumes Thread’s primary connection after pairing so the launch draft can open without a reload.
+
+### Installed single-use ticket correction
+
+The clean `750c7e0f65b2d171d7cad6c90e91b531ece8fe72` artifact completes actual Thread pairing, its first protected WebSocket handshake, exact draft staging, later enrollment reuse and acknowledged reload without automatic sending. The corrected reconnect observer records a real closed connection, a new successful handshake and distinct issued tickets. Mandatory replay denial fails: the server accepts an already-used ticket. The frozen run 44 handoff has SHA256 `30c10c19e805d773b4c5295169a94ca0a8358446ae99d2fff71f9a74ea6e235b`. This contradicts the written one-use contract and reopens server admission; the fixture assertion remains unchanged.
+
+An independent strong assessment identifies signed claims without a nonce or consumption state. Root assigns a strong implementation agent to the bounded auth owner and regressions while preparing contract updates, artifacts and historical-state verification independently. The existing session store gains a private bounded ticket-admission owner. Issuance registers a fresh signed nonce; current signature, expiry and parent authority precede atomic consumption. No database migration or new service is required. Previously issued live tickets cannot be displaced at capacity, and reusable credentials remain valid after runtime restart. Tickets themselves are runtime-local and require fresh acquisition after restart or a failed admission attempt.
+
+This compatibility correction changes transient WebSocket tickets for every client using the ticket endpoint. It does not change session credentials, desktop IPC, persisted browser state, attachments or the database schema. Fresh focused regressions, all four repository gates, independent boundary review and ordered Style Assurance precede a clean source commit. The corrected server requires a new installed matrix, historical migration/reopen/restore proof and final image runtime proof. The obsolete image build was canceled cleanly with its private cache preserved.
+
+The new semantic regressions produce ten failures against the original source while 27 existing cases pass. Initial corrected focused execution passes 42 tests across three suites. Root then corrects the test credential issuer, Schema codec and shared Effect configuration composition to satisfy static checks and exercise the intended cookie and independent-runtime cases. Fresh boundary review finds no remaining source defect and binds all eight formatted candidate files at manifest SHA256 `9c57d5d8765228e304ffeaeba0db7daa9015d0475fa56a0b4fdcc3a0dd0a0f2a`; its receipt has SHA256 `59804d617eb0982b05392b498b2977341fdd1f718ca67b02a9646a92b2b7ded9`. Formatting, lint and type checking pass. Final test results belong to `ticket-gates.json`. An isolated scratch-directory retry preserves the packaging self-containment guard after the first disk-backed directory exposed unrelated ancestor dependencies. Ordered Style Assurance and the final passing test receipt remain commit prerequisites.
+
+### Commit effect — single-use connection tickets
+
+If applied, this commit permits each server-issued WebSocket ticket to authorize only one connection attempt.
