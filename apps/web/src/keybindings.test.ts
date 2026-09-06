@@ -1,3 +1,4 @@
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { assert, describe, it } from "vite-plus/test";
 
 import {
@@ -983,5 +984,49 @@ describe("plus key parsing", () => {
         platform: "Linux",
       }),
     );
+  });
+});
+
+describe("shared preview command defaults", () => {
+  it("selects preview close only with preview focus and preserves terminal and panel close", () => {
+    for (const platform of ["MacIntel", "Linux", "Win32"]) {
+      const key = event({
+        key: "w",
+        metaKey: platform === "MacIntel",
+        ctrlKey: platform !== "MacIntel",
+      });
+      for (const [terminalFocus, previewFocus, expected] of [
+        [false, true, "preview.close"],
+        [false, false, "rightPanel.close"],
+        [true, false, "terminal.close"],
+      ] as const) {
+        assert.strictEqual(
+          resolveShortcutCommand(key, DEFAULT_RESOLVED_KEYBINDINGS, {
+            platform,
+            context: { terminalFocus, previewFocus },
+          }),
+          expected,
+        );
+      }
+    }
+  });
+
+  it("admits new and reopen only while the preview owns focus", () => {
+    for (const shiftKey of [false, true]) {
+      const key = event({ key: "t", ctrlKey: true, shiftKey });
+      assert.strictEqual(
+        resolveShortcutCommand(key, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform: "Linux",
+          context: { terminalFocus: false, previewFocus: true },
+        }),
+        shiftKey ? "preview.reopenClosed" : "preview.new",
+      );
+      assert.isNull(
+        resolveShortcutCommand(key, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform: "Linux",
+          context: { terminalFocus: false, previewFocus: false },
+        }),
+      );
+    }
   });
 });

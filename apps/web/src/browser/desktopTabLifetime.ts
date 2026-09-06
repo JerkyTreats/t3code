@@ -1,3 +1,4 @@
+import type { DesktopPreviewTabDefaults } from "@t3tools/contracts";
 import { previewBridge } from "~/components/preview/previewBridge";
 
 import { browserDefaultTabState, resolveBrowserDefaults } from "./browserDefaults";
@@ -36,7 +37,12 @@ export interface AcquiredDesktopTab {
   readonly release: () => void;
 }
 
-export function acquireDesktopTab(tabId: string): AcquiredDesktopTab {
+export function acquireDesktopTab(
+  tabId: string,
+  restoration?: DesktopPreviewTabDefaults,
+): AcquiredDesktopTab {
+  // Capture values before settings hydration or a queued close can suspend creation.
+  const capturedRestoration = restoration ? { ...restoration } : undefined;
   const current =
     leases.get(tabId) ??
     ({
@@ -45,7 +51,10 @@ export function acquireDesktopTab(tabId: string): AcquiredDesktopTab {
       // Zoom/appearance defaults travel with creation so the guest never
       // paints a frame at 100%/system before the preference is applied.
       ready: enqueueDesktopTabOperation(tabId, async () =>
-        previewBridge?.createTab(tabId, browserDefaultTabState(await resolveBrowserDefaults())),
+        previewBridge?.createTab(tabId, {
+          ...browserDefaultTabState(await resolveBrowserDefaults()),
+          ...capturedRestoration,
+        }),
       ),
     } satisfies DesktopTabLease);
   if (current.closeTimer !== null) window.clearTimeout(current.closeTimer);

@@ -9,6 +9,8 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   applyPreviewServerSnapshot,
+  reconcilePreviewServerSessions,
+  removePreviewThread,
   readThreadPreviewState,
   resetPreviewStateForTests,
 } from "~/previewStateStore";
@@ -76,4 +78,57 @@ describe("closePreviewSession", () => {
     expect(readThreadPreviewState(threadRef).snapshot).toEqual(snapshot);
     expect(readThreadPreviewState(threadRef).sessions).toEqual({ [snapshot.tabId]: snapshot });
   });
+  it("records only successful closes and rolls back thrown failures", async () => {
+    applyPreviewServerSnapshot(threadRef, snapshot);
+    const failure = new Error("disconnected");
+    await expect(
+      closePreviewSession({
+        threadRef,
+        snapshot,
+        tabId: snapshot.tabId,
+        closePreview: async () => {
+          throw failure;
+        },
+      }),
+    ).rejects.toBe(failure);
+    expect(readThreadPreviewState(threadRef).closedTabs).toEqual([]);
+    expect(readThreadPreviewState(threadRef).snapshot).toEqual(snapshot);
+    await closePreviewSession({
+      threadRef,
+      snapshot,
+      tabId: snapshot.tabId,
+      closePreview: async () => AsyncResult.success(undefined),
+    });
+    expect(readThreadPreviewState(threadRef).closedTabs).toMatchObject([
+      { status: "closed", tabId: snapshot.tabId },
+    ]);
+  });
+
+  it.each(["epoch", "thread"] as const)(
+    "does not roll a failed close into a new %s lifetime",
+    async (change) => {
+      applyPreviewServerSnapshot(threadRef, snapshot);
+      let finish!: (value: ReturnType<typeof AsyncResult.failure<void, Error>>) => void;
+      const closing = closePreviewSession({
+        threadRef,
+        snapshot,
+        tabId: snapshot.tabId,
+        closePreview: () =>
+          new Promise<ReturnType<typeof AsyncResult.failure<void, Error>>>((resolve) => {
+            finish = resolve;
+          }),
+      });
+      if (change === "thread") removePreviewThread(threadRef);
+      else
+        reconcilePreviewServerSessions(threadRef, {
+          serverEpoch: "replacement",
+          revision: 1,
+          sessions: [],
+        });
+      finish(AsyncResult.failure(Cause.fail(new Error("late failure"))));
+      await closing;
+      expect(readThreadPreviewState(threadRef).sessions).toEqual({});
+      expect(readThreadPreviewState(threadRef).closedTabs).toEqual([]);
+    },
+  );
 });

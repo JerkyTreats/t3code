@@ -1,3 +1,4 @@
+import { appAtomRegistry } from "./rpc/atomRegistry";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   type EnvironmentId,
@@ -14,15 +15,31 @@ import {
   applyPreviewServerSnapshot,
   beginPreviewSessionClose,
   cancelPreviewSessionClose,
+  commitClosedPreviewTab,
   previewStateAtom,
   readThreadPreviewState,
   reconcilePreviewServerSessions,
   rememberPreviewUrl,
+  removePreviewThread,
   resetPreviewStateForTests,
+  reserveClosedPreviewTab,
+  restoreClosedPreviewTab,
+  rollbackClosedPreviewTab,
   setActivePreviewTab,
+  setPendingPreviewRestoration,
+  previewStateLifetimeIsCurrent,
+  takeClosedPreviewTab,
   updatePreviewServerSnapshot,
 } from "./previewStateStore";
-import { appAtomRegistry } from "./rpc/atomRegistry";
+
+const rememberClosedPreviewTab = (
+  targetRef: Parameters<typeof reserveClosedPreviewTab>[0],
+  snapshot: PreviewSessionSnapshot,
+) => {
+  const reservation = reserveClosedPreviewTab(targetRef, snapshot, null);
+  commitClosedPreviewTab(targetRef, reservation.reservationId);
+  return reservation;
+};
 
 const environmentId = "env-1" as EnvironmentId;
 const ref = scopeThreadRef(environmentId, ThreadId.make("thread-1"));
@@ -331,38 +348,6 @@ describe("previewStateStore (single-tab)", () => {
     expect(state.snapshot?.canGoBack).toBe(false);
   });
 
-  it("does not publish duplicate desktop browser state", () => {
-    const snapshot = makeSnapshot();
-    applyPreviewServerSnapshot(ref, snapshot);
-    const overlay = {
-      hasWebContents: true,
-      canGoBack: true,
-      canGoForward: false,
-      loading: false,
-      zoomFactor: 1,
-      pictureInPicture: false,
-      colorScheme: "system" as const,
-      audioMuted: false,
-      audible: false,
-      controller: "none" as const,
-      favicon: {
-        dataUrl: "data:image/png;base64,AA==",
-        pageUrl: "https://example.com",
-        capturedAt: 1,
-      },
-    };
-    let updateCount = 0;
-    const unsubscribe = appAtomRegistry.subscribe(previewStateAtom(scopedThreadKey(ref)), () => {
-      updateCount += 1;
-    });
-
-    applyPreviewDesktopState(ref, snapshot.tabId, overlay);
-    applyPreviewDesktopState(ref, snapshot.tabId, { ...overlay, favicon: { ...overlay.favicon } });
-    unsubscribe();
-
-    expect(updateCount).toBe(1);
-  });
-
   it("retains multiple tabs and switches active desktop state", () => {
     const first = makeSnapshot();
     const second = { ...makeSnapshot(), tabId: "tab_2", updatedAt: "2026-01-02T00:00:00.000Z" };
@@ -607,5 +592,135 @@ describe("previewStateStore (single-tab)", () => {
     expect(state.recentlySeenUrls[0]).toBe(
       `http://localhost:${5000 + __testing.RECENT_URL_LIMIT + 4}/`,
     );
+  });
+
+  it("keeps a bounded last-closed stack isolated to each thread", () => {
+    for (let index = 0; index < __testing.CLOSED_TAB_LIMIT + 3; index += 1) {
+      rememberClosedPreviewTab(
+        ref,
+        makeSnapshot({
+          tabId: `tab_${index}`,
+          navStatus: {
+            _tag: "Success",
+            url: `http://localhost:${6000 + index}/`,
+            title: `Tab ${index}`,
+          },
+        }),
+      );
+    }
+
+    expect(readThreadPreviewState(ref).closedTabs).toHaveLength(__testing.CLOSED_TAB_LIMIT);
+    expect(readThreadPreviewState(ref).closedTabs[0]).toMatchObject({
+      tabId: `tab_${__testing.CLOSED_TAB_LIMIT + 2}`,
+      url: `http://localhost:${6000 + __testing.CLOSED_TAB_LIMIT + 2}/`,
+      status: "closed",
+    });
+    expect(readThreadPreviewState(otherRef).closedTabs).toEqual([]);
+  });
+
+  it("takes and restores an idle closed tab without inventing a URL", () => {
+    rememberClosedPreviewTab(ref, makeSnapshot({ tabId: "tab_idle", navStatus: { _tag: "Idle" } }));
+
+    const closedTab = takeClosedPreviewTab(ref);
+    expect(closedTab).toMatchObject({ tabId: "tab_idle", url: null, status: "closed" });
+    expect(takeClosedPreviewTab(ref)).toBeNull();
+
+    if (closedTab) restoreClosedPreviewTab(ref, closedTab);
+    expect(readThreadPreviewState(ref).closedTabs[0]).toMatchObject({
+      tabId: "tab_idle",
+      url: null,
+      status: "closed",
+    });
+  });
+
+  it("orders overlapping closes by initiation instead of completion", () => {
+    const first = reserveClosedPreviewTab(ref, makeSnapshot({ tabId: "tab_first" }), null);
+    const second = reserveClosedPreviewTab(ref, makeSnapshot({ tabId: "tab_second" }), null);
+
+    commitClosedPreviewTab(ref, first.reservationId);
+    expect(takeClosedPreviewTab(ref)).toBeNull();
+    commitClosedPreviewTab(ref, second.reservationId);
+
+    expect(takeClosedPreviewTab(ref)?.tabId).toBe("tab_second");
+    expect(takeClosedPreviewTab(ref)?.tabId).toBe("tab_first");
+  });
+
+  it("retains ten successful closes while newer pending reservations roll back", () => {
+    for (let index = 0; index < __testing.CLOSED_TAB_LIMIT; index += 1) {
+      rememberClosedPreviewTab(ref, makeSnapshot({ tabId: `tab_committed_${index}` }));
+    }
+    const pending = reserveClosedPreviewTab(ref, makeSnapshot({ tabId: "tab_pending" }), null);
+
+    rollbackClosedPreviewTab(ref, pending.reservationId);
+
+    expect(readThreadPreviewState(ref).closedTabs).toHaveLength(__testing.CLOSED_TAB_LIMIT);
+    expect(readThreadPreviewState(ref).closedTabs.at(-1)?.tabId).toBe("tab_committed_0");
+  });
+
+  it("removeThread strips the entry", () => {
+    const snapshot = makeSnapshot();
+    applyPreviewServerSnapshot(ref, snapshot);
+    removePreviewThread(ref);
+    const state = readThreadPreviewState(ref);
+    expect(state).toEqual(__testing.EMPTY_THREAD_PREVIEW_STATE);
+  });
+  it("does not publish duplicate desktop browser state", () => {
+    const snapshot = makeSnapshot();
+    applyPreviewServerSnapshot(ref, snapshot);
+    const overlay = {
+      hasWebContents: true,
+      canGoBack: true,
+      canGoForward: false,
+      loading: false,
+      zoomFactor: 1,
+      pictureInPicture: false,
+      colorScheme: "system" as const,
+      audioMuted: false,
+      audible: false,
+      controller: "none" as const,
+      favicon: {
+        dataUrl: "data:image/png;base64,AA==",
+        pageUrl: "https://example.com",
+        capturedAt: 1,
+      },
+    };
+    let updateCount = 0;
+    const unsubscribe = appAtomRegistry.subscribe(previewStateAtom(scopedThreadKey(ref)), () => {
+      updateCount += 1;
+    });
+
+    applyPreviewDesktopState(ref, snapshot.tabId, overlay);
+    applyPreviewDesktopState(ref, snapshot.tabId, { ...overlay, favicon: { ...overlay.favicon } });
+    unsubscribe();
+
+    expect(updateCount).toBe(1);
+  });
+  it("mechanically scopes history and restoration across authoritative epoch changes", () => {
+    const snapshot = makeSnapshot();
+    reconcilePreviewServerSessions(ref, {
+      serverEpoch: "epoch-one",
+      revision: 1,
+      sessions: [snapshot],
+    });
+    const sameLifetime = previewStateLifetimeIsCurrent(ref);
+    rememberClosedPreviewTab(ref, makeSnapshot({ tabId: "closed" }));
+    rememberClosedPreviewTab(otherRef, makeSnapshot({ tabId: "other-closed" }));
+    setPendingPreviewRestoration(ref, snapshot.tabId, { zoomFactor: 1.75, colorScheme: "dark" });
+    reconcilePreviewServerSessions(ref, {
+      serverEpoch: "epoch-one",
+      revision: 2,
+      sessions: [snapshot],
+    });
+    expect(readThreadPreviewState(ref).closedTabs[0]?.tabId).toBe("closed");
+    expect(readThreadPreviewState(ref).pendingRestorations[snapshot.tabId]?.zoomFactor).toBe(1.75);
+    reconcilePreviewServerSessions(ref, {
+      serverEpoch: "epoch-two",
+      revision: 1,
+      sessions: [snapshot],
+    });
+    expect(sameLifetime()).toBe(false);
+    expect(readThreadPreviewState(ref).closedTabs).toEqual([]);
+    expect(readThreadPreviewState(ref).pendingRestorations).toEqual({});
+    expect(readThreadPreviewState(otherRef).closedTabs[0]?.tabId).toBe("other-closed");
   });
 });

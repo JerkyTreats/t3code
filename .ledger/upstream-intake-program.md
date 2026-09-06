@@ -486,3 +486,7 @@ If applied, this commit admits desktop screenshots through the ordinary scoped a
 ### Commit effect — prompt context
 
 If applied, this commit preserves authored prompt bytes when composing and projecting generated context.
+
+### Commit effect — preview controls
+
+If applied, this commit provides focused browser actions and bounded preview tab restoration through the current preview owners.

@@ -1,4 +1,4 @@
-import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
 
@@ -9,9 +9,17 @@ import { useProjects } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
-import { dispatchPreviewAction } from "../components/preview/previewActionBus";
+import {
+  dispatchPreviewAction,
+  previewActionForFocusedCommand,
+} from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import {
+  readFocusedPreviewHost,
+  previewDesktopActionForCurrentHost,
+} from "../components/preview/previewHostActions";
+import { resolveThreadRouteRef } from "../threadRoutes";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { resolveShortcutCommand } from "../keybindings";
@@ -22,7 +30,8 @@ import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 
-function ChatRouteGlobalShortcuts() {
+export function ChatRouteGlobalShortcuts() {
+  const router = useRouter();
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
@@ -126,28 +135,14 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
-      // The remaining preview commands only fire when the panel is the
-      // currently-focused tenant. The `when: previewFocus` rule already
-      // gates this, but defend against the keybinding being misconfigured.
-      if (
-        command === "preview.refresh" ||
-        command === "preview.focusUrl" ||
-        command === "preview.zoomIn" ||
-        command === "preview.zoomOut" ||
-        command === "preview.resetZoom"
-      ) {
+      const currentThreadRef = resolveThreadRouteRef(router.state.matches.at(-1)?.params ?? {});
+      const action = previewActionForFocusedCommand(
+        command,
+        readFocusedPreviewHost(currentThreadRef) !== null,
+      );
+      if (action) {
         event.preventDefault();
         event.stopPropagation();
-        const action =
-          command === "preview.refresh"
-            ? "refresh"
-            : command === "preview.focusUrl"
-              ? "focus-url"
-              : command === "preview.zoomIn"
-                ? "zoom-in"
-                : command === "preview.zoomOut"
-                  ? "zoom-out"
-                  : "reset-zoom";
         dispatchPreviewAction(action);
       }
     };
@@ -169,7 +164,20 @@ function ChatRouteGlobalShortcuts() {
     selectedThreadKeysSize,
     legacySidebarEnabled,
     terminalOpen,
+    router,
   ]);
+
+  useEffect(
+    () =>
+      window.desktopBridge?.onPreviewBrowserAction?.((event) => {
+        if (isCommandPaletteOpen()) return;
+        // Read router state inside the native callback, including before the next React render.
+        const currentThreadRef = resolveThreadRouteRef(router.state.matches.at(-1)?.params ?? {});
+        const action = previewDesktopActionForCurrentHost(event, currentThreadRef);
+        if (action) dispatchPreviewAction(action);
+      }),
+    [router],
+  );
 
   return null;
 }

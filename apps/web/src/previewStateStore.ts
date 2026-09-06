@@ -19,6 +19,21 @@ import { Atom } from "effect/unstable/reactivity";
 
 import { PREVIEW_RECENT_URL_LIMIT } from "./components/preview/previewConstants";
 import { appAtomRegistry } from "./rpc/atomRegistry";
+import {
+  CLOSED_PREVIEW_TAB_LIMIT,
+  EMPTY_PREVIEW_TAB_HISTORY,
+  type ClosedPreviewTab,
+  type PreviewDesktopRestoration,
+  type PreviewTabHistory,
+  reservePreviewTabClose,
+  commitPreviewTabClose,
+  rollbackPreviewTabClose,
+  takePreviewTabToReopen,
+  restorePreviewTabToHistory,
+  setPreviewTabRestoration,
+  clearPreviewTabRestoration,
+  reconcilePreviewTabHistory,
+} from "./fork/previewTabHistory";
 
 export interface DesktopPreviewOverlay {
   hasWebContents: boolean;
@@ -34,7 +49,10 @@ export interface DesktopPreviewOverlay {
   favicon: DesktopPreviewFavicon | null;
 }
 
-export interface ThreadPreviewState {
+export type { ClosedPreviewTab, PreviewDesktopRestoration } from "./fork/previewTabHistory";
+
+export interface ThreadPreviewState extends PreviewTabHistory {
+  readonly lifetime: object;
   snapshot: PreviewSessionSnapshot | null;
   sessions: Record<string, PreviewSessionSnapshot>;
   /** Tabs intentionally closed by this client. Stale list snapshots must not resurrect them. */
@@ -50,6 +68,7 @@ export interface ThreadPreviewState {
 }
 
 const EMPTY_THREAD_PREVIEW_STATE: ThreadPreviewState = Object.freeze({
+  lifetime: {},
   snapshot: null,
   sessions: {},
   suppressedTabIds: new Set<string>(),
@@ -57,6 +76,7 @@ const EMPTY_THREAD_PREVIEW_STATE: ThreadPreviewState = Object.freeze({
   desktopOverlay: null,
   desktopByTabId: {},
   recentlySeenUrls: [] as string[],
+  ...EMPTY_PREVIEW_TAB_HISTORY,
   serverEpoch: null,
   serverRevision: 0,
 });
@@ -152,6 +172,7 @@ const removeSession = (current: ThreadPreviewState, tabId: string): ThreadPrevie
   const snapshot = activeTabId ? (sessions[activeTabId] ?? nextSnapshot) : nextSnapshot;
   return {
     ...current,
+    ...clearPreviewTabRestoration(current, tabId),
     sessions,
     desktopByTabId,
     activeTabId: snapshot?.tabId ?? null,
@@ -171,6 +192,25 @@ export function useActivePreviewSessions(): Record<string, ThreadPreviewState> {
 
 export function readThreadPreviewState(ref: ScopedThreadRef): ThreadPreviewState {
   return appAtomRegistry.get(previewStateAtom(scopedThreadKey(ref)));
+}
+
+/** Async operations may only update the lifetime in which they started. */
+export function previewStateLifetimeIsCurrent(ref: ScopedThreadRef): () => boolean {
+  const lifetime = readThreadPreviewState(ref).lifetime;
+  return () => readThreadPreviewState(ref).lifetime === lifetime;
+}
+
+export function subscribeThreadPreviewState(
+  ref: ScopedThreadRef,
+  listener: (state: ThreadPreviewState, previous: ThreadPreviewState) => void,
+): () => void {
+  const atom = previewStateAtom(scopedThreadKey(ref));
+  let previous = appAtomRegistry.get(atom);
+  return appAtomRegistry.subscribe(atom, (state) => {
+    const prior = previous;
+    previous = state;
+    listener(state, prior);
+  });
 }
 
 export function applyPreviewServerEvent(ref: ScopedThreadRef, event: PreviewEvent): void {
@@ -249,6 +289,7 @@ export function applyPreviewServerSnapshot(
     if (!snapshot) {
       return {
         ...current,
+        ...reconcilePreviewTabHistory(current, new Set(), true),
         snapshot: null,
         sessions: {},
         activeTabId: null,
@@ -342,11 +383,13 @@ export function reconcilePreviewServerSessions(
     );
     return {
       ...current,
+      ...reconcilePreviewTabHistory(current, new Set(Object.keys(sessions)), sameServer),
       sessions,
       suppressedTabIds,
       activeTabId,
       snapshot,
       desktopByTabId,
+      lifetime: sameServer ? current.lifetime : {},
       desktopOverlay: activeTabId ? (desktopByTabId[activeTabId] ?? null) : null,
       recentlySeenUrls,
       serverEpoch: result.serverEpoch,
@@ -385,9 +428,7 @@ export function applyPreviewDesktopState(
   overlay: DesktopPreviewOverlay | null,
 ): void {
   updateThreadPreviewState(ref, (current) => {
-    if (isPreviewStateEqual(current.desktopByTabId[tabId] ?? null, overlay)) {
-      return current;
-    }
+    if (isPreviewStateEqual(current.desktopByTabId[tabId] ?? null, overlay)) return current;
     const desktopByTabId = { ...current.desktopByTabId };
     if (overlay) desktopByTabId[tabId] = overlay;
     else delete desktopByTabId[tabId];
@@ -459,6 +500,70 @@ export function rememberPreviewUrl(ref: ScopedThreadRef, url: string): void {
   }));
 }
 
+export function reserveClosedPreviewTab(
+  ref: ScopedThreadRef,
+  snapshot: PreviewSessionSnapshot,
+  overlay: DesktopPreviewOverlay | null,
+): ClosedPreviewTab {
+  let reservation!: ClosedPreviewTab;
+  updateThreadPreviewState(ref, (current) => {
+    const next = reservePreviewTabClose(current, snapshot, overlay);
+    reservation = next.reservation;
+    return { ...current, ...next.state };
+  });
+  return reservation;
+}
+export function commitClosedPreviewTab(ref: ScopedThreadRef, reservationId: string): void {
+  updateThreadPreviewState(ref, (current) => ({
+    ...current,
+    ...commitPreviewTabClose(current, reservationId),
+  }));
+}
+export function rollbackClosedPreviewTab(ref: ScopedThreadRef, reservationId: string): void {
+  updateThreadPreviewState(ref, (current) => ({
+    ...current,
+    ...rollbackPreviewTabClose(current, reservationId),
+  }));
+}
+export function takeClosedPreviewTab(ref: ScopedThreadRef): ClosedPreviewTab | null {
+  let entry: ClosedPreviewTab | null = null;
+  updateThreadPreviewState(ref, (current) => {
+    const next = takePreviewTabToReopen(current);
+    entry = next.entry;
+    return next.state === current ? current : { ...current, ...next.state };
+  });
+  return entry;
+}
+export function restoreClosedPreviewTab(ref: ScopedThreadRef, entry: ClosedPreviewTab): void {
+  updateThreadPreviewState(ref, (current) => ({
+    ...current,
+    ...restorePreviewTabToHistory(current, entry),
+  }));
+}
+export function setPendingPreviewRestoration(
+  ref: ScopedThreadRef,
+  tabId: string,
+  restoration: PreviewDesktopRestoration,
+): void {
+  updateThreadPreviewState(ref, (current) => ({
+    ...current,
+    ...setPreviewTabRestoration(current, tabId, restoration),
+  }));
+}
+export function clearPendingPreviewRestoration(ref: ScopedThreadRef, tabId: string): void {
+  updateThreadPreviewState(ref, (current) => ({
+    ...current,
+    ...clearPreviewTabRestoration(current, tabId),
+  }));
+}
+
+export function removePreviewThread(ref: ScopedThreadRef): void {
+  const threadKey = scopedThreadKey(ref);
+  appAtomRegistry.set(previewStateAtom(threadKey), { ...EMPTY_THREAD_PREVIEW_STATE, lifetime: {} });
+  syncActivePreviewThread(threadKey, EMPTY_THREAD_PREVIEW_STATE);
+  changedPreviewThreadKeys.delete(threadKey);
+}
+
 export function isPreviewSupportedInRuntime(): boolean {
   if (typeof window === "undefined") return false;
   return Boolean(window.desktopBridge?.preview);
@@ -474,5 +579,6 @@ export function resetPreviewStateForTests(): void {
 
 export const __testing = {
   EMPTY_THREAD_PREVIEW_STATE,
+  CLOSED_TAB_LIMIT: CLOSED_PREVIEW_TAB_LIMIT,
   RECENT_URL_LIMIT: PREVIEW_RECENT_URL_LIMIT,
 };

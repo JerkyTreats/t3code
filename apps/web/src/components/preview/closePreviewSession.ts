@@ -6,7 +6,17 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 
-import { beginPreviewSessionClose, cancelPreviewSessionClose } from "~/previewStateStore";
+import {
+  applyPreviewDesktopState,
+  setPendingPreviewRestoration,
+  readThreadPreviewState,
+  previewStateLifetimeIsCurrent,
+  reserveClosedPreviewTab,
+  commitClosedPreviewTab,
+  rollbackClosedPreviewTab,
+  beginPreviewSessionClose,
+  cancelPreviewSessionClose,
+} from "~/previewStateStore";
 
 interface ClosePreviewSessionInput<E> {
   readonly closePreview: (input: {
@@ -25,13 +35,42 @@ interface ClosePreviewSessionInput<E> {
 export async function closePreviewSession<E>(
   input: ClosePreviewSessionInput<E>,
 ): Promise<AtomCommandResult<void, E>> {
+  const isCurrent = previewStateLifetimeIsCurrent(input.threadRef);
+  const current = readThreadPreviewState(input.threadRef);
+  const snapshot = current.sessions[input.tabId] ?? input.snapshot;
+  const reservation =
+    snapshot && !current.suppressedTabIds.has(input.tabId)
+      ? reserveClosedPreviewTab(
+          input.threadRef,
+          snapshot,
+          current.desktopByTabId[input.tabId] ?? null,
+        )
+      : null;
   beginPreviewSessionClose(input.threadRef, input.tabId);
-  const result = await input.closePreview({
-    environmentId: input.threadRef.environmentId,
-    input: { threadId: input.threadRef.threadId, tabId: input.tabId },
-  });
-  if (result._tag === "Failure") {
-    cancelPreviewSessionClose(input.threadRef, input.snapshot, input.tabId);
+  const rollback = () => {
+    if (!isCurrent()) return;
+    if (reservation) rollbackClosedPreviewTab(input.threadRef, reservation.reservationId);
+    cancelPreviewSessionClose(input.threadRef, snapshot, input.tabId);
+    const overlay = current.desktopByTabId[input.tabId];
+    if (overlay && readThreadPreviewState(input.threadRef).sessions[input.tabId]) {
+      applyPreviewDesktopState(input.threadRef, input.tabId, overlay);
+      setPendingPreviewRestoration(input.threadRef, input.tabId, {
+        zoomFactor: overlay.zoomFactor,
+        colorScheme: overlay.colorScheme,
+      });
+    }
+  };
+  try {
+    const result = await input.closePreview({
+      environmentId: input.threadRef.environmentId,
+      input: { threadId: input.threadRef.threadId, tabId: input.tabId },
+    });
+    if (result._tag === "Failure") rollback();
+    else if (reservation && isCurrent())
+      commitClosedPreviewTab(input.threadRef, reservation.reservationId);
+    return result;
+  } catch (error) {
+    rollback();
+    throw error;
   }
-  return result;
 }
