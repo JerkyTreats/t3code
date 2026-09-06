@@ -60,6 +60,111 @@ afterEach(() => {
 });
 
 describe("Thread client activation coordinator host", () => {
+  it("retains requested scope across auth and opens the resolved project with local workspace options", async () => {
+    const owner = createThreadClientActivationOwner();
+    const scopedActivation = { ...activation, workingDirectory: "/workspace/requested" };
+    owner.admit(scopedActivation);
+    const resolving = deferred<typeof projectRef>();
+    const resolveProject = vi.fn(() => resolving.promise);
+    const openDraft = vi.fn(async () => ({ draftId, threadId }));
+    const inspectDraft = vi.fn((): "available" => "available");
+    const finishOpen = vi.fn();
+    const stageDraft = vi.fn();
+    const props = hostProps({
+      owner,
+      projectRef: null,
+      resolveProject,
+      openDraft,
+      inspectDraft,
+      finishOpen,
+      stageDraft,
+    });
+    let renderer!: ReactTestRenderer;
+    await React.act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(ThreadClientActivationHost, { ...props, shellLive: false }),
+      );
+    });
+    expect(resolveProject).not.toHaveBeenCalled();
+    await React.act(async () => renderer.unmount());
+    await React.act(async () => {
+      renderer = TestRenderer.create(React.createElement(ThreadClientActivationHost, props));
+    });
+    expect(resolveProject).toHaveBeenCalledWith(scopedActivation.workingDirectory);
+    expect(openDraft).not.toHaveBeenCalled();
+    await React.act(async () => resolving.resolve(projectRef));
+    expect(openDraft).toHaveBeenCalledWith(projectRef, {
+      envMode: "local",
+      branch: null,
+      worktreePath: null,
+      startFromOrigin: false,
+    });
+    expect(inspectDraft).toHaveBeenCalledWith(draftId, projectRef);
+    expect(finishOpen).toHaveBeenCalledWith({ draftId, threadId }, projectRef);
+    expect(stageDraft).toHaveBeenCalledWith(draftId, scopedActivation.draft);
+    expect(owner.read()).toMatchObject({ activation: scopedActivation });
+    await React.act(async () => renderer.unmount());
+  });
+
+  it("fails a scoped resolution visibly and preserves invested content after retry", async () => {
+    const owner = createThreadClientActivationOwner();
+    owner.admit({ ...activation, workingDirectory: "/workspace/requested" });
+    const resolveProject = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("The directory is unavailable."))
+      .mockResolvedValueOnce(projectRef);
+    const openDraft = vi.fn(async () => ({ draftId, threadId }));
+    const stageDraft = vi.fn();
+    let renderer!: ReactTestRenderer;
+    await React.act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(
+          ThreadClientActivationHost,
+          hostProps({
+            owner,
+            resolveProject,
+            openDraft,
+            stageDraft,
+            inspectDraft: () => "authored",
+          }),
+        ),
+      );
+    });
+    expect(owner.read()).toMatchObject({ phase: "failed" });
+    expect(openDraft).not.toHaveBeenCalled();
+    expect(JSON.stringify(renderer.toJSON())).toContain("The directory is unavailable.");
+    await React.act(async () => renderer.root.findByType("button").props.onClick());
+    expect(openDraft).toHaveBeenCalledTimes(1);
+    expect(stageDraft).not.toHaveBeenCalled();
+    expect(JSON.stringify(renderer.toJSON())).toContain("contains your work");
+    await React.act(async () => renderer.unmount());
+  });
+
+  it("rejects a scoped project returned from a different environment", async () => {
+    const owner = createThreadClientActivationOwner();
+    owner.admit({ ...activation, workingDirectory: "/workspace/requested" });
+    const openDraft = vi.fn(async () => ({ draftId, threadId }));
+    let renderer!: ReactTestRenderer;
+    await React.act(async () => {
+      renderer = TestRenderer.create(
+        React.createElement(
+          ThreadClientActivationHost,
+          hostProps({
+            owner,
+            openDraft,
+            resolveProject: async () => ({
+              ...projectRef,
+              environmentId: EnvironmentId.make("remote"),
+            }),
+          }),
+        ),
+      );
+    });
+    expect(owner.read()).toMatchObject({ phase: "failed" });
+    expect(openDraft).not.toHaveBeenCalled();
+    await React.act(async () => renderer.unmount());
+  });
+
   it("selects the current primary scoped project by shared activity order", () => {
     const remoteEnvironmentId = EnvironmentId.make("remote");
     const olderPrimaryId = ProjectId.make("primary-older");

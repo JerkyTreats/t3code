@@ -71,130 +71,146 @@ describe("DesktopLauncherRuntime", () => {
     );
   });
 
-  it.effect("publishes only after backend and renderer readiness match", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-launcher-runtime-" });
-      const runtimeRoot = `${root}/t3code-desktop`;
-      const readinessPath = `${runtimeRoot}/ready.json`;
-      yield* fileSystem.makeDirectory(runtimeRoot, { recursive: true });
-      yield* fileSystem.chmod(runtimeRoot, 0o700);
-      const hostEnvironment = {
-        XDG_RUNTIME_DIR: root,
-        T3CODE_LAUNCH_GENERATION: "generation-2",
-        T3CODE_LAUNCH_READINESS_PATH: readinessPath,
-        T3CODE_LAUNCH_ARTIFACT_SHA256: SHA256,
-        T3CODE_LAUNCH_COMMIT_HASH: COMMIT,
-      };
-      {
-        const bootId = (yield* fileSystem.readFileString("/proc/sys/kernel/random/boot_id")).trim();
-        const requesterStartTicks = DesktopLauncherRuntime.parseLinuxProcessStartTicks(
-          yield* fileSystem.readFileString(`/proc/${process.pid}/stat`),
-        );
-        if (requesterStartTicks === undefined) {
-          return yield* Effect.die("requester process identity was unavailable");
-        }
-        const activation = {
-          activationId: "12345678-1234-4234-8234-1234567890ab",
-          contractVersion: 1,
-          workspace: "/home/example/exact-workspace",
-          action: "submit",
-          prompt: "private prompt sentinel",
-        } as const;
-        const requestPath = `${runtimeRoot}/handoff-request.json`;
-        const handoffRequest = {
-          contractVersion: 1,
-          productAppId: "com.t3tools.t3code",
-          generation: "generation-2",
-          token: "d".repeat(64),
-          artifactSha256: SHA256,
-          requesterPid: process.pid,
-          requesterBootId: bootId,
-          requesterStartTicks,
-          activation,
-        } as const;
-        yield* fileSystem.writeFileString(
-          requestPath,
-          yield* encodeHandoffRequest({ ...handoffRequest, artifactSha256: "b".repeat(64) }),
-        );
-        yield* fileSystem.chmod(requestPath, 0o600);
-        const environmentLayer = DesktopEnvironment.layer({
-          dirname: "/repo/apps/desktop/dist-electron",
-          homeDirectory: root,
-          platform: "linux",
-          processArch: "x64",
-          appVersion: "1.2.3",
-          appPath: "/repo",
-          isPackaged: true,
-          resourcesPath: "/repo/resources",
-          runningUnderArm64Translation: false,
-        }).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))));
-        const runtimeLayer = DesktopLauncherRuntime.layer.pipe(
-          Layer.provide(Layer.succeed(HostProcessEnvironment, hostEnvironment)),
-          Layer.provideMerge(environmentLayer),
-          Layer.provideMerge(NodeServices.layer),
-        );
-        const mismatchedArtifactRuntime = yield* DesktopLauncherRuntime.DesktopLauncherRuntime.pipe(
-          Effect.provide(runtimeLayer),
-        );
-        assert.isNull(yield* mismatchedArtifactRuntime.takeLauncherActivation!);
-        yield* fileSystem.writeFileString(requestPath, yield* encodeHandoffRequest(handoffRequest));
-        yield* fileSystem.chmod(requestPath, 0o600);
-        const runtime = yield* DesktopLauncherRuntime.DesktopLauncherRuntime.pipe(
-          Effect.provide(runtimeLayer),
-        );
-        assert.deepEqual(yield* runtime.takeLauncherActivation!, activation);
-        assert.isNull(yield* runtime.takeLauncherActivation!);
-        assert.isFalse(
-          yield* runtime.completeLauncherActivation!({
-            activationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-          }),
-        );
-        assert.isTrue(
-          yield* runtime.completeLauncherActivation!({ activationId: activation.activationId }),
-        );
-        assert.isTrue(
-          yield* runtime.completeLauncherActivation!({ activationId: activation.activationId }),
-        );
-        assert.isNull(yield* runtime.takeLauncherActivation!);
-        yield* fileSystem.chmod(requestPath, 0o644);
-        const publicFileRuntime = yield* DesktopLauncherRuntime.DesktopLauncherRuntime.pipe(
-          Effect.provide(runtimeLayer),
-        );
-        assert.isNull(yield* publicFileRuntime.takeLauncherActivation!);
-        yield* runtime.markRendererReady;
-        assert.isFalse(yield* fileSystem.exists(readinessPath));
-        yield* runtime.markBackendReady;
-        assert.isTrue(yield* fileSystem.exists(readinessPath));
-        yield* runtime.markRendererNotReady;
-        assert.isFalse(yield* fileSystem.exists(readinessPath));
-        yield* runtime.markRendererReady;
-        assert.isTrue(yield* fileSystem.exists(readinessPath));
-        const readiness = yield* fileSystem
-          .readFileString(readinessPath)
-          .pipe(
-            Effect.flatMap(Schema.decodeEffect(Schema.fromJsonString(DesktopLauncherReadiness))),
+  for (const channel of ["production", "staging"] as const) {
+    it.effect(`${channel} publishes only after backend and renderer readiness match`, () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-launcher-runtime-" });
+        const runtimeRoot = `${root}/t3code-desktop${channel === "staging" ? "-staging" : ""}`;
+        const readinessPath = `${runtimeRoot}/ready.json`;
+        yield* fileSystem.makeDirectory(runtimeRoot, { recursive: true });
+        yield* fileSystem.chmod(runtimeRoot, 0o700);
+        const hostEnvironment = {
+          XDG_RUNTIME_DIR: root,
+          T3CODE_DESKTOP_CHANNEL: channel,
+          T3CODE_LAUNCH_GENERATION: "generation-2",
+          T3CODE_LAUNCH_READINESS_PATH: readinessPath,
+          T3CODE_LAUNCH_ARTIFACT_SHA256: SHA256,
+          T3CODE_LAUNCH_COMMIT_HASH: COMMIT,
+        };
+        {
+          const bootId = (yield* fileSystem.readFileString(
+            "/proc/sys/kernel/random/boot_id",
+          )).trim();
+          const requesterStartTicks = DesktopLauncherRuntime.parseLinuxProcessStartTicks(
+            yield* fileSystem.readFileString(`/proc/${process.pid}/stat`),
           );
-        assert.equal(readiness.generation, "generation-2");
-        assert.equal(readiness.artifactSha256, SHA256);
-        assert.match(readiness.bootId, /^[0-9a-f-]{36}$/);
-        assert.equal(readiness.desktopMainPid, process.pid);
-        assert.isAbove(readiness.desktopMainProcessStartTicks, 0);
-        assert.isTrue(readiness.backendReady);
-        assert.isTrue(readiness.rendererReady);
-        yield* runtime.markBackendNotReady;
-        assert.isFalse(yield* fileSystem.exists(readinessPath));
-        yield* runtime.markBackendReady;
-        assert.isTrue(yield* fileSystem.exists(readinessPath));
-        yield* fileSystem.writeFileString(
-          readinessPath,
-          yield* encodeReadiness({ ...readiness, generation: "newer-generation" }),
-        );
-        yield* runtime.markRendererNotReady;
-        assert.isTrue(yield* fileSystem.exists(readinessPath));
-      }
-    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
-  );
+          if (requesterStartTicks === undefined) {
+            return yield* Effect.die("requester process identity was unavailable");
+          }
+          const activation = {
+            activationId: "12345678-1234-4234-8234-1234567890ab",
+            contractVersion: 1,
+            workspace: "/home/example/exact-workspace",
+            action: "submit",
+            prompt: "private prompt sentinel",
+          } as const;
+          const requestPath = `${runtimeRoot}/handoff-request.json`;
+          const handoffRequest = {
+            contractVersion: 1,
+            productAppId: "com.t3tools.t3code",
+            generation: "generation-2",
+            token: "d".repeat(64),
+            artifactSha256: SHA256,
+            requesterPid: process.pid,
+            requesterBootId: bootId,
+            requesterStartTicks,
+            activation,
+          } as const;
+          yield* fileSystem.writeFileString(
+            requestPath,
+            yield* encodeHandoffRequest({ ...handoffRequest, artifactSha256: "b".repeat(64) }),
+          );
+          yield* fileSystem.chmod(requestPath, 0o600);
+          const environmentLayer = DesktopEnvironment.layer({
+            dirname: "/repo/apps/desktop/dist-electron",
+            homeDirectory: root,
+            platform: "linux",
+            processArch: "x64",
+            appVersion: "1.2.3",
+            appPath: "/repo",
+            isPackaged: true,
+            resourcesPath: "/repo/resources",
+            runningUnderArm64Translation: false,
+          }).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))));
+          const runtimeLayer = DesktopLauncherRuntime.layer.pipe(
+            Layer.provide(Layer.succeed(HostProcessEnvironment, hostEnvironment)),
+            Layer.provideMerge(environmentLayer),
+            Layer.provideMerge(NodeServices.layer),
+          );
+          const mismatchedArtifactRuntime =
+            yield* DesktopLauncherRuntime.DesktopLauncherRuntime.pipe(Effect.provide(runtimeLayer));
+          assert.isNull(yield* mismatchedArtifactRuntime.takeLauncherActivation!);
+          yield* fileSystem.writeFileString(
+            requestPath,
+            yield* encodeHandoffRequest(handoffRequest),
+          );
+          yield* fileSystem.chmod(requestPath, 0o600);
+          const runtime = yield* DesktopLauncherRuntime.DesktopLauncherRuntime.pipe(
+            Effect.provide(runtimeLayer),
+          );
+          assert.deepEqual(yield* runtime.takeLauncherActivation!, activation);
+          assert.isNull(yield* runtime.takeLauncherActivation!);
+          assert.isFalse(
+            yield* runtime.completeLauncherActivation!({
+              activationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            }),
+          );
+          assert.isTrue(
+            yield* runtime.completeLauncherActivation!({ activationId: activation.activationId }),
+          );
+          assert.isTrue(
+            yield* runtime.completeLauncherActivation!({ activationId: activation.activationId }),
+          );
+          assert.isNull(yield* runtime.takeLauncherActivation!);
+          yield* fileSystem.chmod(requestPath, 0o644);
+          const publicFileRuntime = yield* DesktopLauncherRuntime.DesktopLauncherRuntime.pipe(
+            Effect.provide(runtimeLayer),
+          );
+          assert.isNull(yield* publicFileRuntime.takeLauncherActivation!);
+          yield* runtime.markRendererReady;
+          assert.isFalse(yield* fileSystem.exists(readinessPath));
+          yield* runtime.markBackendReady;
+          assert.isTrue(yield* fileSystem.exists(readinessPath));
+          yield* runtime.markRendererNotReady;
+          assert.isFalse(yield* fileSystem.exists(readinessPath));
+          yield* runtime.markRendererReady;
+          assert.isTrue(yield* fileSystem.exists(readinessPath));
+          const readiness = yield* fileSystem
+            .readFileString(readinessPath)
+            .pipe(
+              Effect.flatMap(Schema.decodeEffect(Schema.fromJsonString(DesktopLauncherReadiness))),
+            );
+          assert.equal(readiness.generation, "generation-2");
+          assert.equal(readiness.artifactSha256, SHA256);
+          assert.match(readiness.bootId, /^[0-9a-f-]{36}$/);
+          assert.equal(readiness.desktopMainPid, process.pid);
+          assert.isAbove(readiness.desktopMainProcessStartTicks, 0);
+          assert.isTrue(readiness.backendReady);
+          assert.isTrue(readiness.rendererReady);
+          yield* runtime.markBackendNotReady;
+          assert.isFalse(yield* fileSystem.exists(readinessPath));
+          yield* runtime.markBackendReady;
+          assert.isTrue(yield* fileSystem.exists(readinessPath));
+          yield* fileSystem.writeFileString(
+            readinessPath,
+            yield* encodeReadiness({ ...readiness, generation: "newer-generation" }),
+          );
+          yield* runtime.markRendererNotReady;
+          assert.isTrue(yield* fileSystem.exists(readinessPath));
+        }
+      }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+    );
+  }
+
+  it("rejects unknown channels without using production handoff state", () => {
+    assert.isUndefined(
+      DesktopLauncherRuntime.resolveDesktopLauncherHandoffPaths({
+        XDG_RUNTIME_DIR: "/run/user/1000",
+        T3CODE_DESKTOP_CHANNEL: "preview",
+      }),
+    );
+  });
 
   it.effect("authenticates an unmanaged primary handoff and publishes process identity", () =>
     Effect.gen(function* () {

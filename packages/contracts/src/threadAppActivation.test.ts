@@ -35,3 +35,10 @@ it("completion carries only the admitted launch identity", () => {
   expect(() => complete({ ...base, draft: "text" })).toThrow();
   expect(() => complete({ ...base, ready: true })).toThrow();
 });
+
+it("bounds working directories by UTF-8 bytes without changing their text", () => {
+  const workingDirectory = "/" + "é".repeat(2047) + "x";
+  expect(decode({ ...base, workingDirectory }).workingDirectory).toBe(workingDirectory);
+  expect(() => decode({ ...base, workingDirectory: workingDirectory + "x" })).toThrow();
+  expect(() => decode({ ...base, workingDirectory: undefined })).toThrow();
+});

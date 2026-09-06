@@ -1,4 +1,5 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
@@ -19,12 +20,20 @@ import {
   type ThreadClientDraftDisposition,
   type ThreadClientActivationOwner,
 } from "../../fork/threadClientActivation";
+import {
+  findThreadClientProject,
+  resolveThreadClientProject,
+} from "../../fork/threadClientProject";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { inferProjectTitleFromPath } from "../../lib/projectPaths";
+import { newProjectId } from "../../lib/utils";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { usePrimaryEnvironment } from "../../state/environments";
-import { useProjects, useThreadShells } from "../../state/entities";
+import { readProjects, waitForProject, useProjects, useThreadShells } from "../../state/entities";
+import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
 import { environmentShell } from "../../state/shell";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { sortScopedProjectsForSidebar } from "../Sidebar.logic";
 import { Button } from "../ui/button";
 
@@ -37,11 +46,13 @@ export interface ThreadClientActivationHostProps {
   readonly projectRef: ScopedProjectRef | null;
   readonly shellLive: boolean;
   readonly openDraft: ReturnType<typeof useNewThreadHandler>;
+  readonly resolveProject?: (workingDirectory: string) => Promise<ScopedProjectRef>;
   readonly inspectDraft: (
     draftId: OpenedThreadClientDraft["draftId"],
+    projectRef: ScopedProjectRef,
   ) => ThreadClientDraftDisposition;
   readonly stageDraft: (draftId: OpenedThreadClientDraft["draftId"], draft: string) => void;
-  readonly finishOpen: (opened: OpenedThreadClientDraft) => void;
+  readonly finishOpen: (opened: OpenedThreadClientDraft, projectRef: ScopedProjectRef) => void;
 }
 
 function useActivationState(owner: ThreadClientActivationOwner) {
@@ -52,7 +63,11 @@ export function selectThreadClientActivationProject(
   primaryEnvironmentId: EnvironmentId,
   projects: readonly EnvironmentProject[],
   threads: readonly EnvironmentThreadShell[],
+  workingDirectory?: string,
 ): ScopedProjectRef | null {
+  if (workingDirectory !== undefined) {
+    return findThreadClientProject(primaryEnvironmentId, workingDirectory, projects);
+  }
   const project =
     sortScopedProjectsForSidebar(
       projects.filter((candidate) => candidate.environmentId === primaryEnvironmentId),
@@ -86,6 +101,7 @@ export function ThreadClientActivationHost(props: ThreadClientActivationHostProp
     owner,
     primaryEnvironmentId,
     projectRef,
+    resolveProject,
     shellLive,
     stageDraft,
   } = props;
@@ -99,14 +115,38 @@ export function ThreadClientActivationHost(props: ThreadClientActivationHostProp
   }, [bridge, owner]);
 
   useEffect(() => {
-    if (activationState.phase !== "waiting" || !shellLive || projectRef === null) return;
+    if (activationState.phase !== "waiting" || !shellLive || primaryEnvironmentId === null) return;
+    const workingDirectory = activationState.activation.workingDirectory;
+    if (workingDirectory === undefined && projectRef === null) return;
+    let openedProjectRef: ScopedProjectRef | null = null;
 
     void owner.attempt({
       completeActivation: bridge?.completeActivation,
-      openDraft: () => openDraft(projectRef),
-      inspectDraft,
+      openDraft: async () => {
+        if (workingDirectory !== undefined) {
+          if (!resolveProject) throw new Error("The requested working directory is unavailable.");
+          openedProjectRef = await resolveProject(workingDirectory);
+        } else {
+          openedProjectRef = projectRef;
+        }
+        if (openedProjectRef === null || openedProjectRef.environmentId !== primaryEnvironmentId) {
+          throw new Error("The requested primary project is unavailable.");
+        }
+        return workingDirectory === undefined
+          ? openDraft(openedProjectRef)
+          : openDraft(openedProjectRef, {
+              envMode: "local",
+              branch: null,
+              worktreePath: null,
+              startFromOrigin: false,
+            });
+      },
+      inspectDraft: (draftId) =>
+        openedProjectRef === null ? "missing" : inspectDraft(draftId, openedProjectRef),
       stageDraft,
-      finishOpen,
+      finishOpen: (opened) => {
+        if (openedProjectRef !== null) finishOpen(opened, openedProjectRef);
+      },
     });
   }, [
     activationState,
@@ -116,6 +156,8 @@ export function ThreadClientActivationHost(props: ThreadClientActivationHostProp
     openDraft,
     owner,
     projectRef,
+    primaryEnvironmentId,
+    resolveProject,
     shellLive,
     stageDraft,
   ]);
@@ -138,7 +180,12 @@ export function ThreadClientActivationHost(props: ThreadClientActivationHostProp
   } else if (activationState.phase === "failed") {
     title = "Couldn’t open the launch message";
     description = activationState.message;
-  } else if (primaryEnvironmentId !== null && shellLive && projectRef === null) {
+  } else if (
+    primaryEnvironmentId !== null &&
+    shellLive &&
+    projectRef === null &&
+    activationState.activation.workingDirectory === undefined
+  ) {
     title = "Add a project to continue";
     description = "Your launch message is waiting and will remain unsent.";
   }
@@ -168,7 +215,10 @@ export function ThreadClientActivationHost(props: ThreadClientActivationHostProp
             <RotateCcwIcon className="size-4" />
             Try again
           </Button>
-        ) : primaryEnvironmentId !== null && shellLive && projectRef === null ? (
+        ) : primaryEnvironmentId !== null &&
+          shellLive &&
+          projectRef === null &&
+          activationState.activation.workingDirectory === undefined ? (
           <Button size="sm" onClick={openAddProject}>
             <PlusIcon className="size-4" />
             Add project
@@ -183,6 +233,9 @@ export function ThreadClientActivationCoordinator(props: {
   readonly owner?: ThreadClientActivationOwner;
 }) {
   const owner = props.owner ?? threadClientActivationOwner;
+  const activationState = useActivationState(owner);
+  const workingDirectory =
+    activationState.phase === "idle" ? undefined : activationState.activation.workingDirectory;
   const primaryEnvironment = usePrimaryEnvironment();
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   const shellState = useEnvironmentQuery(
@@ -191,38 +244,70 @@ export function ThreadClientActivationCoordinator(props: {
   const projects = useProjects();
   const threads = useThreadShells();
   const openDraft = useNewThreadHandler();
+  const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
+  const resolveProject = useCallback(
+    async (directory: string) => {
+      if (primaryEnvironmentId === null) throw new Error("The primary environment is unavailable.");
+      return resolveThreadClientProject(primaryEnvironmentId, directory, {
+        readProjects,
+        waitForProject,
+        createProject: async (environmentId, workspaceRoot) => {
+          const projectId = newProjectId();
+          const result = await createProject({
+            environmentId,
+            input: {
+              projectId,
+              title: inferProjectTitleFromPath(workspaceRoot),
+              workspaceRoot,
+              createWorkspaceRootIfMissing: false,
+            },
+          });
+          if (result._tag === "Failure") {
+            const error = squashAtomCommandFailure(result);
+            throw error instanceof Error
+              ? error
+              : new Error("T3 Thread could not add the requested project.");
+          }
+          return projectId;
+        },
+      });
+    },
+    [createProject, primaryEnvironmentId],
+  );
   const projectRef = useMemo(
     () =>
       primaryEnvironmentId === null
         ? null
-        : selectThreadClientActivationProject(primaryEnvironmentId, projects, threads),
-    [primaryEnvironmentId, projects, threads],
+        : selectThreadClientActivationProject(
+            primaryEnvironmentId,
+            projects,
+            threads,
+            workingDirectory,
+          ),
+    [primaryEnvironmentId, projects, threads, workingDirectory],
   );
   const inspectDraft = useCallback(
-    (draftId: OpenedThreadClientDraft["draftId"]) => {
+    (draftId: OpenedThreadClientDraft["draftId"], selectedProjectRef: ScopedProjectRef) => {
       const store = useComposerDraftStore.getState();
       const session = store.getDraftSession(draftId);
-      return projectRef === null
-        ? "missing"
-        : resolveThreadClientDraftDisposition(
-            projectRef,
-            session,
-            composerDraftHasUserContent(store.getComposerDraft(draftId)),
-          );
+      return resolveThreadClientDraftDisposition(
+        selectedProjectRef,
+        session,
+        composerDraftHasUserContent(store.getComposerDraft(draftId)),
+      );
     },
-    [projectRef],
+    [],
   );
   const stageDraft = useCallback((draftId: OpenedThreadClientDraft["draftId"], draft: string) => {
     useComposerDraftStore.getState().setPrompt(draftId, draft);
   }, []);
   const finishOpen = useCallback(
-    (opened: OpenedThreadClientDraft) => {
-      if (projectRef === null) return;
+    (opened: OpenedThreadClientDraft, selectedProjectRef: ScopedProjectRef) => {
       useRightPanelStore
         .getState()
-        .close(scopeThreadRef(projectRef.environmentId, opened.threadId));
+        .close(scopeThreadRef(selectedProjectRef.environmentId, opened.threadId));
     },
-    [projectRef],
+    [],
   );
 
   return (
@@ -234,6 +319,7 @@ export function ThreadClientActivationCoordinator(props: {
       owner={owner}
       primaryEnvironmentId={primaryEnvironmentId}
       projectRef={projectRef}
+      resolveProject={resolveProject}
       shellLive={shellState.data?.status === "live"}
       stageDraft={stageDraft}
     />

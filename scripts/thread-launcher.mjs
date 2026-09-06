@@ -4,6 +4,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import * as NodeChildProcess from "node:child_process";
+import * as NodeOS from "node:os";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_ACTIVATION_BYTES = 65_536;
@@ -28,6 +29,10 @@ function hasExactKeys(value, required, optional = []) {
 
 function fitsUtf8(value, maximum) {
   return typeof value === "string" && Buffer.byteLength(value, "utf8") <= maximum;
+}
+
+function isWorkingDirectory(value) {
+  return fitsUtf8(value, 4096) && value.startsWith("/") && !value.includes("\0");
 }
 
 function readInput(input) {
@@ -94,17 +99,21 @@ export function parseLauncherActivation(
   bytes,
   expectedUserId = NodeProcess.getuid?.(),
   createLaunchId = NodeCrypto.randomUUID,
+  defaultWorkingDirectory = NodeOS.homedir(),
 ) {
   if (!Buffer.isBuffer(bytes) || bytes.byteLength > MAX_ACTIVATION_BYTES) {
     throw new Error("T3 Thread activation is oversized.");
   }
   if (bytes.byteLength === 0) {
+    if (!isWorkingDirectory(defaultWorkingDirectory)) {
+      throw new Error("T3 Thread default working directory is invalid.");
+    }
     const launchId = createLaunchId();
     if (!INTERNAL_LAUNCH_ID_PATTERN.test(launchId)) {
       throw new Error("T3 Thread fresh launch identity is invalid.");
     }
     return {
-      activation: { contractVersion: 1, launchId },
+      activation: { contractVersion: 1, launchId, workingDirectory: defaultWorkingDirectory },
       responseChannel: "external",
     };
   }
@@ -119,7 +128,8 @@ export function parseLauncherActivation(
   }
   if (Object.hasOwn(input, "launchId")) {
     if (
-      !hasExactKeys(input, ["contractVersion", "launchId"], ["draft"]) ||
+      !hasExactKeys(input, ["contractVersion", "launchId"], ["draft", "workingDirectory"]) ||
+      (Object.hasOwn(input, "workingDirectory") && !isWorkingDirectory(input.workingDirectory)) ||
       !INTERNAL_LAUNCH_ID_PATTERN.test(input.launchId) ||
       (Object.hasOwn(input, "draft") &&
         (!fitsUtf8(input.draft, MAX_DRAFT_BYTES) || input.draft.includes("\0")))
@@ -138,8 +148,7 @@ export function parseLauncherActivation(
     !EXTERNAL_INTENT_ID_PATTERN.test(input.intentId) ||
     (input.source !== "direct-launch" && input.source !== "crash-notification") ||
     input.action !== "draft" ||
-    (Object.hasOwn(input, "workingDirectory") &&
-      (!fitsUtf8(input.workingDirectory, 4096) || !NodePath.isAbsolute(input.workingDirectory))) ||
+    (Object.hasOwn(input, "workingDirectory") && !isWorkingDirectory(input.workingDirectory)) ||
     !isRecord(input.draft) ||
     !hasExactKeys(input.draft, ["text"]) ||
     !fitsUtf8(input.draft.text, MAX_DRAFT_BYTES) ||
@@ -153,11 +162,16 @@ export function parseLauncherActivation(
   ) {
     throw new Error("T3 Thread external draft intent is invalid.");
   }
+  const workingDirectory = input.workingDirectory ?? defaultWorkingDirectory;
+  if (!isWorkingDirectory(workingDirectory)) {
+    throw new Error("T3 Thread default working directory is invalid.");
+  }
   return {
     activation: {
       contractVersion: 1,
       launchId: externalIntentLaunchId(input.intentId),
       draft: input.draft.text,
+      workingDirectory,
     },
     responseChannel: "external",
   };
@@ -188,6 +202,7 @@ export async function launchThread(input) {
     receivedBytes,
     input.expectedUserId,
     input.createLaunchId ?? NodeCrypto.randomUUID,
+    input.defaultWorkingDirectory,
   );
   const activationBytes = Buffer.from(JSON.stringify(parsed.activation));
   const launched = await input.spawnApp(input.appImagePath);
@@ -365,6 +380,7 @@ async function main() {
   await launchThread({
     activationInput: NodeProcess.stdin,
     appImagePath: resolveAppImagePath(NodeProcess.argv.slice(2)),
+    defaultWorkingDirectory: NodeProcess.env.T3_THREAD_WORKING_DIRECTORY ?? NodeOS.homedir(),
     spawnApp: spawnAppImage,
     // The wrapper owns the private extraction root for exactly the app lifetime.
     superviseAfterReady: true,

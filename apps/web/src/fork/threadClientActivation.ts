@@ -67,7 +67,8 @@ function sameActivation(left: ThreadAppActivation, right: ThreadAppActivation): 
   return (
     left.contractVersion === right.contractVersion &&
     left.launchId === right.launchId &&
-    left.draft === right.draft
+    left.draft === right.draft &&
+    left.workingDirectory === right.workingDirectory
   );
 }
 
@@ -148,14 +149,7 @@ export function createThreadClientActivationOwner(): ThreadClientActivationOwner
       let activation: ThreadAppActivation;
       try {
         const decoded = decodeThreadAppActivation(value);
-        activation =
-          decoded.draft === undefined
-            ? { contractVersion: decoded.contractVersion, launchId: decoded.launchId }
-            : {
-                contractVersion: decoded.contractVersion,
-                launchId: decoded.launchId,
-                draft: decoded.draft,
-              };
+        activation = { ...decoded };
       } catch {
         return "rejected";
       }
@@ -185,14 +179,14 @@ export function createThreadClientActivationOwner(): ThreadClientActivationOwner
             return;
           }
 
+          const disposition = dependencies.inspectDraft(opened.draftId);
+          if (disposition === "missing") {
+            fail(activation, DRAFT_MISSING_MESSAGE);
+            return;
+          }
           if (activation.draft !== undefined) {
-            const disposition = dependencies.inspectDraft(opened.draftId);
             if (disposition === "authored") {
               fail(activation, DRAFT_AUTHORED_MESSAGE);
-              return;
-            }
-            if (disposition === "missing") {
-              fail(activation, DRAFT_MISSING_MESSAGE);
               return;
             }
             dependencies.stageDraft(opened.draftId, activation.draft);

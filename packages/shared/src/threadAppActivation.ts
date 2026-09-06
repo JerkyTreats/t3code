@@ -16,9 +16,20 @@ export function decodeThreadAppActivation(value: unknown): ThreadAppActivation {
     record.contractVersion !== 1 ||
     typeof record.launchId !== "string" ||
     !LAUNCH_ID.test(record.launchId) ||
-    !keys.every((key) => key === "contractVersion" || key === "launchId" || key === "draft") ||
+    !keys.every(
+      (key) =>
+        key === "contractVersion" ||
+        key === "launchId" ||
+        key === "draft" ||
+        key === "workingDirectory",
+    ) ||
     keys.length < 2 ||
-    keys.length > 3 ||
+    keys.length > 4 ||
+    (Object.hasOwn(record, "workingDirectory") &&
+      (typeof record.workingDirectory !== "string" ||
+        !record.workingDirectory.startsWith("/") ||
+        record.workingDirectory.includes("\0") ||
+        new TextEncoder().encode(record.workingDirectory).byteLength > 4096)) ||
     (Object.hasOwn(record, "draft") &&
       (typeof record.draft !== "string" ||
         new TextEncoder().encode(record.draft).byteLength > MAX_DRAFT_BYTES ||

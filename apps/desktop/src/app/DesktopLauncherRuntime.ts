@@ -52,7 +52,10 @@ export function resolveDesktopLauncherHandoffPaths(
 ): DesktopLauncherHandoffPaths | undefined {
   const runtimeDirectory = environment.XDG_RUNTIME_DIR?.trim();
   if (!runtimeDirectory?.startsWith("/")) return undefined;
-  const root = `${runtimeDirectory.replace(/\/+$/, "")}/t3code-desktop`;
+  const channel = environment.T3CODE_DESKTOP_CHANNEL?.trim() || "production";
+  if (channel !== "production" && channel !== "staging") return undefined;
+  const directory = channel === "staging" ? "t3code-desktop-staging" : "t3code-desktop";
+  const root = `${runtimeDirectory.replace(/\/+$/, "")}/${directory}`;
   return {
     runtimeRoot: root,
     requestPath: `${root}/handoff-request.json`,

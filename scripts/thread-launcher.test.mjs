@@ -70,7 +70,7 @@ const externalIntent = {
 it("creates a fresh empty activation from exact zero-byte input", () => {
   const freshLaunchId = "11234567-89ab-4def-8abc-0123456789ab";
   expect(parseLauncherActivation(Buffer.alloc(0), 1000, () => freshLaunchId)).toEqual({
-    activation: { contractVersion: 1, launchId: freshLaunchId },
+    activation: { contractVersion: 1, launchId: freshLaunchId, workingDirectory: NodeOS.homedir() },
     responseChannel: "external",
   });
   expect(() => parseLauncherActivation(Buffer.alloc(0), 1000, () => "not-a-launch-id")).toThrow(
@@ -91,6 +91,7 @@ it("translates an exact external crash intent into draft-only internal activatio
       contractVersion: 1,
       launchId: externalIntentLaunchId(externalIntentId),
       draft: externalIntent.draft.text,
+      workingDirectory: NodeOS.homedir(),
     },
     responseChannel: "external",
   });
@@ -282,6 +283,7 @@ it("stages an external draft only in the independent app activation", async () =
       contractVersion: 1,
       launchId: internalLaunchId,
       draft: externalIntent.draft.text,
+      workingDirectory: NodeOS.homedir(),
     });
   } finally {
     child?.kill("SIGTERM");
@@ -385,7 +387,7 @@ process.stdin.on("end", () => {
 `,
     { mode: 0o755 },
   );
-  const runLauncher = async (input) => {
+  const runLauncher = async (input, directoryOverride) => {
     const child = NodeChildProcess.spawn(
       NodeProcess.execPath,
       [new URL("./thread-launcher.mjs", import.meta.url).pathname, appImagePath],
@@ -394,6 +396,7 @@ process.stdin.on("end", () => {
           ...NodeProcess.env,
           XDG_RUNTIME_DIR: runtimeDirectory,
           FIXTURE_CAPTURE: capturePath,
+          T3_THREAD_WORKING_DIRECTORY: directoryOverride,
         },
         stdio: ["pipe", "pipe", "pipe", "pipe"],
       },
@@ -418,10 +421,17 @@ process.stdin.on("end", () => {
     });
     expect(JSON.parse(NodeFS.readFileSync(capturePath, "utf8"))).toEqual({
       contractVersion: 1,
+      workingDirectory: NodeOS.homedir(),
       launchId: expect.stringMatching(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
       ),
     });
+
+    const scoped = await runLauncher(Buffer.alloc(0), "/workspace/explicit");
+    expect(scoped.exit).toBe(0);
+    expect(JSON.parse(NodeFS.readFileSync(capturePath, "utf8")).workingDirectory).toBe(
+      "/workspace/explicit",
+    );
 
     const exactInput = Buffer.from(
       JSON.stringify({ contractVersion: 1, launchId, draft: "byte exact draft" }),
@@ -437,4 +447,26 @@ process.stdin.on("end", () => {
   } finally {
     NodeFS.rmSync(root, { recursive: true, force: true });
   }
+});
+
+it("preserves explicit external scope and rejects invalid directories", () => {
+  const parse = (workingDirectory) =>
+    parseLauncherActivation(
+      Buffer.from(
+        JSON.stringify({
+          ...externalIntent,
+          workingDirectory,
+        }),
+      ),
+      1000,
+    );
+  expect(parse("/workspace/wallpaper").activation.workingDirectory).toBe("/workspace/wallpaper");
+  const limit = "/" + "é".repeat(2047) + "x";
+  expect(parse(limit).activation.workingDirectory).toBe(limit);
+  for (const path of ["", "relative", "~/example", "/bad\0path", limit + "x", null]) {
+    expect(() => parse(path)).toThrow();
+  }
+  expect(() => parseLauncherActivation(Buffer.alloc(0), 1000, () => launchId, "relative")).toThrow(
+    "default working directory is invalid",
+  );
 });

@@ -12,6 +12,7 @@ const activation: ThreadAppActivation = {
   contractVersion: 1,
   launchId: "12345678-1234-4234-8234-123456789abc",
   draft: "  preserve these bytes  \n",
+  workingDirectory: "/workspace/requested",
 };
 const draftId = "draft-returned" as DraftId;
 const threadId = ThreadId.make("thread-returned");
@@ -49,6 +50,7 @@ describe("Thread client activation owner", () => {
     expect(owner.admit(activation)).toBe("accepted");
     expect(owner.admit({ ...activation })).toBe("duplicate");
     expect(owner.admit({ ...activation, draft: "conflict" })).toBe("rejected");
+    expect(owner.admit({ ...activation, workingDirectory: "/workspace/other" })).toBe("rejected");
     expect(owner.admit({ ...activation, launchId: "87654321-4321-4321-8321-cba987654321" })).toBe(
       "rejected",
     );
@@ -63,6 +65,7 @@ describe("Thread client activation owner", () => {
     const input = { ...activation };
     owner.admit(input);
     input.draft = "mutated after admission";
+    input.workingDirectory = "/workspace/mutated";
     const dependencies = attempt();
 
     await owner.attempt(dependencies);
@@ -198,4 +201,17 @@ describe("Thread client activation owner", () => {
     expect(dependencies.stageDraft).toHaveBeenCalledTimes(1);
     expect(owner.read()).toEqual({ phase: "completed", activation });
   });
+});
+
+it("does not acknowledge a fresh scoped launch whose opened draft disappeared", async () => {
+  const owner = createThreadClientActivationOwner();
+  owner.admit({
+    contractVersion: 1,
+    launchId: activation.launchId,
+    workingDirectory: "/workspace/requested",
+  });
+  const dependencies = attempt({ inspectDraft: vi.fn((): "missing" => "missing") });
+  await owner.attempt(dependencies);
+  expect(owner.read()).toMatchObject({ phase: "failed" });
+  expect(dependencies.completeActivation).not.toHaveBeenCalled();
 });

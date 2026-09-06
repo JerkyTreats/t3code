@@ -1,6 +1,6 @@
 # F16 Official Linux Desktop Launcher
 
-Date: 2026-09-05
+Date: 2026-09-06
 Status: active
 
 ## Intent
@@ -87,6 +87,8 @@ The Omarchy theme source and its desktop bridge remain the retained F02 owner an
 Retain upstream Electron lifecycle and client behavior. Preserve the official artifact verification launcher, the independent production host, explicit staging isolation, client-private profiles, and the smallest Quattro adapter needed to join those existing owners without creating another production server environment.
 
 ## Current Evidence
+
+The desktop runtime selects the same production or staging handoff directory as the installed launcher. Staging readiness and activation stay under the staging runtime directory; an unknown channel cannot read production handoff state. The runtime tests exercise readiness publication, withdrawal and authenticated activation independently for both channels. Staging desktop acceptance requires that actual readiness record in addition to a mapped window and hosted connectivity.
 
 Focused tests execute standalone selection before backend acquisition, current DesktopApp composition, Clerk and window lifecycle, preload and IPC, primary cookie transport, renderer launcher coordination and exact send completion. Installer and topology tests execute verified bytes, ownership drift, idempotency and transactional rollback. The clean current AppImages also pass isolated installation and all six client close/crash cases. Native Wayland focus passed two actual launcher focus calls on unchanged Code main and preload bytes, with simulated service status. That bounded bridge does not claim live default service activation or an identical whole AppImage. The intake evidence records both identities and limits.
 

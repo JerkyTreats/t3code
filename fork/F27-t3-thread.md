@@ -1,11 +1,13 @@
 # F27 T3 Thread Hosted Client
 
-Date: 2026-09-05
-Status: implemented source and scoped installed acceptance passed
+Date: 2026-09-06
+Status: source implemented; additional staging directory acceptance in progress
 
 ## Protected Outcome
 
 T3 Thread is an independent Electron shell around the full hosted T3 Code chat. Every launch owns one process, one window, a unique writable Chromium profile and a private extraction directory. Code, Thread and the server retain independent lifetimes. Thread starts no backend or cross-process broker.
+
+Thread is the ephemeral coding front door for desktop entry points. Fresh external launches use the home directory. An explicit working directory selects that exact project in the primary environment, including when a project record must first be created. Scoped launches use the local directory without silently switching to the most recently active project or a remembered worktree. Prompt prefills remain unsent.
 
 ## Protected Decisions
 
@@ -59,6 +61,12 @@ V1 readiness acknowledges the exact launch identity after the admitted URL loads
 `thread-launcher.mjs` supervises the actual AppImage and private extraction cleanup. `install-linux-thread.mjs` verifies bytes and ownership before managed writes. The production topology installer composes Code, Thread and native bootstrap with transactional rollback. Explicit disposable smoke roots and launch targets keep validation separate from installation into an existing environment.
 
 ## Compatibility And Evidence
+
+V1 activation also accepts an optional absolute POSIX `workingDirectory` of at most 4096 UTF-8 bytes without NUL. The external launcher preserves an explicit directory and supplies home when it is absent. A staging entry can set `T3_THREAD_WORKING_DIRECTORY` as the fresh-launch default; an explicit payload directory wins. Historical internal V1 payloads without scope remain accepted. Readiness and completion retain their identity-only shapes.
+
+`threadClientProject.ts` owns exact primary project resolution and uses the existing project creation command without creating filesystem directories. The hosted coordinator translates that result into the ordinary draft opener. Concurrent creation uses the server's existing duplicate-root rejection and rechecks the exact project; a failure remains visible and retryable. The activation owner retains scope across the same authentication and draft-staging boundaries as the prefill.
+
+`scripts/staging-thread-entry.mjs` verifies explicit staging identity and release bytes before importing the launcher. It uses separate artifact, enrollment and Chromium state and stages prefill through the direct-launch contract. The additional desktop usage harness remains in progress under the staging acceptance ledger. Synthetic crash input and packaged prompt-producer execution are distinct from clicking a live crash notification. Installed acceptance must record window workspace, observed directory scope, usable composer, authenticated transport, native input, client lifetime isolation and startup milestones separately.
 
 V1 activation accepts only exact keys, a lowercase UUID v4, at most 64 KiB UTF-8 envelope and optional at most 32 KiB UTF-8 draft without NUL. Internal empty draft remains valid; zero-byte external input omits draft. Retired broker, adapter RPC, custom renderer and outbox are not active compatibility surfaces. Persistence lineage remains under the dedicated compatibility specification.
 

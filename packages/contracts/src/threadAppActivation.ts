@@ -17,10 +17,21 @@ const ThreadAppDraft = Schema.String.check(
   Schema.makeFilter((text) => !text.includes("\0") || "Message text must not contain NUL."),
 );
 
+const ThreadAppWorkingDirectory = Schema.String.check(
+  Schema.makeFilter(
+    (path) =>
+      (path.startsWith("/") &&
+        !path.includes("\0") &&
+        new TextEncoder().encode(path).byteLength <= 4096) ||
+      "Working directory must be an absolute POSIX path of at most 4096 UTF-8 bytes without NUL.",
+  ),
+);
+
 export const ThreadAppActivation = Schema.Struct({
   contractVersion: Schema.Literal(THREAD_APP_CONTRACT_VERSION),
   launchId: ThreadAppLaunchId,
   draft: Schema.optionalKey(ThreadAppDraft),
+  workingDirectory: Schema.optionalKey(ThreadAppWorkingDirectory),
 }).annotate(strict);
 export type ThreadAppActivation = typeof ThreadAppActivation.Type;
 

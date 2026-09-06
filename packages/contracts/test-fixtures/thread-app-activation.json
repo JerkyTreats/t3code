@@ -66,5 +66,87 @@
       "launchId": "12345678-1234-4234-8234-123456789abc",
       "draft": null
     }
+  },
+  {
+    "name": "absolute directory",
+    "valid": true,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "workingDirectory": "/workspace/example"
+    }
+  },
+  {
+    "name": "root directory",
+    "valid": true,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "workingDirectory": "/"
+    }
+  },
+  {
+    "name": "relative directory",
+    "valid": false,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "workingDirectory": "workspace/example"
+    }
+  },
+  {
+    "name": "tilde directory",
+    "valid": false,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "workingDirectory": "~/example"
+    }
+  },
+  {
+    "name": "empty directory",
+    "valid": false,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "workingDirectory": ""
+    }
+  },
+  {
+    "name": "NUL directory",
+    "valid": false,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "workingDirectory": "/workspace/\u0000example"
+    }
+  },
+  {
+    "name": "null directory",
+    "valid": false,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "workingDirectory": null
+    }
+  },
+  {
+    "name": "Windows directory",
+    "valid": false,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "workingDirectory": "C:\\workspace"
+    }
+  },
+  {
+    "name": "directory with exact draft",
+    "valid": true,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "workingDirectory": "/workspace/requested",
+      "draft": "  exact draft  \n"
+    }
   }
 ]
