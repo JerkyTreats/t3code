@@ -458,6 +458,24 @@ describe("enrollment admission, persistence and bounded failures", () => {
     };
   }
 
+  it.each([200, 401])("admits Electron response metadata for status %s", async (status) => {
+    const input = ownerInput();
+    const response = new Response(await tokenExchangeResponse().text(), { status });
+    expect(response.url).toBe("");
+    input.fetch.mockResolvedValue(response);
+    const owner = createThreadEnrollmentOwner(input);
+
+    expect(await owner.submitPairingCredential(pairingCredential)).toEqual({
+      status: status === 200 ? "accepted" : "rejected",
+    });
+    expect(input.fetch.mock.calls[0]?.[1]).toMatchObject({
+      redirect: "error",
+      credentials: "omit",
+    });
+    expect(NodeFS.existsSync(input.enrollmentPath)).toBe(status === 200);
+    expect(owner.bearerCredential()).toBe(status === 200 ? bearerCredential : null);
+  });
+
   it("checks expiry at every use, including the exact expiry instant", async () => {
     let clock = now();
     const owner = createThreadEnrollmentOwner({ ...ownerInput(), now: () => clock });
@@ -620,16 +638,19 @@ describe("enrollment admission, persistence and bounded failures", () => {
   });
 
   it("rejects response URL drift and already-followed redirects before consuming the token", async () => {
-    for (const response of [Response.json({}), tokenExchangeResponse(), tokenExchangeResponse()]) {
+    for (const response of [
+      tokenExchangeResponse(),
+      new Response(await tokenExchangeResponse().text()),
+    ]) {
       const input = ownerInput();
-      if (response.url) Object.defineProperty(response, "redirected", { value: true });
+      Object.defineProperty(response, "redirected", { value: true });
       input.fetch.mockResolvedValue(response);
       expect(
         await createThreadEnrollmentOwner(input).submitPairingCredential(pairingCredential),
       ).toEqual({ status: "unavailable" });
       expect(NodeFS.existsSync(input.enrollmentPath)).toBe(false);
     }
-    const response = Response.json({});
+    const response = new Response(await tokenExchangeResponse().text());
     Object.defineProperty(response, "url", { value: "https://foreign.example.test/oauth/token" });
     const input = ownerInput();
     input.fetch.mockResolvedValue(response);

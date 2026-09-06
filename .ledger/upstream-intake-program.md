@@ -686,3 +686,13 @@ The joined image-helper and Thread-response correction candidate passes all four
 ### Commit effect — available image verification helper
 
 If applied, this commit binds server image verification and promotion to the same available Skopeo artifact.
+
+### Installed Thread response admission correction
+
+Actual installed enrollment reaches a successful portal token exchange but rejects the result before protected persistence. A diagnostic using the exact same Electron executable proves that `net.fetch` omits `Response.url` for both successful and unauthorized responses. The same runtime rejects a controlled redirect with `redirect: error`, with one source response and zero destination hits. The original source test helper had supplied URL metadata absent from the real runtime.
+
+Root adds regressions for successful and unauthorized responses without URL metadata; both fail against the original owner. The owner now accepts absent metadata while retaining the exact request URL, rejected redirects, omitted cookies, bounded response decoding and protected storage. Supplied foreign metadata or a followed redirect still fails closed. Corrected source gates and fresh boundary review precede a new clean Thread artifact and actual enrollment verification. Existing `c992307860007674ddc501ef668c343efba4c48a` artifacts remain historical inputs, not corrected enrollment acceptance.
+
+### Commit effect — Electron enrollment response admission
+
+If applied, this commit lets Thread accept valid Electron enrollment responses while preserving exact-origin requests and redirect rejection.

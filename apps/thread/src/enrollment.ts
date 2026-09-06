@@ -400,11 +400,14 @@ export function createThreadEnrollmentOwner(input: {
         redirect: "error",
         signal: abortController.signal,
       });
-      if (response.redirected || response.url !== exchangeUrl || !response.ok) {
+      // Electron net.fetch omits Response.url. The exact request URL and
+      // redirect:error enforce its target; reject drift when metadata exists.
+      const responseUrlMatches = response.url === "" || response.url === exchangeUrl;
+      if (response.redirected || !responseUrlMatches || !response.ok) {
         void response.body?.cancel().catch(() => undefined);
         return {
           status:
-            !response.redirected && response.url === exchangeUrl && response.status === 401
+            !response.redirected && responseUrlMatches && response.status === 401
               ? "rejected"
               : "unavailable",
         };

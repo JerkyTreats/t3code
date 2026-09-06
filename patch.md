@@ -60,6 +60,8 @@ These source adapters passed S5 source and visual acceptance. Their current host
 
 [F27 T3 Thread](fork/F27-t3-thread.md) owns the separate hosted Electron shell, one process/window/profile/extraction per launch, protected exact-origin enrollment and staging-only activation. The web consumes the current full chat behind compact outer presentation. Main retains acknowledged staging across document reload; pending completion remains an explicit recovery state. Fresh one-use WSS tickets keep reusable credentials outside renderer state. Current source and installed acceptance status belongs to the intake ledger.
 
+Thread enrollment binds the request origin and rejects redirects while accepting Electron's absent response URL metadata. Supplied foreign response metadata remains invalid.
+
 ## Verification
 
 Source and runtime build-input changes require `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test`. Native mobile changes also require `pnpm lint:mobile`. Use synthetic state and keep client installation, production changes and publication within their explicit authorization.
