@@ -5,7 +5,7 @@
   "upstream": "761d4bac1c238ea7af4dd36b56719ad5e30771c3",
   "frozen_denominator": 175,
   "recorded_rows": 175,
-  "scope": "All 175 immutable rows remain recorded. S12 and S34 accepted evidence survives. Forty selected S5 roles pass source and concern review, including thirty-three previously unresolved rows and seven earlier mixed roles. Five S6 rows remain unresolved, alongside explicit mixed later obligations. No installed or final program acceptance is implied.",
+  "scope": "All 175 immutable rows remain recorded. S12, S34 and S5 accepted evidence survives. Eight selected S6 roles pass source review with bounded corrections, closing five previously unresolved source rows and preserving three mixed earlier roles. Installed and final program gates remain pending.",
   "entries": [
     {
       "path": "apps/server/src/auth/EnvironmentAuth.ts",
@@ -4006,11 +4006,11 @@
       "candidate_concerns": ["F02", "F03"],
       "classification": "source_role_attribution_only",
       "decision": "F16 launcher activation IPC imports compete with upstream t3 app activation IPC. Neither side is screenshot or Omarchy despite file-level labels.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "mechanical adapter supported",
       "candidate_owners_and_hosts": "DesktopLauncherRuntime and launcherActivation IPC owner; root DesktopIpcHandlers adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s6_source_role_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S6",
       "later_obligations": [
         "Compose both legitimate Code activation channels without importing Thread process ownership; preserve current upstream appActivation registration."
@@ -4022,7 +4022,50 @@
         "origin_line": 54,
         "upstream_line": 50
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S6 source role review passes with bounded corrections recorded here and in the program ledger. This does not claim installed or final program acceptance.",
+      "prior_s6_source_acceptance": {
+        "path": "apps/desktop/src/ipc/DesktopIpcHandlers.ts",
+        "hunk_number": 1,
+        "sha256": "dbe61692f92db5e73221bd782c9812c2ad26d18b936a1e5078f454efdce46018",
+        "simulated_merge_blob": "7734a7d277793d4613042e96cc9cc4cae0698d28",
+        "candidate_concerns": ["F02", "F03"],
+        "classification": "source_role_attribution_only",
+        "decision": "F16 launcher activation IPC imports compete with upstream t3 app activation IPC. Neither side is screenshot or Omarchy despite file-level labels.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "DesktopLauncherRuntime and launcherActivation IPC owner; root DesktopIpcHandlers adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S6",
+        "later_obligations": [
+          "Compose both legitimate Code activation channels without importing Thread process ownership; preserve current upstream appActivation registration."
+        ],
+        "source_attribution_snapshot": "39b66a7968cb0d2a3979304f5400368a07e68637d723a4b6222d326f45c4cd5d",
+        "source_attribution_evidence": {
+          "origin_blob": "00a2c5ec75ce8f09564eecae0381ea5f7382b191",
+          "upstream_blob": "3e30083064af096034b10dc411ebba4d34028069",
+          "origin_line": 54,
+          "upstream_line": 50
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "s6_exact_role_review": {
+        "report": "t3code-s6-review-code_linux-result.json",
+        "report_sha256": "030b24579cdd004b040c2e443b9154524142ad59844e1c0695d93df13923be38",
+        "evidence": {
+          "path": "apps/desktop/src/ipc/DesktopIpcHandlers.ts",
+          "hunk_number": 1,
+          "sha256": "dbe61692f92db5e73221bd782c9812c2ad26d18b936a1e5078f454efdce46018",
+          "disposition": "mechanical adapter supported",
+          "evidence": "Read exact pinned origin and upstream blobs. Current lines 68 through 75 register take/complete launcher activation beside upstream AppActivationIpc setReady/complete. Runtime ownership remains Code-only and no Thread process ownership is imported."
+        }
+      },
+      "s6_source_host_sha256": "aca8b2938adb0733b7e695e0da6d80debd1a396dbea58ec7233d9322d1fd79ac",
+      "s6_later_obligation_disposition": "Current source composition passes exact-role review. Clean artifact, installed and final program evidence remain separate pending gates.",
+      "candidate_owners": [
+        "apps/desktop/src/app/DesktopLauncherRuntime.ts",
+        "apps/desktop/src/ipc/methods/launcherActivation.ts"
+      ]
     },
     {
       "path": "apps/desktop/src/preview/Manager.ts",
@@ -4520,11 +4563,11 @@
       "candidate_concerns": ["F04", "F23", "F25", "F27", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "F16 desktop launcher submit-admission hook import versus upstream page scroll controller import. Traced old hook registers a draft submit callback with desktopLauncherActivationOwner; this is not Thread staging itself and is not outbox storage.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_mechanical_Code_admission_adapter",
       "candidate_owners_and_hosts": "DesktopLauncherActivationCoordinator/owner and root ChatView host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s6_source_role_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S6",
       "later_obligations": [
         "Reconcile supported Code launcher action admission with upstream t3 app activation; preserve page scrolling. Thread launch remains draft-only without autosend."
@@ -4536,7 +4579,58 @@
         "origin_line": 277,
         "upstream_line": 299
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S6 source role review passes with bounded corrections recorded here and in the program ledger. This does not claim installed or final program acceptance.",
+      "prior_s6_source_acceptance": {
+        "path": "apps/web/src/components/ChatView.tsx",
+        "hunk_number": 1,
+        "sha256": "36ccbdf08d1d9a6e68ff02b08275db782c97ba390686c81160b49ef30326ea6e",
+        "simulated_merge_blob": "ebb2e895b009be631eb72ae87d709eb656ecf5d7",
+        "candidate_concerns": ["F04", "F23", "F25", "F27", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "F16 desktop launcher submit-admission hook import versus upstream page scroll controller import. Traced old hook registers a draft submit callback with desktopLauncherActivationOwner; this is not Thread staging itself and is not outbox storage.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "DesktopLauncherActivationCoordinator/owner and root ChatView host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S6",
+        "later_obligations": [
+          "Reconcile supported Code launcher action admission with upstream t3 app activation; preserve page scrolling. Thread launch remains draft-only without autosend."
+        ],
+        "source_attribution_snapshot": "5d520c3096a6f90b03059d30d34521e0628cf7fd94671793e677951f1b388e20",
+        "source_attribution_evidence": {
+          "origin_blob": "51c83f44e6494d7f6237a638925493001a69ca6a",
+          "upstream_blob": "5bba2212d5e1c504c4727f27126db6ec7d3e231c",
+          "origin_line": 277,
+          "upstream_line": 299
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "s6_exact_role_review": {
+        "report": "t3code-s6-review-code_linux-result.json",
+        "report_sha256": "030b24579cdd004b040c2e443b9154524142ad59844e1c0695d93df13923be38",
+        "evidence": {
+          "path": "apps/web/src/components/ChatView.tsx",
+          "hunk_number": 1,
+          "sha256": "36ccbdf08d1d9a6e68ff02b08275db782c97ba390686c81160b49ef30326ea6e",
+          "disposition": "mechanical role supported; outcome acceptance blocked by S6-CODE-LINUX-01",
+          "evidence": "Read exact pinned origin and upstream blobs. Current page scroll controller import and creation remain. New Code hook and completion call are thin host adapters, but the host reads a different prompt representation from the hook admission check. Thread still has no automatic-send entry through this owner."
+        }
+      },
+      "s6_source_host_sha256": "fba1d8bbe1ee2bd24badd56866c7a641d4fc795c3b0a402a5e22922821fe1aa8",
+      "s6_later_obligation_disposition": "Current source composition passes exact-role review. Clean artifact, installed and final program evidence remain separate pending gates.",
+      "s6_correction_reviews": [
+        "t3code-s6-review-code-correction-result.json",
+        "t3code-s6-review-code-attachment-result.json"
+      ],
+      "candidate_owners": [
+        "apps/web/src/fork/desktopLauncherActivation.ts",
+        "apps/web/src/components/desktop/DesktopLauncherActivationCoordinator.tsx"
+      ],
+      "candidate_evidence": [
+        "Forty-six tests execute current composer, owner and hook: exact committed prompt and prepared attachment refs, synchronous reservations, and uncertain outcome handling.",
+        "Current ChatView maps readiness and successful exact draft/raw prompt admission to the owner; scrolling and Thread staging remain."
+      ]
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -4652,11 +4746,11 @@
       "candidate_concerns": ["F04", "F23", "F25", "F27", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "F27 compact shared Thread header selection versus current ordinary WorkspacePageHeader native-control placement, project PR target, project icon and draft settings.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_mechanical_compact_header_adapter_with_current_upstream_ordinary_branch",
       "candidate_owners_and_hosts": "Compact surface/header adapter; root ChatView host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s6_source_role_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S6",
       "later_obligations": [
         "S5 establishes shared appearance; S6 adds compact branch while preserving current ordinary header consumers and exact-origin PR authority."
@@ -4668,7 +4762,67 @@
         "origin_line": 6394,
         "upstream_line": 7713
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S6 source role review passes with bounded corrections recorded here and in the program ledger. This does not claim installed or final program acceptance.",
+      "prior_s6_source_acceptance": {
+        "path": "apps/web/src/components/ChatView.tsx",
+        "hunk_number": 28,
+        "sha256": "9468972636d11c7752aa8be2c88a1a60fbe20655bcb4e365db05465fb4ef60e2",
+        "simulated_merge_blob": "ebb2e895b009be631eb72ae87d709eb656ecf5d7",
+        "candidate_concerns": ["F04", "F23", "F25", "F27", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "F27 compact shared Thread header selection versus current ordinary WorkspacePageHeader native-control placement, project PR target, project icon and draft settings.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Compact surface/header adapter; root ChatView host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S6",
+        "later_obligations": [
+          "S5 establishes shared appearance; S6 adds compact branch while preserving current ordinary header consumers and exact-origin PR authority."
+        ],
+        "source_attribution_snapshot": "5d520c3096a6f90b03059d30d34521e0628cf7fd94671793e677951f1b388e20",
+        "source_attribution_evidence": {
+          "origin_blob": "51c83f44e6494d7f6237a638925493001a69ca6a",
+          "upstream_blob": "5bba2212d5e1c504c4727f27126db6ec7d3e231c",
+          "origin_line": 6394,
+          "upstream_line": 7713
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "s6_exact_role_review": {
+        "report": "t3code-s6-review-hosted_activation-result.json",
+        "report_sha256": "1f2300fce2f47142a0295870522eb9c9f94e92e90400aa6ea2f276fe16190d37",
+        "evidence": {
+          "path": "apps/web/src/components/ChatView.tsx",
+          "hunk_number": 28,
+          "sha256": "9468972636d11c7752aa8be2c88a1a60fbe20655bcb4e365db05465fb4ef60e2",
+          "baseline_hunk_text_sha256_verified": true,
+          "candidate_host_sha256": "95858c375d188fae4a75055ff6c24e6d04d75b9d1bbd92b3f1cb5f0d8a42f8ac",
+          "disposition": "accepted_mechanical_compact_header_adapter_with_current_upstream_ordinary_branch",
+          "durable_owner": [
+            "apps/web/src/components/thread/ThreadClientHeader.tsx",
+            "apps/web/src/threadClientSurface.ts"
+          ],
+          "adapter": "apps/web/src/components/ChatView.tsx",
+          "candidate_line_references": "7769 through 7824",
+          "role_basis": "The compact branch mechanically renders the declared Thread header from current thread title, model, runtime and activity state. The ordinary branch retains the current WorkspacePageHeader, native-control reservation, exact-origin pull-request action, active project icon, draft project settings action and project script controls. Current timeline, composer, send behavior and right-panel substrate remain shared ChatView behavior. The protected decision no longer lives in the broad host, so the role is not based on path relocation.",
+          "evidence": [
+            "apps/web/src/components/thread/ThreadClientHeader.test.tsx",
+            "apps/web/src/threadClientSurface.test.ts",
+            "direct immutable origin and upstream blob comparison",
+            "direct base-to-candidate diff review"
+          ],
+          "isolation_credit": true,
+          "blocking": false
+        }
+      },
+      "s6_source_host_sha256": "fba1d8bbe1ee2bd24badd56866c7a641d4fc795c3b0a402a5e22922821fe1aa8",
+      "s6_later_obligation_disposition": "Current source composition passes exact-role review. Clean artifact, installed and final program evidence remain separate pending gates.",
+      "candidate_owners": [
+        "apps/web/src/components/thread/ThreadClientHeader.tsx",
+        "apps/web/src/threadClientSurface.ts"
+      ],
+      "s6_correction_reviews": ["t3code-s6-review-hosted-correction-result.json"]
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -6053,9 +6207,9 @@
       "candidate_concerns": ["F27"],
       "classification": "source_role_attribution_only",
       "decision": "Upstream browser pairing-link/session inventory record types absent from origin under F17 external Admin boundary. Types expose scopes, subjects, methods and sessions, unlike privacy-safe portal projection.",
-      "candidate_role": "accepted_f17_exclusion_of_embedded_pairing_and_session_inventory_types",
+      "candidate_role": "retained F17 exclusion",
       "candidate_owners_and_hosts": "Accepted F17 auth boundary; primary/auth client adapter",
-      "status": "supplemental_role_review_passed_join_pending",
+      "status": "s6_source_role_review_passed",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S2_exact_role_review_now",
@@ -6069,7 +6223,7 @@
         "origin_line": null,
         "upstream_line": 120
       },
-      "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
+      "note": "S6 source role review passes with bounded corrections recorded here and in the program ledger. This does not claim installed or final program acceptance.",
       "candidate_owners": [
         "apps/server/src/auth/AdminAccess.ts",
         "apps/server/src/auth/DeviceAdministratorPolicy.ts",
@@ -6087,7 +6241,65 @@
       "deferred_later_obligations": [
         "S6 may consume ordinary pairing credentials but must not restore embedded pairing-link or client-session inventory types, routes, or UI."
       ],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "prior_s6_source_acceptance": {
+        "path": "apps/web/src/environments/primary/auth.ts",
+        "hunk_number": 1,
+        "sha256": "ef93c15c621637badc6cd9d8cf0d26998d9a2c6563cd2a119782673f5f9dc6e0",
+        "simulated_merge_blob": "2002ee26dadf078565644fbb79e0b7751933cf27",
+        "candidate_concerns": ["F27"],
+        "classification": "source_role_attribution_only",
+        "decision": "Upstream browser pairing-link/session inventory record types absent from origin under F17 external Admin boundary. Types expose scopes, subjects, methods and sessions, unlike privacy-safe portal projection.",
+        "candidate_role": "accepted_f17_exclusion_of_embedded_pairing_and_session_inventory_types",
+        "candidate_owners_and_hosts": "Accepted F17 auth boundary; primary/auth client adapter",
+        "status": "supplemental_role_review_passed_join_pending",
+        "review_status": "passed",
+        "unresolved": false,
+        "required_slice": "S2_exact_role_review_now",
+        "later_obligations": [
+          "S6 pairing consumption must not restore browser management inventory types or routes. Existing S2 removal requires this exact row attribution before denominator completion."
+        ],
+        "source_attribution_snapshot": "ec3076821daaa6e0bbd31d16150eba2465166186403bf434c0f41ff3f7fae511",
+        "source_attribution_evidence": {
+          "origin_blob": "aa1f700d56a7fa215b7cad7cc04d13c4429e7ad9",
+          "upstream_blob": "d76002a932980be04dd3743bc8e2caf5300a0642",
+          "origin_line": null,
+          "upstream_line": 120
+        },
+        "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
+        "candidate_owners": [
+          "apps/server/src/auth/AdminAccess.ts",
+          "apps/server/src/auth/DeviceAdministratorPolicy.ts",
+          "fork/F17-settings-admin.md"
+        ],
+        "candidate_hosts": [
+          "apps/web/src/environments/primary/auth.ts standard authentication adapter"
+        ],
+        "source_evidence_rationale": [
+          "The pinned upstream ServerPairingLinkRecord and ServerClientSessionRecord types expose scopes, subjects, methods, session identifiers, and connection state. They are absent from the current primary auth adapter and from its public index exports.",
+          "The current adapter at lines 99 through 130 retains only auth gate and pairing URL consumption state. The F17 owner exposes privacy-safe external portal projection through dedicated server authority and a six-route fail-closed boundary.",
+          "Focused auth bootstrap, AdminAccess, DeviceAdministratorPolicy, and DeviceAdministratorAuthority tests passed. This exact exclusion is established S2 and F17 behavior rather than an S6 implementation claim."
+        ],
+        "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
+        "deferred_later_obligations": [
+          "S6 may consume ordinary pairing credentials but must not restore embedded pairing-link or client-session inventory types, routes, or UI."
+        ],
+        "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      },
+      "s6_exact_role_review": {
+        "report": "t3code-s6-review-protected_transport-result.json",
+        "report_sha256": "f3c336e355112ce6b490978c2e6979d2174de8c10c03a9587a2c9ce8cf0488df",
+        "evidence": {
+          "path": "apps/web/src/environments/primary/auth.ts",
+          "hunk_number": 1,
+          "sha256": "ef93c15c621637badc6cd9d8cf0d26998d9a2c6563cd2a119782673f5f9dc6e0",
+          "status": "passed",
+          "current_role": "retained F17 exclusion",
+          "evidence": "Current auth adapter and primary exports contain no pairing-link or client-session inventory types. Original h1 is an F17 exclusion, despite its broad F27 label."
+        }
+      },
+      "s6_source_host_sha256": "1433a549e532eabf3e7f46bf49e6eb9112d4d7ebc1857c649756b29f3a585959",
+      "s6_later_obligation_disposition": "Current source composition passes exact-role review. Clean artifact, installed and final program evidence remain separate pending gates."
     },
     {
       "path": "apps/web/src/environments/primary/auth.ts",
@@ -6097,11 +6309,11 @@
       "candidate_concerns": ["F27"],
       "classification": "source_role_attribution_only",
       "decision": "F27 one-way protected Thread enrollment submission versus upstream cookie bootstrap, authenticated-session wait and cached gate result.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "mechanical one-way enrollment result adapter composed with accepted upstream session readiness",
       "candidate_owners_and_hosts": "Thread enrollment owner and primary/auth adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s6_source_role_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S6",
       "later_obligations": [
         "Compose Thread bridge submission with upstream post-auth readiness; keep bearer in main and add exact-origin WS ticket seam from S6 preflight."
@@ -6113,7 +6325,52 @@
         "origin_line": 330,
         "upstream_line": 355
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S6 source role review passes with bounded corrections recorded here and in the program ledger. This does not claim installed or final program acceptance.",
+      "prior_s6_source_acceptance": {
+        "path": "apps/web/src/environments/primary/auth.ts",
+        "hunk_number": 2,
+        "sha256": "6e035461592e01f5a5a69b29f1a569904c6928d8de63fb9652ac1c6010890a63",
+        "simulated_merge_blob": "2002ee26dadf078565644fbb79e0b7751933cf27",
+        "candidate_concerns": ["F27"],
+        "classification": "source_role_attribution_only",
+        "decision": "F27 one-way protected Thread enrollment submission versus upstream cookie bootstrap, authenticated-session wait and cached gate result.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Thread enrollment owner and primary/auth adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S6",
+        "later_obligations": [
+          "Compose Thread bridge submission with upstream post-auth readiness; keep bearer in main and add exact-origin WS ticket seam from S6 preflight."
+        ],
+        "source_attribution_snapshot": "ec3076821daaa6e0bbd31d16150eba2465166186403bf434c0f41ff3f7fae511",
+        "source_attribution_evidence": {
+          "origin_blob": "aa1f700d56a7fa215b7cad7cc04d13c4429e7ad9",
+          "upstream_blob": "d76002a932980be04dd3743bc8e2caf5300a0642",
+          "origin_line": 330,
+          "upstream_line": 355
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "s6_exact_role_review": {
+        "report": "t3code-s6-review-protected_transport-result.json",
+        "report_sha256": "f3c336e355112ce6b490978c2e6979d2174de8c10c03a9587a2c9ce8cf0488df",
+        "evidence": {
+          "path": "apps/web/src/environments/primary/auth.ts",
+          "hunk_number": 2,
+          "sha256": "6e035461592e01f5a5a69b29f1a569904c6928d8de63fb9652ac1c6010890a63",
+          "status": "passed",
+          "current_role": "mechanical one-way enrollment result adapter composed with accepted upstream session readiness",
+          "evidence": "auth.ts:313 routes the existing credential to threadAuth.ts:73 and translates bounded result status. enrollment.ts:352 owns protected exchange and persistence, threadTransport.ts owns exact-origin HTTP binding, and threadAuth.ts:26 owns fresh ticket acquisition. auth.ts:330 preserves the upstream real-session wait before caching authenticated state. authBootstrap.test.ts:130 and :176 execute the current adapter success and failed-session paths; resolver.test.ts:187 and :226 execute freshness and no fallback. No product management authority is introduced in this hunk."
+        }
+      },
+      "s6_source_host_sha256": "1433a549e532eabf3e7f46bf49e6eb9112d4d7ebc1857c649756b29f3a585959",
+      "s6_later_obligation_disposition": "Current source composition passes exact-role review. Clean artifact, installed and final program evidence remain separate pending gates.",
+      "candidate_owners": [
+        "apps/thread/src/enrollment.ts",
+        "apps/web/src/environments/primary/threadAuth.ts",
+        "apps/web/src/environments/primary/threadTransport.ts"
+      ]
     },
     {
       "path": "apps/web/src/environments/primary/auth.ts",
@@ -6123,9 +6380,9 @@
       "candidate_concerns": ["F27"],
       "classification": "source_role_attribution_only",
       "decision": "Upstream browser pairing issuance/list/revoke plus client-session list/revoke APIs absent from origin under F17 external portal authority. This is not ordinary pairing consumption.",
-      "candidate_role": "accepted_f17_exclusion_of_embedded_pairing_issuance_and_access_management_apis",
+      "candidate_role": "retained F17 exclusion",
       "candidate_owners_and_hosts": "Accepted F17 boundary; primary/auth client adapter",
-      "status": "supplemental_role_review_passed_join_pending",
+      "status": "s6_source_role_review_passed",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S2_exact_role_review_now",
@@ -6139,7 +6396,7 @@
         "origin_line": null,
         "upstream_line": 362
       },
-      "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
+      "note": "S6 source role review passes with bounded corrections recorded here and in the program ledger. This does not claim installed or final program acceptance.",
       "candidate_owners": [
         "apps/server/src/auth/AdminAccess.ts",
         "apps/server/src/auth/DeviceAdministratorPolicy.ts",
@@ -6158,7 +6415,66 @@
       "deferred_later_obligations": [
         "S6 must preserve standard-client pairing consumption and the absence of embedded access management. It must not redesign server authority or create a new policy owner."
       ],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent.",
+      "prior_s6_source_acceptance": {
+        "path": "apps/web/src/environments/primary/auth.ts",
+        "hunk_number": 3,
+        "sha256": "4e17139f084e45f03b1de294ec998ea1598b032f42cc5e447dc15e8b924fda3b",
+        "simulated_merge_blob": "2002ee26dadf078565644fbb79e0b7751933cf27",
+        "candidate_concerns": ["F27"],
+        "classification": "source_role_attribution_only",
+        "decision": "Upstream browser pairing issuance/list/revoke plus client-session list/revoke APIs absent from origin under F17 external portal authority. This is not ordinary pairing consumption.",
+        "candidate_role": "accepted_f17_exclusion_of_embedded_pairing_issuance_and_access_management_apis",
+        "candidate_owners_and_hosts": "Accepted F17 boundary; primary/auth client adapter",
+        "status": "supplemental_role_review_passed_join_pending",
+        "review_status": "passed",
+        "unresolved": false,
+        "required_slice": "S2_exact_role_review_now",
+        "later_obligations": [
+          "S6 must preserve standard-client consumption only and retain absence of embedded access management. No server authority redesign or new policy owner."
+        ],
+        "source_attribution_snapshot": "ec3076821daaa6e0bbd31d16150eba2465166186403bf434c0f41ff3f7fae511",
+        "source_attribution_evidence": {
+          "origin_blob": "aa1f700d56a7fa215b7cad7cc04d13c4429e7ad9",
+          "upstream_blob": "d76002a932980be04dd3743bc8e2caf5300a0642",
+          "origin_line": null,
+          "upstream_line": 362
+        },
+        "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
+        "candidate_owners": [
+          "apps/server/src/auth/AdminAccess.ts",
+          "apps/server/src/auth/DeviceAdministratorPolicy.ts",
+          "apps/server/src/auth/http.ts",
+          "fork/F17-settings-admin.md"
+        ],
+        "candidate_hosts": [
+          "apps/web/src/environments/primary/auth.ts standard credential consumption adapter"
+        ],
+        "source_evidence_rationale": [
+          "The pinned upstream create, list, and revoke pairing APIs and list and revoke client-session APIs are absent from current primary auth source, current primary exports, web call sites, and public RPC transport.",
+          "Current auth.ts lines 303 through 317 retain submitServerAuthCredential only. PairingRouteSurface consumes that function for manual or URL-provided one-time credentials, preserving standard client authentication without adding management authority.",
+          "Focused client bootstrap and F17 server authority tests passed. Portal issuance and private lifecycle remain in dedicated server owners behind the exact external authority boundary."
+        ],
+        "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
+        "deferred_later_obligations": [
+          "S6 must preserve standard-client pairing consumption and the absence of embedded access management. It must not redesign server authority or create a new policy owner."
+        ],
+        "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      },
+      "s6_exact_role_review": {
+        "report": "t3code-s6-review-protected_transport-result.json",
+        "report_sha256": "f3c336e355112ce6b490978c2e6979d2174de8c10c03a9587a2c9ce8cf0488df",
+        "evidence": {
+          "path": "apps/web/src/environments/primary/auth.ts",
+          "hunk_number": 3,
+          "sha256": "4e17139f084e45f03b1de294ec998ea1598b032f42cc5e447dc15e8b924fda3b",
+          "status": "passed",
+          "current_role": "retained F17 exclusion",
+          "evidence": "Current auth adapter and primary exports retain only credential consumption and ordinary auth. Issuance, listing and revocation APIs from immutable h3 remain absent. No S6 server authority mutation exists; EnvironmentAuth.ts:746 derives management class only from the consumed server grant."
+        }
+      },
+      "s6_source_host_sha256": "1433a549e532eabf3e7f46bf49e6eb9112d4d7ebc1857c649756b29f3a585959",
+      "s6_later_obligation_disposition": "Current source composition passes exact-role review. Clean artifact, installed and final program evidence remain separate pending gates."
     },
     {
       "path": "apps/web/src/hooks/useTheme.ts",
@@ -6392,11 +6708,11 @@
       "candidate_concerns": ["F27", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "F27 compact surface selection versus upstream welcome-return navigation suppression ref/effect.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_mechanical_host_composition_of_compact_policy_and_upstream_welcome_return_state",
       "candidate_owners_and_hosts": "Compact shell owner; root route host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s6_source_role_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S6",
       "later_obligations": [
         "Compose compact surface with FirstRunGate and EventRouter initial navigation; preserve welcome return behavior and do not lose launch draft."
@@ -6408,7 +6724,68 @@
         "origin_line": 98,
         "upstream_line": 101
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S6 source role review passes with bounded corrections recorded here and in the program ledger. This does not claim installed or final program acceptance.",
+      "prior_s6_source_acceptance": {
+        "path": "apps/web/src/routes/__root.tsx",
+        "hunk_number": 2,
+        "sha256": "af9b1fc708454b011924eea0ab7b3b2a68a0bf27ebd53c3568048d0b6a191dd5",
+        "simulated_merge_blob": "bdae13db81f333f5ffbd94df049becc121cb3e0b",
+        "candidate_concerns": ["F27", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "F27 compact surface selection versus upstream welcome-return navigation suppression ref/effect.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Compact shell owner; root route host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S6",
+        "later_obligations": [
+          "Compose compact surface with FirstRunGate and EventRouter initial navigation; preserve welcome return behavior and do not lose launch draft."
+        ],
+        "source_attribution_snapshot": "3df391057e0f49a641b78aec0129f501cfedbfe4e8348bceb9c1b82eee5606a9",
+        "source_attribution_evidence": {
+          "origin_blob": "deb052d8c542a3ea0a8b994198ad7b4b16c7a1fb",
+          "upstream_blob": "12cdd946f6c46a63ae6e2c9177f64630f1941519",
+          "origin_line": 98,
+          "upstream_line": 101
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "s6_exact_role_review": {
+        "report": "t3code-s6-review-hosted_activation-result.json",
+        "report_sha256": "1f2300fce2f47142a0295870522eb9c9f94e92e90400aa6ea2f276fe16190d37",
+        "evidence": {
+          "path": "apps/web/src/routes/__root.tsx",
+          "hunk_number": 2,
+          "sha256": "af9b1fc708454b011924eea0ab7b3b2a68a0bf27ebd53c3568048d0b6a191dd5",
+          "baseline_hunk_text_sha256_verified": true,
+          "candidate_host_sha256": "cdc606d5a17b8bd232b675d939c04de1d817ac8efe2f7b46c6c66fcab2de434d",
+          "disposition": "accepted_mechanical_host_composition_of_compact_policy_and_upstream_welcome_return_state",
+          "durable_owner": [
+            "apps/web/src/threadClientSurface.ts",
+            "apps/web/src/fork/threadClientActivation.ts"
+          ],
+          "adapter": "apps/web/src/routes/__root.tsx",
+          "candidate_line_references": "107 through 117 and 159 through 216",
+          "role_basis": "The root reads the owner-produced compact and launch-navigation decisions while preserving the upstream returningFromWelcome ref and effect. It mounts Thread activation only for authenticated actual-bridge hosts, keeps the command palette and sidebar context, bypasses first-run and one initial EventRouter navigation only for actual launch ownership, and leaves ordinary clients on AppSidebarLayout, FirstRunGate and the current welcome-return behavior. The root selects no Thread credential, prompt, project or receipt policy.",
+          "evidence": [
+            "apps/web/src/threadClientSurface.test.ts",
+            "apps/web/src/components/thread/ThreadClientActivationCoordinator.test.tsx",
+            "apps/web/src/hooks/useHandleNewThread.test.ts",
+            "direct immutable origin and upstream blob comparison",
+            "direct base-to-candidate diff review"
+          ],
+          "isolation_credit": true,
+          "blocking": false
+        }
+      },
+      "s6_source_host_sha256": "cdc606d5a17b8bd232b675d939c04de1d817ac8efe2f7b46c6c66fcab2de434d",
+      "s6_later_obligation_disposition": "Current source composition passes exact-role review. Clean artifact, installed and final program evidence remain separate pending gates.",
+      "candidate_owners": [
+        "apps/web/src/threadClientSurface.ts",
+        "apps/web/src/fork/threadClientActivation.ts"
+      ],
+      "s6_correction_reviews": ["t3code-s6-review-hosted-correction-result.json"]
     },
     {
       "path": "packages/contracts/src/ipc.ts",
@@ -6531,9 +6908,9 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "F03 screenshot and F02 system-theme optional bridge methods versus upstream t3 app activation optional bridge with readiness/completion/request subscription.",
-      "candidate_role": "accepted_mechanical_contract_adapter",
+      "candidate_role": "S5 role retained; S6 mechanical extension supported",
       "candidate_owners_and_hosts": "Root desktop bridge contracts and preload registration; F02/F03 adapter owners",
-      "status": "s5_role_and_concern_review_passed",
+      "status": "s6_source_role_review_passed",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S5_with_S6_host_constraint",
@@ -6547,7 +6924,7 @@
         "origin_line": 1252,
         "upstream_line": 1154
       },
-      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "note": "S6 source role review passes with bounded corrections recorded here and in the program ledger. This does not claim installed or final program acceptance.",
       "prior_source_acceptance": {
         "candidate_concerns": ["F23"],
         "classification": "source_role_attribution_only",
@@ -6586,10 +6963,90 @@
       ],
       "s5_role_review": "/tmp/t3code-s5-review-native_theme-result.json",
       "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
-      "s5_correction_review": "/tmp/t3code-s5-round3-review-native_theme-result.json"
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-native_theme-result.json",
+      "prior_s6_source_acceptance": {
+        "path": "packages/contracts/src/ipc.ts",
+        "hunk_number": 3,
+        "sha256": "4309b4143c8071621b4259a8b12568c34cee365221c8fd6ef619b5264fa97210",
+        "simulated_merge_blob": "06cf726bf76ced648e34bcd6036fa1fdc3fcae16",
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "F03 screenshot and F02 system-theme optional bridge methods versus upstream t3 app activation optional bridge with readiness/completion/request subscription.",
+        "candidate_role": "accepted_mechanical_contract_adapter",
+        "candidate_owners_and_hosts": "Root desktop bridge contracts and preload registration; F02/F03 adapter owners",
+        "status": "s5_role_and_concern_review_passed",
+        "review_status": "passed",
+        "unresolved": false,
+        "required_slice": "S5_with_S6_host_constraint",
+        "later_obligations": [
+          "Replay thin screenshot/theme capabilities while retaining upstream appActivation. S6 later composes Code launcher lifecycle using current bridge, not Thread authority."
+        ],
+        "source_attribution_snapshot": "2e8fc5e91cf748966be1359038993fe619505c1a957848578883a91b1d8aad29",
+        "source_attribution_evidence": {
+          "origin_blob": "5de8f56098a11c7884f0008d6ab655363615fcd5",
+          "upstream_blob": "a14a4ed0a08aaa0959f8bf3b33490de16c489289",
+          "origin_line": 1252,
+          "upstream_line": 1154
+        },
+        "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+        "prior_source_acceptance": {
+          "candidate_concerns": ["F23"],
+          "classification": "source_role_attribution_only",
+          "decision": "F03 screenshot and F02 system-theme optional bridge methods versus upstream t3 app activation optional bridge with readiness/completion/request subscription.",
+          "candidate_role": "pending_exact_role_review",
+          "candidate_owners_and_hosts": "Root desktop bridge contracts and preload registration; F02/F03 adapter owners",
+          "status": "later_slice_implementation_pending",
+          "review_status": "pending",
+          "unresolved": true,
+          "required_slice": "S5_with_S6_host_constraint",
+          "later_obligations": [
+            "Replay thin screenshot/theme capabilities while retaining upstream appActivation. S6 later composes Code launcher lifecycle using current bridge, not Thread authority."
+          ],
+          "source_attribution_snapshot": "2e8fc5e91cf748966be1359038993fe619505c1a957848578883a91b1d8aad29",
+          "source_attribution_evidence": {
+            "origin_blob": "5de8f56098a11c7884f0008d6ab655363615fcd5",
+            "upstream_blob": "a14a4ed0a08aaa0959f8bf3b33490de16c489289",
+            "origin_line": 1252,
+            "upstream_line": 1154
+          },
+          "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+        },
+        "candidate_owners": [
+          "apps/desktop/src/fork/DesktopScreenshotCapture.ts",
+          "apps/desktop/src/fork/OmarchyThemeSource.ts",
+          "apps/web/src/fork/desktopSystemTheme.ts"
+        ],
+        "candidate_hosts": [
+          "DesktopBridge retains upstream appActivation unchanged and adds optional getSystemTheme, onSystemTheme and captureDesktopScreenshot beside the existing nested preview capture contract."
+        ],
+        "candidate_evidence": [
+          "packages/contracts/src/ipc.ts lines 1200 through 1253",
+          "apps/desktop/src/preload.test.ts validates optional capture exposure, theme decoding, cleanup and distinct preview capture routing.",
+          "The built sandboxed preload contains appActivation and exposeClerkBridge, has only electron as an external require, and matches runtime hash 52b334eaa459d2d93003d89e9c1170990793f20205c5411d40baf7f45e73860a.",
+          "No F17 authority owner or adapter path appears in the candidate diff."
+        ],
+        "s5_role_review": "/tmp/t3code-s5-review-native_theme-result.json",
+        "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+        "s5_correction_review": "/tmp/t3code-s5-round3-review-native_theme-result.json"
+      },
+      "s6_exact_role_review": {
+        "report": "t3code-s6-review-code_linux-result.json",
+        "report_sha256": "030b24579cdd004b040c2e443b9154524142ad59844e1c0695d93df13923be38",
+        "evidence": {
+          "path": "packages/contracts/src/ipc.ts",
+          "hunk_number": 3,
+          "sha256": "4309b4143c8071621b4259a8b12568c34cee365221c8fd6ef619b5264fa97210",
+          "disposition": "S5 role retained; S6 mechanical extension supported",
+          "evidence": "Read exact pinned origin and upstream blobs. Existing theme/screenshot capabilities and upstream nested appActivation remain. New launcher take and identity-only completion types live beside local bootstrap methods; no Thread bridge or lifecycle authority is added."
+        }
+      },
+      "s6_source_host_sha256": "38aeef3bc8f3a959a7ccb8b9f66f8150e466fd9d21506eba7dd26c253c6074b5",
+      "s6_later_obligation_disposition": "Current source composition passes exact-role review. Clean artifact, installed and final program evidence remain separate pending gates."
     }
   ],
   "s5_reviewed_rows": 40,
-  "unresolved_rows": 5,
-  "s5_delivery_gate": "Source, built visuals and ordered Style Assurance pass; the local commit group is accepted with this record. Installed Linux and Thread remain S6; final acceptance remains S7."
+  "unresolved_rows": 0,
+  "s5_delivery_gate": "Source, built visuals and ordered Style Assurance pass; the local commit group is accepted with this record. Installed Linux and Thread remain S6; final acceptance remains S7.",
+  "s6_reviewed_rows": 8,
+  "s6_delivery_gate": "Logical source reviews, bounded corrections, final required gates and ordered Style Assurance pass. Root accepts the joined source for local commits and clean artifact creation. Installed acceptance and S7 remain pending."
 }

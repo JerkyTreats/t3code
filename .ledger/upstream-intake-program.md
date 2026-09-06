@@ -631,3 +631,22 @@ If applied, this commit installs verified Code and Thread artifacts with ownersh
 ### Commit effect — S6 hosts
 
 If applied, this commit connects the current chat and application hosts to independent Code and Thread client owners.
+
+### S6 local source delivery
+
+The first eight local source commits are:
+
+- `fd228f534 feat(contracts): define bounded client launch identities`
+- `a6b4629d4 feat(desktop): isolate standalone HTTPS Code lifecycle`
+- `f7c442c0d feat(thread): add independent protected hosted client shell`
+- `4ef61e580 feat(auth): bind hosted client primary transport to its origin`
+- `3321579ff feat(launcher): admit Code prompts through the ready composer`
+- `71f32c48d feat(thread): stage launch drafts in the shared chat surface`
+- `b251734e1 feat(linux): install verified independent client artifacts`
+- `b1bed98d2 refactor(chat): connect independent clients to current hosts`
+
+This records commit closes the S6 source commit gate. Root verifies every non-ledger delivery hash after the prior hooks, including current specs and exact-role evidence. The final joined source is ready for clean Code and Thread artifact creation. It supplies independent Thread shell and enrollment, full hosted draft staging, standalone HTTPS Code and verified Linux installation with bounded rollback. Actual installed product acceptance remains open. No production, existing profile or remote repository was mutated.
+
+### Commit effect — S6 records
+
+If applied, this commit records retained Linux and Thread responsibilities with source preservation evidence and installed verification boundaries.

@@ -50,7 +50,13 @@ The provider capability owner admits Board for Codex, Claude, Cursor, Grok and l
 
 [F23 preview controls](fork/F23-preview-browser-controls.md) owns focused new, confirmed close and reopen actions, exact scoped runtime identity and ten-entry successful-close history. Current preview sessions, profiles and browser presentation remain upstream substrate. Optional exact zoom restoration consumes the existing normalized Manager operation.
 
-These source adapters are integrating in S5. Their current host, visual and installed acceptance status belongs to the intake ledger. [Ordinary chat and draft appearance](fork/chat-and-draft-presentation.md) keeps the captured message hierarchy, centered draft, plan presentation, floating permission control, full-width checkout strip and composer geometry while consuming current upstream sending, attachments and Markdown.
+These source adapters passed S5 source and visual acceptance. Their current host, visual and installed acceptance status belongs to the intake ledger. [Ordinary chat and draft appearance](fork/chat-and-draft-presentation.md) keeps the captured message hierarchy, centered draft, plan presentation, floating permission control, full-width checkout strip and composer geometry while consuming current upstream sending, attachments and Markdown.
+
+## Linux And Hosted Thread
+
+[F16 official Linux launcher](fork/F16-official-linux-desktop-launcher.md) owns isolated standalone Code identity, verified launch admission, readiness withdrawal and transactional production topology. Selection occurs before bundled backend allocation. Trusted Code launcher submission consumes ordinary send admission; completion retry does not resend. Server lifecycle remains independent.
+
+[F27 T3 Thread](fork/F27-t3-thread.md) owns the separate hosted Electron shell, one process/window/profile/extraction per launch, protected exact-origin enrollment and staging-only activation. The web consumes the current full chat behind compact outer presentation. Main retains acknowledged staging across document reload; pending completion remains an explicit recovery state. Fresh one-use WSS tickets keep reusable credentials outside renderer state. Current source and installed acceptance status belongs to the intake ledger.
 
 ## Verification
 
