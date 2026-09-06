@@ -37,6 +37,7 @@ async function launch(input: {
   activationText?: string;
   redirect?: string;
   loadFailure?: boolean;
+  loadingAtLoadResolution?: boolean;
   storageAvailable?: boolean;
   serverUrl?: string;
 }) {
@@ -82,10 +83,11 @@ async function launch(input: {
     destroyed = false;
     url = "";
     redirectPrevented = false;
+    loadingMainFrame = input.loadingAtLoadResolution ?? false;
     webContents = Object.assign(new NodeEvents.EventEmitter(), {
       getURL: () => this.url,
       mainFrame: { url: "" },
-      isLoadingMainFrame: () => false,
+      isLoadingMainFrame: () => this.loadingMainFrame,
       send: vi.fn(),
       setWindowOpenHandler: vi.fn(),
       session: Object.assign(new NodeEvents.EventEmitter(), {
@@ -225,6 +227,27 @@ describe("T3 Thread main composition", () => {
     expect(second.app.quit).toHaveBeenCalledOnce();
   });
 
+  it("delivers pending activation when loading clears after did-finish-load and loadURL", async () => {
+    const process = await launch({ root: fixtureRoot(), loadingAtLoadResolution: true });
+    const window = process.windows[0]!;
+    // Electron can resolve loadURL and emit did-finish-load before clearing this flag.
+    expect(process.readyBytes.length).toBeGreaterThan(0);
+    expect(window.webContents.send).not.toHaveBeenCalled();
+    window.webContents.emit("did-stop-loading");
+    expect(window.webContents.send).not.toHaveBeenCalled();
+
+    window.loadingMainFrame = false;
+    window.webContents.emit("did-stop-loading");
+    expect(window.webContents.send).toHaveBeenCalledExactlyOnceWith(
+      THREAD_CLIENT_ACTIVATION_CHANNEL,
+      activation,
+    );
+    window.webContents.send.mockClear();
+    window.destroy();
+    window.webContents.emit("did-stop-loading");
+    expect(window.webContents.send).not.toHaveBeenCalled();
+  });
+
   it("accepts exact-origin initial redirects and replays the same activation after reload", async () => {
     const process = await launch({ root: fixtureRoot(), redirect: `${origin}/login` });
     const window = process.windows[0]!;
@@ -240,6 +263,7 @@ describe("T3 Thread main composition", () => {
     window.url = "https://foreign.example.test/";
     window.webContents.send.mockClear();
     window.webContents.emit("did-finish-load");
+    window.webContents.emit("did-stop-loading");
     expect(window.webContents.send).not.toHaveBeenCalled();
   });
 
@@ -293,6 +317,7 @@ describe("T3 Thread main composition", () => {
     window.webContents.send.mockClear();
     window.webContents.emit("did-finish-load");
     window.webContents.emit("did-finish-load");
+    window.webContents.emit("did-stop-loading");
     expect(window.webContents.send).not.toHaveBeenCalled();
     window.destroy();
     expect(process.handlers.has(THREAD_CLIENT_ACTIVATION_COMPLETION_CHANNEL)).toBe(false);

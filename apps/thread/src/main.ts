@@ -147,6 +147,8 @@ async function run(): Promise<void> {
       app.quit();
     });
     window.webContents.on("did-finish-load", sendActivation);
+    // Electron may clear isLoadingMainFrame only after did-finish-load and loadURL resolve.
+    window.webContents.on("did-stop-loading", sendActivation);
     window.webContents.on("render-process-gone", () => app.quit());
     window.once("ready-to-show", () => {
       if (window) reveal(window);

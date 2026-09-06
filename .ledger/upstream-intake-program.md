@@ -710,3 +710,15 @@ All four required gates pass, including 13,840 tests across fifteen workspaces a
 ### Commit effect — browser fetch invocation
 
 If applied, this commit lets the protected Thread HTTP adapter request its enrolled session through browser fetch.
+
+### Installed Thread activation loading correction
+
+The clean `14e9108a24a20e2787ec738c2c08cfbdfd26b2f0` client completes the actual pairing UI and authenticates HTTP requests, but its root remains blank with no retained preload activation. The bounded diagnostic uses the exact extracted Electron executable and packaged preload. Both `did-finish-load` and the resolved `loadURL` callback still report the main frame as loading, so the existing delivery guard skips both sends. `did-stop-loading` observes the cleared flag, and an explicit diagnostic send then reaches the unchanged preload. This proves the delivery cause without claiming product acceptance from the separate probe.
+
+Root retains the delivery guard and also retries from `did-stop-loading`. A main-composition regression models the observed event order and fails against the original source. The corrected case delivers the pending activation after the flag clears and rejects a late event after window destruction. Existing foreign-document and acknowledged-completion cases now exercise the additional event. No activation schema, readiness meaning, enrollment authority, queue or renderer-send behavior changes. The final installed matrix and refreshed artifact identity remain required.
+
+The four focused activation suites pass 31 tests. All four required repository gates pass, including 13,841 tests across fifteen workspaces and ten inherited server skips, recorded in `t3code-s7-thread-loading-gates.json`. Fresh bounded review reports no source finding at SHA256 `09f5d50675f29c6375fb4ca08bfc8dea11ba52136133c0ddf24f9142e022c13d`. Ordered Style Assurance precedes the clean commit and actual installed retry.
+
+### Commit effect — activation after loading
+
+If applied, this commit delivers a pending Thread launch draft when Electron finishes loading its main frame.
