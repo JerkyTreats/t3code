@@ -99,6 +99,21 @@ import {
 import { ComposerActivityRow } from "./ComposerActivityStatus";
 import type { ThreadSyncPhase } from "../../threadSync";
 import { ComposerBanner } from "./ComposerBanner";
+import {
+  ComposerAttachmentAdmission,
+  composerAttachmentScope,
+  type ComposerAttachmentReservation,
+} from "../../fork/composerAttachmentAdmission";
+import {
+  captureComposerScreenshot,
+  resolveComposerScreenshotCapture,
+} from "../../fork/composerScreenshot";
+import {
+  chatComposerPresentation,
+  FloatingComposerRuntimeControl,
+  shouldFloatComposerRuntimeControl,
+  restingComposerActionPadding,
+} from "../../fork/chatComposerPresentation";
 import { ComposerSurface } from "./ComposerSurface";
 import {
   ComposerBannerStack,
@@ -782,6 +797,7 @@ import {
   CircleAlertIcon,
   FileIcon,
   PaperclipIcon,
+  ScanLineIcon,
   PencilRulerIcon,
   PlayIcon,
   type LucideIcon,
@@ -930,6 +946,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
+  runtimePlacement?: "footer" | "floating" | "hidden";
   size?: "sm" | "xs";
   hidden?: boolean;
   onToggleInteractionMode: () => void;
@@ -990,52 +1007,65 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
 
   return (
     <>
-      <ComposerControlSeparator size={size} />
+      {props.runtimePlacement === "hidden" ? null : (
+        <>
+          {props.runtimePlacement === "floating" ? null : <ComposerControlSeparator size={size} />}
 
-      <Tooltip>
-        <Select
-          open={open}
-          onOpenChange={setOpen}
-          value={props.runtimeMode}
-          onValueChange={(value) => props.onRuntimeModeChange(value!)}
-        >
-          <TooltipTrigger
-            render={
-              <ComposerSelectControl
-                size={size}
-                className={size === "xs" ? undefined : "font-medium"}
-                aria-label="Runtime mode"
-              />
-            }
-          >
-            <ComposerControlIcon icon={RuntimeModeIcon} size={size} />
-            <SelectValue>{runtimeModeOption.label}</SelectValue>
-          </TooltipTrigger>
-          <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>
-            {runtimeModeOptions.map((mode) => {
-              const option = runtimeModeConfig[mode];
-              const OptionIcon = option.icon;
-              return (
-                <SelectItem key={mode} value={mode} hideIndicator className="min-w-64 py-2">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                        <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                        {option.label}
-                      </span>
-                      <span className="text-muted-foreground text-xs leading-4">
-                        {option.description}
-                      </span>
-                    </div>
-                  </div>
-                </SelectItem>
-              );
-            })}
-          </SelectPopup>
-        </Select>
-        <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
-      </Tooltip>
-
+          <Tooltip>
+            <Select
+              open={open}
+              onOpenChange={setOpen}
+              value={props.runtimeMode}
+              onValueChange={(value) => props.onRuntimeModeChange(value!)}
+            >
+              <TooltipTrigger
+                render={
+                  <ComposerSelectControl
+                    size={size}
+                    className={
+                      props.runtimePlacement === "floating"
+                        ? chatComposerPresentation.runtimeTriggerClassName
+                        : size === "xs"
+                          ? undefined
+                          : "font-medium"
+                    }
+                    aria-label="Runtime mode"
+                  />
+                }
+              >
+                <ComposerControlIcon icon={RuntimeModeIcon} size={size} />
+                <SelectValue
+                  className={props.runtimePlacement === "floating" ? "sr-only" : undefined}
+                >
+                  {runtimeModeOption.label}
+                </SelectValue>
+              </TooltipTrigger>
+              <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>
+                {runtimeModeOptions.map((mode) => {
+                  const option = runtimeModeConfig[mode];
+                  const OptionIcon = option.icon;
+                  return (
+                    <SelectItem key={mode} value={mode} hideIndicator className="min-w-64 py-2">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="grid min-w-0 flex-1 gap-0.5">
+                          <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+                            <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                            {option.label}
+                          </span>
+                          <span className="text-muted-foreground text-xs leading-4">
+                            {option.description}
+                          </span>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectPopup>
+            </Select>
+            <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
+          </Tooltip>
+        </>
+      )}
       {interactionModeToggle}
     </>
   );
@@ -1405,6 +1435,46 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // happened while they awaited.
   const composerDraftTargetKeyRef = useRef("");
   composerDraftTargetKeyRef.current = composerTargetKey(composerDraftTarget);
+  const draftSession = useComposerDraftStore((store) =>
+    typeof composerDraftTarget === "string" ? store.getDraftSession(composerDraftTarget) : null,
+  );
+  const attachmentScope = composerAttachmentScope({
+    environmentId,
+    targetKey: composerTargetKey(composerDraftTarget),
+    threadId: activeThreadId,
+    draftProject: draftSession,
+  });
+  const [attachmentActivity, setAttachmentActivity] = useState({ pending: 0, capturing: false });
+  const pendingAttachmentCount = attachmentActivity.pending;
+  const [attachmentAdmission] = useState(
+    () => new ComposerAttachmentAdmission(setAttachmentActivity),
+  );
+  const screenshotCapture = resolveComposerScreenshotCapture(
+    typeof window === "undefined" ? undefined : window.desktopBridge,
+  );
+  const attachmentTargetKey = composerTargetKey(composerDraftTarget);
+  const attachmentDraftId = typeof composerDraftTarget === "string" ? composerDraftTarget : null;
+  useLayoutEffect(() => {
+    // Draft metadata can change in the store before React commits a rerender.
+    attachmentAdmission.activate(attachmentScope, () =>
+      composerAttachmentScope({
+        environmentId,
+        targetKey: attachmentTargetKey,
+        threadId: activeThreadId,
+        draftProject: attachmentDraftId
+          ? useComposerDraftStore.getState().getDraftSession(attachmentDraftId)
+          : null,
+      }),
+    );
+    return () => attachmentAdmission.dispose();
+  }, [
+    attachmentAdmission,
+    attachmentScope,
+    environmentId,
+    attachmentTargetKey,
+    attachmentDraftId,
+    activeThreadId,
+  ]);
   const prompt = composerDraft.prompt;
   const composerImages = composerDraft.images;
   const composerFiles = composerDraft.files;
@@ -1637,6 +1707,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const sendDisabledReason =
     externalSendDisabledReason ??
+    (pendingAttachmentCount > 0 ? "Preparing attachments" : null) ??
     (activePendingProgress ? null : (attachmentBlockReason ?? providerSendBlockReason));
   const isSendDisabled = sendDisabledReason !== null;
   const selectedProviderStatus = useMemo(
@@ -1856,13 +1927,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
    * thread) can still be stashed while an earlier encode is running.
    */
   const stashInFlightRef = useRef<Set<string>>(new Set());
-  /**
-   * Count of pasted images still being compressed, per thread. Reserved
-   * against the attachment limit so concurrent pastes can't overshoot it,
-   * and checked before sending or compacting so an image cannot move into
-   * the next draft.
-   */
-  const pendingImageCompressionsRef = useRef<Map<ThreadId, number>>(new Map());
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -2852,15 +2916,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         event?.preventDefault();
         return;
       }
-      // A send while a pasted image is still compressing would strand that
-      // image: the turn snapshot wouldn't include it, and it would surface
-      // in the *next* draft instead. Only oversized images hit this — small
-      // files clear the pending counter within a microtask.
-      if (activeThreadId && (pendingImageCompressionsRef.current.get(activeThreadId) ?? 0) > 0) {
+      // Read the synchronous budget too: a capture or paste can begin before
+      // React commits the disabled button state.
+      if (attachmentAdmission.pending > 0) {
         event?.preventDefault();
         toastManager.add({
           type: "info",
-          title: "Still compressing a pasted image.",
+          title: "Still preparing an attachment.",
           description: "Send again once its thumbnail appears.",
         });
         return;
@@ -2884,7 +2946,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
     },
     [
-      activeThreadId,
+      attachmentAdmission,
       activePendingProgress,
       blurMobileComposerAfterSend,
       isSendDisabled,
@@ -2916,13 +2978,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     ) {
       return;
     }
-    // The compact buttons cannot see the compression counter (it lives in
-    // a ref), so they render enabled during a paste; toast instead of
-    // silently ignoring the click.
-    if ((pendingImageCompressionsRef.current.get(activeThreadId) ?? 0) > 0) {
+    // Imperative compact commands must honor the same pre-render reservation.
+    if (attachmentAdmission.pending > 0) {
       toastManager.add({
         type: "info",
-        title: "Still compressing a pasted image.",
+        title: "Still preparing an attachment.",
         description: "Compact again once its thumbnail appears.",
       });
       return;
@@ -2942,6 +3002,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [
     activePendingApproval,
     activeThreadId,
+    attachmentAdmission,
     compactDisabled,
     composerDraftTarget,
     isConnecting,
@@ -3894,6 +3955,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     size: "xs",
     hidden: composerControlsHidden || restingHiddenBlockCount > 1,
   });
+  const floatRuntimeControl =
+    shouldFloatComposerRuntimeControl({
+      isMobileViewport,
+      isResting: isComposerResting,
+      isApprovalState: isComposerApprovalState,
+      hasPendingInput: pendingUserInputs.length > 0,
+      noProviderAvailable,
+    }) && !composerControlsCompact;
   const restingBlockDefs = [
     ...(providerTraitsPicker
       ? [
@@ -3915,6 +3984,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           showInteractionModeToggle={planModeUiEnabled}
           interactionMode={interactionMode}
           runtimeMode={runtimeMode}
+          runtimePlacement={floatRuntimeControl ? "hidden" : "footer"}
           size={composerControlsInStrip ? "xs" : "sm"}
           hidden={composerControlsHidden || restingHiddenBlockCount > 0}
           onToggleInteractionMode={toggleInteractionMode}
@@ -4152,8 +4222,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Callbacks: attachments
   // ------------------------------------------------------------------
-  const addComposerAttachments = async (files: File[]) => {
+  const addComposerAttachments = async (
+    files: File[],
+    captureReservation?: ComposerAttachmentReservation,
+  ) => {
     if (!activeThreadId || files.length === 0) return;
+    if (captureReservation && !attachmentAdmission.transfer(captureReservation)) return;
     if (pendingUserInputs.length > 0) {
       toastManager.add({
         type: "error",
@@ -4161,21 +4235,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       return;
     }
-    // Captured before the awaits below: the user may switch threads while a
-    // large image is being compressed, and the attachments and errors belong
-    // to the thread the paste happened in.
     const threadId = activeThreadId;
-
-    // Validation happens synchronously so concurrent pastes see each other:
-    // accepted files reserve their attachment slots (via the pending counter)
-    // before the first await, keeping the total under the limit.
-    const pendingCount = pendingImageCompressionsRef.current.get(threadId) ?? 0;
+    const draft = getComposerDraft(composerDraftTarget);
     let reservedCount =
-      composerImagesRef.current.length + composerFilesRef.current.length + pendingCount;
-    // A pick that matches a needs-reattach marker replaces it in the draft, so
-    // it must not consume a slot; a draft full of markers would otherwise hit
-    // the capacity error before the replacement path could run.
-    const reattachMarkers = composerFilesRef.current.filter(composerFileNeedsReattach);
+      (draft?.images.length ?? 0) +
+      (draft?.files.length ?? 0) +
+      attachmentAdmission.pending -
+      (captureReservation?.count ?? 0);
+    const reattachMarkers = (draft?.files ?? []).filter(composerFileNeedsReattach);
     const replacedReattachMarkerIds = new Set<string>();
     const acceptedImages: File[] = [];
     const acceptedFiles: ComposerFileAttachment[] = [];
@@ -4250,9 +4317,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     if (acceptedImages.length === 0) return;
 
-    pendingImageCompressionsRef.current.set(threadId, pendingCount + acceptedImages.length);
+    const currentDraft = getComposerDraft(composerDraftTarget);
+    const reservation =
+      captureReservation ??
+      attachmentAdmission.reserve(
+        attachmentScope,
+        (currentDraft?.images.length ?? 0) + (currentDraft?.files.length ?? 0),
+        acceptedImages.length,
+      );
+    if (!reservation) return;
+    const nextImages: ComposerImageAttachment[] = [];
+    let committed = false;
     try {
-      const nextImages: ComposerImageAttachment[] = [];
       let compressionError: string | null = null;
       for (const file of acceptedImages) {
         // Images over the wire cap are downscaled to fit rather than
@@ -4261,6 +4337,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           file,
           PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
         );
+        if (!attachmentAdmission.isCurrent(reservation)) return;
         if (!compressed.ok) {
           compressionError =
             compressed.reason === "unreadable"
@@ -4280,11 +4357,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           file: attachmentFile,
         });
       }
+      if (!attachmentAdmission.isCurrent(reservation)) return;
       if (nextImages.length === 1 && nextImages[0]) {
         addComposerImage(nextImages[0]);
       } else if (nextImages.length > 1) {
         addComposerImagesToDraft(nextImages);
       }
+      committed = true;
       // Only failures are reported here. Success must not pass `null`: by
       // now other work (a failed send, an overlapping paste) may have set a
       // thread error this call knows nothing about, and clearing it would
@@ -4292,15 +4371,35 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (compressionError !== null) {
         setThreadError(threadId, compressionError);
       }
-    } finally {
-      const remaining =
-        (pendingImageCompressionsRef.current.get(threadId) ?? 0) - acceptedImages.length;
-      if (remaining > 0) {
-        pendingImageCompressionsRef.current.set(threadId, remaining);
-      } else {
-        pendingImageCompressionsRef.current.delete(threadId);
+    } catch (cause) {
+      if (attachmentAdmission.isCurrent(reservation)) {
+        setThreadError(
+          threadId,
+          cause instanceof Error ? cause.message : "Could not prepare attachment.",
+        );
       }
+    } finally {
+      if (!committed) for (const image of nextImages) URL.revokeObjectURL(image.previewUrl);
+      attachmentAdmission.release(reservation);
     }
+  };
+
+  const captureScreenshotAttachment = async () => {
+    if (
+      !screenshotCapture ||
+      !activeThreadId ||
+      pendingUserInputs.length > 0 ||
+      isComposerApprovalState
+    )
+      return;
+    const draft = getComposerDraft(composerDraftTarget);
+    await attachmentAdmission.captureScreenshot({
+      scope: attachmentScope,
+      occupied: (draft?.images.length ?? 0) + (draft?.files.length ?? 0),
+      capture: () => captureComposerScreenshot(screenshotCapture),
+      admit: (file, reservation) => addComposerAttachments([file], reservation),
+      reportError: (message) => setThreadError(activeThreadId, message),
+    });
   };
 
   const removeComposerImage = (imageId: string) => {
@@ -5004,16 +5103,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ) : null}
       </ComposerBanner.Dock>
       <div className="relative">
+        {floatRuntimeControl ? (
+          <FloatingComposerRuntimeControl>
+            <ComposerFooterModeControls
+              showInteractionModeToggle={false}
+              interactionMode={interactionMode}
+              runtimeMode={runtimeMode}
+              runtimePlacement="floating"
+              onToggleInteractionMode={toggleInteractionMode}
+              onRuntimeModeChange={handleRuntimeModeChange}
+            />
+          </FloatingComposerRuntimeControl>
+        ) : null}
         <ComposerSurface.Main
           ref={composerMainSurfaceRef}
-          className={composerProviderState.composerFrameClassName}
+          className={cn(
+            chatComposerPresentation.mainClassName,
+            composerProviderState.composerFrameClassName,
+          )}
         >
           <div
             ref={composerSurfaceRef}
             data-chat-composer-surface="true"
             data-chat-composer-mobile-collapsed={isComposerCollapsedMobile ? "true" : "false"}
             className={cn(
-              "rounded-[20px] transition-[background-color] duration-200",
+              chatComposerPresentation.surfaceClassName,
               isDragOverComposer ? "bg-accent/45 ring-1 ring-primary/70" : null,
               projectSelectionRequired ? "opacity-75" : null,
               composerProviderState.composerSurfaceClassName,
@@ -5438,11 +5552,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   "relative",
                   isComposerResting && "flex min-w-0 items-center gap-1",
                   isComposerResting &&
-                    (settings.contextWindowMeterEnabled && activeContextWindow
-                      ? "pr-28"
-                      : showComposerAttachAction
-                        ? "pr-20"
-                        : "pr-12"),
+                    restingComposerActionPadding({
+                      hasContextMeter:
+                        settings.contextWindowMeterEnabled && activeContextWindow !== null,
+                      hasAttachmentPicker: showComposerAttachAction,
+                      hasScreenshot: screenshotCapture !== null && pendingUserInputs.length === 0,
+                    }),
                 )}
               >
                 <ComposerPromptEditor
@@ -5576,6 +5691,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  {screenshotCapture && pendingUserInputs.length === 0 ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            disabled={attachmentActivity.capturing || !activeThreadId}
+                            onPointerDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              void captureScreenshotAttachment();
+                            }}
+                            aria-label="Capture screenshot"
+                          />
+                        }
+                      >
+                        <ScanLineIcon />
+                      </TooltipTrigger>
+                      <TooltipPopup>Capture screenshot</TooltipPopup>
+                    </Tooltip>
+                  ) : null}
                   {showComposerAttachAction ? (
                     <>
                       <input
@@ -5637,7 +5774,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
                     compactDisabled={
-                      compactDisabled || noProviderAvailable || isSendBusy || isConnecting
+                      compactDisabled ||
+                      pendingAttachmentCount > 0 ||
+                      noProviderAvailable ||
+                      isSendBusy ||
+                      isConnecting
                     }
                     compactDisabledReason={resolvedCompactDisabledReason}
                     {...(compactCommandAvailable ? { onCompactContext: compactThreadContext } : {})}

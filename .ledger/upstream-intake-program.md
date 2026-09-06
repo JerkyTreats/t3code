@@ -478,3 +478,7 @@ If applied, this commit provides bounded serialized Mermaid rendering with curre
 ### Commit effect — chat presentation
 
 If applied, this commit defines the retained conversation spacing and continuous composer checkout backdrop.
+
+### Commit effect — composer capture
+
+If applied, this commit admits desktop screenshots through the ordinary scoped attachment budget and restores the floating permission control and retained composer geometry.
