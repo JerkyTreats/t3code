@@ -30,6 +30,14 @@
     "./ipc": {
       "types": "./src/ipc.ts",
       "import": "./src/ipc.ts"
+    },
+    "./threadAppActivation": {
+      "types": "./src/threadAppActivation.ts",
+      "import": "./src/threadAppActivation.ts"
+    },
+    "./desktopLauncher": {
+      "types": "./src/desktopLauncher.ts",
+      "import": "./src/desktopLauncher.ts"
     }
   },
   "scripts": {

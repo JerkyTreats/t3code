@@ -2,7 +2,7 @@
 
 Date: 2026-09-05
 Status: in progress
-Readiness: S5 accepted and locally committed with this record; S6 ready for contract activation
+Readiness: S5 complete; S6 joined source under verification
 Branch: `reconcile/upstream-intake-20260905`
 
 ## Objective Baseline
@@ -20,7 +20,7 @@ Immutable decision inventory SHA256: `500abe6378142d01537c45c48f829f248bc1a04d9f
 
 ## Source Plan And Authority
 
-The local source plan is `.plans/57-upstream-intake-program.md`; the active group contract is `.plans/61-upstream-intake-visual-and-adapters.md`. The completed S12 contract remains historical execution evidence in `.plans/59-upstream-intake-persistence-and-authority.md`, carrying `.plans/58-upstream-intake-persistence-slice.md`. Those working records remain uncommitted. This ledger owns current execution, acceptance, commit effects and continuation. The immutable inventory remains supporting evidence.
+The local source plan is `.plans/57-upstream-intake-program.md`; the active group contract is `.plans/62-upstream-intake-linux-and-thread.md`. The completed S12 contract remains historical execution evidence in `.plans/59-upstream-intake-persistence-and-authority.md`, carrying `.plans/58-upstream-intake-persistence-slice.md`. Those working records remain uncommitted. This ledger owns current execution, acceptance, commit effects and continuation. The immutable inventory remains supporting evidence.
 
 The user instruction to proceed with implementation activates the full local program, the approved scope changes, the selected subagent/worktree orchestration, focused fixes, required verification and delivery commits. Activation of a later covered slice follows its dependency and contract gates without another permission request. Source changes and associated current patch/spec updates are within scope. No policy amendment is inferred.
 
@@ -43,7 +43,7 @@ The root owns migration identities, shared contracts, broad hosts, integration a
 | S3    | Global Board and truthful liaison behavior                                    | S1, S2                                          | Complete              | Accepted S34 runtime, provider and client proof                      |
 | S4    | Normal upstream sends/rendering and complete fork retirement                  | S1, S2                                          | Complete              | Accepted S34 retirement and substrate proof                          |
 | S5    | Retained visuals and thin adapters                                            | S4                                              | Complete              | Source, rendered evidence, logical/style review and commit gate pass |
-| S6    | Independent installed Linux clients and Thread                                | S2, S4, S5                                      | Ready                 | Source and installed compatibility to prove                          |
+| S6    | Independent installed Linux clients and Thread                                | S2, S4, S5                                      | In progress           | Shared prerequisites before source and installed compatibility proof |
 | S7    | Integrated preservation and rollback evidence                                 | S3 through S6                                   | Blocked by dependency | No acceptance claim                                                  |
 
 ## Wave Plan And Agent Strength
@@ -513,3 +513,93 @@ This records commit closes the joined S5 commit gate. Root confirms the commit h
 ### Commit effect — records
 
 If applied, this commit records the retained adapter boundaries and their upstream intake preservation evidence.
+
+### S6 shared prerequisite activation
+
+S5 closes at `ab0be77bec3aa2af62a091eee23b215ee2072b63` with a clean worktree and accepted runtime bytes. S6 contract SHA256 is `b19793eb8e4bfe8631ff8183bd8204bad354772963095e70f77d930f9f0a31c9`. Root retains shared contract ownership and delegates the settled primary HTTP/socket implementation to the prior `gpt-6-astra` high contract owner, because it spans authentication, Effect cancellation and exact-origin boundaries. This dedicated prerequisite grant is disjoint from root activation, package, compact header and Code bootstrap prework. No downstream consumer launches before their prerequisite hashes and focused gates pass.
+
+The schema/IPC prerequisite passes 32 tests across four files and contracts/shared typechecks. Its exact 16-file manifest is `/tmp/t3code-s6-core-prerequisite.json`. Code lifecycle ownership is consolidated into one isolated strong worker rather than splitting readiness semantics from current Clerk/window/backend hosts. The successor contract SHA256 is `173733f47edf0c823c182f3ad5b13bfa905b77b77215524f4a2de37e0ed7f680`. The settled primary transport grant is unchanged; standalone Code additionally requires empty local bootstraps to select ordinary cookie auth. Root retains common contracts, package inputs and web hosts.
+
+Shell dispatch uses the tested core contracts and frozen HTTP policy without importing the in-progress web transport implementation. Contract successor SHA256 is `2b4ce58211b7443b1210c5eb24b22663d93e7aa84b1eb4ca1535ac3c6c9a93c9`. The enrollment concurrency promise is explicit atomic latest-record replacement and later-launch reuse, with no implicit live synchronization or globally unique server device under distinct simultaneous grants. Shell source work uses `gpt-6-astra` high for main-frame, protected storage and process isolation boundaries.
+
+The Linux Thread packaging lane uses `gpt-5.6-sol` high in its own worktree, consuming the same tested 16-file core prerequisite. It owns only Thread launcher/artifact/topology scripts and synthetic tests, while accepted Code installer and descriptor owners stay unchanged. Actual builds and installed proof remain root-owned after committed source. Current concurrent implementation lanes are primary transport, Code lifecycle, Thread shell and Linux packaging; hosted activation waits for a slot and its current host contract.
+
+Root verifies all fourteen primary transport handoff hashes and grant membership. Its 83 focused tests and both workspace typechecks pass. Compact full-chat header and host policy pass five tests and web typecheck. Contract successor SHA256 is `7c6e877dc2487c238f8f5a8b61acce28480aaf7ffdd1b7737ed281aa960acf92`. The settled hosted activation owner now dispatches with `gpt-5.6-sol` high in its isolated worktree, replacing the completed primary implementation lane. All 42 prerequisite files are physically copied and hashed before dispatch. Its state is bounded to one launch, with explicit recovery and no autosend.
+
+Code lifecycle integration finds a current web entrypoint dependency: native bridge presence alone selected Electron Clerk, although standalone Code deliberately has no custom-scheme Clerk main bridge. Root makes the entrypoint consume the accepted standalone target predicate and select BrowserManagedAuthShell for that HTTPS client. The desktop worker keeps normal native Clerk and skips its preload exposure only for standalone HTTPS. Actual installed authentication remains required evidence.
+
+The shell is integrated after all 13 grant hashes match; its 64 tests and Thread typecheck pass on root. Root then finds the full-document replay gap and pauses both affected workers. The five-file completion prerequisite passes 34 tests and two typechecks and is physically copied to both trees. Successor contract SHA256 is `e42b173074a149918c1b6e9497bd38ca66a7c31fee91da525dc07e5626ee23b1`. This identity-only receipt keeps completed handoff state in existing Electron main memory, without browser persistence or a queue. Only acknowledged staging receives full handoff credit; reload during unacknowledged completion remains an explicit limit.
+
+Root verifies and integrates 29 Code lifecycle files and 14 Linux Thread script files, plus the five-file completion correction. Worker evidence passes 108 Code tests, 172 Linux script tests and 68 corrected shell tests. Every grant and original prerequisite hash is checked before copying. Root wires the Code coordinator under authenticated non-Thread hosts and calls identifier-only completion after successful current `startThreadTurn`, using the captured draft ID and raw prompt snapshot. Completion is asynchronous bookkeeping owned by the launcher owner and does not delay ordinary chat admission. Thread remains staging only. Joined gates and fresh review are still pending.
+
+### S6 hosted activation join and current contracts
+
+Root verified all six activation handoff hashes against `/tmp/t3code-s6-thread-activation-handoff.json`, SHA256 `9d31e6339a085386902381c91381677db9e525d52a739b681c353c68e711715d`, then integrated the owner and coordinator. Nineteen focused tests cover owner, current host, surface policy and route cancellation. Root mounted the coordinator only under authenticated primary Thread hosts before EventRouter. The joined desktop, web, Thread and scripts typechecks pass. F16 and F27 current specifications and patch guidance now express implemented owners, approved retirements, enrollment provenance, staging receipt limits and pending installed acceptance. Full joined gates and fresh logical review remain pending.
+
+The isolated fixture preparation passed actual CLI administrator issuance, portal-managed exchange, session, HTTPS WSS upgrade and complete owned-process cleanup under empty home and private network. `/tmp/t3code-s6-installed-fixture-handoff.json` binds its helpers and unchanged S5 server bundle. This is fixture feasibility only and does not close installed product acceptance.
+
+### S6 source review fan-out
+
+The 107-file candidate is frozen in `/tmp/t3code-s6-round1-candidate.json`. Formatting, lint and repository typecheck pass; all focused lane checks pass. Root starts three fresh read-only review lanes while the final server test suite completes: strong high for protected Thread enrollment and primary transport, strong high for coupled Code lifecycle and transactional Linux ownership, and standard high for settled hosted activation and compact presentation. Each lane receives a generated complete packet, exact immutable role rows and current source contracts. Reviewers do not mutate source or run whole-repository gates. Gate acceptance waits for the completed test result and review closure. A separate strong worker prepares temporary installed-case helpers without launching product clients before clean artifact identity exists.
+
+### S6 joined source gate receipt
+
+All four required gates pass on the frozen 107-file source candidate: `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `env -u NODE_ENV pnpm test --maxWorkers=4`. The test gate discovers 13,816 passing tests across fifteen workspaces, with ten inherited server skips. `/tmp/t3code-s6-round1-joined-gates.json` records exact command exits and logs. Root rechecks every candidate hash with zero mismatches. Fresh logical reviews and production bundle checks remain open; immutable artifact and installed acceptance require the later clean source commit.
+
+### S6 bundle and actual preload receipt
+
+Production desktop, hosted web, server and Thread bundle builds pass. `/tmp/t3code-s6-round1-build-preload.json` binds all six runtime entry hashes and the build log. Both actual built preloads execute in sandboxed Electron windows inside the empty-home, read-only-source, private-network fixture. Code retains theme, screenshot, preview and both activation capabilities. Thread retains exact staged bytes across repeated activation, rejects malformed completion before IPC and strips an extra synthetic bearer field from enrollment replies. Zero preload errors occurred and all fixture processes stopped. This proves the built bridge boundary only; clean artifact and installed product acceptance remain pending. Strong protected transport review also passes with 173 focused tests, all 107 candidate hashes unchanged and exact auth hunk 2 plus retained F17 hunk 1 and 3 attribution accepted.
+
+### S6 confirmed source corrections
+
+Fresh logical review confirms four bounded blockers. `S6-CODE-LINUX-01` reproduces an immediate Code dispatch before the mounted composer ref receives staged bytes and a lost transition from busy to ready. A strong correction worker receives the five exact owner, coordinator, test and ChatView paths in the existing Code worktree, after all 107 joined prerequisite hashes are physically copied and verified. The fix must wait for actual first-send admission and must not blindly retry an ambiguous send. `S6-CODE-LINUX-02` reproduces deletion of an unrelated replacement during partial native host rollback. A standard-high worker owns three exact installer and test paths to preserve successful-write receipts and fail on ownership drift.
+
+Root corrects `HACT-001` by disabling the Thread status animation under reduced motion while retaining the visible ring. Root corrects `HACT-002` by explicitly separating header source tests from pending compact visual acceptance in F27-D1. The hosted review accepts both exact ChatView and root roles. Protected auth review accepts auth hunk 2 and preserves F17 hunk 1 and 3 exclusions. Source gate and build evidence remain round1 history until corrected bytes pass affected and joined gates.
+
+### S6 reduced-motion correction proof
+
+The corrected CSS owner executes in actual sandboxed Electron inside a new private fixture. Normal motion computes `t3-native-status-spin`; reduced motion computes `none` while preserving the visible 17-pixel dashed ring. All fixture processes stop. `/tmp/t3code-s6-hosted-correction.json` binds both corrected source hashes, the computed-style result and the cleanup receipt. F27-D1 now explicitly leaves compact visual acceptance pending. This is focused CSS owner evidence, not installed Thread visual acceptance.
+
+The Code correction requires one additional mechanical upstream host seam: an optional committed-send-context notification from ChatComposer after its existing passive ref synchronization. Root grants that exact sixth path and physically copies the unchanged accepted source with `/tmp/t3code-s6-fix-code-composer-prerequisite.json`. This lets the admission owner observe child-only readiness directly without polling while keeping ordinary send behavior and screenshot admission intact.
+
+### S6 Linux correction integration
+
+Root verifies and integrates the exact three-file `S6-CODE-LINUX-02` correction. Every successful native-host file and link write retains an identity receipt. Partial-stage cleanup preserves replaced or edited objects, cleans remaining owned objects and reports ownership drift through the topology error chain. Fifty-two focused installer and topology tests, scoped lint/format, scripts typecheck and syntax checks pass. `/tmp/t3code-s6-fix-linux-handoff.json` binds source and tests. Fresh bounded review follows. Both hosted findings are closed by `/tmp/t3code-s6-review-hosted-correction-result.json`, SHA256 `12cffddd8934a787f5fcea6db23d6d597598b690967adeffa0fbd9bee061542f`.
+
+### S6 Code correction integration
+
+Root verifies and integrates all seven exact Code correction hashes from `/tmp/t3code-s6-fix-code-handoff.json`, SHA256 `349d233e18cfe62c04a6606bcf072aa4fd8d836ef959f3fb9f9ffe9e6d4a72b2`. Thirty-nine focused tests execute the owner, coordinator and actual ChatComposer notification. The first ordinary send waits for committed text and readiness without polling. Known refusal requires explicit retry; an unknown result retains uncertainty and cannot resend through the owner. Successful exact-draft/raw-prompt admission remains the completion authority. Existing screenshot cases pass. The additional real composer test harness is the seventh bounded path with a physically verified prerequisite. The worker reports one implicit cached dependency reconciliation before switching to direct binaries; all non-granted source hashes remain unchanged.
+
+The separate Linux correction reviewer failed before producing findings due to an automated content filter. The original fresh strong reviewer then performed the unchanged bounded recheck packet: all 52 tests pass, the original reproduction preserves replacement bytes and reports drift, and all three hashes match. `/tmp/t3code-s6-review-linux-correction-result.json` closes `S6-CODE-LINUX-02`. No failed worker is treated as review acceptance. Final Code recheck and joined gates follow.
+
+### S6 screenshot reservation correction
+
+Fresh Code review accepts the exact prompt/ref and uncertain-outcome correction but reproduces `S6-CODE-LINUX-01A`: a launcher waiting for provider readiness can dispatch while a native screenshot reservation remains pending, bypassing ordinary composer refusal. The actual mounted composer diagnostic proves the mismatch. Root delegates only ChatView, ChatComposer and the existing real composer test harness after physically copying and verifying all 109 round2 source hashes. The correction must project the current synchronous reservation readiness, preserve notification/ref ordering and avoid new send state. Round2 gates remain source history, not joined acceptance.
+
+Round2 required gates all pass with 13,829 tests across fifteen workspaces and ten inherited server skips. The later confirmed attachment-readiness mismatch remains blocking despite that passing gate; it is not hidden by test counts. Final acceptance waits for the three-file successor and its direct regression.
+
+### S6 attachment correction integration
+
+Root verifies the three base and final hashes before integrating `/tmp/t3code-s6-fix-code-attachment-handoff.json`, SHA256 `d60372694937ac540200eef0d006c81fe3ff6de47b5df54a3019f45584d77f76`. The composer projects existing ordinary send guards together with the synchronous attachment reservation count; ChatView consumes that readiness. Forty-six focused tests execute the real composer, owner and coordinator, including capture and paste reservations before React commits, provider readiness transitions, prepared attachment identity and cancellation or failure release. The other 106 candidate files remain unchanged. Bounded strong review rechecks the successor before final joined gates.
+
+The strong installed-fixture worker extends its temporary helper to replenish clients for both close and crash coverage and exercise real disposable authorization failure. A separate strong worker prepares actual installed screenshot, preview and theme assertions in disjoint temporary helpers. Neither lane changes source, launches clients or confers installed acceptance before clean artifact identity exists.
+
+### S6 logical source closure
+
+The strong Code recheck reports no findings in `t3code-s6-review-code-attachment-result.json`. All 46 focused tests pass with exact successor hashes. This closes `S6-CODE-LINUX-01A`; the earlier prompt/ref and uncertain-outcome correction remains accepted. Protected transport, Linux rollback and hosted corrections also pass their named reviews. The final 109-file round3 candidate SHA256 is `8168e3eea6fefffeb39208f0daa4aee33cdbc0d1d1bcb08faacab845b6686c4d`. Final joined gates run once on these corrected bytes.
+
+Root records the eight exact S6 role dispositions with review evidence and current host hashes. The immutable 175 hunk identities and simulated merge objects remain unchanged. Five previously unresolved source rows close; the earlier F17 exclusions and S5 optional bridge capabilities remain intact. Zero unresolved source-role rows does not close installed product or final preservation acceptance. Ordered Style Assurance and the source commit gate follow the final required checks.
+
+### S6 final joined source gates
+
+All four required gates pass on the final corrected round3 candidate: `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `env -u NODE_ENV pnpm test --maxWorkers=4`. The complete suite passes 13,836 tests across fifteen workspaces with ten inherited server skips. `t3code-s6-round3-joined-gates.json` records command exits and hashed logs. Root verifies all 109 candidate hashes unchanged. The proposed nine commit groups cover all 110 non-ledger delivery paths exactly once. Ordered Style Assurance is in progress; clean source commits and installed proof remain pending.
+
+### S6 ordered style and source Gate Acceptance
+
+Style Assurance confirms two documentation blockers: inconsistent F16 role labels and an overly broad server-state claim. Root removes the test and Clerk adapter from durable owners, keeps F02 ownership outside upstream substrate, and limits the server claim to process control and migration. The exact F16 correction SHA256 is `31974927534f63634904ce2a8064bd69315a3a0f05e36edbe67aa998150f2517`. Scoped formatting and whitespace checks pass. No runtime, test or build-input byte changes.
+
+The bounded Style Assurance recheck passes with no findings in `t3code-s6-style-final-result.json`, SHA256 `448212dec0d13d9ae019e4bab682a485872ce5d1ee333c096699cf3bfb0427f2`. The first-pass result stays historical at SHA256 `c3c4cc7e47467551e9da44ae7ab45f45ac3c243de498c787c66c7fc44d011e9f`. Root accepts the joined source gate after logical review, all bounded corrections, required gates and ordered style. Source acceptance authorizes the nine scoped local commits and clean artifact creation only. S6 remains open until actual installed evidence passes; S7 remains dependent on that result.
+
+### Commit effect — S6 contracts
+
+If applied, this commit defines validated Code and Thread launch identities and their optional bridge contracts.

@@ -275,7 +275,11 @@
       "types": "./src/dateTime.ts",
       "import": "./src/dateTime.ts"
     },
-    "./forkReleaseIdentity": "./src/forkReleaseIdentity.ts"
+    "./forkReleaseIdentity": "./src/forkReleaseIdentity.ts",
+    "./threadAppActivation": {
+      "types": "./src/threadAppActivation.ts",
+      "import": "./src/threadAppActivation.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

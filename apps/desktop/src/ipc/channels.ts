@@ -99,3 +99,6 @@ export const CAPTURE_DESKTOP_SCREENSHOT_CHANNEL = "desktop:capture-desktop-scree
 export const PREVIEW_BROWSER_ACTION_CHANNEL = "desktop:preview-browser-action";
 
 export const PREVIEW_SET_ZOOM_FACTOR_CHANNEL = "desktop:preview-set-zoom-factor";
+
+export const TAKE_LAUNCHER_ACTIVATION_CHANNEL = "desktop:take-launcher-activation";
+export const COMPLETE_LAUNCHER_ACTIVATION_CHANNEL = "desktop:complete-launcher-activation";

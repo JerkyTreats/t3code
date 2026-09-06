@@ -1,0 +1,70 @@
+[
+  {
+    "name": "no draft",
+    "valid": true,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc"
+    }
+  },
+  {
+    "name": "empty draft",
+    "valid": true,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "draft": ""
+    }
+  },
+  {
+    "name": "wrong version",
+    "valid": false,
+    "value": {
+      "contractVersion": 2,
+      "launchId": "12345678-1234-4234-8234-123456789abc"
+    }
+  },
+  {
+    "name": "v1 id",
+    "valid": false,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-1234-8234-123456789abc"
+    }
+  },
+  {
+    "name": "uppercase id",
+    "valid": false,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789ABC"
+    }
+  },
+  {
+    "name": "extra key",
+    "valid": false,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "ready": true
+    }
+  },
+  {
+    "name": "NUL draft",
+    "valid": false,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "draft": "a\u0000b"
+    }
+  },
+  {
+    "name": "null draft",
+    "valid": false,
+    "value": {
+      "contractVersion": 1,
+      "launchId": "12345678-1234-4234-8234-123456789abc",
+      "draft": null
+    }
+  }
+]

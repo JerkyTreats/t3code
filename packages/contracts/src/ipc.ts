@@ -1,4 +1,8 @@
 import type {
+  DesktopLauncherActivation,
+  DesktopLauncherActivationCompletion,
+} from "./desktopLauncher.ts";
+import type {
   VcsCreateRefInput,
   VcsCreateRefResult,
   VcsCreateWorktreeInput,
@@ -170,7 +174,7 @@ export type DesktopUpdateStatus =
 export type DesktopRuntimeArch = "arm64" | "x64" | "other";
 export type DesktopTheme = "light" | "dark" | "system";
 export type DesktopUpdateChannel = "latest" | "nightly";
-export type DesktopAppStageLabel = "Alpha" | "Dev" | "Nightly";
+export type DesktopAppStageLabel = "Alpha" | "Dev" | "Nightly" | "Staging";
 
 export const DesktopUpdateStatusSchema = Schema.Literals([
   "disabled",
@@ -185,7 +189,7 @@ export const DesktopUpdateStatusSchema = Schema.Literals([
 export const DesktopRuntimeArchSchema = Schema.Literals(["arm64", "x64", "other"]);
 export const DesktopThemeSchema = Schema.Literals(["light", "dark", "system"]);
 export const DesktopUpdateChannelSchema = Schema.Literals(["latest", "nightly"]);
-export const DesktopAppStageLabelSchema = Schema.Literals(["Alpha", "Dev", "Nightly"]);
+export const DesktopAppStageLabelSchema = Schema.Literals(["Alpha", "Dev", "Nightly", "Staging"]);
 
 export interface DesktopAppBranding {
   baseName: string;
@@ -1162,6 +1166,10 @@ export interface DesktopBridge {
   // The primary backend is identified by id === PRIMARY_LOCAL_ENVIRONMENT_ID.
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
   getLocalEnvironmentBearerToken: () => Promise<string>;
+  takeLauncherActivation?: () => Promise<DesktopLauncherActivation | null>;
+  completeLauncherActivation?: (
+    completion: DesktopLauncherActivationCompletion,
+  ) => Promise<boolean>;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
   getConnectionCatalog?: () => Promise<string | null>;

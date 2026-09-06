@@ -1,5 +1,10 @@
 /// <reference types="vite-plus/client" />
 
+import type {
+  ThreadAppActivation,
+  ThreadAppActivationCompletion,
+} from "@t3tools/contracts/threadAppActivation";
+
 import type { DesktopBridge } from "@t3tools/contracts";
 
 interface ImportMetaEnv {
@@ -23,5 +28,12 @@ interface ImportMeta {
 declare global {
   interface Window {
     desktopBridge?: DesktopBridge;
+    t3ThreadBridge?: {
+      readonly subscribe: (listener: (activation: ThreadAppActivation) => void) => () => void;
+      readonly completeActivation?: (completion: ThreadAppActivationCompletion) => Promise<boolean>;
+      readonly submitPairingCredential: (
+        credential: string,
+      ) => Promise<{ readonly status: "accepted" | "rejected" | "unavailable" }>;
+    };
   }
 }
