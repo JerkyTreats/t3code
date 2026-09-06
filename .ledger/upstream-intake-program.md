@@ -722,3 +722,17 @@ The four focused activation suites pass 31 tests. All four required repository g
 ### Commit effect — activation after loading
 
 If applied, this commit delivers a pending Thread launch draft when Electron finishes loading its main frame.
+
+### Installed Thread pairing connection recovery
+
+The clean `8444afb2896f0623898f48b77d99eb615122172f` client now retains its actual preload activation. The installed diagnostic finds the primary environment but its supervisor remains blocked with an authentication error. A product ticket request returns 401 before pairing; actual pairing succeeds and later direct session, descriptor and ticket requests return 200, but the blocked product connection makes no new ticket request. A diagnostic full reload reaches a draft and renders its launch text. This reload is causal evidence only and is excluded from the acceptance path. No completed WebSocket handshake is inferred from socket construction or that screenshot.
+
+The fixture also encountered temporary-filesystem user quota exhaustion despite reported free space. A no-client copy probe records Linux errno -122, and private disk-backed fixture storage restores exact AppImage copying. All owned processes stop and the synthetic server identity remains unchanged. This setup correction does not alter product source or access existing profiles.
+
+Root places post-enrollment recovery in the existing Thread auth owner and connects the pairing route mechanically to the shared primary retry command. The owner reads the primary identity after enrollment to cover discovery completing during the pairing request. Ordinary browsers and an undiscovered primary retain normal navigation. The route regression fails against the original source, then verifies that accepted Thread pairing retries only its current primary and waits for command completion before navigation. Existing supervisor evidence exercises an authentication-blocked connection staying idle until retry and then becoming connected. No new credential, ticket, queue, protocol, persistence format or automatic send is introduced.
+
+All four required gates pass, including 13,844 tests across fifteen workspaces and ten inherited server skips, recorded in `t3code-s7-thread-pairing-gates.json`. Fresh bounded logical review reports no finding at SHA256 `8f1082cbb40e0317068e774cbae463ab36b725900d7d75c1f0b011b4b35ebd3e`. Ordered Style Assurance and a clean successor build precede the next full installed run. The frozen diagnostic handoff is `t3code-s6-installed-case-handoff-run41.json`, SHA256 `8207465291d0498778255638706c1a5f362aa630bd62a51bb78b2fe6c9eba318`. The refreshed installed and final image gates remain pending.
+
+### Commit effect — pairing connection recovery
+
+If applied, this commit resumes Thread’s primary connection after pairing so the launch draft can open without a reload.

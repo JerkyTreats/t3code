@@ -1,4 +1,5 @@
 import { PrimaryEnvironmentAuth } from "@t3tools/client-runtime/platform";
+import type { EnvironmentId } from "@t3tools/contracts";
 import {
   ConnectionBlockedError,
   ConnectionTransientError,
@@ -70,4 +71,15 @@ export async function submitThreadEnrollmentCredential(credential: string) {
   const bridge = typeof window === "undefined" ? undefined : window.t3ThreadBridge;
   if (!bridge) return null;
   return bridge.submitPairingCredential(credential);
+}
+
+export async function resumeThreadPrimaryConnection(input: {
+  readonly readPrimaryEnvironmentId: () => EnvironmentId | null;
+  readonly retry: (environmentId: EnvironmentId) => Promise<unknown>;
+}): Promise<void> {
+  if (typeof window === "undefined" || window.t3ThreadBridge === undefined) return;
+  // Discovery can finish while pairing is in flight. Read its current identity
+  // after enrollment, then retry the supervisor blocked by the earlier ticket denial.
+  const environmentId = input.readPrimaryEnvironmentId();
+  if (environmentId !== null) await input.retry(environmentId);
 }
