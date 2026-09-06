@@ -1,0 +1,103 @@
+.t3-native-thread-header {
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 7px;
+  padding: 14px 14px 12px;
+}
+
+.t3-native-thread-header-topline {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.t3-native-thread-brand,
+.t3-native-thread-status,
+.t3-native-thread-meta {
+  align-items: center;
+  color: var(--muted-foreground);
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.t3-native-thread-brand {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.t3-native-thread-logo {
+  align-items: center;
+  background: #050505;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 6px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 8px;
+  font-weight: 800;
+  height: 20px;
+  justify-content: center;
+  letter-spacing: -0.03em;
+  width: 22px;
+}
+
+.t3-native-thread-status {
+  color: var(--primary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.t3-native-thread-status-ring {
+  animation: t3-native-status-spin 1.7s linear infinite;
+  border: 2px dashed currentColor;
+  border-radius: 50%;
+  height: 17px;
+  width: 17px;
+}
+
+.t3-native-thread-status[data-status="ready"] .t3-native-thread-status-ring,
+.t3-native-thread-status[data-status="completed"] .t3-native-thread-status-ring {
+  animation: none;
+  background: currentColor;
+  border: 0;
+  height: 7px;
+  width: 7px;
+}
+
+@keyframes t3-native-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.t3-native-thread-header h1 {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.018em;
+  line-height: 1.28;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t3-native-thread-meta {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.t3-thread-elapsed {
+  display: inline-flex;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t3-native-thread-status-ring {
+    animation: none;
+  }
+}

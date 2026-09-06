@@ -619,3 +619,7 @@ If applied, this commit binds hosted client authentication to its admitted origi
 ### Commit effect — S6 code_web
 
 If applied, this commit stages trusted Code launch prompts and waits for the current composer before requesting an ordinary send.
+
+### Commit effect — S6 thread_web
+
+If applied, this commit stages Thread launch text in the shared draft with compact presentation and visible recovery.
