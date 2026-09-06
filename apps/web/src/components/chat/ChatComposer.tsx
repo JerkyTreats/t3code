@@ -1179,6 +1179,7 @@ export interface ChatComposerHandle {
     selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
     providerAvailable: boolean;
+    submissionReady: boolean;
     selectedProvider: ProviderDriverKind;
     selectedModel: string;
     selectedProviderModels: ReadonlyArray<ServerProvider["models"][number]>;
@@ -1302,6 +1303,7 @@ export interface ChatComposerProps {
   onPageScrollRelease: () => void;
 
   // Callbacks
+  onSendContextCommitted?: () => void;
   onSend: (e?: { preventDefault: () => void }, intent?: ComposerSubmissionIntent) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -2348,6 +2350,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useEffect(() => {
     composerElementContextsRef.current = composerElementContexts;
   }, [composerElementContexts, composerElementContextsRef]);
+
+  // Notify after all parent refs have synchronized; child-only provider changes also commit here.
+  useEffect(() => {
+    props.onSendContextCommitted?.();
+  });
 
   // ------------------------------------------------------------------
   // Composer menu highlight sync
@@ -4795,6 +4802,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         selectedModelOptionsForDispatch,
         selectedModelSelection,
         providerAvailable: !noProviderAvailable && providerSendBlockReason === null,
+        // Match ordinary submit, including reservations created before React commits disabled state.
+        submissionReady:
+          !noProviderAvailable &&
+          providerSendBlockReason === null &&
+          !isSendDisabled &&
+          attachmentAdmission.pending === 0,
         selectedProvider,
         selectedModel,
         selectedProviderModels,
@@ -4843,6 +4856,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedModelSelection,
       noProviderAvailable,
       providerSendBlockReason,
+      isSendDisabled,
+      attachmentAdmission,
       selectedPromptEffort,
       selectedProvider,
       selectedProviderModels,

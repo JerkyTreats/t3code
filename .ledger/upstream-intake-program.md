@@ -615,3 +615,7 @@ If applied, this commit provides one independent Thread process and profile per 
 ### Commit effect — S6 transport
 
 If applied, this commit binds hosted client authentication to its admitted origin and obtains fresh Thread connection tickets.
+
+### Commit effect — S6 code_web
+
+If applied, this commit stages trusted Code launch prompts and waits for the current composer before requesting an ordinary send.

@@ -91,6 +91,8 @@ import {
   DraftId,
   type ComposerImageAttachment,
 } from "../../composerDraftStore";
+import { DesktopLauncherActivationOwner } from "../../fork/desktopLauncherActivation";
+import { useDesktopLauncherSubmitAdmission } from "../desktop/DesktopLauncherActivationCoordinator";
 import { ComposerAttachmentAdmission } from "../../fork/composerAttachmentAdmission";
 
 let renderer: ReactTestRenderer | null = null;
@@ -586,4 +588,297 @@ describe("ChatComposer screenshot admission", () => {
     expect(labels).not.toContain("Capture screenshot");
     expect(labels).toContain("Attach files");
   });
+});
+
+describe("ChatComposer committed launcher notification", () => {
+  it("notifies only after real prompt refs synchronize and admits a reused mounted draft once", async () => {
+    const owner = new DesktopLauncherActivationOwner();
+    const draftId = DraftId.make("launcher-committed-draft");
+    const prompt = "  actual composer\n\tlauncher bytes  ";
+    const input = props({
+      composerDraftTarget: draftId,
+      draftId,
+      routeKind: "draft",
+      isLocalDraftThread: true,
+      isServerThread: false,
+    });
+    const attempts: string[] = [];
+    const notifications: string[] = [];
+    const complete = vi.fn(async () => true);
+    let parentRenders = 0;
+    function Host() {
+      parentRenders++;
+      const notify = useDesktopLauncherSubmitAdmission(
+        draftId,
+        async () => {
+          const outgoing = input.promptRef.current;
+          attempts.push(outgoing);
+          if (!outgoing.trim()) return false;
+          await owner.completeAdmittedSubmit(draftId, outgoing);
+        },
+        () => ({
+          prompt: input.promptRef.current,
+          ready: input.composerRef.current?.getSendContext().submissionReady === true,
+        }),
+        owner,
+      );
+      return (
+        <ChatComposer
+          {...input}
+          onSendContextCommitted={() => {
+            notifications.push(input.promptRef.current);
+            notify();
+          }}
+        />
+      );
+    }
+    await act(() => {
+      renderer = create(<Host />);
+    });
+    const initialParentRenders = parentRenders;
+    expect(input.promptRef.current).toBe("");
+    await act(async () => {
+      useComposerDraftStore.getState().setPrompt(draftId, prompt);
+      owner.queueSubmit({
+        activationId: "12345678-1234-4234-8234-1234567890ab",
+        draftId,
+        prompt,
+        complete,
+      });
+      expect(attempts).toEqual([]);
+    });
+    expect(parentRenders).toBe(initialParentRenders);
+    expect(notifications).toContain(prompt);
+    expect(attempts).toEqual([prompt]);
+    expect(complete).toHaveBeenCalledOnce();
+    expect(owner.getSubmitState()).toBeNull();
+  });
+
+  it("preserves staged content through provider unavailability and dispatches only when actual send context becomes ready", async () => {
+    const owner = new DesktopLauncherActivationOwner();
+    const draftId = DraftId.make("launcher-provider-wait");
+    const prompt = "wait for provider";
+    const input = props({
+      composerDraftTarget: draftId,
+      draftId,
+      routeKind: "draft",
+      isLocalDraftThread: true,
+      isServerThread: false,
+    });
+    const complete = vi.fn(async () => true);
+    const attempt = vi.fn(async () => {
+      await owner.completeAdmittedSubmit(draftId, input.promptRef.current);
+    });
+    function Host({ available }: { available: boolean }) {
+      const notify = useDesktopLauncherSubmitAdmission(
+        draftId,
+        attempt,
+        () => ({
+          prompt: input.promptRef.current,
+          ready: input.composerRef.current?.getSendContext().submissionReady === true,
+        }),
+        owner,
+      );
+      return (
+        <ChatComposer
+          {...input}
+          providerStatuses={available ? input.providerStatuses : []}
+          onSendContextCommitted={notify}
+        />
+      );
+    }
+    await act(() => {
+      renderer = create(<Host available={false} />);
+    });
+    await act(async () => {
+      useComposerDraftStore.getState().setPrompt(draftId, prompt);
+      owner.queueSubmit({
+        activationId: "12345678-1234-4234-8234-1234567890ab",
+        draftId,
+        prompt,
+        complete,
+      });
+    });
+    expect(attempt).not.toHaveBeenCalled();
+    expect(input.promptRef.current).toBe(prompt);
+    expect(owner.getSubmitState()).toBe("waiting");
+    await act(() => {
+      renderer!.update(<Host available />);
+    });
+    expect(attempt).toHaveBeenCalledOnce();
+    expect(complete).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ChatComposer launcher attachment admission", () => {
+  async function mountLauncher(available = true) {
+    const owner = new DesktopLauncherActivationOwner();
+    const draftId = DraftId.make("launcher-attachment-wait");
+    const prompt = "  attach before launch\n\tkeep these bytes  ";
+    useComposerDraftStore
+      .getState()
+      .setLogicalProjectDraftThreadId(
+        "launcher-project",
+        { environmentId, projectId: ProjectId.make("launcher-project") },
+        draftId,
+        { threadId },
+      );
+    useComposerDraftStore.getState().setPrompt(draftId, prompt);
+    const input = props({
+      composerDraftTarget: draftId,
+      draftId,
+      routeKind: "draft",
+      isLocalDraftThread: true,
+      isServerThread: false,
+    });
+    const sent: Array<{ prompt: string; images: ComposerImageAttachment[] }> = [];
+    const complete = vi.fn(async () => true);
+    const attempt = vi.fn(async () => {
+      sent.push({ prompt: input.promptRef.current, images: [...input.composerImagesRef.current] });
+      await owner.completeAdmittedSubmit(draftId, input.promptRef.current);
+    });
+    function Host({ available }: { available: boolean }) {
+      const notify = useDesktopLauncherSubmitAdmission(
+        draftId,
+        attempt,
+        () => ({
+          prompt: input.promptRef.current,
+          ready: input.composerRef.current?.getSendContext().submissionReady === true,
+        }),
+        owner,
+      );
+      return (
+        <ChatComposer
+          {...input}
+          providerStatuses={available ? input.providerStatuses : []}
+          onSendContextCommitted={notify}
+        />
+      );
+    }
+    await act(() => {
+      renderer = create(<Host available={available} />);
+    });
+    return {
+      owner,
+      input,
+      prompt,
+      sent,
+      attempt,
+      complete,
+      queue: () =>
+        owner.queueSubmit({
+          activationId: "12345678-1234-4234-8234-1234567890ab",
+          draftId,
+          prompt,
+          complete,
+        }),
+      enableProvider: () => renderer!.update(<Host available />),
+    };
+  }
+
+  it.each(["capture", "paste"] as const)(
+    "keeps launcher pending through provider readiness while %s is preparing",
+    async (source) => {
+      const native = deferred<DesktopScreenshotCapture | null>();
+      const preparation = deferred<{ ok: true; file: File }>();
+      mocks.capture.mockReturnValue(native.promise);
+      mocks.prepare.mockReturnValue(preparation.promise);
+      const fixture = await mountLauncher(false);
+      await act(() => {
+        fixture.queue();
+      });
+      await act(() => {
+        if (source === "capture") capture();
+        else fixture.input.composerRef.current!.addDroppedFiles([image()]);
+      });
+      await act(fixture.enableProvider);
+      expect(fixture.attempt).not.toHaveBeenCalled();
+      expect(fixture.owner.getSubmitState()).toBe("waiting");
+      expect(fixture.input.promptRef.current).toBe(fixture.prompt);
+      expect(
+        renderer!.root
+          .findAllByType("button")
+          .find((node) => node.props["aria-label"] === "Send message")!.props.disabled,
+      ).toBe(true);
+      await act(() =>
+        renderer!.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }),
+      );
+      expect(fixture.input.onSend).not.toHaveBeenCalled();
+      if (source === "capture") {
+        await act(() => native.resolve(emptyCapture));
+        expect(fixture.attempt).not.toHaveBeenCalled();
+      }
+      const prepared = image("prepared.png");
+      await act(() => preparation.resolve({ ok: true, file: prepared }));
+      expect(fixture.sent).toEqual([
+        { prompt: fixture.prompt, images: [expect.objectContaining({ file: prepared })] },
+      ]);
+      expect(fixture.attempt).toHaveBeenCalledOnce();
+      expect(fixture.complete).toHaveBeenCalledOnce();
+      expect(fixture.owner.getSubmitState()).toBeNull();
+      await act(fixture.enableProvider);
+      expect(fixture.attempt).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["capture", "paste"] as const)(
+    "reads the synchronous %s reservation before React commits disabled state",
+    async (source) => {
+      const native = deferred<DesktopScreenshotCapture | null>();
+      const preparation = deferred<{ ok: true; file: File }>();
+      mocks.capture.mockReturnValue(native.promise);
+      mocks.prepare.mockReturnValue(preparation.promise);
+      const fixture = await mountLauncher();
+      await act(() => {
+        const sendButton = renderer!.root
+          .findAllByType("button")
+          .find((node) => node.props["aria-label"] === "Send message")!;
+        expect(sendButton.props.disabled).toBe(false);
+        if (source === "capture") capture();
+        else fixture.input.composerRef.current!.addDroppedFiles([image()]);
+        expect(sendButton.props.disabled).toBe(false);
+        fixture.queue();
+        expect(fixture.attempt).not.toHaveBeenCalled();
+        expect(fixture.owner.getSubmitState()).toBe("waiting");
+      });
+      if (source === "capture") await act(() => native.resolve(emptyCapture));
+      expect(fixture.attempt).not.toHaveBeenCalled();
+      const prepared = image("race.png");
+      await act(() => preparation.resolve({ ok: true, file: prepared }));
+      expect(fixture.sent).toEqual([
+        { prompt: fixture.prompt, images: [expect.objectContaining({ file: prepared })] },
+      ]);
+      expect(fixture.attempt).toHaveBeenCalledOnce();
+      expect(fixture.complete).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["cancel", "native-error", "preparation-error"] as const)(
+    "releases the waiting launcher after %s without attaching a partial result",
+    async (outcome) => {
+      const native = deferred<DesktopScreenshotCapture | null>();
+      const preparation = deferred<{ ok: true; file: File }>();
+      mocks.capture.mockReturnValue(native.promise);
+      mocks.prepare.mockReturnValue(preparation.promise);
+      const fixture = await mountLauncher();
+      await act(() => {
+        capture();
+        fixture.queue();
+      });
+      expect(fixture.attempt).not.toHaveBeenCalled();
+      if (outcome === "preparation-error") {
+        await act(() => native.resolve(emptyCapture));
+        expect(fixture.attempt).not.toHaveBeenCalled();
+        await act(() => preparation.reject(new Error("preparation failed")));
+      } else if (outcome === "native-error") {
+        await act(() => native.reject(new Error("capture failed")));
+      } else {
+        await act(() => native.resolve(null));
+      }
+      expect(fixture.sent).toEqual([{ prompt: fixture.prompt, images: [] }]);
+      expect(fixture.attempt).toHaveBeenCalledOnce();
+      expect(fixture.complete).toHaveBeenCalledOnce();
+      expect(fixture.owner.getSubmitState()).toBeNull();
+    },
+  );
 });
