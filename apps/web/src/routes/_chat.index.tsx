@@ -1,3 +1,4 @@
+import { resolveThreadClientHostPolicy } from "../threadClientSurface";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
@@ -28,7 +29,7 @@ function ChatIndexRouteView() {
     if (environments.length === 0) return <HostedStaticOnboardingState />;
   }
 
-  return <IndexDraftLanding />;
+  return resolveThreadClientHostPolicy().ownsLaunchNavigation ? null : <IndexDraftLanding />;
 }
 
 /**

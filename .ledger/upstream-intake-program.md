@@ -627,3 +627,7 @@ If applied, this commit stages Thread launch text in the shared draft with compa
 ### Commit effect — S6 linux
 
 If applied, this commit installs verified Code and Thread artifacts with ownership-preserving transactional rollback.
+
+### Commit effect — S6 hosts
+
+If applied, this commit connects the current chat and application hosts to independent Code and Thread client owners.

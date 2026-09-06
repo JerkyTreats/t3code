@@ -1,3 +1,4 @@
+import { resolveThreadClientSurface } from "../threadClientSurface";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
@@ -82,6 +83,7 @@ function ChatThreadRouteView() {
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
       {renderState === "ready" || (renderState === "loading" && serverThreadShell !== null) ? (
         <ChatView
+          compactThreadClient={resolveThreadClientSurface()}
           environmentId={threadRef.environmentId}
           threadId={threadRef.threadId}
           routeKind="server"

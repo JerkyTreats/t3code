@@ -1,3 +1,6 @@
+import { useDesktopLauncherSubmitAdmission } from "./desktop/DesktopLauncherActivationCoordinator";
+import { desktopLauncherActivationOwner } from "../fork/desktopLauncherActivation";
+import { ThreadClientHeader } from "./thread/ThreadClientHeader";
 import { composeChatPrompt } from "../fork/chatPromptContext";
 import {
   type AssistantCitation,
@@ -654,6 +657,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      compactThreadClient?: boolean;
       threadSyncPhase?: ThreadSyncPhase | null;
       routeKind: "server";
       draftId?: never;
@@ -664,6 +668,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      compactThreadClient?: boolean;
       threadSyncPhase?: never;
       routeKind: "draft";
       draftId: DraftId;
@@ -1376,6 +1381,7 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
+    compactThreadClient = false,
   } = props;
   const draftId = routeKind === "draft" ? props.draftId : null;
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
@@ -2964,13 +2970,15 @@ export default function ChatView(props: ChatViewProps) {
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
-  const isDraftHeroState = resolveDraftHeroState({
-    isLocalDraftThread,
-    hasTimelineEntries: timelineEntries.length > 0,
-    isWorking,
-    draftHeroDockRequested,
-    backgroundSubmissionPending,
-  });
+  const isDraftHeroState =
+    !compactThreadClient &&
+    resolveDraftHeroState({
+      isLocalDraftThread,
+      hasTimelineEntries: timelineEntries.length > 0,
+      isWorking,
+      draftHeroDockRequested,
+      backgroundSubmissionPending,
+    });
   const [
     attachDraftHeroTransitionGroupRef,
     attachDraftHeroComposerAnchorRef,
@@ -6114,6 +6122,7 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
 
+  // False identifies a known pre-submission refusal for the launcher; completion alone confirms admission.
   const onSend = async (
     e?: { preventDefault: () => void },
     submissionIntent: ComposerSubmissionIntent = "foreground",
@@ -6142,7 +6151,7 @@ export default function ChatView(props: ChatViewProps) {
       feedbackUploadsInFlightRef.current.has(routeThreadKey)
     ) {
       notifyDirectAnnotationAttached();
-      return;
+      return false;
     }
     if (activeEnvironmentUnavailable) {
       const toastSlot = environmentUnavailableSendToastSlotRef.current;
@@ -6156,7 +6165,7 @@ export default function ChatView(props: ChatViewProps) {
         }),
         id: `chat-send-environment-unavailable:${toastSlot}`,
       });
-      return;
+      return false;
     }
     if (activePendingProgress) {
       if (directAnnotation) {
@@ -6164,12 +6173,12 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
       onAdvanceActivePendingUserInput();
-      return;
+      return false;
     }
     const sendCtx = composerRef.current?.getSendContext();
     if (!sendCtx?.providerAvailable) {
       notifyDirectAnnotationAttached();
-      return;
+      return false;
     }
     const {
       images: sendContextImages,
@@ -6252,7 +6261,7 @@ export default function ChatView(props: ChatViewProps) {
             description: "Send a message before you submit feedback.",
           }),
         );
-        return;
+        return false;
       }
       feedbackUploadsInFlightRef.current.add(routeThreadKey);
       const result = await submitCodexFeedback({
@@ -6349,7 +6358,7 @@ export default function ChatView(props: ChatViewProps) {
         text: followUp.text.trim(),
       });
       if (composerRef.current?.validateProviderInput(outgoingFollowUpText) === false) {
-        return;
+        return false;
       }
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
@@ -6392,7 +6401,7 @@ export default function ChatView(props: ChatViewProps) {
           }),
         );
       }
-      return;
+      return false;
     }
     if (!activeProject) {
       toastManager.add(
@@ -6402,7 +6411,7 @@ export default function ChatView(props: ChatViewProps) {
           description: "This draft no longer points to an available project.",
         }),
       );
-      return;
+      return false;
     }
     const threadIdForSend = activeThread.id;
     const isFirstMessage = !isServerThread || activeThread.messages.length === 0;
@@ -6417,7 +6426,7 @@ export default function ChatView(props: ChatViewProps) {
       isFirstMessage && sendEnvMode === "worktree" && !activeThread.worktreePath;
     if (shouldCreateWorktree && !activeThreadBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
-      return;
+      return false;
     }
 
     const composerImagesSnapshot = [...composerImages];
@@ -6442,7 +6451,7 @@ export default function ChatView(props: ChatViewProps) {
       text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
-      return;
+      return false;
     }
 
     const readLiveAttachmentCapabilities = () => {
@@ -6760,6 +6769,7 @@ export default function ChatView(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        void desktopLauncherActivationOwner.completeAdmittedSubmit(draftId, promptForSend);
         if (turnUsesAttachmentUploads) {
           releaseDraftAttachments(composerAttachmentsSnapshot);
         }
@@ -6883,6 +6893,26 @@ export default function ChatView(props: ChatViewProps) {
       resetLocalDispatch();
     }
   };
+
+  const onLauncherComposerCommitted = useDesktopLauncherSubmitAdmission(
+    draftId,
+    () => onSend(),
+    () => ({
+      prompt: promptRef.current,
+      ready: Boolean(
+        activeThread &&
+        activeProject &&
+        !isSendBusy &&
+        !isConnecting &&
+        !threadDetailLoading &&
+        !sendInFlightRef.current &&
+        !feedbackUploadsInFlightRef.current.has(routeThreadKey) &&
+        !activeEnvironmentUnavailable &&
+        !activePendingProgress &&
+        composerRef.current?.getSendContext().submissionReady,
+      ),
+    }),
+  );
 
   const onInterrupt = async () => {
     if (!activeThread) return;
@@ -7755,51 +7785,63 @@ export default function ChatView(props: ChatViewProps) {
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
         {/* Top bar */}
-        <WorkspacePageHeader
-          data-chat-header
-          electron={isElectron}
-          reserveNativeControls={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
-          className="relative bg-background"
-        >
-          {isElectron && rightPanelControlsAtRoot ? (
-            <span
-              aria-hidden
-              className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
-            />
-          ) : null}
-          {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
-          <ChatHeader
-            {...(!supportsPullRequests || activeProjectRepository === null
-              ? {}
-              : { onOpenPullRequest: openProjectPullRequest })}
-            activeThreadEnvironmentId={activeThread.environmentId}
-            activeThreadId={activeThread.id}
-            {...(routeKind === "draft" && draftId ? { draftId } : {})}
-            activeThreadTitle={activeThread.title}
-            isServerThread={isServerThread}
-            activeProjectName={activeProject?.title}
-            activeProjectCwd={activeProject?.workspaceRoot ?? null}
-            activeProjectFaviconPath={activeProject?.faviconPath ?? null}
-            activeProjectIcon={activeProject?.projectIcon ?? null}
-            openInCwd={gitCwd}
-            activeProjectScripts={activeProject?.scripts}
-            preferredScriptId={
-              activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
+        {compactThreadClient ? (
+          <ThreadClientHeader
+            modelLabel={activeThread.modelSelection.model}
+            runtimeMode={runtimeMode}
+            {...(activeWorkStartedAt ? { startedAt: activeWorkStartedAt } : {})}
+            statusLabel={
+              isWorking ? "Working" : phase === "disconnected" ? "Disconnected" : "Ready"
             }
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            rightPanelOpen={rightPanelOpen}
-            gitCwd={gitCwd}
-            onNewThreadInProject={handleNewThreadInActiveProject}
-            {...(activeDraftLogicalProjectKey
-              ? { onOpenProjectSettings: handleOpenDraftProjectSettings }
-              : {})}
-            onRunProjectScript={runProjectScript}
-            onAddProjectScript={saveProjectScript}
-            onUpdateProjectScript={updateProjectScript}
-            onDeleteProjectScript={deleteProjectScript}
+            title={activeThread.title}
           />
-        </WorkspacePageHeader>
+        ) : (
+          <WorkspacePageHeader
+            data-chat-header
+            electron={isElectron}
+            reserveNativeControls={reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar}
+            className="relative bg-background"
+          >
+            {isElectron && rightPanelControlsAtRoot ? (
+              <span
+                aria-hidden
+                className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
+              />
+            ) : null}
+            {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
+            <ChatHeader
+              {...(!supportsPullRequests || activeProjectRepository === null
+                ? {}
+                : { onOpenPullRequest: openProjectPullRequest })}
+              activeThreadEnvironmentId={activeThread.environmentId}
+              activeThreadId={activeThread.id}
+              {...(routeKind === "draft" && draftId ? { draftId } : {})}
+              activeThreadTitle={activeThread.title}
+              isServerThread={isServerThread}
+              activeProjectName={activeProject?.title}
+              activeProjectCwd={activeProject?.workspaceRoot ?? null}
+              activeProjectFaviconPath={activeProject?.faviconPath ?? null}
+              activeProjectIcon={activeProject?.projectIcon ?? null}
+              openInCwd={gitCwd}
+              activeProjectScripts={activeProject?.scripts}
+              preferredScriptId={
+                activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
+              }
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              rightPanelOpen={rightPanelOpen}
+              gitCwd={gitCwd}
+              onNewThreadInProject={handleNewThreadInActiveProject}
+              {...(activeDraftLogicalProjectKey
+                ? { onOpenProjectSettings: handleOpenDraftProjectSettings }
+                : {})}
+              onRunProjectScript={runProjectScript}
+              onAddProjectScript={saveProjectScript}
+              onUpdateProjectScript={updateProjectScript}
+              onDeleteProjectScript={deleteProjectScript}
+            />
+          </WorkspacePageHeader>
+        )}
 
         {/* Main content area with optional plan sidebar */}
         <div className="flex min-h-0 min-w-0 flex-1">
@@ -8047,6 +8089,7 @@ export default function ChatView(props: ChatViewProps) {
                             onPageScrollKeyUp={onComposerPageScrollKeyUp}
                             onPageScrollRelease={onComposerPageScrollRelease}
                             onSend={onSend}
+                            onSendContextCommitted={onLauncherComposerCommitted}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
                             onRespondToApproval={onRespondToApproval}

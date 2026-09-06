@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./features/mermaid/mermaid.css";
 @import "./fork/chatPresentation.css";
+@import "./components/thread/threadClientHeader.css";
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));

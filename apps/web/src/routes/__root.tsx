@@ -1,3 +1,8 @@
+import { ThreadClientActivationCoordinator } from "../components/thread/ThreadClientActivationCoordinator";
+import { DesktopLauncherActivationCoordinator } from "../components/desktop/DesktopLauncherActivationCoordinator";
+import { hasBridgeBoundPrimaryTarget } from "../environments/primary/target";
+import { resolveThreadClientHostPolicy } from "../threadClientSurface";
+import { SidebarProvider } from "../components/ui/sidebar";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -66,7 +71,11 @@ import {
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
-    if (location.pathname === "/pair" && hasHostedPairingRequest(new URL(window.location.href))) {
+    if (
+      !hasBridgeBoundPrimaryTarget() &&
+      location.pathname === "/pair" &&
+      hasHostedPairingRequest(new URL(window.location.href))
+    ) {
       return {
         authGateState: {
           status: "hosted-pairing",
@@ -74,7 +83,7 @@ export const Route = createRootRoute({
       };
     }
 
-    if (isHostedStaticApp(new URL(window.location.href))) {
+    if (!hasBridgeBoundPrimaryTarget() && isHostedStaticApp(new URL(window.location.href))) {
       return {
         authGateState: {
           status: "hosted-static",
@@ -95,6 +104,7 @@ export const Route = createRootRoute({
 });
 
 function RootRouteView() {
+  const threadClientHost = resolveThreadClientHostPolicy();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
@@ -148,9 +158,15 @@ function RootRouteView() {
 
   const appShell = (
     <CommandPalette>
-      <AppSidebarLayout>
-        <Outlet />
-      </AppSidebarLayout>
+      {threadClientHost.compact ? (
+        <SidebarProvider defaultOpen={false}>
+          <Outlet />
+        </SidebarProvider>
+      ) : (
+        <AppSidebarLayout>
+          <Outlet />
+        </AppSidebarLayout>
+      )}
     </CommandPalette>
   );
 
@@ -167,11 +183,17 @@ function RootRouteView() {
         <GlassAppearanceSync />
         <FontAppearanceSync />
         <FirstRunGate
-          enabled={primaryEnvironmentAuthenticated}
+          enabled={primaryEnvironmentAuthenticated && !threadClientHost.ownsLaunchNavigation}
           hostedStatic={authGateState.status === "hosted-static"}
         >
           {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
           {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
+          {primaryEnvironmentAuthenticated && !threadClientHost.ownsLaunchNavigation ? (
+            <DesktopLauncherActivationCoordinator />
+          ) : null}
+          {primaryEnvironmentAuthenticated && threadClientHost.ownsLaunchNavigation ? (
+            <ThreadClientActivationCoordinator />
+          ) : null}
           <RelayClientInstallDialog />
           <ConnectOnboardingDialog />
           <SshPasswordPromptDialog />
@@ -179,7 +201,11 @@ function RootRouteView() {
           <SlowRpcRequestToastCoordinator />
           <HostedStaticEnvironmentBootstrap />
           {primaryEnvironmentAuthenticated ? (
-            <EventRouter skipInitialBootstrapNavigation={returningFromWelcomeRef.current} />
+            <EventRouter
+              skipInitialBootstrapNavigation={
+                returningFromWelcomeRef.current || threadClientHost.ownsLaunchNavigation
+              }
+            />
           ) : null}
           {primaryEnvironmentAuthenticated ? <PlanAgentSelectionHeal /> : null}
           {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
