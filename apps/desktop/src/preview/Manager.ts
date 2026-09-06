@@ -53,7 +53,18 @@ import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import { PREVIEW_PICTURE_IN_PICTURE_FRAME_CHANNEL } from "../ipc/channels.ts";
+import {
+  isPreviewRefreshShortcut,
+  previewBrowserActionForShortcut,
+} from "../fork/PreviewShortcutPolicy.ts";
+export {
+  isPreviewRefreshShortcut,
+  previewBrowserActionForShortcut,
+} from "../fork/PreviewShortcutPolicy.ts";
+import {
+  PREVIEW_BROWSER_ACTION_CHANNEL,
+  PREVIEW_PICTURE_IN_PICTURE_FRAME_CHANNEL,
+} from "../ipc/channels.ts";
 import * as BrowserSession from "./BrowserSession.ts";
 import {
   ANNOTATION_CAPTURED_CHANNEL,
@@ -527,13 +538,6 @@ export const previewWindowOpenAction = (details: {
   readonly disposition: Electron.HandlerDetails["disposition"];
 }): "popup" | "navigate" =>
   details.disposition === "new-window" && isPopupUrl(details.url) ? "popup" : "navigate";
-
-export const isPreviewRefreshShortcut = (input: Electron.Input): boolean =>
-  input.type === "keyDown" &&
-  input.key.toLowerCase() === "r" &&
-  (input.meta || input.control) &&
-  !input.shift &&
-  !input.alt;
 
 const isPreviewInputSignal = (value: unknown): value is PreviewInputSignal => {
   if (typeof value !== "object" || value === null || !("kind" in value)) return false;
@@ -1845,12 +1849,27 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     };
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
-      if (isPreviewRefreshShortcut(input)) {
+      if (isPreviewRefreshShortcut(input, hostPlatform)) {
         event.preventDefault();
         runFork(
           attempt({ operation: "shortcut.refresh", tabId, webContentsId: wc.id }, () =>
             wc.reload(),
           ).pipe(Effect.ignore),
+        );
+        return;
+      }
+      const browserAction = previewBrowserActionForShortcut(input, hostPlatform);
+      if (browserAction) {
+        event.preventDefault();
+        runFork(
+          Effect.gen(function* () {
+            const mainWindow = yield* Ref.get(mainWindowRef);
+            if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed()) return;
+            mainWindow.value.webContents.send(PREVIEW_BROWSER_ACTION_CHANNEL, {
+              action: browserAction,
+              tabId,
+            });
+          }).pipe(Effect.ignore),
         );
         return;
       }
@@ -4167,6 +4186,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     refresh,
     registerWebview,
     resetZoom: (tabId: string) => applyZoom(tabId, () => DEFAULT_ZOOM_FACTOR),
+    setZoomFactor: (tabId: string, zoomFactor: number) =>
+      applyZoom(tabId, () => normalizeZoomFactor(zoomFactor)),
     revealArtifact,
     saveRecording,
     setAnnotationTheme,
@@ -4506,6 +4527,10 @@ export class PreviewManager extends Context.Service<
     readonly refresh: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly zoomIn: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly zoomOut: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
+    readonly setZoomFactor: (
+      tabId: string,
+      zoomFactor: number,
+    ) => Effect.Effect<void, PreviewManagerError>;
     readonly resetZoom: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     // Re-applies every attached guest's own zoom factor, undoing the zoom level
     // Chromium inherits from the embedder when the app UI zooms.
@@ -4624,6 +4649,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     zoomIn: operations.zoomIn,
     zoomOut: operations.zoomOut,
     resetZoom: operations.resetZoom,
+    setZoomFactor: operations.setZoomFactor,
     reapplyZoom: operations.reapplyZoom,
     hardReload: operations.hardReload,
     setColorScheme: operations.setColorScheme,

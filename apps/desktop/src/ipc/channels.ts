@@ -90,3 +90,12 @@ export const PREVIEW_RECORDING_SAVE_CHANNEL = "desktop:preview-recording-save";
 export const PREVIEW_RECORDING_FRAME_CHANNEL = "desktop:preview-recording-frame";
 export const PREVIEW_STATE_CHANGE_CHANNEL = "desktop:preview-state-change";
 export const PREVIEW_POINTER_EVENT_CHANNEL = "desktop:preview-pointer-event";
+
+export const GET_SYSTEM_THEME_CHANNEL = "desktop:get-system-theme";
+export const SYSTEM_THEME_CHANNEL = "desktop:system-theme";
+export const GET_DESKTOP_SCREENSHOT_CAPTURE_AVAILABILITY_CHANNEL =
+  "desktop:get-screenshot-capture-availability";
+export const CAPTURE_DESKTOP_SCREENSHOT_CHANNEL = "desktop:capture-desktop-screenshot";
+export const PREVIEW_BROWSER_ACTION_CHANNEL = "desktop:preview-browser-action";
+
+export const PREVIEW_SET_ZOOM_FACTOR_CHANNEL = "desktop:preview-set-zoom-factor";

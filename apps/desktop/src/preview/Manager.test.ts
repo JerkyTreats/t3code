@@ -45,28 +45,6 @@ describe("recordingFileExtension", () => {
   });
 });
 
-describe("isPreviewRefreshShortcut", () => {
-  const input = (overrides: Partial<Electron.Input> = {}) =>
-    ({
-      type: "keyDown",
-      key: "r",
-      meta: true,
-      control: false,
-      shift: false,
-      alt: false,
-      ...overrides,
-    }) as Electron.Input;
-
-  it("recognizes the platform refresh chord without matching modified variants", () => {
-    expect(PreviewManager.isPreviewRefreshShortcut(input())).toBe(true);
-    expect(PreviewManager.isPreviewRefreshShortcut(input({ meta: false, control: true }))).toBe(
-      true,
-    );
-    expect(PreviewManager.isPreviewRefreshShortcut(input({ shift: true }))).toBe(false);
-    expect(PreviewManager.isPreviewRefreshShortcut(input({ type: "keyUp" }))).toBe(false);
-  });
-});
-
 describe("previewWindowOpenAction", () => {
   const details = (overrides: {
     readonly url?: string;
@@ -481,7 +459,8 @@ describe("PreviewManager", () => {
       Effect.gen(function* () {
         const preview = makeFaviconWebContents();
         const sendInputEvent = vi.fn();
-        const hostWebContents = { sendInputEvent };
+        const send = vi.fn();
+        const hostWebContents = { sendInputEvent, send };
         Object.assign(preview.webContents, { hostWebContents });
         fromId.mockReturnValue(preview.webContents);
         yield* manager.setMainWindow({
@@ -497,7 +476,7 @@ describe("PreviewManager", () => {
         ).toHaveBeenCalledWith(true);
         const beforeInput = preview.listeners.get("before-input-event")!;
         for (const control of [false, true]) {
-          for (const key of ["k", ",", "w", "j", "q", "+", "a", "c", "v", "x"]) {
+          for (const key of ["k", ",", "j", "q", "+", "a", "c", "v", "x"]) {
             for (const type of ["keyDown", "keyUp"]) {
               const preventDefault = vi.fn();
               beforeInput(
@@ -527,6 +506,26 @@ describe("PreviewManager", () => {
         expect(preventDefault).toHaveBeenCalledOnce();
         expect(preview.reload).toHaveBeenCalledOnce();
         expect(sendInputEvent).not.toHaveBeenCalled();
+
+        for (const [key, shift, action] of [
+          ["t", false, "preview.new"],
+          ["w", false, "preview.close"],
+          ["t", true, "preview.reopenClosed"],
+          ["l", false, "preview.focusUrl"],
+        ] as const) {
+          const preventDefault = vi.fn();
+          beforeInput(
+            { preventDefault } as never,
+            { type: "keyDown", key, shift, alt: false, meta: true, control: false } as never,
+          );
+          yield* Effect.yieldNow;
+          expect(preventDefault).toHaveBeenCalledOnce();
+          expect(send).toHaveBeenLastCalledWith("desktop:preview-browser-action", {
+            action,
+            tabId: "tab_keys",
+          });
+          expect(sendInputEvent).not.toHaveBeenCalled();
+        }
 
         const setIgnoreMenuShortcuts = vi.fn();
         preview.listeners.get("did-create-window")!({
@@ -1251,6 +1250,30 @@ describe("PreviewManager", () => {
         yield* manager.registerWebview("tab_favicon_reregister", 42);
 
         expect(states.at(-1)?.favicon?.dataUrl).toBe(TEST_FAVICON);
+      }),
+    ),
+  );
+
+  effectIt.effect("restores exact presentation through the existing normalized zoom owner", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents();
+        const setZoomFactor = vi.fn();
+        Object.assign(preview.webContents, { setZoomFactor });
+        fromId.mockReturnValue(preview.webContents);
+        const states: PreviewManager.PreviewTabState[] = [];
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          Effect.sync(() => {
+            states.push(state);
+          }),
+        );
+        yield* manager.createTab("restored-zoom");
+        yield* manager.registerWebview("restored-zoom", 42);
+        yield* manager.setZoomFactor("restored-zoom", 1.75);
+        expect(states.at(-1)?.zoomFactor).toBe(1.75);
+        expect(setZoomFactor).toHaveBeenLastCalledWith(1.75);
+        yield* manager.setZoomFactor("restored-zoom", 100);
+        expect(states.at(-1)?.zoomFactor).toBe(5);
       }),
     ),
   );

@@ -87,7 +87,8 @@ import type {
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
 } from "./orchestration.ts";
-import { EnvironmentId } from "./baseSchemas.ts";
+import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "./orchestration.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 import type {
   BrowserImportResult,
@@ -197,6 +198,73 @@ export const DesktopAppBrandingSchema = Schema.Struct({
   stageLabel: DesktopAppStageLabelSchema,
   displayName: Schema.String,
 });
+
+export const DESKTOP_SYSTEM_THEME_NAME_MAX_CHARS = 128;
+export const DESKTOP_SYSTEM_THEME_MAX_COLORS = 64;
+export const DESKTOP_SYSTEM_THEME_COLOR_KEY_MAX_CHARS = 64;
+export const DESKTOP_SYSTEM_THEME_COLOR_VALUE_MAX_CHARS = 256;
+
+const DesktopSystemThemeColorKey = Schema.String.check(
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(DESKTOP_SYSTEM_THEME_COLOR_KEY_MAX_CHARS),
+  Schema.isPattern(/^[a-z][a-z0-9_-]*$/u),
+);
+const DesktopSystemThemeColorValue = Schema.String.check(
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(DESKTOP_SYSTEM_THEME_COLOR_VALUE_MAX_CHARS),
+);
+const isDesktopSystemThemeColorKey = Schema.is(DesktopSystemThemeColorKey);
+const DesktopSystemThemeColorsSchema = Schema.StructWithRest(
+  Schema.Struct({
+    background: DesktopSystemThemeColorValue,
+    foreground: DesktopSystemThemeColorValue,
+    accent: DesktopSystemThemeColorValue,
+  }),
+  [Schema.Record(Schema.String, DesktopSystemThemeColorValue)],
+).check(
+  Schema.makeFilter(
+    (colors) =>
+      Object.keys(colors).length <= DESKTOP_SYSTEM_THEME_MAX_COLORS ||
+      `Desktop system theme must not contain more than ${DESKTOP_SYSTEM_THEME_MAX_COLORS} colors.`,
+  ),
+  Schema.makeFilter(
+    (colors) =>
+      Object.keys(colors).every(isDesktopSystemThemeColorKey) ||
+      "Desktop system theme contains an invalid color key.",
+  ),
+);
+
+export const DesktopSystemThemeSchema = Schema.Struct({
+  source: Schema.Literal("omarchy"),
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(DESKTOP_SYSTEM_THEME_NAME_MAX_CHARS)),
+  mode: Schema.Literals(["light", "dark"]),
+  colors: DesktopSystemThemeColorsSchema,
+});
+export type DesktopSystemTheme = typeof DesktopSystemThemeSchema.Type;
+
+const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+
+export const DESKTOP_SCREENSHOT_CAPTURE_MAX_BYTES = PROVIDER_SEND_TURN_MAX_IMAGE_BYTES;
+const DesktopScreenshotCaptureData = Schema.Uint8Array.check(
+  Schema.makeFilter((data) => data.byteLength > 0 || "Screenshot capture must not be empty."),
+  Schema.makeFilter(
+    (data) =>
+      PNG_SIGNATURE.every((byte, index) => data[index] === byte) ||
+      "Screenshot capture must have a valid PNG signature.",
+  ),
+  Schema.makeFilter(
+    (data) =>
+      data.byteLength <= DESKTOP_SCREENSHOT_CAPTURE_MAX_BYTES ||
+      `Screenshot capture must not exceed ${DESKTOP_SCREENSHOT_CAPTURE_MAX_BYTES} bytes.`,
+  ),
+);
+
+export const DesktopScreenshotCaptureSchema = Schema.Struct({
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  mimeType: Schema.Literal("image/png"),
+  data: DesktopScreenshotCaptureData,
+});
+export type DesktopScreenshotCapture = typeof DesktopScreenshotCaptureSchema.Type;
 
 export interface DesktopRuntimeInfo {
   hostArch: DesktopRuntimeArch;
@@ -593,6 +661,20 @@ export const DesktopPreviewAutomationStatusSchema = Schema.Struct({
   tabId: Schema.NullOr(DesktopPreviewTabIdSchema),
 });
 export type DesktopPreviewAutomationStatus = typeof DesktopPreviewAutomationStatusSchema.Type;
+
+export const DesktopPreviewBrowserActionSchema = Schema.Literals([
+  "preview.new",
+  "preview.close",
+  "preview.reopenClosed",
+  "preview.focusUrl",
+]);
+export type DesktopPreviewBrowserAction = typeof DesktopPreviewBrowserActionSchema.Type;
+
+export const DesktopPreviewBrowserActionEventSchema = Schema.Struct({
+  action: DesktopPreviewBrowserActionSchema,
+  tabId: DesktopPreviewTabIdSchema,
+});
+export type DesktopPreviewBrowserActionEvent = typeof DesktopPreviewBrowserActionEventSchema.Type;
 
 export const DesktopPreviewNavStatusSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("Idle") }),
@@ -998,6 +1080,11 @@ export const DesktopPreviewClearDataInputSchema = Schema.Struct({
   profileId: Schema.optional(BrowserProfileId),
 });
 
+export const DesktopPreviewSetZoomFactorInputSchema = Schema.Struct({
+  tabId: DesktopPreviewTabIdSchema,
+  zoomFactor: Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0)),
+});
+
 export const DesktopPreviewSetColorSchemeInputSchema = Schema.Struct({
   tabId: DesktopPreviewTabIdSchema,
   colorScheme: DesktopPreviewColorSchemeSchema,
@@ -1121,6 +1208,10 @@ export interface DesktopBridge {
    */
   pickThemeFiles?: () => Promise<readonly PickedThemeFile[] | null>;
   setTheme: (theme: DesktopTheme) => Promise<void>;
+  /** Local desktop capabilities; absent in ordinary browsers and older shells. */
+  getSystemTheme?: () => Promise<DesktopSystemTheme | null>;
+  onSystemTheme?: (listener: (theme: DesktopSystemTheme | null) => void) => () => void;
+  captureDesktopScreenshot?: () => Promise<DesktopScreenshotCapture | null>;
   showContextMenu: <T extends string>(
     items: readonly ContextMenuItem<T>[],
     position?: { x: number; y: number },
@@ -1138,6 +1229,9 @@ export interface DesktopBridge {
    */
   probeRemoteEditors?: () => Promise<readonly EditorId[]>;
   onMenuAction: (listener: (action: string) => void) => () => void;
+  onPreviewBrowserAction?: (
+    listener: (event: DesktopPreviewBrowserActionEvent) => void,
+  ) => () => void;
   /**
    * Quit-confirmation hint pushes. Optional: older desktop builds never emit
    * them.
@@ -1178,6 +1272,8 @@ export interface DesktopPreviewBridge {
   zoomIn: (tabId: string) => Promise<void>;
   zoomOut: (tabId: string) => Promise<void>;
   resetZoom: (tabId: string) => Promise<void>;
+  /** Exact restoration when a reopened tab was created before its response arrived. */
+  setZoomFactor?: (tabId: string, zoomFactor: number) => Promise<void>;
   /** Reload bypassing the HTTP cache. */
   hardReload: (tabId: string) => Promise<void>;
   /**

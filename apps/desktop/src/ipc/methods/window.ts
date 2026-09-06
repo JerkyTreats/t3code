@@ -1,8 +1,13 @@
+import { captureDesktopScreenshot as captureNativeDesktopScreenshot } from "../../fork/DesktopScreenshotCapture.ts";
+import { isDesktopScreenshotCaptureAvailable } from "../../fork/DesktopScreenshotCaptureAvailability.ts";
+import { readDesktopSystemTheme } from "../../fork/OmarchyThemeSource.ts";
 import {
   ContextMenuItemSchema,
   DesktopAppBrandingSchema,
   DesktopEnvironmentBootstrapSchema,
   DesktopThemeSchema,
+  DesktopScreenshotCaptureSchema,
+  DesktopSystemThemeSchema,
   EDITORS,
   EditorId,
   PickedThemeFileSchema,
@@ -73,6 +78,32 @@ export const getSystemLocale = DesktopIpc.makeSyncIpcMethod({
   handler: Effect.fn("desktop.ipc.window.getSystemLocale")(function* () {
     const electronApp = yield* ElectronApp.ElectronApp;
     return yield* electronApp.systemLocale;
+  }),
+});
+
+export const getSystemTheme = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GET_SYSTEM_THEME_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.NullOr(DesktopSystemThemeSchema),
+  handler: Effect.fn("desktop.ipc.window.getSystemTheme")(function* () {
+    return yield* Effect.sync(() => readDesktopSystemTheme());
+  }),
+});
+
+export const getScreenshotCaptureAvailability = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_DESKTOP_SCREENSHOT_CAPTURE_AVAILABILITY_CHANNEL,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.window.getScreenshotCaptureAvailability")(function* () {
+    return yield* Effect.sync(() => isDesktopScreenshotCaptureAvailable());
+  }),
+});
+
+export const captureDesktopScreenshot = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.CAPTURE_DESKTOP_SCREENSHOT_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.NullOr(DesktopScreenshotCaptureSchema),
+  handler: Effect.fn("desktop.ipc.window.captureDesktopScreenshot")(function* () {
+    return yield* Effect.promise(() => captureNativeDesktopScreenshot());
   }),
 });
 

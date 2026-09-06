@@ -26,6 +26,10 @@
     "./coordinationBoardOrchestration": {
       "types": "./src/coordinationBoardOrchestration.ts",
       "import": "./src/coordinationBoardOrchestration.ts"
+    },
+    "./ipc": {
+      "types": "./src/ipc.ts",
+      "import": "./src/ipc.ts"
     }
   },
   "scripts": {

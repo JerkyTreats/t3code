@@ -59,11 +59,21 @@ export default defineConfig({
       outExtensions: () => ({ js: ".cjs" }),
       define: publicConfigDefine,
       entry: ["src/preload.ts"],
+      // Electron's sandbox wrapper supplies names such as setImmediate. Keep
+      // bundled schema runtime declarations inside their own lexical scope.
+      banner: "(() => {",
+      footer: "})();",
       deps: {
         // Sandboxed Electron preloads cannot reliably resolve package imports
         // from inside the packaged ASAR. Bundle Clerk's preload bridge into the
-        // preload artifact instead of leaving a runtime require() behind.
-        alwaysBundle: (id) => id === "@clerk/electron" || id.startsWith("@clerk/electron/"),
+        // preload artifact instead of leaving a runtime require() behind. Local
+        // capability decoders likewise need their schemas and Effect bundled.
+        alwaysBundle: (id) =>
+          id === "@clerk/electron" ||
+          id.startsWith("@clerk/electron/") ||
+          id.startsWith("@t3tools/") ||
+          id === "effect" ||
+          id.startsWith("effect/"),
       },
     },
     {

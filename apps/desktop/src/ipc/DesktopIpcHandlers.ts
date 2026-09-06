@@ -1,3 +1,6 @@
+import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import { watchDesktopSystemTheme } from "../fork/OmarchyThemeSource.ts";
+import * as IpcChannels from "./channels.ts";
 import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
@@ -36,6 +39,9 @@ import {
   getLocalEnvironmentBootstraps,
   getLocalEnvironmentBearerToken,
   getSystemLocale,
+  getSystemTheme,
+  getScreenshotCaptureAvailability,
+  captureDesktopScreenshot,
   getWindowFullscreenState,
   openExternal,
   openSystemSettings,
@@ -59,6 +65,28 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
 
   yield* ipc.handleSync(getAppBranding);
   yield* ipc.handleSync(getSystemLocale);
+  yield* ipc.handle(getSystemTheme);
+  yield* ipc.handleSync(getScreenshotCaptureAvailability);
+  yield* ipc.handle(captureDesktopScreenshot);
+  const electronWindow = yield* ElectronWindow.ElectronWindow;
+  const context = yield* Effect.context<ElectronWindow.ElectronWindow>();
+  const runPromise = Effect.runPromiseWith(context);
+  yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      watchDesktopSystemTheme((theme) => {
+        void runPromise(
+          electronWindow
+            .sendAll(IpcChannels.SYSTEM_THEME_CHANNEL, theme)
+            .pipe(
+              Effect.catchCause(() =>
+                Effect.logWarning("Failed to broadcast desktop system theme."),
+              ),
+            ),
+        );
+      }),
+    ),
+    (cleanup) => Effect.sync(cleanup),
+  );
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
