@@ -4,7 +4,6 @@ FROM node:24-bookworm-slim@sha256:65932751ed4073ed02f5c04e494e4b2572a891b7dbea05
 
 ENV PNPM_HOME=/pnpm
 ENV PATH="${PNPM_HOME}:${PATH}"
-ENV npm_config_build_from_source=true
 
 WORKDIR /app
 

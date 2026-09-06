@@ -166,7 +166,6 @@ const EXPECTED_DOCKERFILE_INSTRUCTIONS = [
   `FROM ${NODE_BASE} AS build`,
   "ENV PNPM_HOME=/pnpm",
   'ENV PATH="${PNPM_HOME}:${PATH}"',
-  "ENV npm_config_build_from_source=true",
   "WORKDIR /app",
   "RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates=20250419~deb12u1 g++=4:12.2.0-3 git=1:2.39.5-0+deb12u3 make=4.3-4.1 python3=3.11.2-1+b1 && rm -rf /var/lib/apt/lists/* && corepack enable",
   "COPY . .",

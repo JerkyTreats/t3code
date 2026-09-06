@@ -26,6 +26,8 @@ The [retired-feature record](fork/retired-features.md) preserves the approved re
 
 The web update owner also controls inferred reconnect progress. Only desktop-managed capability may infer a lost update; unsupported runtimes retain deployment guidance, while actual running update progress survives transient descriptor loss.
 
+The server image uses the frozen dependency graph's platform packages without globally forcing native compilation. Its exact Dockerfile policy remains enforced by the image workflow scanner.
+
 ## External Admin
 
 [F17 external Admin authority](fork/F17-settings-admin.md) owns persisted and signed portal authority, the six-route HTTP boundary, explicit enrollment, private revisioned lifecycle, exact connection teardown and pre42 backup. Standard clients retain pairing consumption and ordinary authentication; embedded access inventory and mutation UI are absent. The transport adapters register the shared authority services and recheck admission before WebSocket work. Joined synthetic transport and independent-runtime revocation proof pass; final product and installed acceptance remain pending.

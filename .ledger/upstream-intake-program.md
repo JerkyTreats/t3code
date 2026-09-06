@@ -662,3 +662,15 @@ The direct build and descriptor suites pass 77 tests. All four required gates pa
 ### Commit effect — full release revision
 
 If applied, this commit binds desktop packages and Linux release descriptors to the same full source revision.
+
+### Actual server image dependency correction
+
+The independent local image build uses an exact archive of `c992307860007674ddc501ef668c343efba4c48a` in a private rootless engine. Both pinned apt stages succeed. Frozen installation then fails because the global `npm_config_build_from_source=true` setting forces Sharp to compile without libvips headers. Root removes that global override and updates the exact Dockerfile instruction owner. The frozen lockfile continues selecting platform dependencies; source compilation remains available to dependencies that require it. No provider, package, image-base or authority pin changes. The actual corrected image build and runtime smoke remain required; source checks alone do not close F20.
+
+Root isolates this build-input correction from the unchanged Code, Thread and historical fixture source while their installed proofs continue. The image lane uses a strong worker for private engine and artifact diagnosis. Initial nested overlay and temporary inode failures were fixture infrastructure and do not establish a source defect. Only owned temporary engine state was changed, with the next build using a fresh disk-backed fixture.
+
+The corrected scanner and image smoke suites pass 29 tests. All four required repository gates pass on the correction, including 13,837 tests across fifteen workspaces and ten inherited server skips, recorded in `t3code-s7-image-fix-gates.json`. Fresh bounded logical review reports no findings at SHA256 `03a4b4c9f6d8414def37e497487dc2256ede55536d4e317510cd43a436de0693`. Runtime and build-input hashes remain unchanged after verification. Root hands the clean committed successor to the actual image lane only after ordered Style Assurance; the corrected image and its runtime assertions remain independent acceptance evidence.
+
+### Commit effect — native image dependency selection
+
+If applied, this commit lets the server image install pinned native dependency packages without requiring unprovided system libraries.

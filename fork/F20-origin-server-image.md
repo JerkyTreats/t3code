@@ -10,6 +10,7 @@ Build and verify a standalone non-root server image, then permit publication onl
 ## Required Behavior
 
 - The production image contains the current server, bundled web client, and the pinned default Codex provider runtime.
+- Frozen dependency installation selects the lockfile's platform packages. The image does not globally force native dependencies to compile against unprovided system libraries.
 - The runtime uses Node.js 24 on Debian Bookworm, runs as a non-root user, and exposes explicit data and workspace volumes.
 - The server starts in headless mode as a non-root user and remains compatible with a read-only root filesystem when private temporary, data, and workspace mounts are supplied.
 - Build context recursively excludes repository metadata, private configuration, environment files, package manager configuration, agent directories, runtime state, local plans, ledgers, skills, vendored references, build outputs, and dependency trees at any depth.
