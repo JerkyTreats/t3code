@@ -482,3 +482,7 @@ If applied, this commit defines the retained conversation spacing and continuous
 ### Commit effect — composer capture
 
 If applied, this commit admits desktop screenshots through the ordinary scoped attachment budget and restores the floating permission control and retained composer geometry.
+
+### Commit effect — prompt context
+
+If applied, this commit preserves authored prompt bytes when composing and projecting generated context.

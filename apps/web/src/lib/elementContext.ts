@@ -1,3 +1,4 @@
+import { appendPromptContext } from "../fork/promptContextWhitespace";
 import { type ThreadId } from "@t3tools/contracts";
 import type { PickedElementPayload, PickedElementStackFrame } from "@t3tools/contracts";
 
@@ -6,7 +7,7 @@ const ELEMENT_CONTEXT_STYLES_LIMIT = 4000;
 const ELEMENT_CONTEXT_LABEL_TAG_MAX = 24;
 
 const TRAILING_ELEMENT_CONTEXT_BLOCK_PATTERN =
-  /\n*<element_context>\n([\s\S]*?)\n<\/element_context>\s*$/;
+  /(?:\n\n|^)<element_context>\n((?:(?!\n\n<element_context>\n)[\s\S])*)\n<\/element_context>\s*$/;
 
 /**
  * Stable, persistable element selection captured from the in-app preview
@@ -191,10 +192,7 @@ export function appendElementContextsToPrompt(
   prompt: string,
   contexts: ReadonlyArray<ElementContextSelection>,
 ): string {
-  const block = buildElementContextBlock(contexts);
-  if (block.length === 0) return prompt;
-  const trimmed = prompt.trim();
-  return trimmed.length > 0 ? `${trimmed}\n\n${block}` : block;
+  return appendPromptContext(prompt, buildElementContextBlock(contexts));
 }
 
 const ELEMENT_CONTEXT_ID_PREFIX = "el_";
@@ -215,7 +213,7 @@ export function extractTrailingElementContexts(prompt: string): ExtractedElement
   if (!match) {
     return { promptText: prompt, contextCount: 0, contexts: [] };
   }
-  const promptText = prompt.slice(0, match.index).replace(/\n+$/, "");
+  const promptText = prompt.slice(0, match.index);
   const contexts = parseElementContextEntries(match[1] ?? "");
   return { promptText, contextCount: contexts.length, contexts };
 }

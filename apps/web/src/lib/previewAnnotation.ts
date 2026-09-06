@@ -1,8 +1,9 @@
+import { appendPromptContext } from "../fork/promptContextWhitespace";
 import type { PreviewAnnotationPayload } from "@t3tools/contracts";
 import { buildElementContextBlock, normalizeElementContextSelection } from "./elementContext";
 
 const TRAILING_PREVIEW_ANNOTATION_BLOCK_PATTERN =
-  /\n*<preview_annotation>\n((?:(?!<preview_annotation>)[\s\S])*)\n<\/preview_annotation>\s*$/;
+  /(?:\n\n|^)<preview_annotation>\n((?:(?!<preview_annotation>)[\s\S])*)\n<\/preview_annotation>\s*$/;
 
 export interface ParsedPreviewAnnotation {
   id: string;
@@ -62,9 +63,7 @@ export function appendPreviewAnnotationPrompt(
   prompt: string,
   annotation: PreviewAnnotationPayload,
 ): string {
-  const annotationText = buildPreviewAnnotationPrompt(annotation);
-  const trimmed = prompt.trim();
-  return trimmed ? `${trimmed}\n\n${annotationText}` : annotationText;
+  return appendPromptContext(prompt, buildPreviewAnnotationPrompt(annotation));
 }
 
 export function extractTrailingPreviewAnnotation(prompt: string): ExtractedPreviewAnnotation {
@@ -87,7 +86,7 @@ export function extractTrailingPreviewAnnotation(prompt: string): ExtractedPrevi
           .filter((line) => line.startsWith("- "))
           .map((line) => line.slice(2));
   return {
-    promptText: prompt.slice(0, match.index).replace(/\n+$/, ""),
+    promptText: prompt.slice(0, match.index),
     annotation: {
       id: idLine?.slice("Id: ".length).trim() || `${match.index}`,
       title: pageLine?.slice("Page: ".length).trim() || "Preview annotation",

@@ -1,3 +1,4 @@
+import { appendPromptContext } from "../fork/promptContextWhitespace";
 import { type ThreadId } from "@t3tools/contracts";
 
 import { extractTrailingElementContexts, type ParsedElementContextEntry } from "./elementContext";
@@ -45,7 +46,7 @@ export interface ParsedTerminalContextEntry {
 export const INLINE_TERMINAL_CONTEXT_PLACEHOLDER = "\uFFFC";
 
 const TRAILING_TERMINAL_CONTEXT_BLOCK_PATTERN =
-  /\n*<terminal_context>\n([\s\S]*?)\n<\/terminal_context>\s*$/;
+  /(?:\n\n|^)<terminal_context>\n((?:(?!\n\n<terminal_context>\n)[\s\S])*)\n<\/terminal_context>\s*$/;
 
 export function normalizeTerminalContextText(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");
@@ -177,12 +178,10 @@ export function appendTerminalContextsToPrompt(
   prompt: string,
   contexts: ReadonlyArray<TerminalContextSelection>,
 ): string {
-  const trimmedPrompt = materializeInlineTerminalContextPrompt(prompt, contexts).trim();
-  const contextBlock = buildTerminalContextBlock(contexts);
-  if (contextBlock.length === 0) {
-    return trimmedPrompt;
-  }
-  return trimmedPrompt.length > 0 ? `${trimmedPrompt}\n\n${contextBlock}` : contextBlock;
+  return appendPromptContext(
+    materializeInlineTerminalContextPrompt(prompt, contexts),
+    buildTerminalContextBlock(contexts),
+  );
 }
 
 export function extractTrailingTerminalContexts(prompt: string): ExtractedTerminalContexts {
@@ -195,7 +194,7 @@ export function extractTrailingTerminalContexts(prompt: string): ExtractedTermin
       contexts: [],
     };
   }
-  const promptText = prompt.slice(0, match.index).replace(/\n+$/, "");
+  const promptText = prompt.slice(0, match.index);
   const parsedContexts = parseTerminalContextEntries(match[1] ?? "");
   return {
     promptText,
