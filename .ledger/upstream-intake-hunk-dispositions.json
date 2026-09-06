@@ -5,7 +5,7 @@
   "upstream": "761d4bac1c238ea7af4dd36b56719ad5e30771c3",
   "frozen_denominator": 175,
   "recorded_rows": 175,
-  "scope": "All 175 immutable rows are recorded. Forty-six carry accepted S12 evidence. Ninety-one selected S34 and supplemental rows pass joined source acceptance; this Board commit closes the local delivery gate. Thirty-eight rows await later implementation. Mixed later obligations remain explicit.",
+  "scope": "All 175 immutable rows remain recorded. S12 and S34 accepted evidence survives. Forty selected S5 roles pass source and concern review, including thirty-three previously unresolved rows and seven earlier mixed roles. Five S6 rows remain unresolved, alongside explicit mixed later obligations. No installed or final program acceptance is implied.",
   "entries": [
     {
       "path": "apps/server/src/auth/EnvironmentAuth.ts",
@@ -2420,34 +2420,73 @@
       "sha256": "afea7bced57f1ed9fe340c4fcc4016de7db6f3fe847be075c9c83e8be880d7c8",
       "candidate_concern_id": "F22",
       "classification": "semantic",
-      "decision": "omit_the_retired_origin_delta_preserve_current_upstream_behavior_and_defer_the_visual_delta_to_s5",
+      "decision": "Retain current upstream Markdown and its narrow Mermaid fence seam; omit the retired document renderer and rendered-document comments.",
       "source_evidence_rationale": [
-        "All 13 selected upstream snippets are present verbatim in the current ChatMarkdown host; entire file equals pinned upstream.",
-        "Focused ChatMarkdown suite passes 51 tests, including streaming controls, current task edits, privacy-aware images and file actions.",
-        "Exclusive document renderer and rendered-comment owners are absent, with no imports, writers or mounts in active sources."
+        "Omit the retired F09 custom document renderer and F21 rendered document comment imports. Retain the complete current upstream Markdown renderer and add only the F22 Mermaid fence seam.",
+        "The existing raw HTML policy, sanitization, links, citations, artifact templates, media handling and ordinary code fallback remain in ChatMarkdown.",
+        "Only Mermaid and mmd fences dispatch to MermaidDiagramBlock, while the exact existing code fallback is supplied to loading and error states.",
+        "The focused ChatMarkdown and Mermaid suites passed under the workspace test environment."
       ],
       "unresolved": false,
-      "candidate_role": "Remove document outline and rendered-review imports; Mermaid is a distinct retained S5 obligation.",
+      "candidate_role": "Omit the retired F09 custom document renderer and F21 rendered document comment imports. Retain the complete current upstream Markdown renderer and add only the F22 Mermaid fence seam.",
       "candidate_owners": [
-        "apps/web/src/components/ChatMarkdown.tsx",
-        "apps/web/src/components/files/filePreviewMode.ts"
+        "fork/F22-serialized-mermaid-rendering.md",
+        "apps/web/src/features/mermaid/MermaidDiagramBlock.tsx",
+        "apps/web/src/features/mermaid/mermaidRenderer.ts",
+        "apps/web/src/features/mermaid/mermaidRenderCache.ts",
+        "apps/web/src/features/mermaid/mermaidTheme.ts",
+        "apps/web/src/features/mermaid/mermaidScrollStability.ts"
       ],
       "candidate_hosts": [
-        "apps/web/src/components/ChatMarkdown.tsx",
-        "apps/web/src/components/files/FilePreviewPanel.tsx"
+        "apps/web/src/components/ChatMarkdown.tsx:2135 and apps/web/src/components/ChatMarkdown.tsx:2148 and apps/web/src/components/ChatMarkdown.tsx:3079"
       ],
       "candidate_evidence": [
-        "apps/web/src/components/ChatMarkdown.test.tsx",
-        "apps/web/src/components/files/FilePreviewPanel.test.ts"
+        "The existing raw HTML policy, sanitization, links, citations, artifact templates, media handling and ordinary code fallback remain in ChatMarkdown.",
+        "Only Mermaid and mmd fences dispatch to MermaidDiagramBlock, while the exact existing code fallback is supplied to loading and error states.",
+        "The focused ChatMarkdown and Mermaid suites passed under the workspace test environment."
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "s5_role_and_concern_review_passed",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
-      "deferred_later_obligations": ["S5 retains Mermaid F22"],
-      "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "deferred_later_obligations": [],
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "prior_source_acceptance": {
+        "candidate_concern_id": "F22",
+        "classification": "semantic",
+        "decision": "omit_the_retired_origin_delta_preserve_current_upstream_behavior_and_defer_the_visual_delta_to_s5",
+        "source_evidence_rationale": [
+          "All 13 selected upstream snippets are present verbatim in the current ChatMarkdown host; entire file equals pinned upstream.",
+          "Focused ChatMarkdown suite passes 51 tests, including streaming controls, current task edits, privacy-aware images and file actions.",
+          "Exclusive document renderer and rendered-comment owners are absent, with no imports, writers or mounts in active sources."
+        ],
+        "unresolved": false,
+        "candidate_role": "Remove document outline and rendered-review imports; Mermaid is a distinct retained S5 obligation.",
+        "candidate_owners": [
+          "apps/web/src/components/ChatMarkdown.tsx",
+          "apps/web/src/components/files/filePreviewMode.ts"
+        ],
+        "candidate_hosts": [
+          "apps/web/src/components/ChatMarkdown.tsx",
+          "apps/web/src/components/files/FilePreviewPanel.tsx"
+        ],
+        "candidate_evidence": [
+          "apps/web/src/components/ChatMarkdown.test.tsx",
+          "apps/web/src/components/files/FilePreviewPanel.test.ts"
+        ],
+        "status": "s34_exact_role_review_passed_concern_pending",
+        "review_status": "passed",
+        "review_lane": "client_retirement",
+        "review_report": "/tmp/t3code-s34-review-client_retirement.json",
+        "finding_ids": [],
+        "deferred_later_obligations": ["S5 retains Mermaid F22"],
+        "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
+        "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      },
+      "s5_role_review": "/tmp/t3code-s5-review-markdown_visual-result.json",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-markdown_visual-result.json"
     },
     {
       "path": "apps/web/src/components/ChatMarkdown.tsx",
@@ -3793,39 +3832,69 @@
       "sha256": "dde4a58c31ff76c78334924a1b27506b3f88f97040b4a25b16a5ecfd10cd6d7a",
       "candidate_concern_id": "F03,CHAT",
       "classification": "semantic",
-      "decision": "omit_the_retired_origin_delta_preserve_current_upstream_behavior_and_defer_the_visual_delta_to_s5",
+      "decision": "Retain current upstream composer substrate and focused screenshot owner imports; omit the retired outbox notice.",
       "source_evidence_rationale": [
-        "Entire ChatComposer and surviving ComposerTasksBadge equal pinned upstream; selected successor snippets are present verbatim.",
-        "Actual task drawer/badge mounts at ChatComposer:4979 and 4987, stash consumer at 3111 and 5085, and source-review comments at 5150 survive.",
-        "Exclusive ComposerActivityShelf/Disclosure and ThreadOutboxNotice owners and registrations are absent."
+        "accepted_upstream_substrate_and_mechanical_capture_import",
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/components/chat/MessagesTimeline.test.tsx"
       ],
       "unresolved": false,
-      "candidate_role": "Retire web outbox notice type; screenshot and ordinary appearance remain retained S5 obligations.",
+      "candidate_role": "accepted_upstream_substrate_and_mechanical_capture_import",
       "candidate_owners": [
-        "apps/web/src/components/chat/ComposerTasksBadge.tsx",
-        "apps/web/src/promptStashStore.ts",
-        "apps/web/src/components/chat/ComposerPendingReviewComments.tsx"
+        "apps/web/src/fork/composerScreenshot.ts",
+        "apps/web/src/fork/composerAttachmentAdmission.ts"
       ],
-      "candidate_hosts": [
-        "apps/web/src/components/chat/ChatComposer.tsx",
-        "apps/web/src/components/ChatView.tsx"
-      ],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
       "candidate_evidence": [
-        "apps/web/src/promptStashStore.test.ts",
-        "apps/web/src/components/chat/composerAttachmentFiles.test.ts",
-        "apps/web/src/session-logic.test.ts",
-        "apps/web/src/components/chat/MessagesTimeline.logic.test.ts"
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/components/chat/MessagesTimeline.test.tsx"
       ],
-      "status": "s34_exact_role_review_passed_concern_pending",
+      "status": "s5_role_and_concern_review_passed",
       "review_status": "passed",
       "review_lane": "client_retirement",
       "review_report": "/tmp/t3code-s34-review-client_retirement.json",
       "finding_ids": [],
-      "deferred_later_obligations": [
-        "S5 retains composer screenshot F03 and ordinary chat/draft appearance; outbox retirement cannot satisfy them."
-      ],
-      "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "deferred_later_obligations": [],
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "prior_source_acceptance": {
+        "candidate_concern_id": "F03,CHAT",
+        "classification": "semantic",
+        "decision": "omit_the_retired_origin_delta_preserve_current_upstream_behavior_and_defer_the_visual_delta_to_s5",
+        "source_evidence_rationale": [
+          "Entire ChatComposer and surviving ComposerTasksBadge equal pinned upstream; selected successor snippets are present verbatim.",
+          "Actual task drawer/badge mounts at ChatComposer:4979 and 4987, stash consumer at 3111 and 5085, and source-review comments at 5150 survive.",
+          "Exclusive ComposerActivityShelf/Disclosure and ThreadOutboxNotice owners and registrations are absent."
+        ],
+        "unresolved": false,
+        "candidate_role": "Retire web outbox notice type; screenshot and ordinary appearance remain retained S5 obligations.",
+        "candidate_owners": [
+          "apps/web/src/components/chat/ComposerTasksBadge.tsx",
+          "apps/web/src/promptStashStore.ts",
+          "apps/web/src/components/chat/ComposerPendingReviewComments.tsx"
+        ],
+        "candidate_hosts": [
+          "apps/web/src/components/chat/ChatComposer.tsx",
+          "apps/web/src/components/ChatView.tsx"
+        ],
+        "candidate_evidence": [
+          "apps/web/src/promptStashStore.test.ts",
+          "apps/web/src/components/chat/composerAttachmentFiles.test.ts",
+          "apps/web/src/session-logic.test.ts",
+          "apps/web/src/components/chat/MessagesTimeline.logic.test.ts"
+        ],
+        "status": "s34_exact_role_review_passed_concern_pending",
+        "review_status": "passed",
+        "review_lane": "client_retirement",
+        "review_report": "/tmp/t3code-s34-review-client_retirement.json",
+        "finding_ids": [],
+        "deferred_later_obligations": [
+          "S5 retains composer screenshot F03 and ordinary chat/draft appearance; outbox retirement cannot satisfy them."
+        ],
+        "note": "Exact source role reviewed independently on candidate 778bdfc20f9125b33c6ea4c5ffd465d8ce8d852d41a993f01df0cae6cf4f6922. Provider Plan overlap and Board close/reopen findings are closed through bounded correction. Ordered Style Assurance and root acceptance pass; this Board commit closes source delivery; no later-slice acceptance is implied.",
+        "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      },
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json"
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -3963,15 +4032,13 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "F23 browser-action wire type versus upstream preview automation status type. Independent type consumers collide in one import slot.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted-mechanical",
       "candidate_owners_and_hosts": "Preview control owner; root contracts/ipc and preview/Manager adapters",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Restore only residual preview browser-action events while retaining automation status and capability routing."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "b9cca388a83f8ca333f78ea5506d9c2b02c30d4a1bb3ce9e792d8f894e33dd6d",
       "source_attribution_evidence": {
         "origin_blob": "9e3f8d250e1a582e73b5ed65d40b356870430c48",
@@ -3979,7 +4046,35 @@
         "origin_line": 10,
         "upstream_line": 11
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "F23 browser-action wire type versus upstream preview automation status type. Independent type consumers collide in one import slot.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Preview control owner; root contracts/ipc and preview/Manager adapters",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Restore only residual preview browser-action events while retaining automation status and capability routing."
+        ],
+        "source_attribution_snapshot": "b9cca388a83f8ca333f78ea5506d9c2b02c30d4a1bb3ce9e792d8f894e33dd6d",
+        "source_attribution_evidence": {
+          "origin_blob": "9e3f8d250e1a582e73b5ed65d40b356870430c48",
+          "upstream_blob": "900ba5fe983c078247c67f7dafa4b863fdb1cf00",
+          "origin_line": 10,
+          "upstream_line": 11
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/desktop/src/fork/PreviewShortcutPolicy.ts"],
+      "candidate_hosts": ["apps/desktop/src/preview/Manager.ts"],
+      "candidate_evidence": "Browser action type consumed by shortcut owner; upstream automation type remains in Manager. Direct owner policy tests and all 84 Manager tests pass.",
+      "s5_role_review": "/tmp/t3code-s5-review-preview-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round4-review-preview-result.json"
     },
     {
       "path": "apps/desktop/src/preview/Manager.ts",
@@ -3989,15 +4084,13 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "F23 focused guest shortcut forwarding allowlist versus upstream real popup URL policy and isolated popup BrowserWindow preferences.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted-mechanical-and-substrate",
       "candidate_owners_and_hosts": "Preview shortcut owner; preview/Manager adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Preserve upstream popup opener/OAuth semantics and popup isolation while proving retained host accelerators. Do not replace popup policy with old shortcut table."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "b9cca388a83f8ca333f78ea5506d9c2b02c30d4a1bb3ce9e792d8f894e33dd6d",
       "source_attribution_evidence": {
         "origin_blob": "9e3f8d250e1a582e73b5ed65d40b356870430c48",
@@ -4005,7 +4098,35 @@
         "origin_line": 425,
         "upstream_line": 476
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "F23 focused guest shortcut forwarding allowlist versus upstream real popup URL policy and isolated popup BrowserWindow preferences.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Preview shortcut owner; preview/Manager adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Preserve upstream popup opener/OAuth semantics and popup isolation while proving retained host accelerators. Do not replace popup policy with old shortcut table."
+        ],
+        "source_attribution_snapshot": "b9cca388a83f8ca333f78ea5506d9c2b02c30d4a1bb3ce9e792d8f894e33dd6d",
+        "source_attribution_evidence": {
+          "origin_blob": "9e3f8d250e1a582e73b5ed65d40b356870430c48",
+          "upstream_blob": "900ba5fe983c078247c67f7dafa4b863fdb1cf00",
+          "origin_line": 425,
+          "upstream_line": 476
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/desktop/src/fork/PreviewShortcutPolicy.ts"],
+      "candidate_hosts": ["apps/desktop/src/preview/Manager.ts"],
+      "candidate_evidence": "Exact platform decision moved into PreviewShortcutPolicy. Manager consumes the result; popup URL policy and isolated window preferences remain accepted upstream substrate. Four direct policy tests and popup host tests pass.",
+      "s5_role_review": "/tmp/t3code-s5-review-preview-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round4-review-preview-result.json"
     },
     {
       "path": "apps/desktop/src/preview/Manager.ts",
@@ -4015,15 +4136,13 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "F23 forwardShortcut synthesizes main-window keyDown events after guest admission. Upstream side caps popup chaining and ignores popup menu shortcuts.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted-substrate",
       "candidate_owners_and_hosts": "Preview shortcut owner; preview/Manager adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Evaluate shortcut equivalence and add only residual forwarding; preserve upstream popup windowCreated handler."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "b9cca388a83f8ca333f78ea5506d9c2b02c30d4a1bb3ce9e792d8f894e33dd6d",
       "source_attribution_evidence": {
         "origin_blob": "9e3f8d250e1a582e73b5ed65d40b356870430c48",
@@ -4031,7 +4150,35 @@
         "origin_line": 1677,
         "upstream_line": 1840
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "F23 forwardShortcut synthesizes main-window keyDown events after guest admission. Upstream side caps popup chaining and ignores popup menu shortcuts.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Preview shortcut owner; preview/Manager adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Evaluate shortcut equivalence and add only residual forwarding; preserve upstream popup windowCreated handler."
+        ],
+        "source_attribution_snapshot": "b9cca388a83f8ca333f78ea5506d9c2b02c30d4a1bb3ce9e792d8f894e33dd6d",
+        "source_attribution_evidence": {
+          "origin_blob": "9e3f8d250e1a582e73b5ed65d40b356870430c48",
+          "upstream_blob": "900ba5fe983c078247c67f7dafa4b863fdb1cf00",
+          "origin_line": 1677,
+          "upstream_line": 1840
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/desktop/src/fork/PreviewShortcutPolicy.ts"],
+      "candidate_hosts": ["apps/desktop/src/preview/Manager.ts"],
+      "candidate_evidence": "Historical keyboard forwarding is absent. Current popup handler caps chaining and ignores menu shortcuts; Manager test executes guest input with zero sendInputEvent calls.",
+      "s5_role_review": "/tmp/t3code-s5-review-preview-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round4-review-preview-result.json"
     },
     {
       "path": "apps/desktop/src/preview/Manager.ts",
@@ -4041,15 +4188,13 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "F23 browser action dispatch routes a tab-scoped guest accelerator to host UI, then falls back to app shortcut forwarding. Upstream conflict side is empty.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted-mechanical",
       "candidate_owners_and_hosts": "Preview shortcut/action owner; preview/Manager beforeInput adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Prove new/close/reopen/address with runtime tab identity and focused guest; keep existing upstream refresh handling."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "b9cca388a83f8ca333f78ea5506d9c2b02c30d4a1bb3ce9e792d8f894e33dd6d",
       "source_attribution_evidence": {
         "origin_blob": "9e3f8d250e1a582e73b5ed65d40b356870430c48",
@@ -4057,7 +4202,35 @@
         "origin_line": 1711,
         "upstream_line": null
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "F23 browser action dispatch routes a tab-scoped guest accelerator to host UI, then falls back to app shortcut forwarding. Upstream conflict side is empty.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Preview shortcut/action owner; preview/Manager beforeInput adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Prove new/close/reopen/address with runtime tab identity and focused guest; keep existing upstream refresh handling."
+        ],
+        "source_attribution_snapshot": "b9cca388a83f8ca333f78ea5506d9c2b02c30d4a1bb3ce9e792d8f894e33dd6d",
+        "source_attribution_evidence": {
+          "origin_blob": "9e3f8d250e1a582e73b5ed65d40b356870430c48",
+          "upstream_blob": "900ba5fe983c078247c67f7dafa4b863fdb1cf00",
+          "origin_line": 1711,
+          "upstream_line": null
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/desktop/src/fork/PreviewShortcutPolicy.ts"],
+      "candidate_hosts": ["apps/desktop/src/preview/Manager.ts"],
+      "candidate_evidence": "Manager synchronously prevents admitted chords, reloads its guest directly, and sends typed action plus exact runtime tab identity. Policy tests bypass Manager and Manager host test verifies effects.",
+      "s5_role_review": "/tmp/t3code-s5-review-preview-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round4-review-preview-result.json"
     },
     {
       "path": "apps/server/src/provider/Layers/ClaudeAdapter.ts",
@@ -4191,15 +4364,13 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "F23 closed-preview restoration payload versus upstream picture-in-picture payload in Electron browser host session projection.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted-mechanical",
       "candidate_owners_and_hosts": "Preview reopen state owner; ElectronBrowserHost projection adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Carry required viewport/zoom/color restoration through current runtime tab identity without dropping picture-in-picture/profile state."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "41ed0b7185ffa01eb47dfa09ac278a6b1b240e65a6832376179e51b731ce5b43",
       "source_attribution_evidence": {
         "origin_blob": "cea1e7daee5ae1cf697b68b2e64059af0b996465",
@@ -4207,7 +4378,35 @@
         "origin_line": 84,
         "upstream_line": 85
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "F23 closed-preview restoration payload versus upstream picture-in-picture payload in Electron browser host session projection.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Preview reopen state owner; ElectronBrowserHost projection adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Carry required viewport/zoom/color restoration through current runtime tab identity without dropping picture-in-picture/profile state."
+        ],
+        "source_attribution_snapshot": "41ed0b7185ffa01eb47dfa09ac278a6b1b240e65a6832376179e51b731ce5b43",
+        "source_attribution_evidence": {
+          "origin_blob": "cea1e7daee5ae1cf697b68b2e64059af0b996465",
+          "upstream_blob": "de7e236032989ec80ede59d5ccaa6672f46269fc",
+          "origin_line": 84,
+          "upstream_line": 85
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/web/src/fork/previewTabHistory.ts"],
+      "candidate_hosts": ["apps/web/src/browser/ElectronBrowserHost.tsx"],
+      "candidate_evidence": "Projection adds pending restoration alongside upstream pictureInPicture, profileId, runtime identity and zoom. Actual HostedBrowserWebview mount tests execute delayed and late restoration.",
+      "s5_role_review": "/tmp/t3code-s5-review-preview-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round4-review-preview-result.json"
     },
     {
       "path": "apps/web/src/browser/HostedBrowserWebview.tsx",
@@ -4217,15 +4416,13 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "F23 restoration-state imports versus upstream settings hydration and platform helpers for browser webviews.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted-mechanical",
       "candidate_owners_and_hosts": "previewStateStore restoration owner; HostedBrowserWebview adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Consume current hydrated browser profile/platform substrate and wire only bounded reopen restoration."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "423f85ebf84c4d81314f0f1f5ba863f72bde23fd95f69ad9f132bf0a31e26698",
       "source_attribution_evidence": {
         "origin_blob": "c9bb28ca632d879798583018dacd321488b88e4c",
@@ -4233,7 +4430,35 @@
         "origin_line": 9,
         "upstream_line": 9
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "F23 restoration-state imports versus upstream settings hydration and platform helpers for browser webviews.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "previewStateStore restoration owner; HostedBrowserWebview adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Consume current hydrated browser profile/platform substrate and wire only bounded reopen restoration."
+        ],
+        "source_attribution_snapshot": "423f85ebf84c4d81314f0f1f5ba863f72bde23fd95f69ad9f132bf0a31e26698",
+        "source_attribution_evidence": {
+          "origin_blob": "c9bb28ca632d879798583018dacd321488b88e4c",
+          "upstream_blob": "42d5bcfb35b86ebaca33067aca9ee9bd32681fd6",
+          "origin_line": 9,
+          "upstream_line": 9
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/web/src/fork/previewTabHistory.ts"],
+      "candidate_hosts": ["apps/web/src/browser/HostedBrowserWebview.tsx"],
+      "candidate_evidence": "Imports consume restoration state while settings hydration and platform helpers remain upstream. Six restoration tests plus unchanged browser-host test pass.",
+      "s5_role_review": "/tmp/t3code-s5-review-preview-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round4-review-preview-result.json"
     },
     {
       "path": "apps/web/src/browser/HostedBrowserWebview.tsx",
@@ -4243,15 +4468,13 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "F23 restoration prop and legacy environment-only webview config versus current picture-in-picture/profileId and settings hydration.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted-mechanical",
       "candidate_owners_and_hosts": "Current usePreviewWebviewConfig; HostedBrowserWebview restoration adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Preserve partition/profile selection before guest attachment and hydrate before registration while adapting reopening."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "423f85ebf84c4d81314f0f1f5ba863f72bde23fd95f69ad9f132bf0a31e26698",
       "source_attribution_evidence": {
         "origin_blob": "c9bb28ca632d879798583018dacd321488b88e4c",
@@ -4259,7 +4482,35 @@
         "origin_line": 75,
         "upstream_line": 60
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "F23 restoration prop and legacy environment-only webview config versus current picture-in-picture/profileId and settings hydration.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Current usePreviewWebviewConfig; HostedBrowserWebview restoration adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Preserve partition/profile selection before guest attachment and hydrate before registration while adapting reopening."
+        ],
+        "source_attribution_snapshot": "423f85ebf84c4d81314f0f1f5ba863f72bde23fd95f69ad9f132bf0a31e26698",
+        "source_attribution_evidence": {
+          "origin_blob": "c9bb28ca632d879798583018dacd321488b88e4c",
+          "upstream_blob": "42d5bcfb35b86ebaca33067aca9ee9bd32681fd6",
+          "origin_line": 75,
+          "upstream_line": 60
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/web/src/fork/previewTabHistory.ts"],
+      "candidate_hosts": ["apps/web/src/browser/HostedBrowserWebview.tsx"],
+      "candidate_evidence": "Props carry restoration alongside current profileId and pictureInPicture. Configuration still resolves environment plus profile; creation waits for settings hydration. Actual lease, registration, late override and stale replacement tests pass.",
+      "s5_role_review": "/tmp/t3code-s5-review-preview-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round4-review-preview-result.json"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -4295,15 +4546,13 @@
       "candidate_concerns": ["F04", "F23", "F25", "F27", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "F23 browser creation entrypoint overlaps upstream interaction-mode dependency fix, provider setup navigation, profile selection and BrowserSettingsReadError presentation.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "mechanical current preview confirmation, close and reopen adapter",
       "candidate_owners_and_hosts": "Shared browser creation owner; root ChatView adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Use accepted addBrowserSurface/current browser profiles and surfaced errors; decide residual preview capability admission without removing provider setup."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "5d520c3096a6f90b03059d30d34521e0628cf7fd94671793e677951f1b388e20",
       "source_attribution_evidence": {
         "origin_blob": "51c83f44e6494d7f6237a638925493001a69ca6a",
@@ -4311,7 +4560,35 @@
         "origin_line": 3343,
         "upstream_line": 3709
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F04", "F23", "F25", "F27", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "F23 browser creation entrypoint overlaps upstream interaction-mode dependency fix, provider setup navigation, profile selection and BrowserSettingsReadError presentation.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Shared browser creation owner; root ChatView adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Use accepted addBrowserSurface/current browser profiles and surfaced errors; decide residual preview capability admission without removing provider setup."
+        ],
+        "source_attribution_snapshot": "5d520c3096a6f90b03059d30d34521e0628cf7fd94671793e677951f1b388e20",
+        "source_attribution_evidence": {
+          "origin_blob": "51c83f44e6494d7f6237a638925493001a69ca6a",
+          "upstream_blob": "5bba2212d5e1c504c4727f27126db6ec7d3e231c",
+          "origin_line": 3343,
+          "upstream_line": 3709
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/web/src/components/preview/previewHostActions.ts"],
+      "candidate_hosts": ["apps/web/src/components/ChatView.tsx"],
+      "candidate_evidence": ["apps/web/src/components/preview/previewHostIntegration.test.tsx"],
+      "s5_role_review": "/tmp/t3code-s5-review-preview-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round4-review-preview-result.json"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -4321,15 +4598,12 @@
       "candidate_concerns": ["F04", "F23", "F25", "F27", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Comment-only fork ordering rationale for error/warning banners, background Stop affordance, calm notices and parked-thread notice. Empty upstream side does not imply dropped liveness behavior.",
-      "candidate_role": "pending_exact_role_review",
-      "candidate_owners_and_hosts": "Retained composer banner presentation owner; root ChatView host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "candidate_role": "Accept the current upstream banner composition as the surviving substrate. Omit the historical comment-only ordering rationale because it has no distinct active fork behavior.",
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Compare actual current bannerStackItems ordering and visible Stop reachability before claiming visual/behavior preservation. No source-marker acceptance."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "5d520c3096a6f90b03059d30d34521e0628cf7fd94671793e677951f1b388e20",
       "source_attribution_evidence": {
         "origin_blob": "51c83f44e6494d7f6237a638925493001a69ca6a",
@@ -4337,7 +4611,38 @@
         "origin_line": 4584,
         "upstream_line": null
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F04", "F23", "F25", "F27", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Comment-only fork ordering rationale for error/warning banners, background Stop affordance, calm notices and parked-thread notice. Empty upstream side does not imply dropped liveness behavior.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Retained composer banner presentation owner; root ChatView host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Compare actual current bannerStackItems ordering and visible Stop reachability before claiming visual/behavior preservation. No source-marker acceptance."
+        ],
+        "source_attribution_snapshot": "5d520c3096a6f90b03059d30d34521e0628cf7fd94671793e677951f1b388e20",
+        "source_attribution_evidence": {
+          "origin_blob": "51c83f44e6494d7f6237a638925493001a69ca6a",
+          "upstream_blob": "5bba2212d5e1c504c4727f27126db6ec7d3e231c",
+          "origin_line": 4584,
+          "upstream_line": null
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["current upstream ChatView banner composition"],
+      "candidate_hosts": [null],
+      "candidate_evidence": [
+        "apps/web/src/components/ChatView.tsx:5657 through apps/web/src/components/ChatView.tsx:5717 retain thread and provider errors, liveness, resume, woke, branch mismatch and parked-thread notices.",
+        "The full candidate gates passed."
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-markdown_visual-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-markdown_visual-result.json"
     },
     {
       "path": "apps/web/src/components/ChatView.tsx",
@@ -4373,15 +4678,13 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Upstream composer control imports add separator and select controls to old shared control import. Pure presentation dependency shape.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_upstream_substrate",
       "candidate_owners_and_hosts": "ComposerControl owner; root ChatComposer adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Style surviving controls using current shared owner; do not restore removed duplicate runtime selector."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4389,7 +4692,34 @@
         "origin_line": 102,
         "upstream_line": 173
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Upstream composer control imports add separator and select controls to old shared control import. Pure presentation dependency shape.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "ComposerControl owner; root ChatComposer adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Style surviving controls using current shared owner; do not restore removed duplicate runtime selector."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 102,
+          "upstream_line": 173
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": ["apps/web/src/components/chat/ChatComposer.screenshot.test.tsx"],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4399,15 +4729,13 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "F03 screenshot capture reservation/control lifecycle plus fork floating-layer selector and floating runtime-mode selector. Upstream has no corresponding conflict-side code.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "mechanical_adapter",
       "candidate_owners_and_hosts": "Screenshot admission/control owner; root ChatComposer adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Replay screenshot capability into normal upstream attachments with reservation/cancellation/unmount proof; retain accepted presentation through current controls rather than duplicate widgets."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4415,7 +4743,42 @@
         "origin_line": 291,
         "upstream_line": null
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "F03 screenshot capture reservation/control lifecycle plus fork floating-layer selector and floating runtime-mode selector. Upstream has no corresponding conflict-side code.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Screenshot admission/control owner; root ChatComposer adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Replay screenshot capability into normal upstream attachments with reservation/cancellation/unmount proof; retain accepted presentation through current controls rather than duplicate widgets."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 291,
+          "upstream_line": null
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [
+        "apps/web/src/fork/composerAttachmentAdmission.ts",
+        "apps/web/src/fork/composerScreenshot.ts",
+        "apps/web/src/fork/chatComposerPresentation.tsx"
+      ],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": [
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/fork/composerAttachmentAdmission.test.ts",
+        "apps/web/src/fork/composerScreenshot.test.ts"
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4425,15 +4788,13 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Upstream ComposerFooterModeControls props add runtime mode, size and hidden state.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_upstream_substrate_with_mechanical_placement",
       "candidate_owners_and_hosts": "Composer footer mode controls; ChatComposer host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Keep current footer control API/hidden-state behavior while styling accepted presentation."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4441,7 +4802,34 @@
         "origin_line": null,
         "upstream_line": 932
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Upstream ComposerFooterModeControls props add runtime mode, size and hidden state.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Composer footer mode controls; ChatComposer host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Keep current footer control API/hidden-state behavior while styling accepted presentation."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": null,
+          "upstream_line": 932
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/web/src/fork/chatComposerPresentation.tsx"],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": ["apps/web/src/components/chat/ChatComposer.screenshot.test.tsx"],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4451,15 +4839,13 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Old early return hides whole footer control when interaction toggle unsupported; upstream initializes menu and runtime selector independently.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_upstream_substrate",
       "candidate_owners_and_hosts": "Composer footer mode controls; ChatComposer host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Do not hide runtime access selection merely because provider lacks interaction-mode toggle; preserve upstream hidden/menu lifecycle."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4467,7 +4853,34 @@
         "origin_line": 530,
         "upstream_line": 938
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Old early return hides whole footer control when interaction toggle unsupported; upstream initializes menu and runtime selector independently.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Composer footer mode controls; ChatComposer host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Do not hide runtime access selection merely because provider lacks interaction-mode toggle; preserve upstream hidden/menu lifecycle."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 530,
+          "upstream_line": 938
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": ["apps/web/src/components/chat/ChatComposer.screenshot.test.tsx"],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4477,15 +4890,13 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Upstream combined runtime select plus optional interaction toggle replaces old footer close fragment.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "mechanical_presentation_adapter_on_upstream_runtime",
       "candidate_owners_and_hosts": "ComposerFooterModeControls and shared select controls",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Retain both surviving controls and supported-provider logic under accepted layout."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4493,7 +4904,34 @@
         "origin_line": null,
         "upstream_line": 989
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Upstream combined runtime select plus optional interaction toggle replaces old footer close fragment.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "ComposerFooterModeControls and shared select controls",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Retain both surviving controls and supported-provider logic under accepted layout."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": null,
+          "upstream_line": 989
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/web/src/fork/chatComposerPresentation.tsx"],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": ["apps/web/src/components/chat/ChatComposer.screenshot.test.tsx"],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4503,15 +4941,13 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork local focus and compression rerender state versus upstream mobile-aware useComposerFocusState with scroll-collapse restoration.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_upstream_substrate_and_owner_subscription",
       "candidate_owners_and_hosts": "useComposerFocusState upstream owner; ChatComposer adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Preserve current mobile focus/scroll behavior while screenshot reservations can trigger required admission updates."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4519,7 +4955,37 @@
         "origin_line": 1140,
         "upstream_line": 1804
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork local focus and compression rerender state versus upstream mobile-aware useComposerFocusState with scroll-collapse restoration.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "useComposerFocusState upstream owner; ChatComposer adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Preserve current mobile focus/scroll behavior while screenshot reservations can trigger required admission updates."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 1140,
+          "upstream_line": 1804
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/web/src/fork/composerAttachmentAdmission.ts"],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": [
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/fork/composerAttachmentAdmission.test.ts"
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4529,15 +4995,13 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Comment-only description of per-thread pending image reservations. Fork includes capture/compression; upstream describes paste compression plus send/compact race prevention.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "superseded_comment_with_owner_evidence",
       "candidate_owners_and_hosts": "Shared attachment admission owner; ChatComposer host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "F03 expands current pending-image admission to capture without losing upstream send/compact protection. Actual S34 attachment behavior is reviewed independently of this comment."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4545,7 +5009,37 @@
         "origin_line": 1182,
         "upstream_line": 1860
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Comment-only description of per-thread pending image reservations. Fork includes capture/compression; upstream describes paste compression plus send/compact race prevention.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Shared attachment admission owner; ChatComposer host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "F03 expands current pending-image admission to capture without losing upstream send/compact protection. Actual S34 attachment behavior is reviewed independently of this comment."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 1182,
+          "upstream_line": 1860
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/web/src/fork/composerAttachmentAdmission.ts"],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": [
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/fork/composerAttachmentAdmission.test.ts"
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4555,15 +5049,12 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork reservePendingImages helper call versus upstream inline increment for accepted pasted images. This executable counter is ordinary attachment admission and future screenshot integration.",
-      "candidate_role": "upstream_pending_image_admission_reservation_with_later_screenshot_seam",
-      "candidate_owners_and_hosts": "Upstream attachment admission and later screenshot reservation owner; ChatComposer adapter",
-      "status": "supplemental_role_review_passed_join_pending",
+      "candidate_role": "mechanical_reservation_adapter",
+      "status": "s5_role_and_concern_review_passed",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S34_and_S5",
-      "later_obligations": [
-        "S5 must unify capture with the existing pending-work counter and preserve aggregate limits; do not restore image-only acceptedFiles assumptions over generic upload flow."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4571,22 +5062,61 @@
         "origin_line": 2668,
         "upstream_line": 4253
       },
-      "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
-      "candidate_owners": [
-        "apps/web/src/components/chat/ChatComposer.tsx addComposerAttachments",
-        "apps/web/src/components/chat/composerAttachmentFiles.ts attachment classification"
-      ],
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "candidate_owners": ["apps/web/src/fork/composerAttachmentAdmission.ts"],
       "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
       "source_evidence_rationale": [
-        "The current file equals the pinned upstream blob. addComposerAttachments captures thread identity and current pending work at lines 4155 through 4174, validates the whole batch synchronously, and reserves each accepted image before the first await at line 4253.",
-        "The total combines existing images, generic files, and pending image work before enforcing the shared attachment limit. Generic accepted files are inserted synchronously and do not require compression reservation.",
-        "Composer attachment classification tests and the exact-candidate full test gate passed. The source semantics provide the later screenshot integration seam without satisfying F03."
+        "mechanical_reservation_adapter",
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/fork/composerAttachmentAdmission.test.ts",
+        "apps/web/src/components/chat/composerAttachmentFiles.test.ts"
       ],
       "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
-      "deferred_later_obligations": [
-        "S5 must reserve screenshot capture in the same aggregate pending-work budget, retain scoped thread identity, and preserve generic upload and reattachment behavior."
+      "deferred_later_obligations": [],
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork reservePendingImages helper call versus upstream inline increment for accepted pasted images. This executable counter is ordinary attachment admission and future screenshot integration.",
+        "candidate_role": "upstream_pending_image_admission_reservation_with_later_screenshot_seam",
+        "candidate_owners_and_hosts": "Upstream attachment admission and later screenshot reservation owner; ChatComposer adapter",
+        "status": "supplemental_role_review_passed_join_pending",
+        "review_status": "passed",
+        "unresolved": false,
+        "required_slice": "S34_and_S5",
+        "later_obligations": [
+          "S5 must unify capture with the existing pending-work counter and preserve aggregate limits; do not restore image-only acceptedFiles assumptions over generic upload flow."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 2668,
+          "upstream_line": 4253
+        },
+        "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
+        "candidate_owners": [
+          "apps/web/src/components/chat/ChatComposer.tsx addComposerAttachments",
+          "apps/web/src/components/chat/composerAttachmentFiles.ts attachment classification"
+        ],
+        "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+        "source_evidence_rationale": [
+          "The current file equals the pinned upstream blob. addComposerAttachments captures thread identity and current pending work at lines 4155 through 4174, validates the whole batch synchronously, and reserves each accepted image before the first await at line 4253.",
+          "The total combines existing images, generic files, and pending image work before enforcing the shared attachment limit. Generic accepted files are inserted synchronously and do not require compression reservation.",
+          "Composer attachment classification tests and the exact-candidate full test gate passed. The source semantics provide the later screenshot integration seam without satisfying F03."
+        ],
+        "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
+        "deferred_later_obligations": [
+          "S5 must reserve screenshot capture in the same aggregate pending-work budget, retain scoped thread identity, and preserve generic upload and reattachment behavior."
+        ],
+        "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      },
+      "candidate_evidence": [
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/fork/composerAttachmentAdmission.test.ts",
+        "apps/web/src/components/chat/composerAttachmentFiles.test.ts"
       ],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json"
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4596,15 +5126,12 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork releasePendingImages helper versus upstream decrement/delete of per-thread accepted-image count. Correct finally cleanup protects ordinary sending now and screenshot admission later.",
-      "candidate_role": "upstream_pending_image_finally_release_with_later_screenshot_seam",
-      "candidate_owners_and_hosts": "Upstream attachment admission and later screenshot reservation owner; ChatComposer adapter",
-      "status": "supplemental_role_review_passed_join_pending",
+      "candidate_role": "mechanical_cleanup_adapter",
+      "status": "s5_role_and_concern_review_passed",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S34_and_S5",
-      "later_obligations": [
-        "S5 capture reservations must release once, retain thread ownership and never clear concurrent upload/compression counts."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4612,21 +5139,58 @@
         "origin_line": 2708,
         "upstream_line": 4296
       },
-      "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
-      "candidate_owners": [
-        "apps/web/src/components/chat/ChatComposer.tsx addComposerAttachments finally block"
-      ],
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "candidate_owners": ["apps/web/src/fork/composerAttachmentAdmission.ts"],
       "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
       "source_evidence_rationale": [
-        "The pinned upstream cleanup remains verbatim at lines 4295 through 4303. It subtracts only this invocation's accepted image count from the current per-thread count, preserving concurrent work, and deletes the map entry only at zero or below.",
-        "The cleanup is in finally around every asynchronous compression outcome, so success, per-image failure, and thrown work all release this invocation's reservation.",
-        "Composer attachment tests and the exact-candidate full test gate passed. The current behavior is ordinary attachment cleanup and is future input to the S5 screenshot owner."
+        "mechanical_cleanup_adapter",
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/fork/composerAttachmentAdmission.test.ts"
       ],
       "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
-      "deferred_later_obligations": [
-        "S5 capture reservations must release exactly once, preserve concurrent upload and compression counts, and remain owned by the captured thread."
+      "deferred_later_obligations": [],
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork releasePendingImages helper versus upstream decrement/delete of per-thread accepted-image count. Correct finally cleanup protects ordinary sending now and screenshot admission later.",
+        "candidate_role": "upstream_pending_image_finally_release_with_later_screenshot_seam",
+        "candidate_owners_and_hosts": "Upstream attachment admission and later screenshot reservation owner; ChatComposer adapter",
+        "status": "supplemental_role_review_passed_join_pending",
+        "review_status": "passed",
+        "unresolved": false,
+        "required_slice": "S34_and_S5",
+        "later_obligations": [
+          "S5 capture reservations must release once, retain thread ownership and never clear concurrent upload/compression counts."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 2708,
+          "upstream_line": 4296
+        },
+        "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
+        "candidate_owners": [
+          "apps/web/src/components/chat/ChatComposer.tsx addComposerAttachments finally block"
+        ],
+        "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+        "source_evidence_rationale": [
+          "The pinned upstream cleanup remains verbatim at lines 4295 through 4303. It subtracts only this invocation's accepted image count from the current per-thread count, preserving concurrent work, and deletes the map entry only at zero or below.",
+          "The cleanup is in finally around every asynchronous compression outcome, so success, per-image failure, and thrown work all release this invocation's reservation.",
+          "Composer attachment tests and the exact-candidate full test gate passed. The current behavior is ordinary attachment cleanup and is future input to the S5 screenshot owner."
+        ],
+        "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
+        "deferred_later_obligations": [
+          "S5 capture reservations must release exactly once, preserve concurrent upload and compression counts, and remain owned by the captured thread."
+        ],
+        "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      },
+      "candidate_evidence": [
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/fork/composerAttachmentAdmission.test.ts"
       ],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json"
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4636,15 +5200,13 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "F03 capability discovery, capture-disable decision and pending screenshot reservation wired to composer versus upstream model-picker focus/uncollapse helper.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "mechanical_capture_adapter_and_accepted_model_focus",
       "candidate_owners_and_hosts": "Screenshot capture adapter plus upstream openModelPicker; root ChatComposer host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Add screenshot adapter without replacing model picker focus recovery; retain no-native-capability absence and no admission gap."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4652,7 +5214,40 @@
         "origin_line": 2841,
         "upstream_line": 4588
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "F03 capability discovery, capture-disable decision and pending screenshot reservation wired to composer versus upstream model-picker focus/uncollapse helper.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Screenshot capture adapter plus upstream openModelPicker; root ChatComposer host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Add screenshot adapter without replacing model picker focus recovery; retain no-native-capability absence and no admission gap."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 2841,
+          "upstream_line": 4588
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [
+        "apps/web/src/fork/composerAttachmentAdmission.ts",
+        "apps/web/src/fork/composerScreenshot.ts"
+      ],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": [
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/fork/composerAttachmentAdmission.test.ts"
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4662,15 +5257,12 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork approval/user-input/plan top drawer and inline prompt-stash layout versus upstream ComposerBanner dock, strip controls, task progress drawer and badge. This is presentation composition of surviving features, not evidence of a web outbox authority.",
-      "candidate_role": "pending_exact_role_review",
-      "candidate_owners_and_hosts": "Retained composer presentation owner; current ComposerBanner/Tasks components",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "candidate_role": "accepted_upstream_substrate",
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Preserve approvals, user input, ordinary prompt stash and plan progress; do not replay F24 queue rows. S34 retirement boundary remains that no retired queue authority is introduced."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4678,7 +5270,37 @@
         "origin_line": 3037,
         "upstream_line": 4826
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork approval/user-input/plan top drawer and inline prompt-stash layout versus upstream ComposerBanner dock, strip controls, task progress drawer and badge. This is presentation composition of surviving features, not evidence of a web outbox authority.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Retained composer presentation owner; current ComposerBanner/Tasks components",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Preserve approvals, user input, ordinary prompt stash and plan progress; do not replay F24 queue rows. S34 retirement boundary remains that no retired queue authority is introduced."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 3037,
+          "upstream_line": 4826
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": [
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "joined full web unit gate; direct base-to-candidate diff review"
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4688,15 +5310,13 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork floating runtime/screenshot top-actions and main-surface div versus upstream ComposerSurface.Main and banner dock close.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "mechanical_presentation_adapter",
       "candidate_owners_and_hosts": "Screenshot action adapter; ComposerSurface.Main; root ChatComposer host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "F03 action and accepted visual framing adapt through current surface owner; preserve upstream ref and focus layout contracts."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4704,7 +5324,37 @@
         "origin_line": 3157,
         "upstream_line": 5005
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork floating runtime/screenshot top-actions and main-surface div versus upstream ComposerSurface.Main and banner dock close.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Screenshot action adapter; ComposerSurface.Main; root ChatComposer host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "F03 action and accepted visual framing adapt through current surface owner; preserve upstream ref and focus layout contracts."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 3157,
+          "upstream_line": 5005
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [
+        "apps/web/src/fork/chatComposerPresentation.tsx",
+        "apps/web/src/fork/composerAttachmentAdmission.ts"
+      ],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": ["apps/web/src/components/chat/ChatComposer.screenshot.test.tsx"],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4714,15 +5364,12 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork inline prompt-stash badge placement versus upstream collapsed composer image previews. Prompt stash is an explicitly surviving upstream feature, not F15/F24 outbox.",
-      "candidate_role": "pending_exact_role_review",
-      "candidate_owners_and_hosts": "Composer compact presentation owner; ChatComposer host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "candidate_role": "accepted_upstream_substrate",
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Retain collapsed attachment previews and place surviving stash affordance coherently; no queue restoration."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4730,7 +5377,37 @@
         "origin_line": 3117,
         "upstream_line": 5046
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork inline prompt-stash badge placement versus upstream collapsed composer image previews. Prompt stash is an explicitly surviving upstream feature, not F15/F24 outbox.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Composer compact presentation owner; ChatComposer host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Retain collapsed attachment previews and place surviving stash affordance coherently; no queue restoration."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 3117,
+          "upstream_line": 5046
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": [
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "direct base-to-candidate diff review"
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4740,15 +5417,12 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Origin-only inline prompt-stash badge placement in another compact composer branch.",
-      "candidate_role": "pending_exact_role_review",
-      "candidate_owners_and_hosts": "Composer compact presentation owner; ChatComposer host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "candidate_role": "accepted_upstream_substrate",
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Choose accepted stash placement without duplicated controls; keep upstream prompt stash storage/action semantics."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4756,7 +5430,37 @@
         "origin_line": 3450,
         "upstream_line": null
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Origin-only inline prompt-stash badge placement in another compact composer branch.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Composer compact presentation owner; ChatComposer host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Choose accepted stash placement without duplicated controls; keep upstream prompt stash storage/action semantics."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 3450,
+          "upstream_line": null
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": [
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "direct base-to-candidate diff review"
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4766,15 +5470,13 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork footer provider/model and traits/mode controls versus upstream footer control host/ref with resting-state visibility.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_upstream_substrate_with_mechanical_runtime_placement",
       "candidate_owners_and_hosts": "Current composer controls owner; root ChatComposer host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Use current shared composerControls and portal/resting behavior, preserving provider availability, model selection and mode controls."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4782,7 +5484,34 @@
         "origin_line": 3493,
         "upstream_line": 5558
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork footer provider/model and traits/mode controls versus upstream footer control host/ref with resting-state visibility.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Current composer controls owner; root ChatComposer host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Use current shared composerControls and portal/resting behavior, preserving provider availability, model selection and mode controls."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 3493,
+          "upstream_line": 5558
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/web/src/fork/chatComposerPresentation.tsx"],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
+      "candidate_evidence": ["apps/web/src/components/chat/ChatComposer.screenshot.test.tsx"],
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger."
     },
     {
       "path": "apps/web/src/components/chat/ChatComposer.tsx",
@@ -4792,15 +5521,13 @@
       "candidate_concerns": ["F03", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork stash badge slot versus upstream generic multi-file input, attach button and addComposerAttachments entrypoint. The upstream side is the actual ordinary file-attachment UI required by S34, not solely visual.",
-      "candidate_role": "unchanged_upstream_generic_multi_file_attach_action",
+      "candidate_role": "accepted_upstream_attachment_substrate_with_mechanical_admission",
       "candidate_owners_and_hosts": "Upstream addComposerAttachments; root ChatComposer attachment action adapter",
-      "status": "supplemental_role_review_passed_join_pending",
+      "status": "s5_role_and_concern_review_passed",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S34_and_S5",
-      "later_obligations": [
-        "S5 may reposition styling or screenshot controls but must retain generic attach action, input reset, focus restoration and accepted upload admission."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
       "source_attribution_evidence": {
         "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
@@ -4808,22 +5535,61 @@
         "origin_line": 3572,
         "upstream_line": 5579
       },
-      "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
-      "candidate_owners": [
-        "apps/web/src/components/chat/ChatComposer.tsx addComposerAttachments",
-        "apps/web/src/components/chat/composerAttachmentFiles.ts"
-      ],
-      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx composer footer"],
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "candidate_owners": ["apps/web/src/fork/composerAttachmentAdmission.ts"],
+      "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx"],
       "source_evidence_rationale": [
-        "The current file equals pinned upstream. Lines 5579 through 5611 retain the generic multiple file input and Attach files action with no image-only accept filter.",
-        "The change handler copies all selected files, resets the input value for reselection, calls addComposerAttachments, and restores composer focus. The same admission path also serves dropped files at lines 4610 through 4612.",
-        "Composer attachment classification tests and the exact-candidate full test gate passed. This row is functional attachment UI, not only appearance."
+        "accepted_upstream_attachment_substrate_with_mechanical_admission",
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/components/chat/composerAttachmentFiles.test.ts",
+        "apps/web/src/components/chat/MessagesTimeline.test.tsx"
       ],
       "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
-      "deferred_later_obligations": [
-        "S5 may reposition visual controls but must preserve the generic attach action, multiple selection, input reset, focus restoration, and ordinary admission path."
+      "deferred_later_obligations": [],
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F03", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork stash badge slot versus upstream generic multi-file input, attach button and addComposerAttachments entrypoint. The upstream side is the actual ordinary file-attachment UI required by S34, not solely visual.",
+        "candidate_role": "unchanged_upstream_generic_multi_file_attach_action",
+        "candidate_owners_and_hosts": "Upstream addComposerAttachments; root ChatComposer attachment action adapter",
+        "status": "supplemental_role_review_passed_join_pending",
+        "review_status": "passed",
+        "unresolved": false,
+        "required_slice": "S34_and_S5",
+        "later_obligations": [
+          "S5 may reposition styling or screenshot controls but must retain generic attach action, input reset, focus restoration and accepted upload admission."
+        ],
+        "source_attribution_snapshot": "a8b698053d3b7a59564e550de94e0e5b422e15a90b3989947b7fdf0b70a9e805",
+        "source_attribution_evidence": {
+          "origin_blob": "8559c3a1064b06e36080a627d3628b27583ba10f",
+          "upstream_blob": "30acb44dd423d3c96e0128dae22f2e655ff2ee96",
+          "origin_line": 3572,
+          "upstream_line": 5579
+        },
+        "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
+        "candidate_owners": [
+          "apps/web/src/components/chat/ChatComposer.tsx addComposerAttachments",
+          "apps/web/src/components/chat/composerAttachmentFiles.ts"
+        ],
+        "candidate_hosts": ["apps/web/src/components/chat/ChatComposer.tsx composer footer"],
+        "source_evidence_rationale": [
+          "The current file equals pinned upstream. Lines 5579 through 5611 retain the generic multiple file input and Attach files action with no image-only accept filter.",
+          "The change handler copies all selected files, resets the input value for reselection, calls addComposerAttachments, and restores composer focus. The same admission path also serves dropped files at lines 4610 through 4612.",
+          "Composer attachment classification tests and the exact-candidate full test gate passed. This row is functional attachment UI, not only appearance."
+        ],
+        "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
+        "deferred_later_obligations": [
+          "S5 may reposition visual controls but must preserve the generic attach action, multiple selection, input reset, focus restoration, and ordinary admission path."
+        ],
+        "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      },
+      "candidate_evidence": [
+        "apps/web/src/components/chat/ChatComposer.screenshot.test.tsx",
+        "apps/web/src/components/chat/composerAttachmentFiles.test.ts",
+        "apps/web/src/components/chat/MessagesTimeline.test.tsx"
       ],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "s5_role_review": "/tmp/t3code-s5-review-composer_context-result.json"
     },
     {
       "path": "apps/web/src/components/chat/MessagesTimeline.tsx",
@@ -4833,15 +5599,12 @@
       "candidate_concerns": ["F22", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Origin imports LegendList/FileDiff plus fork T3CodeMessageSurface/T3CodeWorkGroup wrappers; upstream side empty because current timeline virtualization/diff/presentation ownership changed.",
-      "candidate_role": "pending_exact_role_review",
-      "candidate_owners_and_hosts": "Current timeline renderer and retained shared message/work-group presentation",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "candidate_role": "Accept current upstream LegendList virtualization and FileDiff integration. Keep retired reduced Thread message and work-group wrappers absent.",
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Preserve current list/diff substrate and replay only required presentation wrappers or equivalent styles. Do not restore old whole timeline or reduced Thread renderer."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
       "source_attribution_evidence": {
         "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
@@ -4849,7 +5612,41 @@
         "origin_line": 33,
         "upstream_line": null
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F22", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Origin imports LegendList/FileDiff plus fork T3CodeMessageSurface/T3CodeWorkGroup wrappers; upstream side empty because current timeline virtualization/diff/presentation ownership changed.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Current timeline renderer and retained shared message/work-group presentation",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Preserve current list/diff substrate and replay only required presentation wrappers or equivalent styles. Do not restore old whole timeline or reduced Thread renderer."
+        ],
+        "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
+        "source_attribution_evidence": {
+          "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
+          "upstream_blob": "fa718bc1de9c72a54946da1211fac0a6d27d33da",
+          "origin_line": 33,
+          "upstream_line": null
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["current upstream timeline virtualization and diff substrate"],
+      "candidate_hosts": [
+        "apps/web/src/components/chat/MessagesTimeline.tsx:1 and apps/web/src/components/chat/MessagesTimeline.tsx:52 through apps/web/src/components/chat/MessagesTimeline.tsx:56"
+      ],
+      "candidate_evidence": [
+        "The timeline imports the ordinary presentation spacing owner mechanically.",
+        "No T3CodeMessageSurface or T3CodeWorkGroup source occurrence survives.",
+        "The focused MessagesTimeline suite passed."
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-markdown_visual-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-markdown_visual-result.json"
     },
     {
       "path": "apps/web/src/components/chat/MessagesTimeline.tsx",
@@ -4859,15 +5656,13 @@
       "candidate_concerns": ["F22", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork user message surface wrapper versus upstream ordinary div and media admission expanded from images to images or user videos.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "Accept the current upstream user message element and expanded image or video admission. Supply stable F22 Mermaid surface identity without restoring the retired reduced wrapper.",
       "candidate_owners_and_hosts": "User message presentation owner; MessagesTimeline adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Retain video attachments and shared message presentation; wrapper replay cannot narrow current media admission."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
       "source_attribution_evidence": {
         "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
@@ -4875,7 +5670,44 @@
         "origin_line": 1013,
         "upstream_line": 1343
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F22", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork user message surface wrapper versus upstream ordinary div and media admission expanded from images to images or user videos.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "User message presentation owner; MessagesTimeline adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Retain video attachments and shared message presentation; wrapper replay cannot narrow current media admission."
+        ],
+        "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
+        "source_attribution_evidence": {
+          "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
+          "upstream_blob": "fa718bc1de9c72a54946da1211fac0a6d27d33da",
+          "origin_line": 1013,
+          "upstream_line": 1343
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [
+        "current upstream user message presentation",
+        "fork/F22-serialized-mermaid-rendering.md"
+      ],
+      "candidate_hosts": [
+        "apps/web/src/components/chat/MessagesTimeline.tsx:1310 and apps/web/src/components/chat/MessagesTimeline.tsx:1486"
+      ],
+      "candidate_evidence": [
+        "timelineMarkdownSurfaceId derives stable message identity from the scoped thread and message role.",
+        "The upstream video path and media actions remain present.",
+        "The focused MessagesTimeline and Mermaid host integration suites passed."
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-markdown_visual-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-markdown_visual-result.json"
     },
     {
       "path": "apps/web/src/components/chat/MessagesTimeline.tsx",
@@ -4885,15 +5717,12 @@
       "candidate_concerns": ["F22", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork assistant message wrapper and explicit ChatMarkdown surfaceId versus upstream citation wrapper, artifact-template and image-expand callbacks. Pinned surfaceId feeds MermaidDiagramBlock identity and a DOM data marker, so it is not exclusively a retired inline-comment identifier.",
-      "candidate_role": "upstream_assistant_citation_and_markdown_host_with_explicit_later_mermaid_identity",
-      "candidate_owners_and_hosts": "Upstream AssistantCitationSource/ChatMarkdown plus later Mermaid identity owner; MessagesTimeline adapter",
-      "status": "supplemental_role_review_passed_join_pending",
+      "candidate_role": "Accept the current upstream assistant citation wrapper, artifact-template callback and image expansion callback. Add only the stable F22 surface identity at the Markdown host.",
+      "status": "s5_role_and_concern_review_passed",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S34_and_S5",
-      "later_obligations": [
-        "S5 owns assistant styling and F22 stable diagram identity on the upstream Markdown host. S34 verifies upstream renderer/citation and ordinary review substrate survived retirement; do not restore F09/F21 to retain Mermaid."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
       "source_attribution_evidence": {
         "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
@@ -4901,23 +5730,68 @@
         "origin_line": 1148,
         "upstream_line": 1563
       },
-      "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
       "candidate_owners": [
-        "apps/web/src/components/chat/AssistantCitationSource.tsx",
-        "apps/web/src/components/ChatMarkdown.tsx"
+        "current upstream assistant Markdown behavior",
+        "fork/F22-serialized-mermaid-rendering.md"
       ],
-      "candidate_hosts": ["apps/web/src/components/chat/MessagesTimeline.tsx AssistantTimelineRow"],
+      "candidate_hosts": ["apps/web/src/components/chat/MessagesTimeline.tsx:1575"],
       "source_evidence_rationale": [
-        "MessagesTimeline.tsx equals pinned upstream. AssistantTimelineRow at lines 1557 through 1596 retains AssistantCitationSource around ChatMarkdown and forwards thread identity, streaming state, line-break behavior, skills, artifact-template actions, and image expansion.",
-        "The focused AssistantCitationSource and ChatMarkdown tests passed. Current ChatMarkdown retains upstream links, media, tasks, code fences, and thread and environment adapters.",
-        "Pinned origin ChatMarkdown proves surfaceId was also consumed by MermaidDiagramBlock and data-markdown-surface-id. Its absence from current S34 is therefore a preserved S5 F22 identity obligation, not evidence that the identifier belonged solely to retired rendered comments."
+        "Accept the current upstream assistant citation wrapper, artifact-template callback and image expansion callback. Add only the stable F22 surface identity at the Markdown host.",
+        "Citation activation, artifact templates and image expansion remain wired around ChatMarkdown.",
+        "The assistant surface ID includes the scoped thread, message ID and assistant role.",
+        "The focused MessagesTimeline, ChatMarkdown and Mermaid host integration suites passed."
       ],
       "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
-      "deferred_later_obligations": [
-        "S5 must add stable semantic surface and source-range identity for Mermaid fences on this upstream host while retaining citation, artifact-template, image expansion, streaming, and ordinary Markdown behavior.",
-        "Do not restore the retired F09 renderer or F21 rendered-document comments to satisfy F22."
+      "deferred_later_obligations": [],
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F22", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork assistant message wrapper and explicit ChatMarkdown surfaceId versus upstream citation wrapper, artifact-template and image-expand callbacks. Pinned surfaceId feeds MermaidDiagramBlock identity and a DOM data marker, so it is not exclusively a retired inline-comment identifier.",
+        "candidate_role": "upstream_assistant_citation_and_markdown_host_with_explicit_later_mermaid_identity",
+        "candidate_owners_and_hosts": "Upstream AssistantCitationSource/ChatMarkdown plus later Mermaid identity owner; MessagesTimeline adapter",
+        "status": "supplemental_role_review_passed_join_pending",
+        "review_status": "passed",
+        "unresolved": false,
+        "required_slice": "S34_and_S5",
+        "later_obligations": [
+          "S5 owns assistant styling and F22 stable diagram identity on the upstream Markdown host. S34 verifies upstream renderer/citation and ordinary review substrate survived retirement; do not restore F09/F21 to retain Mermaid."
+        ],
+        "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
+        "source_attribution_evidence": {
+          "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
+          "upstream_blob": "fa718bc1de9c72a54946da1211fac0a6d27d33da",
+          "origin_line": 1148,
+          "upstream_line": 1563
+        },
+        "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
+        "candidate_owners": [
+          "apps/web/src/components/chat/AssistantCitationSource.tsx",
+          "apps/web/src/components/ChatMarkdown.tsx"
+        ],
+        "candidate_hosts": [
+          "apps/web/src/components/chat/MessagesTimeline.tsx AssistantTimelineRow"
+        ],
+        "source_evidence_rationale": [
+          "MessagesTimeline.tsx equals pinned upstream. AssistantTimelineRow at lines 1557 through 1596 retains AssistantCitationSource around ChatMarkdown and forwards thread identity, streaming state, line-break behavior, skills, artifact-template actions, and image expansion.",
+          "The focused AssistantCitationSource and ChatMarkdown tests passed. Current ChatMarkdown retains upstream links, media, tasks, code fences, and thread and environment adapters.",
+          "Pinned origin ChatMarkdown proves surfaceId was also consumed by MermaidDiagramBlock and data-markdown-surface-id. Its absence from current S34 is therefore a preserved S5 F22 identity obligation, not evidence that the identifier belonged solely to retired rendered comments."
+        ],
+        "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
+        "deferred_later_obligations": [
+          "S5 must add stable semantic surface and source-range identity for Mermaid fences on this upstream host while retaining citation, artifact-template, image expansion, streaming, and ordinary Markdown behavior.",
+          "Do not restore the retired F09 renderer or F21 rendered-document comments to satisfy F22."
+        ],
+        "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      },
+      "candidate_evidence": [
+        "Citation activation, artifact templates and image expansion remain wired around ChatMarkdown.",
+        "The assistant surface ID includes the scoped thread, message ID and assistant role.",
+        "The focused MessagesTimeline, ChatMarkdown and Mermaid host integration suites passed."
       ],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "s5_role_review": "/tmp/t3code-s5-review-markdown_visual-result.json",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-markdown_visual-result.json"
     },
     {
       "path": "apps/web/src/components/chat/MessagesTimeline.tsx",
@@ -4927,15 +5801,12 @@
       "candidate_concerns": ["F22", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork tool-only work-group label calculation versus empty upstream side.",
-      "candidate_role": "pending_exact_role_review",
-      "candidate_owners_and_hosts": "Retained work-group presentation owner; MessagesTimeline host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "candidate_role": "Omit the retired reduced Thread tool-only work-group label calculation and accept the current upstream activity presentation.",
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Preserve agreed work-log hierarchy/labels using current activity entries; no old timeline restore."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
       "source_attribution_evidence": {
         "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
@@ -4943,7 +5814,38 @@
         "origin_line": 1395,
         "upstream_line": 1
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F22", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork tool-only work-group label calculation versus empty upstream side.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Retained work-group presentation owner; MessagesTimeline host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Preserve agreed work-log hierarchy/labels using current activity entries; no old timeline restore."
+        ],
+        "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
+        "source_attribution_evidence": {
+          "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
+          "upstream_blob": "fa718bc1de9c72a54946da1211fac0a6d27d33da",
+          "origin_line": 1395,
+          "upstream_line": 1
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["current upstream activity substrate"],
+      "candidate_hosts": [null],
+      "candidate_evidence": [
+        "No active fork specification owns the historical tool-only label calculation.",
+        "Current tool activity rendering and its focused tests remain intact."
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-markdown_visual-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-markdown_visual-result.json"
     },
     {
       "path": "apps/web/src/components/chat/MessagesTimeline.tsx",
@@ -4953,15 +5855,12 @@
       "candidate_concerns": ["F22", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Fork activity wrapper div/spacing versus upstream semantic Activity section with adjusted vertical spacing.",
-      "candidate_role": "pending_exact_role_review",
-      "candidate_owners_and_hosts": "Retained work-group presentation owner; MessagesTimeline host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "candidate_role": "Accept the current upstream semantic Activity section and spacing. Do not restore the retired reduced Thread wrapper div.",
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Match retained appearance without dropping upstream accessible Activity labeling."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
       "source_attribution_evidence": {
         "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
@@ -4969,7 +5868,38 @@
         "origin_line": 1429,
         "upstream_line": 1829
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F22", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork activity wrapper div/spacing versus upstream semantic Activity section with adjusted vertical spacing.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Retained work-group presentation owner; MessagesTimeline host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Match retained appearance without dropping upstream accessible Activity labeling."
+        ],
+        "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
+        "source_attribution_evidence": {
+          "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
+          "upstream_blob": "fa718bc1de9c72a54946da1211fac0a6d27d33da",
+          "origin_line": 1429,
+          "upstream_line": 1829
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["current upstream activity substrate"],
+      "candidate_hosts": [null],
+      "candidate_evidence": [
+        "apps/web/src/components/chat/MessagesTimeline.tsx:1834 retains the semantic Activity section.",
+        "The focused MessagesTimeline suite passed."
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-markdown_visual-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-markdown_visual-result.json"
     },
     {
       "path": "apps/web/src/components/chat/MessagesTimeline.tsx",
@@ -4979,15 +5909,12 @@
       "candidate_concerns": ["F22", "CHAT"],
       "classification": "source_role_attribution_only",
       "decision": "Closing-tag counterpart of Activity div-versus-section wrapper in hunk 5. No independent product decision.",
-      "candidate_role": "pending_exact_role_review",
-      "candidate_owners_and_hosts": "Same MessagesTimeline Activity wrapper owner",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "candidate_role": "Accept the current upstream semantic Activity section closing structure. This row has no independent product decision beyond hunk 5.",
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Treat together with hunk 5 to preserve balanced markup and accessible activity region."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
       "source_attribution_evidence": {
         "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
@@ -4995,7 +5922,37 @@
         "origin_line": 188,
         "upstream_line": 1842
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F22", "CHAT"],
+        "classification": "source_role_attribution_only",
+        "decision": "Closing-tag counterpart of Activity div-versus-section wrapper in hunk 5. No independent product decision.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Same MessagesTimeline Activity wrapper owner",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Treat together with hunk 5 to preserve balanced markup and accessible activity region."
+        ],
+        "source_attribution_snapshot": "562009efeed86896507b5be0f41bb24ac439945bb15b26d0c06fc2232d55ba31",
+        "source_attribution_evidence": {
+          "origin_blob": "71194f6822a281deb31d45f1f2a813687842ceac",
+          "upstream_blob": "fa718bc1de9c72a54946da1211fac0a6d27d33da",
+          "origin_line": 188,
+          "upstream_line": 1842
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["current upstream activity substrate"],
+      "candidate_hosts": [null],
+      "candidate_evidence": [
+        "The Activity section is structurally balanced and covered by the focused MessagesTimeline suite."
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-markdown_visual-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-markdown_visual-result.json"
     },
     {
       "path": "apps/web/src/components/pullRequest/PullRequestMarkdown.tsx",
@@ -5005,15 +5962,12 @@
       "candidate_concerns": ["F22"],
       "classification": "source_role_attribution_only",
       "decision": "Fork per-segment ChatMarkdown surfaceId versus upstream threadRef/environmentId and remark PR autolinks. The old identity is concretely consumed by Mermaid and a DOM marker, not solely F21.",
-      "candidate_role": "unchanged_upstream_pull_request_markdown_and_autolink_host_with_explicit_later_mermaid_identity",
-      "candidate_owners_and_hosts": "Upstream PullRequestMarkdown/remarkPullRequestAutolinks; later Mermaid adapter",
-      "status": "supplemental_role_review_passed_join_pending",
+      "candidate_role": "Compose stable F22 segment identity with current upstream threadRef, environmentId, media behavior and pull request autolink plugins.",
+      "status": "s5_role_and_concern_review_passed",
       "review_status": "passed",
       "unresolved": false,
       "required_slice": "S34_and_S5",
-      "later_obligations": [
-        "S5 F22 must work on PR Markdown fences through normal renderer. S34 verifies retirement leaves upstream PR links/environment targeting/review rendering intact; do not restore custom renderer."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "f673c383f9a470ca6cfe108bddca70fce79053d03888101f5ae9302ef4579439",
       "source_attribution_evidence": {
         "origin_blob": "f55a346bac450782576053c0d27fc499baee5027",
@@ -5021,28 +5975,75 @@
         "origin_line": 38,
         "upstream_line": 47
       },
-      "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
       "candidate_owners": [
-        "apps/web/src/components/pullRequest/PullRequestMarkdown.tsx",
-        "apps/web/src/components/pullRequest/pullRequestMarkdown.logic.ts remarkPullRequestAutolinks"
+        "fork/F22-serialized-mermaid-rendering.md",
+        "apps/web/src/components/pullRequest/PullRequestMarkdown.tsx"
       ],
       "candidate_hosts": [
-        "apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx",
-        "apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx",
-        "apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx",
-        "apps/web/src/components/pullRequest/PullRequestMarkdownEditor.tsx"
+        "apps/web/src/components/pullRequest/PullRequestMarkdown.tsx:13 through apps/web/src/components/pullRequest/PullRequestMarkdown.tsx:27 and apps/web/src/components/pullRequest/PullRequestMarkdown.tsx:53 through apps/web/src/components/pullRequest/PullRequestMarkdown.tsx:72"
       ],
       "source_evidence_rationale": [
-        "PullRequestMarkdown.tsx equals pinned upstream. Lines 34 through 52 split PR bodies, configure repository-specific autolinks, and render each Markdown segment through ChatMarkdown with threadRef, environmentId, and extraRemarkPlugins.",
-        "The remaining branches preserve GitHub upload cards, while summary, timeline, review annotation, and editor preview components all invoke this host. Focused PR Markdown logic and ChatMarkdown tests passed.",
-        "Pinned origin passes per-segment surfaceId into ChatMarkdown, whose pinned Mermaid path consumes semantic identity. S34 correctly keeps current upstream PR rendering while retaining the S5 F22 obligation."
+        "Compose stable F22 segment identity with current upstream threadRef, environmentId, media behavior and pull request autolink plugins.",
+        "pullRequestMarkdownSurfaceId encodes environment, repository owner and name, pull request number and segment kind.",
+        "Every description, comment, review annotation, timeline entry and editor preview caller supplies a stable ID, and each Markdown segment adds its encoded segment ID.",
+        "threadRef, environmentId, pull request autolinks and attachment media behavior remain wired.",
+        "The focused pull request Markdown and Mermaid host integration suites passed."
       ],
       "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
-      "deferred_later_obligations": [
-        "S5 F22 must render Mermaid fences in PR Markdown through normal ChatMarkdown with stable per-segment identity while preserving environment targeting, thread links, PR autolinks, and review hosts.",
-        "Do not restore the retired custom renderer."
+      "deferred_later_obligations": [],
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F22"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork per-segment ChatMarkdown surfaceId versus upstream threadRef/environmentId and remark PR autolinks. The old identity is concretely consumed by Mermaid and a DOM marker, not solely F21.",
+        "candidate_role": "unchanged_upstream_pull_request_markdown_and_autolink_host_with_explicit_later_mermaid_identity",
+        "candidate_owners_and_hosts": "Upstream PullRequestMarkdown/remarkPullRequestAutolinks; later Mermaid adapter",
+        "status": "supplemental_role_review_passed_join_pending",
+        "review_status": "passed",
+        "unresolved": false,
+        "required_slice": "S34_and_S5",
+        "later_obligations": [
+          "S5 F22 must work on PR Markdown fences through normal renderer. S34 verifies retirement leaves upstream PR links/environment targeting/review rendering intact; do not restore custom renderer."
+        ],
+        "source_attribution_snapshot": "f673c383f9a470ca6cfe108bddca70fce79053d03888101f5ae9302ef4579439",
+        "source_attribution_evidence": {
+          "origin_blob": "f55a346bac450782576053c0d27fc499baee5027",
+          "upstream_blob": "5e9db1347ce7a6277f2f64a39835367fb1417d12",
+          "origin_line": 38,
+          "upstream_line": 47
+        },
+        "note": "Fresh exact-role review passes. Mixed later obligations are retained explicitly; no S5/S6 acceptance credit.",
+        "candidate_owners": [
+          "apps/web/src/components/pullRequest/PullRequestMarkdown.tsx",
+          "apps/web/src/components/pullRequest/pullRequestMarkdown.logic.ts remarkPullRequestAutolinks"
+        ],
+        "candidate_hosts": [
+          "apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx",
+          "apps/web/src/components/pullRequest/PullRequestTimelineTab.tsx",
+          "apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx",
+          "apps/web/src/components/pullRequest/PullRequestMarkdownEditor.tsx"
+        ],
+        "source_evidence_rationale": [
+          "PullRequestMarkdown.tsx equals pinned upstream. Lines 34 through 52 split PR bodies, configure repository-specific autolinks, and render each Markdown segment through ChatMarkdown with threadRef, environmentId, and extraRemarkPlugins.",
+          "The remaining branches preserve GitHub upload cards, while summary, timeline, review annotation, and editor preview components all invoke this host. Focused PR Markdown logic and ChatMarkdown tests passed.",
+          "Pinned origin passes per-segment surfaceId into ChatMarkdown, whose pinned Mermaid path consumes semantic identity. S34 correctly keeps current upstream PR rendering while retaining the S5 F22 obligation."
+        ],
+        "review_report": "/tmp/t3code-s34-supplemental-11-result.json",
+        "deferred_later_obligations": [
+          "S5 F22 must render Mermaid fences in PR Markdown through normal ChatMarkdown with stable per-segment identity while preserving environment targeting, thread links, PR autolinks, and review hosts.",
+          "Do not restore the retired custom renderer."
+        ],
+        "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      },
+      "candidate_evidence": [
+        "pullRequestMarkdownSurfaceId encodes environment, repository owner and name, pull request number and segment kind.",
+        "Every description, comment, review annotation, timeline entry and editor preview caller supplies a stable ID, and each Markdown segment adds its encoded segment ID.",
+        "threadRef, environmentId, pull request autolinks and attachment media behavior remain wired.",
+        "The focused pull request Markdown and Mermaid host integration suites passed."
       ],
-      "joined_source_acceptance": "S34 source delivery accepted and committed with this Board change. Later obligations remain independent."
+      "s5_role_review": "/tmp/t3code-s5-review-markdown_visual-result.json",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-markdown_visual-result.json"
     },
     {
       "path": "apps/web/src/environments/primary/auth.ts",
@@ -5167,15 +6168,13 @@
       "candidate_concerns": ["F02"],
       "classification": "source_role_attribution_only",
       "decision": "Fork theme color-role import versus upstream theme preview ID import. These support different owner strategies, not equivalent names.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_mechanical_adapter",
       "candidate_owners_and_hosts": "S5 Omarchy palette adapter; root useTheme host",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Use thin Omarchy adapter into current theme framework, retaining preview/onboarding owner."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "2dbbf0a3610912a6fa6d08eea9094a50f3a58fdd6c1a9d6592e2488418ee0552",
       "source_attribution_evidence": {
         "origin_blob": "020c23b70e37c8ab2c85daf46f8dcc1b95bf956d",
@@ -5183,7 +6182,45 @@
         "origin_line": 19,
         "upstream_line": 16
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F02"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork theme color-role import versus upstream theme preview ID import. These support different owner strategies, not equivalent names.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "S5 Omarchy palette adapter; root useTheme host",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Use thin Omarchy adapter into current theme framework, retaining preview/onboarding owner."
+        ],
+        "source_attribution_snapshot": "2dbbf0a3610912a6fa6d08eea9094a50f3a58fdd6c1a9d6592e2488418ee0552",
+        "source_attribution_evidence": {
+          "origin_blob": "020c23b70e37c8ab2c85daf46f8dcc1b95bf956d",
+          "upstream_blob": "01928552acb0c07e5453a7daaf31ad66e9b65f56",
+          "origin_line": 19,
+          "upstream_line": 16
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [
+        "apps/web/src/fork/desktopSystemTheme.ts",
+        "apps/web/src/fork/omarchySystemTheme.ts"
+      ],
+      "candidate_hosts": [
+        "apps/web/src/hooks/useTheme.ts imports the dedicated local observation and projection owners while retaining upstream theme preview identity and normal palette ownership."
+      ],
+      "candidate_evidence": [
+        "apps/web/src/fork/desktopSystemTheme.test.ts",
+        "apps/web/src/fork/omarchySystemTheme.test.ts",
+        "apps/web/src/hooks/useTheme.test.ts",
+        "Focused review run passed all 56 theme owner and host tests in the four relevant files."
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-native_theme-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-native_theme-result.json"
     },
     {
       "path": "apps/web/src/hooks/useTheme.ts",
@@ -5193,15 +6230,13 @@
       "candidate_concerns": ["F02"],
       "classification": "source_role_attribution_only",
       "decision": "Fork broad projected Omarchy colors applied after theme palette versus upstream onboarding dark mode and normal palette branch.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_mechanical_adapter",
       "candidate_owners_and_hosts": "S5 Omarchy adapter and upstream useTheme palette owner",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Replace broad projection with accepted thin palette adapter respecting explicit theme and upstream onboarding behavior; root owns preparation."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "2dbbf0a3610912a6fa6d08eea9094a50f3a58fdd6c1a9d6592e2488418ee0552",
       "source_attribution_evidence": {
         "origin_blob": "020c23b70e37c8ab2c85daf46f8dcc1b95bf956d",
@@ -5209,7 +6244,44 @@
         "origin_line": 351,
         "upstream_line": 376
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F02"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork broad projected Omarchy colors applied after theme palette versus upstream onboarding dark mode and normal palette branch.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "S5 Omarchy adapter and upstream useTheme palette owner",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Replace broad projection with accepted thin palette adapter respecting explicit theme and upstream onboarding behavior; root owns preparation."
+        ],
+        "source_attribution_snapshot": "2dbbf0a3610912a6fa6d08eea9094a50f3a58fdd6c1a9d6592e2488418ee0552",
+        "source_attribution_evidence": {
+          "origin_blob": "020c23b70e37c8ab2c85daf46f8dcc1b95bf956d",
+          "upstream_blob": "01928552acb0c07e5453a7daaf31ad66e9b65f56",
+          "origin_line": 351,
+          "upstream_line": 376
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [
+        "apps/web/src/fork/desktopSystemTheme.ts",
+        "apps/web/src/fork/omarchySystemTheme.ts"
+      ],
+      "candidate_hosts": [
+        "The hook preserves upstream onboarding and preview precedence, computes the current local projection through the fork owner, and passes it as a transient palette into upstream applyThemePalette."
+      ],
+      "candidate_evidence": [
+        "apps/web/src/hooks/useTheme.ts lines 381 through 417",
+        "apps/web/src/hooks/useTheme.test.ts covers same-mode replacement, explicit selection, preview, onboarding, final-subscriber cleanup and absence of persistence writes.",
+        "apps/web/src/themePalette.test.ts covers transient semantic variables and ordinary reset."
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-native_theme-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-native_theme-result.json"
     },
     {
       "path": "apps/web/src/previewStateStore.ts",
@@ -5219,15 +6291,13 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "F23 bounded closed-tab reservation/commit/rollback/take/restore and pending desktop restoration state, plus preview-thread cleanup. Empty upstream side.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "mechanical scoped storage adapter for pure history transitions",
       "candidate_owners_and_hosts": "Preview reopen state owner; previewStateStore adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Replay bounded per-thread reopen history through current session/profile identity; preserve pending ordering, failed close rollback and cleanup without a new store."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "16415fada453546ac96bde28898976d0115e9f7c7c942f34755c1983af579bff",
       "source_attribution_evidence": {
         "origin_blob": "f2d48ccb674ab84e9653e02f1594af158f24220c",
@@ -5235,7 +6305,38 @@
         "origin_line": 484,
         "upstream_line": null
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "F23 bounded closed-tab reservation/commit/rollback/take/restore and pending desktop restoration state, plus preview-thread cleanup. Empty upstream side.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Preview reopen state owner; previewStateStore adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Replay bounded per-thread reopen history through current session/profile identity; preserve pending ordering, failed close rollback and cleanup without a new store."
+        ],
+        "source_attribution_snapshot": "16415fada453546ac96bde28898976d0115e9f7c7c942f34755c1983af579bff",
+        "source_attribution_evidence": {
+          "origin_blob": "f2d48ccb674ab84e9653e02f1594af158f24220c",
+          "upstream_blob": "1e7ec370661843c94812881bd4dec78beee9f3ee",
+          "origin_line": 484,
+          "upstream_line": null
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/web/src/fork/previewTabHistory.ts"],
+      "candidate_hosts": ["apps/web/src/previewStateStore.ts"],
+      "candidate_evidence": [
+        "apps/web/src/fork/previewTabHistory.test.ts",
+        "apps/web/src/previewStateStore.test.ts"
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-preview-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round4-review-preview-result.json"
     },
     {
       "path": "apps/web/src/rightPanelStore.ts",
@@ -5317,15 +6418,13 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "Fork screenshot image-byte budget and trimmed theme/screenshot name schema imports versus upstream browser profile/import types.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_upstream_substrate_and_mechanical_contract_adapter",
       "candidate_owners_and_hosts": "F03 screenshot/F02 palette schemas; root contracts/ipc adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Root contracts retains upstream browser profile/import contracts and adds only F02/F03 schema imports required by selected adapters."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "2e8fc5e91cf748966be1359038993fe619505c1a957848578883a91b1d8aad29",
       "source_attribution_evidence": {
         "origin_blob": "5de8f56098a11c7884f0008d6ab655363615fcd5",
@@ -5333,7 +6432,44 @@
         "origin_line": 94,
         "upstream_line": 90
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "Fork screenshot image-byte budget and trimmed theme/screenshot name schema imports versus upstream browser profile/import types.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "F03 screenshot/F02 palette schemas; root contracts/ipc adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Root contracts retains upstream browser profile/import contracts and adds only F02/F03 schema imports required by selected adapters."
+        ],
+        "source_attribution_snapshot": "2e8fc5e91cf748966be1359038993fe619505c1a957848578883a91b1d8aad29",
+        "source_attribution_evidence": {
+          "origin_blob": "5de8f56098a11c7884f0008d6ab655363615fcd5",
+          "upstream_blob": "a14a4ed0a08aaa0959f8bf3b33490de16c489289",
+          "origin_line": 94,
+          "upstream_line": 90
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [
+        "apps/desktop/src/fork/DesktopScreenshotPng.ts",
+        "apps/desktop/src/fork/OmarchyThemeSource.ts"
+      ],
+      "candidate_hosts": [
+        "The shared contract retains the provider image byte ceiling and trimmed-name schema needed by F02 and F03 while also retaining upstream environment, browser-profile and browser-import contract inputs."
+      ],
+      "candidate_evidence": [
+        "packages/contracts/src/ipc.ts lines 202 through 267",
+        "packages/contracts/src/ipc.test.ts validates bounded theme and screenshot envelopes.",
+        "packages/contracts/package.json exposes the narrow ipc subpath used by preload."
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-native_theme-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-native_theme-result.json"
     },
     {
       "path": "packages/contracts/src/ipc.ts",
@@ -5343,15 +6479,13 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "F23 host browser-action schema/event versus upstream preview automation status schema. Distinct required consumers can coexist.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted-schema-substrate",
       "candidate_owners_and_hosts": "Preview action contract owner; root contracts/ipc adapter",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5",
-      "later_obligations": [
-        "Root freezes residual browser-action protocol without dropping automation status; use typed tab identity and current preview runtime."
-      ],
+      "later_obligations": [],
       "source_attribution_snapshot": "2e8fc5e91cf748966be1359038993fe619505c1a957848578883a91b1d8aad29",
       "source_attribution_evidence": {
         "origin_blob": "5de8f56098a11c7884f0008d6ab655363615fcd5",
@@ -5359,7 +6493,35 @@
         "origin_line": 659,
         "upstream_line": 591
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "F23 host browser-action schema/event versus upstream preview automation status schema. Distinct required consumers can coexist.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Preview action contract owner; root contracts/ipc adapter",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5",
+        "later_obligations": [
+          "Root freezes residual browser-action protocol without dropping automation status; use typed tab identity and current preview runtime."
+        ],
+        "source_attribution_snapshot": "2e8fc5e91cf748966be1359038993fe619505c1a957848578883a91b1d8aad29",
+        "source_attribution_evidence": {
+          "origin_blob": "5de8f56098a11c7884f0008d6ab655363615fcd5",
+          "upstream_blob": "a14a4ed0a08aaa0959f8bf3b33490de16c489289",
+          "origin_line": 659,
+          "upstream_line": 591
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": ["apps/desktop/src/fork/PreviewShortcutPolicy.ts"],
+      "candidate_hosts": ["packages/contracts/src/ipc.ts"],
+      "candidate_evidence": "Browser action literal/event schema coexists with automation status schema. Optional exact zoom setter uses positive finite schema; Manager normalizes with existing zoom policy. Joined contract gates and built sandboxed preload receipt support wire compatibility.",
+      "s5_role_review": "/tmp/t3code-s5-review-preview-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round4-review-preview-result.json"
     },
     {
       "path": "packages/contracts/src/ipc.ts",
@@ -5369,11 +6531,11 @@
       "candidate_concerns": ["F23"],
       "classification": "source_role_attribution_only",
       "decision": "F03 screenshot and F02 system-theme optional bridge methods versus upstream t3 app activation optional bridge with readiness/completion/request subscription.",
-      "candidate_role": "pending_exact_role_review",
+      "candidate_role": "accepted_mechanical_contract_adapter",
       "candidate_owners_and_hosts": "Root desktop bridge contracts and preload registration; F02/F03 adapter owners",
-      "status": "later_slice_implementation_pending",
-      "review_status": "pending",
-      "unresolved": true,
+      "status": "s5_role_and_concern_review_passed",
+      "review_status": "passed",
+      "unresolved": false,
       "required_slice": "S5_with_S6_host_constraint",
       "later_obligations": [
         "Replay thin screenshot/theme capabilities while retaining upstream appActivation. S6 later composes Code launcher lifecycle using current bridge, not Thread authority."
@@ -5385,7 +6547,49 @@
         "origin_line": 1252,
         "upstream_line": 1154
       },
-      "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      "note": "S5 source, exact-role, final built visual and ordered Style Assurance review pass. The program ledger records the accepted local commit group; installed Linux, Thread and final program acceptance remain S6/S7 obligations.",
+      "prior_source_acceptance": {
+        "candidate_concerns": ["F23"],
+        "classification": "source_role_attribution_only",
+        "decision": "F03 screenshot and F02 system-theme optional bridge methods versus upstream t3 app activation optional bridge with readiness/completion/request subscription.",
+        "candidate_role": "pending_exact_role_review",
+        "candidate_owners_and_hosts": "Root desktop bridge contracts and preload registration; F02/F03 adapter owners",
+        "status": "later_slice_implementation_pending",
+        "review_status": "pending",
+        "unresolved": true,
+        "required_slice": "S5_with_S6_host_constraint",
+        "later_obligations": [
+          "Replay thin screenshot/theme capabilities while retaining upstream appActivation. S6 later composes Code launcher lifecycle using current bridge, not Thread authority."
+        ],
+        "source_attribution_snapshot": "2e8fc5e91cf748966be1359038993fe619505c1a957848578883a91b1d8aad29",
+        "source_attribution_evidence": {
+          "origin_blob": "5de8f56098a11c7884f0008d6ab655363615fcd5",
+          "upstream_blob": "a14a4ed0a08aaa0959f8bf3b33490de16c489289",
+          "origin_line": 1252,
+          "upstream_line": 1154
+        },
+        "note": "Exact source-role attribution only. No acceptance credit; broad candidate concern labels do not determine actual ownership."
+      },
+      "candidate_owners": [
+        "apps/desktop/src/fork/DesktopScreenshotCapture.ts",
+        "apps/desktop/src/fork/OmarchyThemeSource.ts",
+        "apps/web/src/fork/desktopSystemTheme.ts"
+      ],
+      "candidate_hosts": [
+        "DesktopBridge retains upstream appActivation unchanged and adds optional getSystemTheme, onSystemTheme and captureDesktopScreenshot beside the existing nested preview capture contract."
+      ],
+      "candidate_evidence": [
+        "packages/contracts/src/ipc.ts lines 1200 through 1253",
+        "apps/desktop/src/preload.test.ts validates optional capture exposure, theme decoding, cleanup and distinct preview capture routing.",
+        "The built sandboxed preload contains appActivation and exposeClerkBridge, has only electron as an external require, and matches runtime hash 52b334eaa459d2d93003d89e9c1170990793f20205c5411d40baf7f45e73860a.",
+        "No F17 authority owner or adapter path appears in the candidate diff."
+      ],
+      "s5_role_review": "/tmp/t3code-s5-review-native_theme-result.json",
+      "joined_source_acceptance": "S5 logical source acceptance passes; ordered style and local delivery gates remain tracked in the program ledger.",
+      "s5_correction_review": "/tmp/t3code-s5-round3-review-native_theme-result.json"
     }
-  ]
+  ],
+  "s5_reviewed_rows": 40,
+  "unresolved_rows": 5,
+  "s5_delivery_gate": "Source, built visuals and ordered Style Assurance pass; the local commit group is accepted with this record. Installed Linux and Thread remain S6; final acceptance remains S7."
 }

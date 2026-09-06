@@ -2,7 +2,7 @@
 
 Date: 2026-09-05
 Status: in progress
-Readiness: S34 committed; S5 source, visual and ordered style review pass; local commits in progress
+Readiness: S5 accepted and locally committed with this record; S6 ready for contract activation
 Branch: `reconcile/upstream-intake-20260905`
 
 ## Objective Baseline
@@ -42,8 +42,8 @@ The root owns migration identities, shared contracts, broad hosts, integration a
 | S2    | Exact-origin Git and external Admin authority                                 | S12 joint persistence acceptance                | Complete              | Four bounded implementation lanes                                    |
 | S3    | Global Board and truthful liaison behavior                                    | S1, S2                                          | Complete              | Accepted S34 runtime, provider and client proof                      |
 | S4    | Normal upstream sends/rendering and complete fork retirement                  | S1, S2                                          | Complete              | Accepted S34 retirement and substrate proof                          |
-| S5    | Retained visuals and thin adapters                                            | S4                                              | In progress           | Source and visuals verified; ordered style and local commits pending |
-| S6    | Independent installed Linux clients and Thread                                | S2, S4, S5                                      | Blocked by dependency | Source and installed compatibility to prove                          |
+| S5    | Retained visuals and thin adapters                                            | S4                                              | Complete              | Source, rendered evidence, logical/style review and commit gate pass |
+| S6    | Independent installed Linux clients and Thread                                | S2, S4, S5                                      | Ready                 | Source and installed compatibility to prove                          |
 | S7    | Integrated preservation and rollback evidence                                 | S3 through S6                                   | Blocked by dependency | No acceptance claim                                                  |
 
 ## Wave Plan And Agent Strength
@@ -494,3 +494,22 @@ If applied, this commit provides focused browser actions and bounded preview tab
 ### Commit effect — host integration
 
 If applied, this commit connects current chat and Markdown hosts to the retained rendering, presentation, context and preview owners.
+
+### S5 local delivery closeout
+
+The first eight local commits are:
+
+- `82d60907a feat(desktop): expose bounded optional desktop capabilities`
+- `fc07ca9b2 feat(theme): project local Omarchy colors into system appearance`
+- `b37019fc6 feat(markdown): provide bounded theme-aware Mermaid rendering`
+- `003e1b992 feat(chat): retain conversation spacing and checkout backdrop`
+- `090221fe3 feat(composer): restore scoped capture and retained control geometry`
+- `6b5bdeaf0 fix(chat): preserve authored bytes around generated context`
+- `6f0c44294 feat(preview): preserve focused browser controls and tab restoration`
+- `b9c74a2a2 refactor(chat): connect retained owners to current upstream hosts`
+
+This records commit closes the joined S5 commit gate. Root confirms the commit hooks leave every runtime, test and build-input byte identical to the accepted round4 candidate. The retained chat and draft now provide ordinary upstream Markdown with Mermaid diagrams, system-selected Omarchy colors, scoped screenshot attachments, exact authored context bytes and focused preview controls. The accepted source retains the full upstream client. Installed Linux and hosted Thread remain the next required phase.
+
+### Commit effect — records
+
+If applied, this commit records the retained adapter boundaries and their upstream intake preservation evidence.

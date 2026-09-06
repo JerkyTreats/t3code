@@ -38,6 +38,20 @@ The provider capability owner admits Board for Codex, Claude, Cursor, Grok and l
 
 [F28 Collective instructions](fork/F28-board-user-submit-liaison.md) owns the Codex root-thread instruction cadence and current-submit opt-out. It is a prompt contract whose actual participation depends on the provider; it does not guarantee durable exactly-once execution. Server-issued credentials remain the authority for Board tools. Joined source acceptance is tracked in the intake ledger.
 
+## Retained Presentation And Client Adapters
+
+[F02 Omarchy system theme](fork/F02-omarchy-system-theme.md) keeps coherent local observation and an exact-seed restrained transient palette through current semantic roles. Explicit appearance, preview and onboarding retain upstream precedence. No Omarchy preference or general theme generator is added.
+
+[F03 desktop screenshot capture](fork/F03-desktop-screenshot-capture.md) exposes optional top-level desktop capture independently of upstream preview capture. The composer uses a scoped reservation shared with ordinary attachment admission, then transfers one validated PNG through the current image path.
+
+[F04 context whitespace](fork/F04-composer-context-whitespace.md) preserves authored bytes when terminal, element or preview context is appended, including mixed upstream source review. The focused composition and display owner preserves generated ordering and removes only inserted separation. Ordinary and review-only trimming remains upstream behavior.
+
+[F22 Mermaid rendering](fork/F22-serialized-mermaid-rendering.md) adds one fence adapter to upstream Markdown. A bounded serialized owner handles theme-sensitive rendering, stable semantic identity, retries and stale results across message, plan, file and PR surfaces. The retired document renderer and rendered-document review remain absent.
+
+[F23 preview controls](fork/F23-preview-browser-controls.md) owns focused new, confirmed close and reopen actions, exact scoped runtime identity and ten-entry successful-close history. Current preview sessions, profiles and browser presentation remain upstream substrate. Optional exact zoom restoration consumes the existing normalized Manager operation.
+
+These source adapters are integrating in S5. Their current host, visual and installed acceptance status belongs to the intake ledger. [Ordinary chat and draft appearance](fork/chat-and-draft-presentation.md) keeps the captured message hierarchy, centered draft, plan presentation, floating permission control, full-width checkout strip and composer geometry while consuming current upstream sending, attachments and Markdown.
+
 ## Verification
 
 Source and runtime build-input changes require `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test`. Native mobile changes also require `pnpm lint:mobile`. Use synthetic state and keep client installation, production changes and publication within their explicit authorization.
