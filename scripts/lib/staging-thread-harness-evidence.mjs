@@ -4,6 +4,7 @@ import * as NodeFSP from "node:fs/promises";
 export const FAILURE_STAGES = new Set([
   "config",
   "inputs",
+  "desktop-preflight",
   "protected-baseline",
   "server-probe",
   "fresh-launch",
@@ -73,6 +74,10 @@ export function sanitizeFailure(stage, cause) {
   const known = new Set([
     "artifact-verification-failed",
     "cdp-unavailable",
+    "desktop-locked",
+    "desktop-lock-state-unavailable",
+    "cleanup-deadline-exceeded",
+    "core-code-draft-unobserved",
     "composer-mismatch",
     "core-code-not-usable",
     "database-observation-failed",

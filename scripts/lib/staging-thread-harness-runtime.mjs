@@ -30,6 +30,42 @@ import {
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+export async function withDeadline(operation, timeoutMs, failure = "cleanup-deadline-exceeded") {
+  let timer;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(failure)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function assertDesktopUnlocked(run = execFile) {
+  let stdout;
+  try {
+    ({ stdout } = await run("/usr/share/omarchy/bin/omarchy-shell", ["lock", "isLocked"], {
+      timeout: 5_000,
+      maxBuffer: 1024,
+    }));
+  } catch {
+    throw new Error("desktop-lock-state-unavailable");
+  }
+  if (stdout.trim() === "true") throw new Error("desktop-locked");
+  if (stdout.trim() !== "false") throw new Error("desktop-lock-state-unavailable");
+}
+
+export function observeCodeDraft(probe, text) {
+  if (typeof text !== "string") throw new Error("core-code-draft-unobserved");
+  const fingerprint = sha256Text(text);
+  if (probe.composerFingerprint === undefined) probe.composerFingerprint = fingerprint;
+  else if (probe.composerFingerprint !== fingerprint) throw new Error("core-code-not-usable");
+  probe.composerObservations = (probe.composerObservations ?? 0) + 1;
+}
+
 async function until(operation, failure, timeoutMs = 30_000) {
   const deadline = performance.now() + timeoutMs;
   while (performance.now() < deadline) {
@@ -103,7 +139,27 @@ async function findOwnedWindow(config, identity, observe = () => undefined) {
   );
 }
 
+export function desktopActionArguments(action, target) {
+  const address = target.address;
+  const workspace = target.workspace;
+  if (address !== undefined && !/^0x[0-9a-f]+$/u.test(address))
+    throw new Error("native-focus-failed");
+  if (workspace !== undefined && (!Number.isSafeInteger(workspace) || workspace < 1))
+    throw new Error("native-focus-failed");
+  if (action === "move" && address && workspace)
+    return [
+      "dispatch",
+      `hl.dsp.window.move({workspace="${workspace}",window="address:${address}",follow=false})`,
+    ];
+  if (action === "focus" && address)
+    return ["dispatch", `hl.dsp.focus({window="address:${address}"})`];
+  if (action === "workspace" && workspace)
+    return ["dispatch", `hl.dsp.focus({workspace="${workspace}"})`];
+  throw new Error("native-focus-failed");
+}
+
 async function moveOwnedWindow(config, item, workspace) {
+  await assertDesktopUnlocked();
   const current = JSON.parse(await hyprctl(config, ["clients", "-j"]));
   const matching = current.filter(
     (client) =>
@@ -112,11 +168,10 @@ async function moveOwnedWindow(config, item, workspace) {
       client.class === config.hyprland.threadClass,
   );
   if (matching.length !== 1) throw new Error("window-identity-mismatch");
-  await hyprctl(config, [
-    "dispatch",
-    "movetoworkspacesilent",
-    `${workspace},address:${item.window.address}`,
-  ]);
+  await hyprctl(
+    config,
+    desktopActionArguments("move", { workspace, address: item.window.address }),
+  );
   await until(
     async () => {
       const clients = JSON.parse(await hyprctl(config, ["clients", "-j"]));
@@ -133,17 +188,21 @@ async function moveOwnedWindow(config, item, workspace) {
 }
 
 async function restoreDesktop(config, initial) {
-  await hyprctl(config, ["dispatch", "workspace", String(initial.workspace)]).catch(
-    () => undefined,
-  );
-  if (!initial.activeAddress) return;
-  const clients = await hyprctl(config, ["clients", "-j"])
-    .then((value) => JSON.parse(value))
-    .catch(() => []);
-  if (clients.some((client) => client.address === initial.activeAddress)) {
-    await hyprctl(config, ["dispatch", "focuswindow", `address:${initial.activeAddress}`]).catch(
-      () => undefined,
+  try {
+    await assertDesktopUnlocked();
+    await hyprctl(config, desktopActionArguments("workspace", { workspace: initial.workspace }));
+    const clients = JSON.parse(await hyprctl(config, ["clients", "-j"]));
+    const activeStillExists =
+      initial.activeAddress && clients.some((client) => client.address === initial.activeAddress);
+    if (activeStillExists)
+      await hyprctl(config, desktopActionArguments("focus", { address: initial.activeAddress }));
+    const restored = await snapshotDesktop(config);
+    return (
+      restored.workspace === initial.workspace &&
+      (!activeStillExists || restored.activeAddress === initial.activeAddress)
     );
+  } catch {
+    return false;
   }
 }
 
@@ -326,14 +385,19 @@ async function assertCodeUsable(config, probe) {
     const expand = [...document.querySelectorAll("button")].some(
       (button) => button.getAttribute("aria-label") === "Expand composer",
     );
-    return { authenticated, composerPresent: Boolean(composer) || expand };
+    return {
+      authenticated,
+      composerPresent: Boolean(composer) || expand,
+      composerText: composer?.innerText ?? null,
+    };
   });
   if (!status.authenticated || !status.composerPresent) throw new Error("core-code-not-usable");
+  observeCodeDraft(probe, status.composerText);
 }
 
 async function disconnectCodeProbe(probe) {
   if (!probe) return;
-  await probe.browser.close();
+  await withDeadline(() => probe.browser.close(), 2_000);
 }
 
 async function attachToCase(config, item, chromium) {
@@ -450,6 +514,14 @@ async function pairIfNeeded(config, item, credential) {
   return true;
 }
 
+async function editorText(editor) {
+  return editor.evaluate((element) => {
+    // Chromium renders an empty contenteditable paragraph as one visual newline.
+    // Preserve every nonempty draft byte, including intentional blank lines.
+    return element.textContent === "" && element.innerText === "\n" ? "" : element.innerText;
+  });
+}
+
 async function composerText(item, expected, timeoutMs) {
   const editor = item.page.locator('[data-testid="composer-editor"]');
   const expand = item.page.getByRole("button", { name: "Expand composer", exact: true });
@@ -460,13 +532,13 @@ async function composerText(item, expected, timeoutMs) {
   );
   if (!(await editor.isVisible())) await expand.click();
   await editor.waitFor({ state: "visible", timeout: timeoutMs });
-  await until(async () => (await editor.innerText()) === expected, "composer-mismatch", timeoutMs);
+  await until(async () => (await editorText(editor)) === expected, "composer-mismatch", timeoutMs);
   return editor;
 }
 
 export function matchesProjectScopeObservation(observation, workingDirectory) {
   const project = observation.projects.find(
-    (candidate) => candidate.workspaceRoot === workingDirectory && candidate.deletedAt === null,
+    (candidate) => candidate.workspaceRoot === workingDirectory,
   );
   if (!project || !observation.routeDraftId) return false;
   try {
@@ -509,9 +581,28 @@ async function exactProjectScope(item, workingDirectory) {
         return {
           persistedDrafts: localStorage.getItem("t3code:composer-drafts:v1"),
           projects: projected,
+          registryCount: registries.size,
           routeDraftId: match ? decodeURIComponent(match[1]) : null,
         };
       });
+      const project = observation.projects.find(
+        (candidate) => candidate.workspaceRoot === workingDirectory,
+      );
+      let draft;
+      try {
+        draft = JSON.parse(observation.persistedDrafts ?? "null")?.state?.draftThreadsByThreadKey?.[
+          observation.routeDraftId
+        ];
+      } catch {}
+      item.scopeObservation = {
+        registryCount: observation.registryCount,
+        projectCount: observation.projects.length,
+        expectedProjectFound: Boolean(project),
+        routeFound: Boolean(observation.routeDraftId),
+        draftStored: Boolean(draft),
+        projectMatches: Boolean(project && draft?.projectId === project.id),
+        environmentMatches: Boolean(project && draft?.environmentId === project.environmentId),
+      };
       return matchesProjectScopeObservation(observation, workingDirectory);
     },
     "project-scope-mismatch",
@@ -673,24 +764,21 @@ async function assertThreadSurvivor(config, item) {
 }
 
 async function nativeInput(config, target, siblings) {
+  await assertDesktopUnlocked();
   const started = performance.now();
   const siblingDrafts = new Map();
   for (const sibling of siblings)
     siblingDrafts.set(
       sibling,
-      await sibling.page.locator('[data-testid="composer-editor"]').innerText(),
+      await editorText(sibling.page.locator('[data-testid="composer-editor"]')),
     );
-  await target.page.locator('[data-testid="composer-editor"]').click();
-  await target.page.locator('[data-testid="composer-editor"]').evaluate((editor) => {
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    range.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    editor.focus();
-  });
-  await hyprctl(config, ["dispatch", "focuswindow", `address:${target.window.address}`]);
+  if (
+    !identityIsAlive(target.mainIdentity) ||
+    !processBelongsToLaunch(target.mainIdentity, target.launchIdentity)
+  )
+    throw new Error("native-focus-failed");
+  await hyprctl(config, desktopActionArguments("workspace", { workspace: target.workspace }));
+  await hyprctl(config, desktopActionArguments("focus", { address: target.window.address }));
   await until(
     async () => {
       const active = JSON.parse(await hyprctl(config, ["activewindow", "-j"]));
@@ -703,6 +791,16 @@ async function nativeInput(config, target, siblings) {
     "native-focus-failed",
     5_000,
   );
+  await target.page.locator('[data-testid="composer-editor"]').click();
+  await target.page.locator('[data-testid="composer-editor"]').evaluate((editor) => {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    editor.focus();
+  });
   if (
     !identityIsAlive(target.mainIdentity) ||
     !processBelongsToLaunch(target.mainIdentity, target.launchIdentity) ||
@@ -711,6 +809,7 @@ async function nativeInput(config, target, siblings) {
       .evaluate((editor) => document.activeElement === editor))
   )
     throw new Error("native-focus-failed");
+  await assertDesktopUnlocked();
   await execFile("/usr/bin/wtype", ["--", config.nativeTypeSentinel], {
     env: NodeProcess.env,
     timeout: 5_000,
@@ -722,7 +821,7 @@ async function nativeInput(config, target, siblings) {
   );
   for (const sibling of siblings) {
     if (
-      (await sibling.page.locator('[data-testid="composer-editor"]').innerText()) !==
+      (await editorText(sibling.page.locator('[data-testid="composer-editor"]'))) !==
       siblingDrafts.get(sibling)
     )
       throw new Error("composer-mismatch");
@@ -741,7 +840,8 @@ async function stopCase(item, mode, timeoutMs) {
   if (!identityIsAlive(item.mainIdentity)) throw new Error("window-identity-mismatch");
   if (!processBelongsToLaunch(item.mainIdentity, item.launchIdentity))
     throw new Error("signal-target-not-owned");
-  if (mode === "close") await item.browserSession.send("Browser.close");
+  if (mode === "close")
+    await withDeadline(() => item.browserSession.send("Browser.close"), timeoutMs);
   else
     signalExactOwnedProcess({
       target: item.mainIdentity,
@@ -757,14 +857,20 @@ async function stopCase(item, mode, timeoutMs) {
 }
 
 async function cleanupCases(items) {
-  for (const item of items) captureCurrentOwned(item);
+  for (const item of items) {
+    try {
+      captureCurrentOwned(item);
+    } catch {}
+  }
   for (const item of items.toReversed()) {
     if (
       identityIsAlive(item.mainIdentity) &&
       processBelongsToLaunch(item.mainIdentity, item.launchIdentity)
     )
-      await item.browserSession?.send("Browser.close").catch(() => undefined);
-    else await item.browser?.close().catch(() => undefined);
+      await withDeadline(() => item.browserSession?.send("Browser.close"), 2_000).catch(
+        () => undefined,
+      );
+    else await withDeadline(() => item.browser?.close(), 2_000).catch(() => undefined);
   }
   await delay(500);
   for (const item of items.toReversed()) {
@@ -807,6 +913,15 @@ async function cleanupCases(items) {
   await Promise.race([Promise.allSettled(items.map((item) => item.entryPromise)), delay(2_000)]);
 }
 
+function caseMetrics(item, thresholds) {
+  const metrics = item.timeline.publicResult(thresholds);
+  for (const [name, elapsedMs] of Object.entries(item.operationMetrics ?? {})) {
+    const thresholdMs = thresholds[`${name}Ms`];
+    metrics[name] = { elapsedMs, thresholdMs, withinBudget: elapsedMs <= thresholdMs };
+  }
+  return metrics;
+}
+
 export async function runStagingThreadHarness(config, outputDirectory) {
   NodeProcess.umask(0o077);
   const diagnostics = {
@@ -845,6 +960,8 @@ export async function runStagingThreadHarness(config, outputDirectory) {
       !NodePath.isAbsolute(NodeProcess.env.XDG_RUNTIME_DIR ?? "")
     )
       throw new Error("artifact-verification-failed");
+    stage = "desktop-preflight";
+    await assertDesktopUnlocked();
     stage = "inputs";
     const adapter = await import(NodeURL.pathToFileURL(config.entryAdapterPath).href);
     if (
@@ -986,7 +1103,7 @@ export async function runStagingThreadHarness(config, outputDirectory) {
       instances.filter((item) => item !== crash),
     );
     crash.expectedDraft += config.nativeTypeSentinel;
-    await restoreDesktop(config, initialDesktop);
+    if (!(await restoreDesktop(config, initialDesktop))) throw new Error("native-focus-failed");
     if (!sameProtectedSnapshot(baseline, await protectedSnapshot(config)))
       throw new Error("protected-service-changed");
     if (codeProbe) await assertCodeUsable(config, codeProbe);
@@ -1023,11 +1140,7 @@ export async function runStagingThreadHarness(config, outputDirectory) {
     if (!sameProtectedSnapshot(baseline, await protectedSnapshot(config)))
       throw new Error("protected-service-changed");
     for (const item of instances) {
-      const metrics = item.timeline.publicResult(config.thresholds);
-      for (const [name, elapsedMs] of Object.entries(item.operationMetrics ?? {})) {
-        const thresholdMs = config.thresholds[`${name}Ms`];
-        metrics[name] = { elapsedMs, thresholdMs, withinBudget: elapsedMs <= thresholdMs };
-      }
+      const metrics = caseMetrics(item, config.thresholds);
       summary.metrics[item.name] = metrics;
       for (const [name, value] of Object.entries(metrics))
         if (!value.withinBudget) summary.budgetBreaches.push({ case: item.name, milestone: name });
@@ -1056,6 +1169,7 @@ export async function runStagingThreadHarness(config, outputDirectory) {
       lifecycleIsolation: true,
       protectedRuntimeInvariant: true,
       coreCodeUsable: Boolean(codeProbe),
+      coreCodeDraftUnchanged: (codeProbe?.composerObservations ?? 0) >= 2,
     };
     diagnostics.success = true;
     diagnostics.stage = "complete";
@@ -1080,14 +1194,43 @@ export async function runStagingThreadHarness(config, outputDirectory) {
     });
   } finally {
     stage = "cleanup";
-    await cleanupCases(instances);
-    if (initialDesktop) await restoreDesktop(config, initialDesktop);
+    try {
+      await cleanupCases(instances);
+    } catch (cause) {
+      summary.success = false;
+      diagnostics.success = false;
+      summary.stage = "cleanup";
+      diagnostics.stage = "cleanup";
+      summary.failure = sanitizeFailure("cleanup", cause);
+    }
+    if (initialDesktop) {
+      diagnostics.desktopRestored = await restoreDesktop(config, initialDesktop);
+      if (!diagnostics.desktopRestored) {
+        summary.success = false;
+        diagnostics.success = false;
+        summary.stage = "cleanup";
+        diagnostics.stage = "cleanup";
+        summary.failure = sanitizeFailure("cleanup", new Error("native-focus-failed"));
+      }
+    }
+    summary.attemptedCaseCount = instances.length;
+    for (const item of instances) {
+      if (!summary.metrics[item.name]) {
+        const metrics = caseMetrics(item, config.thresholds);
+        summary.metrics[item.name] = metrics;
+        for (const [name, metric] of Object.entries(metrics)) {
+          if (!metric.withinBudget)
+            summary.budgetBreaches.push({ case: item.name, milestone: name });
+        }
+      }
+    }
     diagnostics.observations = instances.map((item) => ({
       name: item.name,
       stage: item.lastStage,
       launchIdentity: item.launchIdentity,
       observedMainIdentity: item.observedMainIdentity,
       observedWindowClasses: item.observedWindowClasses,
+      scope: item.scopeObservation,
     }));
     diagnostics.cleanup = instances.map((item) => ({
       name: item.name,

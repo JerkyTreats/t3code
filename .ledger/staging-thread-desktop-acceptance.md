@@ -37,11 +37,11 @@ Commit accepted implementation after required gates and review. Each delivery co
 
 | Phase | Scope                                   | Dependencies           | Owner                    | Status      |
 | ----- | --------------------------------------- | ---------------------- | ------------------------ | ----------- |
-| P1    | Recovery push and staging promotion     | Accepted intake        | Root                     | in progress |
-| P2    | Desktop entry and activation scope      | Contract inventory     | Root and bounded worker  | proposed    |
-| P3    | Reusable desktop usage harness          | P2 activation contract | Bounded worker           | proposed    |
-| P4    | Installed staging acceptance and fixes  | P1, P2, P3             | Root                     | proposed    |
-| P5    | Gates, independent reviews and closeout | P4                     | Root and fresh reviewers | proposed    |
+| P1    | Recovery push and staging promotion     | Accepted intake        | Root                     | complete    |
+| P2    | Desktop entry and activation scope      | Contract inventory     | Root and bounded worker  | complete    |
+| P3    | Reusable desktop usage harness          | P2 activation contract | Bounded worker           | complete    |
+| P4    | Installed staging acceptance and fixes  | P1, P2, P3             | Root                     | in progress |
+| P5    | Gates, independent reviews and closeout | P4                     | Root and fresh reviewers | in progress |
 
 ## Dependency graph
 
@@ -69,11 +69,15 @@ Staging state was backed up after stopping only its service. Promoted live sourc
 
 Read-only desktop inventory found a missing server target on the bare installed Thread hotkey path and Code routing on current crash and wallpaper entry paths. Existing wallpaper entry scope differs from the source project requested here. These findings do not establish an installed Thread crash. Staging uses explicit client and adapter namespaces without editing packaged Omarchy or unrelated project code.
 
-The first source delivery is committed and backed up on exact origin. Rebuilt staging Code passes actual channel readiness, authenticated desktop composer, HTTPS and HMR checks on workspace 4. The first harness launches found numeric readiness ticks were incorrectly treated as strings and that Thread needs an explicit Linux desktop name for native Wayland staging identity. The harness stopped and cleaned up its owned processes, preserving Code and both servers. These installed findings are being corrected before rerunning acceptance.
+The first source delivery is committed and backed up on exact origin. Rebuilt staging Code passes actual channel readiness, authenticated desktop composer, HTTPS and HMR checks on workspace 4. The first harness launches found numeric readiness ticks were incorrectly treated as strings and that Thread needs an explicit Linux desktop name for native Wayland staging identity. The harness stopped and cleaned up its owned processes, preserving Code and both servers. Those installed findings were corrected before the subsequent acceptance runs.
+
+The rebuilt Thread artifact establishes the correct staging Wayland class. Four simultaneous real Threads passed exact bearer authentication, primary WSS, home or explicit project scope, persisted draft association and exact prefill checks on the reserved workspaces. Native focus failed because Omarchy held a secure session lock. No typing or provider submission occurred. Owned processes were cleaned and Code and server identities remained unchanged. These partial observations do not establish native input or current close/crash acceptance.
+
+A separate packaged crash prompt producer supplied the exact prefill used for acceptance. A live notification click and wallpaper widget click remain unobserved. The native hotkey attempt while locked did not launch a client and receives no acceptance credit.
 
 ## Gate evidence
 
-Final product source gates passed after all review corrections: `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test --maxWorkers=4` with 13,919 passing tests and the ten inherited server skips. Both product review lanes are closed. These results establish source acceptance, not installed staging behavior. The harness and explicit Thread desktop identity also passed all four gates with 13,936 passing tests. The final browser-history observation correction passed its focused runtime tests and lint. Fresh source review is clear; installed acceptance remains pending the corrected Thread rebuild.
+Final product source gates passed after all review corrections: `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test --maxWorkers=4` with 13,919 passing tests and the ten inherited server skips. Both product review lanes are closed. These results establish source acceptance, not installed staging behavior. The harness and explicit Thread desktop identity also passed all four gates with 13,936 passing tests. The final browser-history observation correction passed its focused runtime tests and lint. Fresh source review is clear. The corrected Thread rebuild is installed; subsequent native acceptance remains partial as recorded above.
 
 ## Commit effects
 
@@ -81,9 +85,13 @@ If applied, this commit preserves directory scope and independent readiness for 
 
 If applied, this commit adds a real desktop harness and explicit staging identity for T3 Thread.
 
+If applied, this commit makes desktop acceptance fail safely on locked sessions and preserves bounded cleanup evidence.
+
 ## Review findings
 
 The fresh directory and readiness review found double normalization could alter a directory ending in a space. Creation now dispatches the original path and uses normalization only for comparison. The regression passed and the reviewer closed the finding. The staging entry review found overly broad state admission and rejection of prompt values that equal recognized flags. The adapter now requires a dedicated staging namespace outside production roots, completes immutable admission before creating state, and consumes prompt values by context. The reviewer closed both findings after all 16 focused tests passed.
+
+The latest harness review identified unbounded raw CDP close and a null composer fingerprint that could overstate Code draft preservation. Close now has a deadline, cleanup errors preserve restoration and evidence, and draft comparison requires observed text. Current Lua dispatch, exact project shell observation and empty editor observation corrections follow installed failures. Fresh review closed both findings and found no new blocking issues. The locked desktop preflight returned `desktop-locked` with zero attempted clients and no pairing credential read. All four final gates passed with 13,940 passing tests and the ten inherited server skips.
 
 ## Deferred findings
 
@@ -91,16 +99,16 @@ Unrelated repository defects and production changes are outside this delivery.
 
 ## Phase completion matrix
 
-R1 complete. R2 through R6 in progress.
+R1 and R2 complete. R3 through R6 remain in progress pending native desktop acceptance and final closeout.
 
 ## Risks and exceptions
 
-Existing staging state needs a pre-migration backup. Production hosts the current agent, so no operation may stop or signal its service. Desktop evidence must identify only harness-owned windows and processes before any close or crash action. Authentication material must never appear in reports.
+The pre-migration staging backup was completed and verified before promotion. Production hosts the current agent, so no operation may stop or signal its service. Desktop evidence must identify only harness-owned windows and processes before any close or crash action. Authentication material must never appear in reports.
 
 ## Final reconciliation
 
-Pending.
+The promoted staging runtime and corrected installed Code and Thread identities are verified. Current desktop acceptance is partial: native typing, the unlocked hotkey and final close/crash cases require normal user unlock. No provider request was submitted. Production identities and the active user workspace remain unchanged.
 
 ## Deliverable closeout
 
-Pending.
+The repository CLI and operator guide are delivered. A private `t3code-staging-thread-check` command runs that CLI in an independent user service with one-use pairing passed through standard input. Its lock check rejects a locked session before pairing issuance. Private configuration retains exact protected identities and fails closed after a stale runtime change. Final native acceptance remains pending normal desktop unlock.

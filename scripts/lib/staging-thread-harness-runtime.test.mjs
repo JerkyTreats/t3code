@@ -6,7 +6,11 @@ import * as NodeSqlite from "node:sqlite";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import {
+  assertDesktopUnlocked,
+  withDeadline,
+  observeCodeDraft,
   matchesProjectScopeObservation,
+  desktopActionArguments,
   noSendSnapshot,
   readinessIdentity,
 } from "./staging-thread-harness-runtime.mjs";
@@ -19,6 +23,23 @@ afterEach(async () =>
 );
 
 describe("staging Thread runtime evidence", () => {
+  it("uses current Lua dispatchers with bounded workspace and window arguments", () => {
+    expect(desktopActionArguments("move", { workspace: 5, address: "0xab12" })).toEqual([
+      "dispatch",
+      'hl.dsp.window.move({workspace="5",window="address:0xab12",follow=false})',
+    ]);
+    expect(desktopActionArguments("focus", { address: "0xab12" })).toEqual([
+      "dispatch",
+      'hl.dsp.focus({window="address:0xab12"})',
+    ]);
+    expect(() => desktopActionArguments("focus", { address: '0xab12"});danger()' })).toThrow(
+      "native-focus-failed",
+    );
+    expect(() => desktopActionArguments("workspace", { workspace: -1 })).toThrow(
+      "native-focus-failed",
+    );
+  });
+
   it("accepts numeric Code readiness start ticks and rejects a recycled process identity", async () => {
     const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "thread-harness-ready-"));
     roots.push(root);
@@ -44,7 +65,6 @@ describe("staging Thread runtime evidence", () => {
       id: "project-one",
       environmentId: "environment-one",
       workspaceRoot: "/workspace/project",
-      deletedAt: null,
     };
     const observation = {
       routeDraftId: "draft-one",
@@ -85,5 +105,43 @@ describe("staging Thread runtime evidence", () => {
       sendAdmissionEvents: 2,
       highWater: 11,
     });
+  });
+});
+
+describe("native desktop admission and cleanup", () => {
+  it("requires a positively unlocked Omarchy session", async () => {
+    await expect(
+      assertDesktopUnlocked(async () => ({ stdout: "false\n" })),
+    ).resolves.toBeUndefined();
+    await expect(assertDesktopUnlocked(async () => ({ stdout: "true\n" }))).rejects.toThrow(
+      "desktop-locked",
+    );
+    await expect(assertDesktopUnlocked(async () => ({ stdout: "" }))).rejects.toThrow(
+      "desktop-lock-state-unavailable",
+    );
+    await expect(
+      assertDesktopUnlocked(async () => {
+        throw new Error("unavailable");
+      }),
+    ).rejects.toThrow("desktop-lock-state-unavailable");
+  });
+
+  it("bounds an unresponsive close so signal fallback can proceed", async () => {
+    let fallback = false;
+    await withDeadline(() => new Promise(() => {}), 10).catch(() => {
+      fallback = true;
+    });
+    expect(fallback).toBe(true);
+    await expect(withDeadline(() => Promise.resolve("closed"), 100)).resolves.toBe("closed");
+  });
+
+  it("requires observed Code draft text and detects changed bytes", () => {
+    const probe = {};
+    expect(() => observeCodeDraft(probe, null)).toThrow("core-code-draft-unobserved");
+    expect(probe.composerFingerprint).toBeUndefined();
+    observeCodeDraft(probe, "draft ");
+    observeCodeDraft(probe, "draft ");
+    expect(probe.composerObservations).toBe(2);
+    expect(() => observeCodeDraft(probe, "draft")).toThrow("core-code-not-usable");
   });
 });
