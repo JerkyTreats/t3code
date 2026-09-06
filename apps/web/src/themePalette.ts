@@ -469,7 +469,7 @@ export function getStandardThemeColors(appearance: ThemeAppearance): ThemeColors
   return (standardLightThemeColors ??= decodeThemeColors(T3_CODE_LIGHT_THEME_COLORS));
 }
 
-type ThemeRgbColor = {
+export type ThemeRgbColor = {
   r: number;
   g: number;
   b: number;
@@ -545,7 +545,7 @@ export function themeColorToHex(value: string): string | null {
   return `${opaque}${alpha}`;
 }
 
-function parseThemeRgbColor(value: string, fallback: ThemeRgbColor): ThemeRgbColor {
+export function parseThemeRgbColor(value: string, fallback: ThemeRgbColor): ThemeRgbColor {
   const parsed = parseThemeColor(value);
   return parsed ? themeOklchToRgb(parsed.color) : fallback;
 }
@@ -560,7 +560,7 @@ function themeRgbToHexColor(color: ThemeRgbColor): string {
     .join("")}`;
 }
 
-function themeRgbToThemeColor(color: ThemeRgbColor): string {
+export function themeRgbToThemeColor(color: ThemeRgbColor): string {
   return formatOklchThemeColor(themeRgbToOklch(color));
 }
 
@@ -595,7 +595,7 @@ function canonicalizeThemeDefinition(theme: ThemeDefinition): ThemeDefinition {
   };
 }
 
-function mixThemeRgbColors(
+export function mixThemeRgbColors(
   base: ThemeRgbColor,
   overlay: ThemeRgbColor,
   amount: number,
@@ -747,7 +747,7 @@ const STANDARD_STATUS_COLORS = {
  * (the unthemed app uses 8% in light and 16% in dark), so alerts still sit on
  * the palette while the signal color stays standard.
  */
-function standardStatusColors(canvas: ThemeRgbColor): {
+export function standardStatusColors(canvas: ThemeRgbColor): {
   error: string;
   errorForeground: string;
   errorSurface: string;
@@ -939,7 +939,7 @@ function themeContrastRatio(first: ThemeRgbColor, second: ThemeRgbColor): number
   return (lighter + 0.05) / (darker + 0.05);
 }
 
-function readableThemeForeground(background: ThemeRgbColor): ThemeRgbColor {
+export function readableThemeForeground(background: ThemeRgbColor): ThemeRgbColor {
   const lightContrast = themeContrastRatio(background, THEME_LIGHT_FOREGROUND);
   const darkContrast = themeContrastRatio(background, THEME_DARK_FOREGROUND);
   if (Math.max(lightContrast, darkContrast) >= 4.5) {
@@ -952,7 +952,7 @@ function readableThemeForeground(background: ThemeRgbColor): ThemeRgbColor {
     : THEME_BLACK_FOREGROUND;
 }
 
-function readableThemeText(
+export function readableThemeText(
   background: ThemeRgbColor,
   foreground: ThemeRgbColor,
   amount: number,
@@ -987,7 +987,7 @@ function readableThemeText(
 const STANDARD_LIGHT_MUTED_CONTRAST = 4.705;
 const STANDARD_DARK_MUTED_CONTRAST = 5.082;
 
-function standardMutedThemeText(
+export function standardMutedThemeText(
   background: ThemeRgbColor,
   foreground: ThemeRgbColor,
 ): ThemeRgbColor {
@@ -1641,7 +1641,13 @@ export function applyThemeColorPreview(colors: ThemeColors, appearance: ThemeApp
   }
 }
 
-export function applyThemePalette(theme: ThemePreference, appearance?: ThemeAppearance): void {
+export type TransientThemePalette = Readonly<{ id: string; colors: ThemeColors }>;
+
+export function applyThemePalette(
+  theme: ThemePreference,
+  appearance?: ThemeAppearance,
+  transient?: TransientThemePalette | null,
+): void {
   if (typeof document === "undefined") return;
 
   const root = document.documentElement;
@@ -1649,6 +1655,16 @@ export function applyThemePalette(theme: ThemePreference, appearance?: ThemeAppe
 
   setThemePreviewSidebarArtwork(null);
   const palette = getThemeDefinition(theme);
+
+  if (transient) {
+    root.dataset.themeId = transient.id;
+    for (const [role, value] of Object.entries(transient.colors) as Array<
+      [ThemeColorRole, string]
+    >) {
+      root.style.setProperty(APP_THEME_VARIABLES[role], value);
+    }
+    return;
+  }
 
   if (palette) {
     root.dataset.themeId = palette.id;

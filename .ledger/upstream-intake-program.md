@@ -466,3 +466,7 @@ The final bounded Style Assurance result passes with no findings and SHA256 `1e1
 ### Commit effect — native bridge
 
 If applied, this commit exposes validated local theme, screenshot and preview controls through the optional desktop bridge.
+
+### Commit effect — omarchy projection
+
+If applied, this commit applies Omarchy colors transiently when the active appearance selects the system theme.

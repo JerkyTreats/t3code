@@ -1073,3 +1073,25 @@ describe("singleAppearanceOf", () => {
     expect(singleAppearanceOf(T3_CHAT_THEME)).toBe(null);
   });
 });
+
+describe("transient desktop palette application", () => {
+  it("activates semantic CSS and clears the transient marker without storing a theme", () => {
+    const style = { removeProperty: vi.fn(), setProperty: vi.fn() };
+    const root = { dataset: {} as Record<string, string>, style };
+    const setItem = vi.fn();
+    vi.stubGlobal("document", { documentElement: root });
+    vi.stubGlobal("window", { localStorage: { getItem: () => null, setItem } });
+    try {
+      applyThemePalette("system", "dark", { id: "omarchy-system", colors: T3_CHAT_THEME.colors });
+      expect(root.dataset.themeId).toBe("omarchy-system");
+      expect(style.setProperty).toHaveBeenCalledTimes(Object.keys(T3_CHAT_THEME.colors).length);
+      expect(setItem).not.toHaveBeenCalled();
+      applyThemePalette("system", "dark");
+      expect(root.dataset.themeId).toBeUndefined();
+      expect(style.removeProperty).toHaveBeenCalled();
+      expect(setItem).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
