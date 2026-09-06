@@ -2,6 +2,8 @@ import * as Layer from "effect/Layer";
 
 import { OrchestrationCommandReceiptRepositoryLive } from "../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../persistence/Layers/OrchestrationEventStore.ts";
+import { BoardLive } from "./Layers/Board.ts";
+import { BoardQueryLive } from "./Layers/BoardQuery.ts";
 import { OrchestrationEngineLive } from "./Layers/OrchestrationEngine.ts";
 import { OrchestrationProjectionPipelineLive } from "./Layers/ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./Layers/ProjectionSnapshotQuery.ts";
@@ -30,7 +32,21 @@ export const OrchestrationInfrastructureLayerLive = Layer.mergeAll(
   Layer.provideMerge(ThreadPlanProgress.layer),
 );
 
+const OrchestrationEngineLayerLive = OrchestrationEngineLive.pipe(
+  Layer.provide(OrchestrationInfrastructureLayerLive),
+);
+const BoardLayerLive = BoardLive.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      OrchestrationEngineLayerLive,
+      BoardQueryLive,
+      OrchestrationInfrastructureLayerLive,
+    ),
+  ),
+);
 export const OrchestrationLayerLive = Layer.mergeAll(
   OrchestrationInfrastructureLayerLive,
-  OrchestrationEngineLive.pipe(Layer.provide(OrchestrationInfrastructureLayerLive)),
+  OrchestrationEngineLayerLive,
+  BoardQueryLive,
+  BoardLayerLive,
 );

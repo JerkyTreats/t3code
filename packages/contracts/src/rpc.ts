@@ -78,6 +78,7 @@ import { KeybindingsConfigError } from "./keybindings.ts";
 import {
   ClientOrchestrationCommand,
   ORCHESTRATION_WS_METHODS,
+  OrchestrationBoardRevisionError,
   OrchestrationDispatchCommandError,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetFullThreadDiffInput,
@@ -1120,6 +1121,30 @@ export const WsOrchestrationGetArchivedShellSnapshotRpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationGetBoardPageRpc = Rpc.make(ORCHESTRATION_WS_METHODS.getBoardPage, {
+  payload: OrchestrationRpcSchemas.getBoardPage.input,
+  success: OrchestrationRpcSchemas.getBoardPage.output,
+  error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+});
+
+export const WsOrchestrationGetBoardPostHistoryRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getBoardPostHistory,
+  {
+    payload: OrchestrationRpcSchemas.getBoardPostHistory.input,
+    success: OrchestrationRpcSchemas.getBoardPostHistory.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsOrchestrationReviseBoardPostRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.reviseBoardPost,
+  {
+    payload: OrchestrationRpcSchemas.reviseBoardPost.input,
+    success: OrchestrationRpcSchemas.reviseBoardPost.output,
+    error: Schema.Union([OrchestrationBoardRevisionError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsOrchestrationSubscribeShellRpc = Rpc.make(ORCHESTRATION_WS_METHODS.subscribeShell, {
   payload: OrchestrationRpcSchemas.subscribeShell.input,
   success: OrchestrationRpcSchemas.subscribeShell.output,
@@ -1136,6 +1161,13 @@ export const WsOrchestrationSubscribeThreadRpc = Rpc.make(
     stream: true,
   },
 );
+
+export const WsOrchestrationSubscribeBoardRpc = Rpc.make(ORCHESTRATION_WS_METHODS.subscribeBoard, {
+  payload: OrchestrationRpcSchemas.subscribeBoard.input,
+  success: OrchestrationRpcSchemas.subscribeBoard.output,
+  error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  stream: true,
+});
 
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
@@ -1308,6 +1340,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetFullThreadDiffRpc,
   WsOrchestrationSearchThreadsRpc,
   WsOrchestrationGetArchivedShellSnapshotRpc,
+  WsOrchestrationGetBoardPageRpc,
+  WsOrchestrationGetBoardPostHistoryRpc,
+  WsOrchestrationReviseBoardPostRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
+  WsOrchestrationSubscribeBoardRpc,
 );

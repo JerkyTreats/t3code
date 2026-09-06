@@ -7,6 +7,8 @@ import {
   OrchestrationThread,
 } from "@t3tools/contracts";
 import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
+import { isBoardEvent } from "../board/Event.ts";
+import { projectBoardEventOntoReadModel } from "../board/EventProjection.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Predicate from "effect/Predicate";
@@ -231,6 +233,10 @@ export function projectEvent(
   model: OrchestrationReadModel,
   event: OrchestrationEvent,
 ): Effect.Effect<OrchestrationReadModel, OrchestrationProjectorDecodeError> {
+  if (isBoardEvent(event)) {
+    return Effect.succeed(projectBoardEventOntoReadModel(model, event));
+  }
+
   const nextBase: OrchestrationReadModel = {
     ...model,
     snapshotSequence: event.sequence,

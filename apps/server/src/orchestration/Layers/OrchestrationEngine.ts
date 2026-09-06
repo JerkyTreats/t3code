@@ -2,6 +2,7 @@ import type {
   OrchestrationClientOrigin,
   OrchestrationEvent,
   OrchestrationReadModel,
+  BoardAggregateId,
   ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -40,6 +41,8 @@ import {
   type OrchestrationDispatchError,
   type OrchestrationProjectorDecodeError,
 } from "../Errors.ts";
+import { makeBoardEventHub } from "../../board/BoardSubscription.ts";
+import { boardCommandAggregateRef, isBoardCommand } from "../../board/Event.ts";
 import { decideOrchestrationCommand } from "../decider.ts";
 import { createEmptyReadModel, projectEvent } from "../projector.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
@@ -62,9 +65,10 @@ interface CommandEnvelope {
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
-  readonly aggregateKind: "project" | "thread";
-  readonly aggregateId: ProjectId | ThreadId;
+  readonly aggregateKind: "project" | "thread" | "board";
+  readonly aggregateId: ProjectId | ThreadId | BoardAggregateId;
 } {
+  if (isBoardCommand(command)) return boardCommandAggregateRef(command);
   switch (command.type) {
     case "project.create":
     case "project.meta.update":
@@ -95,6 +99,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
   const commandQueue = yield* Queue.unbounded<CommandEnvelope>();
   const eventPubSub = yield* PubSub.unbounded<OrchestrationEvent>();
+  const boardEvents = yield* makeBoardEventHub;
 
   const projectEventsOntoReadModel = (
     baseReadModel: OrchestrationReadModel,
@@ -128,6 +133,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
       for (const persistedEvent of persistedEvents) {
         yield* PubSub.publish(eventPubSub, persistedEvent);
+        yield* boardEvents.publish(persistedEvent);
       }
     });
 
@@ -284,6 +290,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         }
         for (const [index, event] of committedCommand.committedEvents.entries()) {
           yield* PubSub.publish(eventPubSub, event);
+          yield* boardEvents.publish(event);
           if (index === 0) {
             yield* Metric.update(
               Metric.withAttributes(
@@ -411,6 +418,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     readThreadEvents,
     getThreadReplayStats,
     dispatch,
+    subscribeBoardDomainEvents: boardEvents.subscribe,
     subscribeDomainEvents: PubSub.subscribe(eventPubSub).pipe(Effect.map(Stream.fromSubscription)),
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (wsServer, ProviderRuntimeIngestion, CheckpointReactor, etc.)

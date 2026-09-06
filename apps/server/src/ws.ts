@@ -86,6 +86,9 @@ import {
 } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as Board from "./orchestration/Services/Board.ts";
+import * as BoardQuery from "./orchestration/Services/BoardQuery.ts";
+import { makeBoardSubscription } from "./board/BoardSubscription.ts";
 import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
 import {
   observeRpcEffect as instrumentRpcEffect,
@@ -148,6 +151,7 @@ import * as ClientConnectionRegistry from "./auth/ClientConnectionRegistry.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import * as RelayClient from "@t3tools/shared/relayClient";
 const isOrchestrationDispatchCommandError = Schema.is(OrchestrationDispatchCommandError);
+const isOrchestrationGetSnapshotError = Schema.is(OrchestrationGetSnapshotError);
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
@@ -429,6 +433,8 @@ const makeWsRpcLayer = (
       const crypto = yield* Crypto.Crypto;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
+      const boardQuery = yield* BoardQuery.BoardQuery;
+      const board = yield* Board.Board;
       const threadDeletionReactor = yield* ThreadDeletionReactor;
       const analytics = yield* AnalyticsService.AnalyticsService;
       // Every command dispatched on this connection carries the connecting
@@ -1321,6 +1327,52 @@ const makeWsRpcLayer = (
             readWorkflowScript({ scriptPath: input.scriptPath }),
             { "rpc.aggregate": "orchestration" },
           ),
+        [ORCHESTRATION_WS_METHODS.getBoardPage]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getBoardPage,
+            boardQuery.getPage(input).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: "Failed to load the global Board page.",
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.getBoardPostHistory]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getBoardPostHistory,
+            boardQuery.getHistory(input).pipe(
+              Effect.flatMap(
+                Option.match({
+                  onNone: () =>
+                    Effect.fail(
+                      new OrchestrationGetSnapshotError({
+                        message: `Board post '${input.postId}' was not found.`,
+                      }),
+                    ),
+                  onSome: Effect.succeed,
+                }),
+              ),
+              Effect.mapError((cause) =>
+                isOrchestrationGetSnapshotError(cause)
+                  ? cause
+                  : new OrchestrationGetSnapshotError({
+                      message: "Failed to load Board revision history.",
+                      cause,
+                    }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.reviseBoardPost]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.reviseBoardPost,
+            board.reviseAsOwner(currentSession.clientId, input),
+            { "rpc.aggregate": "orchestration" },
+          ),
         [ORCHESTRATION_WS_METHODS.getTurnDiff]: (input) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.getTurnDiff,
@@ -1534,6 +1586,15 @@ const makeWsRpcLayer = (
                   }),
               ),
             ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.subscribeBoard]: (input) =>
+          observeRpcStreamEffect(
+            ORCHESTRATION_WS_METHODS.subscribeBoard,
+            Effect.gen(function* () {
+              const domainEvents = yield* orchestrationEngine.subscribeBoardDomainEvents;
+              return yield* makeBoardSubscription({ domainEvents, query: boardQuery })(input);
+            }),
             { "rpc.aggregate": "orchestration" },
           ),
         [ORCHESTRATION_WS_METHODS.subscribeThread]: (input) =>

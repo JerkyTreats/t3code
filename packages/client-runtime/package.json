@@ -87,6 +87,14 @@
       "types": "./src/state/attachments.ts",
       "default": "./src/state/attachments.ts"
     },
+    "./state/board": {
+      "types": "./src/state/board.ts",
+      "default": "./src/state/board.ts"
+    },
+    "./state/board-projection": {
+      "types": "./src/state/boardProjection.ts",
+      "default": "./src/state/boardProjection.ts"
+    },
     "./state/connections": {
       "types": "./src/state/connections.ts",
       "default": "./src/state/connections.ts"

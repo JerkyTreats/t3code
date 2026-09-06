@@ -26,6 +26,7 @@ import type {
 
 import {
   ApprovalRequestId,
+  EnvironmentId,
   OpenCodeSettings,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -33,6 +34,7 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
@@ -128,6 +130,7 @@ const runtimeMock = {
     questionListImplementation: null as (() => Promise<Array<QuestionRequest>>) | null,
     sessionUpdateCalls: [] as Array<{ sessionID: string; permission: unknown }>,
     forkCalls: [] as Array<{ sessionID: string; directory?: string }>,
+    mcpAddCalls: [] as Array<unknown>,
   },
   reset() {
     this.state.startCalls.length = 0;
@@ -182,6 +185,7 @@ const runtimeMock = {
     this.state.questionListImplementation = null;
     this.state.sessionUpdateCalls.length = 0;
     this.state.forkCalls.length = 0;
+    this.state.mcpAddCalls.length = 0;
   },
 };
 
@@ -230,6 +234,12 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
   runOpenCodeCommand: () => Effect.succeed({ stdout: "", stderr: "", code: 0 }),
   createOpenCodeSdkClient: ({ baseUrl, serverPassword }) =>
     ({
+      mcp: {
+        add: async (input: unknown) => {
+          runtimeMock.state.mcpAddCalls.push(input);
+          return { data: true };
+        },
+      },
       session: {
         create: async (input: Record<string, unknown>) => {
           runtimeMock.state.sessionCreateUrls.push(baseUrl);
@@ -557,9 +567,65 @@ const OpenCodeAdapterTestLayer = Layer.effect(
   Layer.provideMerge(NodeServices.layer),
 );
 
+const LocalOpenCodeAdapterTestLayer = Layer.effect(
+  OpenCodeAdapter,
+  makeOpenCodeAdapter(Schema.decodeSync(OpenCodeSettings)({ binaryPath: "fake-opencode" })),
+).pipe(
+  Layer.provideMerge(Layer.succeed(OpenCodeRuntime, OpenCodeRuntimeTestDouble)),
+  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+  Layer.provideMerge(ServerSettingsService.layerTest()),
+  Layer.provideMerge(providerSessionDirectoryTestLayer),
+  Layer.provideMerge(NodeServices.layer),
+);
+
 beforeEach(() => {
   runtimeMock.reset();
+  McpProviderSession.clearAllMcpProviderSessions();
 });
+
+it.effect("attaches separate Board and preview servers to local OpenCode", () =>
+  Effect.gen(function* () {
+    const threadId = asThreadId("thread-opencode-board-preview");
+    McpProviderSession.setMcpProviderSession({
+      environmentId: EnvironmentId.make("environment-opencode-board-preview"),
+      threadId,
+      providerSessionId: "provider-session-opencode-board-preview",
+      providerInstanceId: ProviderInstanceId.make("opencode"),
+      capabilities: new Set(["board", "preview"]),
+      boardEndpoint: "http://127.0.0.1:43123/mcp",
+      previewEndpoint: "http://127.0.0.1:43123/mcp/preview",
+      authorizationHeader: "Bearer synthetic-opencode-token",
+    });
+    const adapter = yield* OpenCodeAdapter;
+
+    yield* adapter.startSession({
+      provider: ProviderDriverKind.make("opencode"),
+      threadId,
+      runtimeMode: "full-access",
+    });
+
+    NodeAssert.deepEqual(runtimeMock.state.mcpAddCalls, [
+      {
+        name: "t3-code",
+        config: {
+          type: "remote",
+          url: "http://127.0.0.1:43123/mcp",
+          headers: { Authorization: "Bearer synthetic-opencode-token" },
+          oauth: false,
+        },
+      },
+      {
+        name: "t3-code-preview",
+        config: {
+          type: "remote",
+          url: "http://127.0.0.1:43123/mcp/preview",
+          headers: { Authorization: "Bearer synthetic-opencode-token" },
+          oauth: false,
+        },
+      },
+    ]);
+  }).pipe(Effect.provide(LocalOpenCodeAdapterTestLayer)),
+);
 
 const advanceTestClock = (ms: number) =>
   TestClock.adjust(`${ms} millis`).pipe(Effect.andThen(Effect.yieldNow));

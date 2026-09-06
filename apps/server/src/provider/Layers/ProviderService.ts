@@ -69,6 +69,8 @@ import * as ProviderSessionDirectory from "../Services/ProviderSessionDirectory.
 import { type EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
+import * as BoardTurnWritePolicy from "../../board/TurnWritePolicy.ts";
+import { resolveProviderMcpCapabilities } from "../../board/ProviderCapabilityPolicy.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
@@ -100,6 +102,8 @@ export interface ProviderServiceLiveOptions {
   readonly issueMcpCredential?: typeof McpSessionRegistry.issueActiveMcpCredential;
   /** Same seam as `issueMcpCredential`, for observing the deny path's revoke. */
   readonly revokeMcpCredential?: typeof McpSessionRegistry.revokeActiveMcpThread;
+  /** Observes the per-turn Board write-mode update without replacing the token. */
+  readonly setMcpBoardWriteEnabled?: typeof McpSessionRegistry.setActiveMcpBoardWriteEnabled;
 }
 
 interface TurnAnalyticsMetadata {
@@ -327,6 +331,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
   const revokeMcpCredential =
     options?.revokeMcpCredential ?? McpSessionRegistry.revokeActiveMcpThread;
+  const setMcpBoardWriteEnabled =
+    options?.setMcpBoardWriteEnabled ?? McpSessionRegistry.setActiveMcpBoardWriteEnabled;
+  const boardTurnWritePolicy = yield* BoardTurnWritePolicy.make(setMcpBoardWriteEnabled);
   const fileSystem = yield* FileSystem.FileSystem;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const pendingCompactions = new Map<ThreadId, PendingCompaction>();
@@ -698,14 +705,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     });
     yield* recordCompletedTurnProperties(properties);
   });
-  /**
-   * Attach the `t3-code` MCP server to the session that is about to start.
-   *
-   * This is the only place a credential is minted, so withholding one here is
-   * what disables agent browser access everywhere: every adapter already
-   * treats a missing session as "no MCP server", and the `/mcp` endpoint
-   * accepts nothing but tokens issued from this path.
-   */
+  /** Attach only the capabilities admitted for the resolved provider driver. */
   /**
    * Deny on an unreadable settings file rather than letting the read failure
    * escape: adding `ServerSettingsError` to `ProviderServiceError` would widen
@@ -724,27 +724,41 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     ),
   );
 
-  const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
+  const prepareMcpSession = (
+    threadId: ThreadId,
+    providerInstanceId: ProviderInstanceId,
+    provider: ProviderDriverKind,
+  ) =>
     Effect.gen(function* () {
-      if (!(yield* agentBrowserAccessEnabled)) {
-        // Revoke as well as clear. Every other prepare path reaches
-        // `issueActiveMcpCredential`, which revokes the thread first, so
-        // skipping it here would leave a previously issued bearer token valid
-        // against `/mcp` for the rest of its liveness window — and later turns
-        // would keep refreshing it. A session restart (runtime mode, cwd,
-        // model) re-prepares without stopping, so it relies on this.
+      yield* boardTurnWritePolicy.cancelDispatches(threadId);
+      const capabilities = resolveProviderMcpCapabilities({
+        provider,
+        previewEnabled: yield* agentBrowserAccessEnabled,
+      });
+      if (capabilities.size === 0) {
+        // Restart preparation must invalidate any previously issued token when
+        // the resolved provider now receives no MCP capability.
         yield* revokeMcpCredential(threadId);
+        yield* boardTurnWritePolicy.reset(threadId);
         yield* Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId));
         return undefined;
       }
-      const credential = yield* issueMcpCredential({ threadId, providerInstanceId });
+      const credential = yield* issueMcpCredential({
+        threadId,
+        providerInstanceId,
+        capabilities,
+      });
+      yield* boardTurnWritePolicy.reset(threadId);
       if (credential) {
         yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
+      } else {
+        yield* Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId));
       }
       return credential;
     });
   const clearMcpSession = (threadId: ThreadId) =>
-    McpSessionRegistry.revokeActiveMcpThread(threadId).pipe(
+    revokeMcpCredential(threadId).pipe(
+      Effect.tap(() => boardTurnWritePolicy.reset(threadId)),
       Effect.tap(() => Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId))),
     );
 
@@ -885,8 +899,14 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         canonicalEvent.type === "turn.completed" ||
         canonicalEvent.type === "turn.aborted"
       ) {
+        yield* boardTurnWritePolicy.terminal(
+          canonicalEvent.threadId,
+          source.instanceId,
+          canonicalEvent.turnId,
+        );
         yield* recordTurnCompletedAnalytics(source, canonicalEvent);
       } else if (canonicalEvent.type === "session.exited") {
+        yield* boardTurnWritePolicy.exited(canonicalEvent.threadId, source.instanceId);
         yield* clearTurnAnalyticsSession(source.instanceId, canonicalEvent.threadId);
       }
       if (
@@ -1026,7 +1046,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
 
-      yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
+      yield* prepareMcpSession(input.binding.threadId, bindingInstanceId, adapter.provider);
       const resumed = yield* adapter
         .startSession({
           threadId: input.binding.threadId,
@@ -1057,6 +1077,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       });
       return { adapter, session: resumed } as const;
     }).pipe(
+      (effect) => boardTurnWritePolicy.withCredentialLifecycle(input.binding.threadId, effect),
       withMetrics({
         counter: providerSessionsTotal,
         attributes: providerMetricAttributes(input.binding.provider, {
@@ -1257,7 +1278,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         }
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
         yield* clearTurnAnalyticsSession(resolvedInstanceId, threadId);
-        yield* prepareMcpSession(threadId, resolvedInstanceId);
+        yield* prepareMcpSession(threadId, resolvedInstanceId, resolvedProvider);
         const session = yield* adapter
           .startSession({
             ...input,
@@ -1312,6 +1333,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
         return sessionWithInstance;
       }).pipe(
+        (effect) => boardTurnWritePolicy.withCredentialLifecycle(threadId, effect),
         withMetrics({
           counter: providerSessionsTotal,
           attributes: () =>
@@ -1422,32 +1444,42 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
       const analyticsModelSelection =
         input.modelSelection?.instanceId === routed.instanceId ? input.modelSelection : undefined;
-      const turn = yield* Effect.acquireUseRelease(
-        beginTurnAnalytics({
-          providerInstanceId: routed.instanceId,
-          provider: routed.adapter.provider,
-          threadId: input.threadId,
-          modelSelection: analyticsModelSelection,
-          interactionMode: input.interactionMode,
-          runtimeMode: routed.runtimeMode,
-        }),
-        (turnMetadata) =>
-          Effect.gen(function* () {
-            const turn = yield* routed.adapter.sendTurn(input);
-            yield* associateTurnAnalytics({
-              providerInstanceId: routed.instanceId,
-              threadId: input.threadId,
-              turnId: String(turn.turnId),
-              metadata: turnMetadata,
-            });
-            return turn;
-          }),
-        (turnMetadata) =>
-          clearPendingTurnAnalytics({
-            providerInstanceId: routed.instanceId,
-            threadId: input.threadId,
-            requestId: turnMetadata.requestId,
-          }),
+      const turn = yield* boardTurnWritePolicy.trackDispatch(
+        input.threadId,
+        Effect.acquireUseRelease(
+          boardTurnWritePolicy.begin(input.threadId, routed.instanceId, input.interactionMode),
+          (admission) =>
+            Effect.acquireUseRelease(
+              beginTurnAnalytics({
+                providerInstanceId: routed.instanceId,
+                provider: routed.adapter.provider,
+                threadId: input.threadId,
+                modelSelection: analyticsModelSelection,
+                interactionMode: input.interactionMode,
+                runtimeMode: routed.runtimeMode,
+              }),
+              (turnMetadata) =>
+                Effect.gen(function* () {
+                  const turn = yield* routed.adapter.sendTurn(input);
+                  yield* associateTurnAnalytics({
+                    providerInstanceId: routed.instanceId,
+                    threadId: input.threadId,
+                    turnId: String(turn.turnId),
+                    metadata: turnMetadata,
+                  });
+                  return turn;
+                }),
+              (turnMetadata) =>
+                clearPendingTurnAnalytics({
+                  providerInstanceId: routed.instanceId,
+                  threadId: input.threadId,
+                  requestId: turnMetadata.requestId,
+                }),
+            ).pipe(
+              Effect.tap((turn) => boardTurnWritePolicy.associate(admission, String(turn.turnId))),
+            ),
+          (admission) => boardTurnWritePolicy.failed(admission),
+        ),
       );
       yield* directory.upsert({
         threadId: input.threadId,
@@ -1744,6 +1776,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.kind": routed.adapter.provider,
           "provider.thread_id": input.threadId,
         });
+        yield* boardTurnWritePolicy.cancelDispatches(input.threadId);
         if (routed.isActive) {
           yield* routed.adapter.stopSession(routed.threadId);
         }
@@ -1769,6 +1802,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           provider: routed.adapter.provider,
         });
       }).pipe(
+        (effect) => boardTurnWritePolicy.withCredentialLifecycle(input.threadId, effect),
         withMetrics({
           counter: providerSessionsTotal,
           outcomeAttributes: () =>
@@ -1972,72 +2006,81 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   );
 
   const runStopAll = Effect.fn("runStopAll")(function* () {
-    const continueAfterRestart = yield* serverSettings.getSettings.pipe(
-      Effect.map((settings) => settings.continueThreadsAfterServerUpdate),
-      Effect.orElseSucceed(() => false),
-    );
-    const properties = yield* Ref.modify(turnAnalytics, (state) => {
-      const completed: Array<Readonly<Record<string, unknown>>> = [];
-      for (const [sessionKey, session] of state.sessions) {
-        for (const [turnId, completion] of session.deferredCompletionsByTurnId) {
-          const entry = finishTurnAnalytics(state, { sessionKey, turnId, completion });
-          if (entry) completed.push(entry);
-        }
-      }
-      state.sessions.clear();
-      return [completed, state] as const;
-    });
-    yield* recordCompletedTurnProperties(properties);
-    const threadIds = yield* directory.listThreadIds();
-    const currentAdapters = yield* getAdapterEntries;
-    const activeSessions = yield* Effect.forEach(currentAdapters, ([instanceId, adapter]) =>
-      adapter.listSessions().pipe(
-        Effect.map((sessions) =>
-          sessions.map((session) => ({
-            ...session,
-            providerInstanceId: instanceId,
-          })),
-        ),
-      ),
-    ).pipe(Effect.map((sessionsByAdapter) => sessionsByAdapter.flatMap((sessions) => sessions)));
-    yield* Effect.forEach(activeSessions, (session) =>
-      Effect.flatMap(nowIso, (lastRuntimeEventAt) =>
-        upsertSessionBinding(session, session.threadId, {
-          ...(continueAfterRestart && session.status === "running" && session.activeTurnId
-            ? { continueAfterServerUpdate: session.activeTurnId }
-            : {}),
-          lastRuntimeEvent: "provider.stopAll",
-          lastRuntimeEventAt,
-        }),
-      ),
-    ).pipe(Effect.asVoid);
-    yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
-    yield* McpSessionRegistry.revokeAllActiveMcpCredentials();
-    McpProviderSession.clearAllMcpProviderSessions();
-    const bindings = yield* directory.listBindings().pipe(Effect.orElseSucceed(() => []));
-    yield* Effect.forEach(bindings, (binding) =>
+    return yield* boardTurnWritePolicy.withAllCredentialLifecycles(
       Effect.gen(function* () {
-        const providerInstanceId = dieOnMissingBindingInstanceId(
-          "ProviderService.stopAll",
-          binding,
+        const continueAfterRestart = yield* serverSettings.getSettings.pipe(
+          Effect.map((settings) => settings.continueThreadsAfterServerUpdate),
+          Effect.orElseSucceed(() => false),
         );
-        return yield* directory.upsert({
-          threadId: binding.threadId,
-          provider: binding.provider,
-          providerInstanceId,
-          status: "stopped",
-          runtimePayload: {
-            activeTurnId: null,
-            lastRuntimeEvent: "provider.stopAll",
-            lastRuntimeEventAt: yield* nowIso,
-          },
+        const properties = yield* Ref.modify(turnAnalytics, (state) => {
+          const completed: Array<Readonly<Record<string, unknown>>> = [];
+          for (const [sessionKey, session] of state.sessions) {
+            for (const [turnId, completion] of session.deferredCompletionsByTurnId) {
+              const entry = finishTurnAnalytics(state, { sessionKey, turnId, completion });
+              if (entry) completed.push(entry);
+            }
+          }
+          state.sessions.clear();
+          return [completed, state] as const;
         });
+        yield* recordCompletedTurnProperties(properties);
+        const threadIds = yield* directory.listThreadIds();
+        const currentAdapters = yield* getAdapterEntries;
+        const activeSessions = yield* Effect.forEach(currentAdapters, ([instanceId, adapter]) =>
+          adapter.listSessions().pipe(
+            Effect.map((sessions) =>
+              sessions.map((session) => ({
+                ...session,
+                providerInstanceId: instanceId,
+              })),
+            ),
+          ),
+        ).pipe(
+          Effect.map((sessionsByAdapter) => sessionsByAdapter.flatMap((sessions) => sessions)),
+        );
+        yield* Effect.forEach(activeSessions, (session) =>
+          Effect.flatMap(nowIso, (lastRuntimeEventAt) =>
+            upsertSessionBinding(session, session.threadId, {
+              ...(continueAfterRestart && session.status === "running" && session.activeTurnId
+                ? { continueAfterServerUpdate: session.activeTurnId }
+                : {}),
+              lastRuntimeEvent: "provider.stopAll",
+              lastRuntimeEventAt,
+            }),
+          ),
+        ).pipe(Effect.asVoid);
+        yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(
+          Effect.asVoid,
+        );
+        yield* McpSessionRegistry.revokeAllActiveMcpCredentials();
+        yield* boardTurnWritePolicy.resetAll;
+        McpProviderSession.clearAllMcpProviderSessions();
+        const bindings = yield* directory.listBindings().pipe(Effect.orElseSucceed(() => []));
+        yield* Effect.forEach(bindings, (binding) =>
+          Effect.gen(function* () {
+            const providerInstanceId = dieOnMissingBindingInstanceId(
+              "ProviderService.stopAll",
+              binding,
+            );
+            return yield* directory.upsert({
+              threadId: binding.threadId,
+              provider: binding.provider,
+              providerInstanceId,
+              status: "stopped",
+              runtimePayload: {
+                activeTurnId: null,
+                lastRuntimeEvent: "provider.stopAll",
+                lastRuntimeEventAt: yield* nowIso,
+              },
+            });
+          }),
+        ).pipe(Effect.asVoid);
+        yield* analytics.record("provider.sessions.stopped_all", {
+          sessionCount: threadIds.length,
+        });
+        yield* analytics.flush;
       }),
-    ).pipe(Effect.asVoid);
-    yield* analytics.record("provider.sessions.stopped_all", {
-      sessionCount: threadIds.length,
-    });
-    yield* analytics.flush;
+    );
   });
 
   yield* Effect.addFinalizer(() =>

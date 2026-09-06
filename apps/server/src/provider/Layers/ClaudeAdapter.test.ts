@@ -14,6 +14,7 @@ import type {
 import {
   ApprovalRequestId,
   ClaudeSettings,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
@@ -37,6 +38,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import {
   SYNTHETIC_CLAUDE_CAPABLE_MODEL,
@@ -46,6 +48,7 @@ import {
   SYNTHETIC_CLAUDE_THINKING_MODEL,
 } from "../ClaudeModelCatalog.testFixtures.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
+import { T3_CODE_BOARD_TOOL_INSTRUCTIONS } from "../BoardToolInstructions.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import type { ClaudeScopedLimitNames } from "./claudeUsageLimits.ts";
 import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
@@ -307,6 +310,59 @@ const RESUME_THREAD_ID = ThreadId.make("thread-claude-resume");
 const SYNTHETIC_SUBAGENT_MODEL = "claude-synthetic-subagent[expanded]";
 
 describe("ClaudeAdapterLive", () => {
+  it.effect("attaches separate Board and preview servers with Board instructions", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      yield* Effect.sync(() =>
+        McpProviderSession.setMcpProviderSession({
+          environmentId: EnvironmentId.make("environment-claude-board-preview"),
+          threadId: THREAD_ID,
+          providerSessionId: "provider-session-claude-board-preview",
+          providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+          capabilities: new Set(["board", "preview"]),
+          boardEndpoint: "http://127.0.0.1:43123/mcp",
+          previewEndpoint: "http://127.0.0.1:43123/mcp/preview",
+          authorizationHeader: "Bearer synthetic-claude-token",
+        }),
+      );
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => McpProviderSession.clearMcpProviderSession(THREAD_ID)),
+      );
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const options = harness.getLastCreateQueryInput()?.options;
+      const systemPrompt = options?.systemPrompt;
+      assert.isObject(systemPrompt);
+      if (
+        typeof systemPrompt !== "object" ||
+        systemPrompt === null ||
+        Array.isArray(systemPrompt) ||
+        !("type" in systemPrompt) ||
+        systemPrompt.type !== "preset"
+      ) {
+        assert.fail("Expected the Claude preset system prompt");
+      }
+      assert.include(systemPrompt.append ?? "", T3_CODE_BOARD_TOOL_INSTRUCTIONS);
+      assert.deepEqual(options?.mcpServers, {
+        "t3-code": {
+          type: "http",
+          url: "http://127.0.0.1:43123/mcp",
+          headers: { Authorization: "Bearer synthetic-claude-token" },
+        },
+        "t3-code-preview": {
+          type: "http",
+          url: "http://127.0.0.1:43123/mcp/preview",
+          headers: { Authorization: "Bearer synthetic-claude-token" },
+        },
+      });
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("returns validation error for non-claude provider on startSession", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

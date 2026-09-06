@@ -2,7 +2,7 @@
 
 Date: 2026-09-05
 Status: in progress
-Readiness: S34 source acceptance passes; local delivery commits are being recorded
+Readiness: S34 source acceptance passes; Board commit closes its delivery gate; S5 prerequisites are next
 Branch: `reconcile/upstream-intake-20260905`
 
 ## Objective Baseline
@@ -40,9 +40,9 @@ The root owns migration identities, shared contracts, broad hosts, integration a
 | ----- | ----------------------------------------------------------------------------- | ----------------------------------------------- | --------------------- | ------------------------------------------------ |
 | S1    | New persistence opens supported fork history and applies upstream corrections | Pinned baseline and historical fixture contract | Complete              | Root migration owner; two proof lanes integrated |
 | S2    | Exact-origin Git and external Admin authority                                 | S12 joint persistence acceptance                | Complete              | Four bounded implementation lanes                |
-| S3    | Global Board and truthful liaison behavior                                    | S1, S2                                          | In progress           | Active S34 contract and MCP prerequisites        |
-| S4    | Normal upstream sends/rendering and complete fork retirement                  | S1, S2                                          | In progress           | Active S34 retirement and substrate proof        |
-| S5    | Retained visuals and thin adapters                                            | S4                                              | Blocked by dependency | Visual baseline and exact adapters to freeze     |
+| S3    | Global Board and truthful liaison behavior                                    | S1, S2                                          | Complete              | Accepted S34 runtime, provider and client proof  |
+| S4    | Normal upstream sends/rendering and complete fork retirement                  | S1, S2                                          | Complete              | Accepted S34 retirement and substrate proof      |
+| S5    | Retained visuals and thin adapters                                            | S4                                              | Ready                 | Reference captured; shared source prework next   |
 | S6    | Independent installed Linux clients and Thread                                | S2, S4, S5                                      | Blocked by dependency | Source and installed compatibility to prove      |
 | S7    | Integrated preservation and rollback evidence                                 | S3 through S6                                   | Blocked by dependency | No acceptance claim                              |
 
@@ -118,7 +118,7 @@ Provider lifecycle state retains one historical session entry per thread until e
 
 ## Phase Completion Matrix
 
-S1 and S2 are complete as the joined S12 source delivery group through `2b691e322`. S34 implementation, full gates, logical review, ordered Style Assurance and root acceptance pass; local commits are being recorded. S5 reference capture and adapter contracts are prepared. Final visuals and installed Linux/Thread acceptance remain pending.
+S1 and S2 are complete as the joined S12 source delivery group through `2b691e322`. S34 implementation, full gates, logical review, ordered Style Assurance and root acceptance pass; this Board commit closes its source delivery gate. S5 reference capture and adapter contracts are prepared. Final visuals and installed Linux/Thread acceptance remain pending.
 
 ## Risks And Exceptions
 
@@ -132,7 +132,7 @@ Pending all required slices. Origin has not been mutated and no deployment has o
 
 ## Deliverable Closeout
 
-Supported fork databases open through the current runtime with their retained history and explicit device authority. Repository operations use exact origin, external device administration stays with the portal, and runtime acquisition follows the managed fork installation boundary. These accepted source outcomes are prerequisites to the complete product; Board and chat retirement pass source acceptance and await the local commit gate; visuals and installed Linux/Thread acceptance remain pending.
+Supported fork databases open through the current runtime with their retained history and explicit device authority. Repository operations use exact origin, external device administration stays with the portal, and runtime acquisition follows the managed fork installation boundary. These accepted source outcomes are prerequisites to the complete product; Board and chat retirement pass source acceptance, with this Board commit closing their local gate; visuals and installed Linux/Thread acceptance remain pending.
 
 ### S1 prerequisite handoff
 
@@ -373,3 +373,11 @@ Local delivery uses two focused commits: the historical retirement record and it
 If applied, this commit records the approved retirement of the fork web outbox, custom Markdown renderer, rendered-document comments and queue shelf.
 
 Compatibility: these retired fork workflows do not return in the reconciled client. Dispose of any old pending web outbox work explicitly in the old client before cutover. The source change neither resends nor removes that work and performs no live cutover. Historical retirement records create no current replay or compatibility obligation.
+
+### Global Board delivery
+
+If applied, this commit restores the global Board with authenticated agent posts, revisioned corrections, bounded updates and mode-aware provider access in the current client.
+
+The Board feature is atomic across shared schemas, MCP and SQL runtime, provider lifecycle and the web panel. Explicit supported-provider capabilities remain independent of preview. Plan work retains session-wide write denial through overlapping sends and credential transitions. Human readers share the same Board; only authorized owners correct posts. Codex receives the root Collective prompt contract without a durable exactly-once guarantee.
+
+Compatibility: matching current clients and server are required. Right-panel state upgrades from origin version 12 to version 13 and preserves the prior visible panel; keep the previous browser profile if intentionally downgrading. Board history and historical provenance survive. The historical retirement record is committed as `9ddd85585`. This Board commit closes S34 source delivery; S5, S6 and S7 remain open.

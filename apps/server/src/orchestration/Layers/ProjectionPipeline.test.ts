@@ -1,5 +1,9 @@
 import {
   ApprovalRequestId,
+  AuthClientId,
+  BOARD_AGGREGATE_ID,
+  BoardAuthorId,
+  BoardPostId,
   CheckpointRef,
   CommandId,
   CorrelationId,
@@ -96,6 +100,7 @@ it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-curs
         assert.deepEqual(
           yield* projectionState.listAll(),
           Object.values(ORCHESTRATION_PROJECTOR_NAMES)
+            .filter((name) => name !== ORCHESTRATION_PROJECTOR_NAMES.boardPosts)
             .sort()
             .map((projector) => ({
               projector,
@@ -319,7 +324,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         FROM projection_state
         ORDER BY projector ASC
       `;
-      assert.equal(stateRows.length, Object.keys(ORCHESTRATION_PROJECTOR_NAMES).length);
+      assert.equal(stateRows.length, Object.keys(ORCHESTRATION_PROJECTOR_NAMES).length - 1);
       for (const row of stateRows) {
         assert.equal(row.lastAppliedSequence, 3);
       }
@@ -1659,7 +1664,9 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       const lastSequence = appendedEvents[appendedEvents.length - 1]!.sequence;
 
       yield* Effect.forEach(
-        Object.values(ORCHESTRATION_PROJECTOR_NAMES),
+        Object.values(ORCHESTRATION_PROJECTOR_NAMES).filter(
+          (name) => name !== ORCHESTRATION_PROJECTOR_NAMES.boardPosts,
+        ),
         (projector) => {
           const lastAppliedSequence =
             projector === ORCHESTRATION_PROJECTOR_NAMES.projects
@@ -4124,3 +4131,313 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
     }),
   );
 });
+
+it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-board-projection-hotpath-")))(
+  "OrchestrationProjectionPipeline Board filtering",
+  (it) => {
+    it.effect("skips unrelated live and replay writes while rebuilding every Board event", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const now = "2026-01-01T00:00:00.000Z";
+
+        const firstBoardEvent = yield* eventStore.append({
+          type: "board.post-published",
+          eventId: EventId.make("evt-board-hotpath-1"),
+          aggregateKind: "board",
+          aggregateId: BOARD_AGGREGATE_ID,
+          occurredAt: now,
+          commandId: CommandId.make("cmd-board-hotpath-1"),
+          causationEventId: null,
+          correlationId: CommandId.make("cmd-board-hotpath-1"),
+          metadata: {},
+          payload: {
+            postId: BoardPostId.make("post-board-hotpath-1"),
+            author: {
+              kind: "agent",
+              id: BoardAuthorId.make("board-hotpath-agent"),
+              providerInstanceId: ProviderInstanceId.make("codex"),
+            },
+            source: {
+              projectId: ProjectId.make("project-board-hotpath"),
+              threadId: ThreadId.make("thread-board-hotpath"),
+            },
+            body: "First Board post",
+            targets: [],
+            createdAt: now,
+          },
+        });
+
+        yield* projectionPipeline.bootstrap;
+
+        const unrelatedEvent = yield* eventStore.append({
+          type: "project.created",
+          eventId: EventId.make("evt-board-hotpath-unrelated"),
+          aggregateKind: "project",
+          aggregateId: ProjectId.make("project-board-hotpath-unrelated"),
+          occurredAt: "2026-01-01T00:00:01.000Z",
+          commandId: CommandId.make("cmd-board-hotpath-unrelated"),
+          causationEventId: null,
+          correlationId: CommandId.make("cmd-board-hotpath-unrelated"),
+          metadata: {},
+          payload: {
+            projectId: ProjectId.make("project-board-hotpath-unrelated"),
+            title: "Unrelated project",
+            workspaceRoot: "/tmp/project-board-hotpath-unrelated",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: "2026-01-01T00:00:01.000Z",
+            updatedAt: "2026-01-01T00:00:01.000Z",
+          },
+        });
+
+        yield* sql`
+            CREATE TRIGGER reject_unrelated_board_projection_state_update
+            BEFORE UPDATE ON projection_state
+            WHEN OLD.projector = 'projection.board-posts'
+            BEGIN
+              SELECT RAISE(ABORT, 'unexpected Board projection state update');
+            END
+          `;
+
+        yield* projectionPipeline.projectEvent(unrelatedEvent);
+        yield* projectionPipeline.bootstrap;
+
+        const boardStateAfterUnrelatedEvent = yield* sql<{
+          readonly lastAppliedSequence: number;
+        }>`
+            SELECT last_applied_sequence AS "lastAppliedSequence"
+            FROM projection_state
+            WHERE projector = 'projection.board-posts'
+          `;
+        assert.deepEqual(boardStateAfterUnrelatedEvent, [
+          { lastAppliedSequence: firstBoardEvent.sequence },
+        ]);
+
+        yield* sql`DROP TRIGGER reject_unrelated_board_projection_state_update`;
+
+        for (let index = 0; index < 1_000; index += 1) {
+          const suffix = String(index);
+          yield* eventStore.append({
+            type: "project.created",
+            eventId: EventId.make(`evt-board-hotpath-unrelated-${suffix}`),
+            aggregateKind: "project",
+            aggregateId: ProjectId.make(`project-board-hotpath-unrelated-${suffix}`),
+            occurredAt: "2026-01-01T00:00:01.000Z",
+            commandId: CommandId.make(`cmd-board-hotpath-unrelated-${suffix}`),
+            causationEventId: null,
+            correlationId: CommandId.make(`cmd-board-hotpath-unrelated-${suffix}`),
+            metadata: {},
+            payload: {
+              projectId: ProjectId.make(`project-board-hotpath-unrelated-${suffix}`),
+              title: `Unrelated project ${suffix}`,
+              workspaceRoot: `/tmp/project-board-hotpath-unrelated-${suffix}`,
+              defaultModelSelection: null,
+              scripts: [],
+              createdAt: "2026-01-01T00:00:01.000Z",
+              updatedAt: "2026-01-01T00:00:01.000Z",
+            },
+          });
+        }
+
+        const secondBoardEvent = yield* eventStore.append({
+          type: "board.post-published",
+          eventId: EventId.make("evt-board-hotpath-2"),
+          aggregateKind: "board",
+          aggregateId: BOARD_AGGREGATE_ID,
+          occurredAt: "2026-01-01T00:00:02.000Z",
+          commandId: CommandId.make("cmd-board-hotpath-2"),
+          causationEventId: null,
+          correlationId: CommandId.make("cmd-board-hotpath-2"),
+          metadata: {},
+          payload: {
+            postId: BoardPostId.make("post-board-hotpath-2"),
+            author: {
+              kind: "agent",
+              id: BoardAuthorId.make("board-hotpath-agent"),
+              providerInstanceId: ProviderInstanceId.make("codex"),
+            },
+            source: {
+              projectId: ProjectId.make("project-board-hotpath"),
+              threadId: ThreadId.make("thread-board-hotpath"),
+            },
+            body: "Second Board post",
+            targets: [],
+            createdAt: "2026-01-01T00:00:02.000Z",
+          },
+        });
+
+        yield* projectionPipeline.bootstrap;
+
+        const projectedBeforeRebuild = yield* sql<{
+          readonly id: string;
+          readonly sequence: number;
+        }>`
+            SELECT post_id AS id, event_sequence AS sequence
+            FROM projection_board_posts
+            ORDER BY event_sequence ASC
+          `;
+        assert.deepEqual(projectedBeforeRebuild, [
+          { id: "post-board-hotpath-1", sequence: firstBoardEvent.sequence },
+          { id: "post-board-hotpath-2", sequence: secondBoardEvent.sequence },
+        ]);
+
+        yield* sql`DELETE FROM projection_board_posts`;
+        yield* sql`
+            DELETE FROM projection_state
+            WHERE projector = 'projection.board-posts'
+          `;
+        yield* projectionPipeline.bootstrap;
+
+        const projectedAfterRebuild = yield* sql<{
+          readonly id: string;
+          readonly sequence: number;
+        }>`
+            SELECT post_id AS id, event_sequence AS sequence
+            FROM projection_board_posts
+            ORDER BY event_sequence ASC
+          `;
+        assert.deepEqual(projectedAfterRebuild, projectedBeforeRebuild);
+
+        const boardStateAfterRebuild = yield* sql<{
+          readonly lastAppliedSequence: number;
+        }>`
+            SELECT last_applied_sequence AS "lastAppliedSequence"
+            FROM projection_state
+            WHERE projector = 'projection.board-posts'
+          `;
+        assert.deepEqual(boardStateAfterRebuild, [
+          { lastAppliedSequence: secondBoardEvent.sequence },
+        ]);
+      }),
+    );
+  },
+);
+
+it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-board-revision-projection-")))(
+  "OrchestrationProjectionPipeline Board revisions",
+  (it) => {
+    it.effect("projects one current post and rebuilds its complete append-only history", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const postId = BoardPostId.make("post-board-revision");
+        const author = {
+          kind: "agent" as const,
+          id: BoardAuthorId.make("board-revision-agent"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        };
+        const source = {
+          projectId: ProjectId.make("project-board-revision"),
+          threadId: ThreadId.make("thread-board-revision"),
+        };
+
+        const published = yield* eventStore.append({
+          type: "board.post-published",
+          eventId: EventId.make("evt-board-revision-published"),
+          aggregateKind: "board",
+          aggregateId: BOARD_AGGREGATE_ID,
+          occurredAt: "2026-01-01T00:00:00.000Z",
+          commandId: CommandId.make("cmd-board-revision-published"),
+          causationEventId: null,
+          correlationId: CommandId.make("cmd-board-revision-published"),
+          metadata: {},
+          payload: {
+            postId,
+            author,
+            source,
+            body: "Original claim",
+            targets: ["collective"],
+            createdAt: "2026-01-01T00:00:00.000Z",
+          },
+        });
+        yield* projectionPipeline.bootstrap;
+
+        const revised = yield* eventStore.append({
+          type: "board.post-revised",
+          eventId: EventId.make("evt-board-revision-corrected"),
+          aggregateKind: "board",
+          aggregateId: BOARD_AGGREGATE_ID,
+          occurredAt: "2026-01-01T00:00:01.000Z",
+          commandId: CommandId.make("cmd-board-revision-corrected"),
+          causationEventId: null,
+          correlationId: CommandId.make("cmd-board-revision-corrected"),
+          metadata: {},
+          payload: {
+            postId,
+            previousRevision: 1,
+            revision: 2,
+            editor: {
+              kind: "environment-owner",
+              clientId: AuthClientId.make("owner-client"),
+            },
+            editorSource: null,
+            body: "Corrected claim",
+            targets: ["collective", "verified"],
+            revisedAt: "2026-01-01T00:00:01.000Z",
+          },
+        });
+        yield* projectionPipeline.bootstrap;
+
+        const readProjection = () =>
+          sql<{
+            readonly body: string;
+            readonly sequence: number;
+            readonly revision: number;
+            readonly updatedSequence: number;
+            readonly author: string;
+          }>`
+            SELECT
+              body,
+              event_sequence AS sequence,
+              revision,
+              updated_event_sequence AS "updatedSequence",
+              author_json AS author
+            FROM projection_board_posts
+            WHERE post_id = ${postId}
+          `;
+        const readHistory = () =>
+          sql<{
+            readonly revision: number;
+            readonly body: string;
+            readonly eventSequence: number;
+          }>`
+            SELECT revision, body, event_sequence AS "eventSequence"
+            FROM projection_board_post_revisions
+            WHERE post_id = ${postId}
+            ORDER BY revision ASC
+          `;
+
+        const livePost = yield* readProjection();
+        const liveHistory = yield* readHistory();
+        assert.deepEqual(livePost, [
+          {
+            body: "Corrected claim",
+            sequence: published.sequence,
+            revision: 2,
+            updatedSequence: revised.sequence,
+            author:
+              '{"kind":"agent","id":"legacy-post-board-revision","providerInstanceId":"codex"}',
+          },
+        ]);
+        assert.deepEqual(liveHistory, [
+          { revision: 1, body: "Original claim", eventSequence: published.sequence },
+          { revision: 2, body: "Corrected claim", eventSequence: revised.sequence },
+        ]);
+
+        yield* sql`DELETE FROM projection_board_post_revisions`;
+        yield* sql`DELETE FROM projection_board_posts`;
+        yield* sql`
+          DELETE FROM projection_state
+          WHERE projector = 'projection.board-posts'
+        `;
+        yield* projectionPipeline.bootstrap;
+
+        assert.deepEqual(yield* readProjection(), livePost);
+        assert.deepEqual(yield* readHistory(), liveHistory);
+      }),
+    );
+  },
+);

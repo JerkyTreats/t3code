@@ -82,6 +82,7 @@ import * as Stream from "effect/Stream";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
+import { T3_CODE_BOARD_TOOL_INSTRUCTIONS } from "../BoardToolInstructions.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
@@ -4644,6 +4645,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           : {}),
       };
       const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+      const mcpAttachments = mcpSession
+        ? McpProviderSession.getMcpProviderServerAttachments(mcpSession)
+        : [];
+      const boardToolsAvailable = mcpAttachments.some(
+        (attachment) => attachment.name === "t3-code",
+      );
       // The attachments dir grant lets the agent Read/copy pasted images at
       // the paths ProviderService injects into the turn text, without an
       // approval prompt. It is a leaf directory holding only attachment
@@ -4660,7 +4667,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           type: "preset",
           preset: "claude_code",
           // Model and effort can change after this session-level prompt is set.
-          append: buildRuntimeInstructions({ harness: "Claude Code" }),
+          append: [
+            buildRuntimeInstructions({ harness: "Claude Code" }),
+            ...(boardToolsAvailable ? [T3_CODE_BOARD_TOOL_INSTRUCTIONS] : []),
+          ].join("\n\n"),
         },
         settingSources: [...CLAUDE_SETTING_SOURCES],
         // `ultracode` is a Claude Code setting, not an API effort level. It is
@@ -4684,17 +4694,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         env: claudeEnvironment,
         additionalDirectories,
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
-        ...(mcpSession
+        ...(mcpAttachments.length > 0
           ? {
-              mcpServers: {
-                "t3-code": {
-                  type: "http",
-                  url: mcpSession.endpoint,
-                  headers: {
-                    Authorization: mcpSession.authorizationHeader,
+              mcpServers: Object.fromEntries(
+                mcpAttachments.map((attachment) => [
+                  attachment.name,
+                  {
+                    type: "http",
+                    url: attachment.endpoint,
+                    headers: {
+                      Authorization: attachment.authorizationHeader,
+                    },
                   },
-                },
-              },
+                ]),
+              ),
             }
           : {}),
       };

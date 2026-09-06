@@ -23,6 +23,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionStartInput,
+  ServerSettingsError,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -49,6 +50,10 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { HttpServer } from "effect/unstable/http";
+import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
+import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 
 import {
   ProviderAdapterRequestError,
@@ -57,6 +62,7 @@ import {
   ProviderValidationError,
   ProviderWorkspaceMissingError,
   type ProviderAdapterError,
+  type ProviderServiceError,
 } from "../Errors.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
@@ -139,27 +145,28 @@ function makeFakeCodexAdapter(
   const sessions = new Map<ThreadId, ProviderSession>();
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
 
-  const startSession = vi.fn((input: ProviderSessionStartInput) =>
-    Effect.sync(() => {
-      const now = "2026-01-01T00:00:00.000Z";
-      const session: ProviderSession = {
-        provider,
-        ...(input.providerInstanceId !== undefined
-          ? { providerInstanceId: input.providerInstanceId }
-          : {}),
-        status: "ready",
-        runtimeMode: input.runtimeMode,
-        threadId: input.threadId,
-        resumeCursor: input.resumeCursor ?? {
-          opaque: `resume-${String(input.threadId)}`,
-        },
-        cwd: input.cwd ?? process.cwd(),
-        createdAt: now,
-        updatedAt: now,
-      };
-      sessions.set(session.threadId, session);
-      return session;
-    }),
+  const startSession = vi.fn(
+    (input: ProviderSessionStartInput): Effect.Effect<ProviderSession, ProviderAdapterError> =>
+      Effect.sync(() => {
+        const now = "2026-01-01T00:00:00.000Z";
+        const session: ProviderSession = {
+          provider,
+          ...(input.providerInstanceId !== undefined
+            ? { providerInstanceId: input.providerInstanceId }
+            : {}),
+          status: "ready",
+          runtimeMode: input.runtimeMode,
+          threadId: input.threadId,
+          resumeCursor: input.resumeCursor ?? {
+            opaque: `resume-${String(input.threadId)}`,
+          },
+          cwd: input.cwd ?? process.cwd(),
+          createdAt: now,
+          updatedAt: now,
+        };
+        sessions.set(session.threadId, session);
+        return session;
+      }),
   );
 
   const sendTurn = vi.fn(
@@ -4302,16 +4309,24 @@ boundedListing.layer("ProviderServiceLive session listing", (it) => {
   );
 });
 
-describe("agent browser access", () => {
-  const revokedThreads: Array<ThreadId> = [];
-
-  const startSessionWith = (enableAgentBrowserAccess: boolean, threadId: ThreadId) =>
+describe("provider MCP capability admission", () => {
+  const startSessionWith = (
+    enableAgentBrowserAccess: boolean,
+    threadId: ThreadId,
+    driver = CODEX_DRIVER,
+    settingsLayer: Layer.Layer<
+      ServerSettings.ServerSettingsService,
+      ServerSettingsError
+    > = ServerSettings.ServerSettingsService.layerTest({ enableAgentBrowserAccess }),
+  ) =>
     Effect.gen(function* () {
-      const issued: Array<ThreadId> = [];
-      const codex = makeFakeCodexAdapter();
+      const issued: Array<{ readonly threadId: ThreadId; readonly capabilities: string[] }> = [];
+      const revoked: ThreadId[] = [];
+      const adapter = makeFakeCodexAdapter(driver);
+      const instanceId = ProviderInstanceId.make(String(driver));
       const providerAdapterLayer = Layer.succeed(
         ProviderAdapterRegistry.ProviderAdapterRegistry,
-        makeAdapterRegistryMock({ [CODEX_DRIVER]: codex.adapter }),
+        makeStaticInstanceRegistry([[instanceId, adapter.adapter]]),
       );
       const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
         Layer.provide(SqlitePersistenceMemory),
@@ -4322,14 +4337,17 @@ describe("agent browser access", () => {
       const providerLayer = makeProviderServiceLive({
         issueMcpCredential: (request) =>
           Effect.sync(() => {
-            issued.push(request.threadId);
+            issued.push({
+              threadId: request.threadId,
+              capabilities: Array.from(request.capabilities).sort(),
+            });
             return undefined;
           }),
-        revokeMcpCredential: (revoked) => Effect.sync(() => void revokedThreads.push(revoked)),
+        revokeMcpCredential: (revokedThread) => Effect.sync(() => void revoked.push(revokedThread)),
       }).pipe(
         Layer.provide(providerAdapterLayer),
         Layer.provide(directoryLayer),
-        Layer.provide(ServerSettings.ServerSettingsService.layerTest({ enableAgentBrowserAccess })),
+        Layer.provide(settingsLayer),
         Layer.provide(serverConfigTestLayer),
         Layer.provide(AnalyticsService.layerTest),
         Layer.provide(
@@ -4343,48 +4361,572 @@ describe("agent browser access", () => {
       yield* Effect.gen(function* () {
         const provider = yield* ProviderService.ProviderService;
         return yield* provider.startSession(threadId, {
-          provider: CODEX_DRIVER,
-          providerInstanceId: codexInstanceId,
+          provider: driver,
+          providerInstanceId: instanceId,
           threadId,
           runtimeMode: "full-access",
         });
       }).pipe(Effect.provide(providerLayer));
 
-      return issued;
+      return { issued, revoked };
     });
 
-  // Credential issuance is the observable that matters: it is the only place a
-  // credential is minted, and `/mcp` accepts nothing else, so withholding it is
-  // what actually denies every provider and external MCP client.
-  it.effect("requests no MCP credential when agent browser access is off", () =>
+  it.effect("admits Board independently of the browser setting for each built-in provider", () =>
     Effect.gen(function* () {
-      const issued = yield* startSessionWith(false, asThreadId("thread-browser-off"));
+      const boardDrivers = ["codex", "claudeAgent", "cursor", "grok", "opencode"] as const;
+      for (const driverName of boardDrivers) {
+        const driver = ProviderDriverKind.make(driverName);
+        const threadId = asThreadId(`thread-${driverName}-board-only`);
+        const result = yield* startSessionWith(false, threadId, driver);
 
-      assert.deepEqual(issued, []);
+        assert.deepEqual(result.issued, [{ threadId, capabilities: ["board", "board-write"] }]);
+        assert.deepEqual(result.revoked, []);
+      }
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("revokes an already-issued credential when access is off", () =>
+  it.effect("keeps Antigravity preview-only and clears it when preview is disabled", () =>
     Effect.gen(function* () {
-      const threadId = asThreadId("thread-browser-revoke");
-      revokedThreads.length = 0;
+      const driver = ProviderDriverKind.make("antigravity");
+      const enabledThread = asThreadId("thread-antigravity-preview");
+      const enabled = yield* startSessionWith(true, enabledThread, driver);
 
-      yield* startSessionWith(false, threadId);
+      assert.deepEqual(enabled.issued, [{ threadId: enabledThread, capabilities: ["preview"] }]);
+      assert.deepEqual(enabled.revoked, []);
 
-      // Clearing the in-memory map is not enough: a token issued before the
-      // toggle flipped stays valid against `/mcp` for its whole liveness
-      // window, and later turns refresh it.
-      assert.deepEqual(revokedThreads, [threadId]);
+      const disabledThread = asThreadId("thread-antigravity-no-mcp");
+      const disabled = yield* startSessionWith(false, disabledThread, driver);
+      assert.deepEqual(disabled.issued, []);
+      assert.deepEqual(disabled.revoked, [disabledThread]);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("requests an MCP credential when agent browser access is on", () =>
+  it.effect("adds preview to Board capabilities when browser access is on", () =>
     Effect.gen(function* () {
       const threadId = asThreadId("thread-browser-on");
 
-      const issued = yield* startSessionWith(true, threadId);
+      const result = yield* startSessionWith(true, threadId);
 
-      assert.deepEqual(issued, [threadId]);
+      assert.deepEqual(result.issued, [
+        { threadId, capabilities: ["board", "board-write", "preview"] },
+      ]);
     }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("withholds preview but keeps Board when browser settings cannot be read", () =>
+    Effect.gen(function* () {
+      const failingSettingsLayer = Layer.effect(
+        ServerSettings.ServerSettingsService,
+        Effect.gen(function* () {
+          const settings = yield* ServerSettings.ServerSettingsService;
+          return {
+            ...settings,
+            getSettings: Effect.fail(
+              new ServerSettingsError({
+                settingsPath: "/synthetic/settings.json",
+                operation: "read-file",
+                cause: new Error("synthetic read failure"),
+              }),
+            ),
+          };
+        }),
+      ).pipe(Layer.provide(ServerSettings.ServerSettingsService.layerTest()));
+      const threadId = asThreadId("thread-settings-failure");
+
+      const result = yield* startSessionWith(false, threadId, CODEX_DRIVER, failingSettingsLayer);
+
+      assert.deepEqual(result.issued, [{ threadId, capabilities: ["board", "board-write"] }]);
+      assert.deepEqual(result.revoked, []);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("keeps Board writes denied when a Default dispatch overlaps a live Plan turn", () =>
+    Effect.gen(function* () {
+      const events: string[] = [];
+      const codex = makeFakeCodexAdapter();
+      codex.sendTurn.mockImplementation((input) =>
+        Effect.sync(() => {
+          events.push("dispatch");
+          return {
+            threadId: input.threadId,
+            turnId: TurnId.make(`turn-${events.length}`),
+          };
+        }),
+      );
+      const providerAdapterLayer = Layer.succeed(
+        ProviderAdapterRegistry.ProviderAdapterRegistry,
+        makeStaticInstanceRegistry([[codexInstanceId, codex.adapter]]),
+      );
+      const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+        Layer.provide(SqlitePersistenceMemory),
+      );
+      const providerLayer = makeProviderServiceLive({
+        issueMcpCredential: () => Effect.succeed(undefined),
+        setMcpBoardWriteEnabled: (_threadId, enabled) =>
+          Effect.sync(() => void events.push(`write:${String(enabled)}`)),
+      }).pipe(
+        Layer.provide(providerAdapterLayer),
+        Layer.provide(ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer))),
+        Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(serverConfigTestLayer),
+        Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      );
+      const threadId = asThreadId("thread-board-mode-update");
+
+      yield* Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        yield* provider.startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        });
+        yield* provider.sendTurn({ threadId, input: "plan", interactionMode: "plan" });
+        yield* provider.sendTurn({ threadId, input: "default", interactionMode: "default" });
+      }).pipe(Effect.provide(providerLayer));
+
+      assert.deepEqual(events, [
+        "write:false",
+        "dispatch",
+        "write:false",
+        "write:false",
+        "dispatch",
+      ]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+});
+
+describe("provider Board turn lifecycle authority", () => {
+  const withProvider = <A, E>(
+    run: (context: {
+      readonly provider: ProviderService.ProviderServiceShape;
+      readonly codex: ReturnType<typeof makeFakeCodexAdapter>;
+      readonly registry: McpSessionRegistry.McpSessionRegistryShape;
+      readonly tokens: string[];
+      readonly threadId: ThreadId;
+      readonly start: Effect.Effect<ProviderSession, ProviderServiceError>;
+    }) => Effect.Effect<A, E, Scope.Scope>,
+  ) =>
+    Effect.gen(function* () {
+      const registry = yield* McpSessionRegistry.__testing.make().pipe(
+        Effect.provideService(
+          HttpServer.HttpServer,
+          HttpServer.HttpServer.of({
+            address: { _tag: "TcpAddress", hostname: "127.0.0.1", port: 43123 },
+            serve: (() => Effect.void) as HttpServer.HttpServer["Service"]["serve"],
+          }),
+        ),
+        Effect.provideService(
+          ServerEnvironment.ServerEnvironment,
+          ServerEnvironment.ServerEnvironment.of({
+            getEnvironmentId: Effect.succeed(EnvironmentId.make("board-lifecycle")),
+            getDescriptor: Effect.die("unused"),
+          }),
+        ),
+      );
+      const tokens: string[] = [];
+      const codex = makeFakeCodexAdapter();
+      const threadId = asThreadId("board-lifecycle-thread");
+      const providerLayer = makeProviderServiceLive({
+        issueMcpCredential: (request) =>
+          registry.revokeThread(request.threadId).pipe(
+            Effect.andThen(registry.issue(request)),
+            Effect.tap((credential) =>
+              Effect.sync(() => {
+                tokens.push(credential.config.authorizationHeader.replace(/^Bearer\s+/, ""));
+              }),
+            ),
+          ),
+        revokeMcpCredential: registry.revokeThread,
+        setMcpBoardWriteEnabled: registry.setBoardWriteEnabled,
+      }).pipe(
+        Layer.provide(
+          Layer.succeed(
+            ProviderAdapterRegistry.ProviderAdapterRegistry,
+            makeStaticInstanceRegistry([[codexInstanceId, codex.adapter]]),
+          ),
+        ),
+        Layer.provide(
+          ProviderSessionDirectoryLive.pipe(
+            Layer.provide(
+              ProviderSessionRuntime.layer.pipe(Layer.provide(SqlitePersistenceMemory)),
+            ),
+          ),
+        ),
+        Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
+        Layer.provide(serverConfigTestLayer),
+        Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      );
+      return yield* Effect.gen(function* () {
+        const provider = yield* ProviderService.ProviderService;
+        const start = provider.startSession(threadId, {
+          provider: CODEX_DRIVER,
+          providerInstanceId: codexInstanceId,
+          threadId,
+          runtimeMode: "full-access",
+        });
+        yield* start;
+        return yield* run({ provider, codex, registry, tokens, threadId, start });
+      }).pipe(Effect.provide(providerLayer));
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+
+  const assertAuthority = Effect.fn("assertBoardAuthority")(function* (
+    registry: McpSessionRegistry.McpSessionRegistryShape,
+    token: string,
+    writable: boolean,
+  ) {
+    const scope = yield* registry.resolve(token);
+    assert.isDefined(scope);
+    if (!scope) return;
+    const read = yield* McpInvocationContext.requireBoardCapability().pipe(
+      Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+      Effect.exit,
+    );
+    const write = yield* McpInvocationContext.requireBoardWriteCapability().pipe(
+      Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+      Effect.exit,
+    );
+    assert.isTrue(Exit.isSuccess(read));
+    assert.equal(Exit.isSuccess(write), writable);
+    if (!writable && Exit.isFailure(write)) {
+      assert.instanceOf(
+        Cause.squash(write.cause),
+        McpInvocationContext.BoardWriteCapabilityUnavailableError,
+      );
+    }
+  });
+
+  const observe = Effect.fn("observeBoardLifecycle")(function* (
+    provider: ProviderService.ProviderServiceShape,
+    codex: ReturnType<typeof makeFakeCodexAdapter>,
+    event: ProviderRuntimeEvent,
+  ) {
+    const observed = yield* provider.streamEvents.pipe(
+      Stream.take(1),
+      Stream.runDrain,
+      Effect.forkChild,
+    );
+    yield* Effect.yieldNow;
+    codex.emit(event);
+    yield* Fiber.join(observed);
+  });
+
+  const terminal = (threadId: ThreadId, turnId: TurnId): ProviderRuntimeEvent => ({
+    type: "turn.completed",
+    eventId: asEventId(`complete-${turnId}`),
+    provider: CODEX_DRIVER,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    threadId,
+    turnId,
+    payload: { state: "completed" },
+  });
+
+  for (const firstMode of ["plan", "default"] as const) {
+    for (const earlyTerminal of [false, true]) {
+      it.effect(
+        `retains same-token Plan denial for ${firstMode} first with early terminal ${earlyTerminal}`,
+        () =>
+          withProvider(({ provider, codex, registry, tokens, threadId }) =>
+            Effect.gen(function* () {
+              const token = tokens[0]!;
+              const entered = [yield* Deferred.make<void>(), yield* Deferred.make<void>()];
+              const release = [yield* Deferred.make<void>(), yield* Deferred.make<void>()];
+              const turnIds = [asTurnId("overlap-first"), asTurnId("overlap-second")];
+              const modes = [firstMode, firstMode === "plan" ? "default" : "plan"] as const;
+              for (const index of [0, 1]) {
+                codex.sendTurn.mockImplementationOnce(() =>
+                  Effect.gen(function* () {
+                    yield* Deferred.succeed(entered[index]!, undefined);
+                    yield* Deferred.await(release[index]!);
+                    return { threadId, turnId: turnIds[index]! };
+                  }),
+                );
+              }
+              const first = yield* provider
+                .sendTurn({ threadId, input: "first", interactionMode: modes[0] })
+                .pipe(Effect.forkChild);
+              yield* Deferred.await(entered[0]!);
+              const second = yield* provider
+                .sendTurn({ threadId, input: "second", interactionMode: modes[1] })
+                .pipe(Effect.forkChild);
+              yield* Deferred.await(entered[1]!);
+              yield* assertAuthority(registry, token, false);
+              const planIndex = firstMode === "plan" ? 0 : 1;
+              const planTurn = turnIds[planIndex]!;
+              const defaultTurn = turnIds[1 - planIndex]!;
+              if (earlyTerminal) {
+                yield* observe(provider, codex, terminal(threadId, planTurn));
+                yield* assertAuthority(registry, token, false);
+              }
+              // Response order is deliberately opposite to dispatch order.
+              yield* Deferred.succeed(release[1]!, undefined);
+              yield* Fiber.join(second);
+              yield* assertAuthority(registry, token, earlyTerminal && planIndex === 1);
+              yield* Deferred.succeed(release[0]!, undefined);
+              yield* Fiber.join(first);
+              yield* assertAuthority(registry, token, earlyTerminal);
+              if (!earlyTerminal) {
+                yield* observe(provider, codex, terminal(threadId, defaultTurn));
+                yield* assertAuthority(registry, token, false);
+                yield* observe(provider, codex, terminal(threadId, planTurn));
+              }
+              yield* assertAuthority(registry, token, true);
+              assert.equal(tokens.length, 1);
+            }),
+          ),
+      );
+    }
+  }
+
+  it.effect(
+    "keeps ambiguous failed Plan sends denied through unrelated terminals and session exit",
+    () =>
+      withProvider(({ provider, codex, registry, tokens, threadId, start }) =>
+        Effect.gen(function* () {
+          const oldToken = tokens[0]!;
+          codex.sendTurn.mockImplementationOnce(() =>
+            Effect.fail(
+              new ProviderAdapterRequestError({
+                provider: CODEX_DRIVER,
+                method: "turn/start",
+                detail: "connection lost after possible acceptance",
+              }),
+            ),
+          );
+          const failure = yield* provider
+            .sendTurn({ threadId, input: "plan", interactionMode: "plan" })
+            .pipe(Effect.exit);
+          assert.isTrue(Exit.isFailure(failure));
+          const followup = yield* provider.sendTurn({
+            threadId,
+            input: "default",
+            interactionMode: "default",
+          });
+          yield* observe(provider, codex, terminal(threadId, followup.turnId));
+          yield* assertAuthority(registry, oldToken, false);
+          yield* observe(provider, codex, {
+            type: "session.exited",
+            eventId: asEventId("ambiguous-exit"),
+            provider: CODEX_DRIVER,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            threadId,
+            payload: {},
+          });
+          yield* assertAuthority(registry, oldToken, false);
+          yield* provider.stopSession({ threadId });
+          assert.isUndefined(yield* registry.resolve(oldToken));
+          yield* start;
+          yield* provider.sendTurn({ threadId, input: "default", interactionMode: "default" });
+          yield* assertAuthority(registry, tokens[1]!, true);
+        }),
+      ),
+  );
+
+  it.effect("cancels old pending sends before restart and holds denial on late exits", () =>
+    withProvider(({ provider, codex, registry, tokens, threadId, start }) =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const oldTurn = asTurnId("old-generation");
+        const newTurn = asTurnId("new-generation");
+        codex.sendTurn.mockImplementationOnce(() =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(entered, undefined);
+            yield* Deferred.await(release);
+            return { threadId, turnId: oldTurn };
+          }),
+        );
+        const oldSend = yield* provider
+          .sendTurn({ threadId, input: "old plan", interactionMode: "plan" })
+          .pipe(Effect.exit, Effect.forkChild);
+        yield* Deferred.await(entered);
+        yield* provider.stopSession({ threadId });
+        yield* start;
+        assert.isUndefined(yield* registry.resolve(tokens[0]!));
+        codex.sendTurn.mockImplementationOnce(() => Effect.succeed({ threadId, turnId: newTurn }));
+        yield* provider.sendTurn({ threadId, input: "new plan", interactionMode: "plan" });
+        yield* Deferred.succeed(release, undefined);
+        assert.isTrue(Exit.isFailure(yield* Fiber.join(oldSend)));
+        yield* observe(provider, codex, terminal(threadId, oldTurn));
+        yield* assertAuthority(registry, tokens[1]!, false);
+        yield* observe(provider, codex, {
+          type: "session.exited",
+          eventId: asEventId("late-old-exit"),
+          provider: CODEX_DRIVER,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          threadId,
+          payload: {},
+        });
+        yield* observe(provider, codex, terminal(threadId, newTurn));
+        yield* provider.sendTurn({ threadId, input: "default", interactionMode: "default" });
+        yield* assertAuthority(registry, tokens[1]!, false);
+        // Recovery replaces the credential when the adapter no longer has a session.
+        yield* codex.stopSession(threadId);
+        yield* provider.sendTurn({ threadId, input: "recover", interactionMode: "default" });
+        assert.isUndefined(yield* registry.resolve(tokens[1]!));
+        yield* assertAuthority(registry, tokens[2]!, true);
+      }),
+    ),
+  );
+
+  it.effect(
+    "retains denial after an interrupted pending send even when an observed turn ends",
+    () =>
+      withProvider(({ provider, codex, registry, tokens, threadId, start }) =>
+        Effect.gen(function* () {
+          const entered = yield* Deferred.make<void>();
+          codex.sendTurn.mockImplementationOnce(() =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(entered, undefined);
+              return yield* Effect.never;
+            }),
+          );
+          const send = yield* provider
+            .sendTurn({ threadId, input: "plan", interactionMode: "plan" })
+            .pipe(Effect.forkChild);
+          yield* Deferred.await(entered);
+          const observedTurn = asTurnId("unassociated-start");
+          yield* observe(provider, codex, {
+            type: "turn.started",
+            eventId: asEventId("unassociated-start"),
+            provider: CODEX_DRIVER,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            threadId,
+            turnId: observedTurn,
+            payload: {},
+          });
+          yield* Fiber.interrupt(send);
+          yield* observe(provider, codex, terminal(threadId, observedTurn));
+          yield* provider.sendTurn({ threadId, input: "default", interactionMode: "default" });
+          yield* assertAuthority(registry, tokens[0]!, false);
+          // Failed stop is not evidence that the old process or credential is dead.
+          codex.stopSession.mockImplementationOnce(() =>
+            Effect.fail(
+              new ProviderAdapterRequestError({
+                provider: CODEX_DRIVER,
+                method: "stopSession",
+                detail: "stop failed",
+              }),
+            ),
+          );
+          const stop = yield* provider.stopSession({ threadId }).pipe(Effect.exit);
+          assert.isTrue(Exit.isFailure(stop));
+          yield* assertAuthority(registry, tokens[0]!, false);
+          yield* provider.stopSession({ threadId });
+          assert.isUndefined(yield* registry.resolve(tokens[0]!));
+          yield* start;
+          yield* provider.sendTurn({ threadId, input: "default", interactionMode: "default" });
+          yield* assertAuthority(registry, tokens[1]!, true);
+        }),
+      ),
+  );
+
+  it.effect("cancels pending sends and revokes replacement credentials when restart fails", () =>
+    withProvider(({ provider, codex, registry, tokens, threadId, start }) =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        codex.sendTurn.mockImplementationOnce(() =>
+          Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)),
+        );
+        const pending = yield* provider
+          .sendTurn({ threadId, input: "pending plan", interactionMode: "plan" })
+          .pipe(Effect.exit, Effect.forkChild);
+        yield* Deferred.await(entered);
+        codex.startSession.mockImplementationOnce(() =>
+          Effect.fail(
+            new ProviderAdapterRequestError({
+              provider: CODEX_DRIVER,
+              method: "startSession",
+              detail: "replacement failed",
+            }),
+          ),
+        );
+        const restart = yield* start.pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(restart));
+        assert.isTrue(Exit.isFailure(yield* Fiber.join(pending)));
+        assert.equal(tokens.length, 2);
+        for (const token of tokens) assert.isUndefined(yield* registry.resolve(token));
+      }),
+    ),
+  );
+
+  it.effect("keeps an admitted send alive when replacement validation fails", () =>
+    withProvider(({ provider, codex, registry, tokens, threadId }) =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        let finalized = false;
+        const turnId = asTurnId("validation-survives");
+        codex.sendTurn.mockImplementationOnce(() =>
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.as({ threadId, turnId }),
+            Effect.ensuring(
+              Effect.sync(() => {
+                finalized = true;
+              }),
+            ),
+          ),
+        );
+        const pending = yield* provider
+          .sendTurn({ threadId, input: "pending plan", interactionMode: "plan" })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(entered);
+        const invalid = yield* provider
+          .startSession(threadId, {
+            threadId,
+            provider: CLAUDE_AGENT_DRIVER,
+            providerInstanceId: codexInstanceId,
+            runtimeMode: "full-access",
+          })
+          .pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(invalid));
+        assert.isFalse(finalized);
+        assert.equal(tokens.length, 1);
+        yield* assertAuthority(registry, tokens[0]!, false);
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(pending);
+        yield* observe(provider, codex, terminal(threadId, turnId));
+        yield* assertAuthority(registry, tokens[0]!, true);
+      }),
+    ),
+  );
+
+  it.effect(
+    "waits for an exact aborted turn after interrupt instead of trusting the request response",
+    () =>
+      withProvider(({ provider, codex, registry, tokens, threadId }) =>
+        Effect.gen(function* () {
+          const plan = yield* provider.sendTurn({
+            threadId,
+            input: "plan",
+            interactionMode: "plan",
+          });
+          yield* provider.interruptTurn({ threadId, turnId: plan.turnId });
+          yield* assertAuthority(registry, tokens[0]!, false);
+          yield* observe(provider, codex, {
+            type: "turn.aborted",
+            eventId: asEventId("aborted-plan"),
+            provider: CODEX_DRIVER,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            threadId,
+            turnId: plan.turnId,
+            payload: { reason: "interrupted" },
+          });
+          yield* assertAuthority(registry, tokens[0]!, true);
+        }),
+      ),
   );
 });

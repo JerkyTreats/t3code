@@ -1,11 +1,16 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
+import { resolveBoardInteractionPolicy } from "../board/InteractionPolicy.ts";
 import { buildRuntimeInstructions } from "./RuntimeInstructions.ts";
+import {
+  T3_CODE_BOARD_TOOL_INSTRUCTIONS,
+  boardCollectiveInstructionsForProfile,
+} from "./BoardToolInstructions.ts";
 
 const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
 ## T3 Code collaborative browser
 
-You are running inside T3 Code. The \`t3-code\` MCP server is the product-native collaborative browser shared with the user. When it exposes \`preview_*\` tools, prefer those tools for browser navigation, inspection, interaction, screenshots, and recordings.
+You are running inside T3 Code. The \`t3-code-preview\` MCP server is the product-native collaborative browser shared with the user. Prefer its \`preview_*\` tools for browser navigation, inspection, interaction, screenshots, and recordings.
 
 For browser work, first call \`preview_status\`. If no automation-capable preview is attached, call \`preview_open\` before concluding that the browser is unavailable. Then use \`preview_navigate\`, \`preview_snapshot\`, and the focused interaction tools. Prefer snapshot-provided locators over coordinates.
 
@@ -22,8 +27,25 @@ Do not switch to global browser skills, Chrome, Node REPL browser automation, st
 const browserToolInstructions = (browserToolsAvailable: boolean): string =>
   browserToolsAvailable ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS : "";
 
+const boardToolInstructions = (
+  boardToolsAvailable: boolean,
+  interactionMode: ProviderInteractionMode,
+): string =>
+  boardToolsAvailable
+    ? `
+
+## T3 Code global Board
+
+${T3_CODE_BOARD_TOOL_INSTRUCTIONS}
+
+${boardCollectiveInstructionsForProfile(
+  resolveBoardInteractionPolicy(interactionMode).collectiveInstructionProfile,
+)}`
+    : "";
+
 const codexPlanModeDeveloperInstructions = (
   browserToolsAvailable: boolean,
+  boardToolsAvailable: boolean,
 ): string => `<collaboration_mode># Plan Mode (Conversational)
 
 You work in 3 phases, and you should *chat your way* to a great plan before finalizing it. A great plan is very detailed-intent- and implementation-wise-so that it can be handed to another engineer or agent to be implemented right away. It must be **decision complete**, where the implementer does not need to make any decisions.
@@ -152,11 +174,15 @@ Do not ask "should I proceed?" in the final output. The user can easily switch o
 Only produce at most one \`<proposed_plan>\` block per turn, and only when you are presenting a complete spec.
 
 If the user stays in Plan mode and asks for revisions after a prior \`<proposed_plan>\`, any new \`<proposed_plan>\` must be a complete replacement. If the user indicates that the prior plan is not acceptable but does not provide enough information to produce a complete replacement, address the concern and continue planning without producing a \`<proposed_plan>\` block. If the follow-up neither requires changes nor calls the plan into question (e.g. clarifying question), answer it before the block, then reproduce the prior \`<proposed_plan>\` unchanged.
-${browserToolInstructions(browserToolsAvailable)}
+${browserToolInstructions(browserToolsAvailable)}${boardToolInstructions(
+  boardToolsAvailable,
+  "plan",
+)}
 </collaboration_mode>`;
 
 const codexDefaultModeDeveloperInstructions = (
   browserToolsAvailable: boolean,
+  boardToolsAvailable: boolean,
 ): string => `<collaboration_mode># Collaboration Mode: Default
 
 You are now in Default mode. Any previous instructions for other modes (e.g. Plan mode) are no longer active.
@@ -168,7 +194,10 @@ Your active mode changes only when new developer instructions with a different \
 Use the \`request_user_input\` tool only when it is listed in the available tools for this turn.
 
 In Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions. If you absolutely must ask a question because the answer cannot be discovered from local context and a reasonable assumption would be risky, ask the user directly with a concise plain-text question. Never write a multiple choice question as a textual assistant message.
-${browserToolInstructions(browserToolsAvailable)}
+${browserToolInstructions(browserToolsAvailable)}${boardToolInstructions(
+  boardToolsAvailable,
+  "default",
+)}
 </collaboration_mode>`;
 
 export interface CodexRuntimeInfo {
@@ -180,16 +209,18 @@ export function buildCodexDeveloperInstructions(
   interactionMode: ProviderInteractionMode,
   runtime: CodexRuntimeInfo,
   /**
-   * Whether the `t3-code` MCP server is attached to this turn. Callers derive
+   * Whether the `t3-code-preview` MCP server is attached to this turn. Callers derive
    * it from the session's actual MCP configuration rather than re-reading the
    * setting, so the prompt cannot claim tools the turn doesn't have.
    */
   browserToolsAvailable = true,
+  /** Whether the authenticated `t3-code` Board server is attached. */
+  boardToolsAvailable = true,
 ): string {
   const base =
     interactionMode === "plan"
-      ? codexPlanModeDeveloperInstructions(browserToolsAvailable)
-      : codexDefaultModeDeveloperInstructions(browserToolsAvailable);
+      ? codexPlanModeDeveloperInstructions(browserToolsAvailable, boardToolsAvailable)
+      : codexDefaultModeDeveloperInstructions(browserToolsAvailable, boardToolsAvailable);
   return `${base}
 
 ${buildRuntimeInstructions({ harness: "Codex", ...runtime })}`;

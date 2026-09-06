@@ -1,4 +1,6 @@
 import {
+  AuthAccessWriteScope,
+  ORCHESTRATION_WS_METHODS,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
@@ -11,6 +13,18 @@ import { describe, expect, it } from "@effect/vitest";
 import { RPC_REQUIRED_SCOPES, requiredScopeForRpcMethod } from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it("separates global Board reading from human correction authority", () => {
+    for (const method of [
+      ORCHESTRATION_WS_METHODS.getBoardPage,
+      ORCHESTRATION_WS_METHODS.getBoardPostHistory,
+      ORCHESTRATION_WS_METHODS.subscribeBoard,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
+    }
+    expect(requiredScopeForRpcMethod(ORCHESTRATION_WS_METHODS.reviseBoardPost)).toBe(
+      AuthAccessWriteScope,
+    );
+  });
   it("declares exactly one scope for every RPC in the server group", () => {
     expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));
   });

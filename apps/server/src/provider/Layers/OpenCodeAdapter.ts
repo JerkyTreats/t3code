@@ -2815,18 +2815,23 @@ export function makeOpenCodeAdapter(
               });
               const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
               if (mcpSession && !server.external) {
-                yield* runOpenCodeSdk("mcp.add", () =>
-                  client.mcp.add({
-                    name: "t3-code",
-                    config: {
-                      type: "remote",
-                      url: mcpSession.endpoint,
-                      headers: {
-                        Authorization: mcpSession.authorizationHeader,
-                      },
-                      oauth: false,
-                    },
-                  }),
+                yield* Effect.forEach(
+                  McpProviderSession.getMcpProviderServerAttachments(mcpSession),
+                  (attachment) =>
+                    runOpenCodeSdk("mcp.add", () =>
+                      client.mcp.add({
+                        name: attachment.name,
+                        config: {
+                          type: "remote",
+                          url: attachment.endpoint,
+                          headers: {
+                            Authorization: attachment.authorizationHeader,
+                          },
+                          oauth: false,
+                        },
+                      }),
+                    ),
+                  { discard: true },
                 );
               }
               // Resume: re-adopt the session named by the durable cursor —

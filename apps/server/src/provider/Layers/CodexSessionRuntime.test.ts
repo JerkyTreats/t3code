@@ -10,6 +10,11 @@ import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
+import {
+  T3_CODE_BOARD_TOOL_INSTRUCTIONS,
+  T3_CODE_CODEX_COLLECTIVE_INSTRUCTIONS,
+  T3_CODE_CODEX_COLLECTIVE_PLAN_INSTRUCTIONS,
+} from "../BoardToolInstructions.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import {
   buildTurnStartParams,
@@ -545,6 +550,39 @@ describe("T3 browser developer instructions", () => {
   });
 });
 
+describe("T3 Board and Collective developer instructions", () => {
+  const runtime = { model: "gpt-5.3-codex", reasoningEffort: "high" };
+
+  it("includes the writable root liaison contract only when Board is attached", () => {
+    const instructions = buildCodexDeveloperInstructions("default", runtime, false, true);
+
+    NodeAssert.ok(instructions.includes(T3_CODE_BOARD_TOOL_INSTRUCTIONS));
+    NodeAssert.ok(instructions.includes(T3_CODE_CODEX_COLLECTIVE_INSTRUCTIONS));
+    NodeAssert.match(instructions, /exactly one dedicated Collective liaison pass/);
+    NodeAssert.match(instructions, /If no Collective task exists, call `spawn_agent`/);
+    NodeAssert.match(instructions, /call `followup_task` targeting `collective`/);
+    NodeAssert.match(instructions, /Do not call both/);
+    NodeAssert.match(instructions, /current submit opts out/);
+    NodeAssert.match(instructions, /Never activate the default liaison from a child/);
+    NodeAssert.match(instructions, /privacy-safe advisory interpretation/);
+    NodeAssert.match(instructions, /prompt-mediated/);
+    NodeAssert.match(instructions, /no durable exactly-once guarantee/);
+
+    const withoutBoard = buildCodexDeveloperInstructions("default", runtime, true, false);
+    NodeAssert.doesNotMatch(withoutBoard, /T3 Code global Board/);
+    NodeAssert.doesNotMatch(withoutBoard, /Collective liaison pass/);
+  });
+
+  it("selects the read-only liaison contract in Plan mode", () => {
+    const instructions = buildCodexDeveloperInstructions("plan", runtime, false, true);
+
+    NodeAssert.ok(instructions.includes(T3_CODE_CODEX_COLLECTIVE_PLAN_INSTRUCTIONS));
+    NodeAssert.match(instructions, /read-only planning visit/);
+    NodeAssert.match(instructions, /Neither the participant nor the root may call `board_post`/);
+    NodeAssert.match(instructions, /root agent perform a read-only Board visit/);
+  });
+});
+
 describe("hasConfiguredMcpServer", () => {
   it("detects inline Codex MCP configuration arguments", () => {
     NodeAssert.equal(hasConfiguredMcpServer(undefined), false);
@@ -553,6 +591,15 @@ describe("hasConfiguredMcpServer", () => {
       hasConfiguredMcpServer(["-c", 'mcp_servers.t3-code.url="http://127.0.0.1/mcp"']),
       true,
     );
+    const separateServers = [
+      "-c",
+      'mcp_servers.t3-code.url="http://127.0.0.1/mcp"',
+      "-c",
+      'mcp_servers.t3-code-preview.url="http://127.0.0.1/mcp/preview"',
+    ];
+    NodeAssert.equal(hasConfiguredMcpServer(separateServers, "t3-code"), true);
+    NodeAssert.equal(hasConfiguredMcpServer(separateServers, "t3-code-preview"), true);
+    NodeAssert.equal(hasConfiguredMcpServer(separateServers, "missing"), false);
   });
 });
 

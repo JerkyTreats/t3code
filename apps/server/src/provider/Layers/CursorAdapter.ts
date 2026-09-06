@@ -539,6 +539,9 @@ export function makeCursorAdapter(
             : cursorSettings;
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+          const mcpAttachments = mcpSession
+            ? McpProviderSession.getMcpProviderServerAttachments(mcpSession)
+            : [];
           const acp = yield* makeCursorAcpRuntime({
             cursorSettings: effectiveCursorSettings,
             ...(options?.environment ? { environment: options.environment } : {}),
@@ -547,21 +550,19 @@ export function makeCursorAdapter(
             runtimeMode: input.runtimeMode,
             ...(resumeSessionId ? { resumeSessionId } : {}),
             clientInfo: { name: "t3-code", version: "0.0.0" },
-            ...(mcpSession
+            ...(mcpAttachments.length > 0
               ? {
-                  mcpServers: [
-                    {
-                      type: "http" as const,
-                      name: "t3-code",
-                      url: mcpSession.endpoint,
-                      headers: [
-                        {
-                          name: "Authorization",
-                          value: mcpSession.authorizationHeader,
-                        },
-                      ],
-                    },
-                  ],
+                  mcpServers: mcpAttachments.map((attachment) => ({
+                    type: "http" as const,
+                    name: attachment.name,
+                    url: attachment.endpoint,
+                    headers: [
+                      {
+                        name: "Authorization",
+                        value: attachment.authorizationHeader,
+                      },
+                    ],
+                  })),
                 }
               : {}),
             ...acpNativeLoggers,

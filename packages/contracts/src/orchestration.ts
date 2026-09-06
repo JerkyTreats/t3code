@@ -23,6 +23,33 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
+import {
+  BoardAggregateId,
+  BoardGetHistoryInput,
+  BoardGetPageInput,
+  BoardHistoryPage,
+  BoardPage,
+  BoardPost,
+  BoardReviseInput,
+  BoardStreamItem,
+  BoardSubscribeInput,
+} from "./coordinationBoard.ts";
+import {
+  BoardPostPublishedPayload,
+  BoardPostPublishCommand,
+  BoardPostRevisedPayload,
+  BoardPostReviseCommand,
+} from "./coordinationBoardOrchestration.ts";
+
+export {
+  BoardPostPublishedPayload,
+  BoardPostPublishCommand,
+  BoardPostRevisedPayload,
+  BoardPostReviseCommand,
+  OrchestrationBoardAuditEditor,
+  OrchestrationBoardRevisionError,
+} from "./coordinationBoardOrchestration.ts";
+export type { BoardOrchestrationCommand } from "./coordinationBoardOrchestration.ts";
 
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
@@ -31,8 +58,12 @@ export const ORCHESTRATION_WS_METHODS = {
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
+  getBoardPage: "orchestration.getBoardPage",
+  getBoardPostHistory: "orchestration.getBoardPostHistory",
+  reviseBoardPost: "orchestration.reviseBoardPost",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
+  subscribeBoard: "orchestration.subscribeBoard",
 } as const;
 
 export const ProviderApprovalPolicy = Schema.Literals([
@@ -1194,6 +1225,9 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
   ThreadTitleRegenerationCompleteCommand,
+  // Board write commands carry trusted server identity and never enter the public client union.
+  BoardPostPublishCommand,
+  BoardPostReviseCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -1233,10 +1267,12 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.proposed-plan-upserted",
   "thread.turn-diff-completed",
   "thread.activity-appended",
+  "board.post-published",
+  "board.post-revised",
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
-export const OrchestrationAggregateKind = Schema.Literals(["project", "thread"]);
+export const OrchestrationAggregateKind = Schema.Literals(["project", "thread", "board"]);
 export type OrchestrationAggregateKind = typeof OrchestrationAggregateKind.Type;
 export const OrchestrationActorKind = Schema.Literals(["client", "server", "provider"]);
 
@@ -1498,7 +1534,7 @@ const EventBaseFields = {
   sequence: NonNegativeInt,
   eventId: EventId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([ProjectId, ThreadId]),
+  aggregateId: Schema.Union([ProjectId, ThreadId, BoardAggregateId]),
   occurredAt: IsoDateTime,
   commandId: Schema.NullOr(CommandId),
   causationEventId: Schema.NullOr(EventId),
@@ -1651,6 +1687,16 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.activity-appended"),
     payload: ThreadActivityAppendedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("board.post-published"),
+    payload: BoardPostPublishedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("board.post-revised"),
+    payload: BoardPostRevisedPayload,
   }),
 ]);
 export type OrchestrationEvent = typeof OrchestrationEvent.Type;
@@ -1854,6 +1900,18 @@ export const OrchestrationRpcSchemas = {
     input: Schema.Struct({}),
     output: OrchestrationShellSnapshot,
   },
+  getBoardPage: {
+    input: BoardGetPageInput,
+    output: BoardPage,
+  },
+  getBoardPostHistory: {
+    input: BoardGetHistoryInput,
+    output: BoardHistoryPage,
+  },
+  reviseBoardPost: {
+    input: BoardReviseInput,
+    output: BoardPost,
+  },
   subscribeThread: {
     input: OrchestrationSubscribeThreadInput,
     output: OrchestrationThreadStreamItem,
@@ -1861,6 +1919,10 @@ export const OrchestrationRpcSchemas = {
   subscribeShell: {
     input: OrchestrationSubscribeShellInput,
     output: OrchestrationShellStreamItem,
+  },
+  subscribeBoard: {
+    input: BoardSubscribeInput,
+    output: BoardStreamItem,
   },
 } as const;
 

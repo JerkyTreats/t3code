@@ -5,6 +5,8 @@ import * as NodePath from "node:path";
 
 import {
   ApprovalRequestId,
+  BoardAuthorId,
+  BoardPostId,
   EventId,
   CheckpointRef,
   CommandId,
@@ -53,6 +55,53 @@ import {
 } from "../Services/ProjectionPipeline.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ServerConfig } from "../../config.ts";
+
+effectIt.effect(
+  "routes acquired Board subscriptions without changing upstream domain consumers",
+  () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const boardEvents = yield* engine.subscribeBoardDomainEvents;
+      const allEvents = yield* engine.subscribeDomainEvents;
+      const createdAt = "2026-09-05T00:00:00.000Z";
+      const source = {
+        projectId: ProjectId.make("board-host-project"),
+        threadId: ThreadId.make("board-host-thread"),
+      };
+      const first = yield* engine.dispatch({
+        type: "board.post.publish",
+        commandId: CommandId.make("board-host-publish"),
+        postId: BoardPostId.make("board-host-post"),
+        author: {
+          kind: "agent",
+          id: BoardAuthorId.make("board-public-host"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        },
+        source,
+        body: "Durable Board wakeup",
+        targets: [],
+        createdAt,
+      });
+      for (let index = 0; index < 260; index++) {
+        yield* engine.dispatch({
+          type: "project.create",
+          commandId: CommandId.make(`board-host-unrelated-command-${index}`),
+          projectId: ProjectId.make(`board-host-unrelated-project-${index}`),
+          title: "Unrelated project",
+          workspaceRoot: `/workspace/unrelated-${index}`,
+          defaultModelSelection: null,
+          createdAt,
+        });
+      }
+      const board = yield* boardEvents.pipe(Stream.take(1), Stream.runCollect);
+      expect(board.map((event) => event.sequence)).toEqual([first.sequence]);
+      const upstream = yield* allEvents.pipe(Stream.take(261), Stream.runCollect);
+      expect(upstream.length).toBe(261);
+      expect(upstream[0]?.type).toBe("board.post-published");
+      expect(upstream.slice(1).every((event) => event.type === "project.created")).toBe(true);
+      expect(yield* engine.latestSequence).toBe(upstream.at(-1)?.sequence);
+    }).pipe(Effect.provide(makeOrchestrationLayer())),
+);
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);

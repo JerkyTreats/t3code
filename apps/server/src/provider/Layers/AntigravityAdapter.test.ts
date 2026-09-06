@@ -3,6 +3,7 @@ import { expect, it } from "@effect/vitest";
 import {
   AntigravitySettings,
   ApprovalRequestId,
+  EnvironmentId,
   ProviderInstanceId,
   ThreadId,
   type ProviderRuntimeEvent,
@@ -23,6 +24,7 @@ import * as AcpErrors from "effect-acp/errors";
 import type * as AcpSchema from "effect-acp/schema";
 
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE } from "../antigravityAuthSupport.ts";
 import type { AcpSessionRuntimeEvent } from "../acp/AcpSessionRuntime.ts";
 import { makeAntigravityAcpRuntime } from "../acp/AntigravityAcpSupport.ts";
@@ -302,6 +304,40 @@ const layer = ServerConfig.layerTest(process.cwd(), {
 }).pipe(Layer.provideMerge(NodeServices.layer));
 
 it.layer(layer)("AntigravityAdapter", (it) => {
+  it.effect("attaches only the admitted preview server", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      McpProviderSession.setMcpProviderSession({
+        environmentId: EnvironmentId.make("environment-antigravity-preview"),
+        threadId,
+        providerSessionId: "provider-session-antigravity-preview",
+        providerInstanceId: instanceId,
+        capabilities: new Set(["preview"]),
+        boardEndpoint: "http://127.0.0.1:43123/mcp",
+        previewEndpoint: "http://127.0.0.1:43123/mcp/preview",
+        authorizationHeader: "Bearer synthetic-antigravity-token",
+      });
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+      );
+
+      yield* h.adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+
+      expect(h.launches[0]?.mcpServers).toEqual([
+        {
+          type: "http",
+          name: "t3-code-preview",
+          url: "http://127.0.0.1:43123/mcp/preview",
+          headers: [{ name: "Authorization", value: "Bearer synthetic-antigravity-token" }],
+        },
+      ]);
+    }),
+  );
+
   it.effect(
     "runs native auth, resume, models, commands, and streaming through the ACP transport",
     () =>

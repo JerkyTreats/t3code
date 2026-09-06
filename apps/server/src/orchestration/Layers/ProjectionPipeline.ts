@@ -15,6 +15,10 @@ import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import { isBoardEvent } from "../../board/Event.ts";
+import { applyBoardEventProjection, BOARD_POSTS_PROJECTOR } from "../../board/EventProjection.ts";
+import { ProjectionBoardPostRepository } from "../../persistence/Services/ProjectionBoardPosts.ts";
+import { ProjectionBoardPostRepositoryLive } from "../../persistence/Layers/ProjectionBoardPosts.ts";
 import { toPersistenceSqlError, type ProjectionRepositoryError } from "../../persistence/Errors.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { ProjectionPendingApprovalRepository } from "../../persistence/Services/ProjectionPendingApprovals.ts";
@@ -67,6 +71,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
   threadTurns: "projection.thread-turns",
   checkpoints: "projection.checkpoints",
   pendingApprovals: "projection.pending-approvals",
+  boardPosts: BOARD_POSTS_PROJECTOR,
 } as const;
 
 type ProjectorName =
@@ -97,6 +102,7 @@ function settledTurnStateForSessionStatus(
 
 interface ProjectorDefinition {
   readonly name: ProjectorName;
+  readonly accepts?: (event: OrchestrationEvent) => boolean;
   readonly apply: (
     event: OrchestrationEvent,
     attachmentSideEffects: AttachmentSideEffects,
@@ -507,6 +513,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionThreadSessionRepository = yield* ProjectionThreadSessionRepository;
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
+    const projectionBoardPostRepository = yield* ProjectionBoardPostRepository;
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -1852,6 +1859,12 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         apply: applyPendingApprovalsProjection,
       },
       {
+        name: ORCHESTRATION_PROJECTOR_NAMES.boardPosts,
+        accepts: isBoardEvent,
+        apply: (event) =>
+          applyBoardEventProjection({ event, repository: projectionBoardPostRepository }),
+      },
+      {
         name: ORCHESTRATION_PROJECTOR_NAMES.threads,
         apply: applyThreadsProjection,
       },
@@ -1913,6 +1926,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       event: OrchestrationEvent,
       attachmentSideEffects: AttachmentSideEffects,
     ) {
+      if (projector.accepts !== undefined && !projector.accepts(event)) return;
       yield* projector.apply(event, attachmentSideEffects);
       yield* projectionStateRepository.upsert({
         projector: projector.name,
@@ -1958,16 +1972,20 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             deletedThreadIds: new Set<string>(),
             prunedThreadRelativePaths: new Map<string, Set<string>>(),
           };
+          // Board's durable head moves only for Board events. Other projectors retain upstream global cursors.
+          const activeProjectors = projectors.filter(
+            (projector) => projector.accepts?.(event) ?? true,
+          );
           yield* sql.withTransaction(
             Effect.gen(function* () {
               yield* Effect.forEach(
-                projectors,
+                activeProjectors,
                 (projector) => projector.apply(event, attachmentSideEffects),
                 { concurrency: 1, discard: true },
               );
               // Runtime projectors commit together. Bootstrap still advances each cursor separately.
               yield* projectionStateRepository.upsertMany(
-                projectors.map((projector) => ({
+                activeProjectors.map((projector) => ({
                   projector: projector.name,
                   lastAppliedSequence: event.sequence,
                   updatedAt: event.occurredAt,
@@ -2033,5 +2051,6 @@ export const OrchestrationProjectionPipelineLive = Layer.effect(
   Layer.provideMerge(ProjectionThreadSessionRepositoryLive),
   Layer.provideMerge(ProjectionTurnRepositoryLive),
   Layer.provideMerge(ProjectionPendingApprovalRepositoryLive),
+  Layer.provideMerge(ProjectionBoardPostRepositoryLive),
   Layer.provideMerge(ProjectionStateRepositoryLive),
 );

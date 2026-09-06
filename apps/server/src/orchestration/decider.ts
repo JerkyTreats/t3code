@@ -16,6 +16,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
+import { decideBoardCommand } from "../board/CommandDecision.ts";
+import { isBoardCommand } from "../board/Event.ts";
 import type * as PlatformError from "effect/PlatformError";
 
 import {
@@ -200,6 +202,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   OrchestrationCommandRejection | PlatformError.PlatformError,
   Crypto.Crypto
 > {
+  if (isBoardCommand(command)) {
+    return yield* decideBoardCommand({ command, makeEventBase: withEventBase });
+  }
+
   switch (command.type) {
     case "project.create": {
       yield* requireProjectAbsent({

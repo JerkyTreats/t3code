@@ -8,6 +8,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -17,6 +19,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import {
   ApprovalRequestId,
+  EnvironmentId,
   GrokSettings,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -26,6 +29,20 @@ import {
 } from "@t3tools/contracts";
 
 import { ServerConfig } from "../../config.ts";
+import { HttpServer } from "effect/unstable/http";
+import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
+import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
+import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
+import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
+import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
+import { makeProviderServiceLive } from "./ProviderService.ts";
+import { ProviderService } from "../Services/ProviderService.ts";
+import { ProviderAdapterRegistry } from "../Services/ProviderAdapterRegistry.ts";
+import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
+import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   grokPromptSettlementBelongsToContext,
   isGrokEnterPlanModeToolCall,
@@ -212,6 +229,64 @@ it("requires a settlement to match the live Grok turn", () => {
 });
 
 it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
+  it.effect("passes separate Board and preview servers into the Grok ACP session", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("grok-board-preview-mcp");
+      const tempDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-board-preview-mcp-")),
+      );
+      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
+      yield* Effect.promise(() => NodeFSP.writeFile(requestLogPath, "", "utf8"));
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+      );
+      yield* Effect.sync(() =>
+        McpProviderSession.setMcpProviderSession({
+          environmentId: EnvironmentId.make("environment-grok-board-preview"),
+          threadId,
+          providerSessionId: "provider-session-grok-board-preview",
+          providerInstanceId: ProviderInstanceId.make("grok"),
+          capabilities: new Set(["board", "preview"]),
+          boardEndpoint: "http://127.0.0.1:43123/mcp",
+          previewEndpoint: "http://127.0.0.1:43123/mcp/preview",
+          authorizationHeader: "Bearer synthetic-grok-token",
+        }),
+      );
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+      );
+      const adapter = yield* makeTestAdapter(wrapperPath);
+
+      yield* adapter.startSession({
+        threadId,
+        provider: ProviderDriverKind.make("grok"),
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.stopSession(threadId);
+
+      const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
+      const sessionNew = requests.find((entry) => entry.method === "session/new");
+      assert.deepStrictEqual(
+        (sessionNew?.params as { readonly mcpServers?: unknown } | undefined)?.mcpServers,
+        [
+          {
+            type: "http",
+            name: "t3-code",
+            url: "http://127.0.0.1:43123/mcp",
+            headers: [{ name: "Authorization", value: "Bearer synthetic-grok-token" }],
+          },
+          {
+            type: "http",
+            name: "t3-code-preview",
+            url: "http://127.0.0.1:43123/mcp/preview",
+            headers: [{ name: "Authorization", value: "Bearer synthetic-grok-token" }],
+          },
+        ],
+      );
+    }),
+  );
+
   it.effect("sends runtime context with the current model without changing saved prompts", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-runtime-context");
@@ -2458,3 +2533,155 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     }).pipe(TestClock.withLive),
   );
 });
+
+it.effect(
+  "cancels a real Grok Plan send waiting for preparation before replacing its credential",
+  () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("grok-board-queued-replacement");
+      const directory = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-board-queue-")),
+      );
+      const requestLogPath = NodePath.join(directory, "requests.ndjson");
+      yield* Effect.promise(() => NodeFSP.writeFile(requestLogPath, "", "utf8"));
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockGrokWrapper({ T3_ACP_REQUEST_LOG_PATH: requestLogPath }),
+      );
+      const readEntered = yield* Deferred.make<void>();
+      const releaseRead = yield* Deferred.make<void>();
+      const readFinalized = yield* Deferred.make<void>();
+      const planEntered = yield* Deferred.make<void>();
+      const fileSystem = yield* FileSystem.FileSystem;
+      const adapter = yield* makeTestAdapter(wrapperPath).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fileSystem,
+          readFile: (path) =>
+            String(path).includes("queued-board-image")
+              ? Deferred.succeed(readEntered, undefined).pipe(
+                  Effect.andThen(Deferred.await(releaseRead)),
+                  Effect.as(new Uint8Array([1, 2, 3])),
+                  Effect.ensuring(Deferred.succeed(readFinalized, undefined)),
+                )
+              : fileSystem.readFile(path),
+        }),
+      );
+      const registry = yield* McpSessionRegistry.__testing.make().pipe(
+        Effect.provideService(
+          HttpServer.HttpServer,
+          HttpServer.HttpServer.of({
+            address: { _tag: "TcpAddress", hostname: "127.0.0.1", port: 43123 },
+            serve: (() => Effect.void) as HttpServer.HttpServer["Service"]["serve"],
+          }),
+        ),
+        Effect.provideService(
+          ServerEnvironment.ServerEnvironment,
+          ServerEnvironment.ServerEnvironment.of({
+            getEnvironmentId: Effect.succeed(EnvironmentId.make("grok-queue")),
+            getDescriptor: Effect.die("unused"),
+          }),
+        ),
+      );
+      const tokens: string[] = [];
+      const providerLayer = makeProviderServiceLive({
+        issueMcpCredential: (request) =>
+          registry.revokeThread(request.threadId).pipe(
+            Effect.andThen(registry.issue(request)),
+            Effect.tap((credential) =>
+              Effect.sync(() => {
+                tokens.push(credential.config.authorizationHeader.replace(/^Bearer\s+/, ""));
+              }),
+            ),
+          ),
+        revokeMcpCredential: registry.revokeThread,
+        setMcpBoardWriteEnabled: registry.setBoardWriteEnabled,
+      }).pipe(
+        Layer.provide(
+          Layer.succeed(
+            ProviderAdapterRegistry,
+            makeAdapterRegistryMock({
+              [ProviderDriverKind.make("grok")]: {
+                ...adapter,
+                sendTurn: (input) =>
+                  (input.interactionMode === "plan"
+                    ? Deferred.succeed(planEntered, undefined)
+                    : Effect.void
+                  ).pipe(Effect.andThen(adapter.sendTurn(input))),
+              },
+            }),
+          ),
+        ),
+        Layer.provide(
+          ProviderSessionDirectoryLive.pipe(
+            Layer.provide(
+              ProviderSessionRuntime.layer.pipe(Layer.provide(SqlitePersistenceMemory)),
+            ),
+          ),
+        ),
+        Layer.provide(ServerSettingsService.layerTest()),
+        Layer.provide(AnalyticsService.layerTest),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const provider = yield* ProviderService;
+        const start = provider.startSession(threadId, {
+          threadId,
+          provider: ProviderDriverKind.make("grok"),
+          providerInstanceId: ProviderInstanceId.make("grok"),
+          runtimeMode: "full-access",
+          cwd: process.cwd(),
+        });
+        yield* start;
+        const first = yield* provider
+          .sendTurn({
+            threadId,
+            input: "holding preparation",
+            interactionMode: "default",
+            attachments: [
+              {
+                type: "image",
+                id: "queued-board-image-12345678-1234-1234-1234-123456789abc",
+                name: "image.png",
+                mimeType: "image/png",
+                sizeBytes: 3,
+              },
+            ],
+          })
+          .pipe(Effect.exit, Effect.forkChild);
+        yield* Deferred.await(readEntered);
+        const queued = yield* provider
+          .sendTurn({ threadId, input: "queued plan", interactionMode: "plan" })
+          .pipe(Effect.exit, Effect.forkChild);
+        yield* Deferred.await(planEntered);
+        yield* Effect.yieldNow;
+        const scope = yield* registry.resolve(tokens[0]!);
+        assert.isTrue(scope?.capabilities.has("board"));
+        assert.isFalse(scope?.capabilities.has("board-write"));
+        yield* start;
+        assert.isTrue(yield* Deferred.isDone(readFinalized));
+        assert.isTrue(Exit.isFailure(yield* Fiber.join(first)));
+        assert.isTrue(Exit.isFailure(yield* Fiber.join(queued)));
+        assert.isUndefined(yield* registry.resolve(tokens[0]!));
+        yield* Deferred.succeed(releaseRead, undefined);
+        yield* Effect.yieldNow;
+        const before = yield* Effect.promise(() => readJsonLines(requestLogPath));
+        assert.equal(before.filter((request) => request.method === "session/prompt").length, 0);
+        yield* provider.sendTurn({
+          threadId,
+          input: "replacement default",
+          interactionMode: "default",
+        });
+        const replacementScope = yield* registry.resolve(tokens[1]!);
+        assert.isTrue(replacementScope?.capabilities.has("board-write"));
+        const after = yield* Effect.promise(() => readJsonLines(requestLogPath));
+        assert.equal(after.filter((request) => request.method === "session/prompt").length, 1);
+        const requestLog = yield* Effect.promise(() => NodeFSP.readFile(requestLogPath, "utf8"));
+        assert.isFalse(requestLog.includes("queued plan"));
+        yield* provider.stopSession({ threadId });
+      }).pipe(Effect.provide(providerLayer));
+    }).pipe(Effect.provide(grokAdapterTestLayer), Effect.scoped, TestClock.withLive),
+);

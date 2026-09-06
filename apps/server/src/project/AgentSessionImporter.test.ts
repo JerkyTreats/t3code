@@ -224,6 +224,7 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
           readThreadEvents: () => Stream.empty,
           getThreadReplayStats: () => Effect.die("unused"),
           streamDomainEvents: Stream.empty,
+          subscribeBoardDomainEvents: Effect.succeed(Stream.empty),
           subscribeDomainEvents: Effect.succeed(Stream.empty),
           latestSequence: Effect.succeed(0),
         });
@@ -329,6 +330,7 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
           readThreadEvents: () => Stream.empty,
           getThreadReplayStats: () => Effect.die("unused"),
           streamDomainEvents: Stream.empty,
+          subscribeBoardDomainEvents: Effect.succeed(Stream.empty),
           subscribeDomainEvents: Effect.succeed(Stream.empty),
           latestSequence: Effect.succeed(0),
         });
@@ -394,6 +396,7 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
           readThreadEvents: () => Stream.empty,
           getThreadReplayStats: () => Effect.die("unused"),
           streamDomainEvents: Stream.empty,
+          subscribeBoardDomainEvents: Effect.succeed(Stream.empty),
           subscribeDomainEvents: Effect.succeed(Stream.empty),
           latestSequence: Effect.succeed(0),
         });
@@ -465,6 +468,7 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
           readThreadEvents: () => Stream.empty,
           getThreadReplayStats: () => Effect.die("unused"),
           streamDomainEvents: Stream.empty,
+          subscribeBoardDomainEvents: Effect.succeed(Stream.empty),
           subscribeDomainEvents: Effect.succeed(Stream.empty),
           latestSequence: Effect.succeed(0),
         });
@@ -503,6 +507,7 @@ it.layer(NodeServices.layer)("AgentSessionImporter", (it) => {
           readThreadEvents: () => Stream.empty,
           getThreadReplayStats: () => Effect.die("unused"),
           streamDomainEvents: Stream.empty,
+          subscribeBoardDomainEvents: Effect.succeed(Stream.empty),
           subscribeDomainEvents: Effect.succeed(Stream.empty),
           latestSequence: Effect.succeed(0),
         });

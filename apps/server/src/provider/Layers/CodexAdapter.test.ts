@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import {
   ApprovalRequestId,
   CodexSettings,
+  EnvironmentId,
   EventId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -23,6 +24,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, vi } from "@effect/vitest";
 
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
+import * as FileSystem from "effect/FileSystem";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -36,6 +39,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as CodexErrors from "effect-codex-app-server/errors";
 
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterValidationError } from "../Errors.ts";
 import type { CodexAdapterShape } from "../Services/CodexAdapter.ts";
@@ -47,6 +51,19 @@ import {
   type CodexThreadSnapshot,
 } from "./CodexSessionRuntime.ts";
 import { makeCodexAdapter } from "./CodexAdapter.ts";
+import { HttpServer } from "effect/unstable/http";
+import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
+import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
+import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
+import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
+import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
+import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
+import { makeProviderServiceLive } from "./ProviderService.ts";
+import { ProviderService } from "../Services/ProviderService.ts";
+import { ProviderAdapterRegistry } from "../Services/ProviderAdapterRegistry.ts";
+import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
+import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* CodexAdapter`.
@@ -296,6 +313,48 @@ validationLayer("CodexAdapterLive validation", (it) => {
         threadId: asThreadId("thread-1"),
         runtimeMode: "full-access",
       });
+    }),
+  );
+
+  it.effect("passes separate Board and preview attachments into the Codex runtime", () =>
+    Effect.gen(function* () {
+      validationRuntimeFactory.factory.mockClear();
+      const threadId = asThreadId("thread-codex-board-preview");
+      yield* Effect.sync(() =>
+        McpProviderSession.setMcpProviderSession({
+          environmentId: EnvironmentId.make("environment-codex-board-preview"),
+          threadId,
+          providerSessionId: "provider-session-codex-board-preview",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          capabilities: new Set(["board", "preview"]),
+          boardEndpoint: "http://127.0.0.1:43123/mcp",
+          previewEndpoint: "http://127.0.0.1:43123/mcp/preview",
+          authorizationHeader: "Bearer synthetic-codex-token",
+        }),
+      );
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+      );
+      const adapter = yield* CodexAdapter;
+
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const runtimeOptions = validationRuntimeFactory.factory.mock.calls[0]?.[0];
+      NodeAssert.deepStrictEqual(runtimeOptions?.appServerArgs, [
+        "-c",
+        "mcp_servers.t3-code.url=http://127.0.0.1:43123/mcp",
+        "-c",
+        'mcp_servers.t3-code.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+        "-c",
+        "mcp_servers.t3-code-preview.url=http://127.0.0.1:43123/mcp/preview",
+        "-c",
+        'mcp_servers.t3-code-preview.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+      ]);
+      NodeAssert.equal(runtimeOptions?.environment?.T3_MCP_BEARER_TOKEN, "synthetic-codex-token");
     }),
   );
 });
@@ -2693,3 +2752,186 @@ it.effect("flushes managed native logs when the adapter layer shuts down", () =>
     }
   }),
 );
+
+const attachmentReplacementTestLayer = ServerConfig.layerTest(process.cwd(), process.cwd()).pipe(
+  Layer.provideMerge(NodeServices.layer),
+);
+
+const replacementAttachment = {
+  type: "image" as const,
+  id: "replacement-12345678-1234-1234-1234-123456789abc",
+  name: "image.png",
+  mimeType: "image/png",
+  sizeBytes: 3,
+};
+const makeDelayedAttachmentAdapter = Effect.fn("makeDelayedAttachmentAdapter")(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const entered = yield* Deferred.make<void>();
+  const release = yield* Deferred.make<void>();
+  const finalized = yield* Deferred.make<void>();
+  const runtimeFactory = makeRuntimeFactory();
+  const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
+    makeRuntime: runtimeFactory.factory,
+  }).pipe(
+    Effect.provideService(FileSystem.FileSystem, {
+      ...fileSystem,
+      readFile: (path) =>
+        String(path).includes(replacementAttachment.id)
+          ? Deferred.succeed(entered, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.as(new Uint8Array([1, 2, 3])),
+              Effect.ensuring(Deferred.succeed(finalized, undefined)),
+            )
+          : fileSystem.readFile(path),
+    }),
+  );
+  return { adapter, runtimeFactory, entered, release, finalized };
+});
+
+it.effect("rejects a delayed image send when its captured Codex session has been replaced", () =>
+  Effect.gen(function* () {
+    const { adapter, runtimeFactory, entered, release } = yield* makeDelayedAttachmentAdapter();
+    const threadId = asThreadId("direct-attachment-replacement");
+    const start = adapter.startSession({ threadId, runtimeMode: "full-access" });
+    yield* start;
+    const original = runtimeFactory.lastRuntime!;
+    const pending = yield* adapter
+      .sendTurn({
+        threadId,
+        input: "plan image",
+        interactionMode: "plan",
+        attachments: [replacementAttachment],
+      })
+      .pipe(Effect.exit, Effect.forkChild);
+    yield* Deferred.await(entered);
+    yield* start;
+    const replacement = runtimeFactory.lastRuntime!;
+    yield* Deferred.succeed(release, undefined);
+    const result = yield* Fiber.join(pending);
+    NodeAssert.equal(Exit.isFailure(result), true);
+    NodeAssert.equal(original.sendTurnImpl.mock.calls.length, 0);
+    NodeAssert.equal(replacement.sendTurnImpl.mock.calls.length, 0);
+    yield* adapter.sendTurn({ threadId, input: "new image", attachments: [replacementAttachment] });
+    NodeAssert.equal(replacement.sendTurnImpl.mock.calls.length, 1);
+    NodeAssert.deepEqual(replacement.sendTurnImpl.mock.calls[0]?.[0].attachments, [
+      { type: "image", url: "data:image/png;base64,AQID" },
+    ]);
+    yield* adapter.stopAll();
+  }).pipe(Effect.provide(attachmentReplacementTestLayer), Effect.scoped),
+);
+
+for (const lifecycle of ["restart", "stop"] as const) {
+  it.effect(
+    `cancels the real pending Codex image read before ${lifecycle} replaces Board credentials`,
+    () =>
+      Effect.gen(function* () {
+        const { adapter, runtimeFactory, entered, release, finalized } =
+          yield* makeDelayedAttachmentAdapter();
+        const registry = yield* McpSessionRegistry.__testing.make().pipe(
+          Effect.provideService(
+            HttpServer.HttpServer,
+            HttpServer.HttpServer.of({
+              address: { _tag: "TcpAddress", hostname: "127.0.0.1", port: 43123 },
+              serve: (() => Effect.void) as HttpServer.HttpServer["Service"]["serve"],
+            }),
+          ),
+          Effect.provideService(
+            ServerEnvironment.ServerEnvironment,
+            ServerEnvironment.ServerEnvironment.of({
+              getEnvironmentId: Effect.succeed(EnvironmentId.make("codex-attachment-lifecycle")),
+              getDescriptor: Effect.die("unused"),
+            }),
+          ),
+        );
+        const providerLayer = makeProviderServiceLive({
+          issueMcpCredential: (request) =>
+            registry.revokeThread(request.threadId).pipe(Effect.andThen(registry.issue(request))),
+          revokeMcpCredential: registry.revokeThread,
+          setMcpBoardWriteEnabled: registry.setBoardWriteEnabled,
+        }).pipe(
+          Layer.provide(
+            Layer.succeed(
+              ProviderAdapterRegistry,
+              makeAdapterRegistryMock({ [ProviderDriverKind.make("codex")]: adapter }),
+            ),
+          ),
+          Layer.provide(
+            ProviderSessionDirectoryLive.pipe(
+              Layer.provide(
+                ProviderSessionRuntime.layer.pipe(Layer.provide(SqlitePersistenceMemory)),
+              ),
+            ),
+          ),
+          Layer.provide(ServerSettingsService.layerTest()),
+          Layer.provide(AnalyticsService.layerTest),
+          Layer.provide(
+            Layer.succeed(
+              ProviderEventLoggers.ProviderEventLoggers,
+              ProviderEventLoggers.NoOpProviderEventLoggers,
+            ),
+          ),
+        );
+        yield* Effect.gen(function* () {
+          const provider = yield* ProviderService;
+          const threadId = asThreadId(`service-image-${lifecycle}`);
+          const start = provider.startSession(threadId, {
+            threadId,
+            provider: ProviderDriverKind.make("codex"),
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            runtimeMode: "full-access",
+          });
+          yield* start;
+          const original = runtimeFactory.lastRuntime!;
+          const oldToken = original.options.environment!.T3_MCP_BEARER_TOKEN!;
+          const pending = yield* provider
+            .sendTurn({
+              threadId,
+              input: "plan image",
+              interactionMode: "plan",
+              attachments: [replacementAttachment],
+            })
+            .pipe(Effect.exit, Effect.forkChild);
+          yield* Deferred.await(entered);
+          const planScope = yield* registry.resolve(oldToken);
+          NodeAssert.ok(planScope);
+          yield* McpInvocationContext.requireBoardCapability().pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, planScope),
+          );
+          const write = yield* McpInvocationContext.requireBoardWriteCapability().pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, planScope),
+            Effect.exit,
+          );
+          NodeAssert.equal(Exit.isFailure(write), true);
+          if (lifecycle === "stop") yield* provider.stopSession({ threadId });
+
+          yield* start;
+          NodeAssert.equal(yield* Deferred.isDone(finalized), true);
+          NodeAssert.equal(Exit.isFailure(yield* Fiber.join(pending)), true);
+          const replacement = runtimeFactory.lastRuntime!;
+          const newToken = replacement.options.environment!.T3_MCP_BEARER_TOKEN!;
+          NodeAssert.notEqual(newToken, oldToken);
+          NodeAssert.equal(yield* registry.resolve(oldToken), undefined);
+          yield* Deferred.succeed(release, undefined);
+          yield* Effect.yieldNow;
+          NodeAssert.equal(original.sendTurnImpl.mock.calls.length, 0);
+          NodeAssert.equal(replacement.sendTurnImpl.mock.calls.length, 0);
+          yield* provider.sendTurn({ threadId, input: "default", interactionMode: "default" });
+          const scope = yield* registry.resolve(newToken);
+          NodeAssert.ok(scope);
+          yield* McpInvocationContext.requireBoardWriteCapability().pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+          );
+          yield* provider.sendTurn({
+            threadId,
+            input: "new plan image",
+            interactionMode: "plan",
+            attachments: [replacementAttachment],
+          });
+          const newPlanScope = yield* registry.resolve(newToken);
+          NodeAssert.ok(newPlanScope);
+          NodeAssert.equal(newPlanScope.capabilities.has("board"), true);
+          NodeAssert.equal(newPlanScope.capabilities.has("board-write"), false);
+        }).pipe(Effect.provide(providerLayer));
+      }).pipe(Effect.provide(attachmentReplacementTestLayer), Effect.scoped),
+  );
+}

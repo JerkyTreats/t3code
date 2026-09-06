@@ -7,9 +7,12 @@ import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import {
   AdminMutationResult,
   AuthAccessTokenType,
+  AuthClientId,
   AuthStandardClientScopes,
   AuthEnvironmentBootstrapTokenType,
   AuthTokenExchangeGrantType,
+  BoardAuthorId,
+  BoardPostId,
   CommandId,
   DEFAULT_SERVER_SETTINGS,
   type DpopFailureReason,
@@ -167,6 +170,9 @@ import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/provid
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as BoardQuery from "./orchestration/Services/BoardQuery.ts";
+import * as Board from "./orchestration/Services/Board.ts";
+import { makeBoardEventHub } from "./board/BoardSubscription.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -243,6 +249,89 @@ const defaultModelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
   model: "gpt-5-codex",
 } as const;
+
+const makeBoardPost = (sequence: number) => ({
+  id: BoardPostId.make(`board-post-${sequence}`),
+  author: {
+    kind: "agent" as const,
+    id: BoardAuthorId.make("trusted-agent"),
+    providerInstanceId: ProviderInstanceId.make("codex"),
+  },
+  source: { projectId: defaultProjectId, threadId: defaultThreadId },
+  body: `Board message ${sequence}`,
+  targets: sequence === 2 ? ["attention-only"] : [],
+  sequence,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  revision: 1,
+  updatedSequence: sequence,
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  lastEditor: {
+    kind: "agent" as const,
+  },
+  lastEditorSource: { projectId: defaultProjectId, threadId: defaultThreadId },
+});
+const makeBoardEvent = (sequence: number) => {
+  const post = makeBoardPost(sequence);
+  return {
+    sequence,
+    eventId: EventId.make(`event-board-${sequence}`),
+    aggregateKind: "board",
+    aggregateId: "environment-global-board",
+    occurredAt: post.createdAt,
+    commandId: CommandId.make(`provider:board:${sequence}`),
+    causationEventId: null,
+    correlationId: CommandId.make(`provider:board:${sequence}`),
+    metadata: {},
+    type: "board.post-published",
+    payload: {
+      postId: post.id,
+      author: post.author,
+      source: post.source,
+      body: post.body,
+      targets: post.targets,
+      createdAt: post.createdAt,
+    },
+  } satisfies Extract<OrchestrationEvent, { type: "board.post-published" }>;
+};
+const makeRevisedBoardPost = (publicationSequence: number, updatedSequence: number) => ({
+  ...makeBoardPost(publicationSequence),
+  body: `Corrected Board message ${publicationSequence}`,
+  revision: 2,
+  updatedSequence,
+  updatedAt: "2026-01-01T00:05:00.000Z",
+  lastEditor: {
+    kind: "environment-owner" as const,
+  },
+  lastEditorSource: null,
+});
+const makeBoardRevisionEvent = (publicationSequence: number, eventSequence: number) => {
+  const post = makeRevisedBoardPost(publicationSequence, eventSequence);
+  return {
+    sequence: eventSequence,
+    eventId: EventId.make(`event-board-revision-${eventSequence}`),
+    aggregateKind: "board",
+    aggregateId: "environment-global-board",
+    occurredAt: post.updatedAt,
+    commandId: CommandId.make(`owner:board:${eventSequence}`),
+    causationEventId: null,
+    correlationId: CommandId.make(`owner:board:${eventSequence}`),
+    metadata: {},
+    type: "board.post-revised",
+    payload: {
+      postId: post.id,
+      previousRevision: 1,
+      revision: 2,
+      editor: {
+        kind: "environment-owner",
+        clientId: AuthClientId.make("owner-client"),
+      },
+      editorSource: null,
+      body: post.body,
+      targets: post.targets,
+      revisedAt: post.updatedAt,
+    },
+  } satisfies Extract<OrchestrationEvent, { type: "board.post-revised" }>;
+};
 
 const providerSetupInstanceId = ProviderInstanceId.make("antigravity-custom-profile");
 const providerSetupDriver = ProviderDriverKind.make("antigravity");
@@ -560,6 +649,8 @@ const buildAppUnderTest = (options?: {
     threadDeletionReactor?: Partial<ThreadDeletionReactor["Service"]>;
     analyticsService?: Partial<AnalyticsService.AnalyticsService["Service"]>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"]>;
+    boardQuery?: Partial<BoardQuery.BoardQuery["Service"]>;
+    board?: Partial<Board.Board["Service"]>;
     checkpointDiffQuery?: Partial<CheckpointDiffQuery.CheckpointDiffQuery["Service"]>;
     browserTraceCollector?: Partial<BrowserTraceCollector.BrowserTraceCollector["Service"]>;
     serverLifecycleEvents?: Partial<ServerLifecycleEvents.ServerLifecycleEvents["Service"]>;
@@ -989,8 +1080,26 @@ const buildAppUnderTest = (options?: {
               }),
             dispatch: () => Effect.succeed({ sequence: 0 }),
             streamDomainEvents: Stream.empty,
+            subscribeBoardDomainEvents: Effect.succeed(Stream.empty),
             latestSequence: Effect.succeed(0),
             ...options?.layers?.orchestrationEngine,
+          }),
+          Layer.mock(BoardQuery.BoardQuery)({
+            getPage: () => Effect.succeed({ posts: [], beforeCursor: null, headSequence: 0 }),
+            getHeadSequence: Effect.succeed(0),
+            getPostBySequence: () => Effect.succeed(Option.none()),
+            getPostById: () => Effect.succeed(Option.none()),
+            getHistory: () => Effect.succeed(Option.none()),
+            listAfterSequenceThroughHead: () => Effect.succeed([]),
+            readAfterSequenceSnapshot: () =>
+              Effect.succeed({ posts: [], headSequence: 0, replayable: true }),
+            ...options?.layers?.boardQuery,
+          }),
+          Layer.mock(Board.Board)({
+            publish: () => Effect.die("Unexpected Board publish in server test"),
+            reviseAsAgent: () => Effect.die("Unexpected Board agent revision in server test"),
+            reviseAsOwner: () => Effect.die("Unexpected Board owner revision in server test"),
+            ...options?.layers?.board,
           }),
           Layer.mock(ThreadDeletionReactor)({
             start: () => Effect.void,
@@ -7766,6 +7875,455 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       assert.deepEqual(Option.getOrThrow(firstItem), { kind: "synchronized" });
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("serves the same global Board page to a human reader", () =>
+    Effect.gen(function* () {
+      const post = makeBoardPost(7);
+      yield* buildAppUnderTest({
+        layers: {
+          boardQuery: {
+            getPage: () => Effect.succeed({ posts: [post], beforeCursor: null, headSequence: 9 }),
+          },
+        },
+      });
+
+      const page = yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          client[ORCHESTRATION_WS_METHODS.getBoardPage]({}),
+        ),
+      );
+
+      assert.deepStrictEqual(page, { posts: [post], beforeCursor: null, headSequence: 9 });
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("allows standard Board reads and subscriptions but denies owner correction", () =>
+    Effect.gen(function* () {
+      const post = makeBoardPost(7);
+      let ownerCalls = 0;
+      yield* buildAppUnderTest({
+        layers: {
+          boardQuery: {
+            getPage: () => Effect.succeed({ posts: [post], beforeCursor: null, headSequence: 7 }),
+            getHistory: () =>
+              Effect.succeed(
+                Option.some({
+                  postId: post.id,
+                  currentRevision: 1,
+                  revisions: [],
+                  beforeRevision: null,
+                }),
+              ),
+          },
+          board: {
+            reviseAsOwner: () =>
+              Effect.sync(() => {
+                ownerCalls += 1;
+                return post;
+              }),
+          },
+        },
+      });
+      const { response, body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        scope: AuthStandardClientScopes.join(" "),
+      });
+      assert.equal(response.status, 200);
+      const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+        headers: { authorization: `Bearer ${body.access_token ?? ""}` },
+      });
+      const ticket = (yield* ticketResponse.json) as { readonly ticket: string };
+      const wsUrl = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket.ticket)}`;
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const page = yield* client[ORCHESTRATION_WS_METHODS.getBoardPage]({});
+            assert.deepStrictEqual(page.posts, [post]);
+            const history = yield* client[ORCHESTRATION_WS_METHODS.getBoardPostHistory]({
+              postId: post.id,
+            });
+            assert.equal(history.currentRevision, 1);
+            const items = yield* client[ORCHESTRATION_WS_METHODS.subscribeBoard]({
+              requestCompletionMarker: true,
+            }).pipe(Stream.take(2), Stream.runCollect);
+            assert.deepStrictEqual(
+              items.map((item) => item.kind),
+              ["snapshot", "synchronized"],
+            );
+            const failure = yield* Effect.flip(
+              client[ORCHESTRATION_WS_METHODS.reviseBoardPost]({
+                postId: post.id,
+                expectedRevision: 1,
+                body: "Unauthorized correction",
+                targets: [],
+              }),
+            );
+            assert.equal(failure._tag, "EnvironmentAuthorizationError");
+            if (failure._tag === "EnvironmentAuthorizationError") {
+              assert.equal(failure.requiredScope, "access:write");
+            }
+          }),
+        ),
+      );
+      assert.equal(ownerCalls, 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("routes owner Board corrections and deliberate history through typed RPCs", () =>
+    Effect.gen(function* () {
+      const original = makeBoardPost(7);
+      const corrected = makeRevisedBoardPost(7, 11);
+      const revisions = [
+        {
+          postId: corrected.id,
+          revision: 2,
+          body: corrected.body,
+          targets: corrected.targets,
+          editor: corrected.lastEditor,
+          editorSource: null,
+          editedAt: corrected.updatedAt,
+          eventSequence: corrected.updatedSequence,
+        },
+        {
+          postId: original.id,
+          revision: 1,
+          body: original.body,
+          targets: original.targets,
+          editor: original.lastEditor,
+          editorSource: original.lastEditorSource,
+          editedAt: original.createdAt,
+          eventSequence: original.sequence,
+        },
+      ];
+      const ownerCalls: Array<{ readonly clientId: string; readonly expectedRevision: number }> =
+        [];
+      yield* buildAppUnderTest({
+        layers: {
+          board: {
+            reviseAsOwner: (clientId, input) => {
+              ownerCalls.push({ clientId, expectedRevision: input.expectedRevision });
+              return Effect.succeed(corrected);
+            },
+          },
+          boardQuery: {
+            getHistory: () =>
+              Effect.succeed(
+                Option.some({
+                  postId: original.id,
+                  currentRevision: 2,
+                  revisions,
+                  beforeRevision: null,
+                }),
+              ),
+          },
+        },
+      });
+
+      const result = yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          Effect.all({
+            corrected: client[ORCHESTRATION_WS_METHODS.reviseBoardPost]({
+              postId: original.id,
+              expectedRevision: 1,
+              body: corrected.body,
+              targets: corrected.targets,
+            }),
+            history: client[ORCHESTRATION_WS_METHODS.getBoardPostHistory]({
+              postId: original.id,
+            }),
+          }),
+        ),
+      );
+
+      assert.deepStrictEqual(result.corrected, corrected);
+      assert.deepStrictEqual(result.history.revisions, revisions);
+      assert.strictEqual(ownerCalls.length, 1);
+      assert.strictEqual(ownerCalls[0]?.expectedRevision, 1);
+      assert.ok((ownerCalls[0]?.clientId.length ?? 0) > 0);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("wakes Board subscribers with a stable-position revision replacement", () =>
+    Effect.gen(function* () {
+      const liveEvents = yield* makeBoardEventHub;
+      const revised = makeRevisedBoardPost(1, 4);
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: { subscribeBoardDomainEvents: liveEvents.subscribe },
+          boardQuery: {
+            getPage: () =>
+              liveEvents.publish(makeBoardRevisionEvent(1, 4)).pipe(
+                Effect.as({
+                  posts: [makeBoardPost(1)],
+                  beforeCursor: null,
+                  headSequence: 1,
+                }),
+              ),
+            readAfterSequenceSnapshot: (afterSequence) => {
+              assert.strictEqual(afterSequence, 1);
+              return Effect.succeed({ posts: [revised], headSequence: 4, replayable: true });
+            },
+          },
+        },
+      });
+
+      const items = yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeBoard]({
+            requestCompletionMarker: true,
+          }).pipe(Stream.take(3), Stream.runCollect),
+        ),
+      ).pipe(Effect.timeout("2 seconds"));
+
+      assert.deepStrictEqual(Array.from(items), [
+        {
+          kind: "snapshot",
+          page: { posts: [makeBoardPost(1)], beforeCursor: null, headSequence: 1 },
+        },
+        { kind: "synchronized" },
+        { kind: "revision", post: revised },
+      ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+  );
+
+  it.effect("coalesces buffered Board wakeups and recovers every post in global order", () =>
+    Effect.gen(function* () {
+      const liveEvents = yield* makeBoardEventHub;
+      const livePosts = [makeBoardPost(2), makeBoardPost(3), makeBoardPost(4)];
+      let replayRequests = 0;
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: { subscribeBoardDomainEvents: liveEvents.subscribe },
+          boardQuery: {
+            getPage: () =>
+              Effect.forEach([2, 3, 4], (sequence) =>
+                liveEvents.publish(makeBoardEvent(sequence)),
+              ).pipe(
+                Effect.as({
+                  posts: [makeBoardPost(1)],
+                  beforeCursor: null,
+                  headSequence: 1,
+                }),
+              ),
+            readAfterSequenceSnapshot: (afterSequence) => {
+              replayRequests += 1;
+              assert.equal(afterSequence, 1);
+              return Effect.succeed({ posts: livePosts, headSequence: 4, replayable: true });
+            },
+          },
+        },
+      });
+
+      const items = yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeBoard]({
+            requestCompletionMarker: true,
+          }).pipe(Stream.take(5), Stream.runCollect),
+        ),
+      ).pipe(Effect.timeout("2 seconds"));
+
+      assert.deepStrictEqual(Array.from(items), [
+        {
+          kind: "snapshot",
+          page: { posts: [makeBoardPost(1)], beforeCursor: null, headSequence: 1 },
+        },
+        { kind: "synchronized" },
+        ...livePosts.map((post) => ({ kind: "post" as const, post })),
+      ]);
+      assert.equal(replayRequests, 1);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+  );
+
+  it.effect("rebases a slow Board subscriber that exceeds the bounded replay gap", () =>
+    Effect.gen(function* () {
+      const liveEvents = yield* makeBoardEventHub;
+      const initialPage = {
+        posts: [makeBoardPost(1)],
+        beforeCursor: null,
+        headSequence: 1,
+      };
+      const replacementPage = {
+        posts: [makeBoardPost(1_002)],
+        beforeCursor: "older-board-posts",
+        headSequence: 1_002,
+      };
+      let pageRequests = 0;
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: { subscribeBoardDomainEvents: liveEvents.subscribe },
+          boardQuery: {
+            getPage: () =>
+              Effect.gen(function* () {
+                pageRequests += 1;
+                if (pageRequests === 1) {
+                  yield* liveEvents.publish(makeBoardEvent(1_002));
+                  return initialPage;
+                }
+                return replacementPage;
+              }),
+            readAfterSequenceSnapshot: () =>
+              Effect.succeed({ posts: [], headSequence: 1_002, replayable: false }),
+          },
+        },
+      });
+
+      const items = yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeBoard]({
+            requestCompletionMarker: true,
+          }).pipe(Stream.take(4), Stream.runCollect),
+        ),
+      ).pipe(Effect.timeout("2 seconds"));
+
+      assert.deepStrictEqual(Array.from(items), [
+        { kind: "snapshot", page: initialPage },
+        { kind: "synchronized" },
+        { kind: "snapshot", page: replacementPage },
+        { kind: "synchronized" },
+      ]);
+      assert.equal(pageRequests, 2);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+  );
+
+  it.effect("recovers newer Board wakeups after a live catch-up query stalls", () =>
+    Effect.gen(function* () {
+      const liveEvents = yield* makeBoardEventHub;
+      const firstCatchUpStarted = yield* Deferred.make<void>();
+      const releaseFirstCatchUp = yield* Deferred.make<void>();
+      const replayRequests: Array<{ afterSequence: number; throughSequence: number }> = [];
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: { subscribeBoardDomainEvents: liveEvents.subscribe },
+          boardQuery: {
+            getPage: () =>
+              Effect.succeed({
+                posts: [makeBoardPost(1)],
+                beforeCursor: null,
+                headSequence: 1,
+              }),
+            readAfterSequenceSnapshot: (afterSequence) =>
+              Effect.gen(function* () {
+                if (afterSequence === 1) {
+                  replayRequests.push({ afterSequence, throughSequence: 2 });
+                  yield* Deferred.succeed(firstCatchUpStarted, undefined);
+                  yield* Deferred.await(releaseFirstCatchUp);
+                  return { posts: [makeBoardPost(2)], headSequence: 2, replayable: true };
+                }
+                replayRequests.push({ afterSequence, throughSequence: 4 });
+                return {
+                  posts: [makeBoardPost(3), makeBoardPost(4)],
+                  headSequence: 4,
+                  replayable: true,
+                };
+              }),
+          },
+        },
+      });
+
+      const observed = yield* Queue.unbounded<unknown>();
+      const itemsFiber = yield* Effect.forkChild(
+        Effect.scoped(
+          withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+            client[ORCHESTRATION_WS_METHODS.subscribeBoard]({
+              requestCompletionMarker: true,
+            }).pipe(
+              Stream.tap((item) => Queue.offer(observed, item)),
+              Stream.take(5),
+              Stream.runCollect,
+            ),
+          ),
+        ),
+      );
+
+      yield* Queue.take(observed);
+      yield* Queue.take(observed);
+      yield* liveEvents.publish(makeBoardEvent(2));
+      yield* Deferred.await(firstCatchUpStarted);
+      yield* liveEvents.publish(makeBoardEvent(3));
+      yield* liveEvents.publish(makeBoardEvent(4));
+      yield* Deferred.succeed(releaseFirstCatchUp, undefined);
+
+      const items = yield* Fiber.join(itemsFiber).pipe(Effect.timeout("2 seconds"));
+      assert.deepStrictEqual(Array.from(items), [
+        {
+          kind: "snapshot",
+          page: { posts: [makeBoardPost(1)], beforeCursor: null, headSequence: 1 },
+        },
+        { kind: "synchronized" },
+        { kind: "post", post: makeBoardPost(2) },
+        { kind: "post", post: makeBoardPost(3) },
+        { kind: "post", post: makeBoardPost(4) },
+      ]);
+      assert.deepStrictEqual(replayRequests, [
+        { afterSequence: 1, throughSequence: 2 },
+        { afterSequence: 2, throughSequence: 4 },
+      ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+  );
+
+  it.effect("replays global Board posts through one captured head without duplicates", () =>
+    Effect.gen(function* () {
+      const replayed = [makeBoardPost(3), makeBoardPost(5)];
+      yield* buildAppUnderTest({
+        layers: {
+          boardQuery: {
+            getPage: () => Effect.die("unexpected snapshot fallback"),
+            readAfterSequenceSnapshot: (afterSequence) => {
+              assert.equal(afterSequence, 2);
+              return Effect.succeed({ posts: replayed, headSequence: 5, replayable: true });
+            },
+          },
+        },
+      });
+
+      const items = yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeBoard]({
+            afterSequence: 2,
+            requestCompletionMarker: true,
+          }).pipe(Stream.take(3), Stream.runCollect),
+        ),
+      );
+
+      assert.deepStrictEqual(Array.from(items), [
+        { kind: "post", post: replayed[0]! },
+        { kind: "post", post: replayed[1]! },
+        { kind: "synchronized" },
+      ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("delivers a revised current row as its first atomic replay publication", () =>
+    Effect.gen(function* () {
+      const revised = makeRevisedBoardPost(3, 4);
+      const replayRequests: Array<{ afterSequence: number; throughSequence: number }> = [];
+      yield* buildAppUnderTest({
+        layers: {
+          boardQuery: {
+            getPage: () => Effect.die("unexpected snapshot fallback"),
+            readAfterSequenceSnapshot: (afterSequence) => {
+              replayRequests.push({ afterSequence, throughSequence: 4 });
+              return Effect.succeed({ posts: [revised], headSequence: 4, replayable: true });
+            },
+          },
+        },
+      });
+
+      const items = yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeBoard]({
+            afterSequence: 2,
+            requestCompletionMarker: true,
+          }).pipe(Stream.take(2), Stream.runCollect),
+        ),
+      ).pipe(Effect.timeout("2 seconds"));
+
+      assert.deepStrictEqual(Array.from(items), [
+        { kind: "post", post: revised },
+        { kind: "synchronized" },
+      ]);
+      assert.deepStrictEqual(replayRequests, [{ afterSequence: 2, throughSequence: 4 }]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
   );
 
   it.effect("marks a socket thread snapshot as synchronized when requested", () =>

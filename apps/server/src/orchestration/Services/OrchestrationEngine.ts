@@ -82,6 +82,13 @@ export interface OrchestrationEngineShape {
    */
   readonly streamDomainEvents: Stream.Stream<OrchestrationEvent>;
 
+  /** Board-only bounded wakeups, acquired before snapshot reads and released with the caller scope. */
+  readonly subscribeBoardDomainEvents: Effect.Effect<
+    Stream.Stream<OrchestrationEvent>,
+    never,
+    Scope.Scope
+  >;
+
   /**
    * Acquire a domain-event subscription before starting a consumer.
    * The subscription is ready when this effect returns and closes with the scope.

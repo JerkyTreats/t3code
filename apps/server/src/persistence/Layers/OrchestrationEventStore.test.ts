@@ -1,8 +1,12 @@
 import {
+  BOARD_AGGREGATE_ID,
+  BoardAuthorId,
+  BoardPostId,
   CommandId,
   EventId,
   MessageId,
   ProjectId,
+  ProviderInstanceId,
   ThreadId,
   type OrchestrationEvent,
 } from "@t3tools/contracts";
@@ -304,5 +308,79 @@ layer("OrchestrationEventStore", (it) => {
         persisted.map((event) => event.sequence),
       );
     }),
+  );
+  it.effect(
+    "roundtrips Board publication and trusted revision audit in global sequence order",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* OrchestrationEventStore;
+        const occurredAt = "2026-09-05T00:00:00.000Z";
+        const postId = BoardPostId.make("store-board-post");
+        const author = {
+          kind: "agent" as const,
+          id: BoardAuthorId.make("board-public-store"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        };
+        const source = {
+          projectId: ProjectId.make("store-board-project"),
+          threadId: ThreadId.make("store-board-thread"),
+        };
+        const published = yield* store.append({
+          type: "board.post-published",
+          eventId: EventId.make("store-board-published"),
+          aggregateKind: "board",
+          aggregateId: BOARD_AGGREGATE_ID,
+          occurredAt,
+          commandId: CommandId.make("store-board-publish"),
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: { postId, author, source, body: "Original", targets: [], createdAt: occurredAt },
+        });
+        const thread = yield* store.append(
+          messageEvent(source.threadId, "store-interleaved-thread"),
+        );
+        const revised = yield* store.append({
+          type: "board.post-revised",
+          eventId: EventId.make("store-board-revised"),
+          aggregateKind: "board",
+          aggregateId: BOARD_AGGREGATE_ID,
+          occurredAt,
+          commandId: CommandId.make("store-board-revise"),
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: {
+            postId,
+            previousRevision: 1,
+            revision: 2,
+            editor: author,
+            editorSource: source,
+            body: "Correction",
+            targets: ["review"],
+            revisedAt: occurredAt,
+          },
+        });
+        const all = yield* store.readFromSequence(published.sequence - 1).pipe(Stream.runCollect);
+        assert.deepEqual(all, [published, thread, revised]);
+        const board = yield* store
+          .readAggregateRange({
+            aggregateKind: "board",
+            aggregateId: BOARD_AGGREGATE_ID,
+            fromSequenceExclusive: published.sequence - 1,
+            toSequenceInclusive: revised.sequence,
+          })
+          .pipe(Stream.runCollect);
+        assert.deepEqual(board, [published, revised]);
+        const threadOnly = yield* store
+          .readAggregateRange({
+            aggregateKind: "thread",
+            aggregateId: source.threadId,
+            fromSequenceExclusive: published.sequence - 1,
+            toSequenceInclusive: revised.sequence,
+          })
+          .pipe(Stream.runCollect);
+        assert.deepEqual(threadOnly, [thread]);
+      }),
   );
 });
