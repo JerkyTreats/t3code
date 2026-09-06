@@ -696,3 +696,17 @@ Root adds regressions for successful and unauthorized responses without URL meta
 ### Commit effect — Electron enrollment response admission
 
 If applied, this commit lets Thread accept valid Electron enrollment responses while preserving exact-origin requests and redirect rejection.
+
+### Installed Thread browser fetch invocation correction
+
+The clean `312545cedb98c2fdf87e622184ba602c733fccfe` client accepts managed enrollment, but its primary session loader fails before rendering the composer. Actual renderer diagnostics prove that calling native fetch as a method of the adapter options throws `Illegal invocation`; standalone and global calls return a successful exact-origin response. The loaded primary auth owner reports the same nested failure. A WebSocket construction observation does not prove a completed handshake. The source boundary tests had used receiver-insensitive mocks and missed the browser requirement.
+
+Root adds a receiver-sensitive successful-session regression, which fails against the original owner, then invokes the captured fetch as a standalone function. Exact-origin request and response checks, renderer authorization rejection, omitted cookies and rejected redirects remain unchanged. The three focused transport, HTTP layer and enrollment suites pass all 40 tests. The new hosted web bytes require a clean successor build and renewed installed Thread and image evidence. The prior image runtime and native focus results remain truthful historical evidence.
+
+Both fresh final program source review lanes found no other scoped issue at `312545cedb98c2fdf87e622184ba602c733fccfe`. This contradictory installed result reopens the affected HTTP boundary. Root runs all four gates, bounded correction review and ordered Style Assurance before the next clean artifact input. The final 21-concern and 175-hunk preservation gate remains open.
+
+All four required gates pass, including 13,840 tests across fifteen workspaces and ten inherited server skips, recorded in `t3code-s7-thread-fetch-gates.json`. Fresh bounded review reports no source finding at SHA256 `9d7704afcb381d00f5067179fe6674bb1261a3e1e8f8f8f32ff4f865d4eec86e`. The actual installed diagnostic and the failing-before regression establish the browser behavior independently of the source mock. Ordered Style Assurance precedes the clean commit and artifact rebuild.
+
+### Commit effect — browser fetch invocation
+
+If applied, this commit lets the protected Thread HTTP adapter request its enrolled session through browser fetch.

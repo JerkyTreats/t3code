@@ -75,6 +75,8 @@ export function makeThreadPrimaryFetch(input: {
   readonly fetch: typeof globalThis.fetch;
 }): typeof globalThis.fetch {
   const origin = exactHttpsOrigin(input.applicationOrigin).origin;
+  // Invoke browser fetch without binding its receiver to the adapter options.
+  const fetch = input.fetch;
   return async (request, init) => {
     const url = new URL(request instanceof Request ? request.url : request.toString());
     const headers = new Headers(
@@ -84,7 +86,7 @@ export function makeThreadPrimaryFetch(input: {
       throw new ThreadPrimaryTransportError();
     }
     // Main injects its credential after this renderer boundary. Never follow a redirect with it.
-    const response = await input.fetch(request, {
+    const response = await fetch(request, {
       ...init,
       credentials: "omit",
       redirect: "error",

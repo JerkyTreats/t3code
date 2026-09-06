@@ -104,6 +104,23 @@ describe("protected Thread transport", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("uses the browser fetch receiver for an admitted session request", async () => {
+    const response = new Response("{}", { status: 200 });
+    Object.defineProperty(response, "url", { value: `${origin}/api/auth/session` });
+    const fetch = vi.fn<typeof globalThis.fetch>(async function (this: unknown) {
+      // Browser fetch rejects an options object as its receiver.
+      if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+      return response;
+    });
+    const bound = makeThreadPrimaryFetch({ applicationOrigin: origin, fetch });
+
+    await expect(bound(`${origin}/api/auth/session`)).resolves.toBe(response);
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(`${origin}/api/auth/session`, {
+      credentials: "omit",
+      redirect: "error",
+    });
+  });
+
   it.each(["foreign", "redirected", "missing-url"])(
     "rejects unexpected response %s",
     async (kind) => {
