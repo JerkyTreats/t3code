@@ -623,3 +623,7 @@ If applied, this commit stages trusted Code launch prompts and waits for the cur
 ### Commit effect — S6 thread_web
 
 If applied, this commit stages Thread launch text in the shared draft with compact presentation and visible recovery.
+
+### Commit effect — S6 linux
+
+If applied, this commit installs verified Code and Thread artifacts with ownership-preserving transactional rollback.

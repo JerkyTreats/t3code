@@ -47,7 +47,14 @@
     "sync:repos": "node scripts/sync-reference-repos.ts",
     "test:desktop-artifact-smoke": "node scripts/desktop-artifact-smoke.ts",
     "test:server-image-smoke": "node scripts/server-image-smoke.ts",
-    "test:release-safety": "node scripts/lib/release-workflow-safety.ts && node scripts/lib/server-image-workflow-safety.ts"
+    "test:release-safety": "node scripts/lib/release-workflow-safety.ts && node scripts/lib/server-image-workflow-safety.ts",
+    "dist:thread:linux": "node scripts/build-thread-artifact.mjs",
+    "test:thread-artifact-smoke": "node scripts/thread-artifact-smoke.ts",
+    "test:thread:open": "node scripts/thread-artifact-smoke.ts --open",
+    "test:thread:quattro": "node scripts/thread-artifact-smoke.ts --quattro",
+    "test:quattro": "T3CODE_REQUIRE_QUATTRO_NATIVE_TOOLS=1 vp test run scripts/quattro-native-bootstrap.test.mjs",
+    "install:production:linux": "node scripts/install-linux-production-topology.mjs install",
+    "doctor:production:linux": "node scripts/install-linux-production-topology.mjs doctor"
   },
   "devDependencies": {
     "@effect/tsgo": "catalog:",
