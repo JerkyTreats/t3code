@@ -6,6 +6,8 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
+import { isStandaloneDesktop } from "../fork/StandaloneDesktopPolicy.ts";
+
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
@@ -47,6 +49,10 @@ const normalizeCommitHash = (value: string): Option.Option<string> => {
 
 export const resolveUserDataPath = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  // Standalone profiles never probe or reuse an upstream legacy browser profile.
+  if (isStandaloneDesktop(environment)) {
+    return environment.path.join(environment.appDataDirectory, environment.userDataDirName);
+  }
   const fileSystem = yield* FileSystem.FileSystem;
   const legacyPath = environment.path.join(
     environment.appDataDirectory,

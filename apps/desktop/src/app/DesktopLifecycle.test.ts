@@ -9,6 +9,8 @@ import type * as Electron from "electron";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import * as DesktopLauncherRuntime from "./DesktopLauncherRuntime.ts";
+
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopLifecycle from "./DesktopLifecycle.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
@@ -191,6 +193,19 @@ describe("DesktopLifecycle", () => {
         Layer.provideMerge(electronThemeLayer),
         Layer.provideMerge(makeElectronWindowLayer(destroyAll)),
         Layer.provideMerge(makeDesktopWindowLayer({ flushMainWindowBounds })),
+        Layer.provideMerge(
+          Layer.succeed(DesktopLauncherRuntime.DesktopLauncherRuntime, {
+            markBackendReady: Effect.void,
+            markRendererReady: Effect.void,
+            markBackendNotReady: Effect.sync(() => {
+              events.push("withdraw-backend");
+            }),
+            markRendererNotReady: Effect.sync(() => {
+              events.push("withdraw-renderer");
+            }),
+            acceptSingleInstanceHandoff: () => Effect.succeed(false),
+          }),
+        ),
         Layer.provideMerge(environmentLayer),
         Layer.provideMerge(desktopShutdownLayer),
         Layer.provideMerge(DesktopState.layer),
@@ -209,8 +224,21 @@ describe("DesktopLifecycle", () => {
           yield* Deferred.succeed(allowShutdown, undefined);
           yield* Deferred.await(quitRequested);
 
-          assert.deepEqual(eventsBeforeCleanup, ["flush", "destroy", "request"]);
-          assert.deepEqual(events, ["flush", "destroy", "request", "quit"]);
+          assert.deepEqual(eventsBeforeCleanup, [
+            "withdraw-backend",
+            "withdraw-renderer",
+            "flush",
+            "destroy",
+            "request",
+          ]);
+          assert.deepEqual(events, [
+            "withdraw-backend",
+            "withdraw-renderer",
+            "flush",
+            "destroy",
+            "request",
+            "quit",
+          ]);
         }),
       ).pipe(Effect.provide(layer));
     }),

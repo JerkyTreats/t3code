@@ -1,7 +1,15 @@
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { isStandaloneDesktop } from "../fork/StandaloneDesktopPolicy.ts";
+
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import { watchDesktopSystemTheme } from "../fork/OmarchyThemeSource.ts";
 import * as IpcChannels from "./channels.ts";
 import * as Effect from "effect/Effect";
+
+import {
+  takeLauncherActivation,
+  completeLauncherActivation,
+} from "./methods/launcherActivation.ts";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
@@ -60,6 +68,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   const ipc = yield* DesktopIpc.DesktopIpc;
   yield* PreviewIpc.installPreviewEventForwarding();
 
+  yield* ipc.handle(takeLauncherActivation);
+  yield* ipc.handle(completeLauncherActivation);
   yield* ipc.handle(AppActivationIpc.setReady);
   yield* ipc.handle(AppActivationIpc.complete);
 
@@ -108,14 +118,17 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(resolveSshPasswordPrompt);
 
   yield* ipc.handle(getServerExposureState);
-  yield* ipc.handle(setServerExposureMode);
-  yield* ipc.handle(setTailscaleServeEnabled);
+  const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  if (!isStandaloneDesktop(environment)) {
+    yield* ipc.handle(setServerExposureMode);
+    yield* ipc.handle(setTailscaleServeEnabled);
+    yield* ipc.handle(setWslBackendEnabled);
+    yield* ipc.handle(setWslDistro);
+    yield* ipc.handle(setWslOnly);
+  }
   yield* ipc.handle(getAdvertisedEndpoints);
 
   yield* ipc.handle(getWslState);
-  yield* ipc.handle(setWslBackendEnabled);
-  yield* ipc.handle(setWslDistro);
-  yield* ipc.handle(setWslOnly);
 
   yield* ipc.handle(pickFolder);
   yield* ipc.handle(pickProjectFavicon);

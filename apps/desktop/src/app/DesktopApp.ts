@@ -11,6 +11,9 @@ import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import { installDesktopIpcHandlers } from "../ipc/DesktopIpcHandlers.ts";
+import { isStandaloneDesktop } from "../fork/StandaloneDesktopPolicy.ts";
+import * as DesktopLauncherRuntime from "./DesktopLauncherRuntime.ts";
+
 import * as DesktopAppActivation from "./DesktopAppActivation.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopClerk from "./DesktopClerk.ts";
@@ -141,11 +144,25 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
 const fatalStartupCause = <E>(stage: string, cause: Cause.Cause<E>) =>
   handleFatalStartupError(stage, Cause.pretty(cause)).pipe(Effect.andThen(Effect.failCause(cause)));
 
-const bootstrap = Effect.gen(function* () {
-  const pool = yield* DesktopBackendPool.DesktopBackendPool;
-  const primaryBackend = yield* pool.primary;
+export const bootstrap = Effect.gen(function* () {
   const state = yield* DesktopState.DesktopState;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  if (isStandaloneDesktop(environment)) {
+    yield* installDesktopIpcHandlers();
+    const desktopWindow = yield* DesktopWindow.DesktopWindow;
+    const appActivation = yield* DesktopAppActivation.DesktopAppActivation;
+    if (!(yield* Ref.get(state.quitting))) {
+      yield* desktopWindow.handleBackendReady(Option.getOrThrow(environment.standaloneServerUrl!));
+      yield* appActivation.start.pipe(
+        Effect.catch((error) =>
+          logStartupError("desktop app control socket unavailable", { error }),
+        ),
+      );
+    }
+    return;
+  }
+  const pool = yield* DesktopBackendPool.DesktopBackendPool;
+  const primaryBackend = yield* pool.primary;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
   const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
@@ -294,7 +311,7 @@ const startup = Effect.gen(function* () {
   yield* applicationMenu.configure;
   yield* updates.configure;
   yield* DesktopRemoteUpdates.listen;
-  yield* linuxUrlHandler.register;
+  if (!isStandaloneDesktop(environment)) yield* linuxUrlHandler.register;
   yield* bootstrap.pipe(Effect.catchCause((cause) => fatalStartupCause("bootstrap", cause)));
 }).pipe(Effect.withSpan("desktop.startup"));
 
@@ -308,6 +325,9 @@ const scopedProgram = Effect.scoped(
 
     yield* Effect.addFinalizer(() =>
       Effect.gen(function* () {
+        const launcher = yield* DesktopLauncherRuntime.DesktopLauncherRuntime;
+        yield* launcher.markBackendNotReady;
+        yield* launcher.markRendererNotReady;
         const pool = yield* DesktopBackendPool.DesktopBackendPool;
         // Stop every backend in the pool, not just the primary. The
         // electronApp.quit() path can race ahead of the layer-scope

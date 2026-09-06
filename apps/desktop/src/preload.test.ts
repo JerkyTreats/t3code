@@ -128,3 +128,41 @@ describe("local desktop capabilities in the actual preload", () => {
     });
   });
 });
+
+describe("standalone preload and launcher contract", () => {
+  it("uses no Clerk custom-scheme bridge on HTTPS and returns no local bootstraps", async () => {
+    vi.stubGlobal("location", { protocol: "https:" });
+    try {
+      host.sendSync.mockReturnValue([]);
+      const bridge = await loadBridge();
+      expect(host.clerk).not.toHaveBeenCalled();
+      expect(bridge.getLocalEnvironmentBootstraps()).toEqual([]);
+      expect(host.invoke).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("decodes launcher activation and identifier-only completion responses", async () => {
+    const bridge = await loadBridge();
+    const activation = {
+      activationId: "12345678-1234-4234-8234-1234567890ab",
+      contractVersion: 1,
+      workspace: "/workspace/project",
+      action: "open",
+      prompt: "Exact\ntext",
+    };
+    host.invoke.mockResolvedValueOnce(activation);
+    expect(await bridge.takeLauncherActivation?.()).toEqual(activation);
+    host.invoke.mockResolvedValueOnce(true);
+    expect(
+      await bridge.completeLauncherActivation?.({ activationId: activation.activationId as never }),
+    ).toBe(true);
+    expect(host.invoke.mock.calls.at(-1)).toEqual([
+      Channels.COMPLETE_LAUNCHER_ACTIVATION_CHANNEL,
+      { activationId: activation.activationId },
+    ]);
+    host.invoke.mockResolvedValueOnce({ ...activation, activationId: "bad" });
+    await expect(bridge.takeLauncherActivation?.()).rejects.toThrow();
+    expect(bridge.appActivation).toBeDefined();
+  });
+});

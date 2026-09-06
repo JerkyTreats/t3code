@@ -11,6 +11,11 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
+import {
+  resolveStandaloneDesktopIdentity,
+  standaloneDesktopBranding,
+} from "../fork/StandaloneDesktopPolicy.ts";
+
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
@@ -63,6 +68,7 @@ export class DesktopEnvironment extends Context.Service<
     readonly backendCwd: string;
     readonly preloadPath: string;
     readonly appUpdateYmlPath: string;
+    readonly standaloneServerUrl?: Option.Option<URL>;
     readonly devServerUrl: Option.Option<URL>;
     readonly devRemoteT3ServerEntryPath: Option.Option<string>;
     readonly configuredBackendPort: Option.Option<number>;
@@ -161,15 +167,33 @@ const make = Effect.fn("desktop.environment.make")(function* (
     joinPath: path.join,
     t3Home: config.t3Home,
   });
+  const standalone = yield* resolveStandaloneDesktopIdentity({
+    ...input,
+    path,
+    isDevelopment,
+    baseDir,
+    appDataDirectory,
+    serverUrl: config.standaloneServerUrl,
+    legacyServerUrl: config.legacyStagingServerUrl,
+    displayName: config.desktopDisplayNameOverride,
+    xdgConfigHome: config.xdgConfigHome,
+    xdgDataHome: config.xdgDataHome,
+    configuredBackendPort: config.configuredBackendPort,
+    disableAutoUpdate: config.disableAutoUpdate,
+  });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
   const serverRoot =
     input.isPackaged && input.platform === "win32"
       ? path.join(input.resourcesPath, "server.asar")
       : appRoot;
-  const branding = resolveDesktopAppBranding({
+  const defaultBranding = resolveDesktopAppBranding({
     isDevelopment,
     appVersion: input.appVersion,
+  });
+  const branding = Option.match(standalone, {
+    onNone: () => defaultBranding,
+    onSome: (identity) => standaloneDesktopBranding(identity, defaultBranding),
   });
   const displayName = branding.displayName;
   const stateDir = resolveDesktopStateDir({
@@ -216,6 +240,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
       ? path.join(resourcesPath, "app-update.yml")
       : path.join(input.appPath, "dev-app-update.yml"),
     devServerUrl,
+    standaloneServerUrl: Option.map(standalone, (identity) => identity.serverUrl),
     devRemoteT3ServerEntryPath: config.devRemoteT3ServerEntryPath,
     configuredBackendPort: config.configuredBackendPort,
     commitHashOverride: config.commitHashOverride,
@@ -226,8 +251,14 @@ const make = Effect.fn("desktop.environment.make")(function* (
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
       isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code",
     ),
-    linuxDesktopEntryName: isDevelopment ? "t3code-dev.desktop" : "t3code.desktop",
-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
+    linuxDesktopEntryName: Option.match(standalone, {
+      onSome: (identity) => identity.linuxDesktopEntryName,
+      onNone: () => (isDevelopment ? "t3code-dev.desktop" : "t3code.desktop"),
+    }),
+    linuxWmClass: Option.match(standalone, {
+      onSome: (identity) => identity.linuxWmClass,
+      onNone: () => (isDevelopment ? "t3code-dev" : "t3code"),
+    }),
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
     userDataDirName,

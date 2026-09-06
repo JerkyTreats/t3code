@@ -603,3 +603,7 @@ The bounded Style Assurance recheck passes with no findings in `t3code-s6-style-
 ### Commit effect — S6 contracts
 
 If applied, this commit defines validated Code and Thread launch identities and their optional bridge contracts.
+
+### Commit effect — S6 code
+
+If applied, this commit runs standalone Linux Code against its isolated HTTPS identity with independent launcher readiness.

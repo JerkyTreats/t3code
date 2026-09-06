@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -8,6 +9,8 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcessSpawner } from "effect/unstable/process";
+
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
@@ -47,6 +50,9 @@ function makePoolLayer(
   return DesktopBackendPool.layer.pipe(
     Layer.provideMerge(
       Layer.mergeAll(
+        Layer.succeed(DesktopEnvironment.DesktopEnvironment, {
+          standaloneServerUrl: Option.none(),
+        } as DesktopEnvironment.DesktopEnvironment["Service"]),
         FileSystem.layerNoop({}),
         Layer.succeed(
           ChildProcessSpawner.ChildProcessSpawner,
@@ -154,5 +160,36 @@ describe("DesktopBackendPool", () => {
         assert.equal(yield* primary.label, "WSL (Ubuntu)");
       }),
     ),
+  );
+});
+
+describe("standalone backend pool", () => {
+  it.effect("does not acquire factory dependencies or register a local primary", () =>
+    Effect.gen(function* () {
+      const environment = {
+        standaloneServerUrl: Option.some(new URL("https://code.example.test")),
+      } as DesktopEnvironment.DesktopEnvironment["Service"];
+      // No factory services are supplied. The actual pool must return before acquiring them.
+      const resolve = DesktopBackendPool.DesktopBackendPool.pipe(
+        Effect.provide(
+          DesktopBackendPool.layer.pipe(
+            Layer.provide(Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment)),
+          ),
+        ),
+      );
+      const pool = yield* resolve.pipe(
+        Effect.provide(Context.empty() as Context.Context<Effect.Services<typeof resolve>>),
+      );
+      assert.deepEqual(yield* pool.list, []);
+      assert.isTrue(Option.isNone(yield* pool.get(DesktopBackendPool.PRIMARY_INSTANCE_ID)));
+      const primary = yield* pool.primary.pipe(Effect.exit);
+      assert.isTrue(primary._tag === "Failure");
+      const registration = yield* pool
+        .register({
+          id: DesktopBackendPool.PRIMARY_INSTANCE_ID,
+        } as DesktopBackendPool.BackendInstanceSpec)
+        .pipe(Effect.exit);
+      assert.isTrue(registration._tag === "Failure");
+    }),
   );
 });

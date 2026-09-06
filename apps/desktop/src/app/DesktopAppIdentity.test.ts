@@ -241,3 +241,24 @@ describe("DesktopAppIdentity", () => {
     );
   });
 });
+
+describe("standalone browser identity", () => {
+  it.effect("never probes or adopts a legacy upstream profile", () =>
+    Effect.gen(function* () {
+      const environment = {
+        standaloneServerUrl: Option.some(new URL("https://code.example.test/")),
+        path: { join: (...parts: string[]) => parts.join("/") },
+        appDataDirectory: "/config/t3code-production",
+        userDataDirName: "t3code",
+        legacyUserDataDirName: "T3 Code (Alpha)",
+      } as DesktopEnvironment.DesktopEnvironment["Service"];
+      const path = yield* DesktopAppIdentity.resolveUserDataPath.pipe(
+        Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
+        Effect.provide(
+          FileSystem.layerNoop({ exists: () => Effect.die("must not inspect legacy profile") }),
+        ),
+      );
+      assert.equal(path, "/config/t3code-production/t3code");
+    }),
+  );
+});

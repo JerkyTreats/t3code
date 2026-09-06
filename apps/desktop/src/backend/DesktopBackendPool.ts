@@ -79,6 +79,9 @@
 //   10. CommandPalette enables file-manager picker for desktop-local
 //       envs, routes pickFolder by env id. (38e8477a)
 
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { isStandaloneDesktop } from "../fork/StandaloneDesktopPolicy.ts";
+
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -210,6 +213,17 @@ type UnregisterAction =
 export const layer = Layer.effect(
   DesktopBackendPool,
   Effect.gen(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    // Layer construction must not allocate a backend in standalone mode, including lazy IPC callers.
+    if (isStandaloneDesktop(environment)) {
+      return DesktopBackendPool.of({
+        get: () => Effect.succeed(Option.none()),
+        list: Effect.succeed([]),
+        primary: Effect.die("Standalone desktop has no local backend"),
+        register: () => Effect.die("Standalone desktop cannot allocate local backends"),
+        unregister: () => Effect.void,
+      });
+    }
     const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
     const electronDialog = yield* ElectronDialog.ElectronDialog;

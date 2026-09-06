@@ -1,3 +1,7 @@
+import * as Electron from "electron";
+import { isStandaloneDesktop } from "../fork/StandaloneDesktopPolicy.ts";
+import * as DesktopLauncherRuntime from "./DesktopLauncherRuntime.ts";
+
 import { createClerkBridge } from "@clerk/electron";
 import { storage } from "@clerk/electron/storage";
 import * as Context from "effect/Context";
@@ -83,6 +87,17 @@ export function createDesktopClerkBridge(stateDir: string, isDevelopment: boolea
   });
 }
 
+// Keep the native singleton seam injectable without registering a custom-scheme Clerk bridge for HTTPS.
+export const StandaloneInstanceLock = Context.Reference<{
+  readonly acquire: () => boolean;
+  readonly release: () => void;
+}>("@t3tools/desktop/app/StandaloneInstanceLock", {
+  defaultValue: () => ({
+    acquire: () => Electron.app.requestSingleInstanceLock(),
+    release: () => Electron.app.releaseSingleInstanceLock(),
+  }),
+});
+
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const electronApp = yield* ElectronApp.ElectronApp;
@@ -95,6 +110,40 @@ export const make = Effect.gen(function* () {
   // detection in resolveUserDataPath match on fresh installs.
   const userDataPath = yield* DesktopAppIdentity.resolveUserDataPath;
   yield* electronApp.setPath("userData", userDataPath);
+
+  const standalone = isStandaloneDesktop(environment);
+  const launcherOption = yield* Effect.serviceOption(DesktopLauncherRuntime.DesktopLauncherRuntime);
+  if (standalone) {
+    const lock = yield* StandaloneInstanceLock;
+    const acquired = yield* Effect.acquireRelease(Effect.sync(lock.acquire), (owned) =>
+      owned ? Effect.sync(lock.release) : Effect.void,
+    );
+    return DesktopClerk.of({
+      configure: Effect.gen(function* () {
+        if (!acquired) {
+          yield* electronApp.quit;
+          return yield* Effect.interrupt;
+        }
+        const electronWindow = yield* ElectronWindow.ElectronWindow;
+        const context = yield* Effect.context<ElectronWindow.ElectronWindow>();
+        const runPromise = Effect.runPromiseWith(context);
+        yield* electronApp.on("second-instance", (_event, commandLine: unknown) => {
+          void runPromise(
+            Effect.gen(function* () {
+              // Standalone launcher wakeups require authenticated runtime-directory handoff before focus.
+              if (
+                Option.isNone(launcherOption) ||
+                !(yield* launcherOption.value.acceptSingleInstanceHandoff(commandLine))
+              )
+                return;
+              const mainWindow = yield* electronWindow.currentMainOrFirst;
+              if (Option.isSome(mainWindow)) yield* electronWindow.reveal(mainWindow.value);
+            }),
+          );
+        });
+      }),
+    });
+  }
 
   const bridge = yield* Effect.acquireRelease(
     Effect.try({
@@ -135,9 +184,16 @@ export const make = Effect.gen(function* () {
         return yield* Effect.interrupt;
       }
 
-      yield* electronApp.on("second-instance", () => {
+      yield* electronApp.on("second-instance", (_event, commandLine: unknown) => {
         void runPromise(
           Effect.gen(function* () {
+            if (
+              Option.isSome(launcherOption) &&
+              DesktopLauncherRuntime.resolveDesktopLauncherHandoffGeneration(commandLine) !==
+                undefined &&
+              !(yield* launcherOption.value.acceptSingleInstanceHandoff(commandLine))
+            )
+              return;
             const mainWindow = yield* electronWindow.currentMainOrFirst;
             if (Option.isSome(mainWindow)) {
               yield* electronWindow.reveal(mainWindow.value);

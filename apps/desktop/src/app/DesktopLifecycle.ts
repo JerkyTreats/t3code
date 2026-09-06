@@ -1,3 +1,6 @@
+import * as DesktopLauncherRuntime from "./DesktopLauncherRuntime.ts";
+import * as Option from "effect/Option";
+
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -85,6 +88,12 @@ const requestDesktopShutdownAndWait = Effect.fn("desktop.lifecycle.requestShutdo
   function* (
     afterBoundsFlush: Effect.Effect<void> = Effect.void,
   ): Effect.fn.Return<void, never, DesktopShutdown.DesktopShutdown | DesktopWindow.DesktopWindow> {
+    const launcher = yield* Effect.serviceOption(DesktopLauncherRuntime.DesktopLauncherRuntime);
+    if (Option.isSome(launcher)) {
+      // Withdraw before bounds persistence and graceful shutdown can yield to another launcher.
+      yield* launcher.value.markBackendNotReady;
+      yield* launcher.value.markRendererNotReady;
+    }
     const shutdown = yield* DesktopShutdown.DesktopShutdown;
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
     yield* desktopWindow.flushMainWindowBounds;

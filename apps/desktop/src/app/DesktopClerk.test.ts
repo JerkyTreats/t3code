@@ -1,4 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as Option from "effect/Option";
+import * as DesktopLauncherRuntime from "./DesktopLauncherRuntime.ts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -231,4 +233,78 @@ describe("DesktopClerk", () => {
     storageMock.mockClear();
     createClerkBridgeMock.mockClear();
   });
+});
+
+describe("standalone singleton host", () => {
+  it.effect(
+    "sets isolated userData before its native lock and requires authenticated handoff before focus",
+    () =>
+      Effect.gen(function* () {
+        const events: string[] = [];
+        let secondInstance: ((...args: unknown[]) => void) | undefined;
+        let accepted = false;
+        const environment = {
+          standaloneServerUrl: Option.some(new URL("https://code.example.test/")),
+          appDataDirectory: "/config/t3code-production",
+          userDataDirName: "t3code",
+          path: { join: (...parts: string[]) => parts.join("/") },
+        } as DesktopEnvironment.DesktopEnvironment["Service"];
+        const app = {
+          setPath: (_name: string, value: string) =>
+            Effect.sync(() => {
+              events.push(value);
+            }),
+          on: (_event: string, listener: (...args: unknown[]) => void) =>
+            Effect.sync(() => {
+              secondInstance = listener;
+            }),
+          quit: Effect.sync(() => {
+            events.push("quit");
+          }),
+        } as unknown as ElectronApp.ElectronApp["Service"];
+        const window = {
+          currentMainOrFirst: Effect.succeed(Option.some({} as never)),
+          reveal: () =>
+            Effect.sync(() => {
+              events.push("focus");
+            }),
+        } as unknown as ElectronWindow.ElectronWindow["Service"];
+        const launcher = {
+          acceptSingleInstanceHandoff: () => Effect.sync(() => accepted),
+        } as unknown as DesktopLauncherRuntime.DesktopLauncherRuntime["Service"];
+        yield* Effect.gen(function* () {
+          const clerk = yield* DesktopClerk.DesktopClerk;
+          yield* clerk.configure;
+          assert.deepEqual(events, ["/config/t3code-production/t3code", "lock"]);
+          secondInstance?.({}, ["--t3code-launcher-handoff=test"]);
+          yield* Effect.yieldNow;
+          assert.equal(events.at(-1), "lock");
+          accepted = true;
+          secondInstance?.({}, ["--t3code-launcher-handoff=test"]);
+          yield* Effect.yieldNow;
+          assert.equal(events.at(-1), "focus");
+        }).pipe(
+          Effect.provide(DesktopClerk.layer),
+          Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
+          Effect.provideService(ElectronApp.ElectronApp, app),
+          Effect.provideService(ElectronWindow.ElectronWindow, window),
+          Effect.provideService(DesktopLauncherRuntime.DesktopLauncherRuntime, launcher),
+          Effect.provideService(DesktopClerk.StandaloneInstanceLock, {
+            acquire: () => {
+              events.push("lock");
+              return true;
+            },
+            release: () => {
+              events.push("release");
+            },
+          }),
+          Effect.provide(
+            FileSystem.layerNoop({ exists: () => Effect.die("must not probe a legacy profile") }),
+          ),
+          Effect.scoped,
+        );
+        assert.equal(events.at(-1), "release");
+        assert.equal(createClerkBridgeMock.mock.calls.length, 0);
+      }),
+  );
 });

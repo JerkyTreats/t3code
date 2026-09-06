@@ -1,3 +1,4 @@
+import { DesktopLauncherActivation } from "@t3tools/contracts/desktopLauncher";
 import {
   DesktopSystemThemeSchema,
   DesktopScreenshotCaptureSchema,
@@ -15,7 +16,8 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import * as IpcChannels from "./ipc/channels.ts";
 
-exposeClerkBridge({ passkeys: true });
+// Hosted standalone documents use ordinary HTTPS auth and never the custom-scheme Clerk bridge.
+if (globalThis.location?.protocol !== "https:") exposeClerkBridge({ passkeys: true });
 
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Electron exposes the client platform in its sandboxed preload process.
 const clientPlatform = process.platform;
@@ -100,6 +102,14 @@ const desktopBridge: DesktopBridge = {
   },
   getLocalEnvironmentBearerToken: () =>
     ipcRenderer.invoke(IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL),
+  takeLauncherActivation: () =>
+    ipcRenderer
+      .invoke(IpcChannels.TAKE_LAUNCHER_ACTIVATION_CHANNEL, undefined)
+      .then(Schema.decodeUnknownSync(Schema.NullOr(DesktopLauncherActivation))),
+  completeLauncherActivation: (completion) =>
+    ipcRenderer
+      .invoke(IpcChannels.COMPLETE_LAUNCHER_ACTIVATION_CHANNEL, completion)
+      .then(Schema.decodeUnknownSync(Schema.Boolean)),
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>
     ipcRenderer.invoke(IpcChannels.SET_CLIENT_SETTINGS_CHANNEL, settings),
