@@ -112,7 +112,6 @@ export const make = Effect.gen(function* () {
   yield* electronApp.setPath("userData", userDataPath);
 
   const standalone = isStandaloneDesktop(environment);
-  const launcherOption = yield* Effect.serviceOption(DesktopLauncherRuntime.DesktopLauncherRuntime);
   if (standalone) {
     const lock = yield* StandaloneInstanceLock;
     const acquired = yield* Effect.acquireRelease(Effect.sync(lock.acquire), (owned) =>
@@ -120,6 +119,9 @@ export const make = Effect.gen(function* () {
     );
     return DesktopClerk.of({
       configure: Effect.gen(function* () {
+        const launcherOption = yield* Effect.serviceOption(
+          DesktopLauncherRuntime.DesktopLauncherRuntime,
+        );
         if (!acquired) {
           yield* electronApp.quit;
           return yield* Effect.interrupt;
@@ -169,6 +171,9 @@ export const make = Effect.gen(function* () {
 
   return DesktopClerk.of({
     configure: Effect.gen(function* () {
+      const launcherOption = yield* Effect.serviceOption(
+        DesktopLauncherRuntime.DesktopLauncherRuntime,
+      );
       const electronApp = yield* ElectronApp.ElectronApp;
       const electronWindow = yield* ElectronWindow.ElectronWindow;
       const context = yield* Effect.context<ElectronWindow.ElectronWindow>();

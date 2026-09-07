@@ -6,6 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
+import { beforeEach, vi } from "vite-plus/test";
 
 import type * as Electron from "electron";
 
@@ -14,6 +15,17 @@ import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+
+const { accessSyncMock } = vi.hoisted(() => ({ accessSyncMock: vi.fn() }));
+
+vi.mock("node:fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs")>()),
+  accessSync: accessSyncMock,
+}));
+
+beforeEach(() => {
+  accessSyncMock.mockReset();
+});
 
 const defaultEnvironmentInput = {
   dirname: "/repo/apps/desktop/dist-electron",
@@ -122,17 +134,17 @@ const withIdentity = <A, E, R>(
     setName: [],
   };
 
+  accessSyncMock.mockImplementation((path: string) => {
+    if (input.legacyPathProbeError) throw input.legacyPathProbeError;
+    if (input.legacyPathExists === true && path.includes("T3 Code (Alpha)")) return;
+    throw Object.assign(new Error("synthetic path does not exist"), { code: "ENOENT" });
+  });
+
   return effect.pipe(
     Effect.provide(
       DesktopAppIdentity.layer.pipe(
         Layer.provideMerge(
           FileSystem.layerNoop({
-            exists: (path) =>
-              input.legacyPathProbeError
-                ? Effect.fail(input.legacyPathProbeError)
-                : Effect.succeed(
-                    input.legacyPathExists === true && path.includes("T3 Code (Alpha)"),
-                  ),
             readFileString: () =>
               Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
           }),
@@ -146,6 +158,18 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
+  it.effect("selects the current userData path when the legacy path is absent", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        assert.equal(
+          yield* identity.resolveUserDataPath,
+          "/Users/alice/Library/Application Support/t3code",
+        );
+      }),
+    ),
+  );
+
   it.effect("keeps using the legacy userData path when it already exists", () =>
     withIdentity(
       Effect.gen(function* () {
@@ -259,6 +283,7 @@ describe("standalone browser identity", () => {
         ),
       );
       assert.equal(path, "/config/t3code-production/t3code");
+      assert.equal(accessSyncMock.mock.calls.length, 0);
     }),
   );
 });

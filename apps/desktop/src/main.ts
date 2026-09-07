@@ -198,7 +198,6 @@ const desktopApplicationLayer = Layer.mergeAll(
 );
 
 const desktopClerkLayer = DesktopClerk.layer.pipe(
-  Layer.provideMerge(DesktopLauncherRuntime.layer),
   Layer.provideMerge(desktopEnvironmentLayer),
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(ElectronApp.layer),
@@ -211,8 +210,8 @@ const desktopApplicationRuntimeLayer = desktopApplicationLayer.pipe(
   Layer.provideMerge(electronLayer),
 );
 
-// Acquire strict pre-ready setup before Clerk, whose userData resolution can
-// yield and let Electron emit ready.
+// Clerk also registers scheme privileges. Keep its entire acquisition synchronous
+// and acquire launcher I/O only in the application runtime after Clerk exists.
 const desktopRuntimeLayer = desktopClerkLayer.pipe(
   Layer.flatMap((clerkContext) =>
     desktopApplicationRuntimeLayer.pipe(Layer.provideMerge(Layer.succeedContext(clerkContext))),

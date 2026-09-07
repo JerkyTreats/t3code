@@ -1,8 +1,11 @@
+// @effect-diagnostics nodeBuiltinImport:off - userData must be resolved synchronously before the Clerk SDK registers Electron schemes.
+import * as NodeFS from "node:fs";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
@@ -53,20 +56,22 @@ export const resolveUserDataPath = Effect.gen(function* () {
   if (isStandaloneDesktop(environment)) {
     return environment.path.join(environment.appDataDirectory, environment.userDataDirName);
   }
-  const fileSystem = yield* FileSystem.FileSystem;
   const legacyPath = environment.path.join(
     environment.appDataDirectory,
     environment.legacyUserDataDirName,
   );
-  const legacyPathExists = yield* fileSystem.exists(legacyPath).pipe(
-    Effect.mapError(
-      (cause) =>
-        new DesktopUserDataPathResolutionError({
-          legacyPath,
-          cause,
-        }),
-    ),
-  );
+  const legacyPathExists = yield* Effect.try({
+    try: () => {
+      try {
+        NodeFS.accessSync(legacyPath);
+        return true;
+      } catch (cause) {
+        if (Predicate.hasProperty(cause, "code") && cause.code === "ENOENT") return false;
+        throw cause;
+      }
+    },
+    catch: (cause) => new DesktopUserDataPathResolutionError({ legacyPath, cause }),
+  });
   return legacyPathExists
     ? legacyPath
     : environment.path.join(environment.appDataDirectory, environment.userDataDirName);
@@ -118,9 +123,7 @@ export const make = Effect.gen(function* () {
   });
 
   const userDataPath = resolveUserDataPath.pipe(
-    Effect.provide(
-      yield* Effect.context<DesktopEnvironment.DesktopEnvironment | FileSystem.FileSystem>(),
-    ),
+    Effect.provide(yield* Effect.context<DesktopEnvironment.DesktopEnvironment>()),
   );
 
   const configure = Effect.gen(function* () {

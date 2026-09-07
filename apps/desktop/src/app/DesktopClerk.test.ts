@@ -6,7 +6,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { beforeEach, vi } from "vite-plus/test";
 
-const { createClerkBridgeMock, storageAdapter, storageMock } = vi.hoisted(() => ({
+const { accessSyncMock, createClerkBridgeMock, storageAdapter, storageMock } = vi.hoisted(() => ({
+  accessSyncMock: vi.fn(),
   createClerkBridgeMock: vi.fn(),
   storageAdapter: {
     getItem: vi.fn(),
@@ -15,6 +16,18 @@ const { createClerkBridgeMock, storageAdapter, storageMock } = vi.hoisted(() => 
   },
   storageMock: vi.fn(),
 }));
+
+vi.mock("node:fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs")>()),
+  accessSync: accessSyncMock,
+}));
+
+beforeEach(() => {
+  accessSyncMock.mockReset();
+  accessSyncMock.mockImplementation(() => {
+    throw Object.assign(new Error("synthetic path does not exist"), { code: "ENOENT" });
+  });
+});
 
 vi.mock("@clerk/electron", () => ({
   createClerkBridge: createClerkBridgeMock,
@@ -31,7 +44,11 @@ import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopClerk from "./DesktopClerk.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
-const makeDesktopClerkLayer = (isDevelopment = true, events: string[] = []) => {
+const makeDesktopClerkLayer = (
+  isDevelopment = true,
+  events: string[] = [],
+  exists: FileSystem.FileSystem["exists"] = () => Effect.succeed(false),
+) => {
   const environment = DesktopEnvironment.DesktopEnvironment.of({
     stateDir: "/tmp/t3-state",
     isDevelopment,
@@ -53,7 +70,7 @@ const makeDesktopClerkLayer = (isDevelopment = true, events: string[] = []) => {
       Layer.mergeAll(
         Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment),
         Layer.succeed(ElectronApp.ElectronApp, electronApp),
-        FileSystem.layerNoop({ exists: () => Effect.succeed(false) }),
+        FileSystem.layerNoop({ exists }),
       ),
     ),
   );
@@ -63,6 +80,31 @@ describe("DesktopClerk", () => {
   beforeEach(() => {
     createClerkBridgeMock.mockReset();
     storageMock.mockReset();
+  });
+
+  it("creates the bridge before an asynchronous filesystem probe can emit Electron ready", () => {
+    const events: string[] = [];
+    let ready = false;
+    storageMock.mockReturnValue(storageAdapter);
+    createClerkBridgeMock.mockImplementation(() => {
+      assert.isFalse(ready);
+      events.push("createClerkBridge");
+      return { cleanup: vi.fn(), isPrimaryInstance: true };
+    });
+    const asyncExists = vi.fn(() =>
+      Effect.promise(async () => {
+        ready = true;
+        events.push("electron-ready");
+        return false;
+      }),
+    );
+
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- Electron scheme registration requires a fully synchronous acquisition; an async test runtime would hide an added yield.
+    Effect.runSync(Effect.scoped(Layer.build(makeDesktopClerkLayer(false, events, asyncExists))));
+
+    assert.deepEqual(events, ["setPath:userData:/tmp/app-data/t3code", "createClerkBridge"]);
+    assert.equal(asyncExists.mock.calls.length, 0);
+    assert.deepEqual(accessSyncMock.mock.calls, [["/tmp/app-data/T3 Code (Alpha)"]]);
   });
 
   it("derives the Clerk Frontend API hostname used by the desktop CSP", () => {
@@ -274,7 +316,9 @@ describe("standalone singleton host", () => {
         } as unknown as DesktopLauncherRuntime.DesktopLauncherRuntime["Service"];
         yield* Effect.gen(function* () {
           const clerk = yield* DesktopClerk.DesktopClerk;
-          yield* clerk.configure;
+          yield* clerk.configure.pipe(
+            Effect.provideService(DesktopLauncherRuntime.DesktopLauncherRuntime, launcher),
+          );
           assert.deepEqual(events, ["/config/t3code-production/t3code", "lock"]);
           secondInstance?.({}, ["--t3code-launcher-handoff=test"]);
           yield* Effect.yieldNow;
@@ -288,7 +332,6 @@ describe("standalone singleton host", () => {
           Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
           Effect.provideService(ElectronApp.ElectronApp, app),
           Effect.provideService(ElectronWindow.ElectronWindow, window),
-          Effect.provideService(DesktopLauncherRuntime.DesktopLauncherRuntime, launcher),
           Effect.provideService(DesktopClerk.StandaloneInstanceLock, {
             acquire: () => {
               events.push("lock");
@@ -305,6 +348,7 @@ describe("standalone singleton host", () => {
         );
         assert.equal(events.at(-1), "release");
         assert.equal(createClerkBridgeMock.mock.calls.length, 0);
+        assert.equal(accessSyncMock.mock.calls.length, 0);
       }),
   );
 });

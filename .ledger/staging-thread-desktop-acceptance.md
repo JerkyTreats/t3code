@@ -87,11 +87,15 @@ If applied, this commit adds a real desktop harness and explicit staging identit
 
 If applied, this commit makes desktop acceptance fail safely on locked sessions and preserves bounded cleanup evidence.
 
+If applied, this commit guarantees Clerk scheme registration before Electron readiness in clean desktop launches.
+
 ## Review findings
 
 The fresh directory and readiness review found double normalization could alter a directory ending in a space. Creation now dispatches the original path and uses normalization only for comparison. The regression passed and the reviewer closed the finding. The staging entry review found overly broad state admission and rejection of prompt values that equal recognized flags. The adapter now requires a dedicated staging namespace outside production roots, completes immutable admission before creating state, and consumes prompt values by context. The reviewer closed both findings after all 16 focused tests passed.
 
 The latest harness review identified unbounded raw CDP close and a null composer fingerprint that could overstate Code draft preservation. Close now has a deadline, cleanup errors preserve restoration and evidence, and draft comparison requires observed text. Current Lua dispatch, exact project shell observation and empty editor observation corrections follow installed failures. Fresh review closed both findings and found no new blocking issues. The locked desktop preflight returned `desktop-locked` with zero attempted clients and no pairing credential read. All four final gates passed with 13,940 passing tests and the ten inherited server skips.
+
+Production artifact preparation exposed that the written pre-ready ordering did not match the executable Effect dependency graph. A clean bundled desktop yielded for launcher and legacy-profile I/O before the Clerk SDK registered its Electron scheme, so the artifact exited without readiness. User-data selection and Clerk acquisition are now synchronous, while launcher handoff lookup occurs during configuration. Focused tests force an asynchronous readiness boundary and verify it cannot precede Clerk acquisition. Fresh review found no blocking issue. Formatting, lint, typecheck and all 13,942 tests pass; rebuilt artifact smoke remains the end-to-end gate.
 
 ## Deferred findings
 
