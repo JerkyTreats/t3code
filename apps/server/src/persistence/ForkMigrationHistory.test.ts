@@ -21,6 +21,31 @@ const retiredHistoricalNames = [
   [49, "CollectiveFanoutRuns"],
 ] as const;
 
+const reconciledV0028HistoricalNames = [
+  [14, "ProjectionThreadsIssueLink"],
+  [15, "BackfillProjectionThreadIssueLinks"],
+  [16, "ProjectionThreadsIssueLink"],
+  [17, "BackfillProjectionThreadIssueLinks"],
+  [18, "BackfillProjectionThreadProposedPlanImplementationColumns"],
+  [19, "BackfillProjectionTurnSourceProposedPlanColumns"],
+  [20, "CanonicalizeModelSelections"],
+  [21, "ProjectionThreadsArchivedAt"],
+  [22, "ProjectionThreadsArchivedAtIndex"],
+  [23, "ProjectionSnapshotLookupIndexes"],
+  [24, "AuthAccessManagement"],
+  [25, "AuthSessionClientMetadata"],
+  [26, "AuthSessionLastConnectedAt"],
+  [31, "RepairProjectionThreadShellSummary"],
+  [32, "ProjectionThreadIssueLink"],
+  [33, "AuthAuthorizationScopes"],
+  [34, "AuthPairingProofKeyThumbprint"],
+  [36, "ReconcileV0028MigrationHistories"],
+  [37, "ProjectionThreadRuntimeSummary"],
+  [38, "ProjectionThreadProposedPlanPagingIndex"],
+  [39, "ProjectionThreadsSettled"],
+  [40, "SettingsAdminClients"],
+] as const;
+
 const recordRetiredHistoricalNames = Effect.fn("recordRetiredHistoricalNames")(function* () {
   const sql = yield* SqlClient.SqlClient;
 
@@ -367,6 +392,53 @@ it.effect("rejects an unknown journal identity before continuation writes", () =
     const error = yield* Effect.flip(runMigrations());
 
     assert.match(error.message, /Unsupported fork migration identity at 58/);
+    assert.deepStrictEqual(yield* continuationColumns(), []);
+  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+);
+
+it.effect("continues a released reconciled v0.0.28 journal", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: 51 });
+    for (const [migrationId, name] of reconciledV0028HistoricalNames) {
+      yield* sql`
+        UPDATE effect_sql_migrations
+        SET name = ${name}
+        WHERE migration_id = ${migrationId}
+      `;
+    }
+    yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id = 35`;
+
+    const executed = yield* runMigrations();
+    const latest = yield* sql<{ readonly migrationId: number; readonly name: string }>`
+      SELECT migration_id AS "migrationId", name
+      FROM effect_sql_migrations
+      ORDER BY migration_id DESC
+      LIMIT 1
+    `;
+
+    assert.deepStrictEqual(
+      executed.map(([migrationId]) => migrationId),
+      [52, 53, 54, 55, 56, 57, 58],
+    );
+    assert.deepStrictEqual(latest, [{ migrationId: 58, name: "PairingEnrollmentClass" }]);
+  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+);
+
+it.effect("rejects a missing migration 35 when the marker lacks its released prefix", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: 51 });
+    yield* sql`DELETE FROM effect_sql_migrations WHERE migration_id = 35`;
+    yield* sql`
+      UPDATE effect_sql_migrations
+      SET name = 'ReconcileV0028MigrationHistories'
+      WHERE migration_id = 36
+    `;
+
+    const error = yield* Effect.flip(runMigrations());
+
+    assert.match(error.message, /Unsupported fork migration lineage at 36/);
     assert.deepStrictEqual(yield* continuationColumns(), []);
   }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
 );

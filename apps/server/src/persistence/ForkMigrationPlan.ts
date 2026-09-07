@@ -119,13 +119,29 @@ export const migrationManifest = migrationEntries.map(([id, name]) => [id, name]
 
 // These are recorded identities from the supported fork histories. They are
 // accepted journal evidence, never selectable migration implementations.
-const historicalNames = new Map<number, string>([
+const reconciledV0028HistoricalNames = [
+  [14, "ProjectionThreadsIssueLink"],
+  [15, "BackfillProjectionThreadIssueLinks"],
+  [16, "ProjectionThreadsIssueLink"],
+  [17, "BackfillProjectionThreadIssueLinks"],
+  [18, "BackfillProjectionThreadProposedPlanImplementationColumns"],
+  [19, "BackfillProjectionTurnSourceProposedPlanColumns"],
+  [20, "CanonicalizeModelSelections"],
+  [21, "ProjectionThreadsArchivedAt"],
+  [22, "ProjectionThreadsArchivedAtIndex"],
+  [23, "ProjectionSnapshotLookupIndexes"],
+  [24, "AuthAccessManagement"],
+  [25, "AuthSessionClientMetadata"],
+  [26, "AuthSessionLastConnectedAt"],
   [31, "RepairProjectionThreadShellSummary"],
   [32, "ProjectionThreadIssueLink"],
   [33, "AuthAuthorizationScopes"],
   [34, "AuthPairingProofKeyThumbprint"],
-  [35, "ProjectionThreadStatusSummary"],
   [36, "ReconcileV0028MigrationHistories"],
+] as const;
+const historicalNames = new Map<number, string>([
+  ...reconciledV0028HistoricalNames,
+  [35, "ProjectionThreadStatusSummary"],
   [37, "ProjectionThreadRuntimeSummary"],
   [38, "ProjectionThreadProposedPlanPagingIndex"],
   [39, "ProjectionThreadsSettled"],
@@ -191,7 +207,11 @@ export const makeMigrationLoader = (throughId?: number): Migrator.Loader<SqlClie
     }
     const latest = journal.at(-1)?.migrationId ?? 0;
     const applied = new Set(journal.map((row) => row.migrationId));
+    const reconciledV0028History = reconciledV0028HistoricalNames.every(([migrationId, name]) =>
+      journal.some((row) => row.migrationId === migrationId && row.name === name),
+    );
     for (const [id] of migrationManifest) {
+      if (id === 35 && reconciledV0028History) continue;
       if (id <= latest && !applied.has(id)) {
         return yield* new Migrator.MigrationError({
           kind: "Failed",
