@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { createVoiceOutputClient, VoiceReplyTracker } from "@t3tools/client-runtime/voice-output";
 import { connectionAtomRuntime } from "../connection/runtime";
@@ -35,7 +35,9 @@ export function useVoiceOutput(
     [environmentId],
   );
   const threadId = thread?.id;
-  useEffect(() => {
+  // Route promotion swaps draft and server hosts in one commit. Layout cleanup
+  // and setup complete before the admission owner's deferred departure check.
+  useLayoutEffect(() => {
     const deactivateThread = threadId
       ? webVoiceReplies.activateThread(environmentId, threadId)
       : null;

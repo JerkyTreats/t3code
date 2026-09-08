@@ -17,7 +17,7 @@ Status: active
 
 `packages/client-runtime/src/voice-output` owns device-memory reply admission and authenticated HTTP requests, consuming the existing environment authorization and connection owners. Tests exercise these decisions independently of any screen implementation.
 
-`apps/web/src/fork/useVoiceOutput.tsx` and `voicePlayback.ts` own the web and desktop interaction and audio lifecycle. `apps/mobile/src/features/voice-output` owns the native equivalent. Composer, route, preferences and outbox integrations supply inputs and render controls. Shared contracts, provider execution, turn projection, client settings storage, Expo audio and browser audio remain substrate.
+`apps/web/src/fork/useVoiceOutput.tsx` and `voicePlayback.ts` own the web and desktop interaction and audio lifecycle. The web owner acquires its same-thread admission lease in the synchronous route lifecycle so draft cleanup and server-thread setup settle before deferred departure. `apps/mobile/src/features/voice-output` owns the native equivalent. Composer, route, preferences and outbox integrations supply inputs and render controls. Shared contracts, provider execution, turn projection, client settings storage, Expo audio and browser audio remain substrate.
 
 ## Evidence And Boundaries
 
