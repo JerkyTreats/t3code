@@ -34,6 +34,7 @@ import {
 import { fetchEnvironmentSessionState } from "./session.ts";
 import { fetchEnvironmentShellSnapshot } from "./shellSnapshotHttp.ts";
 import { fetchEnvironmentThreadSnapshot } from "./threadSnapshotHttp.ts";
+import { fetchEnvironmentVoiceResponse } from "../voice-output/http.ts";
 
 const TARGET = new RelayConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
@@ -214,6 +215,60 @@ const LOADERS: ReadonlyArray<{
 ];
 
 describe("authenticated environment HTTP requests", () => {
+  it.effect(
+    "refreshes voice authorization with a new request-bound proof and preserves exact text",
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness((n) =>
+          n === 1
+            ? credentialRejectedResponse()
+            : new Response(new Uint8Array(44), { headers: { "content-type": "audio/wav" } }),
+        );
+        const result = yield* fetchEnvironmentVoiceResponse({
+          ...harness.input,
+          text: "Exact spoken reply.",
+        }).pipe(Effect.provide(harness.httpLayer));
+        expect(result.status).toBe(200);
+        expect(result.bytes).toHaveLength(44);
+        expect(harness.calls.map((c) => c.url)).toEqual([
+          `${CURRENT_ORIGIN}/api/voice/speech`,
+          `${RENEWED_ORIGIN}/api/voice/speech`,
+        ]);
+        expect(harness.proofs[1]).toEqual({
+          method: "POST",
+          url: `${RENEWED_ORIGIN}/api/voice/speech`,
+          accessToken: "renewed-token",
+        });
+        expect(harness.calls[1]!.init.body).toEqual(harness.calls[0]!.init.body);
+        expect(new TextDecoder().decode(harness.calls[1]!.init.body as Uint8Array)).toBe(
+          '{"text":"Exact spoken reply."}',
+        );
+      }),
+  );
+
+  it.effect(
+    "voice uses cookie credentials for local sessions and bearer headers for paired sessions",
+    () =>
+      Effect.gen(function* () {
+        for (const authorization of [
+          null,
+          { _tag: "Bearer" as const, token: "synthetic-bearer" },
+        ]) {
+          const harness = makeHarness(() => Response.json({ available: true }));
+          yield* fetchEnvironmentVoiceResponse({
+            ...harness.input,
+            prepared: { ...PREPARED, httpAuthorization: authorization },
+          }).pipe(Effect.provide(harness.httpLayer));
+          expect(harness.calls[0]!.init.credentials).toBe(
+            authorization === null ? "include" : undefined,
+          );
+          expect(new Headers(harness.calls[0]!.init.headers).get("authorization")).toBe(
+            authorization === null ? null : "Bearer synthetic-bearer",
+          );
+        }
+      }),
+  );
+
   it.effect.each(LOADERS)("uses current relay authorization and endpoint for $name", (loader) =>
     Effect.gen(function* () {
       const harness = makeHarness(() => Response.json(loader.response));

@@ -831,6 +831,46 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
+  it("carries voice style through persisted dispatch while keeping user text unchanged", async () => {
+    const harness = await createHarness();
+    for (const style of ["voice", "text"] as const) {
+      const sent = await harness.runEffect(Deferred.make<void>());
+      harness.sendTurn.mockImplementation(() =>
+        Deferred.succeed(sent, undefined).pipe(
+          Effect.as({ threadId: ThreadId.make("thread-1"), turnId: asTurnId("turn-1") }),
+        ),
+      );
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-style-${style}`),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId(`user-style-${style}`),
+            role: "user",
+            text: "Explain this.",
+            attachments: [],
+          },
+          responseStyle: style,
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }),
+      );
+      await harness.runEffect(Deferred.await(sent));
+      await harness.drain();
+      expect(harness.sendTurn.mock.calls.at(-1)?.[0]).toMatchObject({
+        input: expect.stringContaining(style === "voice" ? "spoken verbatim" : "no longer applies"),
+      });
+      const thread = (await harness.readModel()).threads.find(
+        (entry) => entry.id === ThreadId.make("thread-1"),
+      );
+      expect(
+        thread?.messages.find((entry) => entry.id === asMessageId(`user-style-${style}`))?.text,
+      ).toBe("Explain this.");
+    }
+  });
+
   it("reacts to thread.turn.start by ensuring session and sending provider turn", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
