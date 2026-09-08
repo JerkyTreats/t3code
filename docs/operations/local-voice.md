@@ -41,3 +41,21 @@ The proxy accepts at most 12,000 text characters and an 80 KB request body, caps
 Missing configuration returns 503, a busy proxy returns 429, backend failure returns 502 and timeout returns 504. Text remains usable when voice fails. Stop cancels client playback and HTTP handling; the upstream Pocket TTS generation thread may finish work already started. Removing `T3CODE_TTS_URL` and restarting T3 disables synthesis without changing chat history or the coding model server.
 
 The service processes the selected reply text. T3 does not persist generated audio; clients retain only the current replay audio and release it when voice is disabled or the thread is left. Avoid adding request-body logging at reverse proxies or service wrappers.
+
+## Staging Harness
+
+`scripts/voice-staging-harness.mjs` checks the deployed HTTPS path with synthetic text. It requires an explicit origin whose hostname starts with `stage.` or `staging.` or their hyphenated forms. This prevents an accidental production default; the operator must still verify the exact deployment before running it.
+
+Supply a fresh staging pairing token on standard input, not in command arguments or a tracked file. The output directory must not already exist:
+
+```sh
+node scripts/voice-staging-harness.mjs \
+  --staging-origin https://staging.example.test \
+  --output-dir /tmp/voice-staging-result < /private/staging-token
+```
+
+The private credential file is operator-supplied. Use a pipe instead when the pairing tool can hand over the token directly. Pairing URLs and CLI display output are not valid input: pass just the token. Never reuse a consumed token. The harness refuses redirects and writes only `speech.wav` and `summary.json`, with private permissions. It checks anonymous denial, configured availability, invalid input rejection, non-cached WAV output and synthesis duration. No conversation or coding-agent task is read or created.
+
+For browser verification, `scripts/lib/voice-staging-probe.mjs` also exports `runVoicePlaybackProbe`. Run it in an authenticated staging browser with the deployed `createVoicePlayback` and `VoiceReplyTracker` owners, audio from `runVoiceHttpProbe`, and a real `Audio` element backed by a WAV object URL. The result distinguishes actual playback from browser autoplay denial, and verifies exact text, historical-reply suppression, stop, cached replay and resource clearing. Separately toggle Voice in the real composer, reload to verify persistence, and restore its prior setting.
+
+This is a transport and playback acceptance harness, not an end-to-end coding-provider turn test. A browser run does not prove native Android or iOS audio behavior. Keep staging enabled for the human listening pass; never promote or reconfigure production as part of this harness.
