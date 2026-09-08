@@ -338,11 +338,6 @@ export function NewTaskDraftScreen(props: {
     onChangeDraftMessage: flow.setPrompt,
     onChangeSelection: composerMenu.onSelectionChange,
   });
-  const voicePresentation = resolveVoiceComposerPresentation(
-    voiceInput.state,
-    voiceInput.elapsedSeconds,
-  );
-  const isVoiceInputPresented = voicePresentation.statusLabel !== null;
   const preventRemove =
     (isIncomingShareTransferPending && !isProjectPickerReturnActive) ||
     isCancellingShareImport ||
@@ -1067,17 +1062,27 @@ export function NewTaskDraftScreen(props: {
   }
 
   const isAndroid = Platform.OS === "android";
+  const hasDraftContent = flow.prompt.trim().length > 0;
   const canStart =
     attachmentBlockReason === null &&
     !modelUnavailable &&
     Boolean(flow.selectedProject) &&
     Boolean(flow.selectedModel) &&
-    flow.prompt.trim().length > 0 &&
+    hasDraftContent &&
     isIncomingShareReady &&
     !isImportingShare &&
     !flow.submitting &&
     !voiceInput.blocksSubmission &&
     !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
+  const voicePresentation = resolveVoiceComposerPresentation(
+    voiceInput.state,
+    voiceInput.elapsedSeconds,
+    hasDraftContent,
+    voiceInput.isAvailable,
+  );
+  const isVoiceInputPresented = voicePresentation.statusLabel !== null;
+  const showVoicePrimaryAction =
+    voicePresentation.trailingAction === "confirm" || !voicePresentation.showsSend;
   const promptEditor = (
     <ComposerEditor
       ref={promptInputRef}
@@ -1377,15 +1382,17 @@ export function NewTaskDraftScreen(props: {
                 </>
               )}
               <VoiceModeToggle />
-              <ComposerDictationPrimaryAction
-                state={voiceInput.state}
-                presentation={voicePresentation}
-                isAvailable={voiceInput.isAvailable}
-                disabled={isIncomingShareTransferPending || isImportingShare || flow.submitting}
-                onStart={voiceInput.start}
-                onConfirm={voiceInput.stop}
-                onCancel={voiceInput.cancel}
-              />
+              {showVoicePrimaryAction ? (
+                <ComposerDictationPrimaryAction
+                  state={voiceInput.state}
+                  presentation={voicePresentation}
+                  isAvailable={voiceInput.isAvailable}
+                  disabled={isIncomingShareTransferPending || isImportingShare || flow.submitting}
+                  onStart={voiceInput.start}
+                  onConfirm={voiceInput.stop}
+                  onCancel={voiceInput.cancel}
+                />
+              ) : null}
               {voicePresentation.showsSend ? (
                 <ComposerActionButton
                   accessibilityLabel={

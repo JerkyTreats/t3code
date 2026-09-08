@@ -84,6 +84,7 @@ function makeFakeBrowserWindow() {
     send: vi.fn(),
     setBackgroundThrottling: vi.fn(),
     setWindowOpenHandler: vi.fn(),
+    session: { setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn() },
   };
 
   const window = {
@@ -130,6 +131,8 @@ function makeFakeBrowserWindow() {
     send: webContents.send,
     setZoomLevel: webContents.setZoomLevel,
     setBackgroundThrottling: webContents.setBackgroundThrottling,
+    setPermissionRequestHandler: webContents.session.setPermissionRequestHandler,
+    setPermissionCheckHandler: webContents.session.setPermissionCheckHandler,
     setAutoHideCursor: window.setAutoHideCursor,
     setFullScreen: window.setFullScreen,
     setOpacity: window.setOpacity,
@@ -477,6 +480,134 @@ describe("DesktopWindow", () => {
       }),
     );
   });
+
+  it("allows microphone capture only for the exact desktop renderer origin", () => {
+    assert.isTrue(
+      DesktopWindow.shouldAllowLocalVoiceMicrophonePermission({
+        applicationUrl: "t3code://app/",
+        permission: "media",
+        requestingOrigin: "t3code://app/threads/test",
+        mediaTypes: ["audio"],
+      }),
+    );
+    assert.isFalse(
+      DesktopWindow.shouldAllowLocalVoiceMicrophonePermission({
+        applicationUrl: "t3code://app/",
+        permission: "media",
+        requestingOrigin: "evil://attacker/",
+        mediaTypes: ["audio"],
+      }),
+    );
+    assert.isFalse(
+      DesktopWindow.shouldAllowLocalVoiceMicrophonePermission({
+        applicationUrl: "t3code://app/",
+        permission: "media",
+        requestingOrigin: "t3code://host/",
+        mediaTypes: ["audio"],
+      }),
+    );
+    assert.isFalse(
+      DesktopWindow.shouldAllowLocalVoiceMicrophonePermission({
+        applicationUrl: "t3code://app/",
+        permission: "media",
+        requestingOrigin: "t3code-dev://app/",
+        mediaTypes: ["audio"],
+      }),
+    );
+    assert.isFalse(
+      DesktopWindow.shouldAllowLocalVoiceMicrophonePermission({
+        applicationUrl: "t3code://app/",
+        permission: "media",
+        requestingOrigin: "t3code://app/",
+        mediaTypes: ["video"],
+      }),
+    );
+    assert.isFalse(
+      DesktopWindow.shouldAllowLocalVoiceMicrophonePermission({
+        applicationUrl: "t3code://app/",
+        permission: "media",
+        requestingOrigin: "t3code://app/",
+        mediaTypes: ["audio", "video"],
+      }),
+    );
+    assert.isTrue(
+      DesktopWindow.shouldAllowLocalVoiceMicrophonePermission({
+        applicationUrl: "http://127.0.0.1:5733/",
+        permission: "media",
+        requestingOrigin: "http://127.0.0.1:5733/thread/test",
+        mediaTypes: ["audio"],
+      }),
+    );
+  });
+
+  it.effect("installs matching request and check handlers for main-window media", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = makeTestLayer({
+        window: fakeWindow.window,
+        createCount,
+        mainWindow,
+      });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        assert.equal(fakeWindow.setPermissionRequestHandler.mock.calls.length, 1);
+        assert.equal(fakeWindow.setPermissionCheckHandler.mock.calls.length, 1);
+
+        const requestHandler = fakeWindow.setPermissionRequestHandler.mock.calls[0]?.[0];
+        const checkHandler = fakeWindow.setPermissionCheckHandler.mock.calls[0]?.[0];
+        if (!requestHandler || !checkHandler) {
+          return yield* Effect.die("Expected both main-window media handlers");
+        }
+        const approvals: boolean[] = [];
+        requestHandler(null, "media", (approved: boolean) => approvals.push(approved), {
+          isMainFrame: true,
+          requestingUrl: "evil://attacker/",
+          securityOrigin: "t3code-dev://app/",
+          mediaTypes: ["audio"],
+        });
+        requestHandler(null, "clipboard-read", (approved: boolean) => approvals.push(approved), {
+          isMainFrame: true,
+          requestingUrl: "t3code-dev://app/",
+          securityOrigin: "t3code-dev://app/",
+        });
+        requestHandler(null, "display-capture", (approved: boolean) => approvals.push(approved), {
+          isMainFrame: true,
+          requestingUrl: "t3code-dev://app/",
+          securityOrigin: "t3code-dev://app/",
+        });
+        requestHandler(null, "media", (approved: boolean) => approvals.push(approved), {
+          isMainFrame: true,
+          requestingUrl: "t3code-dev://app/",
+          securityOrigin: "t3code-dev://app/",
+          mediaTypes: ["audio", "video"],
+        });
+        assert.deepEqual(approvals, [true, true, true, false]);
+        assert.isFalse(
+          checkHandler(null, "media", "t3code-dev://app/", {
+            isMainFrame: true,
+            mediaType: "audio",
+          }),
+        );
+        assert.isTrue(
+          checkHandler(null, "media", "t3code-dev://app/", {
+            isMainFrame: true,
+            mediaType: "video",
+          }),
+        );
+        assert.isTrue(
+          checkHandler(null, "clipboard-read", "t3code-dev://app/", {
+            isMainFrame: true,
+            mediaType: "unknown",
+          }),
+        );
+      }).pipe(Effect.provide(layer));
+    }),
+  );
 
   it.effect("does not open a development window until the backend is ready", () =>
     Effect.gen(function* () {

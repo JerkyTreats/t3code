@@ -228,6 +228,7 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    permissions: ["android.permission.RECORD_AUDIO"],
     adaptiveIcon: {
       backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
       foregroundImage: variant.assets.androidAdaptiveForeground,
@@ -307,6 +308,13 @@ const config: ExpoConfig = {
       },
     ],
     [
+      "expo-speech-recognition",
+      {
+        microphonePermission: "Allow T3 Code to use your microphone for voice input.",
+        speechRecognitionPermission: "Allow T3 Code to recognize speech on this device.",
+      },
+    ],
+    [
       "expo-camera",
       {
         cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",
@@ -316,6 +324,7 @@ const config: ExpoConfig = {
       },
     ],
     ["expo-image-picker", { photosPermission: false, microphonePermission: false }],
+    "./plugins/withAndroidVoiceInputPermission.cjs",
     [
       "expo-splash-screen",
       {

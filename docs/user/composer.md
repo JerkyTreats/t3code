@@ -80,19 +80,23 @@ Stashes containing uploaded files must be restored in their original environment
 Those files are retained for 24 hours. After an upload expires, restore the prompt
 and use **Attach again** or remove the missing file before sending.
 
-## Voice input on iPhone
+## Voice input
 
-On supported iPhones with iOS 26 or later, use the composer's microphone to record,
-then confirm to transcribe. Text is inserted where your selection was when
-recording started, ready for you to review and edit before sending.
+When a supported client has no message ready to send, the blue microphone replaces
+the disabled Send button. On native clients, select it to record and confirm to
+transcribe. Browser recognition completes after one utterance or when you stop it.
+The text appears in your draft, ready for you to review and edit before sending.
 
-The first use may download Apple's speech model and needs a network connection.
-Later transcription works offline for that language. Recordings can be up to five
-minutes long. Canceling, leaving the screen, or an audio interruption discards the
-recording and preserves your existing draft.
+Supported iPhones use Apple's local transcription. Supported Android devices and
+Chromium browsers use an installed on-device speech model. The first use may need
+to download a language model. If local recognition is unavailable, T3 Code does not
+offer a remote fallback. Native recording sessions stop after at most five minutes.
+Canceling, leaving the screen, or an audio interruption discards the recording and
+preserves your existing draft.
 
 Transcription runs on your device. T3 Code deletes the temporary audio after
-transcription or cancellation; only the message text is sent when you submit.
+transcription or cancellation where a recording file is used; only the message text
+is sent when you submit.
 
 ## Commands and skills
 

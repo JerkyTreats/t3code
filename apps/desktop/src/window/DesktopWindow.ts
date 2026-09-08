@@ -198,6 +198,65 @@ export function isSameOriginRendererNavigation(input: {
   }
 }
 
+export function isExactApplicationOrigin(input: {
+  readonly applicationUrl: string;
+  readonly requestingOrigin: string;
+}): boolean {
+  try {
+    const application = new URL(input.applicationUrl);
+    const requesting = new URL(input.requestingOrigin);
+    return (
+      application.protocol === requesting.protocol &&
+      application.hostname === requesting.hostname &&
+      application.port === requesting.port
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function shouldAllowLocalVoiceMicrophonePermission(input: {
+  readonly applicationUrl: string;
+  readonly permission: string;
+  readonly requestingOrigin: string;
+  readonly mediaTypes: readonly string[];
+}): boolean {
+  return (
+    input.permission === "media" &&
+    input.mediaTypes.length > 0 &&
+    input.mediaTypes.every((mediaType) => mediaType === "audio") &&
+    isExactApplicationOrigin({
+      applicationUrl: input.applicationUrl,
+      requestingOrigin: input.requestingOrigin,
+    })
+  );
+}
+
+export function shouldAllowMainRendererPermission(input: {
+  readonly applicationUrl: string;
+  readonly permission: string;
+  readonly requestingOrigin: string;
+  readonly mediaTypes: readonly string[];
+}): boolean {
+  if (input.permission !== "media") return true;
+  if (input.mediaTypes.includes("audio")) {
+    return shouldAllowLocalVoiceMicrophonePermission(input);
+  }
+  return (
+    input.mediaTypes.length > 0 && input.mediaTypes.every((mediaType) => mediaType === "video")
+  );
+}
+
+export function shouldGrantMainRendererPermissionCheck(input: {
+  readonly applicationUrl: string;
+  readonly permission: string;
+  readonly requestingOrigin: string;
+  readonly mediaTypes: readonly string[];
+}): boolean {
+  if (input.permission === "media" && input.mediaTypes.includes("audio")) return false;
+  return shouldAllowMainRendererPermission(input);
+}
+
 export function isRetryableDevelopmentRendererLoadFailure(input: {
   readonly applicationUrl: string;
   readonly errorCode: number;
@@ -401,6 +460,37 @@ export const make = Effect.gen(function* () {
         webviewTag: true,
       },
     });
+
+    // The isolated desktop renderer may request a microphone only from the app origin.
+    window.webContents.session.setPermissionRequestHandler(
+      (_webContents, permission, callback, details) => {
+        const securityOrigin =
+          "securityOrigin" in details && typeof details.securityOrigin === "string"
+            ? details.securityOrigin
+            : "about:blank";
+        const mediaTypes =
+          "mediaTypes" in details && Array.isArray(details.mediaTypes) ? details.mediaTypes : [];
+        callback(
+          shouldAllowMainRendererPermission({
+            applicationUrl,
+            permission,
+            requestingOrigin: securityOrigin,
+            mediaTypes,
+          }),
+        );
+      },
+    );
+    window.webContents.session.setPermissionCheckHandler(
+      (_webContents, permission, requestingOrigin, details) => {
+        const mediaTypes = typeof details.mediaType === "string" ? [details.mediaType] : [];
+        return shouldGrantMainRendererPermissionCheck({
+          applicationUrl,
+          permission,
+          requestingOrigin,
+          mediaTypes,
+        });
+      },
+    );
 
     if (environment.platform === "darwin") {
       window.setAutoHideCursor(false);

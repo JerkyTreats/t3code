@@ -1,5 +1,6 @@
 import { memo, type PointerEventHandler } from "react";
-import { ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronLeftIcon, MicIcon } from "lucide-react";
+import type { LocalVoiceInputState } from "../../fork/localVoiceInput";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
@@ -28,6 +29,13 @@ interface ComposerPrimaryActionsProps {
   isEnvironmentUnavailable: boolean;
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
+  voiceInput?: {
+    readonly primaryAction: "send" | "voice";
+    readonly state: LocalVoiceInputState;
+    readonly start: () => void;
+    readonly stop: () => void;
+    readonly cancel: () => void;
+  };
   preserveComposerFocusOnPointerDown?: boolean;
   /** Enter-to-send is disabled on mobile viewports, where stop would otherwise
    * be the only primary action and a running turn could not be steered. */
@@ -71,6 +79,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   isEnvironmentUnavailable,
   isPreparingWorktree,
   hasSendableContent,
+  voiceInput,
   preserveComposerFocusOnPointerDown = false,
   showSendWhileRunning = false,
   onPreviousPendingQuestion,
@@ -270,6 +279,50 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       )}
     </button>
   );
+
+  if (voiceInput?.primaryAction === "voice") {
+    const isRecording = voiceInput.state.phase === "recording";
+    const isCancelable =
+      voiceInput.state.phase === "preparing" || voiceInput.state.phase === "transcribing";
+    return (
+      <div className="flex items-center justify-end gap-2">
+        {voiceInput.state.error ? (
+          <span
+            role="status"
+            data-chat-composer-voice-input-error="true"
+            className="max-w-48 truncate text-destructive text-xs"
+          >
+            {voiceInput.state.error}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          data-chat-composer-voice-input="true"
+          className={cn(
+            "relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-message-action text-message-action-foreground shadow-xs shadow-message-action/24 transition-all duration-150 hover:scale-105 hover:bg-message-action-hover active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none sm:h-8 sm:w-8",
+            isCancelable && "opacity-75",
+          )}
+          {...pointerFocusProps}
+          onClick={
+            isRecording ? voiceInput.stop : isCancelable ? voiceInput.cancel : voiceInput.start
+          }
+          aria-label={
+            isRecording
+              ? "Stop voice input"
+              : isCancelable
+                ? "Cancel voice input"
+                : "Start voice input"
+          }
+        >
+          {isRecording ? (
+            <span className="size-3 rounded-[2px] bg-current" aria-hidden="true" />
+          ) : (
+            <MicIcon className="size-3.5" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+    );
+  }
 
   if (!isRunning) {
     return sendButton;

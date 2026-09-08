@@ -389,13 +389,14 @@ export function ComposerDictationPrimaryAction(props: {
     );
   }
 
-  return <ComposerDictationStartAction {...props} />;
+  return <ComposerDictationStartAction {...props} primary />;
 }
 
 export function ComposerDictationStartAction(props: {
   readonly state: VoiceInputState;
   readonly isAvailable: boolean;
   readonly disabled?: boolean;
+  readonly primary?: boolean;
   readonly onStart: () => void;
   readonly onCancel: () => void;
 }) {
@@ -414,6 +415,7 @@ export function ComposerDictationStartAction(props: {
             }
           : props.onStart
       }
+      variant={props.primary ? "primary" : "plain"}
     />
   );
 }

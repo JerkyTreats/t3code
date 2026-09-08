@@ -87,6 +87,90 @@ function renderSendButton(sendDisabledReason: string | null = null) {
   );
 }
 
+function renderEmptyDraftActions(voiceAvailable: boolean) {
+  return renderToStaticMarkup(
+    createElement(ComposerPrimaryActions, {
+      compact: true,
+      pendingAction: null,
+      isRunning: false,
+      showPlanFollowUpPrompt: false,
+      promptHasText: false,
+      isSendBusy: false,
+      sendDisabledReason: null,
+      isConnecting: false,
+      isEnvironmentUnavailable: false,
+      isPreparingWorktree: false,
+      hasSendableContent: false,
+      voiceInput: {
+        primaryAction: voiceAvailable ? "voice" : "send",
+        state: { phase: "idle", error: null },
+        start: () => {},
+        stop: () => {},
+        cancel: () => {},
+      },
+      onPreviousPendingQuestion: () => {},
+      onInterrupt: () => {},
+      onImplementPlanInNewThread: () => {},
+    }),
+  );
+}
+
+function renderBlockedSendWithText() {
+  return renderToStaticMarkup(
+    createElement(ComposerPrimaryActions, {
+      compact: true,
+      pendingAction: null,
+      isRunning: false,
+      showPlanFollowUpPrompt: false,
+      promptHasText: true,
+      isSendBusy: false,
+      sendDisabledReason: "Waiting for an upload",
+      isConnecting: false,
+      isEnvironmentUnavailable: false,
+      isPreparingWorktree: false,
+      hasSendableContent: true,
+      voiceInput: {
+        primaryAction: "send",
+        state: { phase: "idle", error: null },
+        start: () => {},
+        stop: () => {},
+        cancel: () => {},
+      },
+      onPreviousPendingQuestion: () => {},
+      onInterrupt: () => {},
+      onImplementPlanInNewThread: () => {},
+    }),
+  );
+}
+
+function renderVoiceError() {
+  return renderToStaticMarkup(
+    createElement(ComposerPrimaryActions, {
+      compact: true,
+      pendingAction: null,
+      isRunning: false,
+      showPlanFollowUpPrompt: false,
+      promptHasText: false,
+      isSendBusy: false,
+      sendDisabledReason: null,
+      isConnecting: false,
+      isEnvironmentUnavailable: false,
+      isPreparingWorktree: false,
+      hasSendableContent: false,
+      voiceInput: {
+        primaryAction: "voice",
+        state: { phase: "error", error: "No speech was detected." },
+        start: () => {},
+        stop: () => {},
+        cancel: () => {},
+      },
+      onPreviousPendingQuestion: () => {},
+      onInterrupt: () => {},
+      onImplementPlanInNewThread: () => {},
+    }),
+  );
+}
+
 afterEach(() => {
   stageArtworkState.mode = "none";
   stageArtworkState.variant = null;
@@ -145,5 +229,35 @@ describe("ComposerPrimaryActions", () => {
 
     expect(markup).toContain('aria-label="Stop generation"');
     expect(markup).not.toContain('aria-label="Send message"');
+  });
+
+  it("uses one microphone as the empty draft primary action when local recognition is supported", () => {
+    const markup = renderEmptyDraftActions(true);
+
+    expect(markup).toContain('aria-label="Start voice input"');
+    expect(markup).not.toContain('aria-label="Send message"');
+    expect(markup).toContain('type="button"');
+  });
+
+  it("keeps the ordinary disabled Send fallback when local recognition is unsupported", () => {
+    const markup = renderEmptyDraftActions(false);
+
+    expect(markup).toContain('aria-label="Send message"');
+    expect(markup).toContain("disabled");
+  });
+
+  it("keeps Send for non-empty drafts even when a transient state disables it", () => {
+    const markup = renderBlockedSendWithText();
+
+    expect(markup).toContain('aria-label="Waiting for an upload"');
+    expect(markup).not.toContain('aria-label="Start voice input"');
+  });
+
+  it("shows a recognition error beside the retry microphone", () => {
+    const markup = renderVoiceError();
+
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain("No speech was detected.");
+    expect(markup).toContain('aria-label="Start voice input"');
   });
 });

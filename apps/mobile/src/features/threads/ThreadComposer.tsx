@@ -363,6 +363,8 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const voicePresentation = resolveVoiceComposerPresentation(
     voiceInput.state,
     voiceInput.elapsedSeconds,
+    hasContent,
+    voiceInput.isAvailable,
   );
   const isVoiceInputPresented = voicePresentation.statusLabel !== null;
   const voiceOutput = useVoiceOutput(
@@ -387,6 +389,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     !voiceInput.blocksSubmission &&
     attachmentBlockReason === null &&
     !modelUnavailable;
+  const showVoicePrimaryAction =
+    voicePresentation.trailingAction === "confirm" ||
+    (!voicePresentation.showsSend && !showStopAction);
 
   // Keep the feed inset aligned with the card or compact dictation strip.
   useEffect(() => {
@@ -728,12 +733,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             {!isExpanded ? (
               <View className="flex-row items-center">
                 <VoiceOutputControls voice={voiceOutput} recording={voiceInput.isBusy} />
-                <ComposerDictationStartAction
-                  state={voiceInput.state}
-                  isAvailable={voiceInput.isAvailable}
-                  onStart={voiceInput.start}
-                  onCancel={voiceInput.cancel}
-                />
+                {!voicePresentation.showsSend && !showStopAction ? (
+                  <ComposerDictationStartAction
+                    state={voiceInput.state}
+                    isAvailable={voiceInput.isAvailable}
+                    primary
+                    onStart={voiceInput.start}
+                    onCancel={voiceInput.cancel}
+                  />
+                ) : null}
                 {showStopAction ? (
                   <ComposerActionButton
                     accessibilityLabel="Stop agent"
@@ -741,7 +749,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     variant="danger"
                     onPress={props.onStopThread}
                   />
-                ) : (
+                ) : voicePresentation.showsSend ? (
                   <ComposerActionButton
                     accessibilityLabel={attachmentBlockReason ?? sendLabel}
                     icon="arrow.up"
@@ -749,7 +757,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     disabled={!canSend}
                     onPress={handleSend}
                   />
-                )}
+                ) : null}
               </View>
             ) : null}
             {isExpanded ? <View className="h-1" /> : null}
@@ -818,14 +826,16 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                 )}
                 <View className="shrink-0 flex-row items-center">
                   <VoiceOutputControls voice={voiceOutput} recording={voiceInput.isBusy} />
-                  <ComposerDictationPrimaryAction
-                    state={voiceInput.state}
-                    presentation={voicePresentation}
-                    isAvailable={voiceInput.isAvailable}
-                    onStart={voiceInput.start}
-                    onConfirm={voiceInput.stop}
-                    onCancel={voiceInput.cancel}
-                  />
+                  {showVoicePrimaryAction ? (
+                    <ComposerDictationPrimaryAction
+                      state={voiceInput.state}
+                      presentation={voicePresentation}
+                      isAvailable={voiceInput.isAvailable}
+                      onStart={voiceInput.start}
+                      onConfirm={voiceInput.stop}
+                      onCancel={voiceInput.cancel}
+                    />
+                  ) : null}
                   {showStopAction ? (
                     <ComposerActionButton
                       accessibilityLabel="Stop agent"
