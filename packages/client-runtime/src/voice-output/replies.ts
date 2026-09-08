@@ -30,6 +30,24 @@ const key = (input: Pick<VoiceSubmission, "environmentId" | "threadId" | "messag
 /** Device-memory admission only: snapshots and reconnects cannot opt historical turns into speech. */
 export class VoiceReplyTracker {
   private readonly pending = new Map<string, VoiceSubmission>();
+  private readonly activeThreads = new Map<string, number>();
+
+  /** Keeps a same-thread route handoff from looking like the user left the thread. */
+  activateThread(environmentId: string, threadId: string): () => void {
+    const threadKey = JSON.stringify([environmentId, threadId]);
+    this.activeThreads.set(threadKey, (this.activeThreads.get(threadKey) ?? 0) + 1);
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      const remaining = (this.activeThreads.get(threadKey) ?? 1) - 1;
+      if (remaining > 0) this.activeThreads.set(threadKey, remaining);
+      else this.activeThreads.delete(threadKey);
+      queueMicrotask(() => {
+        if (!this.activeThreads.has(threadKey)) this.clearThread(environmentId, threadId);
+      });
+    };
+  }
 
   register(input: VoiceSubmission): void {
     this.pending.set(key(input), input);

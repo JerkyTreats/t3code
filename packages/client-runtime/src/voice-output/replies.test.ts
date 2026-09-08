@@ -100,4 +100,22 @@ describe("VoiceReplyTracker", () => {
     tracker.forget(submission);
     expect(tracker.consume(snapshot)).toBeNull();
   });
+  it("preserves admission across a same-thread route handoff", async () => {
+    const tracker = new VoiceReplyTracker();
+    const deactivateDraft = tracker.activateThread(submission.environmentId, submission.threadId);
+    tracker.register(submission);
+    deactivateDraft();
+    const deactivateThread = tracker.activateThread(submission.environmentId, submission.threadId);
+    await Promise.resolve();
+    expect(tracker.consume(snapshot)?.messageId).toBe("final-a");
+    deactivateThread();
+  });
+  it("revokes admission after genuinely leaving the thread", async () => {
+    const tracker = new VoiceReplyTracker();
+    const deactivate = tracker.activateThread(submission.environmentId, submission.threadId);
+    tracker.register(submission);
+    deactivate();
+    await Promise.resolve();
+    expect(tracker.consume(snapshot)).toBeNull();
+  });
 });

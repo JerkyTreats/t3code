@@ -36,9 +36,12 @@ export function useVoiceOutput(
   );
   const threadId = thread?.id;
   useEffect(() => {
+    const deactivateThread = threadId
+      ? webVoiceReplies.activateThread(environmentId, threadId)
+      : null;
     return () => {
       playback.clear();
-      if (threadId) webVoiceReplies.clearThread(environmentId, threadId);
+      deactivateThread?.();
     };
   }, [environmentId, threadId, playback]);
   useEffect(() => {
