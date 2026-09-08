@@ -70,6 +70,6 @@ Thread enrollment binds the request origin and rejects redirects while accepting
 
 ## Verification
 
-[F29 local voice output](fork/F29-local-voice-output.md) owns turn-only response guidance at the existing provider boundary and an authenticated bounded proxy for an operator-configured local Pocket TTS service. Shared admission and HTTP owners provide explicit local-submission tracking, completed-reply selection and authenticated audio fetching. Coding-model serving and existing dictation remain unchanged.
+[F29 local voice output](fork/F29-local-voice-output.md) owns opt-in, device-local spoken replies. Turn-only response guidance feeds the existing provider boundary, and an authenticated bounded proxy sends the completed reply verbatim to an operator-configured local Pocket TTS service. Shared admission and HTTP owners prevent historical or cross-device autoplay; web, desktop and mobile audio owners expose stop, replay and failure states. Coding-model serving and existing dictation remain unchanged.
 
 Source and runtime build-input changes require `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test`. Native mobile changes also require `pnpm lint:mobile`. Use synthetic state and keep client installation, production changes and publication within their explicit authorization.

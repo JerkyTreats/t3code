@@ -92,6 +92,12 @@ import { resolveProviderInteractionMode } from "./legacy-plan-mode";
 import { deriveThreadTitleFromPrompt } from "../../lib/projectThreadStartTurn";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
+import { mobileResponseStyle } from "../voice-output/preferences";
+import { VoiceModeToggle } from "../voice-output/VoiceModeToggle";
+import {
+  prepareQueuedVoiceSubmission,
+  finishLocalVoiceSubmission,
+} from "../voice-output/coordination";
 import { removeThreadOutboxMessage } from "../../state/thread-outbox-removal";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { useNewTaskFlow } from "./new-task-flow-provider";
@@ -938,9 +944,16 @@ export function NewTaskDraftScreen(props: {
         return;
       }
       flow.setSubmitting(true);
+      const responseStyle = mobileResponseStyle();
       try {
-        await enqueueThreadOutboxMessage(message);
+        await prepareQueuedVoiceSubmission({
+          submission: message,
+          responseStyle,
+          destination: "background-creation",
+        });
+        await enqueueThreadOutboxMessage({ ...message, responseStyle });
       } catch (error) {
+        finishLocalVoiceSubmission(message);
         Alert.alert(
           "Could not queue task",
           error instanceof Error ? error.message : "The task could not be saved to the outbox.",
@@ -1363,6 +1376,7 @@ export function NewTaskDraftScreen(props: {
                   </ComposerToolbarScroller>
                 </>
               )}
+              <VoiceModeToggle />
               <ComposerDictationPrimaryAction
                 state={voiceInput.state}
                 presentation={voicePresentation}

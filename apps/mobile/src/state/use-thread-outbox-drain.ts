@@ -19,6 +19,11 @@ import { Alert } from "react-native";
 
 import { scopedProjectKey, scopedThreadKey } from "../lib/scopedEntities";
 import { buildProjectThreadStartTurnInput } from "../lib/projectThreadStartTurn";
+import {
+  mobileVoiceReplies,
+  registerQueuedVoiceSubmission,
+  finishLocalVoiceSubmission,
+} from "../features/voice-output/coordination";
 import { prepareTurnAttachments, type PreparedTurnAttachments } from "../lib/attachmentUpload";
 import { randomHex } from "../lib/uuid";
 import { isModelSelectionUnavailable } from "../lib/modelOptions";
@@ -301,6 +306,7 @@ export async function recoverEditedCreationAfterDelivery(
       ...(kept.modelSelection !== undefined ? { modelSelection: kept.modelSelection } : {}),
       ...(kept.runtimeMode !== undefined ? { runtimeMode: kept.runtimeMode } : {}),
       ...(kept.interactionMode !== undefined ? { interactionMode: kept.interactionMode } : {}),
+      ...(kept.responseStyle !== undefined ? { responseStyle: kept.responseStyle } : {}),
     });
     // The append only schedules a debounced write; the queue entry is the
     // only durable copy until the draft lands, so flush before removing.
@@ -391,6 +397,7 @@ export async function restoreRejectedQueuedMessage(
       ...(queuedMessage.modelSelection ? { modelSelection: queuedMessage.modelSelection } : {}),
       ...(queuedMessage.runtimeMode ? { runtimeMode: queuedMessage.runtimeMode } : {}),
       ...(queuedMessage.interactionMode ? { interactionMode: queuedMessage.interactionMode } : {}),
+      ...(queuedMessage.responseStyle ? { responseStyle: queuedMessage.responseStyle } : {}),
       ...(queuedMessage.creation
         ? {
             workspaceSelection: {
@@ -750,6 +757,7 @@ export function useThreadOutboxDrain(): void {
         settings,
         currentConfig.providers,
       );
+      if (queuedMessage.responseStyle === "voice") registerQueuedVoiceSubmission(queuedMessage);
       const deliveryResult = await startTurn({
         environmentId: queuedMessage.environmentId,
         input: {
@@ -764,10 +772,13 @@ export function useThreadOutboxDrain(): void {
           modelSelection: sendSettings.modelSelection,
           runtimeMode: sendSettings.runtimeMode,
           interactionMode: sendSettings.interactionMode,
+          responseStyle: queuedMessage.responseStyle ?? "text",
           createdAt: queuedMessage.createdAt,
         },
       });
       const failure = reportFailure(deliveryResult, "start-turn");
+      if (failure) mobileVoiceReplies.forget(queuedMessage);
+      else finishLocalVoiceSubmission(queuedMessage);
       if (failure?.action === "retry") {
         return false;
       }
@@ -870,6 +881,7 @@ export function useThreadOutboxDrain(): void {
         settings,
         currentConfig.providers,
       );
+      if (queuedMessage.responseStyle === "voice") registerQueuedVoiceSubmission(queuedMessage);
       const deliveryResult = await startTurn({
         environmentId: queuedMessage.environmentId,
         input: buildProjectThreadStartTurnInput({
@@ -884,6 +896,7 @@ export function useThreadOutboxDrain(): void {
           modelSelection: sendSettings.modelSelection,
           runtimeMode: sendSettings.runtimeMode,
           interactionMode: sendSettings.interactionMode,
+          responseStyle: queuedMessage.responseStyle ?? "text",
           workspaceMode: creation.workspaceMode,
           branch: creation.branch,
           worktreePath: creation.worktreePath,
@@ -893,6 +906,8 @@ export function useThreadOutboxDrain(): void {
       });
       const { reportFailure } = makeDeliveryHelpers(queuedMessage);
       const failure = reportFailure(deliveryResult, "start-turn");
+      if (failure) mobileVoiceReplies.forget(queuedMessage);
+      else finishLocalVoiceSubmission(queuedMessage);
       if (failure?.action === "retry") {
         return false;
       }

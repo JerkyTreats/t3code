@@ -79,6 +79,8 @@ import {
   ComposerDictationToolbar,
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
+import { useVoiceOutput } from "../voice-output/useVoiceOutput";
+import { VoiceOutputControls } from "../voice-output/VoiceOutputControls";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import {
   type ExistingThreadSettingsRouteSession,
@@ -363,6 +365,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     voiceInput.elapsedSeconds,
   );
   const isVoiceInputPresented = voicePresentation.statusLabel !== null;
+  const voiceOutput = useVoiceOutput(
+    props.environmentId,
+    props.selectedThread.id,
+    voiceInput.isBusy,
+  );
   // An open draft stays visible; only a collapsed composer becomes a voice strip.
   const isExpanded = isFocused || settingsSheetPresentation.isActive;
   const showsCompactDictation = isVoiceInputPresented && !isExpanded;
@@ -598,6 +605,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           </Pressable>
         ) : null}
 
+        {voiceOutput.error ? (
+          <Text
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            className="px-3 py-1 text-xs text-foreground-muted"
+          >
+            {voiceOutput.error}
+          </Text>
+        ) : null}
         <ComposerSurface
           style={
             isExpanded
@@ -711,6 +727,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             ) : null}
             {!isExpanded ? (
               <View className="flex-row items-center">
+                <VoiceOutputControls voice={voiceOutput} recording={voiceInput.isBusy} />
                 <ComposerDictationStartAction
                   state={voiceInput.state}
                   isAvailable={voiceInput.isAvailable}
@@ -800,6 +817,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   </View>
                 )}
                 <View className="shrink-0 flex-row items-center">
+                  <VoiceOutputControls voice={voiceOutput} recording={voiceInput.isBusy} />
                   <ComposerDictationPrimaryAction
                     state={voiceInput.state}
                     presentation={voicePresentation}

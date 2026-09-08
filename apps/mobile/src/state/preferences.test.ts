@@ -62,6 +62,39 @@ function makePreferencesState(
 }
 
 describe("mobile preferences state", () => {
+  it.effect("keeps spoken replies opt-in and persists device-local toggles", () =>
+    Effect.gen(function* () {
+      const savePatch = vi.fn((patch: Partial<Preferences>) => Effect.succeed(patch));
+      const state = makePreferencesState({ load: Effect.succeed({}), savePatch });
+      const registry = AtomRegistry.make();
+      const unmount = registry.mount(state.preferencesAtom);
+      const unmountUpdate = registry.mount(state.updatePreferencesAtom);
+      const initial = yield* AtomRegistry.getResult(registry, state.preferencesAtom, {
+        suspendOnWaiting: true,
+      });
+      expect(initial.voiceModeEnabled === true).toBe(false);
+      registry.set(state.updatePreferencesAtom, { voiceModeEnabled: true });
+      yield* AtomRegistry.getResult(registry, state.updatePreferencesAtom, {
+        suspendOnWaiting: true,
+      });
+      expect(savePatch).toHaveBeenCalledWith({ voiceModeEnabled: true });
+      const enabled = yield* AtomRegistry.getResult(registry, state.preferencesAtom, {
+        suspendOnWaiting: true,
+      });
+      expect(enabled.voiceModeEnabled).toBe(true);
+      registry.set(state.updatePreferencesAtom, { voiceModeEnabled: false });
+      yield* AtomRegistry.getResult(registry, state.updatePreferencesAtom, {
+        suspendOnWaiting: true,
+      });
+      const disabled = yield* AtomRegistry.getResult(registry, state.preferencesAtom, {
+        suspendOnWaiting: true,
+      });
+      expect(disabled.voiceModeEnabled).toBe(false);
+      unmountUpdate();
+      unmount();
+      registry.dispose();
+    }),
+  );
   it.effect("shares one preference load across consumers", () =>
     Effect.gen(function* () {
       const load = vi.fn(() => Promise.resolve<Preferences>({ baseFontSize: 17 }));

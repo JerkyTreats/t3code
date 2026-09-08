@@ -7,6 +7,7 @@ import {
   type RecordingStatus,
 } from "expo-audio";
 import { File } from "expo-file-system";
+import { stopMobileVoicePlayback } from "../voice-output/coordination";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
@@ -43,6 +44,7 @@ async function releaseVoiceRecordingAudio(): Promise<void> {
 }
 
 async function configureVoiceRecordingAudio(): Promise<void> {
+  await stopMobileVoicePlayback();
   try {
     await setAudioModeAsync({
       allowsRecording: true,

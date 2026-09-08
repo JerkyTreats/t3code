@@ -424,6 +424,7 @@ import { RightPanelSheet } from "./RightPanelSheet";
 import { previewEnvironment } from "../state/preview";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { useVoiceOutput, webVoiceReplies } from "../fork/useVoiceOutput";
 import { fileAttachmentCapabilityBlockReason } from "./chat/composerAttachmentFiles";
 import { assetEnvironment } from "../state/assets";
 import { readPreparedConnection } from "../state/session";
@@ -1412,7 +1413,7 @@ export default function ChatView(props: ChatViewProps) {
   const setThreadInteractionMode = useAtomCommand(threadEnvironment.setInteractionMode, {
     reportFailure: false,
   });
-  const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
+  const dispatchThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
     refresh: true,
@@ -1772,6 +1773,28 @@ export default function ChatView(props: ChatViewProps) {
   // depend on which route is mounted.
   const isServerThread = activeServerThread !== null;
   const activeThread = activeServerThread ?? localDraftThread;
+  const voiceOutput = useVoiceOutput(environmentId, activeThread, settings.voiceModeEnabled);
+  const stopVoiceOutput = voiceOutput.stop;
+  const startThreadTurn = useCallback(
+    async (request: Parameters<typeof dispatchThreadTurn>[0]) => {
+      stopVoiceOutput();
+      const registration = {
+        environmentId: request.environmentId,
+        threadId: request.input.threadId,
+        messageId: request.input.message.messageId,
+        createdAt: request.input.createdAt ?? new Date().toISOString(),
+      };
+      const responseStyle = settings.voiceModeEnabled ? "voice" : "text";
+      if (responseStyle === "voice") webVoiceReplies.register(registration);
+      const result = await dispatchThreadTurn({
+        ...request,
+        input: { ...request.input, createdAt: registration.createdAt, responseStyle },
+      });
+      if (result._tag === "Failure") webVoiceReplies.forget(registration);
+      return result;
+    },
+    [dispatchThreadTurn, settings.voiceModeEnabled, stopVoiceOutput],
+  );
   const threadError = isServerThread
     ? (localServerError ?? activeServerThread?.session?.lastError ?? null)
     : localDraftError;
@@ -6132,6 +6155,7 @@ export default function ChatView(props: ChatViewProps) {
     },
   ) => {
     e?.preventDefault();
+    stopVoiceOutput();
     const notifyDirectAnnotationAttached = () => {
       if (!directAnnotation) return;
       toastManager.add(
@@ -8089,6 +8113,7 @@ export default function ChatView(props: ChatViewProps) {
                             onPageScrollKeyUp={onComposerPageScrollKeyUp}
                             onPageScrollRelease={onComposerPageScrollRelease}
                             onSend={onSend}
+                            voiceControls={voiceOutput.controls}
                             onSendContextCommitted={onLauncherComposerCommitted}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}

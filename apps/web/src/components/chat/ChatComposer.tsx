@@ -1195,6 +1195,7 @@ export interface ChatComposerHandle {
 // --------------------------------------------------------------------------
 
 export interface ChatComposerProps {
+  voiceControls?: ReactNode;
   composerDraftTarget: ScopedThreadRef | DraftId;
   environmentId: EnvironmentId;
   attachmentUploadsCapabilityKnown: boolean;
@@ -1387,6 +1388,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     compactDisabledReason,
     resolvedTheme,
     settings,
+    voiceControls,
     keybindings,
     terminalOpen,
     gitCwd,
@@ -4937,6 +4939,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       className="mx-auto w-full min-w-0 max-w-3xl"
       data-chat-composer-form="true"
     >
+      {voiceControls}
       {composerControlsInStrip && restingControlsHost
         ? createPortal(
             <div

@@ -1,4 +1,6 @@
 import { useCallback } from "react";
+import { mobileResponseStyle } from "../voice-output/preferences";
+import { mobileVoiceReplies, stopMobileVoicePlayback } from "../voice-output/coordination";
 
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -50,6 +52,8 @@ export function useCreateProjectThread() {
       readonly turnMetadata?: TurnCommandMetadata;
     }) => {
       const metadata = input.turnMetadata ?? makeTurnCommandMetadata();
+      const responseStyle = mobileResponseStyle();
+      await stopMobileVoicePlayback();
       const threadId = ThreadId.make(metadata.threadId);
       const initialMessageText = input.initialMessageText.trim();
 
@@ -128,6 +132,9 @@ export function useCreateProjectThread() {
         (candidate) => candidate.instanceId === input.modelSelection.instanceId,
       );
 
+      if (responseStyle === "voice") {
+        mobileVoiceReplies.register({ environmentId: input.project.environmentId, ...metadata });
+      }
       const result = await startTurn({
         environmentId: input.project.environmentId,
         input: buildProjectThreadStartTurnInput({
@@ -138,6 +145,7 @@ export function useCreateProjectThread() {
           messageId: metadata.messageId,
           createdAt: metadata.createdAt,
           text: initialMessageText,
+          responseStyle,
           uploadedAttachments: prepared.attachments,
           modelSelection: input.modelSelection,
           runtimeMode: input.runtimeMode,
@@ -150,6 +158,7 @@ export function useCreateProjectThread() {
         }),
       });
       if (AsyncResult.isFailure(result)) {
+        mobileVoiceReplies.forget({ environmentId: input.project.environmentId, ...metadata });
         const error = Cause.squash(result.cause);
         setPendingConnectionError(
           error instanceof Error ? error.message : "The task could not be started.",
