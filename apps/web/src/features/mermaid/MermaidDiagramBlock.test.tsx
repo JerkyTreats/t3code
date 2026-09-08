@@ -105,6 +105,91 @@ describe("MermaidDiagramBlock", () => {
     await React.act(async () => renderer.unmount());
   });
 
+  it("visibility-gates new and cached diagrams", async () => {
+    let intersectionCallback: IntersectionObserverCallback | undefined;
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    class TestIntersectionObserver implements IntersectionObserver {
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly scrollMargin = "0px";
+      readonly thresholds = [0];
+
+      constructor(callback: IntersectionObserverCallback) {
+        intersectionCallback = callback;
+      }
+
+      observe(target: Element) {
+        observe(target);
+      }
+
+      unobserve() {}
+
+      disconnect() {
+        disconnect();
+      }
+
+      takeRecords() {
+        return [];
+      }
+    }
+    vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
+    renderMermaidDiagram.mockResolvedValue(RESULT);
+
+    let renderer: ReactTestRenderer | undefined;
+    await React.act(async () => {
+      renderer = TestRenderer.create(diagram(), {
+        createNodeMock: (element) => (element.type === "figure" ? {} : null),
+      });
+    });
+
+    expect(observe).toHaveBeenCalledOnce();
+    expect(renderMermaidDiagram).not.toHaveBeenCalled();
+    expect(renderer!.root.findByProps({ role: "status" }).children).toEqual([
+      "Diagram renders when visible...",
+    ]);
+
+    await React.act(async () => {
+      intersectionCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+
+    expect(disconnect).toHaveBeenCalled();
+    expect(renderMermaidDiagram).toHaveBeenCalledOnce();
+    expect(
+      renderer!.root.findByProps({ className: "chat-markdown-mermaid-viewport" }).props,
+    ).toHaveProperty("dangerouslySetInnerHTML", { __html: RESULT.svg });
+
+    await React.act(async () => {
+      renderer?.update(diagram({ key: "cached-remount" }));
+    });
+
+    expect(renderMermaidDiagram).toHaveBeenCalledOnce();
+    expect(
+      renderer!.root.findByProps({ className: "chat-markdown-mermaid-viewport" }).props
+        .dangerouslySetInnerHTML,
+    ).toBeUndefined();
+    expect(renderer!.root.findByProps({ role: "status" }).children).toEqual([
+      "Diagram renders when visible...",
+    ]);
+
+    await React.act(async () => {
+      intersectionCallback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+
+    expect(renderMermaidDiagram).toHaveBeenCalledOnce();
+    expect(
+      renderer!.root.findByProps({ className: "chat-markdown-mermaid-viewport" }).props,
+    ).toHaveProperty("dangerouslySetInnerHTML", { __html: RESULT.svg });
+
+    await React.act(async () => renderer?.unmount());
+  });
+
   it("reuses pending and completed semantic work across remounts", async () => {
     let finishRender = (_result: RenderResult): void => {
       throw new Error("Render promise was not initialized.");

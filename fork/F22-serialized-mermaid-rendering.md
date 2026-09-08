@@ -10,6 +10,8 @@ Render Mermaid fences safely and predictably across concurrent Markdown surfaces
 ## Required Behavior
 
 - `mermaid` and `mmd` fences load Mermaid only when first needed.
+- Completed diagrams begin rendering only after their block enters the visible scroll area. Cached
+  SVG remains visibility-gated on remount so hidden Markdown does not pay DOM layout cost.
 - Global Mermaid configuration and render work are serialized.
 - Pending work and completed semantic cache entries are bounded.
 - Cache identity includes exact source, normalized effective semantic colors, source offsets and stable owner-level surface identity. Modern literal colors use the existing theme color converter; composed CSS colors resolve through the live document before conversion to Mermaid-compatible hex with alpha preserved. Invalid values fall back independently by semantic role.
@@ -50,7 +52,7 @@ Render Mermaid fences safely and predictably across concurrent Markdown surfaces
 
 ## Verification
 
-- renderer tests cover lazy import, import retry, serialization, theme identity, stale generations, bounded pending work, cache eviction, failure source, and scroll correction.
+- renderer tests cover visibility-gated lazy import, import retry, serialization, theme identity, stale generations, bounded pending work, cache eviction, failure source, and scroll correction.
 - Host integration tests cover streaming completion, stable message, plan, file and pull-request identities, source offsets, exact current code-block fallback and coexistence with upstream source/PR review.
 - production build evidence proves Mermaid remains split from the initial web runtime.
 

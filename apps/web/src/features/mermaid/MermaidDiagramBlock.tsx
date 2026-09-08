@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { RenderResult } from "mermaid";
 
 import {
@@ -25,6 +25,32 @@ export function isMermaidFenceLanguage(language: string): boolean {
   return MERMAID_FENCE_LANGUAGES.has(language.toLowerCase());
 }
 
+function useRenderMermaidWhenVisible(elementRef: RefObject<HTMLElement | null>): boolean {
+  const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined");
+
+  useEffect(() => {
+    if (visible) return;
+
+    const element = elementRef.current;
+    if (!element) return;
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      observer.disconnect();
+      setVisible(true);
+    });
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, [elementRef, visible]);
+
+  return visible;
+}
+
 function formatRenderErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
@@ -48,6 +74,7 @@ export function MermaidDiagramBlock(props: {
   const renderSequenceRef = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const figureRef = useRef<HTMLElement>(null);
+  const visible = useRenderMermaidWhenVisible(figureRef);
   const themeSnapshot = useMermaidThemeSnapshot(props.theme);
   const renderIdPrefix = useMemo(
     () => `chat-mermaid-${reactId.replaceAll(/[^a-zA-Z0-9_-]/g, "")}`,
@@ -79,16 +106,17 @@ export function MermaidDiagramBlock(props: {
   });
   const [retryGeneration, setRetryGeneration] = useState(0);
   const cachedRender = props.isStreaming ? null : getCachedMermaidRender(cacheKey);
-  const currentResult =
-    cachedRender ??
-    (renderState.status === "rendered" && renderState.cacheKey === cacheKey
-      ? renderState.result
-      : null);
+  const currentResult = visible
+    ? (cachedRender ??
+      (renderState.status === "rendered" && renderState.cacheKey === cacheKey
+        ? renderState.result
+        : null))
+    : null;
 
   usePreserveScrollOnMermaidResize(figureRef);
 
   useEffect(() => {
-    if (props.isStreaming || getCachedMermaidRender(cacheKey)) return;
+    if (!visible || props.isStreaming || getCachedMermaidRender(cacheKey)) return;
 
     let cancelled = false;
     const renderId = `${renderIdPrefix}-${renderSequenceRef.current}-${retryGeneration}`;
@@ -123,6 +151,7 @@ export function MermaidDiagramBlock(props: {
     renderIdPrefix,
     retryGeneration,
     themeSnapshot.palette,
+    visible,
   ]);
 
   useEffect(() => {
@@ -167,7 +196,11 @@ export function MermaidDiagramBlock(props: {
       />
       {!currentResult ? (
         <div className="chat-markdown-mermaid-loading" role="status">
-          {props.isStreaming ? "Waiting for diagram..." : "Rendering diagram..."}
+          {props.isStreaming
+            ? "Waiting for diagram..."
+            : visible
+              ? "Rendering diagram..."
+              : "Diagram renders when visible..."}
         </div>
       ) : null}
     </figure>

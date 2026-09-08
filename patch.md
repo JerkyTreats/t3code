@@ -48,7 +48,7 @@ The provider capability owner admits Board for Codex, Claude, Cursor, Grok and l
 
 [F04 context whitespace](fork/F04-composer-context-whitespace.md) preserves authored bytes when terminal, element or preview context is appended, including mixed upstream source review. The focused composition and display owner preserves generated ordering and removes only inserted separation. Ordinary and review-only trimming remains upstream behavior.
 
-[F22 Mermaid rendering](fork/F22-serialized-mermaid-rendering.md) adds one fence adapter to upstream Markdown. A bounded serialized owner handles theme-sensitive rendering, stable semantic identity, retries and stale results across message, plan, file and PR surfaces. The retired document renderer and rendered-document review remain absent.
+[F22 Mermaid rendering](fork/F22-serialized-mermaid-rendering.md) adds one fence adapter to upstream Markdown. A bounded visibility-gated serialized owner delays hidden diagram work while handling theme-sensitive rendering, stable semantic identity, retries and stale results across message, plan, file and PR surfaces. The retired document renderer and rendered-document review remain absent.
 
 [F23 preview controls](fork/F23-preview-browser-controls.md) owns focused new, confirmed close and reopen actions, exact scoped runtime identity and ten-entry successful-close history. Current preview sessions, profiles and browser presentation remain upstream substrate. Optional exact zoom restoration consumes the existing normalized Manager operation.
 
