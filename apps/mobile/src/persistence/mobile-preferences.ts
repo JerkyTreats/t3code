@@ -5,7 +5,11 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import type { SidebarProjectGroupingMode } from "@t3tools/contracts";
+import {
+  VOICE_OUTPUT_VOICE_IDS,
+  type SidebarProjectGroupingMode,
+  type VoiceOutputVoiceId,
+} from "@t3tools/contracts";
 import { MOBILE_THEME_IDS, type MobileThemeId, type MobileThemeMode } from "../lib/mobileTheme";
 
 import * as MobileDatabase from "./mobile-database";
@@ -17,6 +21,7 @@ const PREFERENCES_FALLBACK_KEY = "t3code.preferences.fallback";
 
 export interface Preferences {
   readonly voiceModeEnabled?: boolean;
+  readonly voiceOutputVoiceId?: VoiceOutputVoiceId;
   readonly liveActivitiesEnabled?: boolean;
   readonly themeId?: MobileThemeId;
   readonly lightThemeId?: MobileThemeId;
@@ -87,6 +92,7 @@ export class MobilePreferencesStore extends Context.Service<
 function sanitizePreferences(parsed: Preferences): Preferences {
   const preferences: {
     voiceModeEnabled?: boolean;
+    voiceOutputVoiceId?: VoiceOutputVoiceId;
     liveActivitiesEnabled?: boolean;
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
@@ -109,6 +115,13 @@ function sanitizePreferences(parsed: Preferences): Preferences {
 
   if (typeof parsed.voiceModeEnabled === "boolean") {
     preferences.voiceModeEnabled = parsed.voiceModeEnabled;
+  }
+
+  if (
+    typeof parsed.voiceOutputVoiceId === "string" &&
+    (VOICE_OUTPUT_VOICE_IDS as readonly string[]).includes(parsed.voiceOutputVoiceId)
+  ) {
+    preferences.voiceOutputVoiceId = parsed.voiceOutputVoiceId as VoiceOutputVoiceId;
   }
 
   if (typeof parsed.liveActivitiesEnabled === "boolean") {

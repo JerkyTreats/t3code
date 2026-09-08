@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, VoiceOutputVoiceId } from "@t3tools/contracts";
 import { createVoiceOutputClient, VoiceReplyTracker } from "@t3tools/client-runtime/voice-output";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -14,6 +14,7 @@ export function useVoiceOutput(
   environmentId: EnvironmentId,
   thread: Thread | undefined,
   enabled: boolean,
+  voiceId: VoiceOutputVoiceId | null,
 ) {
   const updateSettings = useUpdateClientSettings();
   const [state, setState] = useState<VoicePlaybackState>({
@@ -25,14 +26,14 @@ export function useVoiceOutput(
   const playback = useMemo(
     () =>
       createVoicePlayback({
-        speech: (text, signal) => client.speech(environmentId, text, signal),
+        speech: (text, signal) => client.speech(environmentId, text, { signal, voiceId }),
         createAudio: (bytes) => {
           const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "audio/wav" }));
           return { audio: new Audio(url), release: () => URL.revokeObjectURL(url) };
         },
         changed: setState,
       }),
-    [environmentId],
+    [environmentId, voiceId],
   );
   const threadId = thread?.id;
   // Route promotion swaps draft and server hosts in one commit. Layout cleanup

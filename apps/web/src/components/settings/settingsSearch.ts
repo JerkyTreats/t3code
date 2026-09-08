@@ -173,6 +173,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresThreadAutoSettlement: true,
   },
   {
+    id: "spoken-reply-voice",
+    title: "Spoken reply voice",
+    to: "/settings/general",
+    searchTerms: [
+      "voice speech speaker spoken audio tts pocket alba marius javert jean fantine cosette eponine azelma",
+    ],
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",

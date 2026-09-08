@@ -1,4 +1,8 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  VOICE_OUTPUT_VOICE_IDS,
+  type EnvironmentId,
+  type VoiceOutputVoiceId,
+} from "@t3tools/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -28,6 +32,7 @@ export const fetchEnvironmentVoiceResponse = Effect.fn("voiceOutput.fetchEnviron
   function* (input: {
     readonly prepared: PreparedConnection;
     readonly text?: string;
+    readonly voiceId?: VoiceOutputVoiceId;
     readonly signer: Option.Option<ManagedRelayDpopSigner["Service"]>;
     readonly remoteAuthorization?: Option.Option<RemoteEnvironmentAuthorization["Service"]>;
   }) {
@@ -39,7 +44,10 @@ export const fetchEnvironmentVoiceResponse = Effect.fn("voiceOutput.fetchEnviron
           input.text === undefined
             ? HttpClientRequest.get(url)
             : HttpClientRequest.post(url).pipe(
-                HttpClientRequest.bodyJsonUnsafe({ text: input.text }),
+                HttpClientRequest.bodyJsonUnsafe({
+                  text: input.text,
+                  ...(input.voiceId === undefined ? {} : { voiceId: input.voiceId }),
+                }),
               );
         const response = yield* http.execute(
           request.pipe(HttpClientRequest.setHeaders({ ...headers })),
@@ -64,7 +72,7 @@ export const fetchEnvironmentVoiceResponse = Effect.fn("voiceOutput.fetchEnviron
   },
 );
 
-function voiceRequest(environmentId: EnvironmentId, text?: string) {
+function voiceRequest(environmentId: EnvironmentId, text?: string, voiceId?: VoiceOutputVoiceId) {
   return Effect.gen(function* () {
     const registry = yield* EnvironmentRegistry;
     const signer = yield* Effect.serviceOption(ManagedRelayDpopSigner);
@@ -84,6 +92,7 @@ function voiceRequest(environmentId: EnvironmentId, text?: string) {
           signer,
           remoteAuthorization,
           ...(text === undefined ? {} : { text }),
+          ...(voiceId === undefined ? {} : { voiceId }),
         });
       }),
     );
@@ -99,8 +108,9 @@ export function createVoiceOutputClient<R, E>(
     environmentId: EnvironmentId,
     text: string | undefined,
     signal?: AbortSignal,
+    voiceId?: VoiceOutputVoiceId,
   ) => {
-    const atom = runtime.atom(voiceRequest(environmentId, text));
+    const atom = runtime.atom(voiceRequest(environmentId, text, voiceId));
     return Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -115,28 +125,49 @@ export function createVoiceOutputClient<R, E>(
     async status(
       environmentId: EnvironmentId,
       signal?: AbortSignal,
-    ): Promise<{ available: boolean }> {
+    ): Promise<{ available: boolean; voiceIds: ReadonlyArray<VoiceOutputVoiceId> }> {
       const response = await request(environmentId, undefined, signal);
-      if (response.status === 404 || response.status === 503) return { available: false };
+      if (response.status === 404 || response.status === 503)
+        return { available: false, voiceIds: [] };
       if (response.status !== 200)
         throw new VoiceOutputError({
           message: "Could not check voice availability. Reconnect and try again.",
         });
       const status: unknown = JSON.parse(new TextDecoder().decode(response.bytes));
+      const voiceIds =
+        typeof status === "object" &&
+        status !== null &&
+        "voiceIds" in status &&
+        Array.isArray(status.voiceIds)
+          ? status.voiceIds.filter(
+              (voiceId): voiceId is VoiceOutputVoiceId =>
+                typeof voiceId === "string" &&
+                (VOICE_OUTPUT_VOICE_IDS as readonly string[]).includes(voiceId),
+            )
+          : [];
       return {
         available:
           typeof status === "object" &&
           status !== null &&
           "available" in status &&
           status.available === true,
+        voiceIds,
       };
     },
     async speech(
       environmentId: EnvironmentId,
       text: string,
-      signal?: AbortSignal,
+      options?: {
+        readonly signal?: AbortSignal;
+        readonly voiceId?: VoiceOutputVoiceId | null;
+      },
     ): Promise<Uint8Array> {
-      const response = await request(environmentId, text, signal);
+      const response = await request(
+        environmentId,
+        text,
+        options?.signal,
+        options?.voiceId ?? undefined,
+      );
       if (response.status !== 200) {
         throw new VoiceOutputError({
           message:

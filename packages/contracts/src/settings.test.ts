@@ -152,6 +152,18 @@ describe("ClientSettings word wrap", () => {
   });
 });
 
+describe("ClientSettings spoken reply voice", () => {
+  it("uses the server default until this device selects a supported voice", () => {
+    expect(decodeClientSettings({}).voiceOutputVoiceId).toBeNull();
+    expect(decodeClientSettings({ voiceOutputVoiceId: "marius" }).voiceOutputVoiceId).toBe(
+      "marius",
+    );
+    expect(decodeClientSettingsPatch({ voiceOutputVoiceId: null }).voiceOutputVoiceId).toBeNull();
+    expect(() => decodeClientSettings({ voiceOutputVoiceId: "unsupported" })).toThrow();
+    expect(() => decodeClientSettingsPatch({ voiceOutputVoiceId: "unsupported" })).toThrow();
+  });
+});
+
 describe("ClientSettings proactive panels", () => {
   it("is opt-in and accepts client-local updates", () => {
     expect(decodeClientSettings({}).proactivePanelsEnabled).toBe(false);

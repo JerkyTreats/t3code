@@ -22,6 +22,7 @@ export async function runStagingVoiceHarness({
   origin,
   credential,
   outputDirectory,
+  voiceId,
   fetch: request = fetch,
 }) {
   validateStagingOrigin(origin);
@@ -41,13 +42,19 @@ export async function runStagingVoiceHarness({
     .map((header) => header.split(";", 1)[0])
     .join("; ");
   if (!cookie) throw new Error("staging-session-cookie-missing");
-  const result = await runVoiceHttpProbe((endpoint, init = {}, authenticated = true) =>
-    request(`${origin}${endpoint}`, {
-      ...init,
-      redirect: "error",
-      signal: AbortSignal.timeout(125_000),
-      headers: { "content-type": "application/json", origin, ...(authenticated ? { cookie } : {}) },
-    }),
+  const result = await runVoiceHttpProbe(
+    (endpoint, init = {}, authenticated = true) =>
+      request(`${origin}${endpoint}`, {
+        ...init,
+        redirect: "error",
+        signal: AbortSignal.timeout(125_000),
+        headers: {
+          "content-type": "application/json",
+          origin,
+          ...(authenticated ? { cookie } : {}),
+        },
+      }),
+    { voiceId },
   );
   // Output contains synthetic audio and booleans only, never topology or credentials.
   await NodeFSP.mkdir(outputDirectory, { mode: 0o700 });
@@ -65,7 +72,12 @@ export async function runStagingVoiceHarness({
 
 async function main() {
   const args = process.argv.slice(2);
-  if (args.length !== 4 || args[0] !== "--staging-origin" || args[2] !== "--output-dir")
+  if (
+    ![4, 6].includes(args.length) ||
+    args[0] !== "--staging-origin" ||
+    args[2] !== "--output-dir" ||
+    (args.length === 6 && args[4] !== "--voice")
+  )
     throw new Error("invalid-harness-arguments");
   let credential = "";
   for await (const chunk of process.stdin) {
@@ -76,6 +88,7 @@ async function main() {
     origin: args[1],
     credential,
     outputDirectory: args[3],
+    ...(args[5] === undefined ? {} : { voiceId: args[5] }),
   });
   process.stdout.write(`${JSON.stringify({ success: true, ...summary })}\n`);
 }

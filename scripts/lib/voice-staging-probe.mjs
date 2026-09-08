@@ -6,21 +6,24 @@ function check(value, label) {
 }
 
 /** Runs against real authenticated HTTP, with synthetic text and no conversation reads. */
-export async function runVoiceHttpProbe(request) {
-  const denied = await request(
-    "/api/voice/speech",
-    { method: "POST", body: JSON.stringify({ text: VOICE_PROBE_TEXT }) },
-    false,
-  );
+export async function runVoiceHttpProbe(request, { voiceId } = {}) {
+  const speechBody = JSON.stringify({
+    text: VOICE_PROBE_TEXT,
+    ...(voiceId === undefined ? {} : { voiceId }),
+  });
+  const denied = await request("/api/voice/speech", { method: "POST", body: speechBody }, false);
   check(denied.status === 401, "anonymous-speech-was-not-denied");
   const status = await request("/api/voice/status");
-  check(status.ok && (await status.json()).available === true, "voice-not-configured");
+  const statusBody = status.ok ? await status.json() : null;
+  check(statusBody?.available === true, "voice-not-configured");
+  if (voiceId !== undefined)
+    check(statusBody.voiceIds?.includes(voiceId), "selected-voice-not-advertised");
   const malformed = await request("/api/voice/speech", { method: "POST", body: '{"text":123}' });
   check(malformed.status === 400, "invalid-input-was-not-rejected");
   const started = performance.now();
   const response = await request("/api/voice/speech", {
     method: "POST",
-    body: JSON.stringify({ text: VOICE_PROBE_TEXT }),
+    body: speechBody,
   });
   check(response.ok, "synthesis-failed");
   check(response.headers.get("content-type")?.startsWith("audio/wav"), "unexpected-audio-type");
@@ -39,6 +42,7 @@ export async function runVoiceHttpProbe(request) {
       anonymousDenied: true,
       configured: true,
       invalidInputRejected: true,
+      ...(voiceId === undefined ? {} : { voiceId }),
       wavBytes: audio.length,
       synthesisMs: Math.round(performance.now() - started),
     },

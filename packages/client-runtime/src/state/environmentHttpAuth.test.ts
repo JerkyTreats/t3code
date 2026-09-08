@@ -227,6 +227,7 @@ describe("authenticated environment HTTP requests", () => {
         const result = yield* fetchEnvironmentVoiceResponse({
           ...harness.input,
           text: "Exact spoken reply.",
+          voiceId: "marius",
         }).pipe(Effect.provide(harness.httpLayer));
         expect(result.status).toBe(200);
         expect(result.bytes).toHaveLength(44);
@@ -241,7 +242,7 @@ describe("authenticated environment HTTP requests", () => {
         });
         expect(harness.calls[1]!.init.body).toEqual(harness.calls[0]!.init.body);
         expect(new TextDecoder().decode(harness.calls[1]!.init.body as Uint8Array)).toBe(
-          '{"text":"Exact spoken reply."}',
+          '{"text":"Exact spoken reply.","voiceId":"marius"}',
         );
       }),
   );

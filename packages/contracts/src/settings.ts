@@ -26,6 +26,7 @@ import {
   ProviderInstanceId,
   type ProviderDriverKind,
 } from "./providerInstance.ts";
+import { VoiceOutputVoiceId } from "./voice.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -201,6 +202,9 @@ export const DEFAULT_BROWSER_LINK_TARGET: BrowserLinkTarget = "system";
 
 export const ClientSettingsSchema = Schema.Struct({
   voiceModeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  voiceOutputVoiceId: Schema.NullOr(VoiceOutputVoiceId).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   appearanceContrast: AppearanceContrast.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_APPEARANCE_CONTRAST)),
   ),
@@ -1179,6 +1183,7 @@ export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
   voiceModeEnabled: Schema.optionalKey(Schema.Boolean),
+  voiceOutputVoiceId: Schema.optionalKey(Schema.NullOr(VoiceOutputVoiceId)),
   appearanceContrast: Schema.optionalKey(AppearanceContrast),
   panelAnimationDurationMs: Schema.optionalKey(PanelAnimationDurationMs),
   browserDefaultViewport: Schema.optionalKey(PreviewViewportSetting),

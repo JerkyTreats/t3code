@@ -16,6 +16,14 @@ describe("Pocket TTS transport", () => {
     expect((options!.body as FormData).get("voice_url")).toBe("alba");
     expect(options!.redirect).toBe("error");
   });
+  it("lets a validated client voice override the operator default", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(wav());
+    const tts = createPocketTts({ url: "http://tts.example.test", voice: "alba", fetch: fetcher });
+    await tts.synthesize("Preview", new AbortController().signal, "marius");
+    const options = fetcher.mock.calls[0]![1]!;
+    expect((options.body as FormData).get("voice_url")).toBe("marius");
+    expect(tts.voiceIds).toContain("marius");
+  });
   it("fails closed without configuration and rejects empty or excessive text", async () => {
     const fetcher = vi.fn<typeof fetch>();
     const signal = new AbortController().signal;

@@ -22,15 +22,22 @@ describe("staging voice harness", () => {
     const request = vi
       .fn()
       .mockResolvedValueOnce(new Response(null, { status: 401 }))
-      .mockResolvedValueOnce(Response.json({ available: true }))
+      .mockResolvedValueOnce(Response.json({ available: true, voiceIds: ["marius"] }))
       .mockResolvedValueOnce(new Response(null, { status: 400 }))
       .mockResolvedValueOnce(
         new Response(audio, {
           headers: { "content-type": "audio/wav", "cache-control": "no-store" },
         }),
       );
-    const result = await runVoiceHttpProbe(request);
+    const result = await runVoiceHttpProbe(request, { voiceId: "marius" });
     expect(result.summary.wavBytes).toBe(100);
+    expect(result.summary.voiceId).toBe("marius");
+    expect(request.mock.calls[3][1].body).toBe(
+      JSON.stringify({
+        text: "The staging voice test is ready. This reply stays on the local speech service.",
+        voiceId: "marius",
+      }),
+    );
     expect(request.mock.calls[0][2]).toBe(false);
     expect(request.mock.calls.every(([url]) => url.startsWith("/api/voice/"))).toBe(true);
   });

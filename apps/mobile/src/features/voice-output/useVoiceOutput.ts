@@ -21,6 +21,7 @@ import {
 } from "./coordination";
 import { VoicePlayback, type VoicePlaybackState } from "./playback";
 import { resolveVoiceModeEnabled } from "./preferences";
+import { resolveVoiceOutputVoiceId } from "./voiceOptions";
 
 const client = createVoiceOutputClient(connectionAtomRuntime, appAtomRegistry);
 
@@ -34,6 +35,7 @@ export function useVoiceOutput(
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
   const loaded = AsyncResult.isSuccess(preferences);
   const enabled = loaded && resolveVoiceModeEnabled(preferences.value);
+  const voiceId = loaded ? resolveVoiceOutputVoiceId(preferences.value) : null;
   const detail = Option.getOrNull(useThreadDetail({ environmentId, threadId }).data);
   const [availability, setAvailability] = useState<{
     environmentId: EnvironmentId;
@@ -47,7 +49,7 @@ export function useVoiceOutput(
   const playback = useMemo(
     () =>
       new VoicePlayback({
-        speech: (text, signal) => client.speech(environmentId, text, signal),
+        speech: (text, signal) => client.speech(environmentId, text, { signal, voiceId }),
         activate: async () => {
           await setAudioModeAsync({
             allowsRecording: false,
@@ -86,7 +88,7 @@ export function useVoiceOutput(
         },
         changed: setState,
       }),
-    [environmentId],
+    [environmentId, voiceId],
   );
 
   useFocusEffect(

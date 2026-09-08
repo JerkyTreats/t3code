@@ -32,11 +32,12 @@ it.live("authenticates speech routes before synthesis and validates scope and JS
       ["speech", undefined, '{"text":"Hello"}', 401],
       ["speech", readOnly.token, '{"text":"Hello"}', 403],
       ["speech", session.token, '{"text":123}', 400],
+      ["speech", session.token, '{"text":"Hello","voiceId":"unsupported"}', 400],
       ["speech", session.token, '{"text":" "}', 400],
       ["speech", session.token, "invalid JSON", 400],
       ["speech", session.token, `{"text":"${"x".repeat(90_000)}"}`, 400],
       ["status", session.token, undefined, 200],
-      ["speech", session.token, '{"text":"Hello"}', 200],
+      ["speech", session.token, '{"text":"Hello","voiceId":"marius"}', 200],
     ] as const) {
       const response = yield* Effect.promise(() =>
         router.handler(
@@ -55,6 +56,7 @@ it.live("authenticates speech routes before synthesis and validates scope and JS
       if (status === 200) expect(response.headers.get("cache-control")).toBe("no-store");
     }
     expect(fetcher).toHaveBeenCalledTimes(1);
+    expect((fetcher.mock.calls[0]![1]!.body as FormData).get("voice_url")).toBe("marius");
     const started = Promise.withResolvers<AbortSignal>();
     fetcher.mockImplementation(
       (_url, options) =>

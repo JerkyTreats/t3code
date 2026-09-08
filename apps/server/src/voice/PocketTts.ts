@@ -1,8 +1,10 @@
+import { VOICE_OUTPUT_VOICE_IDS, VoiceOutputVoiceId } from "@t3tools/contracts";
 import { Schema } from "effect";
 
 export const MAX_SPEECH_TEXT_CHARS = 12_000;
 export const SpeechRequest = Schema.Struct({
   text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_SPEECH_TEXT_CHARS)),
+  voiceId: Schema.optionalKey(VoiceOutputVoiceId),
 });
 const MAX_AUDIO_BYTES = 32 * 1024 * 1024;
 
@@ -24,7 +26,11 @@ export function createPocketTts(options: {
   const fetchAudio = options.fetch ?? fetch;
   let active = 0;
   const available = Boolean(options.url);
-  async function synthesize(text: string, signal: AbortSignal): Promise<Uint8Array> {
+  async function synthesize(
+    text: string,
+    signal: AbortSignal,
+    voiceId?: VoiceOutputVoiceId,
+  ): Promise<Uint8Array> {
     if (!options.url) throw new SpeechError(503);
     if (!text.trim() || text.length > MAX_SPEECH_TEXT_CHARS) throw new SpeechError(400);
     if (active >= 2) throw new SpeechError(429);
@@ -34,7 +40,8 @@ export function createPocketTts(options: {
     try {
       const form = new FormData();
       form.set("text", text);
-      if (options.voice) form.set("voice_url", options.voice);
+      const voice = voiceId ?? options.voice;
+      if (voice) form.set("voice_url", voice);
       const response = await fetchAudio(new URL("tts", `${options.url.replace(/\/$/, "")}/`), {
         method: "POST",
         body: form,
@@ -86,5 +93,5 @@ export function createPocketTts(options: {
       active--;
     }
   }
-  return { available, synthesize };
+  return { available, synthesize, voiceIds: VOICE_OUTPUT_VOICE_IDS };
 }

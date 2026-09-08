@@ -48,6 +48,7 @@ const clientSettings: ClientSettings = {
   panelAnimationDurationMs: 0,
   planModeEnabled: false,
   voiceModeEnabled: false,
+  voiceOutputVoiceId: null,
   proactivePanelsEnabled: true,
   showSkillsInSlashMenu: false,
   providerModelPreferences: {},

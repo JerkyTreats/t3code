@@ -1773,7 +1773,12 @@ export default function ChatView(props: ChatViewProps) {
   // depend on which route is mounted.
   const isServerThread = activeServerThread !== null;
   const activeThread = activeServerThread ?? localDraftThread;
-  const voiceOutput = useVoiceOutput(environmentId, activeThread, settings.voiceModeEnabled);
+  const voiceOutput = useVoiceOutput(
+    environmentId,
+    activeThread,
+    settings.voiceModeEnabled,
+    settings.voiceOutputVoiceId,
+  );
   const stopVoiceOutput = voiceOutput.stop;
   const startThreadTurn = useCallback(
     async (request: Parameters<typeof dispatchThreadTurn>[0]) => {

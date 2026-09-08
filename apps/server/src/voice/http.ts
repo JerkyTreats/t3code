@@ -20,7 +20,7 @@ export const makeVoiceRouteLayer = (tts: ReturnType<typeof createPocketTts>) => 
       Effect.gen(function* () {
         yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
         return HttpServerResponse.jsonUnsafe(
-          { available: tts.available },
+          { available: tts.available, voiceIds: tts.voiceIds },
           { headers: { "cache-control": "no-store" } },
         );
       }).pipe(Effect.catchTags(authErrors)),
@@ -37,7 +37,7 @@ export const makeVoiceRouteLayer = (tts: ReturnType<typeof createPocketTts>) => 
           );
           const input = yield* decodeSpeechRequest(body);
           const audio = yield* Effect.tryPromise({
-            try: (signal) => tts.synthesize(input.text, signal),
+            try: (signal) => tts.synthesize(input.text, signal, input.voiceId),
             catch: (error) => (error instanceof SpeechError ? error : new SpeechError(502)),
           });
           return HttpServerResponse.uint8Array(audio, {

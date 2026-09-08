@@ -73,15 +73,22 @@ describe("mobile preferences state", () => {
         suspendOnWaiting: true,
       });
       expect(initial.voiceModeEnabled === true).toBe(false);
-      registry.set(state.updatePreferencesAtom, { voiceModeEnabled: true });
+      registry.set(state.updatePreferencesAtom, {
+        voiceModeEnabled: true,
+        voiceOutputVoiceId: "marius",
+      });
       yield* AtomRegistry.getResult(registry, state.updatePreferencesAtom, {
         suspendOnWaiting: true,
       });
-      expect(savePatch).toHaveBeenCalledWith({ voiceModeEnabled: true });
+      expect(savePatch).toHaveBeenCalledWith({
+        voiceModeEnabled: true,
+        voiceOutputVoiceId: "marius",
+      });
       const enabled = yield* AtomRegistry.getResult(registry, state.preferencesAtom, {
         suspendOnWaiting: true,
       });
       expect(enabled.voiceModeEnabled).toBe(true);
+      expect(enabled.voiceOutputVoiceId).toBe("marius");
       registry.set(state.updatePreferencesAtom, { voiceModeEnabled: false });
       yield* AtomRegistry.getResult(registry, state.updatePreferencesAtom, {
         suspendOnWaiting: true,
