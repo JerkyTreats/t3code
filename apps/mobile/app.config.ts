@@ -314,6 +314,9 @@ const config: ExpoConfig = {
         speechRecognitionPermission: "Allow T3 Code to recognize speech on this device.",
       },
     ],
+    // Same-type mods run last-registered-first. Register the voice permission
+    // repair before camera and image picker so it runs after their microphone removals.
+    "./plugins/withAndroidVoiceInputPermission.cjs",
     [
       "expo-camera",
       {
@@ -324,7 +327,6 @@ const config: ExpoConfig = {
       },
     ],
     ["expo-image-picker", { photosPermission: false, microphonePermission: false }],
-    "./plugins/withAndroidVoiceInputPermission.cjs",
     [
       "expo-splash-screen",
       {
