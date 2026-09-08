@@ -87,8 +87,9 @@ export class VoiceReplyTracker {
         (message) => message.id === entry.messageId && message.role === "user",
       );
       if (user === undefined) continue;
-      // Projection retains the initiating command time even when user messages have no turnId.
-      if (user.turnId !== turn.turnId && entry.createdAt !== turn.requestedAt) continue;
+      // The server canonicalizes the initiating command time onto both projections,
+      // while the client's pre-dispatch registration can be a few milliseconds earlier.
+      if (user.turnId !== turn.turnId && user.createdAt !== turn.requestedAt) continue;
       if (turn.state !== "completed") {
         this.pending.delete(id);
         continue;

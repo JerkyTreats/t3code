@@ -12,7 +12,7 @@ const snapshot: VoiceReplySnapshot = {
   latestTurn: {
     turnId: "turn-a",
     state: "completed",
-    requestedAt: submission.createdAt,
+    requestedAt: "2026-09-07T01:00:00.050Z",
     assistantMessageId: "final-a",
   },
   messages: [
@@ -22,7 +22,7 @@ const snapshot: VoiceReplySnapshot = {
       text: "Hello",
       turnId: null,
       streaming: false,
-      createdAt: submission.createdAt,
+      createdAt: "2026-09-07T01:00:00.050Z",
     },
     {
       id: "comment-a",
@@ -47,7 +47,7 @@ describe("VoiceReplyTracker", () => {
   it("does not speak historical or other-device snapshots", () => {
     expect(new VoiceReplyTracker().consume(snapshot)).toBeNull();
   });
-  it("speaks the checkpoint-selected reply verbatim once, never commentary", () => {
+  it("speaks the checkpoint-selected reply verbatim once using canonical projection time", () => {
     const tracker = new VoiceReplyTracker();
     tracker.register(submission);
     expect(tracker.consume(snapshot)).toEqual({
