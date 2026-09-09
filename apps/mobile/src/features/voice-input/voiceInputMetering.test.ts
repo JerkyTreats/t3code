@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { normalizeVoiceInputDecibels } from "./voiceInputMetering";
+import {
+  normalizeSpeechRecognitionVolume,
+  normalizeVoiceInputDecibels,
+} from "./voiceInputMetering";
 
 describe("normalizeVoiceInputDecibels", () => {
   it.each([undefined, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
@@ -52,5 +55,26 @@ describe("normalizeVoiceInputDecibels", () => {
 
   it.each([0, 6, 160])("caps only full-scale or higher readings %s at one", (decibels) => {
     expect(normalizeVoiceInputDecibels(decibels)).toBe(1);
+  });
+});
+
+describe("normalizeSpeechRecognitionVolume", () => {
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -2, 0])(
+    "treats an inaudible or invalid reading %s as silence",
+    (volume) => {
+      expect(normalizeSpeechRecognitionVolume(volume)).toBe(0);
+    },
+  );
+
+  it("keeps audible speech responsive across the recognizer range", () => {
+    const levels = [0, 1, 2, 5, 10].map(normalizeSpeechRecognitionVolume);
+
+    expect(levels.every((level, index) => index === 0 || level > levels[index - 1]!)).toBe(true);
+    expect(levels[1]).toBeGreaterThan(0.3);
+    expect(levels.at(-1)).toBe(1);
+  });
+
+  it.each([10, 12, 160])("caps a full-scale reading %s at one", (volume) => {
+    expect(normalizeSpeechRecognitionVolume(volume)).toBe(1);
   });
 });

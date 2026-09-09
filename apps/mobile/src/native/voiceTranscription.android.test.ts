@@ -108,7 +108,8 @@ describe("Android local voice transcription", () => {
   );
 
   it("starts only a live on-device recognizer without streaming a recording file", async () => {
-    const voiceInput = createAndroidVoiceInput(vi.fn());
+    const onVolumeChange = vi.fn();
+    const voiceInput = createAndroidVoiceInput(vi.fn(), onVolumeChange);
     const transcriber = voiceInput.getTranscriber()!;
     const options = { signal: new AbortController().signal };
     const prepared = await transcriber.prepare(options);
@@ -121,7 +122,14 @@ describe("Android local voice transcription", () => {
       lang: prepared.locale,
       maxAlternatives: 1,
       requiresOnDeviceRecognition: true,
+      volumeChangeEventOptions: {
+        enabled: true,
+        intervalMillis: 80,
+      },
     });
+
+    mocks.listeners.get("volumechange")?.({ value: 6 } as never);
+    expect(onVolumeChange).toHaveBeenCalledWith(6);
 
     mocks.listeners.get("result")?.({
       isFinal: true,
@@ -136,6 +144,7 @@ describe("Android local voice transcription", () => {
       "Local transcript",
     );
     expect(isAndroidLiveVoiceRecording("voice-input://android-live")).toBe(true);
+    expect(mocks.listeners.has("volumechange")).toBe(false);
   });
 
   it("waits for the recognizer to end after cancellation", async () => {

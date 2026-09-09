@@ -16,6 +16,7 @@ import {
 } from "@t3tools/client-runtime/voice-input";
 
 const ANDROID_ON_DEVICE_RECOGNITION_API_LEVEL = 33;
+const ANDROID_VOLUME_EVENT_INTERVAL_MS = 80;
 const LIVE_RECORDING_URI = "voice-input://android-live";
 
 type AndroidVoiceInput = {
@@ -95,6 +96,7 @@ export function getLocalVoiceTranscriber(): VoiceTranscriber | null {
 /** Creates one foreground-only live recognizer that still satisfies the shared recorder contract. */
 export function createAndroidVoiceInput(
   onStatus: (status: VoiceRecorderStatus) => void,
+  onVolumeChange?: (volume: number) => void,
 ): AndroidVoiceInput {
   let session: RecognitionSession | null = null;
   let recordingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -145,11 +147,16 @@ export function createAndroidVoiceInput(
             );
           }
           await ensureOfflineLocale(locale, options.signal);
-          const nextSession = createRecognitionSession(locale, options.signal, (status) => {
-            if (session !== nextSession) return;
-            clearRecordingTimer();
-            onStatus(status);
-          });
+          const nextSession = createRecognitionSession(
+            locale,
+            options.signal,
+            (status) => {
+              if (session !== nextSession) return;
+              clearRecordingTimer();
+              onStatus(status);
+            },
+            onVolumeChange,
+          );
           session?.abort();
           session = nextSession;
           return {
@@ -181,6 +188,7 @@ function createRecognitionSession(
   locale: string,
   signal: AbortSignal,
   onTerminalStatus: (status: VoiceRecorderStatus) => void,
+  onVolumeChange?: (volume: number) => void,
 ): RecognitionSession {
   let started = false;
   let ended = false;
@@ -196,6 +204,7 @@ function createRecognitionSession(
     resultSubscription.remove();
     errorSubscription.remove();
     endSubscription.remove();
+    volumeSubscription?.remove();
     signal.removeEventListener("abort", abort);
     if (started) {
       onTerminalStatus({
@@ -219,6 +228,11 @@ function createRecognitionSession(
     completionError = transcriptionError(event);
   });
   const endSubscription = ExpoSpeechRecognitionModule.addListener("end", finish);
+  const volumeSubscription = onVolumeChange
+    ? ExpoSpeechRecognitionModule.addListener("volumechange", (event) => {
+        onVolumeChange(event.value);
+      })
+    : null;
   const abort = () => {
     if (ended) return;
     if (!started) {
@@ -247,6 +261,14 @@ function createRecognitionSession(
           lang: locale,
           maxAlternatives: 1,
           requiresOnDeviceRecognition: true,
+          ...(onVolumeChange
+            ? {
+                volumeChangeEventOptions: {
+                  enabled: true,
+                  intervalMillis: ANDROID_VOLUME_EVENT_INTERVAL_MS,
+                },
+              }
+            : {}),
         });
       } catch (error) {
         completionError =
