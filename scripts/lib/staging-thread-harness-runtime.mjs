@@ -678,7 +678,7 @@ async function launchCase(config, adapter, entryConfig, chromium, spec) {
         if (item.launchIdentity)
           item.capturedOwned.set(item.launchIdentity.pid, item.launchIdentity.startTicks);
         item.ownershipTimer = setInterval(() => captureCurrentOwned(item), 50);
-        item.extractionDirectory = options.env?.TMPDIR;
+        item.runtimeDirectory = options.env?.TMPDIR;
         spec.register(item);
         spawnSeenResolve();
         return child;
@@ -1088,7 +1088,7 @@ export async function runStagingThreadHarness(config, outputDirectory) {
     const profiles = await countProfiles(config.stateDirectory);
     if (
       new Set(instances.map((item) => item.mainIdentity.pid)).size !== instances.length ||
-      new Set(instances.map((item) => item.extractionDirectory)).size !== instances.length ||
+      new Set(instances.map((item) => item.runtimeDirectory)).size !== instances.length ||
       new Set(instances.map((item) => item.profilePath)).size !== instances.length ||
       profiles - profileBaseline < instances.length
     )

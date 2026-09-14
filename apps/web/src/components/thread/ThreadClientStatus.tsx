@@ -1,4 +1,3 @@
-import type { RuntimeMode } from "@t3tools/contracts";
 import { useEffect, useRef } from "react";
 
 export function formatElapsedTime(startedAt: string, nowMs: number): string | null {
@@ -43,7 +42,7 @@ function ElapsedTime({
   }, [label, nowMs, startedAt]);
 
   return (
-    <span className="t3-thread-elapsed">
+    <span className="inline-flex gap-1 tabular-nums">
       <span>{label} </span>
       <span aria-label={`${label} ${initialText}`} ref={textRef}>
         {initialText}
@@ -52,47 +51,33 @@ function ElapsedTime({
   );
 }
 
-export function ThreadClientHeader({
+export function ThreadClientStatus({
   modelLabel,
-  runtimeMode,
+  isWorking,
+  isConnecting,
+  disconnected,
   startedAt,
-  statusLabel,
-  title,
 }: {
   readonly modelLabel: string;
-  readonly runtimeMode: RuntimeMode;
+  readonly isWorking: boolean;
+  readonly isConnecting: boolean;
+  readonly disconnected: boolean;
   readonly startedAt?: string;
-  readonly statusLabel: string;
-  readonly title: string;
 }) {
+  const connectionLabel = isConnecting ? "Connecting" : disconnected ? "Disconnected" : null;
+  if (!connectionLabel && !isWorking) return null;
+
   return (
-    <header className="t3-native-thread-header" data-chat-header>
-      <div className="t3-native-thread-header-topline">
-        <span className="t3-native-thread-brand">
-          <span aria-hidden="true" className="t3-native-thread-logo">
-            T3
-          </span>
-          <span>t3code</span>
-        </span>
-        <span className="t3-native-thread-status" data-status={statusLabel.toLowerCase()}>
-          <span aria-hidden="true" className="t3-native-thread-status-ring" />
-          {statusLabel}
-          {startedAt ? <ElapsedTime label="" startedAt={startedAt} /> : null}
-        </span>
-      </div>
-      <h1>{title}</h1>
-      <div className="t3-native-thread-meta" aria-label="Thread runtime">
-        <span>{modelLabel}</span>
-        <span aria-hidden="true">·</span>
-        <span>{threadRuntimeLabels[runtimeMode]}</span>
-      </div>
-    </header>
+    <div
+      data-thread-client-status
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 pb-2 text-xs text-muted-foreground"
+    >
+      <span role="status">
+        {connectionLabel}
+        {connectionLabel && isWorking ? " · " : null}
+        {isWorking ? `Working · ${modelLabel || "Model unavailable"}` : null}
+      </span>
+      {isWorking && startedAt ? <ElapsedTime label="" startedAt={startedAt} /> : null}
+    </div>
   );
 }
-
-const threadRuntimeLabels: Record<RuntimeMode, string> = {
-  "approval-required": "Supervised",
-  "auto-accept-edits": "Auto-accept edits",
-  auto: "Auto",
-  "full-access": "Full access",
-};

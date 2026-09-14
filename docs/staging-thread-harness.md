@@ -2,7 +2,7 @@
 
 This harness exercises the installed T3 Thread AppImage against one explicit staging HTTPS origin. It uses the real staging entry adapter and verified launcher. It never submits a provider turn.
 
-The run covers a fresh home launch, a synthetic crash style prefill, an explicit project launch, concurrent private profiles and extraction roots, exact composer text, native Wayland typing, independent graceful close, independent crash, and protected Code and server invariance. Launcher acknowledgement, authenticated session, primary WebSocket connection, usable composer, and native input have separate timing marks. A read only staging database observation proves that the turn projection and the `thread.turn-start-requested` plus `thread.message-sent` event high water mark remain unchanged across the whole run.
+The run covers a fresh home launch, a synthetic crash style prefill, an explicit project launch, concurrent private profiles and writable runtime roots, exact composer text, native Wayland typing, independent graceful close, independent crash, and protected Code and server invariance. Executable code comes from the verified prepared release, not a private extraction per client. Launcher acknowledgement, authenticated session, primary WebSocket connection, usable composer, and native input have separate timing marks. A read only staging database observation proves that the turn projection and the `thread.turn-start-requested` plus `thread.message-sent` event high water mark remain unchanged across the whole run.
 
 ## Prerequisites
 

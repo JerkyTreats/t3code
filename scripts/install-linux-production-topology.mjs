@@ -31,6 +31,36 @@ const runtimeProcess = process;
 const HOST_PLATFORM = NodeOS.platform();
 const TRANSACTION_FILE_BYTE_LIMIT = 8 * 1024 * 1024;
 
+async function capturePreparedCodeTree(root) {
+  const entries = [];
+  const visit = async (directory) => {
+    for (const name of (await NodeFSP.readdir(directory)).toSorted()) {
+      const path = NodePath.join(directory, name);
+      const status = await NodeFSP.lstat(path);
+      if (
+        entries.length >= 8192 ||
+        (!status.isFile() && !status.isDirectory() && !status.isSymbolicLink())
+      ) {
+        throw new Error("Topology prepared code tree is unsafe.");
+      }
+      entries.push({
+        path: NodePath.relative(root, path),
+        dev: status.dev,
+        ino: status.ino,
+        mode: status.mode,
+        size: status.size,
+        mtimeMs: status.mtimeMs,
+        ctimeMs: status.ctimeMs,
+        ...(status.isSymbolicLink() ? { target: await NodeFSP.readlink(path) } : {}),
+      });
+      // Snapshot link identity without traversing it, including during rollback.
+      if (status.isDirectory()) await visit(path);
+    }
+  };
+  await visit(root);
+  return entries;
+}
+
 async function captureTransactionPath(filePath, allowDirectory = false) {
   const status = await NodeFSP.lstat(filePath).catch((error) => {
     if (error?.code === "ENOENT") return null;
@@ -54,6 +84,16 @@ async function captureTransactionPath(filePath, allowDirectory = false) {
     const entries = [];
     for (const name of names) {
       const entry = await NodeFSP.lstat(NodePath.join(filePath, name));
+      if (name === ".t3-thread-releases" && entry.isDirectory() && !entry.isSymbolicLink()) {
+        entries.push({
+          name,
+          dev: entry.dev,
+          ino: entry.ino,
+          mode: entry.mode,
+          entries: await capturePreparedCodeTree(NodePath.join(filePath, name)),
+        });
+        continue;
+      }
       if (!entry.isFile() || entry.isSymbolicLink()) {
         throw new Error(`Topology artifact root contains an unsafe entry: ${filePath}`);
       }

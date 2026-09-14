@@ -50,6 +50,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
   triggerClassName?: string;
   triggerAriaLabel?: string;
+  labelMode?: "display" | "identifier";
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
@@ -80,14 +81,22 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     (activeEntry?.driverKind === "opencode" || activeEntry?.driverKind === "antigravity"
       ? undefined
       : selectedInstanceOptions[0]);
-  const triggerTitle = selectedModel
-    ? getTriggerDisplayModelName(selectedModel)
-    : props.model === ANTIGRAVITY_DEFAULT_MODEL
-      ? "Choose model"
-      : props.model || "Choose model";
-  const triggerLabel = selectedModel
-    ? `${getTriggerDisplayModelLabel(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
-    : triggerTitle;
+  const triggerTitle =
+    props.labelMode === "identifier"
+      ? props.model === ANTIGRAVITY_DEFAULT_MODEL
+        ? selectedModel?.slug || "Choose model"
+        : props.model || "Choose model"
+      : selectedModel
+        ? getTriggerDisplayModelName(selectedModel)
+        : props.model === ANTIGRAVITY_DEFAULT_MODEL
+          ? "Choose model"
+          : props.model || "Choose model";
+  const triggerLabel =
+    props.labelMode === "identifier"
+      ? `${triggerTitle}${selectedModel?.isUnavailable ? " (Unavailable)" : ""}`
+      : selectedModel
+        ? `${getTriggerDisplayModelLabel(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
+        : triggerTitle;
   const showInstanceBadge =
     activeEntry !== null && shouldShowInstanceBadge(activeEntry, props.instanceEntries);
 
@@ -166,7 +175,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       <PopoverTrigger
         render={
           <ComposerControl
-            aria-label={props.triggerAriaLabel}
+            aria-label={
+              props.triggerAriaLabel ??
+              (props.labelMode === "identifier" ? `Model: ${triggerTitle}` : undefined)
+            }
             variant={props.triggerVariant ?? "ghost"}
             size={size}
             data-chat-provider-model-picker="true"

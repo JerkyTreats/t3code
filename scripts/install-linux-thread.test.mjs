@@ -10,6 +10,7 @@ import {
   resolveThreadInstallPaths,
 } from "./install-linux-thread.mjs";
 import { writeLinuxThreadReleaseDescriptor } from "./linux-thread-release-artifact.mjs";
+import { verifyThreadRelease } from "./thread-launcher.mjs";
 
 const COMMIT = "1234567890abcdef1234567890abcdef12345678";
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Installer fixtures must match the standalone verifier host.
@@ -24,7 +25,16 @@ async function withFixture(run) {
   };
   const artifactPath = NodePath.join(root, "T3-Thread.AppImage");
   const launcherPath = NodePath.join(root, "t3-thread-launcher.mjs");
-  await NodeFSP.writeFile(artifactPath, "synthetic app image\n", { mode: 0o755 });
+  await NodeFSP.writeFile(
+    artifactPath,
+    `#!/usr/bin/env node
+const fs = require('node:fs');
+if (process.argv[2] !== '--appimage-extract') process.exit(1);
+fs.mkdirSync('squashfs-root');
+fs.writeFileSync('squashfs-root/t3-thread', '#!/bin/sh\\nexit 0\\n', { mode: 0o755 });
+`,
+    { mode: 0o755 },
+  );
   await NodeFSP.writeFile(launcherPath, "#!/usr/bin/env node\n", { mode: 0o755 });
   const { descriptorPath } = await writeLinuxThreadReleaseDescriptor({
     artifactPath,
@@ -61,6 +71,20 @@ it("installs a verified content-addressed Thread client", () =>
       productionServerUrl: "https://thread.example.test/",
     });
     expect(await NodeFSP.realpath(paths.appImagePath)).toBe(result.plan.targetArtifact);
+    expect(
+      await NodeFSP.readFile(await verifyThreadRelease(result.plan.targetArtifact), "utf8"),
+    ).toContain("#!/bin/sh\n");
+  }));
+
+it("reports prepared-code damage without repairing or replacing it", () =>
+  withFixture(async ({ input }) => {
+    const result = await installLinuxThread(input);
+    const executable = await verifyThreadRelease(result.plan.targetArtifact);
+    await NodeFSP.appendFile(executable, "# changed after publication\n");
+    const before = await NodeFSP.readFile(executable);
+    expect((await doctorLinuxThread(input)).findings).toContain("prepared-release:invalid");
+    await expect(installLinuxThread(input)).rejects.toThrow("integrity verification");
+    expect(await NodeFSP.readFile(executable)).toEqual(before);
   }));
 
 it("rejects non-origin targets before creating install state", () =>

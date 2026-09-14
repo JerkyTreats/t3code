@@ -18,6 +18,7 @@ import {
   THREAD_CLIENT_ACTIVATION_CHANNEL,
   THREAD_CLIENT_ACTIVATION_COMPLETION_CHANNEL,
   THREAD_ENROLLMENT_SUBMISSION_CHANNEL,
+  THREAD_STARTUP_MARK_CHANNEL,
 } from "./bridge.ts";
 import {
   authorizeThreadSessionRequest,
@@ -35,6 +36,7 @@ import {
   resolveThreadProfileRoot,
   threadWindowOptions,
 } from "./window.ts";
+import { isThreadRendererStartupMark, ThreadStartupTraceChannel } from "./startupTrace.ts";
 
 const preloadPath = NodePath.join(__dirname, "preload.cjs");
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Safe storage selection must run before Electron readiness.
@@ -45,6 +47,10 @@ configureThreadProtectedStorageBeforeReady({
   commandLine: app.commandLine,
   env: process.env,
 });
+
+const startupTrace = new ThreadStartupTraceChannel();
+const startupTraceInstalled = startupTrace.enabled;
+startupTrace.mark("electron", "electron.module-evaluated");
 
 function reveal(window: BrowserWindow): void {
   if (window.isDestroyed()) return;
@@ -61,6 +67,7 @@ async function run(): Promise<void> {
     // Linux identity must be set before Electron readiness, including while stdin is pending.
     if (hostPlatform === "linux") app.setDesktopName(desktopName);
     const activation = await readThreadAppActivation();
+    startupTrace.mark("electron", "electron.activation-read");
     const applicationUrl = resolveThreadApplicationUrl(process.env.T3_THREAD_SERVER_URL);
     const applicationOrigin = new URL(applicationUrl).origin;
     const appDataPath = app.getPath("appData");
@@ -85,9 +92,11 @@ async function run(): Promise<void> {
       // Pending activation survives document reload. Completion lives in this process
       // so a later document cannot stage an already acknowledged launch again.
       window.webContents.send(THREAD_CLIENT_ACTIVATION_CHANNEL, activation);
+      startupTrace.mark("electron", "electron.activation-sent");
     };
 
     await app.whenReady();
+    startupTrace.mark("electron", "electron.ready");
     // Enrollment belongs to the standalone Thread application, while each Chromium session remains private to one process.
     const enrollment = createThreadEnrollmentOwner({
       applicationOrigin,
@@ -97,6 +106,7 @@ async function run(): Promise<void> {
       fetch: net.fetch,
     });
     window = new BrowserWindow(threadWindowOptions({ preloadPath }));
+    startupTrace.mark("electron", "electron.window-created");
     window.removeMenu();
     installThreadWindowGuards(window, {
       applicationOrigin,
@@ -122,6 +132,19 @@ async function run(): Promise<void> {
         senderFrameUrl: event.senderFrame?.url ?? null,
         applicationOrigin,
       });
+    if (startupTraceInstalled) {
+      ipcMain.on(THREAD_STARTUP_MARK_CHANNEL, (event, value: unknown) => {
+        if (
+          isThreadRendererStartupMark(value) &&
+          window &&
+          !window.isDestroyed() &&
+          event.sender === window.webContents &&
+          event.senderFrame === window.webContents.mainFrame
+        ) {
+          startupTrace.mark("renderer", value);
+        }
+      });
+    }
     ipcMain.handle(THREAD_ENROLLMENT_SUBMISSION_CHANNEL, async (event, value: unknown) => {
       if (typeof value !== "string" || !acceptsWindowMessage(event)) {
         return { status: "rejected" } as const;
@@ -145,19 +168,33 @@ async function run(): Promise<void> {
       window?.setTitle("T3 Thread");
     });
     window.on("closed", () => {
+      startupTrace.mark("electron", "electron.window-closed");
       ipcMain.removeHandler(THREAD_ENROLLMENT_SUBMISSION_CHANNEL);
       ipcMain.removeHandler(THREAD_CLIENT_ACTIVATION_COMPLETION_CHANNEL);
+      if (startupTraceInstalled) ipcMain.removeAllListeners(THREAD_STARTUP_MARK_CHANNEL);
+      startupTrace.close();
       window = undefined;
       app.quit();
     });
+    window.webContents.on("did-finish-load", () =>
+      startupTrace.mark("electron", "electron.load-finished"),
+    );
     window.webContents.on("did-finish-load", sendActivation);
+    window.webContents.on("dom-ready", () => {
+      startupTrace.mark("electron", "electron.dom-ready");
+    });
     // Electron may clear isLoadingMainFrame only after did-finish-load and loadURL resolve.
     window.webContents.on("did-stop-loading", sendActivation);
-    window.webContents.on("render-process-gone", () => app.quit());
+    window.webContents.on("render-process-gone", () => {
+      startupTrace.mark("electron", "electron.renderer-gone");
+      app.quit();
+    });
     window.once("ready-to-show", () => {
+      startupTrace.mark("electron", "electron.ready-to-show");
       if (window) reveal(window);
     });
 
+    startupTrace.mark("electron", "electron.load-started");
     await window.loadURL(applicationUrl);
     if (
       !window ||
@@ -167,14 +204,18 @@ async function run(): Promise<void> {
       throw new Error("T3 Thread initial document was not admitted.");
     }
     sendActivation();
+    startupTrace.mark("electron", "electron.launcher-acknowledged");
     readyChannel.acknowledge({
       contractVersion: 1,
       launchId: activation.launchId,
       ready: true,
     });
   } catch (error) {
+    startupTrace.mark("electron", "electron.startup-failed");
     ipcMain.removeHandler(THREAD_ENROLLMENT_SUBMISSION_CHANNEL);
     ipcMain.removeHandler(THREAD_CLIENT_ACTIVATION_COMPLETION_CHANNEL);
+    if (startupTraceInstalled) ipcMain.removeAllListeners(THREAD_STARTUP_MARK_CHANNEL);
+    startupTrace.close();
     if (window && !window.isDestroyed()) window.destroy();
     throw error;
   } finally {

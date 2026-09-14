@@ -34,6 +34,7 @@ function renderPicker(input: {
   model: string;
   options: ReadonlyArray<ModelEsque>;
   includeEntry?: boolean;
+  labelMode?: "display" | "identifier";
 }) {
   const instanceId = ProviderInstanceId.make(input.instanceId);
   const entry = providerEntry(input.instanceId, input.driver);
@@ -41,6 +42,7 @@ function renderPicker(input: {
     <ProviderModelPicker
       activeInstanceId={instanceId}
       model={input.model}
+      {...(input.labelMode ? { labelMode: input.labelMode } : {})}
       lockedProvider={null}
       instanceEntries={input.includeEntry === false ? [] : [entry]}
       modelOptionsByInstance={new Map([[instanceId, input.options]])}
@@ -50,6 +52,38 @@ function renderPicker(input: {
 }
 
 describe("ProviderModelPicker", () => {
+  it("shows the exact selected identifier rather than a shortened catalog name in Thread", () => {
+    const markup = renderPicker({
+      instanceId: "codex",
+      driver: "codex",
+      model: "model-2.4-light",
+      options: [{ slug: "model-2.4-light", name: "Light" }],
+      labelMode: "identifier",
+    });
+    expect(markup).toContain('aria-label="Model: model-2.4-light"');
+    expect(markup).toContain(">model-2.4-light<");
+  });
+  it("does not replace a selected identifier with an unrelated catalog fallback", () => {
+    const markup = renderPicker({
+      instanceId: "codex",
+      driver: "codex",
+      model: "custom-version",
+      options: [{ slug: "other-version", name: "Other" }],
+      labelMode: "identifier",
+    });
+    expect(markup).toContain(">custom-version<");
+  });
+  it("resolves an account default marker to its concrete identifier", () => {
+    const markup = renderPicker({
+      instanceId: "google",
+      driver: "antigravity",
+      model: ANTIGRAVITY_DEFAULT_MODEL,
+      options: [{ slug: "model-account-version", name: "Account default", isDefault: true }],
+      labelMode: "identifier",
+    });
+    expect(markup).toContain(">model-account-version<");
+    expect(markup).not.toContain(ANTIGRAVITY_DEFAULT_MODEL);
+  });
   it.each(["", ANTIGRAVITY_DEFAULT_MODEL])(
     "shows a choice prompt before Antigravity has an account catalog for %s",
     (model) => {

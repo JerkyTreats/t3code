@@ -52,6 +52,7 @@
     "test:thread-artifact-smoke": "node scripts/thread-artifact-smoke.ts",
     "test:thread:open": "node scripts/thread-artifact-smoke.ts --open",
     "test:thread:quattro": "node scripts/thread-artifact-smoke.ts --quattro",
+    "perf:thread:startup": "node scripts/thread-startup-harness.mjs",
     "test:quattro": "T3CODE_REQUIRE_QUATTRO_NATIVE_TOOLS=1 vp test run scripts/quattro-native-bootstrap.test.mjs",
     "install:production:linux": "node scripts/install-linux-production-topology.mjs install",
     "doctor:production:linux": "node scripts/install-linux-production-topology.mjs doctor"

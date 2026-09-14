@@ -86,6 +86,7 @@ vi.mock("./ComposerBannerStack", () => ({ ComposerBannerStack: () => null }));
 
 import { ChatComposer, type ChatComposerProps } from "./ChatComposer";
 import { ComposerPromptEditor } from "../ComposerPromptEditor";
+import { ProviderModelPicker } from "./ProviderModelPicker";
 import {
   useComposerDraftStore,
   DraftId,
@@ -246,6 +247,26 @@ async function mount(input = props()) {
   });
   return input;
 }
+describe("Thread composer controls integration", () => {
+  it("uses the existing selected model and permission handler with Thread presentation", async () => {
+    const input = await mount(props({ threadClient: true }));
+    const picker = renderer!.root.findByType(ProviderModelPicker);
+    expect(picker.props.labelMode).toBe("identifier");
+    expect(picker.props.model).toBeTruthy();
+    expect(picker.props.onInstanceModelChange).toBe(input.onProviderModelSelect);
+    expect(picker.props.triggerClassName).not.toContain(":w-0");
+    expect(
+      renderer!.root
+        .findAllByType("button")
+        .some((node) => node.props["aria-label"] === "Runtime mode: Full access"),
+    ).toBe(true);
+  });
+  it("keeps ordinary chat's model display mode", async () => {
+    await mount();
+    expect(renderer!.root.findByType(ProviderModelPicker).props.labelMode).toBe("display");
+  });
+});
+
 function capture() {
   renderer!.root
     .findAllByType("button")

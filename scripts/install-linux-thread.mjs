@@ -3,6 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import { prepareThreadRelease, verifyThreadRelease } from "./thread-launcher.mjs";
 
 import {
   OFFICIAL_THREAD_PRODUCT_APP_ID,
@@ -561,6 +562,7 @@ export async function preflightLinuxThreadInstall(input, dependencies = {}) {
     ) {
       throw new Error("Existing content-addressed T3 Thread artifact is invalid.");
     }
+    await verifyThreadRelease(prepared.targetArtifact);
   }
   const serviceSnapshot = await snapshotPath(prepared.paths.servicePath);
   if (serviceSnapshot.kind !== "missing") {
@@ -730,6 +732,7 @@ export async function installLinuxThread(input, dependencies = {}) {
         ) {
           throw new Error("Staged T3 Thread artifact failed hash verification.");
         }
+        await prepareThreadRelease(NodePath.join(staging, "T3-Thread.AppImage"));
         await assertPhysicalThreadRoots(plan.paths, { createMissing: true });
         const racedTarget = await NodeFSP.lstat(plan.targetRoot).catch((error) => {
           if (error?.code === "ENOENT") return null;
@@ -924,6 +927,16 @@ export async function doctorLinuxThread(input) {
   } catch (error) {
     if (error?.code === "ENOENT") findings.push("artifact-launcher:missing");
     else throw error;
+  }
+  try {
+    const artifact = await NodeFSP.lstat(plan.targetArtifact);
+    if (artifact.isFile() && !artifact.isSymbolicLink()) {
+      await verifyThreadRelease(plan.targetArtifact).catch(() =>
+        findings.push("prepared-release:invalid"),
+      );
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
   }
   const serviceStatus = await NodeFSP.lstat(plan.paths.servicePath).catch((error) => {
     if (error?.code === "ENOENT") return null;

@@ -13,6 +13,7 @@ import type {
   ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
+import { threadComposerPresentation } from "../../fork/threadComposerPresentation";
 import {
   ProviderDriverKind,
   ProviderInstanceId,
@@ -947,6 +948,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   runtimePlacement?: "footer" | "floating" | "hidden";
+  iconOnly?: boolean;
   size?: "sm" | "xs";
   hidden?: boolean;
   onToggleInteractionMode: () => void;
@@ -1029,13 +1031,17 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
                           ? undefined
                           : "font-medium"
                     }
-                    aria-label="Runtime mode"
+                    aria-label={
+                      props.iconOnly ? `Runtime mode: ${runtimeModeOption.label}` : "Runtime mode"
+                    }
                   />
                 }
               >
                 <ComposerControlIcon icon={RuntimeModeIcon} size={size} />
                 <SelectValue
-                  className={props.runtimePlacement === "floating" ? "sr-only" : undefined}
+                  className={
+                    props.iconOnly || props.runtimePlacement === "floating" ? "sr-only" : undefined
+                  }
                 >
                   {runtimeModeOption.label}
                 </SelectValue>
@@ -1254,6 +1260,8 @@ export interface ChatComposerProps {
   activeTasksProgress: ComposerTasksProgress | null;
   activeTaskSteps: readonly ComposerTaskStep[] | null;
   threadSyncPhase: ThreadSyncPhase | null;
+
+  threadClient?: boolean;
 
   // Mode
   runtimeMode: RuntimeMode;
@@ -3777,6 +3785,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // collapse. Both leave the footer unrendered, so the strip is the only place
   // to see or change the model without expanding the composer.
   const composerControlsInStrip = isComposerResting || isComposerCollapsedMobile;
+  const threadPresentation = threadComposerPresentation(
+    props.threadClient === true,
+    composerControlsInStrip,
+  );
   const composerControlsVisibleInStrip = composerControlsInStrip && restingControlsVisible;
   const composerControlsHidden = composerControlsInStrip && !restingControlsVisible;
   if (composerControlsHidden && isComposerModelPickerOpen) {
@@ -3956,7 +3968,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   const restingHiddenBlockCount = composerControlsInStrip ? restingControlsHiddenBlockCount : 0;
-  const composerControlsCompact = !composerControlsInStrip && isComposerFooterCompact;
+  const composerControlsCompact =
+    !threadPresentation.keepControlsExpanded && !composerControlsInStrip && isComposerFooterCompact;
   const restingProviderTraitsPicker = renderProviderTraitsPicker({
     ...providerTraitsPickerInput,
     size: "xs",
@@ -3992,6 +4005,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           interactionMode={interactionMode}
           runtimeMode={runtimeMode}
           runtimePlacement={floatRuntimeControl ? "hidden" : "footer"}
+          iconOnly={threadPresentation.runtimeIconOnly}
           size={composerControlsInStrip ? "xs" : "sm"}
           hidden={composerControlsHidden || restingHiddenBlockCount > 0}
           onToggleInteractionMode={toggleInteractionMode}
@@ -4034,17 +4048,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         compact={composerControlsCompact}
         activeInstanceId={selectedInstanceId}
         model={selectedModelForPickerWithCustomFallback}
+        labelMode={threadPresentation.modelLabelMode}
         lockedProvider={lockedProvider}
         lockedContinuationGroupKey={lockedContinuationGroupKey}
         instanceEntries={providerInstanceEntries}
         keybindings={keybindings}
         modelOptionsByInstance={modelOptionsByInstance}
         size={composerControlsInStrip ? "xs" : "sm"}
-        triggerClassName={
-          composerControlsInStrip
-            ? "min-w-13 shrink text-xs! @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:w-0 @max-[640px]/composer-surface:[&_[data-chat-provider-model-picker-label]]:flex-none"
-            : "-ms-2.5"
-        }
+        triggerClassName={threadPresentation.modelTriggerClassName}
         terminalOpen={terminalOpen}
         open={isComposerModelPickerOpen}
         instanceIndicatorBackground={
@@ -4946,6 +4957,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               inert={restingControlsVisible ? undefined : true}
               className={cn(
                 "relative flex w-max min-w-0 max-w-full items-center gap-1 font-normal text-muted-foreground/70 [&_button]:text-xs!",
+                threadPresentation.controlsClassName,
                 !restingControlsVisible && "invisible",
               )}
             >
@@ -5125,6 +5137,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               interactionMode={interactionMode}
               runtimeMode={runtimeMode}
               runtimePlacement="floating"
+              iconOnly={threadPresentation.runtimeIconOnly}
               onToggleInteractionMode={toggleInteractionMode}
               onRuntimeModeChange={handleRuntimeModeChange}
             />
@@ -5691,6 +5704,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   data-chat-composer-footer-controls="true"
                   className={cn(
                     "-m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                    threadPresentation.controlsClassName,
                     isComposerResting && "hidden",
                   )}
                 >

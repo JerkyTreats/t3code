@@ -1,6 +1,6 @@
 import { useDesktopLauncherSubmitAdmission } from "./desktop/DesktopLauncherActivationCoordinator";
 import { desktopLauncherActivationOwner } from "../fork/desktopLauncherActivation";
-import { ThreadClientHeader } from "./thread/ThreadClientHeader";
+import { ThreadClientStatus } from "./thread/ThreadClientStatus";
 import { composeChatPrompt } from "../fork/chatPromptContext";
 import {
   type AssistantCitation,
@@ -7785,17 +7785,7 @@ export default function ChatView(props: ChatViewProps) {
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
         {/* Top bar */}
-        {compactThreadClient ? (
-          <ThreadClientHeader
-            modelLabel={activeThread.modelSelection.model}
-            runtimeMode={runtimeMode}
-            {...(activeWorkStartedAt ? { startedAt: activeWorkStartedAt } : {})}
-            statusLabel={
-              isWorking ? "Working" : phase === "disconnected" ? "Disconnected" : "Ready"
-            }
-            title={activeThread.title}
-          />
-        ) : (
+        {compactThreadClient ? null : (
           <WorkspacePageHeader
             data-chat-header
             electron={isElectron}
@@ -7930,7 +7920,9 @@ export default function ChatView(props: ChatViewProps) {
                 onContentOverflowChange={setTimelineOverflows}
                 onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEnd}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
-                hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
+                hideEmptyPlaceholder={
+                  compactThreadClient || isDraftHeroState || threadDetailLoading
+                }
                 topFadeEnabled={!hasTimelineTopBanner}
                 loadEarlier={loadEarlierTurns}
               />
@@ -7974,6 +7966,18 @@ export default function ChatView(props: ChatViewProps) {
                 className="w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
               >
                 <div className="group/composer-stack pointer-events-auto relative z-10">
+                  {compactThreadClient ? (
+                    <ThreadClientStatus
+                      modelLabel={activeThread.modelSelection.model}
+                      isWorking={isWorking}
+                      isConnecting={isConnecting}
+                      disconnected={
+                        activeEnvironmentUnavailable ||
+                        (activeThread.session != null && phase === "disconnected")
+                      }
+                      {...(activeWorkStartedAt ? { startedAt: activeWorkStartedAt } : {})}
+                    />
+                  ) : null}
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
@@ -8009,6 +8013,7 @@ export default function ChatView(props: ChatViewProps) {
                       <ComposerSurface.Host className={chatComposerPresentation.hostClassName}>
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
+                            threadClient={compactThreadClient}
                             composerRef={composerRef}
                             composerDraftTarget={composerDraftTarget}
                             environmentId={environmentId}
@@ -8024,7 +8029,10 @@ export default function ChatView(props: ChatViewProps) {
                             promptHistoryMessages={timelineMessages}
                             isServerThread={isServerThread}
                             isLocalDraftThread={isLocalDraftThread}
-                            forceExpandedOnMobile={forceExpandedMobileComposer && isDraftHeroState}
+                            forceExpandedOnMobile={
+                              compactThreadClient ||
+                              (forceExpandedMobileComposer && isDraftHeroState)
+                            }
                             projectSelectionRequired={isLocalDraftThread && activeProject === null}
                             phase={phase}
                             isConnecting={isConnecting}

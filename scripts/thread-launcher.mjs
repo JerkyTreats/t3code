@@ -5,6 +5,8 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeOS from "node:os";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeUtil from "node:util";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_ACTIVATION_BYTES = 65_536;
@@ -13,7 +15,187 @@ const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 const INTERNAL_LAUNCH_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const EXTERNAL_INTENT_ID_PATTERN = /^[0-9a-f]{32}$/u;
-const APPIMAGE_RUNTIME_PREFIX = "t3code-thread-appimage-";
+const THREAD_RUNTIME_PREFIX = "t3code-thread-runtime-";
+
+async function releaseDigest(path) {
+  const hash = NodeCrypto.createHash("sha256");
+  for await (const bytes of NodeFS.createReadStream(path)) hash.update(bytes);
+  return hash.digest("hex");
+}
+
+async function ownedReleaseDirectory(path) {
+  const status = await NodeFSP.lstat(path);
+  if (
+    !status.isDirectory() ||
+    status.isSymbolicLink() ||
+    (status.mode & 0o022) !== 0 ||
+    status.uid !== NodeProcess.getuid?.() ||
+    (await NodeFSP.realpath(path)) !== path
+  )
+    throw new Error("T3 Thread prepared release directory is unsafe.");
+}
+
+async function releaseInventory(root) {
+  await ownedReleaseDirectory(root);
+  const entries = [];
+  const visit = async (relative) => {
+    const directory = NodePath.join(root, relative);
+    for (const name of (await NodeFSP.readdir(directory)).sort()) {
+      const path = NodePath.join(directory, name);
+      const key = NodePath.relative(root, path);
+      const status = await NodeFSP.lstat(path);
+      if (++visit.count > 8192 || status.uid !== NodeProcess.getuid?.()) {
+        throw new Error("T3 Thread prepared release inventory is unsafe.");
+      }
+      if (status.isSymbolicLink()) {
+        const target = await NodeFSP.readlink(path);
+        const resolved = await NodeFSP.realpath(path);
+        if (NodePath.isAbsolute(target) || !resolved.startsWith(`${root}${NodePath.sep}`)) {
+          throw new Error("T3 Thread prepared release link escapes its code root.");
+        }
+        entries.push({ path: key, kind: "link", target });
+      } else if ((status.mode & 0o7022) !== 0) {
+        throw new Error("T3 Thread prepared release permissions are unsafe.");
+      } else if (status.isDirectory()) {
+        entries.push({ path: key, kind: "directory", mode: status.mode & 0o777 });
+        await visit(key);
+      } else if (status.isFile() && status.nlink === 1 && status.size <= 1024 ** 3) {
+        entries.push({
+          path: key,
+          kind: "file",
+          mode: status.mode & 0o777,
+          sha256: await releaseDigest(path),
+        });
+      } else {
+        throw new Error("T3 Thread prepared release contains an unsupported file.");
+      }
+    }
+  };
+  visit.count = 0;
+  await visit("");
+  if (
+    !entries.some(
+      (entry) => entry.path === "t3-thread" && entry.kind === "file" && entry.mode & 0o100,
+    )
+  ) {
+    throw new Error("T3 Thread prepared release executable is missing.");
+  }
+  return entries;
+}
+
+async function verifyPreparedRelease(root, artifactSha256) {
+  await ownedReleaseDirectory(root);
+  const manifestPath = NodePath.join(root, "release.json");
+  const status = await NodeFSP.lstat(manifestPath);
+  if (
+    !status.isFile() ||
+    status.isSymbolicLink() ||
+    status.nlink !== 1 ||
+    status.size > 2 * 1024 * 1024 ||
+    status.uid !== NodeProcess.getuid?.() ||
+    (status.mode & 0o077) !== 0
+  ) {
+    throw new Error("T3 Thread prepared release manifest is unsafe.");
+  }
+  const manifest = JSON.parse(await NodeFSP.readFile(manifestPath, "utf8"));
+  if (
+    !isRecord(manifest) ||
+    !hasExactKeys(manifest, ["contractVersion", "artifactSha256", "entries"]) ||
+    manifest.contractVersion !== 1 ||
+    manifest.artifactSha256 !== artifactSha256 ||
+    JSON.stringify(manifest.entries) !==
+      JSON.stringify(await releaseInventory(NodePath.join(root, "squashfs-root")))
+  ) {
+    throw new Error("T3 Thread prepared release failed integrity verification.");
+  }
+  return NodePath.join(root, "squashfs-root", "t3-thread");
+}
+
+export async function verifyThreadRelease(appImagePath) {
+  const artifactPath = await NodeFSP.realpath(NodePath.resolve(appImagePath));
+  const artifactSha256 = await releaseDigest(artifactPath);
+  return verifyPreparedRelease(
+    NodePath.join(NodePath.dirname(artifactPath), ".t3-thread-releases", artifactSha256),
+    artifactSha256,
+  );
+}
+
+// The installer and direct-artifact cold path share one release realization owner.
+// Published code is never repaired or collected by a client lifetime.
+export async function prepareThreadRelease(appImagePath, dependencies = {}) {
+  const artifactPath = await NodeFSP.realpath(NodePath.resolve(appImagePath));
+  const artifactStatus = await NodeFSP.lstat(artifactPath);
+  if (
+    !artifactStatus.isFile() ||
+    (artifactStatus.mode & 0o111) === 0 ||
+    (artifactStatus.mode & 0o022) !== 0
+  ) {
+    throw new Error("T3 Thread release artifact is unsafe.");
+  }
+  const artifactSha256 = await releaseDigest(artifactPath);
+  const parent = NodePath.join(NodePath.dirname(artifactPath), ".t3-thread-releases");
+  await ownedReleaseDirectory(NodePath.dirname(artifactPath));
+  await NodeFSP.mkdir(parent, { mode: 0o700 }).catch((error) => {
+    if (error.code !== "EEXIST") throw error;
+  });
+  await ownedReleaseDirectory(parent);
+  const root = NodePath.join(parent, artifactSha256);
+  const exists = await NodeFSP.lstat(root).catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (exists) return verifyPreparedRelease(root, artifactSha256);
+  const staging = await NodeFSP.mkdtemp(NodePath.join(parent, ".preparing-"));
+  try {
+    const extract = dependencies.extract ?? NodeUtil.promisify(NodeChildProcess.execFile);
+    await extract(artifactPath, ["--appimage-extract"], {
+      cwd: staging,
+      timeout: 60_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    if ((await releaseDigest(artifactPath)) !== artifactSha256) {
+      throw new Error("T3 Thread artifact changed during preparation.");
+    }
+    // AppImage carries a setuid sandbox helper; this user-owned release uses
+    // Chromium's existing unprivileged sandbox, never a setuid executable.
+    await ownedReleaseDirectory(NodePath.join(staging, "squashfs-root"));
+    const sandbox = NodePath.join(staging, "squashfs-root", "chrome-sandbox");
+    const sandboxStatus = await NodeFSP.lstat(sandbox).catch((error) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (sandboxStatus?.isFile() && sandboxStatus.nlink === 1) await NodeFSP.chmod(sandbox, 0o755);
+    const entries = await releaseInventory(NodePath.join(staging, "squashfs-root"));
+    await NodeFSP.writeFile(
+      NodePath.join(staging, "release.json"),
+      JSON.stringify({
+        contractVersion: 1,
+        artifactSha256,
+        entries,
+      }),
+      { mode: 0o600, flag: "wx" },
+    );
+    try {
+      await NodeFSP.rename(staging, root);
+    } catch (error) {
+      if (error.code !== "EEXIST" && error.code !== "ENOTEMPTY") throw error;
+      // Concurrent preparation may publish first; only its fully verified
+      // release can win, never its partial staging directory.
+    }
+    return await verifyPreparedRelease(root, artifactSha256);
+  } finally {
+    await NodeFSP.rm(staging, { recursive: true, force: true });
+  }
+}
+
+function startupMark(input, name) {
+  input.markStartup?.({
+    contractVersion: 1,
+    source: "launcher",
+    name,
+    atMs: performance.timeOrigin + performance.now(),
+  });
+}
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -197,7 +379,9 @@ function parseReadyAck(bytes, launchId) {
 }
 
 export async function launchThread(input) {
+  startupMark(input, "launcher.started");
   const receivedBytes = await readInput(input.activationInput);
+  startupMark(input, "launcher.activation-read");
   const parsed = parseLauncherActivation(
     receivedBytes,
     input.expectedUserId,
@@ -205,7 +389,9 @@ export async function launchThread(input) {
     input.defaultWorkingDirectory,
   );
   const activationBytes = Buffer.from(JSON.stringify(parsed.activation));
+  startupMark(input, "launcher.spawn-started");
   const launched = await input.spawnApp(input.appImagePath);
+  startupMark(input, "launcher.child-spawned");
   const child = launched.child;
   const ready = launched.ready;
   if (!child.stdin || !ready) {
@@ -249,6 +435,7 @@ export async function launchThread(input) {
   });
 
   child.stdin.end(activationBytes);
+  startupMark(input, "launcher.activation-sent");
   let timeout;
   try {
     const ack = await Promise.race([
@@ -263,6 +450,7 @@ export async function launchThread(input) {
         );
       }),
     ]);
+    startupMark(input, "launcher.ack-received");
     input.writeReady(
       parsed.responseChannel === "desktop"
         ? ack
@@ -299,7 +487,7 @@ export function resolveAppImagePath(arguments_, launcherPath = NodeProcess.argv[
   );
 }
 
-export function allocateAppImageTempDirectory(environment = NodeProcess.env, fileSystem = NodeFS) {
+export function allocateThreadRuntimeDirectory(environment = NodeProcess.env, fileSystem = NodeFS) {
   const configuredRuntimeDirectory = environment.XDG_RUNTIME_DIR?.trim();
   if (!configuredRuntimeDirectory || !NodePath.isAbsolute(configuredRuntimeDirectory)) {
     throw new Error("T3 Thread requires an absolute XDG runtime directory.");
@@ -318,7 +506,7 @@ export function allocateAppImageTempDirectory(environment = NodeProcess.env, fil
     throw new Error("T3 Thread XDG runtime directory is unsafe.");
   }
   const temporaryDirectory = fileSystem.mkdtempSync(
-    NodePath.join(runtimeDirectory, APPIMAGE_RUNTIME_PREFIX),
+    NodePath.join(runtimeDirectory, THREAD_RUNTIME_PREFIX),
   );
   const temporaryStat = fileSystem.lstatSync(temporaryDirectory);
   const finalRuntimeStat = fileSystem.lstatSync(runtimeDirectory);
@@ -331,14 +519,14 @@ export function allocateAppImageTempDirectory(environment = NodeProcess.env, fil
     initialRuntimeStat.ino !== finalRuntimeStat.ino ||
     NodePath.dirname(fileSystem.realpathSync(temporaryDirectory)) !== physicalRuntimeDirectory
   ) {
-    throw new Error("T3 Thread AppImage temporary directory is unsafe.");
+    throw new Error("T3 Thread temporary directory is unsafe.");
   }
   return temporaryDirectory;
 }
 
 export async function spawnAppImage(appImagePath, dependencies = {}) {
   const environment = dependencies.environment ?? NodeProcess.env;
-  const temporaryDirectory = allocateAppImageTempDirectory(
+  const temporaryDirectory = allocateThreadRuntimeDirectory(
     environment,
     dependencies.fileSystem ?? NodeFS,
   );
@@ -359,17 +547,31 @@ export async function spawnAppImage(appImagePath, dependencies = {}) {
     }
   };
   const spawn = dependencies.spawn ?? NodeChildProcess.spawn;
+  const startupTraceEnabled = environment.T3_THREAD_STARTUP_TRACE === "1";
   try {
-    const child = spawn(appImagePath, [], {
+    const executable = await (dependencies.prepareRelease ?? prepareThreadRelease)(appImagePath);
+    startupMark(dependencies, "launcher.release-verified");
+    const childEnvironment = { ...environment };
+    delete childEnvironment.APPIMAGE_EXTRACT_AND_RUN;
+    delete childEnvironment.APPIMAGE;
+    delete childEnvironment.APPDIR;
+    const child = spawn(executable, [], {
       env: {
-        ...environment,
-        APPIMAGE_EXTRACT_AND_RUN: "1",
+        ...childEnvironment,
         T3_THREAD_STDOUT_READY: "1",
         TMPDIR: temporaryDirectory,
       },
-      stdio: ["pipe", "ignore", "ignore", "pipe"],
+      stdio: startupTraceEnabled
+        ? ["pipe", "ignore", "ignore", "pipe", "pipe"]
+        : ["pipe", "ignore", "ignore", "pipe"],
     });
-    return { child, ready: child.stdio[3], temporaryDirectory, cleanup };
+    return {
+      child,
+      ready: child.stdio[3],
+      trace: startupTraceEnabled ? child.stdio[4] : undefined,
+      temporaryDirectory,
+      cleanup,
+    };
   } catch (cause) {
     cleanup();
     throw cause;
@@ -377,12 +579,16 @@ export async function spawnAppImage(appImagePath, dependencies = {}) {
 }
 
 async function main() {
+  if (NodeProcess.argv[2] === "--prepare") {
+    await prepareThreadRelease(resolveAppImagePath(NodeProcess.argv.slice(3)));
+    return;
+  }
   await launchThread({
     activationInput: NodeProcess.stdin,
     appImagePath: resolveAppImagePath(NodeProcess.argv.slice(2)),
     defaultWorkingDirectory: NodeProcess.env.T3_THREAD_WORKING_DIRECTORY ?? NodeOS.homedir(),
     spawnApp: spawnAppImage,
-    // The wrapper owns the private extraction root for exactly the app lifetime.
+    // Only writable runtime data belongs to this process; release code survives it.
     superviseAfterReady: true,
     writeReady: (bytes, channel) => {
       if (channel === "desktop") NodeFS.writeSync(3, bytes);

@@ -122,6 +122,38 @@ it("relays exact readiness from the independent app process", async () => {
   }
 });
 
+it("records ordered launcher startup marks without changing readiness", async () => {
+  const ready = `${JSON.stringify({ contractVersion: 1, launchId, ready: true })}\n`;
+  const marks = [];
+  let child;
+  try {
+    await launchThread({
+      activationInput: NodeStream.Readable.from([activation]),
+      appImagePath: "/fixture/T3-Thread.AppImage",
+      spawnApp: () => {
+        child = spawnFixture(ready);
+        return { child, ready: child.stdio[4] };
+      },
+      markStartup: (event) => marks.push(event),
+      writeReady: () => undefined,
+      timeoutMs: 2_000,
+    });
+    expect(marks.map((event) => event.name)).toEqual([
+      "launcher.started",
+      "launcher.activation-read",
+      "launcher.spawn-started",
+      "launcher.child-spawned",
+      "launcher.activation-sent",
+      "launcher.ack-received",
+    ]);
+    expect(marks.every((event) => event.source === "launcher" && Number.isFinite(event.atMs))).toBe(
+      true,
+    );
+  } finally {
+    child?.kill("SIGTERM");
+  }
+});
+
 it("launches concurrent children with independently correlated readiness", async () => {
   const launchIds = [
     "01234567-89ab-4def-8abc-0123456789ab",
@@ -191,11 +223,12 @@ it("supervises the acknowledged app until it exits when requested", async () => 
   expect(child?.exitCode).toBe(0);
 });
 
-it("gives concurrent extract-and-run wrappers separate private temp directories", async () => {
+it("gives concurrent prepared-release children separate private runtime directories", async () => {
   const runtimeDirectory = NodeFS.mkdtempSync(
     NodePath.join(NodeOS.tmpdir(), "t3-thread-launcher-runtime-"),
   );
   const spawns = [];
+  const releaseMarks = [];
   const spawn = (command, arguments_, options) => {
     const ready = new NodeStream.PassThrough();
     const child = { stdio: [new NodeStream.PassThrough(), null, null, ready] };
@@ -207,28 +240,71 @@ it("gives concurrent extract-and-run wrappers separate private temp directories"
       spawnAppImage("/artifact/T3-Thread.AppImage", {
         environment: { XDG_RUNTIME_DIR: runtimeDirectory },
         spawn,
+        prepareRelease: async () => "/prepared/t3-thread",
+        markStartup: (event) => releaseMarks.push(event),
       }),
       spawnAppImage("/artifact/T3-Thread.AppImage", {
         environment: { XDG_RUNTIME_DIR: runtimeDirectory },
         spawn,
+        prepareRelease: async () => "/prepared/t3-thread",
       }),
     ]);
 
     expect(first.temporaryDirectory).not.toBe(second.temporaryDirectory);
     expect(spawns).toHaveLength(2);
+    expect(releaseMarks.map((event) => event.name)).toEqual(["launcher.release-verified"]);
+    expect(spawns.map(({ command }) => command)).toEqual([
+      "/prepared/t3-thread",
+      "/prepared/t3-thread",
+    ]);
+    expect(spawns.every(({ options }) => options.env.APPIMAGE_EXTRACT_AND_RUN === undefined)).toBe(
+      true,
+    );
     expect(spawns.map(({ options }) => options.env.TMPDIR)).toEqual([
       first.temporaryDirectory,
       second.temporaryDirectory,
     ]);
     for (const temporaryDirectory of [first.temporaryDirectory, second.temporaryDirectory]) {
       expect(NodePath.dirname(temporaryDirectory)).toBe(runtimeDirectory);
-      expect(NodePath.basename(temporaryDirectory)).toMatch(/^t3code-thread-appimage-/u);
+      expect(NodePath.basename(temporaryDirectory)).toMatch(/^t3code-thread-runtime-/u);
       expect(NodeFS.statSync(temporaryDirectory).mode & 0o777).toBe(0o700);
     }
     first.cleanup();
     second.cleanup();
     expect(NodeFS.existsSync(first.temporaryDirectory)).toBe(false);
     expect(NodeFS.existsSync(second.temporaryDirectory)).toBe(false);
+  } finally {
+    NodeFS.rmSync(runtimeDirectory, { recursive: true, force: true });
+  }
+});
+
+it("adds an inherited trace pipe only for an explicit startup trace", async () => {
+  const runtimeDirectory = NodeFS.mkdtempSync(
+    NodePath.join(NodeOS.tmpdir(), "t3-thread-launcher-trace-"),
+  );
+  const spawns = [];
+  const spawn = (_command, _arguments, options) => {
+    const child = {
+      stdio: [
+        new NodeStream.PassThrough(),
+        null,
+        null,
+        new NodeStream.PassThrough(),
+        new NodeStream.PassThrough(),
+      ],
+    };
+    spawns.push({ options, child });
+    return child;
+  };
+  try {
+    const launched = await spawnAppImage("/artifact/T3-Thread.AppImage", {
+      environment: { XDG_RUNTIME_DIR: runtimeDirectory, T3_THREAD_STARTUP_TRACE: "1" },
+      spawn,
+      prepareRelease: async () => "/prepared/t3-thread",
+    });
+    expect(spawns[0].options.stdio).toEqual(["pipe", "ignore", "ignore", "pipe", "pipe"]);
+    expect(launched.trace).toBe(spawns[0].child.stdio[4]);
+    launched.cleanup();
   } finally {
     NodeFS.rmSync(runtimeDirectory, { recursive: true, force: true });
   }
@@ -372,6 +448,12 @@ it("carries exact zero-byte and fd3 activation through the executable launcher s
     appImagePath,
     `#!/usr/bin/env node
 const fs = require("node:fs");
+if (process.argv.includes("--appimage-extract")) {
+  fs.mkdirSync("squashfs-root");
+  fs.copyFileSync(__filename, "squashfs-root/t3-thread");
+  fs.chmodSync("squashfs-root/t3-thread", 0o755);
+  process.exit(0);
+}
 const chunks = [];
 process.stdin.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
 process.stdin.on("end", () => {

@@ -19,6 +19,7 @@ import {
 import { installLinuxThread, resolveThreadInstallPaths } from "./install-linux-thread.mjs";
 import { resolveInstallPaths } from "./install-linux-desktop.mjs";
 import { resolveQuattroPaths } from "./quattro-native-bootstrap.mjs";
+import { verifyThreadRelease } from "./thread-launcher.mjs";
 
 const COMMIT = "1234567890abcdef1234567890abcdef12345678";
 // oxlint-disable-next-line t3code/no-global-process-runtime -- Artifact fixtures must match the standalone installer's host architecture.
@@ -93,7 +94,15 @@ async function fixture() {
   });
   const threadArtifact = NodePath.join(root, "T3-Thread.AppImage");
   const threadLauncher = NodePath.join(root, "t3-thread-launcher.mjs");
-  await executable(threadArtifact, "thread artifact\n");
+  await executable(
+    threadArtifact,
+    `#!/usr/bin/env node
+const fs = require('node:fs');
+if (process.argv[2] !== '--appimage-extract') process.exit(1);
+fs.mkdirSync('squashfs-root');
+fs.writeFileSync('squashfs-root/t3-thread', '#!/bin/sh\\nexit 0\\n', { mode: 0o755 });
+`,
+  );
   await executable(threadLauncher, "#!/usr/bin/env node\n");
   const { descriptorPath: threadDescriptor } = await writeLinuxThreadReleaseDescriptor({
     artifactPath: threadArtifact,
@@ -267,7 +276,7 @@ describe("Linux production topology installer", () => {
       assert.isTrue((await NodeFSP.lstat(threadPaths.appImagePath)).isSymbolicLink());
       assert.deepEqual(
         await NodeFSP.readFile(result.thread.plan.targetArtifact),
-        Buffer.from("thread artifact\n"),
+        await NodeFSP.readFile(input.thread.artifactPath),
       );
       assert.notDeepEqual(
         await NodeFSP.readFile(result.thread.plan.targetArtifact),
@@ -680,6 +689,39 @@ describe("Linux production topology installer", () => {
       commands.length = 0;
       await installLinuxProductionTopology(productionInput, { integration: { runCommand } });
       assert.deepEqual(commands, []);
+    }));
+
+  it("preserves changed prepared code when a later topology stage fails", () =>
+    withFixture(async ({ input, threadPaths }) => {
+      let executable;
+      let failure;
+      try {
+        await installLinuxProductionTopology(
+          { ...input, refreshDesktopIntegration: true },
+          {
+            integration: {
+              runCommand: async () => {
+                executable = await verifyThreadRelease(
+                  await NodeFSP.realpath(threadPaths.appImagePath),
+                );
+                await NodeFSP.appendFile(executable, "# externally changed prepared code\n");
+                throw new Error("synthetic integration failure");
+              },
+            },
+          },
+        );
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure?.failedComponent).toBe("desktop-integration");
+      expect(
+        failure?.rollbackErrors?.some((error) =>
+          error.message.includes("changed after installation"),
+        ),
+      ).toBe(true);
+      expect(await NodeFSP.readFile(executable, "utf8")).toContain(
+        "externally changed prepared code",
+      );
     }));
 
   it("rolls back a failed Thread component install", () =>
