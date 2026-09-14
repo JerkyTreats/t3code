@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  browserLocalSpeechRecognition,
   browserLocalSpeechRecognitionIsAvailable,
   cancelLocalVoiceInputWhenHidden,
   LocalVoiceInputOwner,
@@ -9,6 +10,8 @@ import {
   type LocalSpeechRecognition,
   type LocalVoiceDraftSnapshot,
 } from "./localVoiceInput";
+
+afterEach(() => vi.unstubAllGlobals());
 
 type FakeRecognition = {
   lang: string;
@@ -102,6 +105,20 @@ function finalTranscript(text: string) {
 }
 
 describe("LocalVoiceInputOwner", () => {
+  it.each(["desktopBridge", "t3ThreadBridge"] as const)(
+    "does not inspect browser recognition inside the %s Electron shell",
+    (bridge) => {
+      const Recognition = vi.fn();
+      vi.stubGlobal("window", {
+        [bridge]: {},
+        SpeechRecognition: Recognition,
+      });
+
+      expect(browserLocalSpeechRecognition()).toBeNull();
+      expect(Recognition).not.toHaveBeenCalled();
+    },
+  );
+
   it("owns the empty composer microphone swap", () => {
     const emptyComposerVisible = shouldKeepLocalVoiceActionVisible({
       isRunning: false,

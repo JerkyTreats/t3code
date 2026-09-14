@@ -84,6 +84,11 @@ export type LocalSpeechRecognition = {
 
 export function browserLocalSpeechRecognition(): LocalSpeechRecognition | null {
   if (typeof window === "undefined") return null;
+  // Chromium currently exposes the local recognition API shape inside Electron
+  // even when Electron has not installed the browser-side Mojo binder. Calling
+  // the static availability method then terminates the renderer as bad IPC.
+  // Both desktop shells must fail closed before touching any recognition API.
+  if (window.desktopBridge !== undefined || window.t3ThreadBridge !== undefined) return null;
   const browser = window as Window & {
     SpeechRecognition?: LocalSpeechRecognition;
     webkitSpeechRecognition?: LocalSpeechRecognition;
