@@ -228,6 +228,7 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    permissions: ["android.permission.RECORD_AUDIO"],
     adaptiveIcon: {
       backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
       foregroundImage: variant.assets.androidAdaptiveForeground,
@@ -306,6 +307,16 @@ const config: ExpoConfig = {
         enableBackgroundRecording: false,
       },
     ],
+    [
+      "expo-speech-recognition",
+      {
+        microphonePermission: "Allow T3 Code to use your microphone for voice input.",
+        speechRecognitionPermission: "Allow T3 Code to recognize speech on this device.",
+      },
+    ],
+    // Same-type mods run last-registered-first. Register the voice permission
+    // repair before camera and image picker so it runs after their microphone removals.
+    "./plugins/withAndroidVoiceInputPermission.cjs",
     [
       "expo-camera",
       {

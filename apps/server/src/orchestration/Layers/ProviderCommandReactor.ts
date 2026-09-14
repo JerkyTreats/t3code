@@ -1,3 +1,4 @@
+import { applyResponseStyle } from "../../voice/responseStyle.ts";
 import {
   type ChatAttachment,
   CommandId,
@@ -1423,7 +1424,7 @@ const make = Effect.gen(function* () {
     }
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
-      messageText: message.text,
+      messageText: applyResponseStyle(message.text, event.payload.responseStyle),
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }

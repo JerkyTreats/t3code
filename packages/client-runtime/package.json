@@ -75,6 +75,10 @@
       "types": "./src/voice-input/index.ts",
       "default": "./src/voice-input/index.ts"
     },
+    "./voice-output": {
+      "types": "./src/voice-output/index.ts",
+      "default": "./src/voice-output/index.ts"
+    },
     "./relay": {
       "types": "./src/relay/index.ts",
       "default": "./src/relay/index.ts"

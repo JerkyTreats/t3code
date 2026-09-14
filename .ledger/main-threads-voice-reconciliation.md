@@ -3,7 +3,7 @@
 Date: 2026-09-13
 Program branch: `main`
 Commit policy: Conventional commits under `governance/commit_policy.md`
-Status: in progress
+Status: source sealed for operational alignment
 
 ## Objective
 
@@ -31,16 +31,16 @@ Preserve existing atomic feature commits where practical. New reconciliation com
 
 ## Phase Inventory
 
-| Id  | Summary                                                     | Status      | Dependencies | Write Scope                                 |
-| --- | ----------------------------------------------------------- | ----------- | ------------ | ------------------------------------------- |
-| P1  | Establish canonical main baseline and accepted feature tips | complete    | none         | Git graph and ledger                        |
-| P2A | Canonize the completed T3 Threads work                      | in progress | P1           | Local main worktree                         |
-| P2B | Rebase and integrate complete voice activation              | blocked     | P2A          | Voice and reconciliation worktrees          |
-| P3  | Rebase meld integration onto final main                     | blocked     | P2B          | Meld branch and worktree                    |
-| P4  | Run repository and preservation gates                       | blocked     | P2B          | Verification only                           |
-| P5  | Publish exact origin main                                   | blocked     | P4           | Exact origin main                           |
-| P6  | Align and verify staging                                    | blocked     | P5           | Canonical staging source and service        |
-| P7  | Build, activate, and verify production                      | blocked     | P5           | Immutable deployment and production service |
+| Id  | Summary                                                     | Status   | Dependencies | Write Scope                                 |
+| --- | ----------------------------------------------------------- | -------- | ------------ | ------------------------------------------- |
+| P1  | Establish canonical main baseline and accepted feature tips | complete | none         | Git graph and ledger                        |
+| P2A | Canonize the completed T3 Threads work                      | complete | P1           | Local main worktree                         |
+| P2B | Rebase and integrate complete voice activation              | complete | P2A          | Voice and reconciliation worktrees          |
+| P3  | Rebase meld integration onto final main                     | ready    | P2B          | Meld branch and worktree                    |
+| P4  | Run repository and preservation gates                       | complete | P2B          | Verification only                           |
+| P5  | Publish exact origin main                                   | ready    | P4           | Exact origin main                           |
+| P6  | Align and verify staging                                    | ready    | P5           | Canonical staging source and service        |
+| P7  | Build, activate, and verify production                      | ready    | P5           | Immutable deployment and production service |
 
 ## Dependency Graph
 
@@ -78,10 +78,17 @@ Preserve existing atomic feature commits where practical. New reconciliation com
 - The live T3 journal tied the requested Thread lane to the main promotion worktree
 - The main promotion and meld worktrees produced the same stable binary patch and identical untracked file contents
 - Voice has a clean worktree and a conflict-free Git merge preview against the pre-Thread main baseline
+- The recovered Thread work was committed as `e921b9b898`
+- The complete voice tip `b77730508b` merged without textual conflicts
+- Semantic inspection confirmed that the combined composer retains Thread presentation, `threadClient`, voice lifecycle control, and `voiceControls`
 
 ## Gate Evidence
 
-Pending fresh gates on the recovered Thread slice and final integrated tree.
+- Recovered Thread slice: `pnpm fmt`, `pnpm lint`, and `pnpm typecheck` passed
+- Recovered Thread slice: `env -u NODE_ENV pnpm test` passed after excluding the production service environment inherited by this turn
+- Integrated Thread and voice tree: focused web, mobile, server, and script tests passed
+- Integrated Thread and voice tree: `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, `pnpm lint:mobile`, and `env -u NODE_ENV pnpm test` passed
+- Mobile native lint reported the existing host-tool caveat that SwiftLint, ktlint, and detekt are unavailable
 
 ## Commit Effects
 
@@ -89,9 +96,15 @@ Pending fresh gates on the recovered Thread slice and final integrated tree.
 
 If applied, this commit makes T3 Thread launches reuse verified pre-expanded release code while keeping each client process and writable state independent, adds startup measurement and integrity tooling, and keeps compact Thread controls beside the shared composer.
 
+### Voice Activation
+
+If applied, this commit canonizes opt-in device-local voice input and spoken replies across supported clients while preserving the T3 Thread composer presentation and independent startup behavior.
+
 ## Review Findings
 
-Pending.
+- Fresh integration review approved the staged tree with no findings. It verified exact preservation of non-overlap blobs and both feature contracts in `ChatView.tsx`, `ChatComposer.tsx`, and `patch.md`.
+- Fresh operational review approved the origin and fast-forward topology while requiring a conventional merge subject, recoverable Meld and staging snapshots, and atomic production symlink activation with automatic rollback.
+- Those operational requirements are incorporated into the final execution plan.
 
 ## Deferred Findings
 
@@ -100,7 +113,10 @@ Unrelated dirty worktrees and newly available upstream revisions are outside thi
 ## Phase Completion Matrix
 
 - P1 complete with Git graph, worktree, live journal, patch identity, and remote identity evidence
-- P2A through P7 remain open
+- P2A complete with commit `e921b9b898`
+- P2B is complete with semantic inspection, fresh approval, and all selected gates passing
+- P4 is complete with the full repository and mobile gates passing
+- P3, P5, P6, and P7 are ready and must target the sealed merge commit exactly
 
 ## Risks And Exceptions
 
@@ -109,8 +125,8 @@ Unrelated dirty worktrees and newly available upstream revisions are outside thi
 
 ## Final Reconciliation
 
-Pending.
+The source reconciliation is sealed by the conventional voice merge commit that follows this ledger update. Mutable environment evidence is intentionally recorded in the activation logs and final operator handoff so no post-publication documentation commit can change the canonical release SHA.
 
 ## Deliverable Closeout
 
-Pending.
+Source implementation and review are complete. The remaining operations are constrained to recoverable ref alignment, exact origin publication, staging verification, and immutable production activation of the sealed commit.

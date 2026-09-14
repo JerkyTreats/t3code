@@ -361,11 +361,15 @@ describe("thread outbox", () => {
       },
       runtimeMode: "approval-required",
       interactionMode: "plan",
+      responseStyle: "voice",
     } satisfies QueuedThreadMessage;
 
     expect(decodeQueuedThreadMessage(encodeQueuedThreadMessage(selectedMessage))).toEqual(
       selectedMessage,
     );
+    expect(
+      decodeQueuedThreadMessage(encodeQueuedThreadMessage(legacyMessage)).responseStyle,
+    ).toBeUndefined();
     expect(
       resolveQueuedThreadSettings(legacyMessage, {
         modelSelection: selectedMessage.modelSelection,

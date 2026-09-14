@@ -4,12 +4,15 @@ import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
+  VOICE_OUTPUT_VOICE_IDS,
+  VOICE_OUTPUT_VOICE_LABELS,
   type BackgroundActivityProfile,
   type DesktopUpdateChannel,
   ProviderDriverKind,
   type ProviderInstanceId,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
+  type VoiceOutputVoiceId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -160,6 +163,9 @@ import {
 import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
+import { useVoicePreview } from "../../fork/useVoicePreview";
+
+const SERVER_DEFAULT_VOICE_VALUE = "server-default";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
@@ -2019,6 +2025,7 @@ export function GeneralSettingsPanel() {
   const updateSettings = useUpdatePrimarySettings();
   const navigate = useNavigate();
   const environmentId = usePrimaryEnvironmentId();
+  const voicePreview = useVoicePreview(environmentId, settings.voiceOutputVoiceId);
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
@@ -2202,6 +2209,82 @@ export function GeneralSettingsPanel() {
             ) : null}
           </>
         ) : null}
+      </SettingsSection>
+
+      <SettingsSection id="voice" title="Voice">
+        <SettingsRow
+          {...searchableSetting("spoken-reply-voice")}
+          description="Choose the Pocket TTS voice used for spoken replies on this device."
+          status={
+            voicePreview.state.error ??
+            (voicePreview.state.phase === "loading"
+              ? "Preparing preview…"
+              : voicePreview.state.phase === "playing"
+                ? "Playing preview…"
+                : null)
+          }
+          resetAction={
+            settings.voiceOutputVoiceId !== DEFAULT_UNIFIED_SETTINGS.voiceOutputVoiceId ? (
+              <SettingResetButton
+                label="spoken reply voice"
+                onClick={() => updateSettings({ voiceOutputVoiceId: null })}
+              />
+            ) : null
+          }
+          control={
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <Select
+                value={settings.voiceOutputVoiceId ?? SERVER_DEFAULT_VOICE_VALUE}
+                onValueChange={(value) => {
+                  if (value === null || value === SERVER_DEFAULT_VOICE_VALUE) {
+                    updateSettings({ voiceOutputVoiceId: null });
+                    return;
+                  }
+                  if (
+                    typeof value === "string" &&
+                    (VOICE_OUTPUT_VOICE_IDS as readonly string[]).includes(value)
+                  ) {
+                    updateSettings({ voiceOutputVoiceId: value as VoiceOutputVoiceId });
+                  }
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="min-w-0 flex-1 sm:w-40 sm:flex-none"
+                  aria-label="Spoken reply voice"
+                >
+                  <SelectValue>
+                    {settings.voiceOutputVoiceId === null
+                      ? "Server default"
+                      : VOICE_OUTPUT_VOICE_LABELS[settings.voiceOutputVoiceId]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value={SERVER_DEFAULT_VOICE_VALUE}>
+                    Server default
+                  </SelectItem>
+                  {VOICE_OUTPUT_VOICE_IDS.map((voiceId) => (
+                    <SelectItem hideIndicator key={voiceId} value={voiceId}>
+                      {VOICE_OUTPUT_VOICE_LABELS[voiceId]}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={environmentId === null || voicePreview.state.phase === "loading"}
+                onClick={() =>
+                  voicePreview.state.phase === "playing"
+                    ? voicePreview.stop()
+                    : void voicePreview.preview()
+                }
+              >
+                {voicePreview.state.phase === "playing" ? "Stop" : "Preview"}
+              </Button>
+            </div>
+          }
+        />
       </SettingsSection>
 
       <SettingsSection id="behavior" title="Behavior">

@@ -1,4 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
+import { mobileResponseStyle } from "../features/voice-output/preferences";
+import {
+  prepareQueuedVoiceSubmission,
+  finishLocalVoiceSubmission,
+} from "../features/voice-output/coordination";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import * as Cause from "effect/Cause";
@@ -346,6 +351,25 @@ export function useThreadComposerState() {
 
     const metadata = makeQueuedMessageMetadata();
     const messageId = MessageId.make(metadata.messageId);
+    const responseStyle = mobileResponseStyle();
+    const voiceSubmission = {
+      environmentId: selectedThreadShell.environmentId,
+      threadId: selectedThreadShell.id,
+      messageId,
+      createdAt: metadata.createdAt,
+    };
+    try {
+      await prepareQueuedVoiceSubmission({
+        submission: voiceSubmission,
+        responseStyle,
+        destination: "current-thread",
+      });
+    } catch (error) {
+      setPendingConnectionError(
+        error instanceof Error ? error.message : "Could not stop spoken playback.",
+      );
+      return null;
+    }
     // Enqueue publishes the queued atom synchronously (the durable write
     // happens behind it), so clearing the draft here gives send feedback on
     // the tap frame instead of after file I/O. If the write fails the message
@@ -356,6 +380,7 @@ export function useThreadComposerState() {
       threadId: selectedThreadShell.id,
       messageId,
       commandId: CommandId.make(metadata.commandId),
+      responseStyle,
       text,
       attachments,
       modelSelection,
@@ -375,6 +400,7 @@ export function useThreadComposerState() {
         scheduleUnusedComposerAttachmentCleanup(attachments);
       },
       (error: unknown) => {
+        finishLocalVoiceSubmission(voiceSubmission);
         // Restore text via merge (idempotent) but attachments via the uncapped
         // append: the merge path slots existing attachments first and truncates
         // at the send limit, which would silently drop this message's images if

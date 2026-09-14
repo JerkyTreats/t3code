@@ -7,13 +7,18 @@ import {
   type RecordingStatus,
 } from "expo-audio";
 import { File } from "expo-file-system";
+import { stopMobileVoicePlayback } from "../voice-output/coordination";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 import { useSharedValue } from "react-native-reanimated";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
 import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";
+import {
+  createAndroidVoiceInput,
+  isAndroidLiveVoiceRecording,
+} from "../../native/voiceTranscription.android";
 import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";
 import {
   VoiceInputController,
@@ -21,9 +26,14 @@ import {
   voiceInputBlocksSubmission,
   voiceInputFreezesEditor,
   type VoiceDraftSnapshot,
+  type VoiceRecorderStatus,
   type VoiceInputState,
 } from "@t3tools/client-runtime/voice-input";
-import { normalizeVoiceInputDecibels, VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
+import {
+  normalizeSpeechRecognitionVolume,
+  normalizeVoiceInputDecibels,
+  VOICE_WAVEFORM_SAMPLE_COUNT,
+} from "./voiceInputMetering";
 
 const INITIAL_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
 const VOICE_METERING_INTERVAL_MS = 80;
@@ -43,6 +53,7 @@ async function releaseVoiceRecordingAudio(): Promise<void> {
 }
 
 async function configureVoiceRecordingAudio(): Promise<void> {
+  await stopMobileVoicePlayback();
   try {
     await setAudioModeAsync({
       allowsRecording: true,
@@ -87,27 +98,64 @@ export function useVoiceInputController(input: {
   const latestInputRef = useRef(input);
   latestInputRef.current = input;
 
-  const handleRecorderStatus = useCallback((status: RecordingStatus) => {
-    controllerRef.current?.handleRecorderStatus({
-      isFinished: status.isFinished,
-      hasError: status.hasError || status.mediaServicesDidReset === true,
-      error: status.error,
-      url: status.url,
-    });
+  const handleVoiceRecorderStatus = useCallback((status: VoiceRecorderStatus) => {
+    controllerRef.current?.handleRecorderStatus(status);
   }, []);
-  const recorder = useAudioRecorder(VOICE_RECORDING_OPTIONS, handleRecorderStatus);
+  const appendAudioLevel = useCallback(
+    (level: number) => {
+      if (controllerRef.current?.currentState.phase !== "recording") return;
+      const history = audioLevelsRef.current;
+      if (level === 0 && history.every((sample) => sample === 0)) return;
+      const nextLevels = [...history.slice(1), level];
+      audioLevelsRef.current = nextLevels;
+      audioLevels.value = nextLevels;
+    },
+    [audioLevels],
+  );
+  const handleAndroidVolumeChange = useCallback(
+    (volume: number) => appendAudioLevel(normalizeSpeechRecognitionVolume(volume)),
+    [appendAudioLevel],
+  );
+  const handleRecorderStatus = useCallback(
+    (status: RecordingStatus) => {
+      handleVoiceRecorderStatus({
+        isFinished: status.isFinished,
+        hasError: status.hasError || status.mediaServicesDidReset === true,
+        error: status.error,
+        url: status.url,
+      });
+    },
+    [handleVoiceRecorderStatus],
+  );
+  const audioRecorder = useAudioRecorder(VOICE_RECORDING_OPTIONS, handleRecorderStatus);
+  const androidVoiceInputRef = useRef<ReturnType<typeof createAndroidVoiceInput> | null>(null);
+  if (Platform.OS === "android" && !androidVoiceInputRef.current) {
+    androidVoiceInputRef.current = createAndroidVoiceInput(
+      handleVoiceRecorderStatus,
+      handleAndroidVolumeChange,
+    );
+  }
+  const androidVoiceInput = androidVoiceInputRef.current;
+  const recorder = androidVoiceInput?.recorder ?? audioRecorder;
+  const getTranscriber = androidVoiceInput?.getTranscriber ?? getLocalVoiceTranscriber;
 
   if (!controllerRef.current) {
     controllerRef.current = new VoiceInputController({
       recorder,
-      getTranscriber: getLocalVoiceTranscriber,
+      getTranscriber,
       requestPermission: async () => {
         const permission = await requestRecordingPermissionsAsync();
         return { granted: permission.granted, canAskAgain: permission.canAskAgain };
       },
       configureRecording: configureVoiceRecordingAudio,
       releaseRecording: releaseVoiceRecordingAudio,
-      deleteRecording: (uri) => new File(uri).delete(),
+      deleteRecording: (uri) => {
+        if (isAndroidLiveVoiceRecording(uri)) {
+          androidVoiceInput?.abort();
+          return;
+        }
+        return new File(uri).delete();
+      },
       readDraft: (): VoiceDraftSnapshot | null => {
         const current = latestInputRef.current;
         if (!current.ownerKey) return null;
@@ -169,18 +217,31 @@ export function useVoiceInputController(input: {
     }
     if (state.phase !== "recording") return;
 
+    if (androidVoiceInput) {
+      const recordingStartedAt = Date.now();
+      const updateElapsed = () => {
+        if (controller.currentState.phase !== "recording") return;
+        const nextElapsedSeconds = Math.min(
+          VOICE_RECORDING_LIMIT_SECONDS,
+          Math.max(0, Math.floor((Date.now() - recordingStartedAt) / 1_000)),
+        );
+        if (nextElapsedSeconds !== elapsedSecondsRef.current) {
+          elapsedSecondsRef.current = nextElapsedSeconds;
+          setElapsedSeconds(nextElapsedSeconds);
+        }
+      };
+
+      updateElapsed();
+      const intervalId = setInterval(updateElapsed, VOICE_METERING_INTERVAL_MS);
+      return () => clearInterval(intervalId);
+    }
+
     const sampleRecording = () => {
       if (controller.currentState.phase !== "recording") return;
-      const status = recorder.getStatus();
+      const status = audioRecorder.getStatus();
       if (!status.isRecording) return;
 
-      const level = normalizeVoiceInputDecibels(status.metering);
-      const history = audioLevelsRef.current;
-      if (level !== 0 || history.some((sample) => sample !== 0)) {
-        const nextLevels = [...history.slice(1), level];
-        audioLevelsRef.current = nextLevels;
-        audioLevels.value = nextLevels;
-      }
+      appendAudioLevel(normalizeVoiceInputDecibels(status.metering));
 
       const nextElapsedSeconds = Math.min(
         VOICE_RECORDING_LIMIT_SECONDS,
@@ -195,7 +256,7 @@ export function useVoiceInputController(input: {
     sampleRecording();
     const intervalId = setInterval(sampleRecording, VOICE_METERING_INTERVAL_MS);
     return () => clearInterval(intervalId);
-  }, [audioLevels, controller, recorder, state.phase]);
+  }, [androidVoiceInput, appendAudioLevel, audioLevels, audioRecorder, controller, state.phase]);
 
   const start = useCallback(() => {
     if (!latestInputRef.current.disabled) void controller.start();
@@ -206,7 +267,7 @@ export function useVoiceInputController(input: {
   return {
     // Store screenshots show the dictation button even on simulators, whose
     // on-device transcription is unavailable.
-    isAvailable: getLocalVoiceTranscriber() !== null || getNativeShowcaseScene() !== null,
+    isAvailable: getTranscriber() !== null || getNativeShowcaseScene() !== null,
     state,
     audioLevels,
     elapsedSeconds,

@@ -986,6 +986,7 @@ const ThreadTurnStartBootstrap = Schema.Struct({
 export type ThreadTurnStartBootstrap = typeof ThreadTurnStartBootstrap.Type;
 
 export const ThreadTurnStartCommand = Schema.Struct({
+  responseStyle: Schema.optional(Schema.Literals(["voice", "text"])),
   type: Schema.Literal("thread.turn.start"),
   commandId: CommandId,
   threadId: ThreadId,
@@ -1007,6 +1008,7 @@ export const ThreadTurnStartCommand = Schema.Struct({
 });
 
 const ClientThreadTurnStartCommand = Schema.Struct({
+  responseStyle: Schema.optional(Schema.Literals(["voice", "text"])),
   type: Schema.Literal("thread.turn.start"),
   commandId: CommandId,
   threadId: ThreadId,
@@ -1433,6 +1435,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
 });
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
+  responseStyle: Schema.optional(Schema.Literals(["voice", "text"])),
   threadId: ThreadId,
   messageId: MessageId,
   modelSelection: Schema.optional(ModelSelection),

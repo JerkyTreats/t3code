@@ -61,6 +61,7 @@ import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { resolveAgentAwarenessPlatformPresentation } from "./SettingsRouteScreen.logic";
+import { voiceOutputVoiceLabel } from "../voice-output/voiceOptions";
 
 type NotificationStatus = "checking" | "enabled" | "disabled" | "unsupported";
 type LiveActivityStatus = "checking" | "enabled" | "disabled" | "signed-out" | "linking";
@@ -542,8 +543,19 @@ function ConfiguredSettingsRouteScreen() {
 }
 
 function GeneralSettingsSection() {
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const voiceId = AsyncResult.isSuccess(preferences)
+    ? (preferences.value.voiceOutputVoiceId ?? null)
+    : null;
+
   return (
     <SettingsSection title="General">
+      <SettingsRow
+        icon="play"
+        label="Voice"
+        value={voiceOutputVoiceLabel(voiceId)}
+        target="SettingsVoice"
+      />
       <SettingsRow icon="folder" label="Project Grouping" target="SettingsProjectGrouping" />
       <AutoSettleSettingsRows />
       <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />

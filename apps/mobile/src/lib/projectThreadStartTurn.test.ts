@@ -54,6 +54,7 @@ describe("project thread title", () => {
       modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.6-sol" },
       runtimeMode: "full-access",
       interactionMode: "default",
+      responseStyle: "voice",
       workspaceMode: "local",
       branch: null,
       worktreePath: null,
@@ -62,6 +63,7 @@ describe("project thread title", () => {
     });
 
     expect(input.titleSeed).toBe(title);
+    expect(input.responseStyle).toBe("voice");
     expect(input.bootstrap.createThread.title).toBe(input.titleSeed);
     expect(input.message.text).toBe(text);
   });

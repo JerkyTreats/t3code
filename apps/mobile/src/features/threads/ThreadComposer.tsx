@@ -79,6 +79,8 @@ import {
   ComposerDictationToolbar,
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
+import { useVoiceOutput } from "../voice-output/useVoiceOutput";
+import { VoiceOutputControls } from "../voice-output/VoiceOutputControls";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import {
   type ExistingThreadSettingsRouteSession,
@@ -361,8 +363,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const voicePresentation = resolveVoiceComposerPresentation(
     voiceInput.state,
     voiceInput.elapsedSeconds,
+    hasContent,
+    voiceInput.isAvailable,
   );
   const isVoiceInputPresented = voicePresentation.statusLabel !== null;
+  const voiceOutput = useVoiceOutput(
+    props.environmentId,
+    props.selectedThread.id,
+    voiceInput.isBusy,
+  );
   // An open draft stays visible; only a collapsed composer becomes a voice strip.
   const isExpanded = isFocused || settingsSheetPresentation.isActive;
   const showsCompactDictation = isVoiceInputPresented && !isExpanded;
@@ -380,6 +389,9 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     !voiceInput.blocksSubmission &&
     attachmentBlockReason === null &&
     !modelUnavailable;
+  const showVoicePrimaryAction =
+    voicePresentation.trailingAction === "confirm" ||
+    (!voicePresentation.showsSend && !showStopAction);
 
   // Keep the feed inset aligned with the card or compact dictation strip.
   useEffect(() => {
@@ -598,6 +610,15 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           </Pressable>
         ) : null}
 
+        {voiceOutput.error ? (
+          <Text
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            className="px-3 py-1 text-xs text-foreground-muted"
+          >
+            {voiceOutput.error}
+          </Text>
+        ) : null}
         <ComposerSurface
           style={
             isExpanded
@@ -711,12 +732,16 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
             ) : null}
             {!isExpanded ? (
               <View className="flex-row items-center">
-                <ComposerDictationStartAction
-                  state={voiceInput.state}
-                  isAvailable={voiceInput.isAvailable}
-                  onStart={voiceInput.start}
-                  onCancel={voiceInput.cancel}
-                />
+                <VoiceOutputControls voice={voiceOutput} recording={voiceInput.isBusy} />
+                {!voicePresentation.showsSend && !showStopAction ? (
+                  <ComposerDictationStartAction
+                    state={voiceInput.state}
+                    isAvailable={voiceInput.isAvailable}
+                    primary
+                    onStart={voiceInput.start}
+                    onCancel={voiceInput.cancel}
+                  />
+                ) : null}
                 {showStopAction ? (
                   <ComposerActionButton
                     accessibilityLabel="Stop agent"
@@ -724,7 +749,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     variant="danger"
                     onPress={props.onStopThread}
                   />
-                ) : (
+                ) : voicePresentation.showsSend ? (
                   <ComposerActionButton
                     accessibilityLabel={attachmentBlockReason ?? sendLabel}
                     icon="arrow.up"
@@ -732,7 +757,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     disabled={!canSend}
                     onPress={handleSend}
                   />
-                )}
+                ) : null}
               </View>
             ) : null}
             {isExpanded ? <View className="h-1" /> : null}
@@ -800,14 +825,17 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                   </View>
                 )}
                 <View className="shrink-0 flex-row items-center">
-                  <ComposerDictationPrimaryAction
-                    state={voiceInput.state}
-                    presentation={voicePresentation}
-                    isAvailable={voiceInput.isAvailable}
-                    onStart={voiceInput.start}
-                    onConfirm={voiceInput.stop}
-                    onCancel={voiceInput.cancel}
-                  />
+                  <VoiceOutputControls voice={voiceOutput} recording={voiceInput.isBusy} />
+                  {showVoicePrimaryAction ? (
+                    <ComposerDictationPrimaryAction
+                      state={voiceInput.state}
+                      presentation={voicePresentation}
+                      isAvailable={voiceInput.isAvailable}
+                      onStart={voiceInput.start}
+                      onConfirm={voiceInput.stop}
+                      onCancel={voiceInput.cancel}
+                    />
+                  ) : null}
                   {showStopAction ? (
                     <ComposerActionButton
                       accessibilityLabel="Stop agent"

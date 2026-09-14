@@ -115,6 +115,11 @@ import {
   shouldFloatComposerRuntimeControl,
   restingComposerActionPadding,
 } from "../../fork/chatComposerPresentation";
+import {
+  shouldKeepLocalVoiceActionVisible,
+  type LocalVoiceInputState,
+} from "../../fork/localVoiceInput";
+import { useLocalVoiceInput } from "../../fork/useLocalVoiceInput";
 import { ComposerSurface } from "./ComposerSurface";
 import {
   ComposerBannerStack,
@@ -1097,6 +1102,13 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
   hasSendableContent: boolean;
+  voiceInput: {
+    readonly primaryAction: "send" | "voice";
+    readonly state: LocalVoiceInputState;
+    readonly start: () => void;
+    readonly stop: () => void;
+    readonly cancel: () => void;
+  };
   preserveComposerFocusOnPointerDown?: boolean;
   showSendWhileRunning?: boolean;
   onPreviousPendingQuestion: () => void;
@@ -1129,6 +1141,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         isEnvironmentUnavailable={props.isEnvironmentUnavailable}
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
+        voiceInput={props.voiceInput}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
         showSendWhileRunning={props.showSendWhileRunning ?? false}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
@@ -1201,6 +1214,7 @@ export interface ChatComposerHandle {
 // --------------------------------------------------------------------------
 
 export interface ChatComposerProps {
+  voiceControls?: ReactNode;
   composerDraftTarget: ScopedThreadRef | DraftId;
   environmentId: EnvironmentId;
   attachmentUploadsCapabilityKnown: boolean;
@@ -1395,6 +1409,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     compactDisabledReason,
     resolvedTheme,
     settings,
+    voiceControls,
     keybindings,
     terminalOpen,
     gitCwd,
@@ -2657,6 +2672,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setComposerDraftTerminalContexts,
     ],
   );
+
+  const voiceInput = useLocalVoiceInput({
+    ownerKey: composerTargetKey(composerDraftTarget),
+    text: prompt,
+    selection: { start: composerCursor, end: composerCursor },
+    visible: shouldKeepLocalVoiceActionVisible({
+      isRunning: phase === "running",
+      hasPendingAction:
+        pendingPrimaryAction !== null ||
+        activePendingApproval !== null ||
+        pendingUserInputs.length > 0,
+      showPlanFollowUpPrompt,
+      hasSendableContent: composerSendState.hasSendableContent,
+    }),
+    onCommit: (text, selection) => {
+      promptRef.current = text;
+      setPrompt(text);
+      setComposerCursor(selection.end);
+      setComposerTrigger(detectComposerTrigger(text, selection.end));
+      expandComposerForEditorChange();
+      scheduleComposerFocus();
+    },
+  });
 
   // ------------------------------------------------------------------
   // Callbacks: prompt replacement / menu
@@ -4948,6 +4986,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       className="mx-auto w-full min-w-0 max-w-3xl"
       data-chat-composer-form="true"
     >
+      {voiceControls}
       {composerControlsInStrip && restingControlsHost
         ? createPortal(
             <div
@@ -5797,6 +5836,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     isPreparingWorktree={isPreparingWorktree}
                     hasSendableContent={composerSendState.hasSendableContent}
+                    voiceInput={voiceInput}
                     preserveComposerFocusOnPointerDown={isMobileViewport || isComposerResting}
                     showSendWhileRunning={isMobileViewport}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}

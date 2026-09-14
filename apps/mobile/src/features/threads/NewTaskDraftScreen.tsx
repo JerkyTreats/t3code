@@ -92,6 +92,12 @@ import { resolveProviderInteractionMode } from "./legacy-plan-mode";
 import { deriveThreadTitleFromPrompt } from "../../lib/projectThreadStartTurn";
 import { armAgentAwarenessLiveActivityForLocalWork } from "../agent-awareness/remoteRegistration";
 import { enqueueThreadOutboxMessage } from "../../state/thread-outbox";
+import { mobileResponseStyle } from "../voice-output/preferences";
+import { VoiceModeToggle } from "../voice-output/VoiceModeToggle";
+import {
+  prepareQueuedVoiceSubmission,
+  finishLocalVoiceSubmission,
+} from "../voice-output/coordination";
 import { removeThreadOutboxMessage } from "../../state/thread-outbox-removal";
 import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
 import { useNewTaskFlow } from "./new-task-flow-provider";
@@ -332,11 +338,6 @@ export function NewTaskDraftScreen(props: {
     onChangeDraftMessage: flow.setPrompt,
     onChangeSelection: composerMenu.onSelectionChange,
   });
-  const voicePresentation = resolveVoiceComposerPresentation(
-    voiceInput.state,
-    voiceInput.elapsedSeconds,
-  );
-  const isVoiceInputPresented = voicePresentation.statusLabel !== null;
   const preventRemove =
     (isIncomingShareTransferPending && !isProjectPickerReturnActive) ||
     isCancellingShareImport ||
@@ -938,9 +939,16 @@ export function NewTaskDraftScreen(props: {
         return;
       }
       flow.setSubmitting(true);
+      const responseStyle = mobileResponseStyle();
       try {
-        await enqueueThreadOutboxMessage(message);
+        await prepareQueuedVoiceSubmission({
+          submission: message,
+          responseStyle,
+          destination: "background-creation",
+        });
+        await enqueueThreadOutboxMessage({ ...message, responseStyle });
       } catch (error) {
+        finishLocalVoiceSubmission(message);
         Alert.alert(
           "Could not queue task",
           error instanceof Error ? error.message : "The task could not be saved to the outbox.",
@@ -1054,17 +1062,27 @@ export function NewTaskDraftScreen(props: {
   }
 
   const isAndroid = Platform.OS === "android";
+  const hasDraftContent = flow.prompt.trim().length > 0;
   const canStart =
     attachmentBlockReason === null &&
     !modelUnavailable &&
     Boolean(flow.selectedProject) &&
     Boolean(flow.selectedModel) &&
-    flow.prompt.trim().length > 0 &&
+    hasDraftContent &&
     isIncomingShareReady &&
     !isImportingShare &&
     !flow.submitting &&
     !voiceInput.blocksSubmission &&
     !(flow.workspaceMode === "worktree" && !flow.selectedBranchName);
+  const voicePresentation = resolveVoiceComposerPresentation(
+    voiceInput.state,
+    voiceInput.elapsedSeconds,
+    hasDraftContent,
+    voiceInput.isAvailable,
+  );
+  const isVoiceInputPresented = voicePresentation.statusLabel !== null;
+  const showVoicePrimaryAction =
+    voicePresentation.trailingAction === "confirm" || !voicePresentation.showsSend;
   const promptEditor = (
     <ComposerEditor
       ref={promptInputRef}
@@ -1363,15 +1381,18 @@ export function NewTaskDraftScreen(props: {
                   </ComposerToolbarScroller>
                 </>
               )}
-              <ComposerDictationPrimaryAction
-                state={voiceInput.state}
-                presentation={voicePresentation}
-                isAvailable={voiceInput.isAvailable}
-                disabled={isIncomingShareTransferPending || isImportingShare || flow.submitting}
-                onStart={voiceInput.start}
-                onConfirm={voiceInput.stop}
-                onCancel={voiceInput.cancel}
-              />
+              <VoiceModeToggle />
+              {showVoicePrimaryAction ? (
+                <ComposerDictationPrimaryAction
+                  state={voiceInput.state}
+                  presentation={voicePresentation}
+                  isAvailable={voiceInput.isAvailable}
+                  disabled={isIncomingShareTransferPending || isImportingShare || flow.submitting}
+                  onStart={voiceInput.start}
+                  onConfirm={voiceInput.stop}
+                  onCancel={voiceInput.cancel}
+                />
+              ) : null}
               {voicePresentation.showsSend ? (
                 <ComposerActionButton
                   accessibilityLabel={
