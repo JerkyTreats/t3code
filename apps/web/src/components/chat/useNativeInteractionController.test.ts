@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { act, createElement, StrictMode } from "react";
+import { act, createElement, StrictMode, useEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -52,7 +52,13 @@ let nativeListener: ((event: DesktopInteractionEvent) => void) | null;
 let currentController: ReturnType<typeof useNativeInteractionController> | null;
 
 function InteractionSurface(props: { interactions: ReadonlyArray<InteractionResource> }) {
-  currentController = useNativeInteractionController(environmentId, props.interactions);
+  const controller = useNativeInteractionController(environmentId, props.interactions);
+  useEffect(() => {
+    currentController = controller;
+    return () => {
+      if (currentController === controller) currentController = null;
+    };
+  }, [controller]);
   return null;
 }
 
