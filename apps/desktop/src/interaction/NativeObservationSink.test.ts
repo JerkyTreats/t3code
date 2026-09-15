@@ -49,7 +49,7 @@ describe("NativeObservationSink", () => {
             requestRef: "request:one",
             requestRevision: "revision:one",
             requestDigest: "digest:one",
-            ownerState: "engaged",
+            ownerState: "resolving",
             receiptId: "receipt:one",
             evidenceRef: null,
             evidenceDigest: null,

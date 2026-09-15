@@ -121,6 +121,7 @@ function decodeOwnerResult(raw: unknown): OwnerResultV1 {
         "pending",
         "engaged",
         "qualified",
+        "resolving",
         "resolution_pending",
         "completed",
         "cancelled",
