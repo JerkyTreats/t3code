@@ -3274,7 +3274,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
     }),
   );
 
-  it.effect("does not fallback-retain messages whose turnId is removed by revert", () =>
+  it.effect("retains interaction authority while pruning reverted turn content", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;
       const eventStore = yield* OrchestrationEventStore;
@@ -3372,6 +3372,89 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           streaming: false,
           createdAt: "2026-02-26T12:00:02.100Z",
           updatedAt: "2026-02-26T12:00:02.100Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.activity-appended",
+        eventId: EventId.make("evt-revert-ordinary-activity"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-revert"),
+        occurredAt: "2026-02-26T12:00:03.200Z",
+        commandId: CommandId.make("cmd-revert-ordinary-activity"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-revert-ordinary-activity"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-revert"),
+          activity: {
+            id: EventId.make("activity-revert-ordinary"),
+            tone: "info",
+            kind: "runtime.note",
+            summary: "Reverted ordinary activity",
+            payload: { marker: "ordinary" },
+            turnId: TurnId.make("turn-2"),
+            createdAt: "2026-02-26T12:00:03.200Z",
+          },
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.activity-appended",
+        eventId: EventId.make("evt-revert-interaction-activity"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-revert"),
+        occurredAt: "2026-02-26T12:00:03.300Z",
+        commandId: CommandId.make("cmd-revert-interaction-activity"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-revert-interaction-activity"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-revert"),
+          activity: {
+            id: EventId.make("activity-revert-interaction"),
+            tone: "info",
+            kind: "interaction.resource.changed",
+            summary: "Retained interaction authority",
+            payload: {
+              resource: {
+                id: "interaction-revert",
+                threadId: "thread-revert",
+                revision: 1,
+                anchorTurnId: "turn-2",
+                createdSequence: 7,
+                capabilityId: "wallpaper.interaction.lab.v1",
+                createdByClientId: "client-revert",
+                request: {
+                  ref: "request-revert",
+                  revision: "revision-1",
+                  digest: "digest-revert",
+                  conditionRevision: "condition-1",
+                  inputProvenance: "synthetic",
+                },
+                display: {
+                  title: "Retained interaction",
+                  summary: "Interaction remains authoritative after transcript revert.",
+                },
+                lifecycle: { state: "open" },
+                presentation: {
+                  state: "unavailable",
+                  ownerClientId: null,
+                  presentationRevision: 0,
+                  lastFrameSequence: null,
+                  droppedFrames: 0,
+                },
+                engagement: { state: "disengaged", latestEpoch: 0 },
+                evidence: null,
+                resolution: null,
+                continuation: { state: "none" },
+                createdAt: "2026-02-26T12:00:03.300Z",
+                updatedAt: "2026-02-26T12:00:03.300Z",
+              },
+            },
+            turnId: TurnId.make("turn-2"),
+            createdAt: "2026-02-26T12:00:03.300Z",
+          },
         },
       });
 
@@ -3475,6 +3558,26 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           messageId: "assistant-keep",
           turnId: "turn-1",
           role: "assistant",
+        },
+      ]);
+      const activityRows = yield* sql<{
+        readonly activityId: string;
+        readonly kind: string;
+        readonly turnId: string | null;
+      }>`
+        SELECT
+          activity_id AS "activityId",
+          kind,
+          turn_id AS "turnId"
+        FROM projection_thread_activities
+        WHERE thread_id = 'thread-revert'
+        ORDER BY created_at ASC, activity_id ASC
+      `;
+      assert.deepEqual(activityRows, [
+        {
+          activityId: "activity-revert-interaction",
+          kind: "interaction.resource.changed",
+          turnId: "turn-2",
         },
       ]);
     }),

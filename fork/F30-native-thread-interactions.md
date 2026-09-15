@@ -28,6 +28,8 @@ The initial staging increment reuses the existing orchestration read and operate
 
 Interaction snapshots are stored as a reserved durable thread activity payload and projected into `thread.interactions`. Reserved rows are excluded from ordinary activities and tool folding. This is a deliberate smaller implementation than the proposed dedicated projection table. The rows are not subject to the in-memory activity cap, and exact retrieval remains available through the interaction GET route.
 
+Checkpoint revert prunes ordinary activity tied to reverted turns but retains every reserved interaction authority row. A revert cannot erase an open, cancelled, or resolved interaction lifecycle, even when its anchor turn is outside the restored transcript window.
+
 Create, cancel, resolve, engagement, presentation, and continuation transitions are serialized by the thread command queue. Thread deletion first records cancellation for every open interaction. A human turn that wins before provider submission returns an admitted continuation to pending. A human turn cannot cross a continuation already in the submitting state. Startup recovery marks an interrupted submitting state ambiguous instead of risking a duplicate provider start.
 
 Only a satisfied resolution with retained evidence requests a continuation. Admission uses a stable command identity derived from the interaction and resolution revision. The visible admitted, submitting, or started state is the receipt consumed by `t3.interaction_resolve_and_await_continuation` version 1. Its exact capability content identity is `capability-contract-1f57a21badb3dfe994c184f3af5873872f4753ff7aa510b6bfd2c949f67c3aff`.
