@@ -259,23 +259,33 @@ export function useNativeInteractionController(
     switch (event.kind) {
       case "Ready":
         session.presentationRevision = event.presentationRevision;
-        void enqueuePresentation(
-          session,
-          "ready",
-          event.presentationRevision,
-          null,
-          session.droppedFrames,
-        ).then((accepted) => {
+        void (async () => {
+          const accepted = await enqueuePresentation(
+            session,
+            "ready",
+            event.presentationRevision,
+            null,
+            session.droppedFrames,
+          ).catch(() => false);
           if (accepted || session.retired) return;
           session.retired = true;
+          await enqueuePresentation(
+            session,
+            "stopped",
+            event.presentationRevision,
+            session.displayedFrameSequence,
+            session.droppedFrames,
+          ).catch(() => false);
           if (sessionRef.current === session) sessionRef.current = null;
           if (bridge !== null && session.nativeStarted) {
-            void bridge.stop({
-              nativeSessionId: session.nativeSessionId,
-              reason: "protocol-fault",
-            });
+            await bridge
+              .stop({
+                nativeSessionId: session.nativeSessionId,
+                reason: "protocol-fault",
+              })
+              .catch(() => undefined);
           }
-        });
+        })();
         return;
       case "Frame": {
         session.presentationRevision = event.presentationRevision;
@@ -370,7 +380,8 @@ export function useNativeInteractionController(
     const resource = interactions.find(
       (entry) =>
         entry.lifecycle.state === "open" &&
-        entry.presentation.state === "unavailable" &&
+        (entry.presentation.state === "unavailable" ||
+          (entry.presentation.state === "stopped" && entry.presentation.ownerClientId === null)) &&
         !startedResourceIdsRef.current.has(entry.id),
     );
     if (resource === undefined) return;

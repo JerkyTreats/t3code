@@ -298,6 +298,43 @@ describe("native interaction controller boundaries", () => {
     );
   });
 
+  it("releases an accepted starting lease when ready is rejected", async () => {
+    setPresentation
+      .mockResolvedValueOnce(AsyncResult.success({ sequence: 1 }))
+      .mockResolvedValueOnce(
+        AsyncResult.failure(Cause.fail(new Error("ready transition rejected"))),
+      )
+      .mockResolvedValueOnce(AsyncResult.success({ sequence: 2 }));
+    const resource = availableResource();
+    act(() => {
+      renderer = create(mountedSurface([resource]));
+    });
+    await flushLifecycle();
+    const nativeSessionId = vi.mocked(bridge.start).mock.calls[0]![0].nativeSessionId;
+
+    act(() => {
+      nativeListener?.({
+        kind: "Ready",
+        nativeSessionId,
+        presentationRevision: 1,
+      } as DesktopInteractionEvent);
+    });
+    await flushLifecycle();
+
+    expect(setPresentation.mock.calls.map(([request]) => request.input.state)).toEqual([
+      "starting",
+      "ready",
+      "stopped",
+    ]);
+    expect(setPresentation.mock.calls.map(([request]) => request.input.resourceRevision)).toEqual([
+      1, 2, 2,
+    ]);
+    expect(bridge.stop).toHaveBeenCalledExactlyOnceWith({
+      nativeSessionId,
+      reason: "protocol-fault",
+    });
+  });
+
   it("does not launch when the server rejects the initial presentation claim", async () => {
     setPresentation.mockResolvedValueOnce(
       AsyncResult.failure(Cause.fail(new Error("presentation lease rejected"))),
@@ -336,7 +373,7 @@ describe("native interaction controller boundaries", () => {
     ]);
   });
 
-  it("retires the exact native session once across a real unmount and remount", async () => {
+  it("retires and reclaims the projection-shaped stopped resource across remount", async () => {
     const resource = availableResource();
     act(() => {
       renderer = create(mountedSurface([resource]));
@@ -357,17 +394,35 @@ describe("native interaction controller boundaries", () => {
       "stopped",
     ]);
 
+    const stoppedResource = availableResource({
+      revision: 3,
+      presentation: {
+        state: "stopped",
+        ownerClientId: null,
+        presentationRevision: 1,
+        lastFrameSequence: null,
+        droppedFrames: 0,
+      },
+    });
     act(() => {
-      renderer = create(mountedSurface([resource]));
+      renderer = create(mountedSurface([stoppedResource]));
     });
     await flushLifecycle();
 
     expect(bridge.start).toHaveBeenCalledTimes(2);
     expect(vi.mocked(bridge.start).mock.calls[1]![0].nativeSessionId).not.toBe(firstSessionId);
+    expect(vi.mocked(bridge.start).mock.calls[1]![0].resourceRevision).toBe(3);
+    expect(setPresentation.mock.calls[2]![0].input).toEqual(
+      expect.objectContaining({
+        resourceRevision: 3,
+        presentationRevision: 1,
+        state: "starting",
+      }),
+    );
     expect(bridge.stop).toHaveBeenCalledTimes(1);
   });
 
-  it("does not launch after unmount while the presentation claim is pending", async () => {
+  it("recovers a delayed claim across a fast unmount and remount", async () => {
     let resolveClaim!: (result: ReturnType<typeof AsyncResult.success>) => void;
     setPresentation.mockImplementationOnce(
       () =>
@@ -381,13 +436,44 @@ describe("native interaction controller boundaries", () => {
     });
     await act(async () => renderer!.unmount());
     renderer = null;
+    setPresentation.mockResolvedValueOnce(
+      AsyncResult.failure(Cause.fail(new Error("stale unavailable projection"))),
+    );
+    act(() => {
+      renderer = create(mountedSurface([resource]));
+    });
+    await flushLifecycle();
     resolveClaim(AsyncResult.success({ sequence: 1 }));
     await flushLifecycle();
 
     expect(bridge.start).not.toHaveBeenCalled();
     expect(setPresentation.mock.calls.map(([request]) => request.input.state)).toEqual([
       "starting",
+      "starting",
       "stopped",
     ]);
+
+    const stoppedResource = availableResource({
+      revision: 3,
+      presentation: {
+        state: "stopped",
+        ownerClientId: null,
+        presentationRevision: 1,
+        lastFrameSequence: null,
+        droppedFrames: 0,
+      },
+    });
+    act(() => renderer!.update(mountedSurface([stoppedResource])));
+    await flushLifecycle();
+
+    expect(bridge.start).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(bridge.start).mock.calls[0]![0].resourceRevision).toBe(3);
+    expect(setPresentation.mock.calls[3]![0].input).toEqual(
+      expect.objectContaining({
+        resourceRevision: 3,
+        presentationRevision: 1,
+        state: "starting",
+      }),
+    );
   });
 });

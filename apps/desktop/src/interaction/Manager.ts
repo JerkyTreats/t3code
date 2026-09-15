@@ -249,6 +249,7 @@ export class InteractionManager {
   readonly #evidenceDirectory: string;
   readonly #observationSink: NativeObservationSink;
   readonly #listeners = new Set<(event: DesktopInteractionEvent) => void>();
+  #startQueue: Promise<void> = Promise.resolve();
   #session: Session | null = null;
 
   constructor(options: InteractionManagerOptions = {}) {
@@ -263,8 +264,29 @@ export class InteractionManager {
     return () => this.#listeners.delete(listener);
   }
 
-  async start(input: DesktopInteractionStartInput): Promise<void> {
-    if (this.#session !== null) throw new Error("A native interaction session is already active.");
+  start(input: DesktopInteractionStartInput): Promise<void> {
+    const operation = this.#startQueue.then(() => this.#start(input));
+    this.#startQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  async #start(input: DesktopInteractionStartInput): Promise<void> {
+    const existing = this.#session;
+    if (existing !== null) {
+      if (existing.stopping === null) {
+        throw new Error("A native interaction session is already active.");
+      }
+      await existing.stopping;
+      if (this.#session === existing) {
+        throw new Error("The previous native interaction session did not finish cleanup.");
+      }
+      if (this.#session !== null) {
+        throw new Error("A native interaction session is already active.");
+      }
+    }
     await this.#observationSink.ready();
     const child = await this.#capability.launch();
     let childExitResolve!: () => void;

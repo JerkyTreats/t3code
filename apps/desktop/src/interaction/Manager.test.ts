@@ -431,11 +431,16 @@ describe("InteractionManager", () => {
     expect(sink.cancel).not.toHaveBeenCalled();
   });
 
-  it("waits for the exact owned child exit after successful Terminal", async () => {
+  it("waits for exact stopped-child exit and admits only one racing successor", async () => {
     const child = new FakeChild();
+    const successorChild = new FakeChild();
+    const launch = vi
+      .fn<() => Promise<InteractionChild>>()
+      .mockResolvedValueOnce(child)
+      .mockResolvedValueOnce(successorChild);
     const sink = fakeObservationSink();
     const manager = new InteractionManager({
-      capability: { launch: async () => child },
+      capability: { launch },
       observationSink: sink,
     });
     await manager.start(startInput);
@@ -505,11 +510,24 @@ describe("InteractionManager", () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(settled).not.toHaveBeenCalled();
-    await expect(
-      manager.start({ ...startInput, nativeSessionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }),
-    ).rejects.toThrow("already active");
+    const firstSuccessor = manager.start({
+      ...startInput,
+      nativeSessionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    });
+    const secondSuccessor = manager.start({
+      ...startInput,
+      nativeSessionId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(launch).toHaveBeenCalledTimes(1);
     child.exit();
     await expect(stopping).resolves.toBeUndefined();
+    await expect(firstSuccessor).resolves.toBeUndefined();
+    await expect(secondSuccessor).rejects.toThrow("already active");
+    expect(launch).toHaveBeenCalledTimes(2);
+    expect(decodeWrites(successorChild.stdin.read() as Buffer)).toEqual([
+      { kind: "Start", protocolVersion: 1, nativeSessionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+    ]);
   });
 
   it("rejects a successful Terminal before evidence commitment", async () => {
@@ -563,7 +581,7 @@ describe("InteractionManager", () => {
     expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGKILL");
     await expect(
       manager.start({ ...startInput, nativeSessionId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }),
-    ).rejects.toThrow("already active");
+    ).rejects.toThrow("broken stdin");
     child.exit(1);
   });
 });
