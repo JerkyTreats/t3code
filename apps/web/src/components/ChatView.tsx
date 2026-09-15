@@ -8,6 +8,7 @@ import {
   type ChatFileAttachment,
   DEFAULT_MODEL,
   type EnvironmentId,
+  type InteractionResource,
   type MessageId,
   type ModelSelection,
   type ProjectScript,
@@ -182,6 +183,7 @@ import {
 } from "./preview/previewHostActions";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
+import { useNativeInteractionController } from "./chat/useNativeInteractionController";
 import {
   selectThreadPreviewMiniPlayer,
   usePreviewMiniPlayerStore,
@@ -1359,6 +1361,7 @@ function chatActionErrorMessage(error: unknown): string {
 }
 
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
+const EMPTY_INTERACTION_RESOURCES: ReadonlyArray<InteractionResource> = [];
 
 /**
  * Drops the send-time anchored end space. That space is what holds a sent
@@ -1773,6 +1776,10 @@ export default function ChatView(props: ChatViewProps) {
   // depend on which route is mounted.
   const isServerThread = activeServerThread !== null;
   const activeThread = activeServerThread ?? localDraftThread;
+  const interactionController = useNativeInteractionController(
+    environmentId,
+    activeThread?.interactions ?? EMPTY_INTERACTION_RESOURCES,
+  );
   const voiceOutput = useVoiceOutput(
     environmentId,
     activeThread,
@@ -7919,6 +7926,15 @@ export default function ChatView(props: ChatViewProps) {
                 activeTurnStartedAt={activeWorkStartedAt}
                 listRef={legendListRef}
                 timelineEntries={timelineEntries}
+                interactions={activeThread.interactions ?? EMPTY_INTERACTION_RESOURCES}
+                interactionHostAvailable={interactionController.hostAvailable}
+                interactionOwnedIds={interactionController.ownedInteractionIds}
+                interactionFrameIds={interactionController.framedInteractionIds}
+                onInteractionEngage={interactionController.engage}
+                onInteractionDisengage={interactionController.disengage}
+                onInteractionCancel={interactionController.cancel}
+                onInteractionCanvas={interactionController.registerCanvas}
+                onInteractionPointer={interactionController.pointerInput}
                 latestTurn={activeLatestTurn}
                 runningTurnId={activeRunningTurnId}
                 turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}

@@ -29,7 +29,12 @@ import {
   type WorkLogEntry,
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import {
+  type InteractionResource,
+  type MessageId,
+  type OrchestrationLatestTurn,
+  type TurnId,
+} from "@t3tools/contracts";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
@@ -352,6 +357,12 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string;
       proposedPlan: ProposedPlan;
+    }
+  | {
+      kind: "interaction";
+      id: string;
+      createdAt: string;
+      resource: InteractionResource;
     }
   | {
       kind: "working";
@@ -780,6 +791,7 @@ function attachTrailingToolGroupsToAssistant(
 
 export function deriveMessagesTimelineRows(input: {
   timelineEntries: ReadonlyArray<TimelineEntry>;
+  interactions?: ReadonlyArray<InteractionResource>;
   latestTurn?: TimelineLatestTurn | null;
   runningTurnId?: TurnId | null;
   expandedTurnIds?: ReadonlySet<TurnId>;
@@ -1156,7 +1168,99 @@ export function deriveMessagesTimelineRows(input: {
     });
   }
 
-  return attachTrailingToolGroupsToAssistant(nextRows);
+  return insertInteractionRows(
+    attachTrailingToolGroupsToAssistant(nextRows),
+    input.interactions ?? [],
+  );
+}
+
+function timelineRowTurnId(row: MessagesTimelineRow): TurnId | null {
+  switch (row.kind) {
+    case "assistant-meta":
+      return row.message.turnId ?? null;
+    case "interaction":
+      return row.resource.anchorTurnId;
+    case "message":
+      return row.message.role === "assistant" ? (row.message.turnId ?? null) : null;
+    case "proposed-plan":
+      return row.proposedPlan.turnId;
+    case "turn-fold":
+      return row.turnId;
+    case "work":
+      return row.groupedEntries.findLast((entry) => entry.turnId !== undefined)?.turnId ?? null;
+    case "work-live":
+      return row.entry.turnId ?? null;
+    case "work-toggle":
+      return row.turnId ?? null;
+    case "context-compaction":
+    case "thinking":
+    case "working":
+      return null;
+  }
+}
+
+function compareInteractions(left: InteractionResource, right: InteractionResource): number {
+  return (
+    left.createdSequence - right.createdSequence ||
+    left.createdAt.localeCompare(right.createdAt) ||
+    String(left.id).localeCompare(String(right.id))
+  );
+}
+
+/** Keep resources outside tool folds while retaining their initiating turn as the causal anchor. */
+function insertInteractionRows(
+  rows: ReadonlyArray<MessagesTimelineRow>,
+  interactions: ReadonlyArray<InteractionResource>,
+): MessagesTimelineRow[] {
+  if (interactions.length === 0) return [...rows];
+
+  const lastRowIndexByTurnId = new Map<TurnId, number>();
+  rows.forEach((row, index) => {
+    const turnId = timelineRowTurnId(row);
+    if (turnId !== null) lastRowIndexByTurnId.set(turnId, index);
+  });
+
+  const anchoredByRowIndex = new Map<number, InteractionResource[]>();
+  const unanchored: InteractionResource[] = [];
+  for (const resource of interactions) {
+    const rowIndex = lastRowIndexByTurnId.get(resource.anchorTurnId);
+    if (rowIndex === undefined) {
+      unanchored.push(resource);
+      continue;
+    }
+    const anchored = anchoredByRowIndex.get(rowIndex) ?? [];
+    anchored.push(resource);
+    anchoredByRowIndex.set(rowIndex, anchored);
+  }
+
+  const result: MessagesTimelineRow[] = [];
+  rows.forEach((row, index) => {
+    result.push(row);
+    for (const resource of anchoredByRowIndex.get(index)?.toSorted(compareInteractions) ?? []) {
+      result.push({
+        kind: "interaction",
+        id: `interaction:${resource.id}`,
+        createdAt: resource.createdAt,
+        resource,
+      });
+    }
+  });
+
+  for (const resource of unanchored.toSorted(compareInteractions)) {
+    const row: MessagesTimelineRow = {
+      kind: "interaction",
+      id: `interaction:${resource.id}`,
+      createdAt: resource.createdAt,
+      resource,
+    };
+    const nextIndex = result.findIndex(
+      (candidate) => candidate.createdAt !== null && candidate.createdAt > resource.createdAt,
+    );
+    if (nextIndex === -1) result.push(row);
+    else result.splice(nextIndex, 0, row);
+  }
+
+  return result;
 }
 
 type MessagesTimelineRowsInput = Parameters<typeof deriveMessagesTimelineRows>[0];
@@ -1263,6 +1367,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
 
     case "proposed-plan":
       return a.proposedPlan === (b as typeof a).proposedPlan;
+
+    case "interaction":
+      return a.resource.revision === (b as typeof a).resource.revision;
 
     case "work": {
       const bw = b as typeof a;

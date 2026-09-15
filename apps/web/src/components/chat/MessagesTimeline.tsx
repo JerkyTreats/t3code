@@ -3,6 +3,7 @@ import { projectChatPromptForDisplay } from "../../fork/chatPromptContext";
 import {
   type AssistantCitation,
   type EnvironmentId,
+  type InteractionResource,
   type MessageId,
   type ScopedThreadRef,
   type ServerProviderSkill,
@@ -27,6 +28,17 @@ const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
+const NOOP_INTERACTION_ACTION = (_resource: InteractionResource) => {};
+const NOOP_INTERACTION_CANVAS = (
+  _resource: InteractionResource,
+  _canvas: HTMLCanvasElement | null,
+) => {};
+const NOOP_INTERACTION_POINTER = (
+  _resource: InteractionResource,
+  _input: InteractionPointerInput,
+) => {};
+const EMPTY_INTERACTIONS: ReadonlyArray<InteractionResource> = [];
+const EMPTY_INTERACTION_IDS: ReadonlySet<string> = new Set();
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
@@ -170,6 +182,7 @@ import {
 } from "./userMessageTerminalContexts";
 import { deriveAgentSpawnSummary } from "./agentSpawnSummary";
 import { SkillInlineText } from "./SkillInlineText";
+import { InteractionResourceRow, type InteractionPointerInput } from "./InteractionResourceRow";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   buildReviewCommentRenderablePatch,
@@ -208,6 +221,14 @@ interface TimelineRowSharedState {
   workGroupViewState: WorkGroupViewState;
   agentPanelModel: AgentPanelModel;
   onOpenAgents: () => void;
+  interactionHostAvailable: boolean;
+  interactionOwnedIds: ReadonlySet<string>;
+  interactionFrameIds: ReadonlySet<string>;
+  onInteractionEngage: (resource: InteractionResource) => void;
+  onInteractionDisengage: (resource: InteractionResource) => void;
+  onInteractionCancel: (resource: InteractionResource) => void;
+  onInteractionCanvas: (resource: InteractionResource, canvas: HTMLCanvasElement | null) => void;
+  onInteractionPointer: (resource: InteractionResource, input: InteractionPointerInput) => void;
 }
 
 interface TimelineRowActivityState {
@@ -321,6 +342,7 @@ interface MessagesTimelineProps {
   activeTurnStartedAt: string | null;
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
+  interactions?: ReadonlyArray<InteractionResource>;
   latestTurn: TimelineLatestTurn | null;
   runningTurnId: TurnId | null;
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
@@ -357,6 +379,14 @@ interface MessagesTimelineProps {
   onContentOverflowChange?: (overflows: boolean) => void;
   onToolOutputCollapsedAtEnd?: () => void;
   onManualNavigation: () => void;
+  interactionHostAvailable?: boolean;
+  interactionOwnedIds?: ReadonlySet<string>;
+  interactionFrameIds?: ReadonlySet<string>;
+  onInteractionEngage?: (resource: InteractionResource) => void;
+  onInteractionDisengage?: (resource: InteractionResource) => void;
+  onInteractionCancel?: (resource: InteractionResource) => void;
+  onInteractionCanvas?: (resource: InteractionResource, canvas: HTMLCanvasElement | null) => void;
+  onInteractionPointer?: (resource: InteractionResource, input: InteractionPointerInput) => void;
   hideEmptyPlaceholder?: boolean;
   topFadeEnabled?: boolean;
   /** Non-null when older turns exist beyond the loaded window. */
@@ -379,6 +409,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenAgents = NOOP_OPEN_AGENTS,
   listRef,
   timelineEntries,
+  interactions = EMPTY_INTERACTIONS,
   latestTurn,
   runningTurnId,
   turnDiffSummaryByAssistantMessageId,
@@ -405,6 +436,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onContentOverflowChange,
   onToolOutputCollapsedAtEnd,
   onManualNavigation,
+  interactionHostAvailable = false,
+  interactionOwnedIds = EMPTY_INTERACTION_IDS,
+  interactionFrameIds = EMPTY_INTERACTION_IDS,
+  onInteractionEngage = NOOP_INTERACTION_ACTION,
+  onInteractionDisengage = NOOP_INTERACTION_ACTION,
+  onInteractionCancel = NOOP_INTERACTION_ACTION,
+  onInteractionCanvas = NOOP_INTERACTION_CANVAS,
+  onInteractionPointer = NOOP_INTERACTION_POINTER,
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
   loadEarlier = null,
@@ -549,6 +588,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     const projection = deriveMessagesTimelineRowsWithState(
       {
         timelineEntries,
+        interactions,
         latestTurn,
         runningTurnId,
         expandedTurnIds,
@@ -569,6 +609,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     routeThreadKey,
     workspaceRoot,
     timelineEntries,
+    interactions,
     latestTurn,
     runningTurnId,
     expandedTurnIds,
@@ -753,6 +794,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workGroupViewState,
       agentPanelModel,
       onOpenAgents,
+      interactionHostAvailable,
+      interactionOwnedIds,
+      interactionFrameIds,
+      onInteractionEngage,
+      onInteractionDisengage,
+      onInteractionCancel,
+      onInteractionCanvas,
+      onInteractionPointer,
     }),
     [
       readyCitationRequest,
@@ -777,6 +826,14 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       workGroupViewState,
       agentPanelModel,
       onOpenAgents,
+      interactionHostAvailable,
+      interactionOwnedIds,
+      interactionFrameIds,
+      onInteractionEngage,
+      onInteractionDisengage,
+      onInteractionCancel,
+      onInteractionCanvas,
+      onInteractionPointer,
     ],
   );
   const activityState = useMemo<TimelineRowActivityState>(
@@ -1239,11 +1296,38 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       ) : null}
       {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
+      {row.kind === "interaction" ? <InteractionTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "thinking" ? <ThinkingTimelineRow /> : null}
     </div>
   );
 });
+
+function InteractionTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "interaction" }> }) {
+  const {
+    interactionHostAvailable,
+    interactionOwnedIds,
+    interactionFrameIds,
+    onInteractionEngage,
+    onInteractionDisengage,
+    onInteractionCancel,
+    onInteractionCanvas,
+    onInteractionPointer,
+  } = use(TimelineRowCtx);
+  return (
+    <InteractionResourceRow
+      resource={row.resource}
+      hostAvailable={interactionHostAvailable}
+      engagementOwned={interactionOwnedIds.has(row.resource.id)}
+      hasFrame={interactionFrameIds.has(row.resource.id)}
+      onEngage={onInteractionEngage}
+      onDisengage={onInteractionDisengage}
+      onCancel={onInteractionCancel}
+      onCanvasRef={onInteractionCanvas}
+      onPointerInput={onInteractionPointer}
+    />
+  );
+}
 
 function ContextCompactionTimelineRow({
   row,

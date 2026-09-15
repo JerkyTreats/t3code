@@ -13,7 +13,9 @@ import type {
   TurnId,
 } from "@t3tools/contracts";
 import { isImportedAgentSessionMessageId } from "@t3tools/contracts";
+import { InteractionResourceActivityPayload } from "@t3tools/contracts";
 import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
+import * as Schema from "effect/Schema";
 
 export type ThreadDetailReducerResult =
   | { readonly kind: "updated"; readonly thread: OrchestrationThread }
@@ -110,6 +112,7 @@ export function applyThreadDetailEvent(
           messages: [],
           proposedPlans: [],
           activities: [],
+          interactions: [],
           checkpoints: [],
           session: null,
         },
@@ -597,6 +600,29 @@ export function applyThreadDetailEvent(
     // ── Activities ──────────────────────────────────────────────────
     case "thread.activity-appended": {
       const activity = event.payload.activity;
+      if (activity.kind === "interaction.resource.changed") {
+        const decoded = Schema.decodeUnknownOption(InteractionResourceActivityPayload)(
+          activity.payload,
+        );
+        if (decoded._tag === "None") {
+          return { kind: "unchanged" };
+        }
+        const resource = decoded.value.resource;
+        return {
+          kind: "updated",
+          thread: {
+            ...thread,
+            interactions: [
+              ...(thread.interactions ?? []).filter((entry) => entry.id !== resource.id),
+              resource,
+            ].toSorted(
+              (left, right) =>
+                left.createdSequence - right.createdSequence || left.id.localeCompare(right.id),
+            ),
+            updatedAt: event.occurredAt,
+          },
+        };
+      }
       // A resolvable context-window update supersedes earlier resolvable ones
       // for the same turn: consumers only read the latest value (walking the
       // array backwards), and providers stream these updates continuously, so

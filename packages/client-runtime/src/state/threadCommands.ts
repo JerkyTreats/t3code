@@ -1,6 +1,6 @@
 import * as Crypto from "effect/Crypto";
 import { Atom } from "effect/unstable/reactivity";
-import { WS_METHODS } from "@t3tools/contracts";
+import { ORCHESTRATION_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
 
 import {
   createAtomCommandScheduler,
@@ -201,6 +201,30 @@ export function createThreadEnvironmentAtoms<R, E>(
     stopSession: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:stop-session",
       execute: (input: StopThreadSessionInput) => stopThreadSession(input),
+      scheduler,
+      concurrency,
+    }),
+    setInteractionPresentation: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:interaction:set-presentation",
+      tag: ORCHESTRATION_WS_METHODS.setInteractionPresentation,
+      scheduler,
+      concurrency,
+    }),
+    engageInteraction: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:interaction:engage",
+      tag: ORCHESTRATION_WS_METHODS.engageInteraction,
+      scheduler,
+      concurrency,
+    }),
+    disengageInteraction: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:interaction:disengage",
+      tag: ORCHESTRATION_WS_METHODS.disengageInteraction,
+      scheduler,
+      concurrency,
+    }),
+    cancelInteraction: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:commands:interaction:cancel",
+      tag: ORCHESTRATION_WS_METHODS.cancelInteraction,
       scheduler,
       concurrency,
     }),

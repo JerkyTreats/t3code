@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
-import { CheckpointRef, MessageId, TurnId } from "@t3tools/contracts";
+import {
+  CheckpointRef,
+  MessageId,
+  ThreadId,
+  TurnId,
+  type InteractionResource,
+} from "@t3tools/contracts";
 import {
   computeStableMessagesTimelineRows,
   computeMessageDurationStart,
@@ -22,6 +28,42 @@ import {
 } from "../../session-logic";
 import { buildRevertTurnCountByUserMessageId } from "../ChatView.logic";
 import { isImageAttachment, type ChatMessage, type TurnDiffSummary } from "../../types";
+
+function interactionResourceFixture(
+  overrides: Partial<InteractionResource> = {},
+): InteractionResource {
+  return {
+    id: "interaction-1" as InteractionResource["id"],
+    threadId: ThreadId.make("thread-1"),
+    revision: 0,
+    anchorTurnId: TurnId.make("turn-1"),
+    createdSequence: 10,
+    capabilityId: "wallpaper.interaction.lab.v1",
+    createdByClientId: "client-fixture" as InteractionResource["createdByClientId"],
+    request: {
+      ref: "request-1",
+      revision: "1",
+      digest: "digest-1",
+      conditionRevision: "1",
+      inputProvenance: "synthetic",
+    },
+    display: { title: "Guide the field", summary: "Move the pointer through the target." },
+    lifecycle: { state: "open" },
+    presentation: {
+      state: "unavailable",
+      presentationRevision: 0,
+      lastFrameSequence: null,
+      droppedFrames: 0,
+    },
+    engagement: { state: "disengaged", latestEpoch: 0 },
+    evidence: null,
+    resolution: null,
+    continuation: { state: "none" },
+    createdAt: "2026-01-01T00:00:02.000Z",
+    updatedAt: "2026-01-01T00:00:02.000Z",
+    ...overrides,
+  };
+}
 
 describe("streaming row projection", () => {
   function fixture(text = "") {
@@ -2617,7 +2659,132 @@ describe("deriveMessagesTimelineRows", () => {
   );
 });
 
+describe("interaction resource rows", () => {
+  const baseInput = {
+    isWorking: false,
+    activeTurnStartedAt: null,
+    turnDiffSummaryByAssistantMessageId: new Map<MessageId, TurnDiffSummary>(),
+    revertTurnCountByUserMessageId: new Map<MessageId, number>(),
+  };
+
+  it("places resources after their anchor turn and orders them by server sequence", () => {
+    const firstTurnId = TurnId.make("turn-1");
+    const secondTurnId = TurnId.make("turn-2");
+    const firstMessage = {
+      id: "assistant-1" as never,
+      role: "assistant" as const,
+      text: "Open the interaction.",
+      turnId: firstTurnId,
+      createdAt: "2026-01-01T00:00:01.000Z",
+      updatedAt: "2026-01-01T00:00:01.000Z",
+      streaming: false,
+    };
+    const secondMessage = {
+      ...firstMessage,
+      id: "assistant-2" as never,
+      text: "Later work.",
+      turnId: secondTurnId,
+      createdAt: "2026-01-01T00:00:04.000Z",
+      updatedAt: "2026-01-01T00:00:04.000Z",
+    };
+    const rows = deriveMessagesTimelineRows({
+      ...baseInput,
+      timelineEntries: [
+        {
+          id: "entry-assistant-1",
+          kind: "message",
+          createdAt: firstMessage.createdAt,
+          message: firstMessage,
+        },
+        {
+          id: "entry-assistant-2",
+          kind: "message",
+          createdAt: secondMessage.createdAt,
+          message: secondMessage,
+        },
+      ],
+      interactions: [
+        interactionResourceFixture({ id: "interaction-2" as never, createdSequence: 12 }),
+        interactionResourceFixture({ id: "interaction-1" as never, createdSequence: 11 }),
+      ],
+    });
+
+    const interactionIndexes = rows.flatMap((row, index) =>
+      row.kind === "interaction" ? [index] : [],
+    );
+    expect(interactionIndexes).toHaveLength(2);
+    expect(interactionIndexes[1]).toBe(interactionIndexes[0]! + 1);
+    expect(rows[interactionIndexes[0]!]).toMatchObject({ id: "interaction:interaction-1" });
+    expect(rows[interactionIndexes[1]!]).toMatchObject({ id: "interaction:interaction-2" });
+    expect(rows.slice(0, interactionIndexes[0]).at(-1)).toMatchObject({
+      kind: "message",
+      message: { turnId: firstTurnId },
+    });
+    expect(
+      rows.slice(interactionIndexes[1]! + 1).find((row) => row.kind === "message"),
+    ).toMatchObject({ message: { turnId: secondTurnId } });
+  });
+
+  it("falls back to created time when the anchor turn is outside the loaded window", () => {
+    const message = (id: string, createdAt: string) => ({
+      id: `entry-${id}`,
+      kind: "message" as const,
+      createdAt,
+      message: {
+        id: id as never,
+        role: "user" as const,
+        text: id,
+        turnId: null,
+        createdAt,
+        updatedAt: createdAt,
+        streaming: false,
+      },
+    });
+    const rows = deriveMessagesTimelineRows({
+      ...baseInput,
+      timelineEntries: [
+        message("before", "2026-01-01T00:00:01.000Z"),
+        message("after", "2026-01-01T00:00:03.000Z"),
+      ],
+      interactions: [interactionResourceFixture({ anchorTurnId: TurnId.make("not-loaded") })],
+    });
+
+    expect(rows.map((row) => row.id)).toEqual([
+      "entry-before",
+      "interaction:interaction-1",
+      "entry-after",
+    ]);
+  });
+});
+
 describe("computeStableMessagesTimelineRows", () => {
+  it("reuses an interaction row until its resource revision changes", () => {
+    const resource = interactionResourceFixture();
+    const firstRow: MessagesTimelineRow = {
+      kind: "interaction",
+      id: `interaction:${resource.id}`,
+      createdAt: resource.createdAt,
+      resource,
+    };
+    const initial = computeStableMessagesTimelineRows([firstRow], {
+      byId: new Map(),
+      result: [],
+    });
+    const equivalentRow = { ...firstRow, resource: { ...resource } };
+    const repeated = computeStableMessagesTimelineRows([equivalentRow], initial);
+
+    expect(repeated).toBe(initial);
+    expect(repeated.result[0]).toBe(firstRow);
+
+    const revisedRow = {
+      ...equivalentRow,
+      resource: { ...resource, revision: resource.revision + 1 },
+    };
+    const revised = computeStableMessagesTimelineRows([revisedRow], repeated);
+    expect(revised).not.toBe(repeated);
+    expect(revised.result[0]).toBe(revisedRow);
+  });
+
   it("replaces a cached work toggle when its icon presentation changes", () => {
     const initialRow: MessagesTimelineRow = {
       kind: "work-toggle",

@@ -2,7 +2,7 @@ import { composeChatPrompt } from "../../fork/chatPromptContext";
 import { buildFileReviewComment } from "../../reviewCommentContext";
 import { CheckpointRef, EnvironmentId, MessageId, TurnId } from "@t3tools/contracts";
 import { codexFeedbackMessage } from "@t3tools/client-runtime/state/threads";
-import { act, createRef, useLayoutEffect, type ReactNode, type Ref } from "react";
+import { createRef, useLayoutEffect, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
@@ -179,11 +179,17 @@ beforeAll(async () => {
 const ACTIVE_THREAD_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 const MESSAGE_CREATED_AT = "2026-03-17T19:12:28.000Z";
 
+const flushRenderer = async (action: () => void) => {
+  action();
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+};
+
 function buildProps() {
   return {
     isWorking: false,
     activeTurnStartedAt: null,
     listRef: createRef<LegendListRef | null>(),
+    interactions: [],
     latestTurn: null,
     runningTurnId: null,
     turnDiffSummaryByAssistantMessageId: new Map(),
@@ -204,6 +210,10 @@ function buildProps() {
     liveFollowEnabled: true,
     onIsAtEndChange: () => {},
     onManualNavigation: () => {},
+    interactionHostAvailable: false,
+    onInteractionEngage: () => {},
+    onInteractionDisengage: () => {},
+    onInteractionCancel: () => {},
   };
 }
 
@@ -257,9 +267,9 @@ describe("MessagesTimeline", () => {
         return nextFrame;
       });
       vi.stubGlobal("cancelAnimationFrame", (frame: number) => frames.delete(frame));
-      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", false);
       const flushFrame = () =>
-        act(() => {
+        flushRenderer(() => {
           const callbacks = [...frames.values()];
           frames.clear();
           callbacks.forEach((callback) => callback(0));
@@ -309,23 +319,23 @@ describe("MessagesTimeline", () => {
       }
       let renderer: ReactTestRenderer | undefined;
       try {
-        await act(() => {
+        await flushRenderer(() => {
           renderer = create(<ThreadProbe />);
         });
         const toggle = renderer!.root.findByProps({ "aria-expanded": false });
-        await act(() => toggle.props.onClick());
+        await flushRenderer(() => toggle.props.onClick());
         await flushFrame();
         await flushFrame();
         expect(isResting).toBe(true);
 
         timelineIsAtEnd = false;
-        await act(() => toggle.props.onClick());
+        await flushRenderer(() => toggle.props.onClick());
         await flushFrame();
         timelineIsAtEnd = isAtEnd;
         await flushFrame();
         expect(isResting).toBe(!isAtEnd);
       } finally {
-        await act(() => renderer?.unmount());
+        await flushRenderer(() => renderer?.unmount());
       }
     },
   );
