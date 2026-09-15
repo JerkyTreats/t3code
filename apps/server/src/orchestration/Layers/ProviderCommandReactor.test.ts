@@ -4,6 +4,9 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import {
+  AuthClientId,
+  InteractionId,
+  type InteractionResource,
   ModelSelection,
   ProviderRuntimeEvent,
   ProviderSession,
@@ -78,6 +81,58 @@ const asProjectId = (value: string): ProjectId => ProjectId.make(value);
 const asApprovalRequestId = (value: string): ApprovalRequestId => ApprovalRequestId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
+
+function interactionResource(
+  continuation: InteractionResource["continuation"],
+): InteractionResource {
+  return {
+    id: InteractionId.make("interaction-reactor"),
+    threadId: ThreadId.make("thread-1"),
+    revision: 4,
+    anchorTurnId: TurnId.make("interaction-anchor"),
+    createdSequence: 3,
+    capabilityId: "wallpaper.interaction.lab.v1",
+    createdByClientId: AuthClientId.make("interaction-owner"),
+    request: {
+      ref: "request-reactor",
+      revision: "request-revision-1",
+      digest: "request-digest-1",
+      conditionRevision: "condition-revision-1",
+      inputProvenance: "synthetic",
+    },
+    display: { title: "Synthetic input test", summary: "Move through the target." },
+    lifecycle: { state: "resolved", ownerReceiptId: "owner-receipt-1" },
+    presentation: {
+      state: "stopped",
+      ownerClientId: null,
+      presentationRevision: 1,
+      lastFrameSequence: "3",
+      droppedFrames: 0,
+    },
+    engagement: { state: "disengaged", latestEpoch: 1 },
+    evidence: {
+      ref: "interaction-evidence:fixture",
+      digest: "sha256:evidence",
+      byteCount: 64,
+      mediaType: "application/vnd.t3.interaction-evidence+json",
+      sourceSequenceStart: "1",
+      sourceSequenceEnd: "3",
+      nativeTimeStartNs: "10",
+      nativeTimeEndNs: "30",
+    },
+    resolution: {
+      ownerOperationId: "owner-operation-1",
+      ownerReceiptId: "owner-receipt-1",
+      summary: "Synthetic motion observed.",
+      timingBasis: "native-monotonic-v1",
+      provenanceClass: "synthetic",
+      resolvedByClientId: AuthClientId.make("interaction-resolver"),
+    },
+    continuation,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
 
 const assistantQuoteText = "Retain the reconnect backoff.";
 const assistantCitation = {
@@ -182,6 +237,7 @@ describe("ProviderCommandReactor", () => {
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderServiceError>;
     readonly tryHandlePromptCommandEffect?: ProviderAuthService["Service"]["tryHandlePromptCommand"];
+    readonly interactionBeforeStart?: InteractionResource;
   }) {
     const now = "2026-01-01T00:00:00.000Z";
     const baseDir =
@@ -528,6 +584,25 @@ describe("ProviderCommandReactor", () => {
               'Old assistant output', 'invalid json', 0, ${now}, ${now}
             )
           `;
+        }),
+      );
+    }
+    if (input?.interactionBeforeStart) {
+      await Effect.runPromise(
+        engine.dispatch({
+          type: "thread.activity.append",
+          commandId: CommandId.make("interaction-before-reactor-start"),
+          threadId: ThreadId.make("thread-1"),
+          activity: {
+            id: EventId.make("interaction-before-reactor-start"),
+            tone: "info",
+            kind: "interaction.resource.changed",
+            summary: input.interactionBeforeStart.display.title,
+            payload: { resource: input.interactionBeforeStart },
+            turnId: input.interactionBeforeStart.anchorTurnId,
+            createdAt: input.interactionBeforeStart.updatedAt,
+          },
+          createdAt: input.interactionBeforeStart.updatedAt,
         }),
       );
     }
@@ -4020,6 +4095,128 @@ describe("ProviderCommandReactor", () => {
       expect(thread?.settledOverride).toBe("settled");
       expect(thread?.session?.status).toBe("stopped");
       expect(thread?.session?.providerInstanceId).toBe(ProviderInstanceId.make("codex_work"));
+    }),
+  );
+
+  effectIt.effect("admits a resolved interaction and sends its continuation exactly once", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const resource = interactionResource({ state: "pending", resolutionRevision: 4 });
+      yield* harness.engine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make("publish-pending-interaction"),
+        threadId: resource.threadId,
+        activity: {
+          id: EventId.make("publish-pending-interaction"),
+          tone: "info",
+          kind: "interaction.resource.changed",
+          summary: resource.display.title,
+          payload: { resource },
+          turnId: resource.anchorTurnId,
+          createdAt: resource.updatedAt,
+        },
+        createdAt: resource.updatedAt,
+      });
+
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+      yield* Effect.promise(() => harness.drain());
+      expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+      const detail = yield* harness.snapshotQuery
+        .getThreadDetailSnapshot(resource.threadId)
+        .pipe(Effect.map(Option.getOrThrow));
+      expect(detail.thread.interactions?.[0]?.continuation).toMatchObject({
+        state: "started",
+        turnId: TurnId.make("turn-1"),
+      });
+    }),
+  );
+
+  effectIt.effect("resumes an admitted continuation during startup", () =>
+    Effect.gen(function* () {
+      const resource = interactionResource({
+        state: "admitted",
+        continuationId: CommandId.make("interaction-continuation:interaction-reactor:4"),
+        resolutionRevision: 4,
+      });
+      const harness = yield* Effect.promise(() =>
+        createHarness({ interactionBeforeStart: resource }),
+      );
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+      yield* Effect.promise(() => harness.drain());
+      expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+    }),
+  );
+
+  effectIt.effect("marks an interrupted submitting continuation ambiguous on startup", () =>
+    Effect.gen(function* () {
+      const resource = interactionResource({
+        state: "submitting",
+        continuationId: CommandId.make("interaction-continuation:interaction-reactor:4"),
+        resolutionRevision: 4,
+      });
+      const harness = yield* Effect.promise(() =>
+        createHarness({ interactionBeforeStart: resource }),
+      );
+      yield* Effect.promise(() =>
+        waitFor(async () => {
+          const detail = await harness.runEffect(
+            harness.snapshotQuery
+              .getThreadDetailSnapshot(resource.threadId)
+              .pipe(Effect.map(Option.getOrThrow)),
+          );
+          return detail.thread.interactions?.[0]?.continuation.state === "ambiguous";
+        }),
+      );
+      const detail = yield* harness.snapshotQuery
+        .getThreadDetailSnapshot(resource.threadId)
+        .pipe(Effect.map(Option.getOrThrow));
+      expect(detail.thread.interactions?.[0]?.continuation.state).toBe("ambiguous");
+      expect(harness.sendTurn).not.toHaveBeenCalled();
+    }),
+  );
+
+  effectIt.effect("leaves a pending interaction behind an active human turn", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const threadId = ThreadId.make("thread-1");
+      yield* harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("human-session-running"),
+        threadId,
+        session: {
+          threadId,
+          status: "running",
+          providerName: "codex",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeMode: "approval-required",
+          activeTurnId: TurnId.make("human-turn"),
+          lastError: null,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      const resource = interactionResource({ state: "pending", resolutionRevision: 4 });
+      yield* harness.engine.dispatch({
+        type: "thread.activity.append",
+        commandId: CommandId.make("publish-pending-behind-human"),
+        threadId,
+        activity: {
+          id: EventId.make("publish-pending-behind-human"),
+          tone: "info",
+          kind: "interaction.resource.changed",
+          summary: resource.display.title,
+          payload: { resource },
+          turnId: resource.anchorTurnId,
+          createdAt: resource.updatedAt,
+        },
+        createdAt: resource.updatedAt,
+      });
+      yield* Effect.promise(() => harness.drain());
+      const detail = yield* harness.snapshotQuery
+        .getThreadDetailSnapshot(threadId)
+        .pipe(Effect.map(Option.getOrThrow));
+      expect(detail.thread.interactions?.[0]?.continuation.state).toBe("pending");
+      expect(harness.sendTurn).not.toHaveBeenCalled();
     }),
   );
 });

@@ -43,6 +43,14 @@ async function persistEvidenceArtifact(
   bytes: Buffer,
 ): Promise<void> {
   await NodeFSP.mkdir(directoryPath, { recursive: true, mode: 0o700 });
+  const directoryStat = await NodeFSP.lstat(directoryPath);
+  if (
+    !directoryStat.isDirectory() ||
+    directoryStat.isSymbolicLink() ||
+    (directoryStat.mode & 0o077) !== 0
+  ) {
+    throw new Error("Interaction evidence root must be a private directory.");
+  }
   try {
     const artifact = await NodeFSP.open(artifactPath, "wx", 0o600);
     try {
@@ -79,6 +87,17 @@ async function persistEvidenceArtifact(
   } finally {
     await directory.close();
   }
+}
+
+export function resolveInteractionEvidenceDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.T3_INTERACTION_EVIDENCE_ROOT?.trim();
+  if (configured === undefined || configured.length === 0) {
+    return NodePath.join(NodeOS.homedir(), ".t3code", "interaction-evidence");
+  }
+  if (!NodePath.isAbsolute(configured)) {
+    throw new Error("T3_INTERACTION_EVIDENCE_ROOT must be an absolute path.");
+  }
+  return NodePath.normalize(configured);
 }
 
 function parseJsonWithoutDuplicateKeys(text: string): unknown {
@@ -235,9 +254,7 @@ export class InteractionManager {
   constructor(options: InteractionManagerOptions = {}) {
     this.#capability = options.capability ?? nativeInteractionCapability;
     this.#now = options.now ?? Date.now;
-    this.#evidenceDirectory =
-      options.evidenceDirectory ??
-      NodePath.join(NodeOS.homedir(), ".t3code", "interaction-evidence");
+    this.#evidenceDirectory = options.evidenceDirectory ?? resolveInteractionEvidenceDirectory();
     this.#observationSink = options.observationSink ?? nativeObservationSink;
   }
 

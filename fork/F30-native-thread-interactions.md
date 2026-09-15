@@ -32,7 +32,7 @@ Create, cancel, resolve, engagement, presentation, and continuation transitions 
 
 Only a satisfied resolution with retained evidence requests a continuation. Admission uses a stable command identity derived from the interaction and resolution revision. The visible admitted, submitting, or started state is the receipt consumed by `t3.interaction_resolve_and_await_continuation` version 1. Its exact capability content identity is `capability-contract-1f57a21badb3dfe994c184f3af5873872f4753ff7aa510b6bfd2c949f67c3aff`.
 
-That capability binds `t3.base-url` and the private `t3.access-token-file`, consumes `interaction_qualified_receipt`, and emits `t3_interaction_continuation_admission`. The output records request identity, interaction and thread identity, current resource revision, snapshot sequence, continuation identity, and a continuation state of admitted, submitting, or started.
+That capability binds `t3.base-url` and the private `t3.access-token-file`, consumes `interaction_qualified_receipt`, and emits `t3_interaction_continuation_admission`. The output records request identity, interaction and thread identity, current resource and resolution revisions, snapshot sequence, owner receipt, qualified evidence reference and digest, continuation identity, and a continuation state of admitted, submitting, or started.
 
 ## Desktop capability boundary
 
@@ -42,6 +42,8 @@ Electron main accepts only two root-configured executable bindings:
 - `T3_INTERACTION_OWNER_BINARY_PATH` and `T3_INTERACTION_OWNER_BINARY_SHA256`
 
 `T3_INTERACTION_OWNER_STATE_ROOT` selects the trusted external owner state directory. Paths must be absolute regular executable artifacts and each lowercase SHA-256 is verified before launch. Neither renderer content nor conversation content can select a path, argument, environment, state root, or working directory. Child environments use a small allowlist.
+
+`T3_INTERACTION_EVIDENCE_ROOT` selects an absolute main-process-only evidence directory so staging and production retention never share state. The host requires that directory to be private and not a symbolic link.
 
 Wallpaper uses the fixed `meld-sim-lab --conversation-stdio --no-audio` invocation and MWI1 framing. The host enforces record sizes, exact dimensions, stream and session identity, presentation revision, monotonic interaction generation, source ordering, frame and input freshness, and an explicit armed fence. Armed and Disarmed records carry the exact generation after their applied transition. Input receipts carry the generation after their final accepted sample, and later frames may advance but never regress it. Cancellation stops input locally and fences later owner admissions. The durable presentation owner includes a unique authenticated WebSocket connection identity, so another connection using the same credential cannot share its lease. Connection teardown explicitly disengages and stops the owned presentation.
 

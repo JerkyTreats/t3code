@@ -11,7 +11,7 @@ import { ThreadId } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { InteractionChild } from "./InteractionCapability.ts";
-import { InteractionManager } from "./Manager.ts";
+import { InteractionManager, resolveInteractionEvidenceDirectory } from "./Manager.ts";
 import type { NativeObservationSink, OwnerResultV1 } from "./NativeObservationSink.ts";
 
 const sessionId = "11111111111111111111111111111111";
@@ -157,6 +157,16 @@ afterEach(async () => {
 });
 
 describe("InteractionManager", () => {
+  it("uses only an absolute main-process evidence root override", () => {
+    expect(
+      resolveInteractionEvidenceDirectory({
+        T3_INTERACTION_EVIDENCE_ROOT: "/var/lib/t3-staging/interaction-evidence",
+      }),
+    ).toBe("/var/lib/t3-staging/interaction-evidence");
+    expect(() =>
+      resolveInteractionEvidenceDirectory({ T3_INTERACTION_EVIDENCE_ROOT: "relative/evidence" }),
+    ).toThrow("must be an absolute path");
+  });
   it("launches only the admitted capability and writes framed host records", async () => {
     const child = new FakeChild();
     const manager = new InteractionManager({
