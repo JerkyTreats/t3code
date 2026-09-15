@@ -29,6 +29,8 @@ import {
   ProjectId,
   ThreadLinkedPullRequest,
   ThreadId,
+  InteractionResourceActivityPayload,
+  type InteractionResource,
 } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
@@ -407,6 +409,32 @@ function mapThreadActivityRow(
   };
 }
 
+function interactionResourcesFromRows(
+  rows: ReadonlyArray<Schema.Schema.Type<typeof ProjectionThreadActivityDbRowSchema>>,
+): Map<string, ReadonlyArray<InteractionResource>> {
+  const latest = new Map<string, Map<string, InteractionResource>>();
+  for (const row of rows) {
+    const decoded = Schema.decodeUnknownOption(InteractionResourceActivityPayload)(row.payload);
+    if (Option.isNone(decoded)) continue;
+    const resource = decoded.value.resource;
+    const byId = latest.get(row.threadId) ?? new Map<string, InteractionResource>();
+    const current = byId.get(resource.id);
+    if (!current || current.revision < resource.revision) {
+      byId.set(resource.id, resource);
+    }
+    latest.set(row.threadId, byId);
+  }
+  return new Map(
+    [...latest.entries()].map(([threadId, byId]) => [
+      threadId,
+      [...byId.values()].toSorted(
+        (left, right) =>
+          left.createdSequence - right.createdSequence || left.id.localeCompare(right.id),
+      ),
+    ]),
+  );
+}
+
 function toPersistenceSqlOrDecodeError(sqlOperation: string, decodeOperation: string) {
   return (cause: unknown): ProjectionRepositoryError =>
     Schema.isSchemaError(cause)
@@ -654,6 +682,26 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at ASC,
           activity_id ASC
       `,
+  });
+
+  const listInteractionActivityRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: () => sql`
+      SELECT
+        activity_id AS "activityId",
+        thread_id AS "threadId",
+        turn_id AS "turnId",
+        tone,
+        kind,
+        summary,
+        payload_json AS "payload",
+        sequence,
+        created_at AS "createdAt"
+      FROM projection_thread_activities
+      WHERE kind = 'interaction.resource.changed'
+      ORDER BY thread_id ASC, sequence ASC, activity_id ASC
+    `,
   });
 
   const listThreadSessionRows = SqlSchema.findAll({
@@ -1197,6 +1245,27 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           created_at ASC,
           activity_id ASC
       `,
+  });
+
+  const listInteractionActivityRowsByThread = SqlSchema.findAll({
+    Request: ThreadIdLookupInput,
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: ({ threadId }) => sql`
+      SELECT
+        activity_id AS "activityId",
+        thread_id AS "threadId",
+        turn_id AS "turnId",
+        tone,
+        kind,
+        summary,
+        payload_json AS "payload",
+        sequence,
+        created_at AS "createdAt"
+      FROM projection_thread_activities
+      WHERE thread_id = ${threadId}
+        AND kind = 'interaction.resource.changed'
+      ORDER BY sequence ASC, activity_id ASC
+    `,
   });
 
   const getUserInputActivityRow = SqlSchema.findOneOption({
@@ -1995,6 +2064,7 @@ pending_approval_requests AS (
                 projectRows,
                 { includeDeleted: true },
               );
+              const interactionsByThread = interactionResourcesFromRows(activityRows);
 
               const projects: ReadonlyArray<OrchestrationProject> = projectRows.map((row) => ({
                 id: row.projectId,
@@ -2039,7 +2109,10 @@ pending_approval_requests AS (
                 deletedAt: row.deletedAt,
                 messages: messagesByThread.get(row.threadId) ?? [],
                 proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
-                activities: activitiesByThread.get(row.threadId) ?? [],
+                activities: (activitiesByThread.get(row.threadId) ?? []).filter(
+                  (activity) => activity.kind !== "interaction.resource.changed",
+                ),
+                interactions: interactionsByThread.get(row.threadId) ?? [],
                 checkpoints: checkpointsByThread.get(row.threadId) ?? [],
                 session: sessionsByThread.get(row.threadId) ?? null,
               }));
@@ -2110,6 +2183,14 @@ pending_approval_requests AS (
               ),
             ),
           ),
+          listInteractionActivityRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getCommandReadModel:listInteractions:query",
+                "ProjectionSnapshotQuery.getCommandReadModel:listInteractions:decodeRows",
+              ),
+            ),
+          ),
           listProjectionStateRows(undefined).pipe(
             Effect.mapError(
               toPersistenceSqlOrDecodeError(
@@ -2122,7 +2203,15 @@ pending_approval_requests AS (
       )
       .pipe(
         Effect.flatMap(
-          ([projectRows, threadRows, proposedPlanRows, sessionRows, latestTurnRows, stateRows]) =>
+          ([
+            projectRows,
+            threadRows,
+            proposedPlanRows,
+            sessionRows,
+            latestTurnRows,
+            interactionRows,
+            stateRows,
+          ]) =>
             Effect.sync(() => {
               let updatedAt: string | null = null;
               const projects: OrchestrationProject[] = [];
@@ -2201,6 +2290,7 @@ pending_approval_requests AS (
               }
               const proposedPlansByThread = new Map<string, Array<OrchestrationProposedPlan>>();
               const sessionByThread = new Map<string, OrchestrationSession>();
+              const interactionsByThread = interactionResourcesFromRows(interactionRows);
 
               for (let index = 0; index < sessionRows.length; index += 1) {
                 const row = sessionRows[index];
@@ -2253,6 +2343,7 @@ pending_approval_requests AS (
                   messages: [],
                   proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],
                   activities: [],
+                  interactions: interactionsByThread.get(row.threadId) ?? [],
                   checkpoints: [],
                   session: sessionByThread.get(row.threadId) ?? null,
                 });
@@ -3027,6 +3118,7 @@ pending_approval_requests AS (
         messageRows,
         proposedPlanRows,
         activities,
+        interactionRows,
         checkpointRows,
         latestTurnRow,
         sessionRow,
@@ -3059,6 +3151,14 @@ pending_approval_requests AS (
           ),
         ),
         activitiesEffect,
+        listInteractionActivityRowsByThread({ threadId }).pipe(
+          Effect.mapError(
+            toPersistenceSqlOrDecodeError(
+              "ProjectionSnapshotQuery.getThreadDetailById:listInteractions:query",
+              "ProjectionSnapshotQuery.getThreadDetailById:listInteractions:decodeRows",
+            ),
+          ),
+        ),
         listCheckpointRowsByThread({ threadId }).pipe(
           Effect.mapError(
             toPersistenceSqlOrDecodeError(
@@ -3130,7 +3230,10 @@ pending_approval_requests AS (
           return message;
         }),
         proposedPlans: proposedPlanRows.map(mapProposedPlanRow),
-        activities,
+        activities: activities.filter(
+          (activity) => activity.kind !== "interaction.resource.changed",
+        ),
+        interactions: interactionResourcesFromRows(interactionRows).get(threadId) ?? [],
         checkpoints: checkpointRows.map((row) => ({
           turnId: row.turnId,
           checkpointTurnCount: row.checkpointTurnCount,

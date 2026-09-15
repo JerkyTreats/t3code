@@ -5,6 +5,7 @@ import {
   OrchestrationMessage,
   OrchestrationSession,
   OrchestrationThread,
+  InteractionResourceActivityPayload,
 } from "@t3tools/contracts";
 import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
 import { isBoardEvent } from "../board/Event.ts";
@@ -12,6 +13,7 @@ import { projectBoardEventOntoReadModel } from "../board/EventProjection.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Predicate from "effect/Predicate";
+import * as Option from "effect/Option";
 
 import { toProjectorDecodeError, type OrchestrationProjectorDecodeError } from "./Errors.ts";
 import {
@@ -354,6 +356,7 @@ export function projectEvent(
             deletedAt: null,
             messages: [],
             activities: [],
+            interactions: [],
             checkpoints: [],
             session: null,
           },
@@ -845,6 +848,29 @@ export function projectEvent(
           const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
           if (!thread) {
             return nextBase;
+          }
+
+          if (payload.activity.kind === "interaction.resource.changed") {
+            const decoded = Schema.decodeUnknownOption(InteractionResourceActivityPayload)(
+              payload.activity.payload,
+            );
+            if (Option.isNone(decoded)) {
+              return nextBase;
+            }
+            const resource = decoded.value.resource;
+            return {
+              ...nextBase,
+              threads: updateThread(nextBase.threads, payload.threadId, {
+                interactions: [
+                  ...(thread.interactions ?? []).filter((entry) => entry.id !== resource.id),
+                  resource,
+                ].toSorted(
+                  (left, right) =>
+                    left.createdSequence - right.createdSequence || left.id.localeCompare(right.id),
+                ),
+                updatedAt: event.occurredAt,
+              }),
+            };
           }
 
           const activities = retainThreadActivities(

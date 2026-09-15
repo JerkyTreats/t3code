@@ -22,6 +22,7 @@ import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as Encoding from "effect/Encoding";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import {
@@ -62,6 +63,28 @@ interface CommandEnvelope {
   origin: OrchestrationClientOrigin | undefined;
   result: Deferred.Deferred<{ sequence: number }, OrchestrationDispatchError>;
   startedAtMs: number;
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const fields = Object.entries(value as Record<string, unknown>)
+      .filter(([, field]) => field !== undefined)
+      .toSorted(([left], [right]) => left.localeCompare(right));
+    return `{${fields.map(([key, field]) => `${JSON.stringify(key)}:${canonicalJson(field)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function interactionCommandFingerprint(command: OrchestrationCommand, crypto: Crypto.Crypto) {
+  if (!command.type.startsWith("interaction.")) return Effect.succeed<string | null>(null);
+  const withoutOperation = { ...command } as Record<string, unknown>;
+  delete withoutOperation.commandId;
+  delete withoutOperation.createdAt;
+  delete withoutOperation.operationId;
+  return crypto
+    .digest("SHA-256", new TextEncoder().encode(canonicalJson(withoutOperation)))
+    .pipe(Effect.map(Encoding.encodeHex));
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
@@ -116,6 +139,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
   const processEnvelope = (envelope: CommandEnvelope): Effect.Effect<void> => {
     const dispatchStartSequence = commandReadModel.snapshotSequence;
     let processingStartedAtMs = 0;
+    let payloadFingerprint: string | null = null;
     const aggregateRef = commandToAggregateRef(envelope.command);
     const baseMetricAttributes = {
       commandType: envelope.command.type,
@@ -150,6 +174,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         const existingReceipt = yield* commandReceiptRepository.getByCommandId({
           commandId: envelope.command.commandId,
         });
+        payloadFingerprint = yield* interactionCommandFingerprint(envelope.command, crypto);
         if (Option.isSome(existingReceipt)) {
           // A receipt only proves this exact command was handled. Replaying it
           // for a command aimed at another aggregate would report success for
@@ -157,6 +182,18 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           if (
             existingReceipt.value.aggregateKind !== aggregateRef.aggregateKind ||
             existingReceipt.value.aggregateId !== aggregateRef.aggregateId
+          ) {
+            return yield* new OrchestrationCommandIdConflictError({
+              commandId: envelope.command.commandId,
+              receiptAggregateKind: existingReceipt.value.aggregateKind,
+              receiptAggregateId: existingReceipt.value.aggregateId,
+              commandAggregateKind: aggregateRef.aggregateKind,
+              commandAggregateId: aggregateRef.aggregateId,
+            });
+          }
+          if (
+            payloadFingerprint !== null &&
+            existingReceipt.value.payloadFingerprint !== payloadFingerprint
           ) {
             return yield* new OrchestrationCommandIdConflictError({
               commandId: envelope.command.commandId,
@@ -266,6 +303,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                 resultSequence: lastSavedEvent.sequence,
                 status: "accepted",
                 error: null,
+                payloadFingerprint,
               });
 
               return {
@@ -365,6 +403,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                   resultSequence: commandReadModel.snapshotSequence,
                   status: "rejected",
                   error: error.message,
+                  payloadFingerprint,
                 })
                 .pipe(Effect.catch(() => Effect.void));
             }

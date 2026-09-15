@@ -1,6 +1,8 @@
 import {
   EventId,
+  CommandId,
   MessageId,
+  ThreadId,
   UserInputRequestedPayload,
   isImportedAgentSessionMessageId,
   type OrchestrationCommand,
@@ -8,6 +10,7 @@ import {
   type OrchestrationReadModel,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
+  type InteractionResource,
 } from "@t3tools/contracts";
 import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
 import * as DateTime from "effect/DateTime";
@@ -40,6 +43,71 @@ import { threadHasQueuedTurnStart } from "./ThreadSettlementPolicy.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const decodeUserInputRequestedPayload = Schema.decodeUnknownOption(UserInputRequestedPayload);
+
+function findInteraction(
+  thread: OrchestrationThread,
+  interactionId: string,
+  commandType: string,
+): Effect.Effect<InteractionResource, OrchestrationCommandInvariantError> {
+  const resource = thread.interactions?.find((entry) => entry.id === interactionId);
+  return resource
+    ? Effect.succeed(resource)
+    : Effect.fail(
+        new OrchestrationCommandInvariantError({
+          commandType,
+          detail: `Interaction '${interactionId}' was not found on thread '${thread.id}'.`,
+        }),
+      );
+}
+
+const interactionResourceEvent = Effect.fn("interactionResourceEvent")(function* (input: {
+  readonly command: { readonly commandId: CommandId; readonly threadId: ThreadId };
+  readonly commandType: string;
+  readonly resource: InteractionResource;
+  readonly occurredAt: string;
+}) {
+  const base = yield* withEventBase({
+    aggregateKind: "thread",
+    aggregateId: input.command.threadId,
+    occurredAt: input.occurredAt,
+    commandId: input.command.commandId,
+  });
+  return {
+    ...base,
+    type: "thread.activity-appended" as const,
+    payload: {
+      threadId: input.command.threadId,
+      activity: {
+        id: base.eventId,
+        tone: "info" as const,
+        kind: "interaction.resource.changed",
+        summary: input.resource.display.title,
+        payload: { resource: input.resource },
+        turnId: input.resource.anchorTurnId,
+        createdAt: input.occurredAt,
+      },
+    },
+  };
+});
+
+function requireInteractionRevision(
+  resource: InteractionResource,
+  revision: number,
+  commandType: string,
+) {
+  return resource.revision === revision
+    ? Effect.void
+    : Effect.fail(
+        new OrchestrationCommandInvariantError({
+          commandType,
+          detail: `Interaction '${resource.id}' revision ${revision} is stale. Current revision is ${resource.revision}.`,
+        }),
+      );
+}
+
+function interactionTerminal(resource: InteractionResource): boolean {
+  return resource.lifecycle.state !== "open";
+}
 
 /**
  * Blocked-on-you work derived from the thread's retained activities: an
@@ -374,13 +442,13 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.delete": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
       const occurredAt = yield* nowIso;
-      return {
+      const deletionEvent: Omit<OrchestrationEvent, "sequence"> = {
         ...(yield* withEventBase({
           aggregateKind: "thread",
           aggregateId: command.threadId,
@@ -393,6 +461,30 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           deletedAt: occurredAt,
         },
       };
+      const cancellationEvents: Array<Omit<OrchestrationEvent, "sequence">> = [];
+      for (const current of thread.interactions ?? []) {
+        if (interactionTerminal(current)) continue;
+        const latestEpoch =
+          current.engagement.state === "engaged"
+            ? current.engagement.epoch
+            : current.engagement.latestEpoch;
+        cancellationEvents.push(
+          yield* interactionResourceEvent({
+            command,
+            commandType: command.type,
+            resource: {
+              ...current,
+              revision: current.revision + 1,
+              lifecycle: { state: "cancelled", reason: "thread-deleted" },
+              presentation: { ...current.presentation, state: "stopped" },
+              engagement: { state: "disengaged", latestEpoch },
+              updatedAt: occurredAt,
+            },
+            occurredAt,
+          }),
+        );
+      }
+      return [...cancellationEvents, deletionEvent];
     }
 
     case "thread.archive": {
@@ -913,6 +1005,425 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "interaction.create": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      if (command.operationId !== command.commandId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Interaction operation id must equal its command id.",
+        });
+      }
+      if (thread.interactions?.some((entry) => entry.id === command.interactionId)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${command.interactionId}' already exists.`,
+        });
+      }
+      const ownsAnchor =
+        thread.latestTurn?.turnId === command.anchorTurnId ||
+        thread.messages.some((message) => message.turnId === command.anchorTurnId);
+      if (!ownsAnchor) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Anchor turn '${command.anchorTurnId}' does not belong to thread '${thread.id}'.`,
+        });
+      }
+      const resource: InteractionResource = {
+        id: command.interactionId,
+        threadId: command.threadId,
+        revision: 1,
+        anchorTurnId: command.anchorTurnId,
+        createdSequence: readModel.snapshotSequence + 1,
+        capabilityId: command.capabilityId,
+        createdByClientId: command.actorClientId,
+        request: {
+          ref: command.requestRef,
+          revision: command.requestRevision,
+          digest: command.requestDigest,
+          conditionRevision: command.conditionRevision,
+          inputProvenance: command.inputProvenance,
+        },
+        display: command.display,
+        lifecycle: { state: "open" },
+        presentation: {
+          state: "unavailable",
+          ownerClientId: null,
+          presentationRevision: 0,
+          lastFrameSequence: null,
+          droppedFrames: 0,
+        },
+        engagement: { state: "disengaged", latestEpoch: 0 },
+        evidence: null,
+        resolution: null,
+        continuation: { state: "none" },
+        createdAt: command.createdAt,
+        updatedAt: command.createdAt,
+      };
+      return yield* interactionResourceEvent({
+        command,
+        commandType: command.type,
+        resource,
+        occurredAt: command.createdAt,
+      });
+    }
+
+    case "interaction.presentation.set": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const current = yield* findInteraction(thread, command.interactionId, command.type);
+      yield* requireInteractionRevision(current, command.resourceRevision, command.type);
+      if (interactionTerminal(current) && command.state !== "stopped") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Terminal interaction '${current.id}' can only stop its presentation.`,
+        });
+      }
+      if (
+        current.presentation.ownerClientId != null &&
+        current.presentation.ownerClientId !== command.ownerClientId
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' presentation belongs to another client.`,
+        });
+      }
+      if (command.presentationRevision < current.presentation.presentationRevision) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' presentation revision is stale.`,
+        });
+      }
+      const resource: InteractionResource = {
+        ...current,
+        revision: current.revision + 1,
+        presentation: {
+          state: command.state,
+          ownerClientId: command.state === "stopped" ? null : command.ownerClientId,
+          presentationRevision: command.presentationRevision,
+          lastFrameSequence: command.lastFrameSequence,
+          droppedFrames: command.droppedFrames,
+        },
+        engagement:
+          command.state === "ready"
+            ? current.engagement
+            : {
+                state: "disengaged",
+                latestEpoch:
+                  current.engagement.state === "engaged"
+                    ? current.engagement.epoch
+                    : current.engagement.latestEpoch,
+              },
+        updatedAt: command.createdAt,
+      };
+      return yield* interactionResourceEvent({
+        command,
+        commandType: command.type,
+        resource,
+        occurredAt: command.createdAt,
+      });
+    }
+
+    case "interaction.engage": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const current = yield* findInteraction(thread, command.interactionId, command.type);
+      yield* requireInteractionRevision(current, command.resourceRevision, command.type);
+      if (current.lifecycle.state !== "open" || current.presentation.state !== "ready") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' is not ready for engagement.`,
+        });
+      }
+      if (current.presentation.ownerClientId !== command.ownerClientId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' presentation is owned by another client.`,
+        });
+      }
+      if (
+        current.presentation.presentationRevision !== command.presentationRevision ||
+        current.engagement.state === "engaged"
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' engagement lease is unavailable.`,
+        });
+      }
+      const epoch = current.engagement.latestEpoch + 1;
+      const resource: InteractionResource = {
+        ...current,
+        revision: current.revision + 1,
+        engagement: {
+          state: "engaged",
+          epoch,
+          ownerClientId: command.ownerClientId,
+          presentationRevision: command.presentationRevision,
+        },
+        updatedAt: command.createdAt,
+      };
+      return yield* interactionResourceEvent({
+        command,
+        commandType: command.type,
+        resource,
+        occurredAt: command.createdAt,
+      });
+    }
+
+    case "interaction.disengage": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const current = yield* findInteraction(thread, command.interactionId, command.type);
+      yield* requireInteractionRevision(current, command.resourceRevision, command.type);
+      if (
+        current.engagement.state === "engaged" &&
+        current.engagement.ownerClientId !== command.ownerClientId
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' is engaged by another client.`,
+        });
+      }
+      const latestEpoch =
+        current.engagement.state === "engaged"
+          ? current.engagement.epoch
+          : current.engagement.latestEpoch;
+      const resource: InteractionResource = {
+        ...current,
+        revision: current.revision + 1,
+        engagement: { state: "disengaged", latestEpoch },
+        updatedAt: command.createdAt,
+      };
+      return yield* interactionResourceEvent({
+        command,
+        commandType: command.type,
+        resource,
+        occurredAt: command.createdAt,
+      });
+    }
+
+    case "interaction.cancel": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const current = yield* findInteraction(thread, command.interactionId, command.type);
+      yield* requireInteractionRevision(current, command.resourceRevision, command.type);
+      if (interactionTerminal(current)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' is already terminal.`,
+        });
+      }
+      const latestEpoch =
+        current.engagement.state === "engaged"
+          ? current.engagement.epoch
+          : current.engagement.latestEpoch;
+      const resource: InteractionResource = {
+        ...current,
+        revision: current.revision + 1,
+        lifecycle: { state: "cancelled", reason: command.reason },
+        presentation: { ...current.presentation, state: "stopped" },
+        engagement: { state: "disengaged", latestEpoch },
+        updatedAt: command.createdAt,
+      };
+      return yield* interactionResourceEvent({
+        command,
+        commandType: command.type,
+        resource,
+        occurredAt: command.createdAt,
+      });
+    }
+
+    case "interaction.resolve": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      if (command.operationId !== command.commandId) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: "Interaction operation id must equal its command id.",
+        });
+      }
+      const current = yield* findInteraction(thread, command.interactionId, command.type);
+      yield* requireInteractionRevision(current, command.resourceRevision, command.type);
+      if (interactionTerminal(current)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' is already terminal.`,
+        });
+      }
+      if (
+        current.request.ref !== command.requestRef ||
+        current.request.revision !== command.requestRevision ||
+        current.request.digest !== command.requestDigest ||
+        current.request.conditionRevision !== command.conditionRevision ||
+        current.request.inputProvenance !== command.observation.provenanceClass
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' request identity does not match.`,
+        });
+      }
+      const latestEpoch =
+        current.engagement.state === "engaged"
+          ? current.engagement.epoch
+          : current.engagement.latestEpoch;
+      if (
+        latestEpoch === 0 ||
+        command.observation.engagementEpoch !== latestEpoch ||
+        BigInt(command.observation.sourceSequenceEnd) <
+          BigInt(command.observation.sourceSequenceStart)
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' observation range or engagement epoch is invalid.`,
+        });
+      }
+      if (command.disposition === "satisfied" && command.evidence === null) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' cannot be satisfied without retained evidence.`,
+        });
+      }
+      const revision = current.revision + 1;
+      const evidence =
+        command.evidence === null
+          ? null
+          : {
+              ...command.evidence,
+              sourceSequenceStart: command.observation.sourceSequenceStart,
+              sourceSequenceEnd: command.observation.sourceSequenceEnd,
+              nativeTimeStartNs: command.observation.nativeTimeStartNs,
+              nativeTimeEndNs: command.observation.nativeTimeEndNs,
+            };
+      const resource: InteractionResource = {
+        ...current,
+        revision,
+        lifecycle:
+          command.disposition === "satisfied"
+            ? { state: "resolved", ownerReceiptId: command.ownerReceiptId }
+            : { state: "failed", ownerReceiptId: command.ownerReceiptId },
+        presentation: { ...current.presentation, state: "stopped" },
+        engagement: { state: "disengaged", latestEpoch },
+        evidence,
+        resolution: {
+          ownerOperationId: command.ownerOperationId,
+          ownerReceiptId: command.ownerReceiptId,
+          summary: command.summary,
+          timingBasis: command.observation.timingBasis,
+          provenanceClass: command.observation.provenanceClass,
+          resolvedByClientId: command.actorClientId,
+        },
+        continuation:
+          command.disposition === "satisfied"
+            ? { state: "pending", resolutionRevision: revision }
+            : { state: "none" },
+        updatedAt: command.createdAt,
+      };
+      return yield* interactionResourceEvent({
+        command,
+        commandType: command.type,
+        resource,
+        occurredAt: command.createdAt,
+      });
+    }
+
+    case "interaction.continuation.admit": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const current = yield* findInteraction(thread, command.interactionId, command.type);
+      if (
+        current.lifecycle.state !== "resolved" ||
+        current.continuation.state !== "pending" ||
+        current.continuation.resolutionRevision !== command.resolutionRevision ||
+        thread.session?.status === "starting" ||
+        thread.session?.status === "running" ||
+        hasQueuedTurnStartForThread(thread, command.createdAt)
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' continuation is not currently admissible.`,
+        });
+      }
+      const resource: InteractionResource = {
+        ...current,
+        revision: current.revision + 1,
+        continuation: {
+          state: "admitted",
+          continuationId: command.commandId,
+          resolutionRevision: command.resolutionRevision,
+        },
+        updatedAt: command.createdAt,
+      };
+      return yield* interactionResourceEvent({
+        command,
+        commandType: command.type,
+        resource,
+        occurredAt: command.createdAt,
+      });
+    }
+
+    case "interaction.continuation.state": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const current = yield* findInteraction(thread, command.interactionId, command.type);
+      const continuation = current.continuation;
+      if (
+        continuation.state === "none" ||
+        continuation.state === "pending" ||
+        continuation.state === "started" ||
+        continuation.continuationId !== command.continuationId
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' continuation identity does not match.`,
+        });
+      }
+      if (command.state === "submitting" && continuation.state !== "admitted") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' continuation was not admitted.`,
+        });
+      }
+      const resource: InteractionResource = {
+        ...current,
+        revision: current.revision + 1,
+        continuation: {
+          state: command.state,
+          continuationId: command.continuationId,
+          resolutionRevision: continuation.resolutionRevision,
+        },
+        updatedAt: command.createdAt,
+      };
+      return yield* interactionResourceEvent({
+        command,
+        commandType: command.type,
+        resource,
+        occurredAt: command.createdAt,
+      });
+    }
+
+    case "interaction.continuation.started": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      const current = yield* findInteraction(thread, command.interactionId, command.type);
+      if (
+        current.continuation.state !== "submitting" ||
+        current.continuation.continuationId !== command.continuationId
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${current.id}' continuation is not submitting.`,
+        });
+      }
+      const resource: InteractionResource = {
+        ...current,
+        revision: current.revision + 1,
+        continuation: {
+          state: "started",
+          continuationId: command.continuationId,
+          resolutionRevision: current.continuation.resolutionRevision,
+          turnId: command.turnId,
+        },
+        updatedAt: command.createdAt,
+      };
+      return yield* interactionResourceEvent({
+        command,
+        commandType: command.type,
+        resource,
+        occurredAt: command.createdAt,
+      });
+    }
+
     case "thread.turn.start": {
       if (isImportedAgentSessionMessageId(command.message.messageId)) {
         return yield* new OrchestrationCommandInvariantError({
@@ -925,6 +1436,15 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      const submittingInteraction = targetThread.interactions?.find(
+        (resource) => resource.continuation.state === "submitting",
+      );
+      if (submittingInteraction) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Interaction '${submittingInteraction.id}' is submitting its admitted continuation.`,
+        });
+      }
       const sourceProposedPlan = command.sourceProposedPlan;
       const sourceThread = sourceProposedPlan
         ? yield* requireThread({
@@ -998,6 +1518,25 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       // A snooze clears the same way — sending a message to a snoozed
       // thread is the user re-engaging, so the return ticket is spent.
       const lifecycleResetEvents: Array<Omit<OrchestrationEvent, "sequence">> = [];
+      for (const current of targetThread.interactions ?? []) {
+        if (current.continuation.state !== "admitted") continue;
+        lifecycleResetEvents.push(
+          yield* interactionResourceEvent({
+            command,
+            commandType: command.type,
+            resource: {
+              ...current,
+              revision: current.revision + 1,
+              continuation: {
+                state: "pending",
+                resolutionRevision: current.continuation.resolutionRevision,
+              },
+              updatedAt: command.createdAt,
+            },
+            occurredAt: command.createdAt,
+          }),
+        );
+      }
       if (targetThread.settledOverride !== null) {
         lifecycleResetEvents.push({
           ...(yield* withEventBase({

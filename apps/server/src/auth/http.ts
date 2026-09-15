@@ -555,7 +555,7 @@ function failEnvironmentRateLimited(retryAfterSeconds: number) {
   );
 }
 
-function failEnvironmentConflict(message: string) {
+export function failEnvironmentConflict(message: string) {
   return Effect.fail(new EnvironmentHttpConflictError({ message }));
 }
 

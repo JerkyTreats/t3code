@@ -5,6 +5,8 @@ import {
   EventId,
   type ModelSelection,
   type OrchestrationEvent,
+  InteractionResourceActivityPayload,
+  type InteractionResource,
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
@@ -72,7 +74,9 @@ type ProviderIntentEvent = Extract<
       | "thread.approval-response-requested"
       | "thread.user-input-response-requested"
       | "thread.session-stop-requested"
-      | "thread.settled";
+      | "thread.session-set"
+      | "thread.settled"
+      | "thread.activity-appended";
   }
 >;
 
@@ -1692,6 +1696,130 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const dispatchContinuationState = Effect.fn("dispatchContinuationState")(function* (input: {
+    readonly resource: InteractionResource;
+    readonly continuationId: CommandId;
+    readonly state: "submitting" | "ambiguous" | "failed";
+    readonly createdAt: string;
+  }) {
+    yield* orchestrationEngine.dispatch({
+      type: "interaction.continuation.state",
+      commandId: CommandId.make(`interaction-continuation-${input.state}:${input.continuationId}`),
+      threadId: input.resource.threadId,
+      interactionId: input.resource.id,
+      continuationId: input.continuationId,
+      state: input.state,
+      createdAt: input.createdAt,
+    });
+  });
+
+  const continuationPrompt = (resource: InteractionResource): string => {
+    const resolution = resource.resolution;
+    return [
+      "A native interaction requested earlier in this conversation has completed.",
+      `Interaction: ${resource.display.title}`,
+      `Outcome: ${resolution?.summary ?? resource.display.summary}`,
+      `Input provenance: ${resolution?.provenanceClass ?? resource.request.inputProvenance}`,
+      `Evidence reference: ${resource.evidence?.ref ?? "none"}`,
+      "Continue the existing conversation using this result. Do not treat the evidence as a new user message.",
+    ].join("\n");
+  };
+
+  const processInteractionResource = Effect.fn("processInteractionResource")(function* (
+    resource: InteractionResource,
+    source: "live" | "startup",
+  ) {
+    const currentThread = yield* resolveThreadDetail(resource.threadId);
+    if (!currentThread) return;
+    const current = currentThread.interactions?.find((entry) => entry.id === resource.id);
+    if (!current || current.revision !== resource.revision) return;
+
+    if (current.continuation.state === "pending") {
+      if (
+        currentThread?.session?.status === "starting" ||
+        currentThread?.session?.status === "running" ||
+        currentThread?.latestTurn?.state === "running"
+      ) {
+        return;
+      }
+      yield* orchestrationEngine
+        .dispatch({
+          type: "interaction.continuation.admit",
+          commandId: CommandId.make(
+            `interaction-continuation:${current.id}:${current.continuation.resolutionRevision}`,
+          ),
+          threadId: current.threadId,
+          interactionId: current.id,
+          resolutionRevision: current.continuation.resolutionRevision,
+          createdAt: current.updatedAt,
+        })
+        .pipe(Effect.catchTag("OrchestrationCommandInvariantError", () => Effect.void));
+      return;
+    }
+
+    if (current.continuation.state === "admitted") {
+      yield* dispatchContinuationState({
+        resource: current,
+        continuationId: current.continuation.continuationId,
+        state: "submitting",
+        createdAt: current.updatedAt,
+      });
+      return;
+    }
+
+    if (current.continuation.state !== "submitting") return;
+    const continuationId = current.continuation.continuationId;
+    if (source === "startup") {
+      yield* dispatchContinuationState({
+        resource: current,
+        continuationId,
+        state: "ambiguous",
+        createdAt: current.updatedAt,
+      });
+      return;
+    }
+
+    const sendTurnRequest = yield* buildSendTurnRequestForThread({
+      threadId: current.threadId,
+      messageText: continuationPrompt(current),
+      interactionMode: currentThread.interactionMode,
+      createdAt: current.updatedAt,
+    }).pipe(
+      Effect.map(Option.some),
+      Effect.catchCause(() =>
+        dispatchContinuationState({
+          resource: current,
+          continuationId,
+          state: "failed",
+          createdAt: current.updatedAt,
+        }).pipe(Effect.as(Option.none())),
+      ),
+    );
+    if (Option.isNone(sendTurnRequest)) return;
+
+    const started = yield* providerService.sendTurn(sendTurnRequest.value).pipe(
+      Effect.map(Option.some),
+      Effect.catchCause(() =>
+        dispatchContinuationState({
+          resource: current,
+          continuationId,
+          state: "ambiguous",
+          createdAt: current.updatedAt,
+        }).pipe(Effect.as(Option.none())),
+      ),
+    );
+    if (Option.isNone(started)) return;
+    yield* orchestrationEngine.dispatch({
+      type: "interaction.continuation.started",
+      commandId: CommandId.make(`interaction-continuation-started:${continuationId}`),
+      threadId: current.threadId,
+      interactionId: current.id,
+      continuationId,
+      turnId: started.value.turnId,
+      createdAt: current.updatedAt,
+    });
+  });
+
   const processDomainEvent = Effect.fn("processDomainEvent")(function* (
     event: ProviderIntentEvent,
   ) {
@@ -1704,6 +1832,15 @@ const make = Effect.gen(function* () {
       eventType: event.type,
     });
     switch (event.type) {
+      case "thread.activity-appended": {
+        if (event.payload.activity.kind !== "interaction.resource.changed") return;
+        const decoded = Schema.decodeUnknownOption(InteractionResourceActivityPayload)(
+          event.payload.activity.payload,
+        );
+        if (Option.isNone(decoded)) return;
+        yield* processInteractionResource(decoded.value.resource, "live");
+        return;
+      }
       case "thread.meta-updated":
         yield* threadTitleRegenerationWorker.enqueue(event);
         return;
@@ -1717,6 +1854,24 @@ const make = Effect.gen(function* () {
           event.payload.threadId,
           event.occurredAt,
           cachedModelSelection !== undefined ? { modelSelection: cachedModelSelection } : {},
+        );
+        return;
+      }
+      case "thread.session-set": {
+        if (
+          event.payload.session.status === "starting" ||
+          event.payload.session.status === "running"
+        ) {
+          return;
+        }
+        const thread = yield* resolveThreadDetail(event.payload.threadId);
+        if (!thread) return;
+        yield* Effect.forEach(
+          (thread.interactions ?? []).filter(
+            (resource) => resource.continuation.state === "pending",
+          ),
+          (resource) => processInteractionResource(resource, "live"),
+          { concurrency: 1, discard: true },
         );
         return;
       }
@@ -1783,16 +1938,37 @@ const make = Effect.gen(function* () {
         ).pipe(Effect.as([]));
       }),
     );
+    const interruptedInteractions = yield* projectionSnapshotQuery.getCommandReadModel().pipe(
+      Effect.map((readModel) =>
+        readModel.threads.flatMap((thread) =>
+          (thread.interactions ?? []).filter(
+            (resource) =>
+              resource.continuation.state === "pending" ||
+              resource.continuation.state === "admitted" ||
+              resource.continuation.state === "submitting",
+          ),
+        ),
+      ),
+      Effect.catchCause((cause) =>
+        Effect.logWarning(
+          "provider command reactor failed to find interrupted interaction continuations",
+          { cause: Cause.pretty(cause) },
+        ).pipe(Effect.as([] as ReadonlyArray<InteractionResource>)),
+      ),
+    );
     const processEvent = Effect.fn("processEvent")(function* (event: OrchestrationEvent) {
       if (
         (event.type === "thread.meta-updated" && event.payload.regenerateTitle === true) ||
         event.type === "thread.runtime-mode-set" ||
+        event.type === "thread.session-set" ||
         event.type === "thread.turn-start-requested" ||
         event.type === "thread.turn-interrupt-requested" ||
         event.type === "thread.approval-response-requested" ||
         event.type === "thread.user-input-response-requested" ||
         event.type === "thread.session-stop-requested" ||
-        event.type === "thread.settled"
+        event.type === "thread.settled" ||
+        (event.type === "thread.activity-appended" &&
+          event.payload.activity.kind === "interaction.resource.changed")
       ) {
         return yield* worker.enqueue(event);
       }
@@ -1801,6 +1977,22 @@ const make = Effect.gen(function* () {
     // Subscribe before returning, even while event handling waits for server activation.
     const domainEvents = yield* orchestrationEngine.subscribeDomainEvents;
     yield* forkParked(Stream.runForEach(domainEvents, processEvent));
+
+    const recoverInteractions = Effect.forEach(
+      interruptedInteractions,
+      (resource) => processInteractionResource(resource, "startup"),
+      { concurrency: 1, discard: true },
+    ).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.logWarning(
+              "provider command reactor failed to recover interaction continuations",
+              { cause: Cause.pretty(cause) },
+            ),
+      ),
+    );
+    yield* forkParked(recoverInteractions);
 
     // The domain event stream is hot, so work pending before this reactor
     // starts cannot be resumed. Correlated completions only clear the request

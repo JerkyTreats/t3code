@@ -50,6 +50,7 @@ import Migration0045 from "./Migrations/045_CollectiveExpeditions.ts";
 import Migration0050 from "./Migrations/050_ThreadAdapterLaunchBindings.ts";
 import Migration0051 from "./Migrations/051_RetireThreadAdapterAuthority.ts";
 import Migration0058 from "./Migrations/058_PairingEnrollmentClass.ts";
+import Migration0059 from "./Migrations/059_InteractionCommandFingerprints.ts";
 import UpstreamMigration0042 from "./Migrations/042_ProjectionThreadLinkedPullRequest.ts";
 import UpstreamMigration0043 from "./Migrations/043_ProjectionThreadsUnsettledAt.ts";
 import UpstreamMigration0044 from "./Migrations/044_ClearAutomaticProjectModelDefaults.ts";
@@ -113,6 +114,7 @@ export const migrationEntries = [
   [56, "RepairAutomaticSettlementTimestamps", UpstreamMigration0046],
   [57, "ProjectionProjectIcon", UpstreamMigration0047],
   [58, "PairingEnrollmentClass", Migration0058],
+  [59, "InteractionCommandFingerprints", Migration0059],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

@@ -5,6 +5,7 @@ export * from "./auth.ts";
 export * from "./adminAccess.ts";
 export * from "./environment.ts";
 export * from "./environmentHttp.ts";
+export * from "./interaction.ts";
 export * from "./relayClient.ts";
 export * from "./desktopBootstrap.ts";
 export * from "./desktopAppActivation.ts";

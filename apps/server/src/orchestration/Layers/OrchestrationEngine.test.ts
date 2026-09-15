@@ -5,9 +5,11 @@ import * as NodePath from "node:path";
 
 import {
   ApprovalRequestId,
+  AuthClientId,
   BoardAuthorId,
   BoardPostId,
   EventId,
+  InteractionId,
   CheckpointRef,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -150,6 +152,89 @@ async function createOrchestrationSystem(databasePath?: string) {
 function now() {
   return "2026-01-01T00:00:00.000Z";
 }
+
+it("fingerprints interaction operation retries and restores the resource projection", async () => {
+  const system = await createOrchestrationSystem();
+  const { engine } = system;
+  const threadId = ThreadId.make("thread-interaction-fingerprint");
+  const anchorTurnId = TurnId.make("turn-interaction-fingerprint");
+  const createdAt = now();
+
+  await system.run(
+    engine.dispatch({
+      type: "project.create",
+      commandId: CommandId.make("interaction-fingerprint-project"),
+      projectId: ProjectId.make("project-interaction-fingerprint"),
+      title: "Interaction fingerprint",
+      workspaceRoot: "/tmp/interaction-fingerprint",
+      defaultModelSelection: null,
+      createdAt,
+    }),
+  );
+  await system.run(
+    engine.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("interaction-fingerprint-thread"),
+      threadId,
+      projectId: ProjectId.make("project-interaction-fingerprint"),
+      title: "Interaction fingerprint",
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-5-codex",
+      },
+      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      runtimeMode: "approval-required",
+      branch: null,
+      worktreePath: null,
+      createdAt,
+    }),
+  );
+  await system.run(
+    engine.dispatch({
+      type: "thread.message.assistant.complete",
+      commandId: CommandId.make("interaction-fingerprint-anchor"),
+      threadId,
+      messageId: MessageId.make("interaction-fingerprint-anchor-message"),
+      turnId: anchorTurnId,
+      createdAt,
+    }),
+  );
+
+  const create = {
+    type: "interaction.create" as const,
+    commandId: CommandId.make("interaction-fingerprint-create"),
+    operationId: CommandId.make("interaction-fingerprint-create"),
+    interactionId: InteractionId.make("interaction-fingerprint"),
+    threadId,
+    anchorTurnId,
+    capabilityId: "wallpaper.interaction.lab.v1" as const,
+    actorClientId: AuthClientId.make("interaction-fingerprint-client"),
+    requestRef: "request-fingerprint",
+    requestRevision: "request-revision-1",
+    requestDigest: "request-digest-1",
+    conditionRevision: "condition-revision-1",
+    inputProvenance: "synthetic" as const,
+    display: { title: "Synthetic input test", summary: "Select the target." },
+    createdAt,
+  };
+  const first = await system.run(engine.dispatch(create));
+  const retry = await system.run(
+    engine.dispatch({ ...create, createdAt: "2026-01-01T00:00:01.000Z" }),
+  );
+  expect(retry.sequence).toBe(first.sequence);
+  await expect(
+    system.run(
+      engine.dispatch({
+        ...create,
+        display: { ...create.display, summary: "Changed content." },
+      }),
+    ),
+  ).rejects.toThrow("already used");
+
+  const thread = await system.readThread(threadId);
+  expect(Option.getOrNull(thread)?.interactions).toHaveLength(1);
+  await system.dispose();
+});
 
 const hasMetricSnapshot = (
   snapshots: ReadonlyArray<Metric.Metric.Snapshot>,

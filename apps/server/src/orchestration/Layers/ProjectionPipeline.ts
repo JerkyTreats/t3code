@@ -336,7 +336,10 @@ function retainProjectionActivitiesAfterRevert(
       .flatMap((turn) => (turn.turnId === null ? [] : [turn.turnId])),
   );
   return activities.filter(
-    (activity) => activity.turnId === null || retainedTurnIds.has(activity.turnId),
+    (activity) =>
+      activity.kind === "interaction.resource.changed" ||
+      activity.turnId === null ||
+      retainedTurnIds.has(activity.turnId),
   );
 }
 

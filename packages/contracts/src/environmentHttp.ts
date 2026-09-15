@@ -45,6 +45,13 @@ import {
   OrchestrationThreadDetailSnapshot,
 } from "./orchestration.ts";
 import {
+  InteractionCreateInput,
+  InteractionGetResult,
+  InteractionId,
+  InteractionMutationResult,
+  InteractionResolveInput,
+} from "./interaction.ts";
+import {
   PullRequestDiffInput,
   PullRequestDiffResult,
   PullRequestOperationError,
@@ -199,6 +206,7 @@ export class EnvironmentInternalError extends Schema.TaggedErrorClass<Environmen
 
 export const EnvironmentResourceNotFoundReason = Schema.Literals([
   "thread_not_found",
+  "interaction_not_found",
   "client_not_found",
   "pairing_code_not_found",
 ]);
@@ -363,6 +371,8 @@ const EnvironmentOrchestrationThreadSnapshotErrors = [
 const EnvironmentOrchestrationDispatchErrors = [
   EnvironmentRequestInvalidError,
   EnvironmentScopeRequiredError,
+  EnvironmentResourceNotFoundError,
+  EnvironmentHttpConflictError,
   EnvironmentInternalError,
 ] as const;
 
@@ -521,6 +531,14 @@ const EnvironmentOrchestrationThreadSnapshotParams = Schema.Struct({
   threadId: ThreadId,
 });
 
+const EnvironmentInteractionParams = Schema.Struct({
+  interactionId: InteractionId,
+});
+
+const EnvironmentInteractionGetQuery = {
+  threadId: ThreadId,
+};
+
 // Query-string window for windowed thread snapshots (GET payloads must encode
 // to strings). Both fields optional: omitting them keeps the full-snapshot
 // behavior, so pagination stays opt-in per request.
@@ -532,6 +550,32 @@ const EnvironmentOrchestrationThreadSnapshotQuery = {
 };
 
 export class EnvironmentOrchestrationHttpApi extends HttpApiGroup.make("orchestration")
+  .add(
+    HttpApiEndpoint.post("createInteraction", "/api/interactions", {
+      headers: OptionalBearerHeaders,
+      payload: InteractionCreateInput,
+      success: InteractionMutationResult,
+      error: EnvironmentOrchestrationDispatchErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.get("getInteraction", "/api/interactions/:interactionId", {
+      headers: OptionalBearerHeaders,
+      params: EnvironmentInteractionParams,
+      payload: EnvironmentInteractionGetQuery,
+      success: InteractionGetResult,
+      error: EnvironmentOrchestrationThreadSnapshotErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("resolveInteraction", "/api/interactions/:interactionId/resolve", {
+      headers: OptionalBearerHeaders,
+      params: EnvironmentInteractionParams,
+      payload: InteractionResolveInput,
+      success: InteractionMutationResult,
+      error: EnvironmentOrchestrationDispatchErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
   .add(
     HttpApiEndpoint.get("snapshot", "/api/orchestration/snapshot", {
       headers: OptionalBearerHeaders,

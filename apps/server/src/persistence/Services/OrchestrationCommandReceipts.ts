@@ -31,6 +31,7 @@ export const OrchestrationCommandReceipt = Schema.Struct({
   resultSequence: NonNegativeInt,
   status: OrchestrationCommandReceiptStatus,
   error: Schema.NullOr(Schema.String),
+  payloadFingerprint: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export type OrchestrationCommandReceipt = typeof OrchestrationCommandReceipt.Type;
 

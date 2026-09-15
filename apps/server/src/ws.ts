@@ -431,6 +431,8 @@ const makeWsRpcLayer = (
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const crypto = yield* Crypto.Crypto;
+      const interactionConnectionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+      const interactionOwnerClientId = `${currentSession.clientId}:${interactionConnectionId}`;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const boardQuery = yield* BoardQuery.BoardQuery;
@@ -532,6 +534,9 @@ const makeWsRpcLayer = (
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
       const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
+      const connectionInteractions = yield* Ref.make(
+        new Map<string, { readonly threadId: ThreadId; readonly interactionId: string }>(),
+      );
       yield* Effect.addFinalizer(() =>
         Ref.get(rpcClientIds).pipe(
           Effect.flatMap((clientIds) =>
@@ -544,6 +549,80 @@ const makeWsRpcLayer = (
             ),
           ),
           Effect.ignore,
+        ),
+      );
+      yield* Effect.addFinalizer(() =>
+        Ref.get(connectionInteractions).pipe(
+          Effect.flatMap((leases) =>
+            Effect.forEach(
+              leases.values(),
+              (lease) =>
+                Effect.gen(function* () {
+                  const detail = yield* projectionSnapshotQuery.getThreadDetailSnapshot(
+                    lease.threadId,
+                  );
+                  if (Option.isNone(detail)) return;
+                  let resource = detail.value.thread.interactions?.find(
+                    (entry) => entry.id === lease.interactionId,
+                  );
+                  if (!resource) return;
+                  if (
+                    resource.engagement.state === "engaged" &&
+                    resource.engagement.ownerClientId === interactionOwnerClientId
+                  ) {
+                    yield* dispatchFromClient({
+                      type: "interaction.disengage",
+                      commandId: CommandId.make(
+                        `interaction-disconnect-disengage:${interactionConnectionId}:${resource.id}:${resource.engagement.epoch}`,
+                      ),
+                      threadId: resource.threadId,
+                      interactionId: resource.id,
+                      resourceRevision: resource.revision,
+                      ownerClientId: interactionOwnerClientId,
+                      createdAt: DateTime.formatIso(yield* DateTime.now),
+                    });
+                    const refreshed = yield* projectionSnapshotQuery.getThreadDetailSnapshot(
+                      lease.threadId,
+                    );
+                    resource = Option.isSome(refreshed)
+                      ? refreshed.value.thread.interactions?.find(
+                          (entry) => entry.id === lease.interactionId,
+                        )
+                      : undefined;
+                  }
+                  if (
+                    resource &&
+                    resource.presentation.ownerClientId === interactionOwnerClientId &&
+                    resource.presentation.state !== "stopped"
+                  ) {
+                    yield* dispatchFromClient({
+                      type: "interaction.presentation.set",
+                      commandId: CommandId.make(
+                        `interaction-disconnect-stop:${interactionConnectionId}:${resource.id}:${resource.presentation.presentationRevision}`,
+                      ),
+                      threadId: resource.threadId,
+                      interactionId: resource.id,
+                      resourceRevision: resource.revision,
+                      presentationRevision: resource.presentation.presentationRevision,
+                      ownerClientId: interactionOwnerClientId,
+                      state: "stopped",
+                      lastFrameSequence: resource.presentation.lastFrameSequence,
+                      droppedFrames: resource.presentation.droppedFrames,
+                      createdAt: DateTime.formatIso(yield* DateTime.now),
+                    });
+                  }
+                }).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("failed to release disconnected interaction lease", {
+                      threadId: lease.threadId,
+                      interactionId: lease.interactionId,
+                      cause,
+                    }),
+                  ),
+                ),
+              { discard: true },
+            ),
+          ),
         ),
       );
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
@@ -1320,6 +1399,156 @@ const makeWsRpcLayer = (
               ),
             ),
             { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.setInteractionPresentation]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.setInteractionPresentation,
+            Effect.gen(function* () {
+              const result = yield* dispatchFromClient({
+                type: "interaction.presentation.set",
+                commandId: input.operationId,
+                threadId: input.threadId,
+                interactionId: input.interactionId,
+                resourceRevision: input.resourceRevision,
+                presentationRevision: input.presentationRevision,
+                ownerClientId: interactionOwnerClientId,
+                state: input.state,
+                lastFrameSequence: input.lastFrameSequence,
+                droppedFrames: input.droppedFrames,
+                createdAt: yield* nowIso,
+              }).pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to update interaction presentation"),
+                ),
+              );
+              yield* Ref.update(connectionInteractions, (leases) => {
+                const next = new Map(leases);
+                const key = `${input.threadId}:${input.interactionId}`;
+                if (input.state === "stopped") next.delete(key);
+                else
+                  next.set(key, {
+                    threadId: input.threadId,
+                    interactionId: input.interactionId,
+                  });
+                return next;
+              });
+              return result;
+            }),
+            { "rpc.aggregate": "interaction" },
+          ),
+        [ORCHESTRATION_WS_METHODS.engageInteraction]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.engageInteraction,
+            Effect.gen(function* () {
+              if (input.presentationRevision === undefined) {
+                return yield* new OrchestrationDispatchCommandError({
+                  message: "Engaging an interaction requires its presentation revision.",
+                });
+              }
+              const result = yield* dispatchFromClient({
+                type: "interaction.engage",
+                commandId: input.operationId,
+                threadId: input.threadId,
+                interactionId: input.interactionId,
+                resourceRevision: input.resourceRevision,
+                presentationRevision: input.presentationRevision,
+                ownerClientId: interactionOwnerClientId,
+                createdAt: yield* nowIso,
+              }).pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to engage interaction"),
+                ),
+              );
+              const detail = yield* projectionSnapshotQuery
+                .getThreadDetailSnapshot(input.threadId)
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationDispatchCommandError({
+                        message: "Failed to verify interaction engagement lease",
+                        cause,
+                      }),
+                  ),
+                );
+              if (Option.isNone(detail)) {
+                return yield* new OrchestrationDispatchCommandError({
+                  message: "Interaction thread disappeared after engagement",
+                });
+              }
+              const resource = detail.value.thread.interactions?.find(
+                (entry) => entry.id === input.interactionId,
+              );
+              if (
+                !resource ||
+                resource.engagement.state !== "engaged" ||
+                resource.engagement.ownerClientId !== interactionOwnerClientId
+              ) {
+                return yield* new OrchestrationDispatchCommandError({
+                  message: "Interaction engagement lease was not retained",
+                });
+              }
+              yield* Ref.update(connectionInteractions, (leases) => {
+                const next = new Map(leases);
+                next.set(`${input.threadId}:${input.interactionId}`, {
+                  threadId: input.threadId,
+                  interactionId: input.interactionId,
+                });
+                return next;
+              });
+              return {
+                sequence: result.sequence,
+                resourceRevision: resource.revision,
+                ownerClientId: resource.engagement.ownerClientId,
+                engagementEpoch: resource.engagement.epoch,
+              };
+            }),
+            { "rpc.aggregate": "interaction" },
+          ),
+        [ORCHESTRATION_WS_METHODS.disengageInteraction]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.disengageInteraction,
+            Effect.gen(function* () {
+              return yield* dispatchFromClient({
+                type: "interaction.disengage",
+                commandId: input.operationId,
+                threadId: input.threadId,
+                interactionId: input.interactionId,
+                resourceRevision: input.resourceRevision,
+                ownerClientId: interactionOwnerClientId,
+                createdAt: yield* nowIso,
+              }).pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to disengage interaction"),
+                ),
+              );
+            }),
+            { "rpc.aggregate": "interaction" },
+          ),
+        [ORCHESTRATION_WS_METHODS.cancelInteraction]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.cancelInteraction,
+            Effect.gen(function* () {
+              const result = yield* dispatchFromClient({
+                type: "interaction.cancel",
+                commandId: input.operationId,
+                threadId: input.threadId,
+                interactionId: input.interactionId,
+                resourceRevision: input.resourceRevision,
+                reason: "user",
+                createdAt: yield* nowIso,
+              }).pipe(
+                Effect.mapError((cause) =>
+                  toDispatchCommandError(cause, "Failed to cancel interaction"),
+                ),
+              );
+              yield* Ref.update(connectionInteractions, (leases) => {
+                const next = new Map(leases);
+                next.delete(`${input.threadId}:${input.interactionId}`);
+                return next;
+              });
+              return result;
+            }),
+            { "rpc.aggregate": "interaction" },
           ),
         [ORCHESTRATION_WS_METHODS.getWorkflowScript]: (input) =>
           observeRpcEffect(

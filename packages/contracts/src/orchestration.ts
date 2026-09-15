@@ -40,6 +40,22 @@ import {
   BoardPostRevisedPayload,
   BoardPostReviseCommand,
 } from "./coordinationBoardOrchestration.ts";
+import {
+  InteractionCancelCommand,
+  InteractionClientActionInput,
+  InteractionClientActionResult,
+  InteractionContinuationAdmitCommand,
+  InteractionContinuationStartedCommand,
+  InteractionContinuationStateCommand,
+  InteractionCreateCommand,
+  InteractionDisengageCommand,
+  InteractionEngageCommand,
+  InteractionEngageResult,
+  InteractionPresentationSetCommand,
+  InteractionPresentationActionInput,
+  InteractionResolveCommand,
+  InteractionResource,
+} from "./interaction.ts";
 
 export {
   BoardPostPublishedPayload,
@@ -64,6 +80,10 @@ export const ORCHESTRATION_WS_METHODS = {
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
   subscribeBoard: "orchestration.subscribeBoard",
+  setInteractionPresentation: "interaction.presentation.set",
+  engageInteraction: "interaction.engage",
+  disengageInteraction: "interaction.disengage",
+  cancelInteraction: "interaction.cancel",
 } as const;
 
 export const ProviderApprovalPolicy = Schema.Literals([
@@ -561,6 +581,7 @@ export const OrchestrationThread = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   activities: Schema.Array(OrchestrationThreadActivity),
+  interactions: Schema.optional(Schema.Array(InteractionResource)),
   checkpoints: Schema.Array(OrchestrationCheckpointSummary),
   session: Schema.NullOr(OrchestrationSession),
 });
@@ -1227,6 +1248,15 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
   ThreadTitleRegenerationCompleteCommand,
+  InteractionCreateCommand,
+  InteractionPresentationSetCommand,
+  InteractionEngageCommand,
+  InteractionDisengageCommand,
+  InteractionCancelCommand,
+  InteractionResolveCommand,
+  InteractionContinuationAdmitCommand,
+  InteractionContinuationStateCommand,
+  InteractionContinuationStartedCommand,
   // Board write commands carry trusted server identity and never enter the public client union.
   BoardPostPublishCommand,
   BoardPostReviseCommand,
@@ -1926,6 +1956,22 @@ export const OrchestrationRpcSchemas = {
   subscribeBoard: {
     input: BoardSubscribeInput,
     output: BoardStreamItem,
+  },
+  engageInteraction: {
+    input: InteractionClientActionInput,
+    output: InteractionEngageResult,
+  },
+  setInteractionPresentation: {
+    input: InteractionPresentationActionInput,
+    output: InteractionClientActionResult,
+  },
+  disengageInteraction: {
+    input: InteractionClientActionInput,
+    output: InteractionClientActionResult,
+  },
+  cancelInteraction: {
+    input: InteractionClientActionInput,
+    output: InteractionClientActionResult,
   },
 } as const;
 

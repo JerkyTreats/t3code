@@ -1082,6 +1082,33 @@ export const WsOrchestrationDispatchCommandRpc = Rpc.make(
   },
 );
 
+export const WsInteractionEngageRpc = Rpc.make(ORCHESTRATION_WS_METHODS.engageInteraction, {
+  payload: OrchestrationRpcSchemas.engageInteraction.input,
+  success: OrchestrationRpcSchemas.engageInteraction.output,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
+export const WsInteractionPresentationSetRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.setInteractionPresentation,
+  {
+    payload: OrchestrationRpcSchemas.setInteractionPresentation.input,
+    success: OrchestrationRpcSchemas.setInteractionPresentation.output,
+    error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+  },
+);
+
+export const WsInteractionDisengageRpc = Rpc.make(ORCHESTRATION_WS_METHODS.disengageInteraction, {
+  payload: OrchestrationRpcSchemas.disengageInteraction.input,
+  success: OrchestrationRpcSchemas.disengageInteraction.output,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
+export const WsInteractionCancelRpc = Rpc.make(ORCHESTRATION_WS_METHODS.cancelInteraction, {
+  payload: OrchestrationRpcSchemas.cancelInteraction.input,
+  success: OrchestrationRpcSchemas.cancelInteraction.output,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
 export const WsOrchestrationGetWorkflowScriptRpc = Rpc.make(
   ORCHESTRATION_WS_METHODS.getWorkflowScript,
   {
@@ -1335,6 +1362,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeBackgroundPolicyRpc,
   WsSubscribeResourceTelemetryRpc,
   WsOrchestrationDispatchCommandRpc,
+  WsInteractionPresentationSetRpc,
+  WsInteractionEngageRpc,
+  WsInteractionDisengageRpc,
+  WsInteractionCancelRpc,
   WsOrchestrationGetWorkflowScriptRpc,
   WsOrchestrationGetTurnDiffRpc,
   WsOrchestrationGetFullThreadDiffRpc,
