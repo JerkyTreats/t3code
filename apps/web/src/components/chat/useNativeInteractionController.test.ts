@@ -49,9 +49,10 @@ const environmentId = EnvironmentId.make("native-controller-test");
 let renderer: ReactTestRenderer | null;
 let bridge: DesktopInteractionBridge;
 let nativeListener: ((event: DesktopInteractionEvent) => void) | null;
+let currentController: ReturnType<typeof useNativeInteractionController> | null;
 
 function InteractionSurface(props: { interactions: ReadonlyArray<InteractionResource> }) {
-  useNativeInteractionController(environmentId, props.interactions);
+  currentController = useNativeInteractionController(environmentId, props.interactions);
   return null;
 }
 
@@ -126,11 +127,12 @@ function availableResource(overrides: Partial<InteractionResource> = {}): Intera
 beforeEach(() => {
   renderer = null;
   nativeListener = null;
+  currentController = null;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   setPresentation.mockReset().mockResolvedValue(AsyncResult.success({ sequence: 1 }));
   engageInteraction.mockReset();
   disengageInteraction.mockReset();
-  cancelInteraction.mockReset();
+  cancelInteraction.mockReset().mockResolvedValue(AsyncResult.success({ sequence: 1 }));
   bridge = {
     start: vi.fn().mockResolvedValue(undefined),
     arm: vi.fn().mockResolvedValue(undefined),
@@ -303,8 +305,7 @@ describe("native interaction controller boundaries", () => {
       .mockResolvedValueOnce(AsyncResult.success({ sequence: 1 }))
       .mockResolvedValueOnce(
         AsyncResult.failure(Cause.fail(new Error("ready transition rejected"))),
-      )
-      .mockResolvedValueOnce(AsyncResult.success({ sequence: 2 }));
+      );
     const resource = availableResource();
     act(() => {
       renderer = create(mountedSurface([resource]));
@@ -324,11 +325,19 @@ describe("native interaction controller boundaries", () => {
     expect(setPresentation.mock.calls.map(([request]) => request.input.state)).toEqual([
       "starting",
       "ready",
-      "stopped",
     ]);
     expect(setPresentation.mock.calls.map(([request]) => request.input.resourceRevision)).toEqual([
-      1, 2, 2,
+      1, 2,
     ]);
+    expect(cancelInteraction).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: expect.objectContaining({
+        threadId: resource.threadId,
+        interactionId: resource.id,
+        resourceRevision: 2,
+        presentationRevision: 1,
+      }),
+    });
     expect(bridge.stop).toHaveBeenCalledExactlyOnceWith({
       nativeSessionId,
       reason: "protocol-fault",
@@ -349,9 +358,32 @@ describe("native interaction controller boundaries", () => {
     expect(bridge.stop).not.toHaveBeenCalled();
   });
 
-  it("does not attempt to take over an existing presentation lease", async () => {
+  it("does not take over an existing or stopped presentation", async () => {
     act(() => {
       renderer = create(mountedSurface([engagedResource()]));
+    });
+    await flushLifecycle();
+
+    expect(setPresentation).not.toHaveBeenCalled();
+    expect(bridge.start).not.toHaveBeenCalled();
+
+    await act(async () => renderer!.unmount());
+    renderer = null;
+    act(() => {
+      renderer = create(
+        mountedSurface([
+          availableResource({
+            revision: 3,
+            presentation: {
+              state: "stopped",
+              ownerClientId: null,
+              presentationRevision: 1,
+              lastFrameSequence: null,
+              droppedFrames: 0,
+            },
+          }),
+        ]),
+      );
     });
     await flushLifecycle();
 
@@ -373,7 +405,7 @@ describe("native interaction controller boundaries", () => {
     ]);
   });
 
-  it("retires and reclaims the projection-shaped stopped resource across remount", async () => {
+  it("cancels an owned session on real unmount and starts only a new request", async () => {
     const resource = availableResource();
     act(() => {
       renderer = create(mountedSurface([resource]));
@@ -391,38 +423,44 @@ describe("native interaction controller boundaries", () => {
     });
     expect(setPresentation.mock.calls.map(([request]) => request.input.state)).toEqual([
       "starting",
-      "stopped",
     ]);
-
-    const stoppedResource = availableResource({
-      revision: 3,
-      presentation: {
-        state: "stopped",
-        ownerClientId: null,
+    expect(cancelInteraction).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: expect.objectContaining({
+        interactionId: resource.id,
+        resourceRevision: 2,
         presentationRevision: 1,
-        lastFrameSequence: null,
-        droppedFrames: 0,
-      },
+      }),
+    });
+
+    const cancelledResource = availableResource({
+      revision: 3,
+      lifecycle: { state: "cancelled", reason: "user" },
     });
     act(() => {
-      renderer = create(mountedSurface([stoppedResource]));
+      renderer = create(mountedSurface([cancelledResource]));
     });
     await flushLifecycle();
 
-    expect(bridge.start).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(bridge.start).mock.calls[1]![0].nativeSessionId).not.toBe(firstSessionId);
-    expect(vi.mocked(bridge.start).mock.calls[1]![0].resourceRevision).toBe(3);
-    expect(setPresentation.mock.calls[2]![0].input).toEqual(
-      expect.objectContaining({
-        resourceRevision: 3,
-        presentationRevision: 1,
-        state: "starting",
-      }),
-    );
+    expect(bridge.start).toHaveBeenCalledTimes(1);
     expect(bridge.stop).toHaveBeenCalledTimes(1);
+
+    const replacement = availableResource({
+      id: "interaction-2" as InteractionResource["id"],
+      request: {
+        ...resource.request,
+        ref: "request-2",
+        digest: "digest-2",
+      },
+    });
+    act(() => renderer!.update(mountedSurface([cancelledResource, replacement])));
+    await flushLifecycle();
+
+    expect(bridge.start).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(bridge.start).mock.calls[1]![0].interactionId).toBe(replacement.id);
   });
 
-  it("recovers a delayed claim across a fast unmount and remount", async () => {
+  it("cancels a delayed accepted claim without relaunching it after remount", async () => {
     let resolveClaim!: (result: ReturnType<typeof AsyncResult.success>) => void;
     setPresentation.mockImplementationOnce(
       () =>
@@ -450,30 +488,151 @@ describe("native interaction controller boundaries", () => {
     expect(setPresentation.mock.calls.map(([request]) => request.input.state)).toEqual([
       "starting",
       "starting",
-      "stopped",
     ]);
+    expect(cancelInteraction).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: expect.objectContaining({
+        interactionId: resource.id,
+        resourceRevision: 2,
+        presentationRevision: 1,
+      }),
+    });
+  });
 
-    const stoppedResource = availableResource({
+  it("serializes a pending disengagement revision before unmount cancellation", async () => {
+    engageInteraction.mockResolvedValueOnce(
+      AsyncResult.success({
+        ownerClientId: "client-a",
+        engagementEpoch: 1,
+        resourceRevision: 4,
+      }),
+    );
+    let resolveDisengagement!: (result: ReturnType<typeof AsyncResult.success>) => void;
+    disengageInteraction.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveDisengagement = resolve;
+        }),
+    );
+    const resource = availableResource();
+    act(() => {
+      renderer = create(mountedSurface([resource]));
+    });
+    await flushLifecycle();
+    const nativeSessionId = vi.mocked(bridge.start).mock.calls[0]![0].nativeSessionId;
+    act(() => {
+      nativeListener?.({
+        kind: "Ready",
+        nativeSessionId,
+        presentationRevision: 1,
+      } as DesktopInteractionEvent);
+    });
+    await flushLifecycle();
+
+    const readyResource = availableResource({
       revision: 3,
       presentation: {
-        state: "stopped",
-        ownerClientId: null,
+        state: "ready",
+        ownerClientId: "client-a",
         presentationRevision: 1,
-        lastFrameSequence: null,
+        lastFrameSequence: "1",
         droppedFrames: 0,
       },
     });
-    act(() => renderer!.update(mountedSurface([stoppedResource])));
+    act(() => renderer!.update(mountedSurface([readyResource])));
+    await flushLifecycle();
+    const pixels = new Uint8ClampedArray(4);
+    currentController!.registerCanvas(readyResource, {
+      getContext: () => ({
+        createImageData: () => ({ data: pixels }),
+        putImageData: vi.fn(),
+      }),
+    } as unknown as HTMLCanvasElement);
+    act(() => {
+      nativeListener?.({
+        kind: "Frame",
+        protocolVersion: 1,
+        nativeSessionId,
+        sourceStreamId: "22222222222222222222222222222222",
+        frameSequence: "1",
+        semanticTick: "1",
+        interactionGeneration: "0",
+        captureStartedNativeMonotonicNs: "1",
+        captureCompletedNativeMonotonicNs: "2",
+        width: 640,
+        height: 360,
+        strideBytes: 2560,
+        pixelFormat: "rgba8-srgb",
+        presentationRevision: 1,
+        droppedSincePrevious: "0",
+        payloadLength: 921600,
+        payload: new Uint8Array([1, 2, 3, 255]),
+      });
+    });
+    currentController!.engage(readyResource);
+    await flushLifecycle();
+    const engaged = {
+      ...readyResource,
+      revision: 4,
+      engagement: {
+        state: "engaged" as const,
+        epoch: 1,
+        ownerClientId: "client-a",
+        presentationRevision: 1,
+      },
+    };
+    currentController!.disengage(engaged);
+    await act(async () => renderer!.unmount());
+    renderer = null;
+    await flushLifecycle();
+    expect(cancelInteraction).not.toHaveBeenCalled();
+
+    resolveDisengagement(AsyncResult.success({ sequence: 5 }));
     await flushLifecycle();
 
-    expect(bridge.start).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(bridge.start).mock.calls[0]![0].resourceRevision).toBe(3);
-    expect(setPresentation.mock.calls[3]![0].input).toEqual(
-      expect.objectContaining({
-        resourceRevision: 3,
+    expect(disengageInteraction).toHaveBeenCalledWith({
+      environmentId,
+      input: expect.objectContaining({ resourceRevision: 4 }),
+    });
+    expect(cancelInteraction).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: expect.objectContaining({
+        interactionId: resource.id,
+        resourceRevision: 5,
         presentationRevision: 1,
-        state: "starting",
       }),
-    );
+    });
+  });
+
+  it("cancels the resource after a terminal host fault", async () => {
+    const resource = availableResource();
+    act(() => {
+      renderer = create(mountedSurface([resource]));
+    });
+    await flushLifecycle();
+    const nativeSessionId = vi.mocked(bridge.start).mock.calls[0]![0].nativeSessionId;
+
+    act(() => {
+      nativeListener?.({
+        kind: "Fault",
+        nativeSessionId,
+        code: "desktop-host-failure",
+        terminal: true,
+      });
+    });
+    await flushLifecycle();
+
+    expect(cancelInteraction).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: expect.objectContaining({
+        interactionId: resource.id,
+        resourceRevision: 2,
+        presentationRevision: 1,
+      }),
+    });
+    expect(bridge.stop).toHaveBeenCalledExactlyOnceWith({
+      nativeSessionId,
+      reason: "protocol-fault",
+    });
   });
 });

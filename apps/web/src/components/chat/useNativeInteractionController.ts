@@ -202,22 +202,61 @@ export function useNativeInteractionController(
     [reportPresentation],
   );
 
+  const enqueueCancellation = useCallback(
+    (session: NativeSession): Promise<boolean> => {
+      const operation = session.presentationQueue.then(async () => {
+        if (!session.presentationClaimed) return false;
+        const result = await cancelInteraction({
+          environmentId,
+          input: {
+            operationId: CommandId.make(randomUUID()),
+            threadId: session.threadId,
+            interactionId: session.resourceId,
+            resourceRevision: session.authorityRevision,
+            presentationRevision: session.presentationRevision ?? 1,
+          },
+        });
+        if (result._tag === "Success") session.authorityRevision += 1;
+        return result._tag === "Success";
+      });
+      session.presentationQueue = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+    [cancelInteraction, environmentId],
+  );
+
   const persistDisengagement = useCallback(
     async (resourceId: string, leaseRevision?: number) => {
       const resource = resourcesRef.current.get(resourceId);
       if (resource === undefined || resource.lifecycle.state !== "open") return;
-      const resourceRevision = leaseRevision ?? resource.revision;
-      const result = await disengageInteraction({
-        environmentId,
-        input: {
-          operationId: CommandId.make(randomUUID()),
-          threadId: resource.threadId,
-          interactionId: resource.id,
-          resourceRevision,
-          presentationRevision: resource.presentation.presentationRevision,
-        },
-      });
       const session = sessionRef.current;
+      const resourceRevision =
+        session?.resourceId === resource.id
+          ? session.authorityRevision
+          : (leaseRevision ?? resource.revision);
+      const invoke = () =>
+        disengageInteraction({
+          environmentId,
+          input: {
+            operationId: CommandId.make(randomUUID()),
+            threadId: resource.threadId,
+            interactionId: resource.id,
+            resourceRevision,
+            presentationRevision: resource.presentation.presentationRevision,
+          },
+        });
+      const operation =
+        session?.resourceId === resource.id ? session.presentationQueue.then(invoke) : invoke();
+      if (session?.resourceId === resource.id) {
+        session.presentationQueue = operation.then(
+          () => undefined,
+          () => undefined,
+        );
+      }
+      const result = await operation;
       if (
         result._tag === "Success" &&
         session?.resourceId === resource.id &&
@@ -256,6 +295,7 @@ export function useNativeInteractionController(
   const handleNativeEvent = useEffectEvent((event: DesktopInteractionEvent) => {
     const session = sessionRef.current;
     if (session === null || event.nativeSessionId !== session.nativeSessionId) return;
+    if (session.retired) return;
     switch (event.kind) {
       case "Ready":
         session.presentationRevision = event.presentationRevision;
@@ -269,14 +309,7 @@ export function useNativeInteractionController(
           ).catch(() => false);
           if (accepted || session.retired) return;
           session.retired = true;
-          await enqueuePresentation(
-            session,
-            "stopped",
-            event.presentationRevision,
-            session.displayedFrameSequence,
-            session.droppedFrames,
-          ).catch(() => false);
-          if (sessionRef.current === session) sessionRef.current = null;
+          await enqueueCancellation(session).catch(() => false);
           if (bridge !== null && session.nativeStarted) {
             await bridge
               .stop({
@@ -285,6 +318,7 @@ export function useNativeInteractionController(
               })
               .catch(() => undefined);
           }
+          if (sessionRef.current === session) sessionRef.current = null;
         })();
         return;
       case "Frame": {
@@ -334,31 +368,32 @@ export function useNativeInteractionController(
       }
       case "Fault":
         if (!event.terminal) return;
-        void enqueuePresentation(
-          session,
-          "failed",
-          session.presentationRevision ?? 0,
-          session.displayedFrameSequence,
-          session.droppedFrames,
-        );
+        session.retired = true;
+        void enqueueCancellation(session);
         disarmById(session.resourceId, "protocol-fault", false);
         if (bridge !== null) {
-          void bridge.stop({
-            nativeSessionId: session.nativeSessionId,
-            reason: "protocol-fault",
-          });
+          void bridge
+            .stop({
+              nativeSessionId: session.nativeSessionId,
+              reason: "protocol-fault",
+            })
+            .catch(() => undefined);
         }
-        session.retired = true;
         sessionRef.current = null;
         return;
       case "Terminal":
-        void enqueuePresentation(
-          session,
-          event.outcome === "success" ? "stopped" : "failed",
-          session.presentationRevision ?? 0,
-          event.finalFrameSequence === "0" ? null : event.finalFrameSequence,
-          addDecimalCounter(0, event.droppedFrameCount),
-        );
+        if (event.outcome === "success") {
+          void enqueuePresentation(
+            session,
+            "stopped",
+            session.presentationRevision ?? 0,
+            event.finalFrameSequence === "0" ? null : event.finalFrameSequence,
+            addDecimalCounter(0, event.droppedFrameCount),
+          );
+        } else {
+          session.retired = true;
+          void enqueueCancellation(session);
+        }
         disarmById(session.resourceId, "stop", false);
         session.retired = true;
         session.nativeStarted = false;
@@ -380,8 +415,7 @@ export function useNativeInteractionController(
     const resource = interactions.find(
       (entry) =>
         entry.lifecycle.state === "open" &&
-        (entry.presentation.state === "unavailable" ||
-          (entry.presentation.state === "stopped" && entry.presentation.ownerClientId === null)) &&
+        entry.presentation.state === "unavailable" &&
         !startedResourceIdsRef.current.has(entry.id),
     );
     if (resource === undefined) return;
@@ -413,7 +447,6 @@ export function useNativeInteractionController(
         }
         session.presentationClaimed = true;
         if (session.retired || sessionRef.current !== session) {
-          await enqueuePresentation(session, "stopped", 1, null, 0);
           return;
         }
         await bridge.start({
@@ -439,16 +472,11 @@ export function useNativeInteractionController(
         if (sessionRef.current === session) sessionRef.current = null;
         if (!session.presentationClaimed) startedResourceIdsRef.current.delete(resource.id);
         if (session.presentationClaimed && !session.retired) {
-          void enqueuePresentation(
-            session,
-            "failed",
-            session.presentationRevision ?? 1,
-            session.displayedFrameSequence,
-            session.droppedFrames,
-          );
+          session.retired = true;
+          void enqueueCancellation(session);
         }
       });
-  }, [bridge, enqueuePresentation, interactions]);
+  }, [bridge, enqueueCancellation, enqueuePresentation, interactions]);
 
   useEffect(() => {
     const currentIds = new Set<string>(interactions.map((resource) => resource.id));
@@ -459,6 +487,7 @@ export function useNativeInteractionController(
     if (session === null || bridge === null) return;
     const resource = resourcesRef.current.get(session.resourceId);
     if (resource !== undefined && resource.lifecycle.state === "open") return;
+    session.retired = true;
     disarmById(session.resourceId, "navigation", true);
     void bridge.stop({ nativeSessionId: session.nativeSessionId, reason: "navigation" });
   }, [bridge, disarmById, interactions]);
@@ -520,15 +549,7 @@ export function useNativeInteractionController(
       const session = sessionRef.current;
       if (session === null || bridge === null || session.retired) return;
       session.retired = true;
-      if (session.presentationClaimed) {
-        void enqueuePresentation(
-          session,
-          "stopped",
-          session.presentationRevision ?? 1,
-          session.displayedFrameSequence,
-          session.droppedFrames,
-        );
-      }
+      void enqueueCancellation(session);
       for (const resourceId of localLeasesRef.current.keys()) {
         disarmById(resourceId, "navigation", false);
       }
@@ -537,7 +558,7 @@ export function useNativeInteractionController(
       }
       sessionRef.current = null;
     };
-  }, [bridge, disarmById, enqueuePresentation]);
+  }, [bridge, disarmById, enqueueCancellation]);
 
   useEffect(() => {
     if (bridge === null) return;
@@ -565,18 +586,26 @@ export function useNativeInteractionController(
       ) {
         return;
       }
-      const result = await engageInteraction({
-        environmentId,
-        input: {
-          operationId: CommandId.make(randomUUID()),
-          threadId: resource.threadId,
-          interactionId: resource.id,
-          resourceRevision: resource.revision,
-          presentationRevision: resource.presentation.presentationRevision,
-        },
-      });
+      const operation = session.presentationQueue.then(() =>
+        engageInteraction({
+          environmentId,
+          input: {
+            operationId: CommandId.make(randomUUID()),
+            threadId: resource.threadId,
+            interactionId: resource.id,
+            resourceRevision: session.authorityRevision,
+            presentationRevision: resource.presentation.presentationRevision,
+          },
+        }),
+      );
+      session.presentationQueue = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      const result = await operation;
       if (result._tag !== "Success" || result.value.engagementEpoch <= 0) return;
       session.authorityRevision = result.value.resourceRevision;
+      if (session.retired || sessionRef.current !== session) return;
       const lease: LocalLease = {
         ownerClientId: result.value.ownerClientId,
         engagementEpoch: result.value.engagementEpoch,
@@ -613,7 +642,15 @@ export function useNativeInteractionController(
       disarmById(resource.id, "cancel", false);
       const session = sessionRef.current;
       if (session?.resourceId === resource.id && bridge !== null) {
-        void bridge.stop({ nativeSessionId: session.nativeSessionId, reason: "cancel" });
+        session.retired = true;
+        const cancellation = enqueueCancellation(session);
+        const stopped = bridge
+          .stop({ nativeSessionId: session.nativeSessionId, reason: "cancel" })
+          .catch(() => undefined);
+        await cancellation;
+        await stopped;
+        if (sessionRef.current === session) sessionRef.current = null;
+        return;
       }
       await cancelInteraction({
         environmentId,
@@ -626,7 +663,7 @@ export function useNativeInteractionController(
         },
       });
     },
-    [bridge, cancelInteraction, disarmById, environmentId],
+    [bridge, cancelInteraction, disarmById, enqueueCancellation, environmentId],
   );
 
   const registerCanvas = useCallback(

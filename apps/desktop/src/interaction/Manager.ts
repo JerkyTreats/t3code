@@ -234,6 +234,8 @@ type Session = {
   latestFrameSequence: bigint | null;
   lastOwnerReceiptId: string | null;
   cancelled: boolean;
+  ownerCancellationCompleted: boolean;
+  hostFaultEmitted: boolean;
 };
 
 export interface InteractionManagerOptions {
@@ -335,6 +337,8 @@ export class InteractionManager {
       latestFrameSequence: null,
       lastOwnerReceiptId: null,
       cancelled: false,
+      ownerCancellationCompleted: false,
+      hostFaultEmitted: false,
     };
     this.#session = session;
     child.stdout.on("data", (chunk: Buffer | Uint8Array) =>
@@ -434,9 +438,7 @@ export class InteractionManager {
       session.terminalResolve = resolve;
       session.terminalReject = reject;
     });
-    if (input.reason === "cancel" || input.reason === "expiry") {
-      this.#cancelOwner(session, input.reason);
-    }
+    this.#cancelOwner(session, input.reason);
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
@@ -613,12 +615,17 @@ export class InteractionManager {
           const result = await this.#observationSink.bindResource({
             schemaVersion: 1,
             operationId: `desktop-bind:${session.nativeSessionId}`,
-            ...session.binding,
+            requestRef: session.binding.requestRef,
+            requestRevision: session.binding.requestRevision,
+            requestDigest: session.binding.requestDigest,
+            resourceId: session.binding.resourceId,
+            resourceRevision: session.binding.resourceRevision,
             threadId: session.threadId,
             presentationRevision: event.presentationRevision,
             nativeSessionId: event.nativeSessionId,
             sourceStreamId: event.sourceStreamId,
             interactionGeneration: event.interactionGeneration,
+            resourceBindingProvenance: session.binding.resourceBindingProvenance,
           });
           session.ownerBound = true;
           if (result.receiptId !== null) session.lastOwnerReceiptId = result.receiptId;
@@ -767,21 +774,7 @@ export class InteractionManager {
     });
     session.ownerQueue = next;
     void next.catch((error) => {
-      if (!session.cancelled) {
-        session.cancelled = true;
-        void this.#observationSink.cancel({
-          schemaVersion: 1,
-          cancellationOperationId: `desktop-cancel:${session.nativeSessionId}`,
-          requestRef: session.binding.requestRef,
-          requestRevision: session.binding.requestRevision,
-          requestDigest: session.binding.requestDigest,
-          resourceId: session.binding.resourceId,
-          resourceRevision: session.binding.resourceRevision,
-          reason: "owner-admission-failure",
-        });
-      }
-      session.terminalReject?.(error instanceof Error ? error : new Error(String(error)));
-      this.#killOwnedChild(session);
+      this.#fail(session, error instanceof Error ? error : new Error(String(error)));
     });
   }
 
@@ -791,16 +784,20 @@ export class InteractionManager {
     session.ownerQueue = session.ownerQueue
       .catch(() => undefined)
       .then(() =>
-        this.#observationSink.cancel({
-          schemaVersion: 1,
-          cancellationOperationId: `desktop-cancel:${session.nativeSessionId}`,
-          requestRef: session.binding.requestRef,
-          requestRevision: session.binding.requestRevision,
-          requestDigest: session.binding.requestDigest,
-          resourceId: session.binding.resourceId,
-          resourceRevision: session.binding.resourceRevision,
-          reason,
-        }),
+        this.#observationSink
+          .cancel({
+            schemaVersion: 1,
+            cancellationOperationId: `desktop-cancel:${session.nativeSessionId}`,
+            requestRef: session.binding.requestRef,
+            requestRevision: session.binding.requestRevision,
+            requestDigest: session.binding.requestDigest,
+            resourceId: session.binding.resourceId,
+            resourceRevision: session.binding.resourceRevision,
+            reason,
+          })
+          .then(() => {
+            session.ownerCancellationCompleted = true;
+          }),
       )
       .then(
         () => undefined,
@@ -827,25 +824,30 @@ export class InteractionManager {
     const artifactPath = NodePath.join(this.#evidenceDirectory, `${session.nativeSessionId}.json`);
     await persistEvidenceArtifact(this.#evidenceDirectory, artifactPath, bytes);
     await session.ownerQueue;
-    if (session.cancelled || session.lastOwnerReceiptId === null)
-      throw new Error("Interaction owner did not produce an evidence receipt binding.");
-    const ownerResult = await this.#observationSink.acknowledgeEvidence({
-      schemaVersion: 1,
-      operationId: `desktop-evidence:${session.nativeSessionId}`,
-      requestRef: session.binding.requestRef,
-      requestRevision: session.binding.requestRevision,
-      requestDigest: session.binding.requestDigest,
-      resourceId: session.binding.resourceId,
-      resourceRevision: session.binding.resourceRevision,
-      ownerReceiptId: session.lastOwnerReceiptId,
-      evidence: {
-        ref: `interaction-evidence:${session.nativeSessionId}:${digest.slice("sha256:".length)}`,
-        digest,
-        byteCount: bytes.byteLength,
-        mediaType: "application/vnd.t3.interaction-evidence+json",
-      },
-    });
-    if (ownerResult.receiptId !== null) session.lastOwnerReceiptId = ownerResult.receiptId;
+    if (session.ownerQualified) {
+      if (session.lastOwnerReceiptId === null) {
+        throw new Error("Qualified interaction owner did not retain its evidence receipt.");
+      }
+      const ownerResult = await this.#observationSink.acknowledgeEvidence({
+        schemaVersion: 1,
+        operationId: `desktop-evidence:${session.nativeSessionId}`,
+        requestRef: session.binding.requestRef,
+        requestRevision: session.binding.requestRevision,
+        requestDigest: session.binding.requestDigest,
+        resourceId: session.binding.resourceId,
+        resourceRevision: session.binding.resourceRevision,
+        ownerReceiptId: session.lastOwnerReceiptId,
+        evidence: {
+          ref: `interaction-evidence:${session.nativeSessionId}:${digest.slice("sha256:".length)}`,
+          digest,
+          byteCount: bytes.byteLength,
+          mediaType: "application/vnd.t3.interaction-evidence+json",
+        },
+      });
+      if (ownerResult.receiptId !== null) session.lastOwnerReceiptId = ownerResult.receiptId;
+    } else if (!session.ownerCancellationCompleted) {
+      throw new Error("Unqualified interaction owner did not complete cancellation.");
+    }
     await this.#write(session, {
       kind: "EvidenceCommitted",
       nativeSessionId: session.nativeSessionId,
@@ -865,6 +867,15 @@ export class InteractionManager {
   }
 
   #fail(session: Session, error: Error): void {
+    if (!session.hostFaultEmitted) {
+      session.hostFaultEmitted = true;
+      this.#emit({
+        kind: "Fault",
+        nativeSessionId: session.nativeSessionId,
+        code: "desktop-host-failure",
+        terminal: true,
+      });
+    }
     this.#cancelOwner(session, "desktop-host-failure");
     session.terminalReject?.(error);
     this.#killOwnedChild(session);

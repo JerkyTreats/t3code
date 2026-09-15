@@ -106,7 +106,31 @@ function nativeReceipt(receiptId: string, sourceSequence: string, generation: st
 function fakeObservationSink(): NativeObservationSink {
   return {
     ready: vi.fn(async () => undefined),
-    bindResource: vi.fn(async () => ownerResult),
+    bindResource: vi.fn(async (input) => {
+      expect(Object.keys(input).sort()).toEqual(
+        [
+          "interactionGeneration",
+          "nativeSessionId",
+          "operationId",
+          "presentationRevision",
+          "requestDigest",
+          "requestRef",
+          "requestRevision",
+          "resourceBindingProvenance",
+          "resourceId",
+          "resourceRevision",
+          "schemaVersion",
+          "sourceStreamId",
+          "threadId",
+        ].sort(),
+      );
+      return {
+        ...ownerResult,
+        operation: "resource-bind",
+        disposition: "bound",
+        receiptId: null,
+      };
+    }),
     activateEngagement: vi.fn(async () => ownerResult),
     admitObservation: vi.fn(async () => ownerResult),
     disarmEngagement: vi.fn(async () => ownerResult),
@@ -220,11 +244,16 @@ describe("InteractionManager", () => {
       ),
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(listener).not.toHaveBeenCalled();
+    expect(listener).toHaveBeenCalledExactlyOnceWith({
+      kind: "Fault",
+      nativeSessionId: sessionId,
+      code: "desktop-host-failure",
+      terminal: true,
+    });
     expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGKILL");
   });
 
-  it("persists bounded evidence before acknowledgment and accepts only successful Terminal", async () => {
+  it("persists unqualified evidence and commits it only after owner cancellation", async () => {
     const child = new FakeChild();
     const evidenceDirectory = await NodeFSP.mkdtemp(
       NodePath.join(NodeOS.tmpdir(), "t3-interaction-"),
@@ -271,7 +300,7 @@ describe("InteractionManager", () => {
         finalEngagementEpoch: "1",
         droppedFrameCount: "0",
         rejectedInputCount: "0",
-        receiptCount: "1",
+        receiptCount: "0",
       }),
     );
     await vi.waitFor(() => {
@@ -281,13 +310,14 @@ describe("InteractionManager", () => {
     expect(
       await NodeFSP.readFile(NodePath.join(evidenceDirectory, `${sessionId}.json`), "utf8"),
     ).toContain("EvidenceReady");
-    expect(sink.acknowledgeEvidence).toHaveBeenCalledWith(
+    expect(sink.cancel).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        evidence: expect.objectContaining({
-          ref: expect.stringMatching(/^interaction-evidence:[a-f0-9]{32}:[a-f0-9]{64}$/),
-        }),
+        resourceId: startInput.interactionId,
+        resourceRevision: startInput.resourceRevision,
+        reason: "stop",
       }),
     );
+    expect(sink.acknowledgeEvidence).not.toHaveBeenCalled();
     child.stdout.write(
       encode({
         kind: "Terminal",
@@ -306,6 +336,114 @@ describe("InteractionManager", () => {
     child.exit();
     await expect(stopping).resolves.toBeUndefined();
     expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it("cancels an unbound request before committing native evidence", async () => {
+    const child = new FakeChild();
+    const evidenceDirectory = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "t3-interaction-prebind-"),
+    );
+    temporaryDirectories.push(evidenceDirectory);
+    const sink = fakeObservationSink();
+    const manager = new InteractionManager({
+      capability: { launch: async () => child },
+      evidenceDirectory,
+      observationSink: sink,
+    });
+    await manager.start(startInput);
+    child.stdout.write(encode(nativeReady()));
+    const stopping = manager.stop({ nativeSessionId: sessionId, reason: "navigation" });
+    child.stdout.write(
+      encode({
+        kind: "EvidenceReady",
+        nativeSessionId: sessionId,
+        finalFrameSequence: "0",
+        finalInputSourceSequence: "0",
+        finalEngagementEpoch: "0",
+        droppedFrameCount: "0",
+        rejectedInputCount: "0",
+        receiptCount: "0",
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(decodeWrites(child.stdin.read() as Buffer).at(-1)?.kind).toBe("EvidenceCommitted");
+    });
+    expect(sink.bindResource).not.toHaveBeenCalled();
+    expect(sink.acknowledgeEvidence).not.toHaveBeenCalled();
+    expect(sink.cancel).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        requestRef: startInput.requestRef,
+        resourceId: startInput.interactionId,
+        resourceRevision: startInput.resourceRevision,
+        reason: "navigation",
+      }),
+    );
+    child.stdout.write(
+      encode({
+        kind: "Terminal",
+        nativeSessionId: sessionId,
+        sourceStreamId: streamId,
+        finalFrameSequence: "0",
+        finalInputSourceSequence: "0",
+        finalEngagementEpoch: "0",
+        droppedFrameCount: "0",
+        rejectedInputCount: "0",
+        terminalNativeMonotonicNs: "1",
+        outcome: "success",
+        reason: "navigation",
+      }),
+    );
+    child.exit();
+    await expect(stopping).resolves.toBeUndefined();
+  });
+
+  it("publishes a stable terminal host fault when the owner rejects resource binding", async () => {
+    const child = new FakeChild();
+    const sink = fakeObservationSink();
+    vi.mocked(sink.bindResource).mockRejectedValue(new Error("strict owner rejected input"));
+    const manager = new InteractionManager({
+      capability: { launch: async () => child },
+      observationSink: sink,
+    });
+    const listener = vi.fn();
+    manager.onEvent(listener);
+    await manager.start(startInput);
+    child.stdout.write(encode(nativeReady()));
+    child.stdout.write(
+      encode(
+        {
+          kind: "Frame",
+          protocolVersion: 1,
+          nativeSessionId: sessionId,
+          sourceStreamId: streamId,
+          frameSequence: "1",
+          semanticTick: "1",
+          interactionGeneration: "0",
+          captureStartedNativeMonotonicNs: "1",
+          captureCompletedNativeMonotonicNs: "2",
+          width: 640,
+          height: 360,
+          strideBytes: 2560,
+          pixelFormat: "rgba8-srgb",
+          presentationRevision: 1,
+          droppedSincePrevious: "0",
+          payloadLength: 921600,
+        },
+        Buffer.alloc(921600),
+      ),
+    );
+    await vi.waitFor(() => {
+      expect(listener).toHaveBeenCalledWith({
+        kind: "Fault",
+        nativeSessionId: sessionId,
+        code: "desktop-host-failure",
+        terminal: true,
+      });
+    });
+    expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGKILL");
+    expect(sink.cancel).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ reason: "desktop-host-failure" }),
+    );
   });
 
   it("latches owner qualification and drains later receipts into evidence without re-admission", async () => {

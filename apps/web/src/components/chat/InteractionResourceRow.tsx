@@ -322,8 +322,14 @@ export function InteractionResourceRow({
         </div>
       ) : null}
 
+      {isOpen && hostAvailable ? (
+        <p className="mt-3 text-muted-foreground text-xs leading-relaxed">
+          Leaving this interaction ends its native session. To retry, start a new request.
+        </p>
+      ) : null}
+
       {isOpen ? (
-        <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
           {hostAvailable ? (
             isEngaged ? (
               <Button

@@ -46,6 +46,78 @@ export interface InteractionObservationEnvelopeV1 extends NativeObservationBindi
   readonly receipt: InputReceipt;
 }
 
+export interface ResourceBindingV1 {
+  readonly schemaVersion: 1;
+  readonly operationId: string;
+  readonly requestRef: string;
+  readonly requestRevision: string;
+  readonly requestDigest: string;
+  readonly resourceId: string;
+  readonly resourceRevision: number;
+  readonly threadId: string;
+  readonly presentationRevision: number;
+  readonly nativeSessionId: string;
+  readonly sourceStreamId: string;
+  readonly interactionGeneration: string;
+  readonly resourceBindingProvenance: "synthetic" | "physical";
+}
+
+export interface EngagementActivationV1 {
+  readonly schemaVersion: 1;
+  readonly operationId: string;
+  readonly requestRef: string;
+  readonly requestRevision: string;
+  readonly requestDigest: string;
+  readonly resourceId: string;
+  readonly resourceRevision: number;
+  readonly presentationRevision: number;
+  readonly interactionGeneration: string;
+  readonly engagementEpoch: string;
+  readonly activationReleaseConsumed: boolean;
+}
+
+export interface EngagementDisarmV1 {
+  readonly schemaVersion: 1;
+  readonly operationId: string;
+  readonly requestRef: string;
+  readonly requestRevision: string;
+  readonly requestDigest: string;
+  readonly resourceId: string;
+  readonly resourceRevision: number;
+  readonly presentationRevision: number;
+  readonly interactionGeneration: string;
+  readonly engagementEpoch: string;
+  readonly reason: string;
+}
+
+export interface EvidenceAcknowledgementV1 {
+  readonly schemaVersion: 1;
+  readonly operationId: string;
+  readonly requestRef: string;
+  readonly requestRevision: string;
+  readonly requestDigest: string;
+  readonly resourceId: string;
+  readonly resourceRevision: number;
+  readonly ownerReceiptId: string;
+  readonly evidence: Readonly<{
+    ref: string;
+    digest: string;
+    byteCount: number;
+    mediaType: string;
+  }>;
+}
+
+export interface OwnerCancellationV1 {
+  readonly schemaVersion: 1;
+  readonly cancellationOperationId: string;
+  readonly requestRef: string;
+  readonly requestRevision: string;
+  readonly requestDigest: string;
+  readonly resourceId: string;
+  readonly resourceRevision: number;
+  readonly reason: string;
+}
+
 export interface OwnerResultV1 {
   readonly schemaVersion: 1;
   readonly operation: string;
@@ -64,14 +136,14 @@ export interface OwnerResultV1 {
 
 export interface NativeObservationSink {
   readonly ready: () => Promise<void>;
-  readonly bindResource: (input: Readonly<Record<string, unknown>>) => Promise<OwnerResultV1>;
-  readonly activateEngagement: (input: Readonly<Record<string, unknown>>) => Promise<OwnerResultV1>;
+  readonly bindResource: (input: Readonly<ResourceBindingV1>) => Promise<OwnerResultV1>;
+  readonly activateEngagement: (input: Readonly<EngagementActivationV1>) => Promise<OwnerResultV1>;
   readonly admitObservation: (envelope: InteractionObservationEnvelopeV1) => Promise<OwnerResultV1>;
-  readonly disarmEngagement: (input: Readonly<Record<string, unknown>>) => Promise<OwnerResultV1>;
+  readonly disarmEngagement: (input: Readonly<EngagementDisarmV1>) => Promise<OwnerResultV1>;
   readonly acknowledgeEvidence: (
-    input: Readonly<Record<string, unknown>>,
+    input: Readonly<EvidenceAcknowledgementV1>,
   ) => Promise<OwnerResultV1>;
-  readonly cancel: (input: Readonly<Record<string, unknown>>) => Promise<OwnerResultV1>;
+  readonly cancel: (input: Readonly<OwnerCancellationV1>) => Promise<OwnerResultV1>;
 }
 
 interface NativeObservationSinkConfig {

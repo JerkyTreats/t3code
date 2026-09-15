@@ -68,6 +68,7 @@ describe("InteractionResourceRow", () => {
     expect(markup).toContain('data-testid="interaction-cancel-interaction-1"');
     expect(markup).not.toContain('data-testid="interaction-canvas-interaction-1"');
     expect(markup).not.toContain(">Engage<");
+    expect(markup).not.toContain("Leaving this interaction ends its native session.");
     expect(markup).not.toContain("autofocus");
   });
 
@@ -99,6 +100,17 @@ describe("InteractionResourceRow", () => {
       .findAllByType("button")
       .find((button) => button.props["data-testid"] === "interaction-engage-interaction-1");
     expect(engage).toBeDefined();
+    expect(renderer!.toJSON()).toEqual(
+      expect.objectContaining({
+        children: expect.arrayContaining([
+          expect.objectContaining({
+            children: [
+              "Leaving this interaction ends its native session. To retry, start a new request.",
+            ],
+          }),
+        ]),
+      }),
+    );
     expect(
       renderer!.root.findByProps({ "data-testid": "interaction-canvas-interaction-1" }).type,
     ).toBe("canvas");
