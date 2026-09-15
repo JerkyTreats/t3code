@@ -22,6 +22,8 @@ import {
   KeybindingRule,
   MessageId,
   ExternalLauncherCommandNotFoundError,
+  InteractionId,
+  type InteractionResource,
   OrchestrationShellSnapshot,
   type OrchestrationShellStreamItem,
   OrchestrationThreadDetailSnapshot,
@@ -250,6 +252,119 @@ const defaultModelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
   model: "gpt-5-codex",
 } as const;
+
+const makeDisconnectedInteractionResource = (): InteractionResource => ({
+  id: InteractionId.make("interaction-disconnect-test"),
+  threadId: defaultThreadId,
+  revision: 1,
+  anchorTurnId: TurnId.make("turn-interaction-anchor"),
+  createdSequence: 1,
+  capabilityId: "wallpaper.interaction.lab.v1",
+  createdByClientId: AuthClientId.make("client-interaction-creator"),
+  request: {
+    ref: "request-disconnect-test",
+    revision: "1",
+    digest: "digest-disconnect-test",
+    conditionRevision: "1",
+    inputProvenance: "synthetic",
+  },
+  display: {
+    title: "Synthetic input test",
+    summary: "Exercise connection-owned cleanup.",
+  },
+  lifecycle: { state: "open" },
+  presentation: {
+    state: "unavailable",
+    ownerClientId: null,
+    presentationRevision: 0,
+    lastFrameSequence: null,
+    droppedFrames: 0,
+  },
+  engagement: { state: "disengaged", latestEpoch: 0 },
+  evidence: null,
+  resolution: null,
+  continuation: { state: "none" },
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+});
+
+const applyInteractionConnectionCommand = (
+  resource: InteractionResource,
+  command: OrchestrationCommand,
+): InteractionResource => {
+  switch (command.type) {
+    case "interaction.presentation.set":
+      return {
+        ...resource,
+        revision: resource.revision + 1,
+        presentation: {
+          state: command.state,
+          ownerClientId: command.state === "stopped" ? null : command.ownerClientId,
+          presentationRevision: command.presentationRevision,
+          lastFrameSequence: command.lastFrameSequence,
+          droppedFrames: command.droppedFrames,
+        },
+        engagement:
+          command.state === "ready"
+            ? resource.engagement
+            : {
+                state: "disengaged",
+                latestEpoch:
+                  resource.engagement.state === "engaged"
+                    ? resource.engagement.epoch
+                    : resource.engagement.latestEpoch,
+              },
+        updatedAt: command.createdAt,
+      };
+    case "interaction.engage": {
+      const latestEpoch =
+        resource.engagement.state === "engaged"
+          ? resource.engagement.epoch
+          : resource.engagement.latestEpoch;
+      return {
+        ...resource,
+        revision: resource.revision + 1,
+        engagement: {
+          state: "engaged",
+          epoch: latestEpoch + 1,
+          ownerClientId: command.ownerClientId,
+          presentationRevision: command.presentationRevision,
+        },
+        updatedAt: command.createdAt,
+      };
+    }
+    case "interaction.disengage":
+      return {
+        ...resource,
+        revision: resource.revision + 1,
+        engagement: {
+          state: "disengaged",
+          latestEpoch:
+            resource.engagement.state === "engaged"
+              ? resource.engagement.epoch
+              : resource.engagement.latestEpoch,
+        },
+        updatedAt: command.createdAt,
+      };
+    case "interaction.cancel":
+      return {
+        ...resource,
+        revision: resource.revision + 1,
+        lifecycle: { state: "cancelled", reason: command.reason },
+        presentation: { ...resource.presentation, state: "stopped" },
+        engagement: {
+          state: "disengaged",
+          latestEpoch:
+            resource.engagement.state === "engaged"
+              ? resource.engagement.epoch
+              : resource.engagement.latestEpoch,
+        },
+        updatedAt: command.createdAt,
+      };
+    default:
+      return resource;
+  }
+};
 
 const makeBoardPost = (sequence: number) => ({
   id: BoardPostId.make(`board-post-${sequence}`),
@@ -1866,6 +1981,383 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       encodeInteractionLeaseKey(ThreadId.make("thread"), "one:interaction"),
     );
   });
+
+  it.effect("cancels an open connection-owned interaction when its socket disconnects", () =>
+    Effect.gen(function* () {
+      let resource = makeDisconnectedInteractionResource();
+      const commands: Array<OrchestrationCommand> = [];
+      const cancellationStarted = yield* Deferred.make<void>();
+      const releaseCancellation = yield* Deferred.make<void>();
+      const cancelled = yield* Deferred.make<void>();
+      const engaged = yield* Deferred.make<void>();
+      const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+      const app = yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.gen(function* () {
+                if (command.type === "interaction.cancel") {
+                  yield* Deferred.succeed(cancellationStarted, undefined);
+                  yield* Deferred.await(releaseCancellation);
+                }
+                commands.push(command);
+                resource = applyInteractionConnectionCommand(resource, command);
+                if (command.type === "interaction.cancel") {
+                  yield* Deferred.succeed(cancelled, undefined);
+                }
+                return { sequence: resource.revision };
+              }),
+          },
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: () =>
+              Effect.sync(() =>
+                Option.some({
+                  snapshotSequence: resource.revision,
+                  thread: { ...thread, interactions: [resource] },
+                }),
+              ),
+          },
+        },
+      });
+      const session = yield* app.sessions.issue({ subject: "interaction-disconnect-test" });
+      const wsUrl = appendSessionCookieToWsUrl(
+        yield* getWsServerUrl("/ws", { authenticated: false }),
+        `${app.sessions.cookieName}=${session.token}`,
+      );
+      const connection = yield* withWsRpcClient(wsUrl, (client) =>
+        client[ORCHESTRATION_WS_METHODS.setInteractionPresentation]({
+          operationId: CommandId.make("presentation-ready-disconnect"),
+          threadId: resource.threadId,
+          interactionId: resource.id,
+          resourceRevision: resource.revision,
+          presentationRevision: 1,
+          state: "ready",
+          lastFrameSequence: "1",
+          droppedFrames: 0,
+        }).pipe(
+          Effect.flatMap(() =>
+            client[ORCHESTRATION_WS_METHODS.engageInteraction]({
+              operationId: CommandId.make("engage-disconnect"),
+              threadId: resource.threadId,
+              interactionId: resource.id,
+              resourceRevision: resource.revision,
+              presentationRevision: 1,
+            }),
+          ),
+          Effect.tap(() => Deferred.succeed(engaged, undefined)),
+          Effect.andThen(client[WS_METHODS.subscribeServerConfig]({}).pipe(Stream.runDrain)),
+        ),
+      ).pipe(Effect.result, Effect.forkChild);
+      yield* Deferred.await(engaged);
+      assert.isTrue(yield* app.sessions.revoke(session.sessionId));
+      yield* Deferred.await(cancellationStarted);
+      assert.isUndefined(connection.pollUnsafe());
+      yield* Deferred.succeed(releaseCancellation, undefined);
+      yield* Deferred.await(cancelled);
+      yield* Fiber.join(connection);
+
+      assert.deepEqual(
+        commands.map((command) => command.type),
+        ["interaction.presentation.set", "interaction.engage", "interaction.cancel"],
+      );
+      assert.deepEqual(resource.lifecycle, { state: "cancelled", reason: "user" });
+      assert.equal(resource.presentation.state, "stopped");
+      assert.equal(resource.engagement.state, "disengaged");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("does not append another cancellation when the renderer cancels first", () =>
+    Effect.gen(function* () {
+      let resource = makeDisconnectedInteractionResource();
+      const commands: Array<OrchestrationCommand> = [];
+      const rendererCancelled = yield* Deferred.make<void>();
+      const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+      const app = yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                commands.push(command);
+                resource = applyInteractionConnectionCommand(resource, command);
+                return { sequence: resource.revision };
+              }),
+          },
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: () =>
+              Effect.sync(() =>
+                Option.some({
+                  snapshotSequence: resource.revision,
+                  thread: { ...thread, interactions: [resource] },
+                }),
+              ),
+          },
+        },
+      });
+      const session = yield* app.sessions.issue({ subject: "interaction-renderer-cancel-test" });
+      const wsUrl = appendSessionCookieToWsUrl(
+        yield* getWsServerUrl("/ws", { authenticated: false }),
+        `${app.sessions.cookieName}=${session.token}`,
+      );
+
+      const connection = yield* withWsRpcClient(wsUrl, (client) =>
+        client[ORCHESTRATION_WS_METHODS.setInteractionPresentation]({
+          operationId: CommandId.make("presentation-ready-renderer-cancel"),
+          threadId: resource.threadId,
+          interactionId: resource.id,
+          resourceRevision: resource.revision,
+          presentationRevision: 1,
+          state: "ready",
+          lastFrameSequence: "1",
+          droppedFrames: 0,
+        }).pipe(
+          Effect.flatMap(() =>
+            client[ORCHESTRATION_WS_METHODS.cancelInteraction]({
+              operationId: CommandId.make("renderer-cancel"),
+              threadId: resource.threadId,
+              interactionId: resource.id,
+              resourceRevision: resource.revision,
+              presentationRevision: 1,
+            }),
+          ),
+          Effect.tap(() => Deferred.succeed(rendererCancelled, undefined)),
+          Effect.andThen(client[WS_METHODS.subscribeServerConfig]({}).pipe(Stream.runDrain)),
+        ),
+      ).pipe(Effect.result, Effect.forkChild);
+      yield* Deferred.await(rendererCancelled);
+      assert.isTrue(yield* app.sessions.revoke(session.sessionId));
+      yield* Fiber.join(connection);
+
+      assert.equal(commands.filter((command) => command.type === "interaction.cancel").length, 1);
+      assert.deepEqual(resource.lifecycle, { state: "cancelled", reason: "user" });
+      assert.equal(resource.presentation.state, "stopped");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("bounds connection cleanup when cancellation dispatch stalls", () =>
+    Effect.gen(function* () {
+      let resource = makeDisconnectedInteractionResource();
+      const cancellationStarted = yield* Deferred.make<void>();
+      const presentationReady = yield* Deferred.make<void>();
+      const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+      const app = yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              command.type === "interaction.cancel"
+                ? Deferred.succeed(cancellationStarted, undefined).pipe(
+                    Effect.andThen(Effect.never),
+                  )
+                : Effect.sync(() => {
+                    resource = applyInteractionConnectionCommand(resource, command);
+                    return { sequence: resource.revision };
+                  }),
+          },
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: () =>
+              Effect.sync(() =>
+                Option.some({
+                  snapshotSequence: resource.revision,
+                  thread: { ...thread, interactions: [resource] },
+                }),
+              ),
+          },
+        },
+      });
+      const session = yield* app.sessions.issue({
+        subject: "interaction-disconnect-timeout-test",
+      });
+      const wsUrl = appendSessionCookieToWsUrl(
+        yield* getWsServerUrl("/ws", { authenticated: false }),
+        `${app.sessions.cookieName}=${session.token}`,
+      );
+
+      const connection = yield* withWsRpcClient(wsUrl, (client) =>
+        client[ORCHESTRATION_WS_METHODS.setInteractionPresentation]({
+          operationId: CommandId.make("presentation-ready-before-disconnect-timeout"),
+          threadId: resource.threadId,
+          interactionId: resource.id,
+          resourceRevision: resource.revision,
+          presentationRevision: 1,
+          state: "ready",
+          lastFrameSequence: "1",
+          droppedFrames: 0,
+        }).pipe(
+          Effect.tap(() => Deferred.succeed(presentationReady, undefined)),
+          Effect.andThen(client[WS_METHODS.subscribeServerConfig]({}).pipe(Stream.runDrain)),
+        ),
+      ).pipe(Effect.result, Effect.forkChild);
+      yield* Deferred.await(presentationReady);
+      assert.isTrue(yield* app.sessions.revoke(session.sessionId));
+      yield* Deferred.await(cancellationStarted);
+      assert.isUndefined(connection.pollUnsafe());
+      yield* TestClock.adjust("5 seconds");
+      yield* Fiber.join(connection);
+
+      assert.equal(resource.lifecycle.state, "open");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  for (const terminalState of ["resolved", "failed"] as const) {
+    it.effect(`preserves a ${terminalState} interaction when its socket disconnects`, () =>
+      Effect.gen(function* () {
+        let resource = makeDisconnectedInteractionResource();
+        const commands: Array<OrchestrationCommand> = [];
+        const terminalized = yield* Deferred.make<void>();
+        const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+        const app = yield* buildAppUnderTest({
+          layers: {
+            orchestrationEngine: {
+              dispatch: (command) =>
+                Effect.sync(() => {
+                  commands.push(command);
+                  resource = applyInteractionConnectionCommand(resource, command);
+                  return { sequence: resource.revision };
+                }),
+            },
+            projectionSnapshotQuery: {
+              getThreadDetailSnapshot: () =>
+                Effect.sync(() =>
+                  Option.some({
+                    snapshotSequence: resource.revision,
+                    thread: { ...thread, interactions: [resource] },
+                  }),
+                ),
+            },
+          },
+        });
+        const session = yield* app.sessions.issue({
+          subject: `interaction-${terminalState}-disconnect-test`,
+        });
+        const wsUrl = appendSessionCookieToWsUrl(
+          yield* getWsServerUrl("/ws", { authenticated: false }),
+          `${app.sessions.cookieName}=${session.token}`,
+        );
+
+        const connection = yield* withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.setInteractionPresentation]({
+            operationId: CommandId.make(`presentation-ready-${terminalState}`),
+            threadId: resource.threadId,
+            interactionId: resource.id,
+            resourceRevision: resource.revision,
+            presentationRevision: 1,
+            state: "ready",
+            lastFrameSequence: "1",
+            droppedFrames: 0,
+          }).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                resource = {
+                  ...resource,
+                  revision: resource.revision + 1,
+                  lifecycle: { state: terminalState, ownerReceiptId: "owner-receipt" },
+                  presentation: { ...resource.presentation, state: "stopped" },
+                };
+              }),
+            ),
+            Effect.tap(() => Deferred.succeed(terminalized, undefined)),
+            Effect.andThen(client[WS_METHODS.subscribeServerConfig]({}).pipe(Stream.runDrain)),
+          ),
+        ).pipe(Effect.result, Effect.forkChild);
+        yield* Deferred.await(terminalized);
+        assert.isTrue(yield* app.sessions.revoke(session.sessionId));
+        yield* Fiber.join(connection);
+
+        assert.equal(resource.lifecycle.state, terminalState);
+        assert.equal(resource.presentation.state, "stopped");
+        assert.equal(commands.filter((command) => command.type === "interaction.cancel").length, 0);
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    );
+  }
+
+  for (const ownershipChange of [
+    {
+      label: "preserves an open interaction after upstream qualification stops presentation",
+      apply: (resource: InteractionResource): InteractionResource => ({
+        ...resource,
+        revision: resource.revision + 1,
+        presentation: {
+          ...resource.presentation,
+          state: "stopped",
+          ownerClientId: null,
+        },
+      }),
+    },
+    {
+      label: "does not cancel an open interaction owned by another connection",
+      apply: (resource: InteractionResource): InteractionResource => ({
+        ...resource,
+        revision: resource.revision + 1,
+        presentation: {
+          ...resource.presentation,
+          ownerClientId: "different-connection-owner",
+        },
+      }),
+    },
+  ] as const) {
+    it.effect(ownershipChange.label, () =>
+      Effect.gen(function* () {
+        let resource = makeDisconnectedInteractionResource();
+        const commands: Array<OrchestrationCommand> = [];
+        const ownershipChanged = yield* Deferred.make<void>();
+        const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+        const app = yield* buildAppUnderTest({
+          layers: {
+            orchestrationEngine: {
+              dispatch: (command) =>
+                Effect.sync(() => {
+                  commands.push(command);
+                  resource = applyInteractionConnectionCommand(resource, command);
+                  return { sequence: resource.revision };
+                }),
+            },
+            projectionSnapshotQuery: {
+              getThreadDetailSnapshot: () =>
+                Effect.sync(() =>
+                  Option.some({
+                    snapshotSequence: resource.revision,
+                    thread: { ...thread, interactions: [resource] },
+                  }),
+                ),
+            },
+          },
+        });
+        const session = yield* app.sessions.issue({
+          subject: "interaction-owner-change-disconnect-test",
+        });
+        const wsUrl = appendSessionCookieToWsUrl(
+          yield* getWsServerUrl("/ws", { authenticated: false }),
+          `${app.sessions.cookieName}=${session.token}`,
+        );
+
+        const connection = yield* withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.setInteractionPresentation]({
+            operationId: CommandId.make("presentation-ready-before-owner-change"),
+            threadId: resource.threadId,
+            interactionId: resource.id,
+            resourceRevision: resource.revision,
+            presentationRevision: 1,
+            state: "ready",
+            lastFrameSequence: "1",
+            droppedFrames: 0,
+          }).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                resource = ownershipChange.apply(resource);
+              }),
+            ),
+            Effect.tap(() => Deferred.succeed(ownershipChanged, undefined)),
+            Effect.andThen(client[WS_METHODS.subscribeServerConfig]({}).pipe(Stream.runDrain)),
+          ),
+        ).pipe(Effect.result, Effect.forkChild);
+        yield* Deferred.await(ownershipChanged);
+        assert.isTrue(yield* app.sessions.revoke(session.sessionId));
+        yield* Fiber.join(connection);
+
+        assert.equal(resource.lifecycle.state, "open");
+        assert.equal(commands.filter((command) => command.type === "interaction.cancel").length, 0);
+      }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    );
+  }
 
   it.effect("parks HTTP ingress until command readiness", () =>
     Effect.gen(function* () {

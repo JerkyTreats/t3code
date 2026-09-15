@@ -3,6 +3,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
@@ -12,6 +13,7 @@ import * as Stream from "effect/Stream";
 import {
   DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
   type AuthEnvironmentScope,
+  type AuthSessionId,
   ClientConnectionMethod,
   ClientDeviceType,
   ClientOs,
@@ -155,6 +157,7 @@ const isOrchestrationGetSnapshotError = Schema.is(OrchestrationGetSnapshotError)
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
+const INTERACTION_CONNECTION_RELEASE_TIMEOUT = Duration.seconds(5);
 
 const resolveDiscoveryForConfig = <A, E, R>(
   discovery: Effect.Effect<A, E, R>,
@@ -175,6 +178,136 @@ export const resolveFileManagerRevealKindForConfig = <E, R>(
 
 export const encodeInteractionLeaseKey = (threadId: ThreadId, interactionId: string): string =>
   JSON.stringify([threadId, interactionId]);
+
+export type InteractionConnectionLease = {
+  readonly threadId: ThreadId;
+  readonly interactionId: string;
+};
+
+export type WsRpcConnectionState = {
+  readonly interactionConnectionId: string;
+  readonly interactionOwnerClientId: string;
+  readonly rpcClientIds: Ref.Ref<Set<RpcClientId>>;
+  readonly interactions: Ref.Ref<Map<string, InteractionConnectionLease>>;
+};
+
+export const releaseWsRpcConnection = Effect.fnUntraced(function* (input: {
+  readonly sessionId: AuthSessionId;
+  readonly clientOrigin: OrchestrationClientOrigin;
+  readonly state: WsRpcConnectionState;
+  readonly backgroundPolicy: BackgroundPolicy.BackgroundPolicy["Service"];
+  readonly projectionSnapshotQuery: ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"];
+  readonly orchestrationEngine: OrchestrationEngine.OrchestrationEngineService["Service"];
+}) {
+  const hasClientOrigin =
+    input.clientOrigin.surface !== undefined || input.clientOrigin.appVersion !== undefined;
+  const dispatchFromClient: OrchestrationEngine.OrchestrationEngineShape["dispatch"] = (command) =>
+    input.orchestrationEngine.dispatch(
+      command,
+      hasClientOrigin ? { origin: input.clientOrigin } : undefined,
+    );
+
+  yield* Ref.get(input.state.rpcClientIds).pipe(
+    Effect.flatMap((clientIds) =>
+      Effect.forEach(
+        clientIds,
+        (clientId) => input.backgroundPolicy.removeRpcClient(input.sessionId, clientId),
+        { discard: true },
+      ),
+    ),
+    Effect.ignore,
+  );
+  yield* Ref.get(input.state.interactions).pipe(
+    Effect.flatMap((leases) =>
+      Effect.forEach(
+        leases.values(),
+        (lease) =>
+          Effect.gen(function* () {
+            const releasedAt = DateTime.formatIso(yield* DateTime.now);
+            const detail = yield* input.projectionSnapshotQuery.getThreadDetailSnapshot(
+              lease.threadId,
+            );
+            if (Option.isNone(detail)) return;
+            let resource = detail.value.thread.interactions?.find(
+              (entry) => entry.id === lease.interactionId,
+            );
+            if (!resource) return;
+            const ownsPresentation =
+              resource.presentation.ownerClientId === input.state.interactionOwnerClientId;
+            const ownsEngagement =
+              resource.engagement.state === "engaged" &&
+              resource.engagement.ownerClientId === input.state.interactionOwnerClientId;
+            if (resource.lifecycle.state === "open" && (ownsPresentation || ownsEngagement)) {
+              const cancellation = {
+                type: "interaction.cancel",
+                commandId: CommandId.make(
+                  `interaction-disconnect-cancel:${input.state.interactionConnectionId}:${resource.id}`,
+                ),
+                threadId: resource.threadId,
+                interactionId: resource.id,
+                resourceRevision: resource.revision,
+                reason: "user",
+                createdAt: releasedAt,
+              } as const;
+              const cancellationExit = yield* Effect.exit(dispatchFromClient(cancellation));
+              if (Exit.isFailure(cancellationExit)) {
+                const refreshed = yield* input.projectionSnapshotQuery.getThreadDetailSnapshot(
+                  lease.threadId,
+                );
+                resource = Option.isSome(refreshed)
+                  ? refreshed.value.thread.interactions?.find(
+                      (entry) => entry.id === lease.interactionId,
+                    )
+                  : undefined;
+                if (!resource || resource.lifecycle.state === "open") {
+                  return yield* Effect.failCause(cancellationExit.cause);
+                }
+              }
+              const refreshed = yield* input.projectionSnapshotQuery.getThreadDetailSnapshot(
+                lease.threadId,
+              );
+              resource = Option.isSome(refreshed)
+                ? refreshed.value.thread.interactions?.find(
+                    (entry) => entry.id === lease.interactionId,
+                  )
+                : undefined;
+            }
+            if (
+              resource &&
+              resource.lifecycle.state !== "open" &&
+              resource.presentation.ownerClientId === input.state.interactionOwnerClientId &&
+              resource.presentation.state !== "stopped"
+            ) {
+              yield* dispatchFromClient({
+                type: "interaction.presentation.set",
+                commandId: CommandId.make(
+                  `interaction-disconnect-stop:${input.state.interactionConnectionId}:${resource.id}:${resource.presentation.presentationRevision}`,
+                ),
+                threadId: resource.threadId,
+                interactionId: resource.id,
+                resourceRevision: resource.revision,
+                presentationRevision: resource.presentation.presentationRevision,
+                ownerClientId: input.state.interactionOwnerClientId,
+                state: "stopped",
+                lastFrameSequence: resource.presentation.lastFrameSequence,
+                droppedFrames: resource.presentation.droppedFrames,
+                createdAt: releasedAt,
+              });
+            }
+          }).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning("failed to release disconnected interaction lease", {
+                threadId: lease.threadId,
+                interactionId: lease.interactionId,
+                cause,
+              }),
+            ),
+          ),
+        { discard: true },
+      ),
+    ),
+  );
+});
 
 function unexpectedCompatibilityError(error: never): never {
   throw new Error(`Unhandled compatibility error: ${String(error)}`);
@@ -429,13 +562,14 @@ const makeWsRpcLayer = (
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  connectionState: WsRpcConnectionState,
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const crypto = yield* Crypto.Crypto;
-      const interactionConnectionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
-      const interactionOwnerClientId = `${currentSession.clientId}:${interactionConnectionId}`;
+      const { interactionOwnerClientId, rpcClientIds } = connectionState;
+      const connectionInteractions = connectionState.interactions;
       const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
       const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
       const boardQuery = yield* BoardQuery.BoardQuery;
@@ -536,98 +670,6 @@ const makeWsRpcLayer = (
       const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
       const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
       const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
-      const rpcClientIds = yield* Ref.make(new Set<RpcClientId>());
-      const connectionInteractions = yield* Ref.make(
-        new Map<string, { readonly threadId: ThreadId; readonly interactionId: string }>(),
-      );
-      yield* Effect.addFinalizer(() =>
-        Ref.get(rpcClientIds).pipe(
-          Effect.flatMap((clientIds) =>
-            Effect.forEach(
-              clientIds,
-              (clientId) => backgroundPolicy.removeRpcClient(currentSessionId, clientId),
-              {
-                discard: true,
-              },
-            ),
-          ),
-          Effect.ignore,
-        ),
-      );
-      yield* Effect.addFinalizer(() =>
-        Ref.get(connectionInteractions).pipe(
-          Effect.flatMap((leases) =>
-            Effect.forEach(
-              leases.values(),
-              (lease) =>
-                Effect.gen(function* () {
-                  const detail = yield* projectionSnapshotQuery.getThreadDetailSnapshot(
-                    lease.threadId,
-                  );
-                  if (Option.isNone(detail)) return;
-                  let resource = detail.value.thread.interactions?.find(
-                    (entry) => entry.id === lease.interactionId,
-                  );
-                  if (!resource) return;
-                  if (
-                    resource.engagement.state === "engaged" &&
-                    resource.engagement.ownerClientId === interactionOwnerClientId
-                  ) {
-                    yield* dispatchFromClient({
-                      type: "interaction.disengage",
-                      commandId: CommandId.make(
-                        `interaction-disconnect-disengage:${interactionConnectionId}:${resource.id}:${resource.engagement.epoch}`,
-                      ),
-                      threadId: resource.threadId,
-                      interactionId: resource.id,
-                      resourceRevision: resource.revision,
-                      ownerClientId: interactionOwnerClientId,
-                      createdAt: DateTime.formatIso(yield* DateTime.now),
-                    });
-                    const refreshed = yield* projectionSnapshotQuery.getThreadDetailSnapshot(
-                      lease.threadId,
-                    );
-                    resource = Option.isSome(refreshed)
-                      ? refreshed.value.thread.interactions?.find(
-                          (entry) => entry.id === lease.interactionId,
-                        )
-                      : undefined;
-                  }
-                  if (
-                    resource &&
-                    resource.presentation.ownerClientId === interactionOwnerClientId &&
-                    resource.presentation.state !== "stopped"
-                  ) {
-                    yield* dispatchFromClient({
-                      type: "interaction.presentation.set",
-                      commandId: CommandId.make(
-                        `interaction-disconnect-stop:${interactionConnectionId}:${resource.id}:${resource.presentation.presentationRevision}`,
-                      ),
-                      threadId: resource.threadId,
-                      interactionId: resource.id,
-                      resourceRevision: resource.revision,
-                      presentationRevision: resource.presentation.presentationRevision,
-                      ownerClientId: interactionOwnerClientId,
-                      state: "stopped",
-                      lastFrameSequence: resource.presentation.lastFrameSequence,
-                      droppedFrames: resource.presentation.droppedFrames,
-                      createdAt: DateTime.formatIso(yield* DateTime.now),
-                    });
-                  }
-                }).pipe(
-                  Effect.catchCause((cause) =>
-                    Effect.logWarning("failed to release disconnected interaction lease", {
-                      threadId: lease.threadId,
-                      interactionId: lease.interactionId,
-                      cause,
-                    }),
-                  ),
-                ),
-              { discard: true },
-            ),
-          ),
-        ),
-      );
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
       const sessions = yield* SessionStore.SessionStore;
       const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
@@ -3067,6 +3109,9 @@ const makeWsRpcLayer = (
 export const websocketRpcRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const connections = yield* ClientConnectionRegistry.ClientConnectionRegistry;
+    const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
+    const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+    const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const baseServerSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
     const config = yield* ServerConfig.ServerConfig;
@@ -3116,6 +3161,14 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         );
         const clientOrigin = readClientConnectionOrigin(request);
         const clientAnalyticsProps = readClientAnalyticsProps(request);
+        const connectionCrypto = yield* Crypto.Crypto;
+        const interactionConnectionId = yield* connectionCrypto.randomUUIDv4.pipe(Effect.orDie);
+        const connectionState: WsRpcConnectionState = {
+          interactionConnectionId,
+          interactionOwnerClientId: `${session.clientId}:${interactionConnectionId}`,
+          rpcClientIds: yield* Ref.make(new Set<RpcClientId>()),
+          interactions: yield* Ref.make(new Map<string, InteractionConnectionLease>()),
+        };
         const rpcWebSocketHttpEffect = yield* RpcServer.toHttpEffectWebsocket(WsRpcGroup, {
           disableTracing: true,
         }).pipe(
@@ -3125,6 +3178,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               clientOrigin,
               clientAnalyticsProps,
               previewAutomationBroker,
+              connectionState,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(AgentSessionScanner.layer),
@@ -3156,28 +3210,50 @@ export const websocketRpcRouteLayer = Layer.unwrap(
             ),
           ),
         );
-        return yield* connections.guard(
-          session.clientId,
-          connections.guardSession(
-            session.sessionId,
-            Effect.gen(function* () {
-              yield* sessions.assertClientAdmission(session.sessionId).pipe(
-                Effect.catchIf(SessionStore.isSessionCredentialInvalidError, () =>
-                  failEnvironmentAuthInvalid("invalid_credential"),
-                ),
-                Effect.catchIf(SessionStore.isSessionCredentialInternalError, (error) =>
-                  failEnvironmentInternal("internal_error", error),
-                ),
-              );
-              yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
-              yield* analytics.record("client.connected", clientAnalyticsProps);
-              return yield* Effect.acquireUseRelease(
-                sessions.markConnected(session.sessionId),
-                () => rpcWebSocketHttpEffect,
-                () => sessions.markDisconnected(session.sessionId),
-              );
-            }),
-          ),
+        return yield* Effect.acquireUseRelease(
+          sessions.markConnected(session.sessionId),
+          () =>
+            connections.guard(
+              session.clientId,
+              connections.guardSession(
+                session.sessionId,
+                Effect.gen(function* () {
+                  yield* sessions.assertClientAdmission(session.sessionId).pipe(
+                    Effect.catchIf(SessionStore.isSessionCredentialInvalidError, () =>
+                      failEnvironmentAuthInvalid("invalid_credential"),
+                    ),
+                    Effect.catchIf(SessionStore.isSessionCredentialInternalError, (error) =>
+                      failEnvironmentInternal("internal_error", error),
+                    ),
+                  );
+                  yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
+                  yield* analytics.record("client.connected", clientAnalyticsProps);
+                  return yield* rpcWebSocketHttpEffect;
+                }),
+              ),
+            ),
+          () =>
+            releaseWsRpcConnection({
+              sessionId: session.sessionId,
+              clientOrigin,
+              state: connectionState,
+              backgroundPolicy,
+              projectionSnapshotQuery,
+              orchestrationEngine,
+            }).pipe(
+              Effect.timeoutOption(INTERACTION_CONNECTION_RELEASE_TIMEOUT),
+              Effect.flatMap(
+                Option.match({
+                  onNone: () =>
+                    Effect.logWarning("interaction connection release timed out", {
+                      interactionConnectionId,
+                    }),
+                  onSome: () => Effect.void,
+                }),
+              ),
+              Effect.uninterruptible,
+              Effect.ensuring(sessions.markDisconnected(session.sessionId)),
+            ),
         );
       }).pipe(
         Effect.catchTags({
