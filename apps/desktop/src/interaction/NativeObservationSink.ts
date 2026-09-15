@@ -189,7 +189,7 @@ export function makeNativeObservationSink(
         clearTimeout(timeout);
         reject(error);
       });
-      child.once("exit", (code) => {
+      child.once("close", (code) => {
         clearTimeout(timeout);
         resolve(code ?? 1);
       });

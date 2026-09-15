@@ -86,6 +86,9 @@ const decodeImportedTranscriptsPayload = Schema.decodeUnknownOption(
   ),
 );
 const decodeAgentSessionImportSource = Schema.decodeUnknownOption(AgentSessionImportSource);
+const decodeInteractionResourceActivityPayload = Schema.decodeUnknownOption(
+  InteractionResourceActivityPayload,
+);
 // Keep detail reads consistent with the in-memory projector's retained
 // activity window. Applying the limit in SQL avoids decoding an unbounded
 // payload_json set before the projector can enforce that invariant.
@@ -414,7 +417,8 @@ function interactionResourcesFromRows(
 ): Map<string, ReadonlyArray<InteractionResource>> {
   const latest = new Map<string, Map<string, InteractionResource>>();
   for (const row of rows) {
-    const decoded = Schema.decodeUnknownOption(InteractionResourceActivityPayload)(row.payload);
+    if (row.kind !== "interaction.resource.changed") continue;
+    const decoded = decodeInteractionResourceActivityPayload(row.payload);
     if (Option.isNone(decoded)) continue;
     const resource = decoded.value.resource;
     const byId = latest.get(row.threadId) ?? new Map<string, InteractionResource>();

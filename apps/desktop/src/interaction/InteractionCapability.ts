@@ -30,6 +30,10 @@ export interface InteractionChild {
   readonly pid?: number | undefined;
   readonly exitCode: number | null;
   once(event: "exit", listener: (code: number | null, signal: NodeJS.Signals | null) => void): this;
+  once(
+    event: "close",
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): this;
   once(event: "error", listener: (error: Error) => void): this;
   kill(signal?: NodeJS.Signals | number): boolean;
 }

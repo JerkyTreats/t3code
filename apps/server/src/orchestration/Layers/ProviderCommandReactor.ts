@@ -62,6 +62,9 @@ const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderAdapterValidationError = Schema.is(ProviderAdapterValidationError);
 const isProviderWorkspaceMissingError = Schema.is(ProviderWorkspaceMissingError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
+const decodeInteractionResourceActivityPayload = Schema.decodeUnknownOption(
+  InteractionResourceActivityPayload,
+);
 
 type ProviderIntentEvent = Extract<
   OrchestrationEvent,
@@ -1834,9 +1837,7 @@ const make = Effect.gen(function* () {
     switch (event.type) {
       case "thread.activity-appended": {
         if (event.payload.activity.kind !== "interaction.resource.changed") return;
-        const decoded = Schema.decodeUnknownOption(InteractionResourceActivityPayload)(
-          event.payload.activity.payload,
-        );
+        const decoded = decodeInteractionResourceActivityPayload(event.payload.activity.payload);
         if (Option.isNone(decoded)) return;
         yield* processInteractionResource(decoded.value.resource, "live");
         return;

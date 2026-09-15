@@ -196,7 +196,20 @@ describe("InteractionResourceRow", () => {
       );
     });
     const updatedSection = renderer!.root.findByType("section");
-    const inside = {};
+    const inside = renderer!.root.findByType("canvas");
+    expect(inside.props.tabIndex).toBe(0);
+    const canvasFocus = vi.fn();
+    inside.props.onPointerDown({
+      clientX: 1,
+      clientY: 1,
+      currentTarget: {
+        focus: canvasFocus,
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 10, height: 10 }),
+      },
+      nativeEvent: { isTrusted: true },
+      preventDefault: vi.fn(),
+    });
+    expect(canvasFocus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
     updatedSection.props.onBlurCapture({
       currentTarget: { contains: (target: unknown) => target === inside },
       relatedTarget: inside,
@@ -244,10 +257,12 @@ describe("InteractionResourceRow", () => {
     });
     const canvas = renderer!.root.findByType("canvas");
     const preventDefault = vi.fn();
+    const focus = vi.fn();
     canvas.props.onPointerDown({
       clientX: 75,
       clientY: 225,
       currentTarget: {
+        focus,
         getBoundingClientRect: () => ({ left: 25, top: 25, width: 200, height: 100 }),
       },
       nativeEvent: { isTrusted: true },
@@ -255,6 +270,7 @@ describe("InteractionResourceRow", () => {
     });
 
     expect(preventDefault).toHaveBeenCalledOnce();
+    expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
     expect(onPointerInput).toHaveBeenCalledWith(resource, {
       phase: "press",
       normalizedX: 0.25,

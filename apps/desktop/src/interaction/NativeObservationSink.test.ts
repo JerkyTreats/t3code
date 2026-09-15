@@ -29,7 +29,7 @@ afterEach(async () => {
 });
 
 describe("NativeObservationSink", () => {
-  it("uses one verified fixed owner invocation with JSON stdin and a sanitized environment", async () => {
+  it("waits for owner stdout closure after exit and uses a sanitized fixed invocation", async () => {
     const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-owner-sink-"));
     temporaryDirectories.push(root);
     const binaryPath = NodePath.join(root, "meld-interaction-owner");
@@ -39,24 +39,27 @@ describe("NativeObservationSink", () => {
     const written: Buffer[] = [];
     child.stdin.on("data", (chunk: Buffer) => written.push(chunk));
     child.stdin.on("finish", () => {
-      child.stdout.end(
-        `${JSON.stringify({
-          schemaVersion: 1,
-          operation: "observation-admit",
-          disposition: "progress",
-          requestRef: "request:one",
-          requestRevision: "revision:one",
-          requestDigest: "digest:one",
-          ownerState: "engaged",
-          receiptId: "receipt:one",
-          evidenceRef: null,
-          evidenceDigest: null,
-          reason: null,
-          publicationAttemptCount: 0,
-          publicationEffectCount: 0,
-        })}\n`,
-      );
       child.emit("exit", 0, null);
+      setImmediate(() => {
+        child.stdout.end(
+          `${JSON.stringify({
+            schemaVersion: 1,
+            operation: "observation-admit",
+            disposition: "progress",
+            requestRef: "request:one",
+            requestRevision: "revision:one",
+            requestDigest: "digest:one",
+            ownerState: "engaged",
+            receiptId: "receipt:one",
+            evidenceRef: null,
+            evidenceDigest: null,
+            reason: null,
+            publicationAttemptCount: 0,
+            publicationEffectCount: 0,
+          })}\n`,
+        );
+        child.emit("close", 0, null);
+      });
     });
     const spawnProcess = vi.fn(() => child);
     const sink = makeNativeObservationSink({

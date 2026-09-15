@@ -132,6 +132,7 @@ import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as ServerConfig from "./config.ts";
 import { HTTP_ROUTER_CONFIG, makeRoutesLayer } from "./server.ts";
 import {
+  encodeInteractionLeaseKey,
   isThreadDetailEvent,
   resolveAvailableEditorsForConfig,
   resolveFileManagerRevealKindForConfig,
@@ -1859,6 +1860,13 @@ const NodeHttpServerTestWithWsDeflate = HttpServer.layerTestClient.pipe(
 );
 
 it.layer(NodeServices.layer)("server router seam", (it) => {
+  it("encodes interaction lease tuples without delimiter collisions", () => {
+    assert.notEqual(
+      encodeInteractionLeaseKey(ThreadId.make("thread:one"), "interaction"),
+      encodeInteractionLeaseKey(ThreadId.make("thread"), "one:interaction"),
+    );
+  });
+
   it.effect("parks HTTP ingress until command readiness", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

@@ -31,6 +31,41 @@ const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
+const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+
+const interactionLookalikePayload = {
+  resource: {
+    id: "interaction-lookalike",
+    threadId: "thread-1",
+    revision: 1,
+    anchorTurnId: "turn-1",
+    createdSequence: 1,
+    capabilityId: "wallpaper.interaction.lab.v1",
+    createdByClientId: "client-1",
+    request: {
+      ref: "request-lookalike",
+      revision: "revision-1",
+      digest: "digest-1",
+      conditionRevision: "condition-1",
+      inputProvenance: "synthetic",
+    },
+    display: { title: "Lookalike", summary: "Ordinary activity payload" },
+    lifecycle: { state: "open" },
+    presentation: {
+      state: "unavailable",
+      ownerClientId: null,
+      presentationRevision: 0,
+      lastFrameSequence: null,
+      droppedFrames: 0,
+    },
+    engagement: { state: "disengaged", latestEpoch: 0 },
+    evidence: null,
+    resolution: null,
+    continuation: { state: "none" },
+    createdAt: "2026-02-24T00:00:06.000Z",
+    updatedAt: "2026-02-24T00:00:06.000Z",
+  },
+} as const;
 
 const projectionSnapshotLayer = it.layer(
   OrchestrationProjectionSnapshotQueryLive.pipe(
@@ -185,7 +220,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           'info',
           'runtime.note',
           'provider started',
-          '{"stage":"start"}',
+          ${encodeUnknownJson(interactionLookalikePayload)},
           '2026-02-24T00:00:06.000Z'
         )
       `;
@@ -370,7 +405,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
               tone: "info",
               kind: "runtime.note",
               summary: "provider started",
-              payload: { stage: "start" },
+              payload: interactionLookalikePayload,
               turnId: asTurnId("turn-1"),
               createdAt: "2026-02-24T00:00:06.000Z",
             },

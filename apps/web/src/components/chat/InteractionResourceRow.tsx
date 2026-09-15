@@ -276,6 +276,7 @@ export function InteractionResourceRow({
             data-testid={`interaction-canvas-${resource.id}`}
             width={640}
             height={360}
+            tabIndex={0}
             aria-label={`${resource.display.title} native interaction surface`}
             className={cn(
               "block aspect-video h-auto w-full bg-background",
@@ -283,7 +284,10 @@ export function InteractionResourceRow({
             )}
             onPointerEnter={(event) => forwardPointerInput("enter", event)}
             onPointerMove={(event) => forwardPointerInput("move", event)}
-            onPointerDown={(event) => forwardPointerInput("press", event)}
+            onPointerDown={(event) => {
+              event.currentTarget.focus({ preventScroll: true });
+              forwardPointerInput("press", event);
+            }}
             onPointerUp={(event) => forwardPointerInput("release", event)}
             onPointerLeave={(event) => forwardPointerInput("leave", event)}
           />

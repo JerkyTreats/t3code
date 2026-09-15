@@ -173,6 +173,9 @@ export const resolveFileManagerRevealKindForConfig = <E, R>(
   discovery: Effect.Effect<FileManagerRevealKind | undefined, E, R>,
 ) => resolveDiscoveryForConfig(discovery, () => undefined);
 
+export const encodeInteractionLeaseKey = (threadId: ThreadId, interactionId: string): string =>
+  JSON.stringify([threadId, interactionId]);
+
 function unexpectedCompatibilityError(error: never): never {
   throw new Error(`Unhandled compatibility error: ${String(error)}`);
 }
@@ -1423,7 +1426,7 @@ const makeWsRpcLayer = (
               );
               yield* Ref.update(connectionInteractions, (leases) => {
                 const next = new Map(leases);
-                const key = `${input.threadId}:${input.interactionId}`;
+                const key = encodeInteractionLeaseKey(input.threadId, input.interactionId);
                 if (input.state === "stopped") next.delete(key);
                 else
                   next.set(key, {
@@ -1489,7 +1492,7 @@ const makeWsRpcLayer = (
               }
               yield* Ref.update(connectionInteractions, (leases) => {
                 const next = new Map(leases);
-                next.set(`${input.threadId}:${input.interactionId}`, {
+                next.set(encodeInteractionLeaseKey(input.threadId, input.interactionId), {
                   threadId: input.threadId,
                   interactionId: input.interactionId,
                 });
@@ -1543,7 +1546,7 @@ const makeWsRpcLayer = (
               );
               yield* Ref.update(connectionInteractions, (leases) => {
                 const next = new Map(leases);
-                next.delete(`${input.threadId}:${input.interactionId}`);
+                next.delete(encodeInteractionLeaseKey(input.threadId, input.interactionId));
                 return next;
               });
               return result;

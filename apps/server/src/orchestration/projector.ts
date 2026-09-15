@@ -45,6 +45,9 @@ import {
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 const MAX_THREAD_MESSAGES = 2_000;
 const MAX_THREAD_CHECKPOINTS = 500;
+const decodeInteractionResourceActivityPayload = Schema.decodeUnknownOption(
+  InteractionResourceActivityPayload,
+);
 
 // Async questions can stay open while the agent produces more activity.
 // Match the database snapshot's pending-question retention.
@@ -851,9 +854,7 @@ export function projectEvent(
           }
 
           if (payload.activity.kind === "interaction.resource.changed") {
-            const decoded = Schema.decodeUnknownOption(InteractionResourceActivityPayload)(
-              payload.activity.payload,
-            );
+            const decoded = decodeInteractionResourceActivityPayload(payload.activity.payload);
             if (Option.isNone(decoded)) {
               return nextBase;
             }
