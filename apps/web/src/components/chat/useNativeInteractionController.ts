@@ -29,8 +29,10 @@ interface LocalLease {
 }
 
 interface NativeSession {
-  resourceId: string;
+  resourceId: InteractionResource["id"];
+  threadId: InteractionResource["threadId"];
   nativeSessionId: string;
+  authorityRevision: number;
   presentationRevision: number | null;
   displayedFrameSequence: string | null;
   droppedFrames: number;
@@ -38,6 +40,10 @@ interface NativeSession {
   lastFrame: Extract<DesktopInteractionEvent, { kind: "Frame" }> | null;
   moveInFlight: boolean;
   requestedDisengageEpochs: Set<number>;
+  presentationQueue: Promise<void>;
+  presentationClaimed: boolean;
+  nativeStarted: boolean;
+  retired: boolean;
 }
 
 export interface NativeInteractionController {
@@ -128,6 +134,7 @@ export function useNativeInteractionController(
   const canvasesRef = useRef(new Map<string, HTMLCanvasElement>());
   const sessionRef = useRef<NativeSession | null>(null);
   const startedResourceIdsRef = useRef(new Set<string>());
+  const lifecycleGenerationRef = useRef(0);
   const localLeasesRef = useRef(new Map<string, LocalLease>());
   const [localLeases, setLocalLeases] = useState<ReadonlyMap<string, LocalLease>>(new Map());
   const [framedInteractionIds, setFramedInteractionIds] = useState<ReadonlySet<string>>(new Set());
@@ -139,46 +146,85 @@ export function useNativeInteractionController(
 
   const reportPresentation = useCallback(
     async (
-      resourceId: string,
+      threadId: InteractionResource["threadId"],
+      resourceId: InteractionResource["id"],
+      resourceRevision: number,
       state: "starting" | "ready" | "stopped" | "failed",
       presentationRevision: number,
       lastFrameSequence: string | null,
       droppedFrames: number,
     ) => {
-      const resource = resourcesRef.current.get(resourceId);
-      if (resource === undefined || resource.lifecycle.state !== "open") return;
-      await setPresentation({
+      const result = await setPresentation({
         environmentId,
         input: {
           operationId: CommandId.make(randomUUID()),
-          threadId: resource.threadId,
-          interactionId: resource.id,
-          resourceRevision:
-            localLeasesRef.current.get(resourceId)?.resourceRevision ?? resource.revision,
+          threadId,
+          interactionId: resourceId,
+          resourceRevision,
           presentationRevision,
           state,
           lastFrameSequence,
           droppedFrames,
         },
       });
+      return result._tag === "Success";
     },
     [environmentId, setPresentation],
+  );
+
+  const enqueuePresentation = useCallback(
+    (
+      session: NativeSession,
+      state: "starting" | "ready" | "stopped" | "failed",
+      presentationRevision: number,
+      lastFrameSequence: string | null,
+      droppedFrames: number,
+    ): Promise<boolean> => {
+      const operation = session.presentationQueue.then(async () => {
+        const accepted = await reportPresentation(
+          session.threadId,
+          session.resourceId,
+          session.authorityRevision,
+          state,
+          presentationRevision,
+          lastFrameSequence,
+          droppedFrames,
+        );
+        if (accepted) session.authorityRevision += 1;
+        return accepted;
+      });
+      session.presentationQueue = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+    [reportPresentation],
   );
 
   const persistDisengagement = useCallback(
     async (resourceId: string, leaseRevision?: number) => {
       const resource = resourcesRef.current.get(resourceId);
       if (resource === undefined || resource.lifecycle.state !== "open") return;
-      await disengageInteraction({
+      const resourceRevision = leaseRevision ?? resource.revision;
+      const result = await disengageInteraction({
         environmentId,
         input: {
           operationId: CommandId.make(randomUUID()),
           threadId: resource.threadId,
           interactionId: resource.id,
-          resourceRevision: leaseRevision ?? resource.revision,
+          resourceRevision,
           presentationRevision: resource.presentation.presentationRevision,
         },
       });
+      const session = sessionRef.current;
+      if (
+        result._tag === "Success" &&
+        session?.resourceId === resource.id &&
+        session.authorityRevision === resourceRevision
+      ) {
+        session.authorityRevision += 1;
+      }
     },
     [disengageInteraction, environmentId],
   );
@@ -213,13 +259,23 @@ export function useNativeInteractionController(
     switch (event.kind) {
       case "Ready":
         session.presentationRevision = event.presentationRevision;
-        void reportPresentation(
-          session.resourceId,
+        void enqueuePresentation(
+          session,
           "ready",
           event.presentationRevision,
           null,
           session.droppedFrames,
-        );
+        ).then((accepted) => {
+          if (accepted || session.retired) return;
+          session.retired = true;
+          if (sessionRef.current === session) sessionRef.current = null;
+          if (bridge !== null && session.nativeStarted) {
+            void bridge.stop({
+              nativeSessionId: session.nativeSessionId,
+              reason: "protocol-fault",
+            });
+          }
+        });
         return;
       case "Frame": {
         session.presentationRevision = event.presentationRevision;
@@ -268,8 +324,8 @@ export function useNativeInteractionController(
       }
       case "Fault":
         if (!event.terminal) return;
-        void reportPresentation(
-          session.resourceId,
+        void enqueuePresentation(
+          session,
           "failed",
           session.presentationRevision ?? 0,
           session.displayedFrameSequence,
@@ -282,17 +338,20 @@ export function useNativeInteractionController(
             reason: "protocol-fault",
           });
         }
+        session.retired = true;
         sessionRef.current = null;
         return;
       case "Terminal":
-        void reportPresentation(
-          session.resourceId,
+        void enqueuePresentation(
+          session,
           event.outcome === "success" ? "stopped" : "failed",
           session.presentationRevision ?? 0,
           event.finalFrameSequence === "0" ? null : event.finalFrameSequence,
           addDecimalCounter(0, event.droppedFrameCount),
         );
         disarmById(session.resourceId, "stop", false);
+        session.retired = true;
+        session.nativeStarted = false;
         sessionRef.current = null;
         return;
       case "InputReceipt":
@@ -311,14 +370,15 @@ export function useNativeInteractionController(
     const resource = interactions.find(
       (entry) =>
         entry.lifecycle.state === "open" &&
-        entry.presentation.state !== "stopped" &&
-        entry.presentation.state !== "failed" &&
+        entry.presentation.state === "unavailable" &&
         !startedResourceIdsRef.current.has(entry.id),
     );
     if (resource === undefined) return;
     const session: NativeSession = {
       resourceId: resource.id,
+      threadId: resource.threadId,
       nativeSessionId: randomHex(16),
+      authorityRevision: resource.revision,
       presentationRevision: null,
       displayedFrameSequence: null,
       droppedFrames: 0,
@@ -326,32 +386,58 @@ export function useNativeInteractionController(
       lastFrame: null,
       moveInFlight: false,
       requestedDisengageEpochs: new Set(),
+      presentationQueue: Promise.resolve(),
+      presentationClaimed: false,
+      nativeStarted: false,
+      retired: false,
     };
     startedResourceIdsRef.current.add(resource.id);
     sessionRef.current = session;
-    void bridge
-      .start({
-        nativeSessionId: session.nativeSessionId,
-        threadId: resource.threadId,
-        requestRef: resource.request.ref,
-        requestRevision: resource.request.revision,
-        requestDigest: resource.request.digest,
-        interactionId: resource.id,
-        resourceRevision: resource.revision,
-        conditionRevision: resource.request.conditionRevision,
-        resourceBindingProvenance: resource.request.inputProvenance,
+    void enqueuePresentation(session, "starting", 1, null, 0)
+      .then(async (claimed) => {
+        if (!claimed) {
+          startedResourceIdsRef.current.delete(resource.id);
+          if (sessionRef.current === session) sessionRef.current = null;
+          return;
+        }
+        session.presentationClaimed = true;
+        if (session.retired || sessionRef.current !== session) {
+          await enqueuePresentation(session, "stopped", 1, null, 0);
+          return;
+        }
+        await bridge.start({
+          nativeSessionId: session.nativeSessionId,
+          threadId: resource.threadId,
+          requestRef: resource.request.ref,
+          requestRevision: resource.request.revision,
+          requestDigest: resource.request.digest,
+          interactionId: resource.id,
+          resourceRevision: resource.revision,
+          conditionRevision: resource.request.conditionRevision,
+          resourceBindingProvenance: resource.request.inputProvenance,
+        });
+        session.nativeStarted = true;
+        if (session.retired || sessionRef.current !== session) {
+          await bridge.stop({
+            nativeSessionId: session.nativeSessionId,
+            reason: "navigation",
+          });
+        }
       })
       .catch(() => {
         if (sessionRef.current === session) sessionRef.current = null;
-        void reportPresentation(
-          resource.id,
-          "failed",
-          resource.presentation.presentationRevision,
-          null,
-          0,
-        );
+        if (!session.presentationClaimed) startedResourceIdsRef.current.delete(resource.id);
+        if (session.presentationClaimed && !session.retired) {
+          void enqueuePresentation(
+            session,
+            "failed",
+            session.presentationRevision ?? 1,
+            session.displayedFrameSequence,
+            session.droppedFrames,
+          );
+        }
       });
-  }, [bridge, interactions, reportPresentation]);
+  }, [bridge, enqueuePresentation, interactions]);
 
   useEffect(() => {
     const currentIds = new Set<string>(interactions.map((resource) => resource.id));
@@ -417,25 +503,40 @@ export function useNativeInteractionController(
     };
   }, [disarmById]);
 
-  useEffect(
-    () => () => {
+  const teardownRef = useRef<() => void>(() => undefined);
+  useLayoutEffect(() => {
+    teardownRef.current = () => {
       const session = sessionRef.current;
-      if (session === null || bridge === null) return;
-      void reportPresentation(
-        session.resourceId,
-        "stopped",
-        session.presentationRevision ?? 0,
-        session.displayedFrameSequence,
-        session.droppedFrames,
-      );
+      if (session === null || bridge === null || session.retired) return;
+      session.retired = true;
+      if (session.presentationClaimed) {
+        void enqueuePresentation(
+          session,
+          "stopped",
+          session.presentationRevision ?? 1,
+          session.displayedFrameSequence,
+          session.droppedFrames,
+        );
+      }
       for (const resourceId of localLeasesRef.current.keys()) {
         disarmById(resourceId, "navigation", false);
       }
-      void bridge.stop({ nativeSessionId: session.nativeSessionId, reason: "navigation" });
+      if (session.nativeStarted) {
+        void bridge.stop({ nativeSessionId: session.nativeSessionId, reason: "navigation" });
+      }
       sessionRef.current = null;
-    },
-    [bridge, disarmById, reportPresentation],
-  );
+    };
+  }, [bridge, disarmById, enqueuePresentation]);
+
+  useEffect(() => {
+    if (bridge === null) return;
+    const generation = ++lifecycleGenerationRef.current;
+    return () => {
+      queueMicrotask(() => {
+        if (lifecycleGenerationRef.current === generation) teardownRef.current();
+      });
+    };
+  }, [bridge]);
 
   const engage = useCallback(
     async (requestedResource: InteractionResource) => {
@@ -464,6 +565,7 @@ export function useNativeInteractionController(
         },
       });
       if (result._tag !== "Success" || result.value.engagementEpoch <= 0) return;
+      session.authorityRevision = result.value.resourceRevision;
       const lease: LocalLease = {
         ownerClientId: result.value.ownerClientId,
         engagementEpoch: result.value.engagementEpoch,

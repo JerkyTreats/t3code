@@ -59,6 +59,8 @@ The interaction is a stable inline row anchored after its source turn. Native HT
 
 Hosted web clients show truthful native unavailability. Desktop paints only validated native RGBA frames. Pointer events are normalized against the canvas and cross the bridge only after the server lease, native armed acknowledgment, current presentation revision, displayed frame, and provenance all match.
 
+The desktop renderer first claims the authenticated server presentation at revision one, then launches the fixed native host with the original resource binding revision. Native readiness advances the server resource revision without changing the native presentation revision. A rejected presentation command never launches native work. React development lifecycle replay cannot retire an owned session, while a real unmount retires and stops that exact session once even when its initial claim is still pending.
+
 The staging fixture uses the immutable synthetic provenance and the visible title `Synthetic input test`. Physical provenance describes the selected capture path and is not hardware attestation.
 
 ## Verification

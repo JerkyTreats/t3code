@@ -1,18 +1,74 @@
 import {
+  EnvironmentId,
   ThreadId,
   TurnId,
+  type DesktopInteractionBridge,
   type DesktopInteractionEvent,
   type InteractionResource,
 } from "@t3tools/contracts";
-import { describe, expect, it, vi } from "vite-plus/test";
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/unstable/reactivity";
+import { act, createElement, StrictMode } from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+const { setPresentation, engageInteraction, disengageInteraction, cancelInteraction } = vi.hoisted(
+  () => ({
+    setPresentation: vi.fn(),
+    engageInteraction: vi.fn(),
+    disengageInteraction: vi.fn(),
+    cancelInteraction: vi.fn(),
+  }),
+);
+
+const commandAtoms = vi.hoisted(() => ({
+  setInteractionPresentation: {},
+  engageInteraction: {},
+  disengageInteraction: {},
+  cancelInteraction: {},
+}));
+
+vi.mock("~/state/threads", () => ({ threadEnvironment: commandAtoms }));
+vi.mock("~/state/use-atom-command", () => ({
+  useAtomCommand: (command: object) => {
+    if (command === commandAtoms.setInteractionPresentation) return setPresentation;
+    if (command === commandAtoms.engageInteraction) return engageInteraction;
+    if (command === commandAtoms.disengageInteraction) return disengageInteraction;
+    if (command === commandAtoms.cancelInteraction) return cancelInteraction;
+    throw new Error("Unexpected interaction command atom.");
+  },
+}));
 
 import {
   interactionLeaseMatchesProjection,
   paintInteractionFrame,
+  useNativeInteractionController,
 } from "./useNativeInteractionController";
 
+const environmentId = EnvironmentId.make("native-controller-test");
+let renderer: ReactTestRenderer | null;
+let bridge: DesktopInteractionBridge;
+let nativeListener: ((event: DesktopInteractionEvent) => void) | null;
+
+function InteractionSurface(props: { interactions: ReadonlyArray<InteractionResource> }) {
+  useNativeInteractionController(environmentId, props.interactions);
+  return null;
+}
+
+function mountedSurface(interactions: ReadonlyArray<InteractionResource>) {
+  return createElement(StrictMode, null, createElement(InteractionSurface, { interactions }));
+}
+
+async function flushLifecycle(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 function engagedResource(
-  engagement: Extract<InteractionResource["engagement"], { state: "engaged" }> = {
+  engagement: InteractionResource["engagement"] = {
     state: "engaged",
     epoch: 3,
     ownerClientId: "client-a",
@@ -51,6 +107,58 @@ function engagedResource(
     updatedAt: "2026-01-01T00:00:03.000Z",
   };
 }
+
+function availableResource(overrides: Partial<InteractionResource> = {}): InteractionResource {
+  return {
+    ...engagedResource({ state: "disengaged", latestEpoch: 0 }),
+    revision: 1,
+    presentation: {
+      state: "unavailable",
+      ownerClientId: null,
+      presentationRevision: 0,
+      lastFrameSequence: null,
+      droppedFrames: 0,
+    },
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  renderer = null;
+  nativeListener = null;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  setPresentation.mockReset().mockResolvedValue(AsyncResult.success({ sequence: 1 }));
+  engageInteraction.mockReset();
+  disengageInteraction.mockReset();
+  cancelInteraction.mockReset();
+  bridge = {
+    start: vi.fn().mockResolvedValue(undefined),
+    arm: vi.fn().mockResolvedValue(undefined),
+    input: vi.fn().mockResolvedValue(true),
+    disarm: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined),
+    onEvent: vi.fn((listener) => {
+      nativeListener = listener;
+      return vi.fn();
+    }),
+  };
+  vi.stubGlobal("window", {
+    desktopBridge: { interaction: bridge },
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+  vi.stubGlobal("document", {
+    visibilityState: "visible",
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  });
+});
+
+afterEach(async () => {
+  if (renderer !== null) await act(async () => renderer?.unmount());
+  renderer = null;
+  vi.unstubAllGlobals();
+});
 
 describe("native interaction controller boundaries", () => {
   it("requires exact projected owner, epoch, and presentation equality", () => {
@@ -111,5 +219,175 @@ describe("native interaction controller boundaries", () => {
     expect(paintInteractionFrame(canvas, frame)).toBe(true);
     expect([...data]).toEqual([...payload]);
     expect(context.putImageData).toHaveBeenCalledWith({ data }, 0, 0);
+  });
+
+  it("claims presentation before launching a resource present on first mount", async () => {
+    const resource = availableResource();
+    act(() => {
+      renderer = create(mountedSurface([resource]));
+    });
+    await flushLifecycle();
+
+    expect(setPresentation).toHaveBeenCalledTimes(1);
+    expect(setPresentation).toHaveBeenCalledWith({
+      environmentId,
+      input: {
+        operationId: expect.any(String),
+        threadId: resource.threadId,
+        interactionId: resource.id,
+        resourceRevision: 1,
+        presentationRevision: 1,
+        state: "starting",
+        lastFrameSequence: null,
+        droppedFrames: 0,
+      },
+    });
+    expect(bridge.start).toHaveBeenCalledTimes(1);
+    expect(bridge.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interactionId: resource.id,
+        resourceRevision: 1,
+      }),
+    );
+    expect(bridge.stop).not.toHaveBeenCalled();
+  });
+
+  it("claims and launches a resource that arrives in a projection update", async () => {
+    const resource = availableResource();
+    act(() => {
+      renderer = create(mountedSurface([]));
+    });
+    await flushLifecycle();
+    expect(setPresentation).not.toHaveBeenCalled();
+    expect(bridge.start).not.toHaveBeenCalled();
+
+    act(() => renderer!.update(mountedSurface([resource])));
+    await flushLifecycle();
+
+    expect(setPresentation).toHaveBeenCalledTimes(1);
+    expect(setPresentation.mock.calls[0]![0].input.state).toBe("starting");
+    expect(bridge.start).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the accepted starting revision for the native ready transition", async () => {
+    const resource = availableResource();
+    act(() => {
+      renderer = create(mountedSurface([resource]));
+    });
+    await flushLifecycle();
+    const nativeSessionId = vi.mocked(bridge.start).mock.calls[0]![0].nativeSessionId;
+
+    act(() => {
+      nativeListener?.({
+        kind: "Ready",
+        nativeSessionId,
+        presentationRevision: 1,
+      } as DesktopInteractionEvent);
+    });
+    await flushLifecycle();
+
+    expect(setPresentation.mock.calls.map(([request]) => request.input.state)).toEqual([
+      "starting",
+      "ready",
+    ]);
+    expect(setPresentation.mock.calls[1]![0].input).toEqual(
+      expect.objectContaining({
+        resourceRevision: 2,
+        presentationRevision: 1,
+      }),
+    );
+  });
+
+  it("does not launch when the server rejects the initial presentation claim", async () => {
+    setPresentation.mockResolvedValueOnce(
+      AsyncResult.failure(Cause.fail(new Error("presentation lease rejected"))),
+    );
+    act(() => {
+      renderer = create(mountedSurface([availableResource()]));
+    });
+    await flushLifecycle();
+
+    expect(setPresentation).toHaveBeenCalledTimes(1);
+    expect(bridge.start).not.toHaveBeenCalled();
+    expect(bridge.stop).not.toHaveBeenCalled();
+  });
+
+  it("does not attempt to take over an existing presentation lease", async () => {
+    act(() => {
+      renderer = create(mountedSurface([engagedResource()]));
+    });
+    await flushLifecycle();
+
+    expect(setPresentation).not.toHaveBeenCalled();
+    expect(bridge.start).not.toHaveBeenCalled();
+  });
+
+  it("does not let StrictMode replay retire the owned native session", async () => {
+    const resource = availableResource();
+    act(() => {
+      renderer = create(mountedSurface([resource]));
+    });
+    await flushLifecycle();
+
+    expect(bridge.start).toHaveBeenCalledTimes(1);
+    expect(bridge.stop).not.toHaveBeenCalled();
+    expect(setPresentation.mock.calls.map(([request]) => request.input.state)).toEqual([
+      "starting",
+    ]);
+  });
+
+  it("retires the exact native session once across a real unmount and remount", async () => {
+    const resource = availableResource();
+    act(() => {
+      renderer = create(mountedSurface([resource]));
+    });
+    await flushLifecycle();
+    const firstSessionId = vi.mocked(bridge.start).mock.calls[0]![0].nativeSessionId;
+
+    await act(async () => renderer!.unmount());
+    renderer = null;
+    await flushLifecycle();
+
+    expect(bridge.stop).toHaveBeenCalledExactlyOnceWith({
+      nativeSessionId: firstSessionId,
+      reason: "navigation",
+    });
+    expect(setPresentation.mock.calls.map(([request]) => request.input.state)).toEqual([
+      "starting",
+      "stopped",
+    ]);
+
+    act(() => {
+      renderer = create(mountedSurface([resource]));
+    });
+    await flushLifecycle();
+
+    expect(bridge.start).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(bridge.start).mock.calls[1]![0].nativeSessionId).not.toBe(firstSessionId);
+    expect(bridge.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not launch after unmount while the presentation claim is pending", async () => {
+    let resolveClaim!: (result: ReturnType<typeof AsyncResult.success>) => void;
+    setPresentation.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveClaim = resolve;
+        }),
+    );
+    const resource = availableResource();
+    act(() => {
+      renderer = create(mountedSurface([resource]));
+    });
+    await act(async () => renderer!.unmount());
+    renderer = null;
+    resolveClaim(AsyncResult.success({ sequence: 1 }));
+    await flushLifecycle();
+
+    expect(bridge.start).not.toHaveBeenCalled();
+    expect(setPresentation.mock.calls.map(([request]) => request.input.state)).toEqual([
+      "starting",
+      "stopped",
+    ]);
   });
 });
