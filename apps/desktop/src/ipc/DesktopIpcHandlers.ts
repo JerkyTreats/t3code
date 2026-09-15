@@ -63,10 +63,12 @@ import {
 import * as PreviewIpc from "./methods/preview.ts";
 import * as AppActivationIpc from "./methods/appActivation.ts";
 import { getWslState, setWslBackendEnabled, setWslDistro, setWslOnly } from "./methods/wsl.ts";
+import * as InteractionIpc from "./methods/interaction.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
   const ipc = yield* DesktopIpc.DesktopIpc;
   yield* PreviewIpc.installPreviewEventForwarding();
+  yield* InteractionIpc.installEventForwarding;
 
   yield* ipc.handle(takeLauncherActivation);
   yield* ipc.handle(completeLauncherActivation);
@@ -145,6 +147,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(checkForUpdate);
   for (const previewMethod of PreviewIpc.methods) {
     yield* ipc.handle(previewMethod);
+  }
+  for (const interactionMethod of InteractionIpc.methods) {
+    yield* ipc.handle(interactionMethod);
   }
   yield* ipc.handle(PreviewIpc.listBrowserImportSources);
   yield* ipc.handle(PreviewIpc.importBrowserCookies);

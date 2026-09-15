@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@t3tools/contracts";
+import { ThreadId, type DesktopBridge } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as Channels from "./ipc/channels.ts";
 
@@ -42,6 +42,50 @@ beforeEach(() => {
 });
 
 describe("local desktop capabilities in the actual preload", () => {
+  it("exposes only typed interaction operations and filters malformed native events", async () => {
+    const bridge = await loadBridge();
+    const session = "11111111111111111111111111111111";
+    const start = {
+      nativeSessionId: session,
+      threadId: ThreadId.make("thread:one"),
+      requestRef: "request:one",
+      requestRevision: "revision:one",
+      requestDigest: "sha256:request",
+      interactionId: "interaction:one",
+      resourceRevision: 1,
+      conditionRevision: "condition:one",
+      resourceBindingProvenance: "physical" as const,
+    };
+    await bridge.interaction!.start(start);
+    expect(host.invoke).toHaveBeenLastCalledWith(Channels.INTERACTION_START_CHANNEL, {
+      ...start,
+    });
+    const listener = vi.fn();
+    const remove = bridge.interaction!.onEvent(listener);
+    const receive = host.on.mock.calls.find(
+      ([channel]) => channel === Channels.INTERACTION_EVENT_CHANNEL,
+    )![1];
+    const ready = {
+      kind: "Ready",
+      protocolVersion: 1,
+      nativeSessionId: session,
+      sourceStreamId: "22222222222222222222222222222222",
+      width: 640,
+      height: 360,
+      strideBytes: 2560,
+      pixelFormat: "rgba8-srgb",
+      presentationRevision: 1,
+      maxFramesPerSecond: 10,
+      frameSlotCapacity: 3,
+      inputQueueCapacity: 64,
+    };
+    receive({}, ready);
+    receive({}, { ...ready, width: 641 });
+    expect(listener).toHaveBeenCalledExactlyOnceWith(ready);
+    remove();
+    expect(host.removeListener).toHaveBeenCalledWith(Channels.INTERACTION_EVENT_CHANNEL, receive);
+  });
+
   it.each([false, null, undefined, "true"])(
     "omits native capture for unavailable probe %s",
     async (availability) => {

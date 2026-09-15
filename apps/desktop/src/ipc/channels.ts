@@ -102,3 +102,9 @@ export const PREVIEW_SET_ZOOM_FACTOR_CHANNEL = "desktop:preview-set-zoom-factor"
 
 export const TAKE_LAUNCHER_ACTIVATION_CHANNEL = "desktop:take-launcher-activation";
 export const COMPLETE_LAUNCHER_ACTIVATION_CHANNEL = "desktop:complete-launcher-activation";
+export const INTERACTION_START_CHANNEL = "desktop:interaction-start";
+export const INTERACTION_ARM_CHANNEL = "desktop:interaction-arm";
+export const INTERACTION_INPUT_CHANNEL = "desktop:interaction-input";
+export const INTERACTION_DISARM_CHANNEL = "desktop:interaction-disarm";
+export const INTERACTION_STOP_CHANNEL = "desktop:interaction-stop";
+export const INTERACTION_EVENT_CHANNEL = "desktop:interaction-event";

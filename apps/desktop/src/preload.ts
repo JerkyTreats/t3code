@@ -3,6 +3,7 @@ import {
   DesktopSystemThemeSchema,
   DesktopScreenshotCaptureSchema,
   DesktopPreviewBrowserActionEventSchema,
+  DesktopInteractionEventSchema,
 } from "@t3tools/contracts/ipc";
 import * as Schema from "effect/Schema";
 import type {
@@ -10,6 +11,7 @@ import type {
   DesktopPreviewPointerEvent,
   DesktopPreviewRecordingFrame,
   DesktopPreviewTabState,
+  DesktopInteractionEvent,
 } from "@t3tools/contracts";
 import { exposeClerkBridge } from "@clerk/electron/preload";
 import { contextBridge, ipcRenderer } from "electron";
@@ -41,6 +43,7 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
 const decodeSystemTheme = Schema.decodeUnknownSync(Schema.NullOr(DesktopSystemThemeSchema));
 const decodeScreenshot = Schema.decodeUnknownSync(Schema.NullOr(DesktopScreenshotCaptureSchema));
 const decodePreviewAction = Schema.decodeUnknownSync(DesktopPreviewBrowserActionEventSchema);
+const decodeInteractionEvent = Schema.decodeUnknownSync(DesktopInteractionEventSchema);
 
 function screenshotCaptureAvailable(): boolean {
   try {
@@ -371,6 +374,26 @@ const desktopBridge: DesktopBridge = {
       ipcRenderer.on(IpcChannels.PREVIEW_POINTER_EVENT_CHANNEL, wrappedListener);
       return () =>
         ipcRenderer.removeListener(IpcChannels.PREVIEW_POINTER_EVENT_CHANNEL, wrappedListener);
+    },
+  },
+  interaction: {
+    start: (input) => ipcRenderer.invoke(IpcChannels.INTERACTION_START_CHANNEL, input),
+    arm: (input) => ipcRenderer.invoke(IpcChannels.INTERACTION_ARM_CHANNEL, input),
+    input: (input) => ipcRenderer.invoke(IpcChannels.INTERACTION_INPUT_CHANNEL, input),
+    disarm: (input) => ipcRenderer.invoke(IpcChannels.INTERACTION_DISARM_CHANNEL, input),
+    stop: (input) => ipcRenderer.invoke(IpcChannels.INTERACTION_STOP_CHANNEL, input),
+    onEvent: (listener) => {
+      const receive = (_event: Electron.IpcRendererEvent, raw: unknown) => {
+        let event: DesktopInteractionEvent;
+        try {
+          event = decodeInteractionEvent(raw);
+        } catch {
+          return;
+        }
+        listener(event);
+      };
+      ipcRenderer.on(IpcChannels.INTERACTION_EVENT_CHANNEL, receive);
+      return () => ipcRenderer.removeListener(IpcChannels.INTERACTION_EVENT_CHANNEL, receive);
     },
   },
 };

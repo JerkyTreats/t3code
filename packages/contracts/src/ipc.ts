@@ -91,7 +91,7 @@ import type {
   OrchestrationSubscribeThreadInput,
   OrchestrationThreadStreamItem,
 } from "./orchestration.ts";
-import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "./orchestration.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 import type {
@@ -1150,6 +1150,220 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
 export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
+const InteractionHexIdSchema = Schema.String.check(Schema.isPattern(/^[0-9a-f]{32}$/u));
+const InteractionDecimalSchema = Schema.String.check(Schema.isPattern(/^(0|[1-9][0-9]*)$/u));
+const InteractionPositiveDecimalSchema = Schema.String.check(Schema.isPattern(/^[1-9][0-9]*$/u));
+const InteractionRevisionSchema = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1 }));
+const InteractionNormalizedCoordinateSchema = Schema.Number.check(
+  Schema.isFinite(),
+  Schema.isBetween({ minimum: 0, maximum: 1 }),
+);
+export const DesktopInteractionProvenanceClassSchema = Schema.Literals(["synthetic", "physical"]);
+export const DesktopInteractionDisarmReasonSchema = Schema.Literals([
+  "visible-control",
+  "escape",
+  "blur",
+  "visibility-loss",
+  "navigation",
+  "lease-loss",
+  "disconnect",
+  "replacement",
+  "cancel",
+  "expiry",
+  "native-surface-loss",
+  "input-overflow",
+  "protocol-fault",
+  "stop",
+]);
+
+export const DesktopInteractionStartInputSchema = Schema.Struct({
+  nativeSessionId: InteractionHexIdSchema,
+  threadId: ThreadId,
+  requestRef: TrimmedNonEmptyString,
+  requestRevision: TrimmedNonEmptyString,
+  requestDigest: TrimmedNonEmptyString,
+  interactionId: TrimmedNonEmptyString,
+  resourceRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  conditionRevision: TrimmedNonEmptyString,
+  resourceBindingProvenance: DesktopInteractionProvenanceClassSchema,
+});
+export type DesktopInteractionStartInput = typeof DesktopInteractionStartInputSchema.Type;
+
+export const DesktopInteractionArmInputSchema = Schema.Struct({
+  nativeSessionId: InteractionHexIdSchema,
+  presentationRevision: InteractionRevisionSchema,
+  engagementEpoch: InteractionPositiveDecimalSchema,
+  activationReleaseSourceSequence: InteractionDecimalSchema,
+  provenanceClass: DesktopInteractionProvenanceClassSchema,
+});
+export type DesktopInteractionArmInput = typeof DesktopInteractionArmInputSchema.Type;
+
+export const DesktopInteractionPointerInputSchema = Schema.Struct({
+  nativeSessionId: InteractionHexIdSchema,
+  presentationRevision: InteractionRevisionSchema,
+  displayedFrameSequence: InteractionPositiveDecimalSchema,
+  engagementEpoch: InteractionPositiveDecimalSchema,
+  sourceSequence: InteractionPositiveDecimalSchema,
+  phase: Schema.Literals(["enter", "move", "press", "release", "leave"]),
+  normalizedX: InteractionNormalizedCoordinateSchema,
+  normalizedY: InteractionNormalizedCoordinateSchema,
+  clientMonotonicNs: InteractionDecimalSchema,
+  provenanceClass: DesktopInteractionProvenanceClassSchema,
+});
+export type DesktopInteractionPointerInput = typeof DesktopInteractionPointerInputSchema.Type;
+
+export const DesktopInteractionDisarmInputSchema = Schema.Struct({
+  nativeSessionId: InteractionHexIdSchema,
+  engagementEpoch: InteractionDecimalSchema,
+  sourceSequence: InteractionDecimalSchema,
+  reason: DesktopInteractionDisarmReasonSchema,
+});
+export type DesktopInteractionDisarmInput = typeof DesktopInteractionDisarmInputSchema.Type;
+
+export const DesktopInteractionStopInputSchema = Schema.Struct({
+  nativeSessionId: InteractionHexIdSchema,
+  reason: DesktopInteractionDisarmReasonSchema,
+});
+export type DesktopInteractionStopInput = typeof DesktopInteractionStopInputSchema.Type;
+
+const InteractionReadySchema = Schema.Struct({
+  kind: Schema.Literal("Ready"),
+  protocolVersion: Schema.Literal(1),
+  nativeSessionId: InteractionHexIdSchema,
+  sourceStreamId: InteractionHexIdSchema,
+  width: Schema.Literal(640),
+  height: Schema.Literal(360),
+  strideBytes: Schema.Literal(2560),
+  pixelFormat: Schema.Literal("rgba8-srgb"),
+  presentationRevision: Schema.Literal(1),
+  maxFramesPerSecond: Schema.Literal(10),
+  frameSlotCapacity: Schema.Literal(3),
+  inputQueueCapacity: Schema.Literal(64),
+});
+const InteractionArmedSchema = Schema.Struct({
+  kind: Schema.Literal("Armed"),
+  nativeSessionId: InteractionHexIdSchema,
+  engagementEpoch: InteractionPositiveDecimalSchema,
+  firstAcceptedSourceSequence: InteractionPositiveDecimalSchema,
+  interactionGeneration: InteractionDecimalSchema,
+  armedNativeMonotonicNs: InteractionDecimalSchema,
+});
+const InteractionFrameSchema = Schema.Struct({
+  kind: Schema.Literal("Frame"),
+  protocolVersion: Schema.Literal(1),
+  nativeSessionId: InteractionHexIdSchema,
+  sourceStreamId: InteractionHexIdSchema,
+  frameSequence: InteractionPositiveDecimalSchema,
+  semanticTick: InteractionDecimalSchema,
+  interactionGeneration: InteractionDecimalSchema,
+  captureStartedNativeMonotonicNs: InteractionDecimalSchema,
+  captureCompletedNativeMonotonicNs: InteractionDecimalSchema,
+  width: Schema.Literal(640),
+  height: Schema.Literal(360),
+  strideBytes: Schema.Literal(2560),
+  pixelFormat: Schema.Literal("rgba8-srgb"),
+  presentationRevision: Schema.Literal(1),
+  droppedSincePrevious: InteractionDecimalSchema,
+  payloadLength: Schema.Literal(921600),
+  payload: Schema.Uint8Array,
+});
+const InteractionReceiptSampleSchema = Schema.Struct({
+  sourceSequence: InteractionPositiveDecimalSchema,
+  nativeReceiveMonotonicNs: InteractionDecimalSchema,
+  phase: Schema.Literals(["enter", "move", "press", "release", "leave"]),
+  normalizedX: InteractionNormalizedCoordinateSchema,
+  normalizedY: InteractionNormalizedCoordinateSchema,
+  displayedFrameSequence: InteractionPositiveDecimalSchema,
+});
+const InteractionInputReceiptSchema = Schema.Struct({
+  kind: Schema.Literal("InputReceipt"),
+  nativeSessionId: InteractionHexIdSchema,
+  sourceStreamId: InteractionHexIdSchema,
+  receiptId: InteractionHexIdSchema,
+  engagementEpoch: InteractionPositiveDecimalSchema,
+  firstSourceSequence: InteractionPositiveDecimalSchema,
+  lastSourceSequence: InteractionPositiveDecimalSchema,
+  previousAcceptedNativeReceiveMonotonicNs: Schema.NullOr(InteractionDecimalSchema),
+  previousAcceptedNormalizedX: Schema.NullOr(InteractionNormalizedCoordinateSchema),
+  previousAcceptedNormalizedY: Schema.NullOr(InteractionNormalizedCoordinateSchema),
+  firstNativeReceiveMonotonicNs: InteractionDecimalSchema,
+  lastNativeReceiveMonotonicNs: InteractionDecimalSchema,
+  maxConsecutiveNativeReceiveGapNs: InteractionDecimalSchema,
+  firstNormalizedX: InteractionNormalizedCoordinateSchema,
+  firstNormalizedY: InteractionNormalizedCoordinateSchema,
+  lastNormalizedX: InteractionNormalizedCoordinateSchema,
+  lastNormalizedY: InteractionNormalizedCoordinateSchema,
+  normalizedPathLength: Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0)),
+  positiveMotionEdgeCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  sampleCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  nativeCanvasWidthPx: Schema.Literal(640),
+  nativeCanvasHeightPx: Schema.Literal(360),
+  presentationRevision: Schema.Literal(1),
+  provenanceClass: DesktopInteractionProvenanceClassSchema,
+  interactionGeneration: InteractionDecimalSchema,
+  timingBasis: Schema.Literal("native-receive-monotonic-v1"),
+  maxDisplayedFrameAgeNs: InteractionDecimalSchema,
+  samples: Schema.Array(InteractionReceiptSampleSchema),
+});
+const InteractionDisarmedSchema = Schema.Struct({
+  kind: Schema.Literal("Disarmed"),
+  nativeSessionId: InteractionHexIdSchema,
+  engagementEpoch: InteractionDecimalSchema,
+  lastAcceptedSourceSequence: InteractionDecimalSchema,
+  interactionGeneration: InteractionDecimalSchema,
+  disarmedNativeMonotonicNs: InteractionDecimalSchema,
+  reason: DesktopInteractionDisarmReasonSchema,
+});
+const InteractionFaultSchema = Schema.Struct({
+  kind: Schema.Literal("Fault"),
+  nativeSessionId: InteractionHexIdSchema,
+  code: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(128)),
+  terminal: Schema.Boolean,
+});
+const InteractionEvidenceReadySchema = Schema.Struct({
+  kind: Schema.Literal("EvidenceReady"),
+  nativeSessionId: InteractionHexIdSchema,
+  finalFrameSequence: InteractionDecimalSchema,
+  finalInputSourceSequence: InteractionDecimalSchema,
+  finalEngagementEpoch: InteractionDecimalSchema,
+  droppedFrameCount: InteractionDecimalSchema,
+  rejectedInputCount: InteractionDecimalSchema,
+  receiptCount: InteractionDecimalSchema,
+});
+const InteractionTerminalSchema = Schema.Struct({
+  kind: Schema.Literal("Terminal"),
+  nativeSessionId: InteractionHexIdSchema,
+  sourceStreamId: InteractionHexIdSchema,
+  finalFrameSequence: InteractionDecimalSchema,
+  finalInputSourceSequence: InteractionDecimalSchema,
+  finalEngagementEpoch: InteractionDecimalSchema,
+  droppedFrameCount: InteractionDecimalSchema,
+  rejectedInputCount: InteractionDecimalSchema,
+  terminalNativeMonotonicNs: InteractionDecimalSchema,
+  outcome: Schema.String,
+  reason: Schema.String,
+});
+export const DesktopInteractionEventSchema = Schema.Union([
+  InteractionReadySchema,
+  InteractionArmedSchema,
+  InteractionFrameSchema,
+  InteractionInputReceiptSchema,
+  InteractionDisarmedSchema,
+  InteractionFaultSchema,
+  InteractionEvidenceReadySchema,
+  InteractionTerminalSchema,
+]);
+export type DesktopInteractionEvent = typeof DesktopInteractionEventSchema.Type;
+
+export interface DesktopInteractionBridge {
+  start: (input: DesktopInteractionStartInput) => Promise<void>;
+  arm: (input: DesktopInteractionArmInput) => Promise<void>;
+  input: (input: DesktopInteractionPointerInput) => Promise<boolean>;
+  disarm: (input: DesktopInteractionDisarmInput) => Promise<void>;
+  stop: (input: DesktopInteractionStopInput) => Promise<void>;
+  onEvent: (listener: (event: DesktopInteractionEvent) => void) => () => void;
+}
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   /** The desktop client's OS platform, read from Electron's preload process. */
@@ -1264,6 +1478,8 @@ export interface DesktopBridge {
    * Electron desktop build; web builds have `preview === undefined`.
    */
   preview?: DesktopPreviewBridge;
+  /** Fixed, local native interaction capability. */
+  interaction?: DesktopInteractionBridge;
 }
 
 /** Renderer callback invoked by Electron with a fresh user gesture before display-media capture. */
