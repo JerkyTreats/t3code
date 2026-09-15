@@ -49,6 +49,7 @@ import { MENU_ACTION_CHANNEL, WINDOW_FULLSCREEN_STATE_CHANNEL } from "../ipc/cha
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 import * as PreviewManager from "../preview/Manager.ts";
+import { interactionManager } from "../interaction/Manager.ts";
 
 const environmentInput = {
   dirname: "/repo/apps/desktop/dist-electron",
@@ -67,6 +68,7 @@ function makeFakeBrowserWindow() {
   const webContentsListeners = new Map<string, (...args: readonly unknown[]) => void>();
   let zoomLevel = 0;
   const webContents = {
+    id: 71,
     copyImageAt: vi.fn(),
     getURL: vi.fn(() => "t3code-dev://app/"),
     getZoomLevel: vi.fn(() => zoomLevel),
@@ -1420,6 +1422,9 @@ describe("standalone window host readiness", () => {
     () =>
       Effect.gen(function* () {
         const fake = makeFakeBrowserWindow();
+        const retireRenderer = vi
+          .spyOn(interactionManager, "retireRenderer")
+          .mockResolvedValue(false);
         vi.mocked(fake.window.webContents.getURL).mockReturnValue("https://code.example.test/");
         const events: string[] = [];
         const mark = (event: string) =>
@@ -1498,6 +1503,11 @@ describe("standalone window host readiness", () => {
           fake.windowListeners.get("closed")?.();
           yield* Effect.yieldNow;
           assert.equal(events.at(-1), "renderer-withdrawn");
+          assert.deepEqual(retireRenderer.mock.calls, [
+            [71, "navigation"],
+            [71, "disconnect"],
+            [71, "disconnect"],
+          ]);
           yield* window.handleBackendNotReady;
           assert.equal(events.at(-1), "backend-withdrawn");
         }).pipe(Effect.provide(layer));

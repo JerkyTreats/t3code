@@ -202,6 +202,7 @@ type HostRecord =
 
 type Session = {
   readonly nativeSessionId: string;
+  readonly ownerRendererId: number;
   readonly child: InteractionChild;
   buffer: Buffer;
   evidence: Array<Record<string, unknown>>;
@@ -250,7 +251,9 @@ export class InteractionManager {
   readonly #now: () => number;
   readonly #evidenceDirectory: string;
   readonly #observationSink: NativeObservationSink;
-  readonly #listeners = new Set<(event: DesktopInteractionEvent) => void>();
+  readonly #listeners = new Set<
+    (event: DesktopInteractionEvent, ownerRendererId: number) => void
+  >();
   #startQueue: Promise<void> = Promise.resolve();
   #session: Session | null = null;
 
@@ -262,12 +265,20 @@ export class InteractionManager {
   }
 
   onEvent(listener: (event: DesktopInteractionEvent) => void): () => void {
+    const ownedListener = (event: DesktopInteractionEvent) => listener(event);
+    this.#listeners.add(ownedListener);
+    return () => this.#listeners.delete(ownedListener);
+  }
+
+  onOwnedEvent(
+    listener: (event: DesktopInteractionEvent, ownerRendererId: number) => void,
+  ): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
 
-  start(input: DesktopInteractionStartInput): Promise<void> {
-    const operation = this.#startQueue.then(() => this.#start(input));
+  start(input: DesktopInteractionStartInput, ownerRendererId: number): Promise<void> {
+    const operation = this.#startQueue.then(() => this.#start(input, ownerRendererId));
     this.#startQueue = operation.then(
       () => undefined,
       () => undefined,
@@ -275,7 +286,7 @@ export class InteractionManager {
     return operation;
   }
 
-  async #start(input: DesktopInteractionStartInput): Promise<void> {
+  async #start(input: DesktopInteractionStartInput, ownerRendererId: number): Promise<void> {
     const existing = this.#session;
     if (existing !== null) {
       if (existing.stopping === null) {
@@ -297,6 +308,7 @@ export class InteractionManager {
     });
     const session: Session = {
       nativeSessionId: input.nativeSessionId,
+      ownerRendererId,
       child,
       buffer: Buffer.alloc(0),
       evidence: [],
@@ -367,8 +379,8 @@ export class InteractionManager {
     });
   }
 
-  async arm(input: DesktopInteractionArmInput): Promise<void> {
-    const session = this.#requireSession(input.nativeSessionId);
+  async arm(input: DesktopInteractionArmInput, ownerRendererId: number): Promise<void> {
+    const session = this.#requireSession(input.nativeSessionId, ownerRendererId);
     if (
       session.presentationRevision !== input.presentationRevision ||
       session.pendingArm !== null ||
@@ -388,9 +400,9 @@ export class InteractionManager {
     }
   }
 
-  async input(input: DesktopInteractionPointerInput): Promise<boolean> {
+  async input(input: DesktopInteractionPointerInput, ownerRendererId: number): Promise<boolean> {
     const receivedAt = this.#now();
-    const session = this.#requireSession(input.nativeSessionId);
+    const session = this.#requireSession(input.nativeSessionId, ownerRendererId);
     const sourceSequence = BigInt(input.sourceSequence);
     const displayedFrameSequence = BigInt(input.displayedFrameSequence);
     if (
@@ -410,8 +422,8 @@ export class InteractionManager {
     return this.#now() - receivedAt <= INPUT_STALE_MS;
   }
 
-  async disarm(input: DesktopInteractionDisarmInput): Promise<void> {
-    const session = this.#requireSession(input.nativeSessionId);
+  async disarm(input: DesktopInteractionDisarmInput, ownerRendererId: number): Promise<void> {
+    const session = this.#requireSession(input.nativeSessionId, ownerRendererId);
     const sourceSequence = BigInt(input.sourceSequence);
     if (
       (session.activeEngagementEpoch !== input.engagementEpoch &&
@@ -426,8 +438,8 @@ export class InteractionManager {
     await this.#write(session, { kind: "Disarm", ...input });
   }
 
-  stop(input: DesktopInteractionStopInput): Promise<void> {
-    const session = this.#requireSession(input.nativeSessionId);
+  stop(input: DesktopInteractionStopInput, ownerRendererId: number): Promise<void> {
+    const session = this.#requireSession(input.nativeSessionId, ownerRendererId);
     if (session.stopping !== null) return session.stopping;
     session.stopping = this.#stop(session, input);
     return session.stopping;
@@ -469,9 +481,23 @@ export class InteractionManager {
     }
   }
 
-  #requireSession(nativeSessionId: string): Session {
+  retireRenderer(ownerRendererId: number, reason: "navigation" | "disconnect"): Promise<boolean> {
     const session = this.#session;
-    if (session === null || session.nativeSessionId !== nativeSessionId) {
+    if (session === null || session.ownerRendererId !== ownerRendererId) {
+      return Promise.resolve(false);
+    }
+    return this.stop({ nativeSessionId: session.nativeSessionId, reason }, ownerRendererId).then(
+      () => true,
+    );
+  }
+
+  #requireSession(nativeSessionId: string, ownerRendererId: number): Session {
+    const session = this.#session;
+    if (
+      session === null ||
+      session.nativeSessionId !== nativeSessionId ||
+      session.ownerRendererId !== ownerRendererId
+    ) {
       throw new Error("No matching native interaction session is active.");
     }
     return session;
@@ -593,7 +619,7 @@ export class InteractionManager {
         );
         return;
       }
-      this.#emit(event);
+      this.#emit(session, event);
       if (event.outcome === "success") session.terminalResolve?.();
       else {
         this.#cancelOwner(session, event.reason);
@@ -645,7 +671,8 @@ export class InteractionManager {
           session.frameScheduled = false;
           const frame = session.queuedFrame;
           session.queuedFrame = null;
-          if (frame !== null && this.#now() - receivedAt <= FRAME_STALE_MS) this.#emit(frame);
+          if (frame !== null && this.#now() - receivedAt <= FRAME_STALE_MS)
+            this.#emit(session, frame);
         }, 0);
       }
       return;
@@ -712,9 +739,11 @@ export class InteractionManager {
         if (result.ownerState === "qualified") {
           session.ownerQualified = true;
           session.activeEngagementEpoch = null;
-          void this.stop({ nativeSessionId: session.nativeSessionId, reason: "stop" }).catch(
-            (error) =>
-              this.#fail(session, error instanceof Error ? error : new Error(String(error))),
+          void this.stop(
+            { nativeSessionId: session.nativeSessionId, reason: "stop" },
+            session.ownerRendererId,
+          ).catch((error) =>
+            this.#fail(session, error instanceof Error ? error : new Error(String(error))),
           );
         }
       });
@@ -722,7 +751,7 @@ export class InteractionManager {
       if (session.ownerQualified) {
         session.receiptEngagementEpoch = null;
         session.lastDisarmed = event;
-        this.#emit(event);
+        this.#emit(session, event);
         return;
       }
       if (
@@ -730,7 +759,7 @@ export class InteractionManager {
         session.lastDisarmed !== null &&
         JSON.stringify(session.lastDisarmed) === JSON.stringify(event)
       ) {
-        this.#emit(event);
+        this.#emit(session, event);
         return;
       }
       if (session.receiptEngagementEpoch !== event.engagementEpoch) {
@@ -765,7 +794,7 @@ export class InteractionManager {
         if (result.receiptId !== null) session.lastOwnerReceiptId = result.receiptId;
       });
     }
-    this.#emit(event);
+    this.#emit(session, event);
   }
 
   #enqueueOwner(session: Session, operation: () => Promise<void>): void {
@@ -857,8 +886,8 @@ export class InteractionManager {
     session.evidenceCommitted = true;
   }
 
-  #emit(event: DesktopInteractionEvent): void {
-    for (const listener of this.#listeners) listener(event);
+  #emit(session: Session, event: DesktopInteractionEvent): void {
+    for (const listener of this.#listeners) listener(event, session.ownerRendererId);
   }
 
   #transportEnded(session: Session): void {
@@ -869,7 +898,7 @@ export class InteractionManager {
   #fail(session: Session, error: Error): void {
     if (!session.hostFaultEmitted) {
       session.hostFaultEmitted = true;
-      this.#emit({
+      this.#emit(session, {
         kind: "Fault",
         nativeSessionId: session.nativeSessionId,
         code: "desktop-host-failure",

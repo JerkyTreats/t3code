@@ -16,6 +16,7 @@ import type { NativeObservationSink, OwnerResultV1 } from "./NativeObservationSi
 
 const sessionId = "11111111111111111111111111111111";
 const streamId = "22222222222222222222222222222222";
+const rendererId = 7;
 const temporaryDirectories: string[] = [];
 const startInput = {
   nativeSessionId: sessionId,
@@ -181,6 +182,22 @@ afterEach(async () => {
 });
 
 describe("InteractionManager", () => {
+  it("rejects commands from another renderer and ignores its loss", async () => {
+    const child = new FakeChild();
+    const manager = new InteractionManager({
+      capability: { launch: async () => child },
+      observationSink: fakeObservationSink(),
+    });
+    await manager.start(startInput, rendererId);
+    await expect(manager.retireRenderer(rendererId + 1, "disconnect")).resolves.toBe(false);
+    expect(() =>
+      manager.stop({ nativeSessionId: sessionId, reason: "stop" }, rendererId + 1),
+    ).toThrow("No matching");
+    expect(decodeWrites(child.stdin.read() as Buffer).map((record) => record.kind)).toEqual([
+      "Start",
+    ]);
+  });
+
   it("uses only an absolute main-process evidence root override", () => {
     expect(
       resolveInteractionEvidenceDirectory({
@@ -197,15 +214,18 @@ describe("InteractionManager", () => {
       capability: { launch: async () => child },
       observationSink: fakeObservationSink(),
     });
-    await manager.start(startInput);
+    await manager.start(startInput, rendererId);
     child.stdout.write(encode(nativeReady()));
-    await manager.arm({
-      nativeSessionId: sessionId,
-      presentationRevision: 1,
-      engagementEpoch: "1",
-      activationReleaseSourceSequence: "4",
-      provenanceClass: "physical",
-    });
+    await manager.arm(
+      {
+        nativeSessionId: sessionId,
+        presentationRevision: 1,
+        engagementEpoch: "1",
+        activationReleaseSourceSequence: "4",
+        provenanceClass: "physical",
+      },
+      rendererId,
+    );
     const written = decodeWrites(child.stdin.read() as Buffer);
     expect(written.map((record) => record.kind)).toEqual(["Start", "Arm"]);
     expect(written[0]).toEqual({ kind: "Start", protocolVersion: 1, nativeSessionId: sessionId });
@@ -219,7 +239,7 @@ describe("InteractionManager", () => {
     });
     const listener = vi.fn();
     manager.onEvent(listener);
-    await manager.start(startInput);
+    await manager.start(startInput, rendererId);
     child.stdout.write(
       encode(
         {
@@ -265,7 +285,7 @@ describe("InteractionManager", () => {
       evidenceDirectory,
       observationSink: sink,
     });
-    await manager.start(startInput);
+    await manager.start(startInput, rendererId);
     child.stdout.write(encode(nativeReady()));
     child.stdout.write(
       encode(
@@ -290,7 +310,7 @@ describe("InteractionManager", () => {
         Buffer.alloc(921600),
       ),
     );
-    const stopping = manager.stop({ nativeSessionId: sessionId, reason: "stop" });
+    const stopping = manager.stop({ nativeSessionId: sessionId, reason: "stop" }, rendererId);
     child.stdout.write(
       encode({
         kind: "EvidenceReady",
@@ -350,9 +370,9 @@ describe("InteractionManager", () => {
       evidenceDirectory,
       observationSink: sink,
     });
-    await manager.start(startInput);
+    await manager.start(startInput, rendererId);
     child.stdout.write(encode(nativeReady()));
-    const stopping = manager.stop({ nativeSessionId: sessionId, reason: "navigation" });
+    const stopping = manager.retireRenderer(rendererId, "navigation");
     child.stdout.write(
       encode({
         kind: "EvidenceReady",
@@ -394,7 +414,7 @@ describe("InteractionManager", () => {
       }),
     );
     child.exit();
-    await expect(stopping).resolves.toBeUndefined();
+    await expect(stopping).resolves.toBe(true);
   });
 
   it("publishes a stable terminal host fault when the owner rejects resource binding", async () => {
@@ -407,7 +427,7 @@ describe("InteractionManager", () => {
     });
     const listener = vi.fn();
     manager.onEvent(listener);
-    await manager.start(startInput);
+    await manager.start(startInput, rendererId);
     child.stdout.write(encode(nativeReady()));
     child.stdout.write(
       encode(
@@ -468,7 +488,7 @@ describe("InteractionManager", () => {
       evidenceDirectory,
       observationSink: sink,
     });
-    await manager.start(startInput);
+    await manager.start(startInput, rendererId);
     child.stdout.write(encode(nativeReady()));
     child.stdout.write(
       encode(
@@ -493,13 +513,16 @@ describe("InteractionManager", () => {
         Buffer.alloc(921600),
       ),
     );
-    await manager.arm({
-      nativeSessionId: sessionId,
-      presentationRevision: 1,
-      engagementEpoch: "1",
-      activationReleaseSourceSequence: "1",
-      provenanceClass: "physical",
-    });
+    await manager.arm(
+      {
+        nativeSessionId: sessionId,
+        presentationRevision: 1,
+        engagementEpoch: "1",
+        activationReleaseSourceSequence: "1",
+        provenanceClass: "physical",
+      },
+      rendererId,
+    );
     child.stdout.write(
       encode({
         kind: "Armed",
@@ -581,7 +604,7 @@ describe("InteractionManager", () => {
       capability: { launch },
       observationSink: sink,
     });
-    await manager.start(startInput);
+    await manager.start(startInput, rendererId);
     child.stdout.write(encode(nativeReady()));
     child.stdout.write(
       encode(
@@ -609,7 +632,7 @@ describe("InteractionManager", () => {
     await vi.waitFor(() => {
       expect(sink.bindResource).toHaveBeenCalledTimes(1);
     });
-    const stopping = manager.stop({ nativeSessionId: sessionId, reason: "stop" });
+    const stopping = manager.stop({ nativeSessionId: sessionId, reason: "stop" }, rendererId);
     const settled = vi.fn();
     void stopping.then(settled);
     child.stdout.write(
@@ -648,14 +671,14 @@ describe("InteractionManager", () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(settled).not.toHaveBeenCalled();
-    const firstSuccessor = manager.start({
-      ...startInput,
-      nativeSessionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    });
-    const secondSuccessor = manager.start({
-      ...startInput,
-      nativeSessionId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-    });
+    const firstSuccessor = manager.start(
+      { ...startInput, nativeSessionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      rendererId,
+    );
+    const secondSuccessor = manager.start(
+      { ...startInput, nativeSessionId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+      rendererId,
+    );
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(launch).toHaveBeenCalledTimes(1);
     child.exit();
@@ -674,8 +697,8 @@ describe("InteractionManager", () => {
       capability: { launch: async () => child },
       observationSink: fakeObservationSink(),
     });
-    await manager.start(startInput);
-    const stopping = manager.stop({ nativeSessionId: sessionId, reason: "stop" });
+    await manager.start(startInput, rendererId);
+    const stopping = manager.stop({ nativeSessionId: sessionId, reason: "stop" }, rendererId);
     child.stdout.write(
       encode({
         kind: "Terminal",
@@ -712,13 +735,16 @@ describe("InteractionManager", () => {
       capability: { launch: async () => child },
       observationSink: fakeObservationSink(),
     });
-    await manager.start(startInput);
-    await expect(manager.stop({ nativeSessionId: sessionId, reason: "stop" })).rejects.toThrow(
-      "broken stdin",
-    );
+    await manager.start(startInput, rendererId);
+    await expect(
+      manager.stop({ nativeSessionId: sessionId, reason: "stop" }, rendererId),
+    ).rejects.toThrow("broken stdin");
     expect(child.kill).toHaveBeenCalledExactlyOnceWith("SIGKILL");
     await expect(
-      manager.start({ ...startInput, nativeSessionId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }),
+      manager.start(
+        { ...startInput, nativeSessionId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        rendererId,
+      ),
     ).rejects.toThrow("broken stdin");
     child.exit(1);
   });

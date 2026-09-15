@@ -30,6 +30,7 @@ import {
   WINDOW_FULLSCREEN_STATE_CHANNEL,
 } from "../ipc/channels.ts";
 import * as PreviewManager from "../preview/Manager.ts";
+import { interactionManager } from "../interaction/Manager.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
@@ -731,6 +732,9 @@ export const make = Effect.gen(function* () {
     let developmentLoadRetryFiber: Fiber.Fiber<void, never> | undefined;
     let rendererRecoveryTimestamps: number[] = [];
     let mainFrameLoadFailed = false;
+    const retireOwnedNativeInteraction = (reason: "navigation" | "disconnect") => {
+      void interactionManager.retireRenderer(window.webContents.id, reason).catch(() => undefined);
+    };
     const publishRendererReadiness = () => {
       if (
         !mainFrameLoadFailed &&
@@ -744,6 +748,7 @@ export const make = Effect.gen(function* () {
     };
     window.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
       if (!isMainFrame || isInPlace) return;
+      retireOwnedNativeInteraction("navigation");
       mainFrameLoadFailed = false;
       void runPromise(withdrawRendererReadiness);
     });
@@ -844,6 +849,7 @@ export const make = Effect.gen(function* () {
       },
     );
     window.webContents.on("render-process-gone", (_event, details) => {
+      retireOwnedNativeInteraction("disconnect");
       mainFrameLoadFailed = true;
       void runPromise(withdrawRendererReadiness);
       const recoverable =
@@ -908,6 +914,7 @@ export const make = Effect.gen(function* () {
     }
 
     window.on("closed", () => {
+      retireOwnedNativeInteraction("disconnect");
       mainFrameLoadFailed = true;
       void runPromise(withdrawRendererReadiness);
       clearDevelopmentLoadRetry();

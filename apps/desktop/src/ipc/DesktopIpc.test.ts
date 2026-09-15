@@ -28,6 +28,25 @@ function makeIpcMain(
 }
 
 describe("DesktopIpc", () => {
+  it.effect("passes the invoking renderer identity to the method handler", () =>
+    Effect.gen(function* () {
+      let listener: DesktopIpc.DesktopIpcHandleListener | undefined;
+      const handler = vi.fn(
+        (_raw: unknown, _context?: DesktopIpc.DesktopIpcInvokeContext) => Effect.void,
+      );
+      const ipc = DesktopIpc.make(
+        makeIpcMain({
+          handle: (_channel, registered) => {
+            listener = registered;
+          },
+        }),
+      );
+      yield* Effect.scoped(ipc.handle({ channel: "desktop.test.sender", handler }));
+      yield* Effect.promise(() => listener!({ sender: { id: 91 } }, undefined) as Promise<void>);
+      assert.strictEqual(handler.mock.calls[0]?.[1]?.senderId, 91);
+    }),
+  );
+
   it.effect("preserves invoke registration context and cause", () =>
     Effect.gen(function* () {
       const cause = new Error("invoke registration failed");
