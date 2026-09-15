@@ -474,7 +474,7 @@ for (const state of forkMigrationStates) {
           return { migrationId, name: historicalNames.get(migrationId)! };
         }),
       );
-      assert.deepStrictEqual(latest, [{ migrationId: 58, name: "PairingEnrollmentClass" }]);
+      assert.deepStrictEqual(latest, [{ migrationId: 59, name: "InteractionCommandFingerprints" }]);
     }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
   );
 }

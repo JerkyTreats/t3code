@@ -375,6 +375,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
               createdAt: "2026-02-24T00:00:06.000Z",
             },
           ],
+          interactions: [],
           checkpoints: [
             {
               turnId: asTurnId("turn-1"),

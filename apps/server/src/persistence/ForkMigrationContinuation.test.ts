@@ -366,6 +366,7 @@ layer("fork migration continuation", (it) => {
           [56, "RepairAutomaticSettlementTimestamps"],
           [57, "ProjectionProjectIcon"],
           [58, "PairingEnrollmentClass"],
+          [59, "InteractionCommandFingerprints"],
         ],
       );
 

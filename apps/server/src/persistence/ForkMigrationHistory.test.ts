@@ -419,9 +419,9 @@ it.effect("continues a released reconciled v0.0.28 journal", () =>
 
     assert.deepStrictEqual(
       executed.map(([migrationId]) => migrationId),
-      [52, 53, 54, 55, 56, 57, 58],
+      [52, 53, 54, 55, 56, 57, 58, 59],
     );
-    assert.deepStrictEqual(latest, [{ migrationId: 58, name: "PairingEnrollmentClass" }]);
+    assert.deepStrictEqual(latest, [{ migrationId: 59, name: "InteractionCommandFingerprints" }]);
   }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
 );
 
