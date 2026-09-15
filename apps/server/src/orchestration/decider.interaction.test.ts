@@ -103,6 +103,86 @@ function createCommand(): Extract<OrchestrationCommand, { type: "interaction.cre
 }
 
 it.layer(NodeServices.layer)("interaction resource decider", (it) => {
+  it.effect("accepts only an exactly owned historical anchor", () =>
+    Effect.gen(function* () {
+      const withoutMessages = {
+        ...makeReadModel(),
+        threads: [{ ...makeReadModel().threads[0]!, messages: [] }],
+      } satisfies OrchestrationReadModel;
+
+      const planned = yield* decideOrchestrationCommand({
+        readModel: withoutMessages,
+        command: createCommand(),
+        interactionAnchorTurn: {
+          threadId: THREAD_ID,
+          turnId: ANCHOR_TURN_ID,
+        },
+      });
+      expect((Array.isArray(planned) ? planned : [planned])[0]?.type).toBe(
+        "thread.activity-appended",
+      );
+
+      for (const interactionAnchorTurn of [
+        {
+          threadId: ThreadId.make("thread-other"),
+          turnId: ANCHOR_TURN_ID,
+        },
+        {
+          threadId: THREAD_ID,
+          turnId: TurnId.make("turn-other"),
+        },
+      ]) {
+        const rejected = yield* decideOrchestrationCommand({
+          readModel: withoutMessages,
+          command: createCommand(),
+          interactionAnchorTurn,
+        }).pipe(Effect.flip);
+        expect(rejected).toMatchObject({
+          _tag: "OrchestrationCommandInvariantError",
+          detail: expect.stringContaining("does not belong"),
+        });
+      }
+    }),
+  );
+
+  it.effect("retains latest-turn and projected-message anchor ownership", () =>
+    Effect.gen(function* () {
+      const command = createCommand();
+      const fromMessage = yield* decideOrchestrationCommand({
+        readModel: makeReadModel(),
+        command,
+      });
+      expect((Array.isArray(fromMessage) ? fromMessage : [fromMessage])[0]?.type).toBe(
+        "thread.activity-appended",
+      );
+
+      const base = makeReadModel();
+      const fromLatest = yield* decideOrchestrationCommand({
+        readModel: {
+          ...base,
+          threads: [
+            {
+              ...base.threads[0]!,
+              messages: [],
+              latestTurn: {
+                turnId: ANCHOR_TURN_ID,
+                state: "completed",
+                requestedAt: NOW,
+                startedAt: NOW,
+                completedAt: NOW,
+                assistantMessageId: MessageId.make("message-anchor"),
+              },
+            },
+          ],
+        },
+        command,
+      });
+      expect((Array.isArray(fromLatest) ? fromLatest : [fromLatest])[0]?.type).toBe(
+        "thread.activity-appended",
+      );
+    }),
+  );
+
   it.effect("owns the durable lifecycle and admits one canonical continuation", () =>
     Effect.gen(function* () {
       let state = makeReadModel();

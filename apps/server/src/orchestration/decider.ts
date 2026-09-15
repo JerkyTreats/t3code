@@ -11,6 +11,7 @@ import {
   type OrchestrationThread,
   type OrchestrationThreadActivity,
   type InteractionResource,
+  type TurnId,
 } from "@t3tools/contracts";
 import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
 import * as DateTime from "effect/DateTime";
@@ -260,10 +261,15 @@ const decideCommandSequence = Effect.fn("decideCommandSequence")(function* ({
 export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand")(function* ({
   command,
   readModel,
+  interactionAnchorTurn,
   userInputActivity,
 }: {
   readonly command: OrchestrationCommand;
   readonly readModel: OrchestrationReadModel;
+  readonly interactionAnchorTurn?: {
+    readonly threadId: ThreadId;
+    readonly turnId: TurnId;
+  };
   readonly userInputActivity?: OrchestrationThreadActivity;
 }): Effect.fn.Return<
   DecideOrchestrationCommandResult,
@@ -1021,7 +1027,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       }
       const ownsAnchor =
         thread.latestTurn?.turnId === command.anchorTurnId ||
-        thread.messages.some((message) => message.turnId === command.anchorTurnId);
+        thread.messages.some((message) => message.turnId === command.anchorTurnId) ||
+        (interactionAnchorTurn?.threadId === thread.id &&
+          interactionAnchorTurn.turnId === command.anchorTurnId);
       if (!ownsAnchor) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,

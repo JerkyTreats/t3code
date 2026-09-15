@@ -236,6 +236,91 @@ it("fingerprints interaction operation retries and restores the resource project
   await system.dispose();
 });
 
+it("creates an interaction for a historical turn after command-model restart", async () => {
+  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-interaction-anchor-"));
+  const databasePath = NodePath.join(directory, "state.sqlite");
+  const threadId = ThreadId.make("thread-interaction-anchor");
+  const projectId = ProjectId.make("project-interaction-anchor");
+  const anchorTurnId = TurnId.make("turn-interaction-anchor");
+  let system = await createOrchestrationSystem(databasePath);
+
+  try {
+    await system.run(
+      system.engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("interaction-anchor-project"),
+        projectId,
+        title: "Interaction anchor",
+        workspaceRoot: "/tmp/interaction-anchor",
+        defaultModelSelection: null,
+        createdAt: now(),
+      }),
+    );
+    await system.run(
+      system.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("interaction-anchor-thread"),
+        threadId,
+        projectId,
+        title: "Interaction anchor",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5-codex",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        branch: null,
+        worktreePath: null,
+        createdAt: now(),
+      }),
+    );
+    for (const [turnId, messageId] of [
+      [anchorTurnId, MessageId.make("interaction-anchor-message")],
+      [TurnId.make("turn-interaction-latest"), MessageId.make("interaction-latest-message")],
+    ] as const) {
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.message.assistant.complete",
+          commandId: CommandId.make(`complete:${turnId}`),
+          threadId,
+          messageId,
+          turnId,
+          createdAt: now(),
+        }),
+      );
+    }
+
+    await system.dispose();
+    system = await createOrchestrationSystem(databasePath);
+    await system.run(
+      system.engine.dispatch({
+        type: "interaction.create",
+        commandId: CommandId.make("interaction-anchor-create"),
+        operationId: CommandId.make("interaction-anchor-create"),
+        interactionId: InteractionId.make("interaction-anchor"),
+        threadId,
+        anchorTurnId,
+        capabilityId: "wallpaper.interaction.lab.v1",
+        actorClientId: AuthClientId.make("interaction-anchor-client"),
+        requestRef: "request-anchor",
+        requestRevision: "request-revision-anchor",
+        requestDigest: "request-digest-anchor",
+        conditionRevision: "condition-revision-anchor",
+        inputProvenance: "synthetic",
+        display: { title: "Synthetic input test", summary: "Select the target." },
+        createdAt: now(),
+      }),
+    );
+
+    expect(Option.getOrNull(await system.readThread(threadId))?.interactions).toMatchObject([
+      { anchorTurnId },
+    ]);
+  } finally {
+    await system.dispose();
+    await NodeFSP.rm(directory, { recursive: true, force: true });
+  }
+});
+
 const hasMetricSnapshot = (
   snapshots: ReadonlyArray<Metric.Metric.Snapshot>,
   id: string,
