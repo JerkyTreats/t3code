@@ -784,3 +784,11 @@ If applied, this commit integrates the current upstream application with retaine
 Commit Effect: If applied, this commit restores the container verification helper and makes launcher verification independent of the host desktop service state.
 
 The unavailable Skopeo manifest is replaced by the verified official1.22.3 immutable digest consistently across smoke, promotion and exact workflow checks. The launcher runtime-root test exercises active and inactive service states through its command seam. Formatting, lint, typecheck and the full test suite pass after these bounded verification corrections. Installed candidate acceptance continues separately.
+
+## Native desktop compatibility follow-up
+
+Commit Effect: If applied, this commit preserves managed Linux desktop identity and launcher ownership and makes native Thread acceptance reliable.
+
+Managed Code selects its installed Linux identity before Electron readiness. Both early and later URL registration leave installer-owned launch entries and the canonical protocol handler untouched. Ordinary upstream development and unmanaged registration keep their existing behavior. Native Thread verification explicitly selects Wayland, positions the caret through native input, and accepts an expected CDP close disconnect only after the captured process exits within its deadline.
+
+Fresh independent review closed the launch-entry and protocol-owner collisions. Formatting, lint, typecheck and the full test gate pass with 18,914 passing tests and 16 existing skips. The native Hyprland harness passes authenticated transport, scope, exact text, no-send, input, lifecycle and protected-runtime checks with the original floating rule restored. Installed screenshot IPC passes through the actual Omarchy adapter. Final clean-commit artifacts are rebuilt and verified separately from these source and harness receipts.

@@ -30,6 +30,38 @@ export interface StandaloneDesktopIdentity {
   readonly linuxWmClass: string;
 }
 
+const managedLinuxIdentities = {
+  production: {
+    displayName: "T3 Code",
+    profile: "t3code-production",
+    linuxDesktopEntryName: "t3code.desktop",
+    linuxWmClass: "t3code",
+  },
+  staging: {
+    displayName: "T3 Code (Staging)",
+    profile: "t3code-staging",
+    linuxDesktopEntryName: "t3code-staging.desktop",
+    linuxWmClass: "t3code-staging",
+  },
+} as const;
+
+export function resolveEarlyManagedLinuxIdentity(
+  env: NodeJS.ProcessEnv,
+  isDevelopment: boolean,
+): Pick<StandaloneDesktopIdentity, "linuxDesktopEntryName" | "linuxWmClass"> | null {
+  if (isDevelopment) return null;
+  const channel = env.T3CODE_DESKTOP_CHANNEL?.trim();
+  const identity =
+    channel === "production"
+      ? managedLinuxIdentities.production
+      : channel === "staging"
+        ? managedLinuxIdentities.staging
+        : null;
+  return identity !== null && env.T3CODE_DESKTOP_DISPLAY_NAME?.trim() === identity.displayName
+    ? identity
+    : null;
+}
+
 const invalidIdentity = () =>
   new Config.ConfigError(
     new Schema.SchemaError(
@@ -52,7 +84,11 @@ export const resolveStandaloneDesktopIdentity = Effect.fn("desktop.standalone.re
     }
     const url = Option.getOrNull(Option.orElse(input.serverUrl, () => input.legacyServerUrl));
     const displayName = Option.getOrNull(input.displayName);
-    const profile = displayName === "T3 Code (Staging)" ? "t3code-staging" : "t3code-production";
+    const identity =
+      displayName === "T3 Code (Staging)"
+        ? managedLinuxIdentities.staging
+        : managedLinuxIdentities.production;
+    const profile = identity.profile;
     const dataHome = Option.getOrElse(input.xdgDataHome, () =>
       input.path.join(input.homeDirectory, ".local", "share"),
     );
@@ -81,10 +117,9 @@ export const resolveStandaloneDesktopIdentity = Effect.fn("desktop.standalone.re
       return yield* Effect.fail(invalidIdentity());
     return Option.some({
       serverUrl: url,
-      displayName,
-      linuxDesktopEntryName:
-        displayName === "T3 Code (Staging)" ? "t3code-staging.desktop" : "t3code.desktop",
-      linuxWmClass: displayName === "T3 Code (Staging)" ? "t3code-staging" : "t3code",
+      displayName: identity.displayName,
+      linuxDesktopEntryName: identity.linuxDesktopEntryName,
+      linuxWmClass: identity.linuxWmClass,
     } satisfies StandaloneDesktopIdentity);
   },
 );

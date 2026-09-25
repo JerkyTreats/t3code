@@ -4,6 +4,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import { describe, expect, it } from "@effect/vitest";
 import {
+  resolveEarlyManagedLinuxIdentity,
   resolveStandaloneDesktopIdentity,
   type StandaloneDesktopInput,
 } from "./StandaloneDesktopPolicy.ts";
@@ -31,11 +32,41 @@ const identity = (overrides: Partial<StandaloneDesktopInput> = {}) =>
   }).pipe(Effect.provide(NodePath.layerPosix));
 
 describe("StandaloneDesktopPolicy", () => {
+  it("selects the matching installed Linux identity before Electron is ready", () => {
+    for (const [channel, displayName, desktopName, wmClass] of [
+      ["production", "T3 Code", "t3code.desktop", "t3code"],
+      ["staging", "T3 Code (Staging)", "t3code-staging.desktop", "t3code-staging"],
+    ]) {
+      expect(
+        resolveEarlyManagedLinuxIdentity(
+          { T3CODE_DESKTOP_CHANNEL: channel, T3CODE_DESKTOP_DISPLAY_NAME: displayName },
+          false,
+        ),
+      ).toMatchObject({
+        linuxDesktopEntryName: desktopName,
+        linuxWmClass: wmClass,
+      });
+    }
+    expect(
+      resolveEarlyManagedLinuxIdentity(
+        { T3CODE_DESKTOP_CHANNEL: "staging", T3CODE_DESKTOP_DISPLAY_NAME: "T3 Code" },
+        false,
+      ),
+    ).toBeNull();
+    expect(
+      resolveEarlyManagedLinuxIdentity(
+        { T3CODE_DESKTOP_CHANNEL: "staging", T3CODE_DESKTOP_DISPLAY_NAME: "T3 Code (Staging)" },
+        true,
+      ),
+    ).toBeNull();
+  });
+
   it.effect("requires the complete isolated identity before selecting HTTPS", () =>
     Effect.gen(function* () {
       const result = Option.getOrThrow(yield* identity());
       expect(result.serverUrl.href).toBe("https://code.example.test/");
       expect(result.linuxWmClass).toBe("t3code");
+      expect(result.linuxDesktopEntryName).toBe("t3code.desktop");
     }),
   );
   it.effect("leaves normal upstream selection unchanged", () =>

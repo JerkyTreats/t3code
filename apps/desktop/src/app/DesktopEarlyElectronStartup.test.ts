@@ -84,6 +84,7 @@ describe("DesktopEarlyElectronStartup", () => {
       isDevelopment: true,
       linuxWmClass: "t3code-dev",
       linuxDesktopEntryName: "com.t3tools.T3Code.Development.desktop",
+      isManagedStandalone: false,
       passwordStore: "gnome-libsecret",
     });
   });

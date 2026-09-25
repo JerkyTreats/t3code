@@ -222,6 +222,7 @@ describe("standalone environment host", () => {
         "https://code.example.test/",
       );
       assert.equal(environment.displayName, "T3 Code");
+      assert.equal(environment.linuxDesktopEntryName, "t3code.desktop");
       assert.equal(environment.stateDir, "/data/t3code-production/state/userdata");
       assert.equal(environment.appDataDirectory, "/config/t3code-production");
       assert.isTrue(Option.isNone(environment.configuredBackendPort));

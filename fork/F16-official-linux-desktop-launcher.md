@@ -17,6 +17,8 @@ Keep one canonical production server and one production T3 Code Electron identit
 - Run the verified AppImage in extract-and-run mode so Omarchy app-scope migration cannot detach Electron from a live FUSE mount owner during handoff.
 - After an authenticated handoff primary exits, verify and stop only its exact PID-derived Omarchy app scope so no bundled backend survives into the replacement generation.
 - Retain an isolated production T3 Code profile. Give every T3 Thread process a unique writable Chromium profile and connection; its protected enrollment is shared only under the F27 exact-origin contract.
+- Set the managed production or staging Linux desktop name before Electron is ready so the native Wayland app ID matches the installed desktop entry and the launcher's exact class selection.
+- Leave the installer-owned protocol URL handler and scheme default untouched during managed Code startup.
 - Require an explicit credential-free HTTPS production origin at default installation. Require a separate matching staging origin only when staging development support is explicitly selected.
 - Use the matching standalone origin's browser session for both HTTP and WebSocket authentication without requesting a bundled-backend bearer token.
 - Keep the canonical production host available to independently authenticated client applications without placing Thread authority in either T3 Code Electron identity.
@@ -91,6 +93,8 @@ Retain upstream Electron lifecycle and client behavior. Preserve the official ar
 ## Current Evidence
 
 The desktop runtime selects the same production or staging handoff directory as the installed launcher. Staging readiness and activation stay under the staging runtime directory; an unknown channel cannot read production handoff state. The runtime tests exercise readiness publication, withdrawal and authenticated activation independently for both channels. Staging desktop acceptance requires that actual readiness record in addition to a mapped window and hosted connectivity.
+
+The early managed identity owner selects the production or staging desktop entry from the matching channel and display name before Electron initializes its Wayland portal registration. Managed startup skips both pre-ready and later protocol registration because the installer owns the URL handler entry and scheme default. This preserves its launcher wiring and the installed launch entries with their `Exec` and `StartupWMClass` fields. Ordinary upstream launches retain their existing desktop name and registration. Focus evidence still requires the exact compositor class and PID.
 
 Focused tests execute standalone selection before backend acquisition, current DesktopApp composition, Clerk and window lifecycle, preload and IPC, primary cookie transport, renderer launcher coordination and exact send completion. Installer and topology tests execute verified bytes, ownership drift, idempotency and transactional rollback. The clean current AppImages also pass isolated installation and all six client close/crash cases. Native Wayland focus passed two actual launcher focus calls on unchanged Code main and preload bytes, with simulated service status. That bounded bridge does not claim live default service activation or an identical whole AppImage. The intake evidence records both identities and limits.
 

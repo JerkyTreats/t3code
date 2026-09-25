@@ -633,6 +633,16 @@ function captureCurrentOwned(item) {
     item.capturedOwned.set(identity.pid, identity.startTicks);
 }
 
+export function nativeWaylandLaunchArguments(argumentsForApp, port, certificateSpki) {
+  return [
+    ...argumentsForApp,
+    "--ozone-platform=wayland",
+    `--remote-debugging-port=${port}`,
+    "--remote-debugging-address=127.0.0.1",
+    ...(certificateSpki ? [`--ignore-certificate-errors-spki-list=${certificateSpki}`] : []),
+  ];
+}
+
 async function launchCase(config, adapter, entryConfig, chromium, spec) {
   const reservation = await reserveLoopbackPort();
   const item = {
@@ -659,14 +669,7 @@ async function launchCase(config, adapter, entryConfig, chromium, spec) {
         item.timeline = createMetricTimeline();
         const child = NodeChildProcess.spawn(
           command,
-          [
-            ...argumentsForApp,
-            `--remote-debugging-port=${item.port}`,
-            "--remote-debugging-address=127.0.0.1",
-            ...(config.certificateSpki
-              ? [`--ignore-certificate-errors-spki-list=${config.certificateSpki}`]
-              : []),
-          ],
+          nativeWaylandLaunchArguments(argumentsForApp, item.port, config.certificateSpki),
           {
             ...options,
             detached: true,
@@ -792,15 +795,6 @@ async function nativeInput(config, target, siblings) {
     5_000,
   );
   await target.page.locator('[data-testid="composer-editor"]').click();
-  await target.page.locator('[data-testid="composer-editor"]').evaluate((editor) => {
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    range.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    editor.focus();
-  });
   if (
     !identityIsAlive(target.mainIdentity) ||
     !processBelongsToLaunch(target.mainIdentity, target.launchIdentity) ||
@@ -810,10 +804,14 @@ async function nativeInput(config, target, siblings) {
   )
     throw new Error("native-focus-failed");
   await assertDesktopUnlocked();
-  await execFile("/usr/bin/wtype", ["--", config.nativeTypeSentinel], {
-    env: NodeProcess.env,
-    timeout: 5_000,
-  });
+  await execFile(
+    "/usr/bin/wtype",
+    ["-M", "ctrl", "-k", "End", "-m", "ctrl", "--", config.nativeTypeSentinel],
+    {
+      env: NodeProcess.env,
+      timeout: 5_000,
+    },
+  );
   await composerText(
     target,
     target.expectedDraft + config.nativeTypeSentinel,
@@ -834,6 +832,23 @@ async function nativeInput(config, target, siblings) {
   };
 }
 
+export async function waitForGracefulClose(sendClose, hasExited, timeoutMs) {
+  const started = performance.now();
+  try {
+    await withDeadline(sendClose, timeoutMs);
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !error.message.includes("Target page, context or browser has been closed")
+    )
+      throw error;
+  }
+  if (hasExited()) return;
+  const remainingMs = timeoutMs - (performance.now() - started);
+  if (remainingMs <= 0) throw new Error("window-identity-mismatch");
+  await until(hasExited, "window-identity-mismatch", remainingMs);
+}
+
 async function stopCase(item, mode, timeoutMs) {
   const started = performance.now();
   captureCurrentOwned(item);
@@ -841,14 +856,19 @@ async function stopCase(item, mode, timeoutMs) {
   if (!processBelongsToLaunch(item.mainIdentity, item.launchIdentity))
     throw new Error("signal-target-not-owned");
   if (mode === "close")
-    await withDeadline(() => item.browserSession.send("Browser.close"), timeoutMs);
-  else
+    await waitForGracefulClose(
+      () => item.browserSession.send("Browser.close"),
+      () => !identityIsAlive(item.mainIdentity),
+      timeoutMs,
+    );
+  else {
     signalExactOwnedProcess({
       target: item.mainIdentity,
       launch: item.launchIdentity,
       signal: "SIGKILL",
     });
-  await until(() => !identityIsAlive(item.mainIdentity), "window-identity-mismatch", timeoutMs);
+    await until(() => !identityIsAlive(item.mainIdentity), "window-identity-mismatch", timeoutMs);
+  }
   item.operationMetrics = {
     ...item.operationMetrics,
     [mode]: Math.round(performance.now() - started),

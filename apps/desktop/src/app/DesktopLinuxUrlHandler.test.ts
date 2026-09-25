@@ -180,6 +180,24 @@ describe("DesktopLinuxUrlHandler", () => {
     });
   });
 
+  it.effect("leaves the installer-owned managed URL handler and default untouched", () => {
+    const recorded = emptyRecording();
+
+    return Effect.gen(function* () {
+      yield* runRegister(recorded, {
+        environment: {
+          displayName: "T3 Code (Staging)",
+          linuxDesktopEntryName: "t3code-staging.desktop",
+          standaloneServerUrl: Option.some(new URL("https://code.example.test/")),
+        },
+      });
+
+      assert.deepEqual(recorded.files, []);
+      assert.deepEqual(recorded.directories, []);
+      assert.deepEqual(recorded.commands, []);
+    });
+  });
+
   it.effect("falls back to the process executable outside an AppImage", () => {
     const recorded = emptyRecording();
 

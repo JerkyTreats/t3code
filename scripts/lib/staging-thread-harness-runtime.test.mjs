@@ -12,7 +12,9 @@ import {
   matchesProjectScopeObservation,
   desktopActionArguments,
   noSendSnapshot,
+  nativeWaylandLaunchArguments,
   readinessIdentity,
+  waitForGracefulClose,
 } from "./staging-thread-harness-runtime.mjs";
 
 import { readProcessIdentity } from "./staging-thread-harness-process.mjs";
@@ -23,6 +25,18 @@ afterEach(async () =>
 );
 
 describe("staging Thread runtime evidence", () => {
+  it("launches native Wayland Thread with bounded CDP and certificate arguments", () => {
+    expect(
+      nativeWaylandLaunchArguments(["--class=t3-thread-staging"], 19444, "synthetic-spki"),
+    ).toEqual([
+      "--class=t3-thread-staging",
+      "--ozone-platform=wayland",
+      "--remote-debugging-port=19444",
+      "--remote-debugging-address=127.0.0.1",
+      "--ignore-certificate-errors-spki-list=synthetic-spki",
+    ]);
+  });
+
   it("uses current Lua dispatchers with bounded workspace and window arguments", () => {
     expect(desktopActionArguments("move", { workspace: 5, address: "0xab12" })).toEqual([
       "dispatch",
@@ -133,6 +147,40 @@ describe("native desktop admission and cleanup", () => {
     });
     expect(fallback).toBe(true);
     await expect(withDeadline(() => Promise.resolve("closed"), 100)).resolves.toBe("closed");
+  });
+
+  it("accepts only the expected CDP disconnect after an owned process exits", async () => {
+    let exited = false;
+    await expect(
+      waitForGracefulClose(
+        async () => {
+          exited = true;
+          throw new Error("cdpSession.send: Target page, context or browser has been closed");
+        },
+        () => exited,
+        100,
+      ),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      waitForGracefulClose(
+        async () => {
+          throw new Error("cdpSession.send: Target page, context or browser has been closed");
+        },
+        () => false,
+        1,
+      ),
+    ).rejects.toThrow("window-identity-mismatch");
+
+    await expect(
+      waitForGracefulClose(
+        async () => {
+          throw new Error("CDP authorization failed");
+        },
+        () => true,
+        100,
+      ),
+    ).rejects.toThrow("CDP authorization failed");
   });
 
   it("requires observed Code draft text and detects changed bytes", () => {

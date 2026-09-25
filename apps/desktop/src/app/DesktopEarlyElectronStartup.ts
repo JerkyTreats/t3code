@@ -14,6 +14,7 @@ import {
   resolveDesktopStateDir,
   type JoinPath,
 } from "./DesktopStatePaths.ts";
+import { resolveEarlyManagedLinuxIdentity } from "../fork/StandaloneDesktopPolicy.ts";
 
 interface EarlyDesktopSettingsInput {
   readonly env: NodeJS.ProcessEnv;
@@ -28,6 +29,7 @@ export interface EarlyLinuxElectronOptions {
   readonly isDevelopment: boolean;
   readonly linuxWmClass: string;
   readonly linuxDesktopEntryName: string;
+  readonly isManagedStandalone: boolean;
   readonly passwordStore: LinuxPasswordStoreSwitch | null;
 }
 
@@ -86,10 +88,13 @@ export function resolveEarlyLinuxElectronOptions(
 ): EarlyLinuxElectronOptions {
   const preference = resolveEarlyLinuxPasswordStorePreference(input);
   const isDevelopment = isDevelopmentEnvironment(input.env);
+  const managedIdentity = resolveEarlyManagedLinuxIdentity(input.env, isDevelopment);
   return {
     isDevelopment,
-    linuxWmClass: isDevelopment ? "t3code-dev" : "t3code",
-    linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
+    linuxWmClass: managedIdentity?.linuxWmClass ?? (isDevelopment ? "t3code-dev" : "t3code"),
+    linuxDesktopEntryName:
+      managedIdentity?.linuxDesktopEntryName ?? resolveLinuxDesktopEntryName(isDevelopment),
+    isManagedStandalone: managedIdentity !== null,
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,
       env: input.env,
