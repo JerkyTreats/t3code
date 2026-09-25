@@ -217,7 +217,11 @@ export const requireAzurePullRequestMembership = (input: {
   readonly target: AzureDevOpsRepositoryTarget;
   readonly pullRequest: AzureDevOpsPullRequest;
 }): Effect.Effect<AzureDevOpsPullRequest, PullRequestProviderError> =>
-  azureDevOpsChangeRequestBelongsToTarget(input.pullRequest, input.target)
+  azureDevOpsChangeRequestBelongsToTarget(input.pullRequest, input.target) &&
+  (input.pullRequest.location === null ||
+    (input.pullRequest.location.project.toLowerCase() === input.target.project.toLowerCase() &&
+      input.pullRequest.location.repository.toLowerCase() ===
+        input.target.repository.toLowerCase()))
     ? Effect.succeed(input.pullRequest)
     : Effect.fail(
         new PullRequestProviderError({

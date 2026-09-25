@@ -110,7 +110,7 @@ it.effect("constructs a fresh database without retired adapter tables", () =>
     ]);
     assert.ok(!tables.some(({ name }) => name === "thread_adapter_launch_bindings"));
     assert.ok(!tables.some(({ name }) => name === "thread_adapter_expired_launches"));
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
 it.effect("preserves Board provenance, revisions and auth identities from accepted 51", () =>
@@ -259,7 +259,7 @@ it.effect("preserves Board provenance, revisions and auth identities from accept
       { migrationId: 45, name: "CollectiveExpeditions" },
       ...retiredHistoricalNames.map(([migrationId, name]) => ({ migrationId, name })),
     ]);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
 it.effect("cleans retired adapter state when upgrading a pre-50 history", () =>
@@ -360,7 +360,7 @@ it.effect("cleans retired adapter state when upgrading a pre-50 history", () =>
     assert.deepStrictEqual(survivingSessions, [{ sessionId: "synthetic-scoped-session" }]);
     assert.ok(!tables.some(({ name }) => name === "thread_adapter_launch_bindings"));
     assert.ok(!tables.some(({ name }) => name === "thread_adapter_expired_launches"));
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
 it.effect("rejects a wrong historical name before continuation writes", () =>
@@ -377,7 +377,7 @@ it.effect("rejects a wrong historical name before continuation writes", () =>
 
     assert.match(error.message, /Unsupported fork migration identity at 41/);
     assert.deepStrictEqual(yield* continuationColumns(), []);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
 it.effect("rejects an unknown journal identity before continuation writes", () =>
@@ -393,7 +393,7 @@ it.effect("rejects an unknown journal identity before continuation writes", () =
 
     assert.match(error.message, /Unsupported fork migration identity at 58/);
     assert.deepStrictEqual(yield* continuationColumns(), []);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
 it.effect("continues a released reconciled v0.0.28 journal", () =>
@@ -419,10 +419,12 @@ it.effect("continues a released reconciled v0.0.28 journal", () =>
 
     assert.deepStrictEqual(
       executed.map(([migrationId]) => migrationId),
-      [52, 53, 54, 55, 56, 57, 58],
+      [52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66],
     );
-    assert.deepStrictEqual(latest, [{ migrationId: 58, name: "PairingEnrollmentClass" }]);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+    assert.deepStrictEqual(latest, [
+      { migrationId: 66, name: "ProjectionThreadsAutoSettleDisabledAt" },
+    ]);
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
 it.effect("rejects a missing migration 35 when the marker lacks its released prefix", () =>
@@ -440,7 +442,7 @@ it.effect("rejects a missing migration 35 when the marker lacks its released pre
 
     assert.match(error.message, /Unsupported fork migration lineage at 36/);
     assert.deepStrictEqual(yield* continuationColumns(), []);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
 it.effect("reopens an initialized file database without applying more migrations", () => {
@@ -502,3 +504,75 @@ it.effect("reopens an initialized file database without applying more migrations
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
   );
 });
+
+for (const lineageId of [58, 59] as const) {
+  it.effect(`continues and reopens a synthetic migration ${lineageId} database`, () => {
+    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-lineage-"));
+    const dbPath = NodePath.join(tempDir, "state.sqlite");
+    const rawLayer = NodeSqliteClient.layer({ filename: dbPath });
+    const persistenceLayer = makeSqlitePersistenceLive(dbPath).pipe(
+      Layer.provide(NodeServices.layer),
+    );
+
+    const readState = Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const journal = yield* sql<{ readonly migrationId: number; readonly name: string }>`
+        SELECT migration_id AS "migrationId", name
+        FROM effect_sql_migrations
+        WHERE migration_id >= 58
+        ORDER BY migration_id
+      `;
+      const receipts = yield* sql<{ readonly payloadFingerprint: string | null }>`
+        SELECT payload_fingerprint AS "payloadFingerprint"
+        FROM orchestration_command_receipts
+        WHERE command_id = 'synthetic-command'
+      `;
+      return { journal, receipts };
+    });
+
+    return Effect.gen(function* () {
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations({ toMigrationInclusive: lineageId });
+        yield* sql`
+          INSERT INTO orchestration_command_receipts (
+            command_id, aggregate_kind, aggregate_id, accepted_at,
+            result_sequence, status
+          ) VALUES (
+            'synthetic-command', 'thread', 'synthetic-thread',
+            '2026-01-01T00:00:00.000Z', 1, 'accepted'
+          )
+        `;
+        if (lineageId === 59) {
+          yield* sql`
+            UPDATE orchestration_command_receipts
+            SET payload_fingerprint = 'synthetic-fingerprint'
+            WHERE command_id = 'synthetic-command'
+          `;
+        }
+      }).pipe(Effect.provide(rawLayer));
+
+      const upgraded = yield* readState.pipe(Effect.provide(persistenceLayer));
+      assert.deepStrictEqual(upgraded.journal[0], {
+        migrationId: 58,
+        name: "PairingEnrollmentClass",
+      });
+      assert.deepStrictEqual(upgraded.journal[1], {
+        migrationId: 59,
+        name: "InteractionCommandFingerprints",
+      });
+      assert.deepStrictEqual(upgraded.journal.at(-1), {
+        migrationId: 66,
+        name: "ProjectionThreadsAutoSettleDisabledAt",
+      });
+      assert.deepStrictEqual(upgraded.receipts, [
+        { payloadFingerprint: lineageId === 59 ? "synthetic-fingerprint" : null },
+      ]);
+
+      const reopened = yield* readState.pipe(Effect.provide(persistenceLayer));
+      assert.deepStrictEqual(reopened, upgraded);
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+    );
+  });
+}

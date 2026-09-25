@@ -6,9 +6,51 @@ import { OriginRepositoryMutationAuthorityError } from "./OriginRepositoryMutati
 import {
   pickOriginSourceControlContext,
   bindOriginProviderContext,
+  originForgejoChangeRequestNumber,
 } from "./sourceControlContextPolicy.ts";
 
 describe("sourceControlContextPolicy", () => {
+  it("keeps Forgejo pull request selectors within the exact origin", () => {
+    const context = {
+      provider: {
+        kind: "forgejo" as const,
+        name: "Forgejo",
+        baseUrl: "https://forge.example:8443",
+      },
+      remoteName: "origin",
+      remoteUrl: "https://forge.example:8443/owner/repo.git",
+    };
+    expect(originForgejoChangeRequestNumber(context, "7")).toBe("7");
+    expect(originForgejoChangeRequestNumber(context, "#7")).toBe("7");
+    expect(
+      originForgejoChangeRequestNumber(context, "https://forge.example:8443/owner/repo/pulls/7"),
+    ).toBe("7");
+    expect(
+      originForgejoChangeRequestNumber(
+        context,
+        "https://forge.example:8443/owner/repo/pulls/7/files?w=1#diff",
+      ),
+    ).toBe("7");
+    expect(
+      originForgejoChangeRequestNumber(
+        { ...context, remoteUrl: "https://forge.example:8443/git/owner/repo.git" },
+        "https://forge.example:8443/git/owner/repo/pulls/7/commits",
+      ),
+    ).toBe("7");
+    for (const reference of [
+      "https://forge.example:8443/owner/other/pulls/7",
+      "https://other.example:8443/owner/repo/pulls/7",
+      "https://forge.example/owner/repo/pulls/7",
+      "https://forge.example:8443/owner/repo/pulls/not-a-number",
+    ]) {
+      expect(originForgejoChangeRequestNumber(context, reference)).toBeNull();
+    }
+    expect(
+      originForgejoChangeRequestNumber({ ...context, remoteName: "upstream" }, "7"),
+    ).toBeNull();
+    expect(originForgejoChangeRequestNumber(undefined, "7")).toBeNull();
+  });
+
   it("selects a supported exact origin", () => {
     expect(
       pickOriginSourceControlContext([

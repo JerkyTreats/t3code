@@ -54,6 +54,7 @@ import {
 } from "../environments/primary/target";
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
 import { isHostedStaticApp } from "../hostedPairing";
+import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { acknowledgeRpcRequest, trackRpcRequestSent } from "../rpc/requestLatencyState";
 import {
@@ -183,7 +184,7 @@ export function makePrimaryEnvironmentAuth(): PrimaryEnvironmentAuth["Service"] 
     makeThreadPrimaryAuth() ??
     PrimaryEnvironmentAuth.of({
       bearerToken: isStandaloneDesktopPrimary()
-        ? Effect.succeed(Option.none())
+        ? Effect.succeedNone
         : Effect.tryPromise({
             try: readDesktopPrimaryBearerToken,
             catch: (cause) =>
@@ -233,7 +234,7 @@ const capabilitiesLayer = Layer.effectContext(
       }),
     });
     const identity = RelayDeviceIdentity.of({
-      deviceId: Effect.succeed(Option.none()),
+      deviceId: Effect.succeedNone,
     });
     const primaryAuth = makePrimaryEnvironmentAuth();
     const ssh = SshEnvironmentGateway.of({
@@ -476,7 +477,7 @@ export function secondaryRegistrationsToRetainAfterTopologyRead(
 export const platformConnectionSourceLayer = Layer.effect(
   PlatformConnectionSource,
   Effect.gen(function* () {
-    if (isHostedStaticApp() && !hasBridgeBoundPrimaryTarget()) {
+    if ((isHostedStaticApp() && !hasBridgeBoundPrimaryTarget()) || isLocalEnvironmentDisabled()) {
       return PlatformConnectionSource.of({
         registrations: Stream.empty,
       });

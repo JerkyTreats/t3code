@@ -119,6 +119,9 @@ export class AuthSessionRepository extends Context.Service<
     readonly createReplacingActive: (
       input: CreateReplacingActiveAuthSessionInput,
     ) => Effect.Effect<ReadonlyArray<AuthSessionId>, AuthSessionRepositoryError>;
+    readonly createIfAbsent: (
+      input: CreateAuthSessionInput,
+    ) => Effect.Effect<void, AuthSessionRepositoryError>;
     readonly getById: (
       input: GetAuthSessionByIdInput,
     ) => Effect.Effect<Option.Option<AuthSessionRecord>, AuthSessionRepositoryError>;
@@ -225,80 +228,49 @@ function toPersistenceSqlOrDecodeError(
         });
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
-  const createSessionRow = SqlSchema.void({
-    Request: CreateAuthSessionInput,
-    execute: (input) =>
-      sql.withTransaction(
-        Effect.gen(function* () {
-          yield* sql`
-          INSERT INTO auth_clients (
-            client_id,
-            label,
-            device_type,
-            platform,
-            granted_scopes,
-            management_class,
-            created_at,
-            last_connected_at,
-            disabled_at,
-            deleted_at,
-            revision
-          ) VALUES (
-            ${input.clientId},
-            ${input.client.label},
-            ${input.client.deviceType},
-            ${input.client.os},
-            ${encodeAuthEnvironmentScopes(input.scopes)},
-            ${input.managementClass},
-            ${input.issuedAt},
-            NULL,
-            NULL,
-            NULL,
-            0
-          )
-        `;
-          yield* sql`
-        INSERT INTO auth_sessions (
-          session_id,
-          client_id,
-          subject,
-          authority_class,
-          scopes,
-          method,
-          client_label,
-          client_ip_address,
-          client_user_agent,
-          client_device_type,
-          client_os,
-          client_browser,
-          issued_at,
-          expires_at,
-          revoked_at
-        )
-        VALUES (
-          ${input.sessionId},
-          ${input.clientId},
-          ${input.subject},
-          ${input.authorityClass},
-          ${encodeAuthEnvironmentScopes(input.scopes)},
-          ${input.method},
-          ${input.client.label},
-          ${input.client.ipAddress},
-          ${input.client.userAgent},
-          ${input.client.deviceType},
-          ${input.client.os},
-          ${input.client.browser},
-          ${input.issuedAt},
-          ${input.expiresAt},
-          NULL
-        )
-        `;
-        }),
-      ),
-  });
+  const insertSessionRow = (ignoreExisting: boolean) =>
+    SqlSchema.void({
+      Request: CreateAuthSessionInput,
+      execute: (input) =>
+        sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`
+              INSERT INTO auth_clients (
+                client_id, label, device_type, platform, granted_scopes,
+                management_class, created_at, last_connected_at,
+                disabled_at, deleted_at, revision
+              ) VALUES (
+                ${input.clientId}, ${input.client.label}, ${input.client.deviceType},
+                ${input.client.os}, ${encodeAuthEnvironmentScopes(input.scopes)},
+                ${input.managementClass}, ${input.issuedAt}, NULL, NULL, NULL, 0
+              )
+              ${ignoreExisting ? sql`ON CONFLICT(client_id) DO NOTHING` : sql``}
+            `;
+            yield* sql`
+              INSERT INTO auth_sessions (
+                session_id, client_id, subject, authority_class, scopes, method,
+                client_label, client_ip_address, client_user_agent,
+                client_device_type, client_os, client_browser,
+                issued_at, expires_at, revoked_at
+              ) VALUES (
+                ${input.sessionId}, ${input.clientId}, ${input.subject},
+                ${input.authorityClass}, ${encodeAuthEnvironmentScopes(input.scopes)},
+                ${input.method}, ${input.client.label}, ${input.client.ipAddress},
+                ${input.client.userAgent}, ${input.client.deviceType},
+                ${input.client.os}, ${input.client.browser},
+                ${input.issuedAt}, ${input.expiresAt}, NULL
+              )
+              ${ignoreExisting ? sql`ON CONFLICT(session_id) DO NOTHING` : sql``}
+            `;
+          }),
+        ),
+    });
+  const createSessionRow = insertSessionRow(false);
+  const createSessionRowIfAbsent = insertSessionRow(true);
 
   const getSessionRowById = SqlSchema.findOneOption({
     Request: GetAuthSessionByIdInput,
@@ -474,6 +446,17 @@ export const make = Effect.gen(function* () {
         ),
       );
 
+  const createIfAbsent: AuthSessionRepository["Service"]["createIfAbsent"] = (input) =>
+    createSessionRowIfAbsent(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "AuthSessionRepository.createIfAbsent:query",
+          "AuthSessionRepository.createIfAbsent:encodeRequest",
+          { sessionId: input.sessionId },
+        ),
+      ),
+    );
+
   const getById: AuthSessionRepository["Service"]["getById"] = (input) =>
     getSessionRowById(input).pipe(
       Effect.mapError(
@@ -485,7 +468,7 @@ export const make = Effect.gen(function* () {
       ),
       Effect.flatMap((rowOption) =>
         Option.match(rowOption, {
-          onNone: () => Effect.succeed(Option.none()),
+          onNone: () => Effect.succeedNone,
           onSome: (row) =>
             decodeAuthSessionDbRow(row).pipe(
               Effect.mapError((cause) =>
@@ -574,6 +557,7 @@ export const make = Effect.gen(function* () {
   return {
     create,
     createReplacingActive,
+    createIfAbsent,
     getById,
     listActive,
     revoke,

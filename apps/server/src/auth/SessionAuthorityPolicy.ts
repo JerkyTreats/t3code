@@ -51,7 +51,7 @@ export interface SessionIssuanceInput {
   readonly managementClass?: "portal-managed-device";
 }
 
-export class SessionAuthorityIssuanceError extends Schema.TaggedErrorClass<SessionAuthorityIssuanceError>()(
+export class SessionAuthorityIssuanceError extends Schema.TaggedError<SessionAuthorityIssuanceError>()(
   "SessionAuthorityIssuanceError",
   { message: Schema.String },
 ) {}
@@ -102,7 +102,7 @@ export const resolveIssuance = Effect.fn("SessionAuthorityPolicy.resolveIssuance
   };
 });
 
-export class SessionTokenExpiredError extends Schema.TaggedErrorClass<SessionTokenExpiredError>()(
+export class SessionTokenExpiredError extends Schema.TaggedError<SessionTokenExpiredError>()(
   "SessionTokenExpiredError",
   {
     sessionId: AuthSessionId,
@@ -115,7 +115,7 @@ export class SessionTokenExpiredError extends Schema.TaggedErrorClass<SessionTok
   }
 }
 
-export class UnknownSessionTokenError extends Schema.TaggedErrorClass<UnknownSessionTokenError>()(
+export class UnknownSessionTokenError extends Schema.TaggedError<UnknownSessionTokenError>()(
   "UnknownSessionTokenError",
   {
     sessionId: AuthSessionId,
@@ -126,7 +126,7 @@ export class UnknownSessionTokenError extends Schema.TaggedErrorClass<UnknownSes
   }
 }
 
-export class SessionTokenRevokedError extends Schema.TaggedErrorClass<SessionTokenRevokedError>()(
+export class SessionTokenRevokedError extends Schema.TaggedError<SessionTokenRevokedError>()(
   "SessionTokenRevokedError",
   {
     sessionId: AuthSessionId,
@@ -138,7 +138,7 @@ export class SessionTokenRevokedError extends Schema.TaggedErrorClass<SessionTok
   }
 }
 
-export class SessionClientDisabledError extends Schema.TaggedErrorClass<SessionClientDisabledError>()(
+export class SessionClientDisabledError extends Schema.TaggedError<SessionClientDisabledError>()(
   "SessionClientDisabledError",
   { clientId: AuthClientId },
 ) {
@@ -147,7 +147,7 @@ export class SessionClientDisabledError extends Schema.TaggedErrorClass<SessionC
   }
 }
 
-export class SessionClientDeletedError extends Schema.TaggedErrorClass<SessionClientDeletedError>()(
+export class SessionClientDeletedError extends Schema.TaggedError<SessionClientDeletedError>()(
   "SessionClientDeletedError",
   { clientId: AuthClientId },
 ) {
@@ -156,7 +156,7 @@ export class SessionClientDeletedError extends Schema.TaggedErrorClass<SessionCl
   }
 }
 
-export class InvalidSessionExpirationClaimError extends Schema.TaggedErrorClass<InvalidSessionExpirationClaimError>()(
+export class InvalidSessionExpirationClaimError extends Schema.TaggedError<InvalidSessionExpirationClaimError>()(
   "InvalidSessionExpirationClaimError",
   {
     sessionId: AuthSessionId,
@@ -168,7 +168,7 @@ export class InvalidSessionExpirationClaimError extends Schema.TaggedErrorClass<
   }
 }
 
-export class InvalidSessionAuthorityClassError extends Schema.TaggedErrorClass<InvalidSessionAuthorityClassError>()(
+export class InvalidSessionAuthorityClassError extends Schema.TaggedError<InvalidSessionAuthorityClassError>()(
   "InvalidSessionAuthorityClassError",
   { sessionId: AuthSessionId },
 ) {
@@ -177,7 +177,7 @@ export class InvalidSessionAuthorityClassError extends Schema.TaggedErrorClass<I
   }
 }
 
-export class WebSocketAuthorityForbiddenError extends Schema.TaggedErrorClass<WebSocketAuthorityForbiddenError>()(
+export class WebSocketAuthorityForbiddenError extends Schema.TaggedError<WebSocketAuthorityForbiddenError>()(
   "WebSocketAuthorityForbiddenError",
   { sessionId: AuthSessionId },
 ) {
@@ -186,7 +186,7 @@ export class WebSocketAuthorityForbiddenError extends Schema.TaggedErrorClass<We
   }
 }
 
-export class WebSocketTokenExpiredError extends Schema.TaggedErrorClass<WebSocketTokenExpiredError>()(
+export class WebSocketTokenExpiredError extends Schema.TaggedError<WebSocketTokenExpiredError>()(
   "WebSocketTokenExpiredError",
   {
     sessionId: AuthSessionId,
@@ -199,7 +199,7 @@ export class WebSocketTokenExpiredError extends Schema.TaggedErrorClass<WebSocke
   }
 }
 
-export class UnknownWebSocketSessionError extends Schema.TaggedErrorClass<UnknownWebSocketSessionError>()(
+export class UnknownWebSocketSessionError extends Schema.TaggedError<UnknownWebSocketSessionError>()(
   "UnknownWebSocketSessionError",
   {
     sessionId: AuthSessionId,
@@ -210,7 +210,7 @@ export class UnknownWebSocketSessionError extends Schema.TaggedErrorClass<Unknow
   }
 }
 
-export class WebSocketSessionExpiredError extends Schema.TaggedErrorClass<WebSocketSessionExpiredError>()(
+export class WebSocketSessionExpiredError extends Schema.TaggedError<WebSocketSessionExpiredError>()(
   "WebSocketSessionExpiredError",
   {
     sessionId: AuthSessionId,
@@ -223,7 +223,7 @@ export class WebSocketSessionExpiredError extends Schema.TaggedErrorClass<WebSoc
   }
 }
 
-export class WebSocketSessionRevokedError extends Schema.TaggedErrorClass<WebSocketSessionRevokedError>()(
+export class WebSocketSessionRevokedError extends Schema.TaggedError<WebSocketSessionRevokedError>()(
   "WebSocketSessionRevokedError",
   {
     sessionId: AuthSessionId,

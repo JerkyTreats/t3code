@@ -10,6 +10,7 @@ import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import { autoPullProjects } from "../serverRuntimeStartup.ts";
 import { ServerConfig } from "../config.ts";
+import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 
 const driverLayer = GitVcsDriver.layer.pipe(
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "origin-auto-pull-config-" })),
@@ -52,7 +53,10 @@ for (const host of ["startup", "broadcaster"] as const) {
             assert.equal((yield* driver.statusDetails(cwd)).behindCount, 1);
 
             if (host === "startup") {
-              yield* autoPullProjects([{ workspaceRoot: cwd, autoPull: true } as never]);
+              yield* autoPullProjects([{ id: "fixture-project", workspaceRoot: cwd } as never], {
+                ...DEFAULT_SERVER_SETTINGS,
+                defaultAutoPull: true,
+              });
             } else {
               const workflow = Layer.mock(GitWorkflowService.GitWorkflowService)({
                 localStatus: ({ cwd }) =>

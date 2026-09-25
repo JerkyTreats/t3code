@@ -250,7 +250,7 @@ describe("MermaidDiagramBlock", () => {
   ])("shows readable source and retry when %s fails", async (_failure, message) => {
     renderMermaidDiagram.mockRejectedValue(new Error(message));
     const renderer = await createDiagram(diagram());
-    const error = renderer.root.findByProps({ className: "chat-markdown-mermaid-error" });
+    const error = renderer.root.findByProps({ "data-mermaid-error": "true" });
 
     expect(error.findByType("strong").children).toEqual(["Diagram render failed"]);
     expect(error.findByType("span").children).toEqual([message]);

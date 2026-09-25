@@ -3,6 +3,7 @@ import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/unstable/http";
+import * as NetAddress from "effect/unstable/net/NetAddress";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
@@ -11,7 +12,7 @@ import type { McpCapability } from "./McpInvocationContext.ts";
 const environmentId = EnvironmentId.make("environment-1");
 const makeFakeHttpServer = (hostname: string, port = 43123) =>
   HttpServer.HttpServer.of({
-    address: { _tag: "TcpAddress", hostname, port },
+    address: NetAddress.inetAddressFromIpStringUnsafe(hostname, port),
     serve: (() => Effect.void) as HttpServer.HttpServer["Service"]["serve"],
   });
 const fakeHttpServer = makeFakeHttpServer("127.0.0.1");
@@ -43,6 +44,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
       capabilities: new Set(["preview"]),
     });
     expect(issued.config.previewEndpoint).toBe("http://127.0.0.1:43123/mcp/preview");
+    expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp/pull-requests");
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     expect(token.length).toBeGreaterThan(20);
 
@@ -56,13 +58,43 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
   }),
 );
 
+it.effect("always grants pull-requests and gates browser and device access independently", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const withPreview = yield* registry.issue({
+      threadId: ThreadId.make("thread-preview"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["preview"]),
+    });
+    const withoutPreview = yield* registry.issue({
+      threadId: ThreadId.make("thread-no-preview"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(),
+    });
+    const withDevice = yield* registry.issue({
+      threadId: ThreadId.make("thread-device"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      capabilities: new Set(["device"]),
+    });
+    const capabilitiesOf = (issued: typeof withPreview) =>
+      registry
+        .resolve(issued.config.authorizationHeader.replace(/^Bearer\s+/, ""))
+        .pipe(Effect.map((scope) => [...(scope?.capabilities ?? [])].sort()));
+
+    expect(yield* capabilitiesOf(withPreview)).toEqual(["preview", "pull-requests"]);
+    expect(yield* capabilitiesOf(withoutPreview)).toEqual(["pull-requests"]);
+    expect(yield* capabilitiesOf(withDevice)).toEqual(["device", "pull-requests"]);
+  }),
+);
+
 it.effect("builds MCP endpoints from the bound server host", () =>
   Effect.gen(function* () {
     const cases = [
-      ["100.64.0.40", "http://100.64.0.40:43123/mcp/preview"],
-      ["0.0.0.0", "http://127.0.0.1:43123/mcp/preview"],
-      ["localhost", "http://localhost:43123/mcp/preview"],
-      ["127.0.0.1", "http://127.0.0.1:43123/mcp/preview"],
+      ["100.64.0.40", "http://100.64.0.40:43123/mcp"],
+      ["0.0.0.0", "http://127.0.0.1:43123/mcp"],
+      ["::", "http://127.0.0.1:43123/mcp"],
+      ["::1", "http://[::1]:43123/mcp"],
+      ["127.0.0.1", "http://127.0.0.1:43123/mcp"],
     ] as const;
 
     for (const [hostname, expectedEndpoint] of cases) {
@@ -72,7 +104,7 @@ it.effect("builds MCP endpoints from the bound server host", () =>
         providerInstanceId: ProviderInstanceId.make("codex"),
         capabilities: new Set(["preview"]),
       });
-      expect(issued.config.previewEndpoint).toBe(expectedEndpoint);
+      expect(issued.config.previewEndpoint).toBe(`${expectedEndpoint}/preview`);
     }
   }),
 );
@@ -134,7 +166,7 @@ it.effect("does not keep credentials of other threads alive", () =>
   }),
 );
 
-it.effect("issues exactly the requested capabilities with independent toolkit endpoints", () =>
+it.effect("adds pull-request access while admitting each toolkit endpoint independently", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry(() => 1_000);
     const cases: ReadonlyArray<ReadonlyArray<McpCapability>> = [
@@ -155,8 +187,9 @@ it.effect("issues exactly the requested capabilities with independent toolkit en
       const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
       capabilities.add("board-write");
       const resolved = yield* registry.resolve(token);
-      expect(resolved?.capabilities).toEqual(new Set(requested));
-      expect(issued.config.capabilities).toEqual(new Set(requested));
+      expect(resolved?.capabilities).toEqual(new Set(["pull-requests", ...requested]));
+      expect(issued.config.capabilities).toEqual(new Set(["pull-requests", ...requested]));
+      expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp/pull-requests");
       expect(issued.config.boardEndpoint).toBe(
         requested.includes("board") ? "http://127.0.0.1:43123/mcp" : undefined,
       );
@@ -191,16 +224,22 @@ it.effect(
       const original = yield* registry.resolve(boardToken);
       yield* registry.setBoardWriteEnabled(boardThread, false);
       expect((yield* registry.resolve(boardToken))?.capabilities).toEqual(
-        new Set(["board", "preview"]),
+        new Set(["pull-requests", "board", "preview"]),
       );
-      expect((yield* registry.resolve(previewToken))?.capabilities).toEqual(new Set(["preview"]));
+      expect((yield* registry.resolve(previewToken))?.capabilities).toEqual(
+        new Set(["pull-requests", "preview"]),
+      );
       yield* registry.setBoardWriteEnabled(boardThread, true);
       const restored = yield* registry.resolve(boardToken);
-      expect(restored?.capabilities).toEqual(new Set(["board", "board-write", "preview"]));
+      expect(restored?.capabilities).toEqual(
+        new Set(["pull-requests", "board", "board-write", "preview"]),
+      );
       expect(restored?.boardAuthorId).toBe(original?.boardAuthorId);
       for (const enabled of [false, true, false, true]) {
         yield* registry.setBoardWriteEnabled(previewThread, enabled);
-        expect((yield* registry.resolve(previewToken))?.capabilities).toEqual(new Set(["preview"]));
+        expect((yield* registry.resolve(previewToken))?.capabilities).toEqual(
+          new Set(["pull-requests", "preview"]),
+        );
       }
     }),
 );

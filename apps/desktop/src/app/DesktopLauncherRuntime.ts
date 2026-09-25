@@ -126,7 +126,7 @@ export class DesktopLauncherRuntime extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopLauncherRuntime") {}
 
-export class DesktopLauncherProcessIdentityError extends Schema.TaggedErrorClass<DesktopLauncherProcessIdentityError>()(
+export class DesktopLauncherProcessIdentityError extends Schema.TaggedError<DesktopLauncherProcessIdentityError>()(
   "DesktopLauncherProcessIdentityError",
   { reason: Schema.String },
 ) {

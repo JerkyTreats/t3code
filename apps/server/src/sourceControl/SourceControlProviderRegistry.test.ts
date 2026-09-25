@@ -15,6 +15,7 @@ import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
 import * as BitbucketApi from "./BitbucketApi.ts";
 import * as GitHubCli from "./GitHubCli.ts";
 import * as GitLabCli from "./GitLabCli.ts";
+import * as ForgejoCli from "./ForgejoCli.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
@@ -41,6 +42,8 @@ function makeRegistry(input: {
     readonly pushUrls?: ReadonlyArray<string>;
   }>;
   readonly process?: Partial<VcsProcess.VcsProcess["Service"]>;
+  readonly github?: Partial<GitHubCli.GitHubCli["Service"]>;
+  readonly gitlab?: Partial<GitLabCli.GitLabCli["Service"]>;
   readonly resolve?: VcsDriverRegistry.VcsDriverRegistry["Service"]["resolve"];
 }) {
   const driver = {
@@ -111,12 +114,14 @@ function makeRegistry(input: {
   return SourceControlProviderRegistry.make.pipe(
     Effect.provide(
       Layer.mergeAll(
+        NodeServices.layer,
         registryLayer,
         processLayer,
         Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
         Layer.mock(BitbucketApi.BitbucketApi)({}),
-        Layer.mock(GitHubCli.GitHubCli)({}),
-        Layer.mock(GitLabCli.GitLabCli)({}),
+        Layer.mock(GitHubCli.GitHubCli)(input.github ?? {}),
+        Layer.mock(GitLabCli.GitLabCli)(input.gitlab ?? {}),
+        Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
         ServerConfig.layerTest(process.cwd(), {
           prefix: "t3-source-control-registry-test-",
         }).pipe(Layer.provide(NodeServices.layer)),
@@ -463,4 +468,64 @@ it.effect("fails closed when origin is not configured", () =>
 
     assert.strictEqual(provider.kind, "unknown");
   }),
+);
+
+it.effect("routes linked subjects only within the exact origin repository", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "https://github.com/team/project.git" }],
+      github: {
+        execute: () =>
+          Effect.succeed(processOutput(JSON.stringify({ title: "GitHub issue", body: null }))),
+      },
+      gitlab: {
+        execute: () =>
+          Effect.succeed(
+            processOutput(JSON.stringify({ title: "GitLab MR", description: "Nested project" })),
+          ),
+      },
+    });
+    const githubLookup = registry.resolveLink({
+      cwd: "/unrelated",
+      url: new URL("https://github.com/team/project/issues/1"),
+    });
+    assert.ok(githubLookup);
+    assert.deepStrictEqual(yield* githubLookup, { title: "GitHub issue", body: null });
+    const foreignLookup = registry.resolveLink({
+      cwd: "/unrelated",
+      url: new URL("https://github.com/other/project/issues/1"),
+    });
+    assert.ok(foreignLookup);
+    const foreignError = yield* foreignLookup.pipe(Effect.flip);
+    assert.strictEqual(foreignError.operation, "resolveLink");
+
+    const gitlabRegistry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "https://gitlab.com/team/sub/project.git" }],
+      gitlab: {
+        execute: () =>
+          Effect.succeed(
+            processOutput(JSON.stringify({ title: "GitLab MR", description: "Nested project" })),
+          ),
+      },
+    });
+    const gitlabLookup = gitlabRegistry.resolveLink({
+      cwd: "/unrelated",
+      url: new URL("https://gitlab.com/team/sub/project/-/merge_requests/2"),
+    });
+    assert.ok(gitlabLookup);
+    assert.deepStrictEqual(yield* gitlabLookup, { title: "GitLab MR", body: "Nested project" });
+    for (const url of [
+      "https://example.test/team/project/issues/1",
+      "https://github.attacker.test/team/project/issues/1",
+      "https://gitlab.attacker.test/team/project/-/issues/1",
+      "https://github.com/team/project",
+      "https://codeberg.org/team/project/issues/1",
+      "https://bitbucket.org/team/project/pull-requests/1",
+      "https://dev.azure.com/org/project/_git/repo/pullrequest/1",
+      "http://github.com/team/project/issues/1",
+      "https://user:secret@github.com/team/project/issues/1",
+    ]) {
+      assert.strictEqual(registry.resolveLink({ cwd: "/unrelated", url: new URL(url) }), undefined);
+    }
+  }).pipe(Effect.scoped),
 );

@@ -171,9 +171,16 @@ it.effect("marks active running sessions that have persisted resume state", () =
   );
 });
 
-it.effect.each(["marked update", "opt-in restart"] as const)(
-  "continues %s sessions after activation with provider-specific input",
-  (recovery) =>
+it.effect.each(
+  (["marked update", "opt-in restart"] as const).flatMap((recovery) =>
+    (["current", "previous", "missing"] as const).map((persistedTurn) => ({
+      recovery,
+      persistedTurn,
+    })),
+  ),
+)(
+  "continues $recovery sessions with a $persistedTurn directory turn",
+  ({ recovery, persistedTurn }) =>
     Effect.gen(function* () {
       const codex = makeThread(
         "thread-continue-codex",
@@ -205,15 +212,22 @@ it.effect.each(["marked update", "opt-in restart"] as const)(
               thread.id === codex.id ? providerInstanceId : fallbackProviderInstanceId,
             status: "running" as const,
             resumeCursor: { threadId: thread.id },
-            runtimePayload:
-              recovery === "marked update"
+            runtimePayload: {
+              activeTurnId:
+                thread.id === codex.id && persistedTurn !== "current"
+                  ? persistedTurn === "previous"
+                    ? "previous-provider-turn"
+                    : null
+                  : thread.session.activeTurnId,
+              ...(recovery === "marked update"
                 ? {
                     continueAfterServerUpdate:
                       thread.id === codex.id
                         ? codex.session.activeTurnId
                         : fallbackContinuationTurnId,
                   }
-                : { activeTurnId: thread.session.activeTurnId },
+                : {}),
+            },
           },
         ]),
       );
@@ -277,6 +291,12 @@ it.effect.each(["marked update", "opt-in restart"] as const)(
             Effect.as({ sequence: dispatched.length }),
           ),
       });
+      assert.isTrue(
+        dispatched.every(
+          (command) =>
+            command.type === "thread.session.set" && command.session.status === "starting",
+        ),
+      );
       yield* Deferred.await(continuationSent);
       yield* Deferred.await(continuationCleared);
 
@@ -380,18 +400,16 @@ it.effect("does not continue archived or deleted marked sessions", () => {
     directory: {
       getBinding: (threadId) => {
         const thread = threadId === archived.id ? archived : deleted;
-        return Effect.succeed(
-          Option.some({
-            threadId,
-            provider: ProviderDriverKind.make("codex"),
-            providerInstanceId,
-            status: "running" as const,
-            resumeCursor: { cursor: threadId },
-            runtimePayload: {
-              continueAfterServerUpdate: thread.session.activeTurnId,
-            },
-          }),
-        );
+        return Effect.succeedSome({
+          threadId,
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId,
+          status: "running" as const,
+          resumeCursor: { cursor: threadId },
+          runtimePayload: {
+            continueAfterServerUpdate: thread.session.activeTurnId,
+          },
+        });
       },
       upsert: () => Effect.void,
       recordImportedTranscript: () => Effect.die("unused"),
@@ -437,18 +455,16 @@ it.effect("retries continuation preparation before settling a persistent failure
     threads: [thread],
     directory: {
       getBinding: () =>
-        Effect.succeed(
-          Option.some({
-            threadId: thread.id,
-            provider: ProviderDriverKind.make("codex"),
-            providerInstanceId,
-            status: "running" as const,
-            resumeCursor: { cursor: thread.id },
-            runtimePayload: {
-              continueAfterServerUpdate: thread.session.activeTurnId,
-            },
-          }),
-        ),
+        Effect.succeedSome({
+          threadId: thread.id,
+          provider: ProviderDriverKind.make("codex"),
+          providerInstanceId,
+          status: "running" as const,
+          resumeCursor: { cursor: thread.id },
+          runtimePayload: {
+            continueAfterServerUpdate: thread.session.activeTurnId,
+          },
+        }),
       upsert: () => Effect.void,
       recordImportedTranscript: () => Effect.die("unused"),
       getProvider: () => Effect.die("unused"),
@@ -591,16 +607,14 @@ it.effect(
       directory: {
         getBinding: (candidate) =>
           candidate === absent.id
-            ? Effect.succeed(Option.none())
+            ? Effect.succeedNone
             : candidate === corrupt.id
               ? Effect.fail(corruptFailure)
-              : Effect.succeed(
-                  Option.some({
-                    threadId: candidate,
-                    provider: ProviderDriverKind.make("codex"),
-                    providerInstanceId,
-                  }),
-                ),
+              : Effect.succeedSome({
+                  threadId: candidate,
+                  provider: ProviderDriverKind.make("codex"),
+                  providerInstanceId,
+                }),
         upsert: () => Effect.fail(writeFailure),
         recordImportedTranscript: () => Effect.die("unused"),
         getProvider: () => Effect.die("unused"),
@@ -638,7 +652,7 @@ it.effect("retries failed projections and continues after a persistent failure",
   return runReconciliation({
     threads: [transient, persistent, later],
     directory: {
-      getBinding: () => Effect.succeed(Option.none()),
+      getBinding: () => Effect.succeedNone,
       upsert: () => Effect.void,
       recordImportedTranscript: () => Effect.die("unused"),
       getProvider: () => Effect.die("unused"),
@@ -715,9 +729,7 @@ for (const scenario of [
   "stopped projection",
   "finished projection",
   "stopped binding",
-  "finished binding",
   "missing cursor",
-  "mismatched turn",
   "marked without cursor",
   "marked stopped projection",
   "marked superseded turn",
@@ -742,24 +754,17 @@ for (const scenario of [
       continueAfterRestart: scenario !== "disabled",
       directory: {
         getBinding: () =>
-          Effect.succeed(
-            Option.some({
-              threadId: thread.id,
-              provider: ProviderDriverKind.make("codex"),
-              providerInstanceId,
-              status: scenario === "stopped binding" ? "stopped" : "running",
-              ...(scenario.includes("cursor") ? {} : { resumeCursor: { threadId: thread.id } }),
-              runtimePayload: {
-                activeTurnId:
-                  scenario === "finished binding"
-                    ? null
-                    : scenario === "mismatched turn" || scenario === "marked superseded turn"
-                      ? "another-turn"
-                      : turnId,
-                ...(scenario.startsWith("marked") ? { continueAfterServerUpdate: turnId } : {}),
-              },
-            }),
-          ),
+          Effect.succeedSome({
+            threadId: thread.id,
+            provider: ProviderDriverKind.make("codex"),
+            providerInstanceId,
+            status: scenario === "stopped binding" ? "stopped" : "running",
+            ...(scenario.includes("cursor") ? {} : { resumeCursor: { threadId: thread.id } }),
+            runtimePayload: {
+              activeTurnId: scenario === "marked superseded turn" ? "another-turn" : turnId,
+              ...(scenario.startsWith("marked") ? { continueAfterServerUpdate: turnId } : {}),
+            },
+          }),
         upsert: (binding) =>
           Effect.sync(() => {
             upserts.push(binding);
@@ -933,9 +938,7 @@ it.effect("settles failed opt-in recovery without retrying the provider turn", (
           Effect.gen(function* () {
             sends.push(input);
             preparedPayloads.push(binding.runtimePayload);
-            return yield* Effect.fail(
-              new ProviderSessionNotFoundError({ threadId: input.threadId }),
-            );
+            return yield* new ProviderSessionNotFoundError({ threadId: input.threadId });
           }),
       },
       directory: {

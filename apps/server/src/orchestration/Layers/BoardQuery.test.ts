@@ -182,7 +182,6 @@ it.effect("captures the projector head before a concurrent page read", () =>
           }),
         ),
       listAll: () => Effect.succeed([]),
-      minLastAppliedSequence: () => Effect.succeed(1),
     });
     const layer = BoardQueryCoreLive.pipe(
       Layer.provide(

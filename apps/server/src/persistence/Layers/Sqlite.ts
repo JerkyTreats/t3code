@@ -3,34 +3,12 @@ import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { backupDatabaseBeforeMigration42 } from "../Migration42Backup.ts";
 
 import { runMigrations } from "../Migrations.ts";
 import { ServerConfig } from "../../config.ts";
-
-type RuntimeSqliteLayerConfig = {
-  readonly filename: string;
-  readonly spanAttributes?: Record<string, unknown>;
-};
-
-type Loader = {
-  layer: (config: RuntimeSqliteLayerConfig) => Layer.Layer<SqlClient.SqlClient, SqlError>;
-};
-const defaultSqliteClientLoaders = {
-  bun: () => import("@effect/sql-sqlite-bun/SqliteClient"),
-  node: () => import("@t3tools/shared/nodeSqliteClient"),
-} satisfies Record<string, () => Promise<Loader>>;
-
-const makeRuntimeSqliteLayer = Effect.fn("makeRuntimeSqliteLayer")(function* (
-  config: RuntimeSqliteLayerConfig,
-) {
-  const runtime = process.versions.bun !== undefined ? "bun" : "node";
-  const loader = defaultSqliteClientLoaders[runtime];
-  const clientModule = yield* Effect.promise<Loader>(loader);
-  return clientModule.layer(config);
-}, Layer.unwrap);
 
 const setup = <E, R>(beforeMigrations: Effect.Effect<void, E, R>) =>
   Layer.effectDiscard(
@@ -54,7 +32,7 @@ export const makeSqlitePersistenceLive = Effect.fn("makeSqlitePersistenceLive")(
 
   return Layer.provideMerge(
     setup(backupDatabaseBeforeMigration42(dbPath)),
-    makeRuntimeSqliteLayer({
+    NodeSqliteClient.layer({
       filename: dbPath,
       spanAttributes: {
         "db.name": path.basename(dbPath),
@@ -66,7 +44,7 @@ export const makeSqlitePersistenceLive = Effect.fn("makeSqlitePersistenceLive")(
 
 export const SqlitePersistenceMemory = Layer.provideMerge(
   setup(Effect.void),
-  makeRuntimeSqliteLayer({ filename: ":memory:" }),
+  NodeSqliteClient.layer({ filename: ":memory:" }),
 );
 
 export const layerConfig = Layer.unwrap(

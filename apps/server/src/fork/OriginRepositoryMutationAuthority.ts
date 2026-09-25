@@ -17,7 +17,7 @@ export type OriginRepositoryMutationAuthorityFailureReason =
   | "inspection-failed"
   | "push-redirect";
 
-export class OriginRepositoryMutationAuthorityError extends Schema.TaggedErrorClass<OriginRepositoryMutationAuthorityError>()(
+export class OriginRepositoryMutationAuthorityError extends Schema.TaggedError<OriginRepositoryMutationAuthorityError>()(
   "OriginRepositoryMutationAuthorityError",
   {
     reason: Schema.Literals([

@@ -1,8 +1,8 @@
 # Patch Guide
 
-Status: current implementation index for the accepted local intake
+Status: current implementation index
 
-This index describes the implemented fork responsibilities. The [intake ledger](.ledger/upstream-intake-program.md) and [preservation evidence](.ledger/upstream-intake-evidence.json) record the accepted local product gate, exact tested source and explicit runtime limits.
+This index describes the implemented fork responsibilities. Fork local voice F29 is retired; ordinary upstream input remains substrate. The [intake ledger](.ledger/upstream-intake-program.md) and [preservation evidence](.ledger/upstream-intake-evidence.json) record the accepted local product gate, exact tested source and explicit runtime limits.
 
 Review this guide and the relevant active specification before changing fork behavior. Update the active contract and this guide in the same completed change. Historical source and plans do not independently require replay.
 
@@ -20,7 +20,7 @@ The [retired-feature record](fork/retired-features.md) preserves the approved re
 
 ## Repository And Runtime Authority
 
-[F06 exact-origin identity](fork/F06-exact-origin-repository-identity.md) owns origin selection, provider binding and mutation authorization. Current upstream Git and provider hosts call those owners, including startup and background automatic pull. Hosted URL selectors are bound to origin before CLI execution; GitHub qualified branch selectors retain their ordinary meaning.
+[F06 exact-origin identity](fork/F06-exact-origin-repository-identity.md) owns origin selection, provider binding and mutation authorization. Current upstream Git and provider hosts call those owners, including startup and background automatic pull. Hosted URL selectors, including Forgejo, linked pull requests and file-revision reads, are bound to origin before CLI execution; GitHub qualified branch selectors retain their ordinary meaning.
 
 [F01 desktop release identity](fork/F01-exact-origin-desktop-release.md) owns exact-origin update metadata, verified Linux descriptors bound to the full build revision and registry-free SSH runtime acquisition. [F20 origin server image](fork/F20-origin-server-image.md) owns private build context, origin image publication rules and operator-managed headless updates. Desktop-controlled updates remain available. The evidence index binds accepted installed artifacts and the actual local image runtime to the tested source.
 
@@ -48,7 +48,7 @@ The provider capability owner admits Board for Codex, Claude, Cursor, Grok and l
 
 [F04 context whitespace](fork/F04-composer-context-whitespace.md) preserves authored bytes when terminal, element or preview context is appended, including mixed upstream source review. The focused composition and display owner preserves generated ordering and removes only inserted separation. Ordinary and review-only trimming remains upstream behavior.
 
-[F22 Mermaid rendering](fork/F22-serialized-mermaid-rendering.md) adds one fence adapter to upstream Markdown. A bounded visibility-gated serialized owner delays hidden diagram work while handling theme-sensitive rendering, stable semantic identity, retries and stale results across message, plan, file and PR surfaces. The retired document renderer and rendered-document review remain absent.
+[F22 Mermaid rendering](fork/F22-serialized-mermaid-rendering.md) adds one fence adapter to upstream Markdown. A bounded visibility-gated serialized owner delays hidden diagram work while handling theme-sensitive rendering, stable semantic identity, retries and stale results across message, plan, file, attachment and PR surfaces. The retired document renderer and rendered-document review remain absent.
 
 [F23 preview controls](fork/F23-preview-browser-controls.md) owns focused new, confirmed close and reopen actions, exact scoped runtime identity and ten-entry successful-close history. Current preview sessions, profiles and browser presentation remain upstream substrate. Optional exact zoom restoration consumes the existing normalized Manager operation.
 
@@ -73,7 +73,5 @@ Thread enrollment binds the request origin and rejects redirects while accepting
 Thread uses a headerless shared chat with composer-adjacent working and connection feedback. Its fork presentation owner keeps the selected model identifier readable at narrow widths and uses an accessible icon-only permission trigger. Ordinary chat presentation and all existing model, draft and execution authorities remain unchanged.
 
 ## Verification
-
-[F29 local voice](fork/F29-local-voice-output.md) owns opt-in, device-local spoken replies, one-shot local voice steering and per-device selection from a bounded Pocket TTS voice catalog. A non-sendable empty composer presents a primary microphone in place of disabled Send, and one recording produces editable draft text without submission. Android and web fail closed unless their platform guarantees on-device recognition. Electron desktop shells fail closed before inspecting Chromium's unsupported browser-local recognition bridge. Turn-only response guidance feeds the existing provider boundary, and an authenticated bounded proxy sends the completed reply verbatim with the selected named voice to an operator-configured local Pocket TTS service. Shared admission and HTTP owners prevent historical or cross-device autoplay while preserving a locally submitted turn through same-thread draft promotion; web and desktop Settings add an explicit voice preview, mobile Settings exposes the same catalog, and every audio owner retains stop, replay and failure states. Coding-model serving, cloud transcription, background recording and duplex conversation remain absent.
 
 Source and runtime build-input changes require `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test`. Native mobile changes also require `pnpm lint:mobile`. Use synthetic state and keep client installation, production changes and publication within their explicit authorization.

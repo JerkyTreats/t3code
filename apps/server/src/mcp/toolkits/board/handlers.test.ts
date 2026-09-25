@@ -35,6 +35,8 @@ const TestLayer = McpHttpServer.BoardToolkitRegistrationLive.pipe(
 const client = McpSchema.McpServerClient.of({
   clientId: 1,
   protocolVersion: "2025-06-18",
+  clientCapabilities: {},
+  clientInfo: { name: "board-mcp-test", version: "1.0.0" },
   initializePayload: {
     protocolVersion: "2025-06-18",
     capabilities: {},

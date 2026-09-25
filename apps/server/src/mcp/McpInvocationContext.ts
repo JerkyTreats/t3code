@@ -1,6 +1,7 @@
 import {
   BoardAuthorId,
   type EnvironmentId,
+  McpCapabilityUnavailableError,
   PreviewAutomationUnavailableError,
   type ProviderInstanceId,
   type ThreadId,
@@ -9,7 +10,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-export type McpCapability = "board" | "board-write" | "preview";
+export type McpCapability = "board" | "board-write" | "preview" | "device" | "pull-requests";
 
 export interface McpInvocationScope {
   readonly environmentId: EnvironmentId;
@@ -26,7 +27,7 @@ export class McpInvocationContext extends Context.Service<
   McpInvocationScope
 >()("t3/mcp/McpInvocationContext") {}
 
-export class BoardCapabilityUnavailableError extends Schema.TaggedErrorClass<BoardCapabilityUnavailableError>()(
+export class BoardCapabilityUnavailableError extends Schema.TaggedError<BoardCapabilityUnavailableError>()(
   "BoardCapabilityUnavailableError",
   {
     capability: Schema.Literal("board"),
@@ -41,7 +42,7 @@ export class BoardCapabilityUnavailableError extends Schema.TaggedErrorClass<Boa
   }
 }
 
-export class BoardWriteCapabilityUnavailableError extends Schema.TaggedErrorClass<BoardWriteCapabilityUnavailableError>()(
+export class BoardWriteCapabilityUnavailableError extends Schema.TaggedError<BoardWriteCapabilityUnavailableError>()(
   "BoardWriteCapabilityUnavailableError",
   {
     capability: Schema.Literal("board-write"),
@@ -55,22 +56,6 @@ export class BoardWriteCapabilityUnavailableError extends Schema.TaggedErrorClas
     return "MCP credential does not grant Board writes in the current interaction mode.";
   }
 }
-
-export const requireMcpCapability = Effect.fn("mcp.requireCapability")(function* (
-  capability: "preview",
-) {
-  const invocation = yield* McpInvocationContext;
-  if (!invocation.capabilities.has(capability)) {
-    return yield* new PreviewAutomationUnavailableError({
-      capability,
-      environmentId: invocation.environmentId,
-      threadId: invocation.threadId,
-      providerSessionId: invocation.providerSessionId,
-      providerInstanceId: invocation.providerInstanceId,
-    });
-  }
-  return invocation;
-});
 
 /** Board identity and admission come only from the server-minted invocation scope. */
 export const requireBoardCapability = Effect.fn("mcp.requireBoardCapability")(function* () {
@@ -109,3 +94,35 @@ export const requireBoardWriteCapability = Effect.fn("mcp.requireBoardWriteCapab
     return identity;
   },
 );
+
+/** The error a missing capability surfaces as; preview keeps its own so the broker can route it. */
+export type McpCapabilityError<C extends McpCapability> = C extends "preview"
+  ? PreviewAutomationUnavailableError
+  : McpCapabilityUnavailableError;
+
+const missingCapability = (
+  invocation: McpInvocationScope,
+  capability: McpCapability,
+): PreviewAutomationUnavailableError | McpCapabilityUnavailableError => {
+  const fields = {
+    environmentId: invocation.environmentId,
+    threadId: invocation.threadId,
+    providerSessionId: invocation.providerSessionId,
+    providerInstanceId: invocation.providerInstanceId,
+  };
+  return capability === "preview"
+    ? new PreviewAutomationUnavailableError({ capability, ...fields })
+    : new McpCapabilityUnavailableError({ capability, ...fields });
+};
+
+export const requireMcpCapability = <const C extends McpCapability>(
+  capability: C,
+): Effect.Effect<McpInvocationScope, McpCapabilityError<C>, McpInvocationContext> =>
+  McpInvocationContext.pipe(
+    Effect.filterOrFail(
+      (invocation) => invocation.capabilities.has(capability),
+      // The conditional type narrows what the literal argument decided at runtime.
+      (invocation) => missingCapability(invocation, capability) as McpCapabilityError<C>,
+    ),
+    Effect.withSpan("mcp.requireCapability"),
+  );

@@ -1,6 +1,10 @@
 import { appendPromptContext } from "../fork/promptContextWhitespace";
 import { type ThreadId } from "@t3tools/contracts";
-import type { PickedElementPayload, PickedElementStackFrame } from "@t3tools/contracts";
+import type {
+  PickedElementPayload,
+  PickedElementStackFrame,
+  PreviewAnnotationPayload,
+} from "@t3tools/contracts";
 
 const ELEMENT_CONTEXT_HTML_PREVIEW_LIMIT = 4000;
 const ELEMENT_CONTEXT_STYLES_LIMIT = 4000;
@@ -239,4 +243,30 @@ function parseElementContextEntries(block: string): ParsedElementContextEntry[] 
   }
   commit();
   return entries;
+}
+
+/** Converts a saved element pick into the annotation shape used by current drafts. */
+export function elementContextToPreviewAnnotation(
+  element: ElementContextSelection,
+  id: string,
+  pickedAt: string,
+): PreviewAnnotationPayload {
+  return {
+    id,
+    pageUrl: element.pageUrl,
+    pageTitle: element.pageTitle,
+    comment: "",
+    elements: [
+      {
+        id,
+        element: { ...element, stack: [], pickedAt },
+        rect: { x: 0, y: 0, width: 0, height: 0 },
+      },
+    ],
+    regions: [],
+    strokes: [],
+    styleChanges: [],
+    screenshot: null,
+    createdAt: pickedAt,
+  };
 }

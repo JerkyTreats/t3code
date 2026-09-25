@@ -122,7 +122,7 @@ replacing Board transport or presentation does not require restoring a duplicate
 ## Dependencies And Compatibility
 
 - Depends on F25 authenticated Board capability and interaction-mode write admission.
-- Depends on Codex developer instruction rebuild for each current user submit.
+- Depends on Codex turn-scoped additional context rebuilt for each current user submit and explicitly restored after compaction.
 - Remains compatible with a missing liaison task or unavailable inherited Board access through the
   direct-root fallback.
 - Preserves F25 global Board visibility, provenance, correction, ordering, and Forum-consumer

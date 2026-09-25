@@ -1,59 +1,67 @@
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
-
-import type { McpCapability } from "./McpInvocationContext.ts";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import {
   getMcpProviderServerAttachments,
-  type McpProviderSessionConfig,
+  withAgentDeviceEnvironment,
 } from "./McpProviderSession.ts";
 
-const session: McpProviderSessionConfig = {
-  environmentId: EnvironmentId.make("test-environment"),
-  threadId: ThreadId.make("test-thread"),
-  providerSessionId: "test-session",
-  providerInstanceId: ProviderInstanceId.make("custom-codex-instance"),
-  capabilities: new Set(),
-  authorizationHeader: "Bearer synthetic-token",
-};
+it("attaches only admitted toolkit endpoints", () => {
+  const config = {
+    environmentId: EnvironmentId.make("synthetic-environment"),
+    threadId: ThreadId.make("synthetic-thread"),
+    providerSessionId: "synthetic-session",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    endpoint: "http://127.0.0.1:43123/mcp/pull-requests",
+    boardEndpoint: "http://127.0.0.1:43123/mcp",
+    previewEndpoint: "http://127.0.0.1:43123/mcp/preview",
+    authorizationHeader: "Bearer synthetic-token",
+  };
+  const boardCapabilities = new Set(["board"] as const);
+  expect(getMcpProviderServerAttachments({ ...config, capabilities: boardCapabilities })).toEqual([
+    {
+      name: "t3-code",
+      endpoint: config.boardEndpoint,
+      authorizationHeader: config.authorizationHeader,
+      capabilities: boardCapabilities,
+    },
+  ]);
+  const previewCapabilities = new Set(["preview"] as const);
+  expect(getMcpProviderServerAttachments({ ...config, capabilities: previewCapabilities })).toEqual(
+    [
+      {
+        name: "t3-code-preview",
+        endpoint: config.previewEndpoint,
+        authorizationHeader: config.authorizationHeader,
+        capabilities: previewCapabilities,
+      },
+    ],
+  );
+});
 
-describe("provider toolkit attachment admission", () => {
-  it("requires both admission and an endpoint independently for each toolkit", () => {
-    for (const board of [false, true]) {
-      for (const preview of [false, true]) {
-        for (const boardEndpoint of [undefined, "http://localhost/mcp"]) {
-          for (const previewEndpoint of [undefined, "http://localhost/mcp/preview"]) {
-            const capabilities = new Set<McpCapability>();
-            if (board) capabilities.add("board");
-            if (preview) capabilities.add("preview");
-            const attachments = getMcpProviderServerAttachments({
-              ...session,
-              capabilities,
-              boardEndpoint,
-              previewEndpoint,
-            });
-            expect(attachments.map((entry) => entry.name)).toEqual([
-              ...(board && boardEndpoint ? ["t3-code"] : []),
-              ...(preview && previewEndpoint ? ["t3-code-preview"] : []),
-            ]);
-            for (const attachment of attachments) {
-              expect(attachment.endpoint).toBe(
-                attachment.name === "t3-code" ? boardEndpoint : previewEndpoint,
-              );
-              expect(attachment.authorizationHeader).toBe(session.authorizationHeader);
-            }
-          }
-        }
-      }
-    }
+describe("device CLI environment", () => {
+  it("preserves provider credentials and commands while routing devices to the owned daemon", () => {
+    const environment = withAgentDeviceEnvironment(
+      { PATH: "/provider/bin:/usr/bin", PROVIDER_KEY: "fixture" },
+      {
+        agentDeviceEnvironment: {
+          PATH: "/t3/device/bin",
+          PATH_SEPARATOR: ":",
+          AGENT_DEVICE_DAEMON_BASE_URL: "http://127.0.0.1:9000",
+          AGENT_DEVICE_DAEMON_AUTH_TOKEN: "fixture-device",
+        },
+      },
+    );
+    expect(environment).toEqual({
+      PATH: "/t3/device/bin:/provider/bin:/usr/bin",
+      PROVIDER_KEY: "fixture",
+      AGENT_DEVICE_DAEMON_BASE_URL: "http://127.0.0.1:9000",
+      AGENT_DEVICE_DAEMON_AUTH_TOKEN: "fixture-device",
+    });
   });
 
-  it("does not treat write-only admission as Board read admission", () => {
-    expect(
-      getMcpProviderServerAttachments({
-        ...session,
-        capabilities: new Set(["board-write"]),
-        boardEndpoint: "http://localhost/mcp",
-      }),
-    ).toEqual([]);
+  it("does not grant CLI access when device access was not supplied", () => {
+    const environment = { PATH: "/usr/bin", PROVIDER_KEY: "fixture" };
+    expect(withAgentDeviceEnvironment(environment, undefined)).toBe(environment);
+    expect(withAgentDeviceEnvironment(environment, {})).toBe(environment);
   });
 });

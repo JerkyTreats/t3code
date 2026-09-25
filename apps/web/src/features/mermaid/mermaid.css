@@ -35,7 +35,7 @@
   font-size: 0.75rem;
 }
 
-.chat-markdown .chat-markdown-mermaid-error-copy {
+.chat-markdown [data-mermaid-error-copy] {
   margin-bottom: 0.55rem;
   border: 1px solid color-mix(in srgb, var(--destructive) 28%, var(--border));
   border-radius: 0.65rem;

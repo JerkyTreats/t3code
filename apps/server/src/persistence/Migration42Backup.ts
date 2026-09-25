@@ -29,12 +29,12 @@ const encodeBackupManifest = Schema.encodeEffect(BackupManifestJson);
 export const migration42BackupDirectory = (databasePath: string): string =>
   `${databasePath}${BACKUP_DIRECTORY_SUFFIX}`;
 
-export class Migration42BackupNotFoundError extends Schema.TaggedErrorClass<Migration42BackupNotFoundError>()(
+export class Migration42BackupNotFoundError extends Schema.TaggedError<Migration42BackupNotFoundError>()(
   "Migration42BackupNotFoundError",
   { databasePath: Schema.String },
 ) {}
 
-export class Migration42BackupInvalidError extends Schema.TaggedErrorClass<Migration42BackupInvalidError>()(
+export class Migration42BackupInvalidError extends Schema.TaggedError<Migration42BackupInvalidError>()(
   "Migration42BackupInvalidError",
   { databasePath: Schema.String, reason: Schema.String },
 ) {}

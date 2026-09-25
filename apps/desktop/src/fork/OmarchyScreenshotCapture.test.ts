@@ -8,15 +8,15 @@ import * as NodeProcess from "node:process";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-const { homedirMock, readImageMock, spawnMock, watchMock } = vi.hoisted(() => ({
+const { homedirMock, readClipboardMock, spawnMock, watchMock } = vi.hoisted(() => ({
   homedirMock: vi.fn(),
-  readImageMock: vi.fn(),
+  readClipboardMock: vi.fn(),
   spawnMock: vi.fn(),
   watchMock: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
-  clipboard: { readImage: readImageMock },
+  clipboard: { read: readClipboardMock },
 }));
 
 vi.mock("node:os", async () => {
@@ -62,10 +62,13 @@ function pngBytes(): Buffer {
 }
 
 function clipboardImage(data: Uint8Array | null) {
-  return {
-    isEmpty: () => data === null,
-    toPNG: () => Buffer.from(data ?? []),
-  };
+  if (data === null) return [];
+  return [
+    {
+      types: ["image/png"],
+      getType: async () => new Blob([Uint8Array.from(data)], { type: "image/png" }),
+    },
+  ];
 }
 
 function fakeChild(): FakeChild {
@@ -117,7 +120,7 @@ describe("captureOmarchyScreenshot", () => {
     outputDirectory = NodePath.join(homeDirectory, "Pictures");
     await NodeFSP.mkdir(outputDirectory, { recursive: true });
     homedirMock.mockReturnValue(homeDirectory);
-    readImageMock.mockReset().mockReturnValue(clipboardImage(null));
+    readClipboardMock.mockReset().mockReturnValue(clipboardImage(null));
     spawnMock.mockReset();
     watcher = fakeWatcher();
     watchMock.mockReset().mockReturnValue(watcher);
@@ -165,7 +168,7 @@ describe("captureOmarchyScreenshot", () => {
     const after = Buffer.from(before);
     after[after.byteLength - 1] = after[after.byteLength - 1]! ^ 1;
     let clipboardData = before;
-    readImageMock.mockImplementation(() => clipboardImage(clipboardData));
+    readClipboardMock.mockImplementation(() => clipboardImage(clipboardData));
     spawnMock.mockImplementation(() => {
       setTimeout(() => {
         clipboardData = after;
@@ -181,7 +184,7 @@ describe("captureOmarchyScreenshot", () => {
     });
 
     expect(Array.from(capture?.data ?? [])).toEqual(Array.from(after));
-    expect(readImageMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(readClipboardMock.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
   });
 

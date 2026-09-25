@@ -13,12 +13,12 @@ export interface IssuedTicket {
   readonly expiresAt: number;
 }
 
-export class WebSocketTicketRegistrationError extends Schema.TaggedErrorClass<WebSocketTicketRegistrationError>()(
+export class WebSocketTicketRegistrationError extends Schema.TaggedError<WebSocketTicketRegistrationError>()(
   "WebSocketTicketRegistrationError",
   { reason: Schema.Literals(["capacity", "collision", "expired"]) },
 ) {}
 
-export class UnavailableWebSocketTicketError extends Schema.TaggedErrorClass<UnavailableWebSocketTicketError>()(
+export class UnavailableWebSocketTicketError extends Schema.TaggedError<UnavailableWebSocketTicketError>()(
   "UnavailableWebSocketTicketError",
   {},
 ) {

@@ -136,7 +136,8 @@ layer("GitLabCli.layer", (it) => {
               web_url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
               target_branch: "main",
               source_branch: "feature/mr-threads",
-              state: "opened",
+              state: "closed",
+              closed_at: "2026-08-23T10:00:00Z",
               source_project_id: 101,
               target_project_id: 100,
               source_project: {
@@ -163,7 +164,9 @@ layer("GitLabCli.layer", (it) => {
         url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
         baseRefName: "main",
         headRefName: "feature/mr-threads",
-        state: "open",
+        state: "closed",
+        closedAt: "2026-08-23T10:00:00Z",
+        mergedAt: null,
         isCrossRepository: true,
         headRepositoryNameWithOwner: "octocat/t3code",
         headRepositoryOwnerLogin: "octocat",
@@ -207,6 +210,7 @@ layer("GitLabCli.layer", (it) => {
                 target_branch: " main ",
                 source_branch: " feature/mr-list ",
                 state: "merged",
+                merged_at: "2026-08-23T11:00:00Z",
               },
             ]),
           ),
@@ -232,6 +236,8 @@ layer("GitLabCli.layer", (it) => {
           baseRefName: "main",
           headRefName: "feature/mr-list",
           state: "merged",
+          closedAt: null,
+          mergedAt: "2026-08-23T11:00:00Z",
         },
       ]);
       expect(mockedRun).toHaveBeenCalledWith(

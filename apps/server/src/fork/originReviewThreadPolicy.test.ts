@@ -1,7 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-class MembershipError extends Schema.TaggedErrorClass<MembershipError>()("MembershipError", {}) {}
+class MembershipError extends Schema.TaggedError<MembershipError>()("MembershipError", {}) {}
 import { requireOriginReviewThread } from "./originReviewThreadPolicy.ts";
 
 it.effect(

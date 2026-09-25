@@ -265,7 +265,7 @@ describe.sequential("primary platform authentication", () => {
       expect(yield* auth.bearerToken).toEqual(Option.none());
       expect(auth.webSocketTicket).toBeUndefined();
       expect(hasBridgeBoundPrimaryTarget()).toBe(true);
-      expect(readPrimaryEnvironmentTarget().target.httpBaseUrl).toBe(
+      expect(readPrimaryEnvironmentTarget()!.target.httpBaseUrl).toBe(
         "https://standalone.example.test/",
       );
       expect(getBearer).not.toHaveBeenCalled();
@@ -360,7 +360,7 @@ describe.sequential("primary platform authentication", () => {
         );
         expect(session.authenticated).toBe(true);
         const registration = yield* loadPrimaryConnectionRegistration(
-          readPrimaryEnvironmentTarget(),
+          readPrimaryEnvironmentTarget()!,
         );
         expect(registration.target.environmentId).toBe("synthetic-thread-environment");
         const auth = makePrimaryEnvironmentAuth();
@@ -423,7 +423,7 @@ describe.sequential("primary platform authentication", () => {
     vi.stubGlobal("fetch", fetch);
     return Effect.gen(function* () {
       expect(
-        yield* loadPrimaryConnectionRegistration(readPrimaryEnvironmentTarget()).pipe(Effect.flip),
+        yield* loadPrimaryConnectionRegistration(readPrimaryEnvironmentTarget()!).pipe(Effect.flip),
       ).toMatchObject({ _tag: "ConnectionTransientError" });
       expect(fetch).toHaveBeenCalledTimes(1);
     });

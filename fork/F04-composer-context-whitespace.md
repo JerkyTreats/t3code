@@ -27,6 +27,7 @@ Preserve exact user-authored prompt whitespace when helper-owned rich context bl
 ## Upstream Sensitive Adapters
 
 - `apps/web/src/components/ChatView.tsx` supplies the current raw prompt and context collections to composition.
+- `packages/shared/src/composerContextLegacySend.ts` and `composerContextLegacy.ts` preserve the authored prefix around generated legacy context for older servers. The reader removes at most the two generated separator newlines; historical text without separator provenance cannot recover already discarded bytes.
 - `apps/web/src/components/chat/MessagesTimeline.tsx` renders the projected authored body and chips alongside upstream source-review segments.
 
 ## Upstream Substrate

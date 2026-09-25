@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-export class ThreadPrimaryTransportError extends Schema.TaggedErrorClass<ThreadPrimaryTransportError>()(
+export class ThreadPrimaryTransportError extends Schema.TaggedError<ThreadPrimaryTransportError>()(
   "ThreadPrimaryTransportError",
   {},
 ) {

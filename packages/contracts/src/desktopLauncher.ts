@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { PositiveInt, TrimmedNonEmptyString, strictStruct } from "./baseSchemas.ts";
 
 export const DesktopLauncherContractVersion = Schema.Literal(1);
 export type DesktopLauncherContractVersion = typeof DesktopLauncherContractVersion.Type;
@@ -40,6 +40,7 @@ export const DesktopLauncherActivationRequest = Schema.Struct({
   action: Schema.Literals(["open", "submit"]),
   prompt: Schema.optionalKey(DesktopLauncherPrompt),
 })
+  .pipe(strictStruct)
   .check(
     Schema.makeFilter(
       (activation) =>
@@ -47,8 +48,7 @@ export const DesktopLauncherActivationRequest = Schema.Struct({
         activation.prompt !== undefined ||
         "Submit activation requires a prompt.",
     ),
-  )
-  .annotate({ parseOptions: { onExcessProperty: "error" } });
+  );
 export type DesktopLauncherActivationRequest = typeof DesktopLauncherActivationRequest.Type;
 
 export const DesktopLauncherActivation = Schema.Struct({
@@ -58,6 +58,7 @@ export const DesktopLauncherActivation = Schema.Struct({
   action: Schema.Literals(["open", "submit"]),
   prompt: Schema.optionalKey(DesktopLauncherPrompt),
 })
+  .pipe(strictStruct)
   .check(
     Schema.makeFilter(
       (activation) =>
@@ -65,13 +66,12 @@ export const DesktopLauncherActivation = Schema.Struct({
         activation.prompt !== undefined ||
         "Submit activation requires a prompt.",
     ),
-  )
-  .annotate({ parseOptions: { onExcessProperty: "error" } });
+  );
 export type DesktopLauncherActivation = typeof DesktopLauncherActivation.Type;
 
 export const DesktopLauncherActivationCompletion = Schema.Struct({
   activationId: DesktopLauncherActivationId,
-}).annotate({ parseOptions: { onExcessProperty: "error" } });
+}).pipe(strictStruct);
 export type DesktopLauncherActivationCompletion = typeof DesktopLauncherActivationCompletion.Type;
 
 export const DesktopLauncherArtifactManifest = Schema.Struct({

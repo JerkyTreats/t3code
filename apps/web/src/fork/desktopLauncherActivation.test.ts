@@ -7,6 +7,7 @@ import type { ComposerThreadDraftState, DraftId } from "../composerDraftStore";
 import {
   DesktopLauncherActivationOwner,
   findPrimaryLauncherProject,
+  launcherPromptMatches,
   stageDesktopLauncherActivation,
 } from "./desktopLauncherActivation";
 
@@ -55,7 +56,6 @@ function investedDraft(): ComposerThreadDraftState {
     nonPersistedImageIds: [],
     persistedAttachments: [],
     terminalContexts: [],
-    elementContexts: [],
     previewAnnotations: [],
     reviewComments: [],
     modelSelectionByProvider: {},
@@ -345,4 +345,14 @@ describe("launcher dispatch permission", () => {
       expect(owner.getSubmitState()).toBeNull();
     },
   );
+});
+
+describe("launcher prompt admission", () => {
+  it("accepts appended context links after the exact authored prompt and rejects extra prose", () => {
+    const authored = "  keep these bytes\n\t ";
+    const link = "![capture](t3-context://v1/image/image_synthetic)";
+    expect(launcherPromptMatches(authored, `${authored}${link} `)).toBe(true);
+    expect(launcherPromptMatches(authored, `${authored} changed`)).toBe(false);
+    expect(launcherPromptMatches(authored, `changed ${link}`)).toBe(false);
+  });
 });

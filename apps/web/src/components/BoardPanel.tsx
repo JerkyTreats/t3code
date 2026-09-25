@@ -18,7 +18,7 @@ import {
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { AlertTriangle, History, Pencil, Radio, RotateCw } from "lucide-react";
+import { AlertTriangle, History, Pencil, Radio as RadioIcon, RotateCw } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -188,14 +188,14 @@ export function BoardPostCard({ post, canEdit, onRevise, onGetHistory }: BoardPo
 
   return (
     <article className="border border-border/60 bg-card px-3 py-2.5 dark:bg-card/50">
-      <div className="flex min-w-0 items-center gap-2 font-mono text-[.65rem] text-muted-foreground">
+      <div className="flex min-w-0 items-center gap-2 font-mono text-3xs text-muted-foreground">
         <span className="truncate text-foreground/85">{visiblePost.author.providerInstanceId}</span>
         <span aria-hidden className="text-border">
           /
         </span>
         <span className="truncate">{boardSourcePrimaryLabel(visiblePost.source)}</span>
         {visiblePost.revision > 1 ? (
-          <span className="border border-info/30 bg-info/5 px-1 text-[.58rem] uppercase tracking-[0.06em] text-info">
+          <span className="border border-info/30 bg-info/5 px-1 text-3xs uppercase tracking-wide text-info">
             {visiblePost.lastEditor.kind === "environment-owner"
               ? "Owner correction"
               : "Agent correction"}
@@ -210,7 +210,7 @@ export function BoardPostCard({ post, canEdit, onRevise, onGetHistory }: BoardPo
 
       {editing ? (
         <div className="mt-2 space-y-2">
-          <label className="block font-mono text-[.62rem] uppercase tracking-[0.08em] text-muted-foreground">
+          <label className="block font-mono text-3xs uppercase tracking-wide text-muted-foreground">
             Correct post
             <Textarea
               aria-label="Edit Board post body"
@@ -221,7 +221,7 @@ export function BoardPostCard({ post, canEdit, onRevise, onGetHistory }: BoardPo
             />
           </label>
           <fieldset className="space-y-1">
-            <legend className="font-mono text-[.62rem] uppercase tracking-[0.08em] text-muted-foreground">
+            <legend className="font-mono text-3xs uppercase tracking-wide text-muted-foreground">
               Attention targets
             </legend>
             {draftTargets.map((target, index) => (
@@ -279,7 +279,7 @@ export function BoardPostCard({ post, canEdit, onRevise, onGetHistory }: BoardPo
                   <p className="mt-1 text-muted-foreground">Your draft is preserved.</p>
                   {conflict.currentPost !== null ? (
                     <div className="mt-1.5 border border-border/60 bg-background/70 p-2">
-                      <p className="font-mono text-[.6rem] uppercase text-muted-foreground">
+                      <p className="font-mono text-3xs uppercase text-muted-foreground">
                         Current v{conflict.currentPost.revision}
                       </p>
                       <p className="mt-1 whitespace-pre-wrap text-foreground/90">
@@ -337,14 +337,14 @@ export function BoardPostCard({ post, canEdit, onRevise, onGetHistory }: BoardPo
       )}
 
       <div className="mt-2 flex flex-wrap items-center gap-1">
-        <span className="font-mono text-[.6rem] uppercase tracking-[0.08em] text-muted-foreground">
+        <span className="font-mono text-3xs uppercase tracking-wide text-muted-foreground">
           {boardSourceScopeLabel(visiblePost.source)}
         </span>
         {keyedTargets(visiblePost.targets).map((target) => (
           <span
             key={target.key}
             className={cn(
-              "border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[.6rem] text-muted-foreground",
+              "border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-3xs text-muted-foreground",
             )}
           >
             {boardTargetAttentionLabel(target.value)}
@@ -395,7 +395,7 @@ export function BoardPostCard({ post, canEdit, onRevise, onGetHistory }: BoardPo
           ) : null}
           {history?.revisions.map((revision) => (
             <div key={revision.revision} className="border-l border-border/70 py-1 pl-2 text-xs">
-              <div className="flex gap-2 font-mono text-[.6rem] uppercase text-muted-foreground">
+              <div className="flex gap-2 font-mono text-3xs uppercase text-muted-foreground">
                 <span>v{revision.revision}</span>
                 <span>{revision.editor.kind === "environment-owner" ? "Owner" : "Agent"}</span>
                 <time dateTime={revision.editedAt}>{formatTime(revision.editedAt)}</time>
@@ -407,7 +407,7 @@ export function BoardPostCard({ post, canEdit, onRevise, onGetHistory }: BoardPo
             </div>
           ))}
           {history?.beforeRevision !== null && history?.beforeRevision !== undefined ? (
-            <p className="mt-1 text-[.65rem] text-muted-foreground">
+            <p className="mt-1 text-3xs text-muted-foreground">
               Older revisions are outside this bounded view.
             </p>
           ) : null}
@@ -455,10 +455,12 @@ export function BoardPanel({ environmentId }: { environmentId: EnvironmentId }) 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
       <header className="border-b border-border/60 bg-muted/15 px-3 py-2.5">
-        <div className="flex items-center gap-2 font-mono text-[.68rem] font-medium uppercase tracking-[0.12em] text-foreground">
-          <Radio aria-hidden className="size-3.5 text-info" />
+        <div className="flex items-center gap-2 font-mono text-2xs font-medium uppercase tracking-widest text-foreground">
+          <span className="text-info">
+            <RadioIcon aria-hidden className="size-3.5" />
+          </span>
           Environment Board
-          <span className="ml-auto text-[.6rem] font-normal tracking-[0.08em] text-muted-foreground">
+          <span className="ml-auto text-3xs font-normal tracking-wide text-muted-foreground">
             {canEdit ? "Owner editable" : "Read only"}
           </span>
         </div>
@@ -479,7 +481,7 @@ export function BoardPanel({ environmentId }: { environmentId: EnvironmentId }) 
                 type="button"
                 size="sm"
                 variant="ghost-muted"
-                className="mt-1.5 h-6 px-1.5 font-mono text-[.65rem]"
+                className="mt-1.5"
                 onClick={() => requestBoardRetry(environmentId)}
               >
                 <RotateCw aria-hidden className="size-3" />
@@ -514,7 +516,7 @@ export function BoardPanel({ environmentId }: { environmentId: EnvironmentId }) 
             type="button"
             size="sm"
             variant="ghost-muted"
-            className="w-full font-mono text-[.68rem]"
+            className="w-full"
             disabled={state.loadingOlder || state.refreshingHead || state.needsHeadRefresh}
             onClick={() => requestOlderBoardPage(environmentId)}
           >

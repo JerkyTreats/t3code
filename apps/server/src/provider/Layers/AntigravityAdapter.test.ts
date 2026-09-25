@@ -312,8 +312,8 @@ it.layer(layer)("AntigravityAdapter", (it) => {
         threadId,
         providerSessionId: "provider-session-antigravity-preview",
         providerInstanceId: instanceId,
-        capabilities: new Set(["preview"]),
-        boardEndpoint: "http://127.0.0.1:43123/mcp",
+        capabilities: new Set(["preview", "pull-requests"]),
+        endpoint: "http://127.0.0.1:43123/mcp/pull-requests",
         previewEndpoint: "http://127.0.0.1:43123/mcp/preview",
         authorizationHeader: "Bearer synthetic-antigravity-token",
       });
@@ -332,6 +332,12 @@ it.layer(layer)("AntigravityAdapter", (it) => {
           type: "http",
           name: "t3-code-preview",
           url: "http://127.0.0.1:43123/mcp/preview",
+          headers: [{ name: "Authorization", value: "Bearer synthetic-antigravity-token" }],
+        },
+        {
+          type: "http",
+          name: "t3-code-pull-requests",
+          url: "http://127.0.0.1:43123/mcp/pull-requests",
           headers: [{ name: "Authorization", value: "Bearer synthetic-antigravity-token" }],
         },
       ]);
@@ -808,6 +814,44 @@ it.layer(layer)("AntigravityAdapter", (it) => {
       const ended = yield* h.waitForEvent((event) => event.type === "task.completed");
       expect(ended.payload.taskId).toBe(started.payload.taskId);
       expect(ended.payload.status).toBe("completed");
+    }),
+  );
+
+  it.effect("stops commands left running after a turn when the idle turn is stopped", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      yield* h.adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "approval-required",
+      });
+      const sending = yield* h.adapter
+        .sendTurn({ threadId, input: "Start a watcher" })
+        .pipe(Effect.forkChild);
+      const prompt = yield* h.nextPrompt;
+      yield* h.emitNative({
+        _tag: "ToolCallUpdated",
+        toolCall: {
+          toolCallId: "watcher-1",
+          kind: "execute",
+          status: "inProgress",
+          command: "tail -f log",
+          data: {},
+        },
+        rawPayload: {},
+      });
+      yield* Deferred.succeed(prompt.result, { stopReason: "end_turn" });
+      yield* Fiber.join(sending);
+      const started = yield* h.waitForEvent((event) => event.type === "task.started");
+
+      // Monitoring's Stop reaches the adapter as a turn interrupt. With no
+      // prompt to cancel, it has to end the session to stop the command.
+      yield* h.adapter.interruptTurn(threadId);
+      const stopped = yield* h.waitForEvent((event) => event.type === "task.completed");
+      expect(stopped.payload).toMatchObject({ taskId: started.payload.taskId, status: "stopped" });
+      yield* h.waitForEvent((event) => event.type === "session.exited");
+      expect(yield* h.adapter.hasSession(threadId)).toBe(false);
+      expect(h.controls.closed).toBe(1);
     }),
   );
 

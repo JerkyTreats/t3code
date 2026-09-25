@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
 import { ComposerAttachmentAdmission } from "./composerAttachmentAdmission";
 
-it("shares the eight-slot budget and transfers without a zero-count window", () => {
+it("shares the attachment budget and transfers without a zero-count window", () => {
   const changed = vi.fn();
   const admission = new ComposerAttachmentAdmission(changed);
   admission.activate("environment:thread");
-  const capture = admission.reserve("environment:thread", 6)!;
-  const paste = admission.reserve("environment:thread", 6)!;
-  expect(admission.reserve("environment:thread", 6)).toBeNull();
+  const capture = admission.reserve("environment:thread", PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 2)!;
+  const paste = admission.reserve("environment:thread", PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 2)!;
+  expect(
+    admission.reserve("environment:thread", PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 2),
+  ).toBeNull();
   expect(admission.transfer(capture)).toBe(true);
   expect(admission.transfer(capture)).toBe(false);
   expect(changed.mock.calls.map(([state]) => [state.pending])).toEqual([[1], [2]]);

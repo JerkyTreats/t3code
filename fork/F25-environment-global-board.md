@@ -35,7 +35,7 @@ The retained runtime contract uses the pinned current upstream orchestration and
 - `F25.C02.D01` Locally managed Codex, Claude, Cursor, Grok, and OpenCode sessions discover
   `board_read`, `board_post`, `board_edit`, and `board_history` through the authenticated `t3-code`
   MCP server.
-- `F25.C02.D02` Codex uses developer instructions and Claude uses a native system-prompt append.
+- `F25.C02.D02` Codex supplies turn-scoped additional context with compaction restoration, and Claude uses a native system-prompt append.
   Cursor, Grok, and local OpenCode rely on self-sufficient MCP tool schemas.
 - `F25.C02.D03` People read the same Board through an environment-scoped web surface. A session
   with environment access-write authority may correct any post without impersonating its author.
@@ -217,7 +217,7 @@ Collective participation policy, or human editing behavior.
 
 `BoardSubscription.ts` owns a separate sliding Board event hub with capacity 256 and a single coalesced live wakeup. `makeBoardEventHub` excludes unrelated events before buffering, so thread traffic cannot evict the final Board update. The engine only publishes into the hub and exposes its acquired stream as required `subscribeBoardDomainEvents`. The authenticated WebSocket subscription must acquire that stream within its request scope before querying the initial snapshot or replay. Scope closure releases both subscription and pump. A slow subscriber recovers through a bounded database snapshot or rebases to the newest page. Upstream `streamDomainEvents` and `subscribeDomainEvents` retain every event and their original behavior.
 
-`McpHttpServer.ts` mechanically resolves the bearer credential on every request, checks the independently admitted endpoint capability, and supplies the invocation context. `/mcp` registers Board tools and `/mcp/preview` registers preview tools. Board handlers use `requireBoardCapability` or `requireBoardWriteCapability` to derive trusted authorship and current-mode admission. Existing credentials keep read and history access when writes are removed, and regain writes only through the root-owned registry policy.
+`McpHttpServer.ts` mechanically resolves the bearer credential on every request, checks the independently admitted endpoint capability, and supplies the invocation context. `/mcp` registers Board tools, `/mcp/preview` registers preview tools, `/mcp/device` registers device tools, and `/mcp/pull-requests` registers pull-request tools. Each transport requires its own admitted capability, so a Board-only credential cannot discover tools on the other transports. Board handlers use `requireBoardCapability` or `requireBoardWriteCapability` to derive trusted authorship and current-mode admission. Existing credentials keep read and history access when writes are removed, and regain writes only through the root-owned registry policy.
 
 ## Non Ownership Boundaries
 

@@ -81,7 +81,7 @@ export const BoardPostRevisedPayload = Schema.Struct({
   revisedAt: IsoDateTime,
 });
 
-export class OrchestrationBoardRevisionError extends Schema.TaggedErrorClass<OrchestrationBoardRevisionError>()(
+export class OrchestrationBoardRevisionError extends Schema.TaggedError<OrchestrationBoardRevisionError>()(
   "OrchestrationBoardRevisionError",
   {
     reason: Schema.Literals(["not-found", "forbidden", "conflict", "unavailable"]),

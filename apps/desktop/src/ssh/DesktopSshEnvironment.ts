@@ -45,10 +45,6 @@ export type DesktopSshEnvironmentOperationError =
 
 export type DesktopSshEnvironmentDiscoverError = SshHostDiscoveryError;
 
-export type DesktopSshEnvironmentError =
-  | DesktopSshEnvironmentDiscoverError
-  | DesktopSshEnvironmentOperationError;
-
 export class DesktopSshEnvironment extends Context.Service<
   DesktopSshEnvironment,
   {
@@ -127,6 +123,7 @@ const makePasswordPrompt = (
     prompts.request(request).pipe(Effect.mapError(toSshPasswordPromptError)),
 });
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const manager = yield* SshTunnel.SshEnvironmentManager;
   const prompts = yield* DesktopSshPasswordPrompts.DesktopSshPasswordPrompts;
@@ -166,10 +163,10 @@ export const make = Effect.gen(function* () {
 export const layer = (options: DesktopSshEnvironmentLayerOptions = {}) =>
   Layer.effect(DesktopSshEnvironment, make).pipe(
     Layer.provide(
-      SshTunnel.SshEnvironmentManager.layer({
-        ...(options.resolveCliRunner === undefined
+      SshTunnel.SshEnvironmentManager.layer(
+        options.resolveCliRunner === undefined
           ? {}
-          : { resolveCliRunner: options.resolveCliRunner }),
-      }),
+          : { resolveCliRunner: options.resolveCliRunner },
+      ),
     ),
   );

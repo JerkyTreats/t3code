@@ -24,8 +24,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, vi } from "@effect/vitest";
 
 import * as Context from "effect/Context";
-import * as Deferred from "effect/Deferred";
-import * as FileSystem from "effect/FileSystem";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -51,19 +49,6 @@ import {
   type CodexThreadSnapshot,
 } from "./CodexSessionRuntime.ts";
 import { makeCodexAdapter } from "./CodexAdapter.ts";
-import { HttpServer } from "effect/unstable/http";
-import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
-import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
-import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
-import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
-import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
-import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
-import { makeProviderServiceLive } from "./ProviderService.ts";
-import { ProviderService } from "../Services/ProviderService.ts";
-import { ProviderAdapterRegistry } from "../Services/ProviderAdapterRegistry.ts";
-import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
-import { makeAdapterRegistryMock } from "../testUtils/providerAdapterRegistryMock.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* CodexAdapter`.
@@ -242,7 +227,7 @@ const providerSessionDirectoryTestLayer = Layer.succeed(ProviderSessionDirectory
   recordImportedTranscript: () => Effect.die("unused"),
   getProvider: () =>
     Effect.die(new Error("ProviderSessionDirectory.getProvider is not used in test")),
-  getBinding: () => Effect.succeed(Option.none()),
+  getBinding: () => Effect.succeedNone,
   listThreadIds: () => Effect.succeed([]),
   listBindings: () => Effect.succeed([]),
 });
@@ -316,7 +301,7 @@ validationLayer("CodexAdapterLive validation", (it) => {
     }),
   );
 
-  it.effect("passes separate Board and preview attachments into the Codex runtime", () =>
+  it.effect("passes only admitted MCP toolkit endpoints into the Codex runtime", () =>
     Effect.gen(function* () {
       validationRuntimeFactory.factory.mockClear();
       const threadId = asThreadId("thread-codex-board-preview");
@@ -326,7 +311,8 @@ validationLayer("CodexAdapterLive validation", (it) => {
           threadId,
           providerSessionId: "provider-session-codex-board-preview",
           providerInstanceId: ProviderInstanceId.make("codex"),
-          capabilities: new Set(["board", "preview"]),
+          capabilities: new Set(["board", "preview", "pull-requests"]),
+          endpoint: "http://127.0.0.1:43123/mcp/pull-requests",
           boardEndpoint: "http://127.0.0.1:43123/mcp",
           previewEndpoint: "http://127.0.0.1:43123/mcp/preview",
           authorizationHeader: "Bearer synthetic-codex-token",
@@ -353,6 +339,10 @@ validationLayer("CodexAdapterLive validation", (it) => {
         "mcp_servers.t3-code-preview.url=http://127.0.0.1:43123/mcp/preview",
         "-c",
         'mcp_servers.t3-code-preview.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
+        "-c",
+        "mcp_servers.t3-code-pull-requests.url=http://127.0.0.1:43123/mcp/pull-requests",
+        "-c",
+        'mcp_servers.t3-code-pull-requests.bearer_token_env_var="T3_MCP_BEARER_TOKEN"',
       ]);
       NodeAssert.equal(runtimeOptions?.environment?.T3_MCP_BEARER_TOKEN, "synthetic-codex-token");
     }),
@@ -412,7 +402,8 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
         Stream.runHead,
         Effect.forkChild,
       );
-      yield* adapter.compactThread!(threadId);
+      NodeAssert.ok(adapter.compaction?.type === "native");
+      yield* adapter.compaction.start(threadId);
       yield* runtime.emit({
         id: asEventId("evt-compaction-item-completed"),
         kind: "notification",
@@ -503,6 +494,54 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
         effort: "high",
         serviceTier: "priority",
       });
+    }),
+  );
+
+  it.effect("passes image attachments to Codex by path instead of base64", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("thread-image-attachment");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const runtime = sessionRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      runtime.sendTurnImpl.mockClear();
+
+      const serverConfig = yield* ServerConfig;
+      const attachmentsDir = serverConfig.attachmentsDir;
+      const attachmentId = "attachment-local-image-1";
+      const attachmentPath = NodePath.join(attachmentsDir, `${attachmentId}.png`);
+      NodeFS.writeFileSync(attachmentPath, Buffer.alloc(4, 0x89));
+
+      try {
+        yield* adapter.sendTurn({
+          threadId,
+          input: "Use this image.",
+          attachments: [
+            {
+              type: "image",
+              id: attachmentId,
+              name: "generated.png",
+              mimeType: "image/png",
+              sizeBytes: NodeFS.statSync(attachmentPath).size,
+            },
+          ],
+        });
+
+        const input = runtime.sendTurnImpl.mock.calls[0]?.[0];
+        NodeAssert.ok(input);
+        NodeAssert.deepStrictEqual(input.attachments, [
+          {
+            type: "localImage",
+            path: attachmentPath,
+          },
+        ]);
+      } finally {
+        NodeFS.rmSync(attachmentPath, { force: true });
+      }
     }),
   );
 
@@ -1729,6 +1768,48 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("maps app permission approval requests to permission_approval request types", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit({
+        id: asEventId("evt-app-permission-request"),
+        kind: "request",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("thread-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "item/permissions/requestApproval",
+        requestId: ApprovalRequestId.make("req-perm-1"),
+        requestKind: "permission",
+        turnId: asTurnId("turn-1"),
+        itemId: asItemId("app_1"),
+        payload: {
+          cwd: "/tmp/project",
+          itemId: "app_1",
+          permissions: { network: { enabled: true } },
+          reason: "Fetch data from api.example.com",
+          startedAtMs: 1_778_000_000_000,
+          threadId: "thread-1",
+          turnId: "turn-1",
+        },
+      } satisfies ProviderEvent);
+
+      const firstEvent = yield* Fiber.join(firstEventFiber);
+
+      NodeAssert.equal(firstEvent._tag, "Some");
+      if (firstEvent._tag !== "Some") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.type, "request.opened");
+      if (firstEvent.value.type !== "request.opened") {
+        return;
+      }
+      NodeAssert.equal(firstEvent.value.payload.requestType, "permission_approval");
+      NodeAssert.equal(firstEvent.value.payload.detail, "Fetch data from api.example.com");
+    }),
+  );
+
   it.effect("maps session/closed lifecycle events to canonical session.exited runtime events", () =>
     Effect.gen(function* () {
       const { adapter, runtime } = yield* startLifecycleRuntime();
@@ -2351,6 +2432,7 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
           method: "item/tool/requestUserInput",
           requestId: ApprovalRequestId.make("req-user-input-1"),
           payload: {
+            isBlocking: true,
             itemId: "item-user-input-1",
             threadId: "thread-1",
             turnId: "turn-1",
@@ -2753,185 +2835,301 @@ it.effect("flushes managed native logs when the adapter layer shuts down", () =>
   }),
 );
 
-const attachmentReplacementTestLayer = ServerConfig.layerTest(process.cwd(), process.cwd()).pipe(
-  Layer.provideMerge(NodeServices.layer),
+const usageLimitRuntimeFactory = makeRuntimeFactory();
+const usageLimitLayer = it.layer(
+  Layer.effect(
+    CodexAdapter,
+    Effect.gen(function* () {
+      const codexConfig = decodeCodexSettings({});
+      return yield* makeCodexAdapter(codexConfig, {
+        makeRuntime: usageLimitRuntimeFactory.factory,
+      });
+    }),
+  ).pipe(
+    Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
+    Layer.provideMerge(ServerSettingsService.layerTest()),
+    Layer.provideMerge(providerSessionDirectoryTestLayer),
+    Layer.provideMerge(NodeServices.layer),
+  ),
 );
 
-const replacementAttachment = {
-  type: "image" as const,
-  id: "replacement-12345678-1234-1234-1234-123456789abc",
-  name: "image.png",
-  mimeType: "image/png",
-  sizeBytes: 3,
-};
-const makeDelayedAttachmentAdapter = Effect.fn("makeDelayedAttachmentAdapter")(function* () {
-  const fileSystem = yield* FileSystem.FileSystem;
-  const entered = yield* Deferred.make<void>();
-  const release = yield* Deferred.make<void>();
-  const finalized = yield* Deferred.make<void>();
-  const runtimeFactory = makeRuntimeFactory();
-  const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
-    makeRuntime: runtimeFactory.factory,
-  }).pipe(
-    Effect.provideService(FileSystem.FileSystem, {
-      ...fileSystem,
-      readFile: (path) =>
-        String(path).includes(replacementAttachment.id)
-          ? Deferred.succeed(entered, undefined).pipe(
-              Effect.andThen(Deferred.await(release)),
-              Effect.as(new Uint8Array([1, 2, 3])),
-              Effect.ensuring(Deferred.succeed(finalized, undefined)),
-            )
-          : fileSystem.readFile(path),
+const USAGE_LIMIT_NOW = "2026-01-01T00:00:00.000Z";
+const USAGE_LIMIT_NOW_SECONDS = Date.parse(USAGE_LIMIT_NOW) / 1000;
+const CODEX_OUT_OF_CREDITS =
+  "Your workspace is out of credits. Ask your workspace owner to refill in order to continue.";
+
+function startUsageLimitRuntime() {
+  return Effect.gen(function* () {
+    const adapter = yield* CodexAdapter;
+    yield* adapter.startSession({
+      provider: ProviderDriverKind.make("codex"),
+      threadId: asThreadId("thread-1"),
+      runtimeMode: "full-access",
+    });
+    const runtime = usageLimitRuntimeFactory.lastRuntime;
+    NodeAssert.ok(runtime);
+    return { adapter, runtime };
+  });
+}
+
+function codexErrorNotification(input: {
+  readonly id: string;
+  readonly message: string;
+  readonly codexErrorInfo?: string;
+}): ProviderEvent {
+  return {
+    id: asEventId(input.id),
+    kind: "notification",
+    provider: ProviderDriverKind.make("codex"),
+    threadId: asThreadId("thread-1"),
+    turnId: asTurnId("turn-limit"),
+    createdAt: USAGE_LIMIT_NOW,
+    method: "error",
+    payload: {
+      threadId: "thread-1",
+      turnId: "turn-limit",
+      willRetry: false,
+      error: {
+        message: input.message,
+        ...(input.codexErrorInfo ? { codexErrorInfo: input.codexErrorInfo } : {}),
+      },
+    },
+  };
+}
+
+function codexRateLimitsNotification(input: {
+  readonly id: string;
+  readonly rateLimitReachedType?: string;
+  readonly primary?: { readonly usedPercent: number; readonly resetsInSeconds: number };
+  readonly secondary?: { readonly usedPercent: number; readonly resetsInSeconds: number };
+}): ProviderEvent {
+  return {
+    id: asEventId(input.id),
+    kind: "notification",
+    provider: ProviderDriverKind.make("codex"),
+    threadId: asThreadId("thread-1"),
+    turnId: asTurnId("turn-limit"),
+    createdAt: USAGE_LIMIT_NOW,
+    method: "account/rateLimits/updated",
+    payload: {
+      rateLimits: {
+        limitId: "codex",
+        ...(input.rateLimitReachedType ? { rateLimitReachedType: input.rateLimitReachedType } : {}),
+        ...(input.primary
+          ? {
+              primary: {
+                usedPercent: input.primary.usedPercent,
+                resetsAt: USAGE_LIMIT_NOW_SECONDS + input.primary.resetsInSeconds,
+                windowDurationMins: 300,
+              },
+            }
+          : {}),
+        ...(input.secondary
+          ? {
+              secondary: {
+                usedPercent: input.secondary.usedPercent,
+                resetsAt: USAGE_LIMIT_NOW_SECONDS + input.secondary.resetsInSeconds,
+                windowDurationMins: 10_080,
+              },
+            }
+          : {}),
+      },
+    },
+  };
+}
+
+function codexUsageLimitTurnFailed(id: string, turnId = "turn-limit"): ProviderEvent {
+  return {
+    id: asEventId(id),
+    kind: "notification",
+    provider: ProviderDriverKind.make("codex"),
+    threadId: asThreadId("thread-1"),
+    turnId: asTurnId(turnId),
+    createdAt: USAGE_LIMIT_NOW,
+    method: "turn/completed",
+    payload: {
+      threadId: "thread-1",
+      turn: {
+        id: turnId,
+        items: [],
+        status: "failed",
+        error: { message: CODEX_OUT_OF_CREDITS, codexErrorInfo: "usageLimitExceeded" },
+      },
+    },
+  };
+}
+
+usageLimitLayer("CodexAdapterLive usage limits", (it) => {
+  it.effect("names the exhausted window and the workspace's missing credits", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startUsageLimitRuntime();
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.take(5),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit(
+        codexErrorNotification({
+          id: "evt-limit-error",
+          message: CODEX_OUT_OF_CREDITS,
+          codexErrorInfo: "usageLimitExceeded",
+        }),
+      );
+      yield* runtime.emit(
+        codexRateLimitsNotification({
+          id: "evt-limit-rate-limits",
+          rateLimitReachedType: "workspace_owner_credits_depleted",
+          primary: { usedPercent: 40, resetsInSeconds: 3_600 },
+          secondary: { usedPercent: 100, resetsInSeconds: 5 * 86_400 + 5 * 3_600 },
+        }),
+      );
+      yield* runtime.emit(codexUsageLimitTurnFailed("evt-limit-turn"));
+      // A second turn stopping on the same limit says as much as the first.
+      yield* runtime.emit(codexUsageLimitTurnFailed("evt-limit-turn-2", "turn-limit-2"));
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      const expected =
+        "Codex usage limit reached. The weekly limit resets in 5d 5h. The workspace has no credits to continue sooner: ask your workspace owner to add credits, or send the message again once the limit resets.";
+      NodeAssert.deepStrictEqual(
+        events.map((event) => event.type),
+        [
+          "account.rate-limits.updated",
+          "runtime.error",
+          "turn.completed",
+          "runtime.error",
+          "turn.completed",
+        ],
+      );
+      for (const event of events) {
+        if (event.type === "runtime.error") {
+          NodeAssert.equal(event.payload.message, expected);
+          NodeAssert.equal(event.payload.detail, CODEX_OUT_OF_CREDITS);
+        }
+        if (event.type === "turn.completed") {
+          NodeAssert.equal(event.payload.errorMessage, expected);
+        }
+      }
     }),
   );
-  return { adapter, runtimeFactory, entered, release, finalized };
-});
 
-it.effect("rejects a delayed image send when its captured Codex session has been replaced", () =>
-  Effect.gen(function* () {
-    const { adapter, runtimeFactory, entered, release } = yield* makeDelayedAttachmentAdapter();
-    const threadId = asThreadId("direct-attachment-replacement");
-    const start = adapter.startSession({ threadId, runtimeMode: "full-access" });
-    yield* start;
-    const original = runtimeFactory.lastRuntime!;
-    const pending = yield* adapter
-      .sendTurn({
-        threadId,
-        input: "plan image",
-        interactionMode: "plan",
-        attachments: [replacementAttachment],
-      })
-      .pipe(Effect.exit, Effect.forkChild);
-    yield* Deferred.await(entered);
-    yield* start;
-    const replacement = runtimeFactory.lastRuntime!;
-    yield* Deferred.succeed(release, undefined);
-    const result = yield* Fiber.join(pending);
-    NodeAssert.equal(Exit.isFailure(result), true);
-    NodeAssert.equal(original.sendTurnImpl.mock.calls.length, 0);
-    NodeAssert.equal(replacement.sendTurnImpl.mock.calls.length, 0);
-    yield* adapter.sendTurn({ threadId, input: "new image", attachments: [replacementAttachment] });
-    NodeAssert.equal(replacement.sendTurnImpl.mock.calls.length, 1);
-    NodeAssert.deepEqual(replacement.sendTurnImpl.mock.calls[0]?.[0].attachments, [
-      { type: "image", url: "data:image/png;base64,AQID" },
-    ]);
-    yield* adapter.stopAll();
-  }).pipe(Effect.provide(attachmentReplacementTestLayer), Effect.scoped),
-);
+  it.effect("names the session window for a plan limit", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startUsageLimitRuntime();
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.take(3),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
 
-for (const lifecycle of ["restart", "stop"] as const) {
-  it.effect(
-    `cancels the real pending Codex image read before ${lifecycle} replaces Board credentials`,
-    () =>
-      Effect.gen(function* () {
-        const { adapter, runtimeFactory, entered, release, finalized } =
-          yield* makeDelayedAttachmentAdapter();
-        const registry = yield* McpSessionRegistry.__testing.make().pipe(
-          Effect.provideService(
-            HttpServer.HttpServer,
-            HttpServer.HttpServer.of({
-              address: { _tag: "TcpAddress", hostname: "127.0.0.1", port: 43123 },
-              serve: (() => Effect.void) as HttpServer.HttpServer["Service"]["serve"],
-            }),
-          ),
-          Effect.provideService(
-            ServerEnvironment.ServerEnvironment,
-            ServerEnvironment.ServerEnvironment.of({
-              getEnvironmentId: Effect.succeed(EnvironmentId.make("codex-attachment-lifecycle")),
-              getDescriptor: Effect.die("unused"),
-            }),
-          ),
-        );
-        const providerLayer = makeProviderServiceLive({
-          issueMcpCredential: (request) =>
-            registry.revokeThread(request.threadId).pipe(Effect.andThen(registry.issue(request))),
-          revokeMcpCredential: registry.revokeThread,
-          setMcpBoardWriteEnabled: registry.setBoardWriteEnabled,
-        }).pipe(
-          Layer.provide(
-            Layer.succeed(
-              ProviderAdapterRegistry,
-              makeAdapterRegistryMock({ [ProviderDriverKind.make("codex")]: adapter }),
-            ),
-          ),
-          Layer.provide(
-            ProviderSessionDirectoryLive.pipe(
-              Layer.provide(
-                ProviderSessionRuntime.layer.pipe(Layer.provide(SqlitePersistenceMemory)),
-              ),
-            ),
-          ),
-          Layer.provide(ServerSettingsService.layerTest()),
-          Layer.provide(AnalyticsService.layerTest),
-          Layer.provide(
-            Layer.succeed(
-              ProviderEventLoggers.ProviderEventLoggers,
-              ProviderEventLoggers.NoOpProviderEventLoggers,
-            ),
-          ),
-        );
-        yield* Effect.gen(function* () {
-          const provider = yield* ProviderService;
-          const threadId = asThreadId(`service-image-${lifecycle}`);
-          const start = provider.startSession(threadId, {
-            threadId,
-            provider: ProviderDriverKind.make("codex"),
-            providerInstanceId: ProviderInstanceId.make("codex"),
-            runtimeMode: "full-access",
-          });
-          yield* start;
-          const original = runtimeFactory.lastRuntime!;
-          const oldToken = original.options.environment!.T3_MCP_BEARER_TOKEN!;
-          const pending = yield* provider
-            .sendTurn({
-              threadId,
-              input: "plan image",
-              interactionMode: "plan",
-              attachments: [replacementAttachment],
-            })
-            .pipe(Effect.exit, Effect.forkChild);
-          yield* Deferred.await(entered);
-          const planScope = yield* registry.resolve(oldToken);
-          NodeAssert.ok(planScope);
-          yield* McpInvocationContext.requireBoardCapability().pipe(
-            Effect.provideService(McpInvocationContext.McpInvocationContext, planScope),
-          );
-          const write = yield* McpInvocationContext.requireBoardWriteCapability().pipe(
-            Effect.provideService(McpInvocationContext.McpInvocationContext, planScope),
-            Effect.exit,
-          );
-          NodeAssert.equal(Exit.isFailure(write), true);
-          if (lifecycle === "stop") yield* provider.stopSession({ threadId });
+      yield* runtime.emit(
+        codexErrorNotification({
+          id: "evt-plan-error",
+          message: "You've hit your usage limit.",
+          codexErrorInfo: "usageLimitExceeded",
+        }),
+      );
+      yield* runtime.emit(
+        codexRateLimitsNotification({
+          id: "evt-plan-rate-limits",
+          rateLimitReachedType: "rate_limit_reached",
+          primary: { usedPercent: 100, resetsInSeconds: 3 * 3_600 + 20 * 60 },
+        }),
+      );
+      yield* runtime.emit(codexUsageLimitTurnFailed("evt-plan-turn"));
 
-          yield* start;
-          NodeAssert.equal(yield* Deferred.isDone(finalized), true);
-          NodeAssert.equal(Exit.isFailure(yield* Fiber.join(pending)), true);
-          const replacement = runtimeFactory.lastRuntime!;
-          const newToken = replacement.options.environment!.T3_MCP_BEARER_TOKEN!;
-          NodeAssert.notEqual(newToken, oldToken);
-          NodeAssert.equal(yield* registry.resolve(oldToken), undefined);
-          yield* Deferred.succeed(release, undefined);
-          yield* Effect.yieldNow;
-          NodeAssert.equal(original.sendTurnImpl.mock.calls.length, 0);
-          NodeAssert.equal(replacement.sendTurnImpl.mock.calls.length, 0);
-          yield* provider.sendTurn({ threadId, input: "default", interactionMode: "default" });
-          const scope = yield* registry.resolve(newToken);
-          NodeAssert.ok(scope);
-          yield* McpInvocationContext.requireBoardWriteCapability().pipe(
-            Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
-          );
-          yield* provider.sendTurn({
-            threadId,
-            input: "new plan image",
-            interactionMode: "plan",
-            attachments: [replacementAttachment],
-          });
-          const newPlanScope = yield* registry.resolve(newToken);
-          NodeAssert.ok(newPlanScope);
-          NodeAssert.equal(newPlanScope.capabilities.has("board"), true);
-          NodeAssert.equal(newPlanScope.capabilities.has("board-write"), false);
-        }).pipe(Effect.provide(providerLayer));
-      }).pipe(Effect.provide(attachmentReplacementTestLayer), Effect.scoped),
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      const completed = events.find((event) => event.type === "turn.completed");
+      NodeAssert.equal(
+        completed?.payload.errorMessage,
+        "Codex usage limit reached. The session limit resets in 3h 20m. Send the message again once the limit resets.",
+      );
+    }),
   );
-}
+
+  it.effect("reads a rate-limit snapshot seen earlier in the session", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startUsageLimitRuntime();
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.take(3),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      // The window arrives long before the stop, and the update that reports the
+      // limit as reached carries no windows of its own.
+      yield* runtime.emit(
+        codexRateLimitsNotification({
+          id: "evt-early-rate-limits",
+          primary: { usedPercent: 100, resetsInSeconds: 3 * 3_600 + 20 * 60 },
+        }),
+      );
+      yield* runtime.emit(
+        codexRateLimitsNotification({
+          id: "evt-sparse-rate-limits",
+          rateLimitReachedType: "rate_limit_reached",
+        }),
+      );
+      yield* runtime.emit(codexUsageLimitTurnFailed("evt-early-turn"));
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      const completed = events.find((event) => event.type === "turn.completed");
+      NodeAssert.equal(
+        completed?.payload.errorMessage,
+        "Codex usage limit reached. The session limit resets in 3h 20m. Send the message again once the limit resets.",
+      );
+    }),
+  );
+
+  it.effect("falls back to the short message without a rate-limit snapshot", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startUsageLimitRuntime();
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit(
+        codexErrorNotification({
+          id: "evt-bare-error",
+          message: CODEX_OUT_OF_CREDITS,
+          codexErrorInfo: "usageLimitExceeded",
+        }),
+      );
+      yield* runtime.emit(codexUsageLimitTurnFailed("evt-bare-turn"));
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      const expected = "Codex usage limit reached. Send the message again once the limit resets.";
+      NodeAssert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["runtime.error", "turn.completed"],
+      );
+      const runtimeError = events.find((event) => event.type === "runtime.error");
+      NodeAssert.equal(runtimeError?.payload.message, expected);
+      const completed = events.find((event) => event.type === "turn.completed");
+      NodeAssert.equal(completed?.payload.errorMessage, expected);
+    }),
+  );
+
+  it.effect("still relays other provider errors as they arrive", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startUsageLimitRuntime();
+      const firstEventFiber = yield* Stream.runHead(adapter.streamEvents).pipe(Effect.forkChild);
+
+      yield* runtime.emit(
+        codexErrorNotification({
+          id: "evt-other-error",
+          message: "Codex is temporarily unavailable.",
+          codexErrorInfo: "internalServerError",
+        }),
+      );
+
+      const first = yield* Fiber.join(firstEventFiber);
+      NodeAssert.equal(first._tag, "Some");
+      if (first._tag !== "Some" || first.value.type !== "runtime.error") return;
+      NodeAssert.equal(first.value.payload.message, "Codex is temporarily unavailable.");
+      NodeAssert.equal(first.value.payload.class, "provider_error");
+    }),
+  );
+});

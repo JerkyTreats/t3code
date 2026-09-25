@@ -1,9 +1,9 @@
 import * as Schema from "effect/Schema";
 
+import { strictStruct } from "./baseSchemas.ts";
+
 export const THREAD_APP_CONTRACT_VERSION = 1 as const;
 export const THREAD_APP_ACTIVATION_MAX_BYTES = 64 * 1024;
-
-const strict = { parseOptions: { onExcessProperty: "error" as const } };
 
 const ThreadAppLaunchId = Schema.String.check(
   Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
@@ -32,18 +32,18 @@ export const ThreadAppActivation = Schema.Struct({
   launchId: ThreadAppLaunchId,
   draft: Schema.optionalKey(ThreadAppDraft),
   workingDirectory: Schema.optionalKey(ThreadAppWorkingDirectory),
-}).annotate(strict);
+}).pipe(strictStruct);
 export type ThreadAppActivation = typeof ThreadAppActivation.Type;
 
 export const ThreadAppReadyAck = Schema.Struct({
   contractVersion: Schema.Literal(THREAD_APP_CONTRACT_VERSION),
   launchId: ThreadAppLaunchId,
   ready: Schema.Literal(true),
-}).annotate(strict);
+}).pipe(strictStruct);
 export type ThreadAppReadyAck = typeof ThreadAppReadyAck.Type;
 
 export const ThreadAppActivationCompletion = Schema.Struct({
   contractVersion: Schema.Literal(THREAD_APP_CONTRACT_VERSION),
   launchId: ThreadAppLaunchId,
-}).annotate(strict);
+}).pipe(strictStruct);
 export type ThreadAppActivationCompletion = typeof ThreadAppActivationCompletion.Type;

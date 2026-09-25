@@ -12,6 +12,9 @@ const fatalPatterns = [
   "Uncaught ReferenceError",
   "Unable to load preload script",
 ];
+const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
+const desktopDir = NodePath.resolve(__dirname, "..");
+const mainJs = NodePath.resolve(desktopDir, "dist-electron/boot.cjs");
 
 export function evaluateDesktopSmokeResult({ output, code, timedOut }) {
   const failures = fatalPatterns.filter((pattern) => output.includes(pattern));
@@ -21,10 +24,6 @@ export function evaluateDesktopSmokeResult({ output, code, timedOut }) {
 }
 
 export function runDesktopSmokeTest() {
-  const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
-  const desktopDir = NodePath.resolve(__dirname, "..");
-  const mainJs = NodePath.resolve(desktopDir, "dist-electron/main.cjs");
-
   console.log("\nLaunching Electron smoke test...");
 
   const electronCommand = resolveElectronLaunchCommand([mainJs]);

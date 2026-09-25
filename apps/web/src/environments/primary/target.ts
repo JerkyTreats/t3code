@@ -2,6 +2,7 @@ import { PRIMARY_LOCAL_ENVIRONMENT_ID, type DesktopEnvironmentBootstrap } from "
 import * as Schema from "effect/Schema";
 
 import { readThreadPrimaryTarget } from "./threadTransport";
+import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 
 const PrimaryEnvironmentTargetSource = Schema.Literals([
   "configured",
@@ -18,7 +19,7 @@ const PrimaryEnvironmentUrlKind = Schema.Literals([
 ]);
 type PrimaryEnvironmentUrlKind = typeof PrimaryEnvironmentUrlKind.Type;
 
-export class PrimaryEnvironmentUrlInvalidError extends Schema.TaggedErrorClass<PrimaryEnvironmentUrlInvalidError>()(
+export class PrimaryEnvironmentUrlInvalidError extends Schema.TaggedError<PrimaryEnvironmentUrlInvalidError>()(
   "PrimaryEnvironmentUrlInvalidError",
   {
     source: PrimaryEnvironmentTargetSource,
@@ -31,7 +32,7 @@ export class PrimaryEnvironmentUrlInvalidError extends Schema.TaggedErrorClass<P
   }
 }
 
-export class PrimaryEnvironmentProtocolUnsupportedError extends Schema.TaggedErrorClass<PrimaryEnvironmentProtocolUnsupportedError>()(
+export class PrimaryEnvironmentProtocolUnsupportedError extends Schema.TaggedError<PrimaryEnvironmentProtocolUnsupportedError>()(
   "PrimaryEnvironmentProtocolUnsupportedError",
   {
     source: PrimaryEnvironmentTargetSource,
@@ -43,7 +44,7 @@ export class PrimaryEnvironmentProtocolUnsupportedError extends Schema.TaggedErr
   }
 }
 
-export class DesktopEnvironmentBootstrapIncompleteError extends Schema.TaggedErrorClass<DesktopEnvironmentBootstrapIncompleteError>()(
+export class DesktopEnvironmentBootstrapIncompleteError extends Schema.TaggedError<DesktopEnvironmentBootstrapIncompleteError>()(
   "DesktopEnvironmentBootstrapIncompleteError",
   {
     hasHttpBaseUrl: Schema.Boolean,
@@ -56,6 +57,15 @@ export class DesktopEnvironmentBootstrapIncompleteError extends Schema.TaggedErr
       ...(this.hasWsBaseUrl ? [] : ["wsBaseUrl"]),
     ];
     return `Desktop bootstrap is missing ${missing.join(" and ")} for the local environment.`;
+  }
+}
+
+export class PrimaryEnvironmentDisabledError extends Schema.TaggedError<PrimaryEnvironmentDisabledError>()(
+  "PrimaryEnvironmentDisabledError",
+  {},
+) {
+  override get message(): string {
+    return "The local environment is disabled.";
   }
 }
 
@@ -279,6 +289,9 @@ export function resolvePrimaryEnvironmentHttpUrl(
   searchParams?: Record<string, string>,
 ): string {
   const primaryTarget = readPrimaryEnvironmentTarget();
+  if (!primaryTarget) {
+    throw new PrimaryEnvironmentDisabledError();
+  }
 
   const url = parseTargetUrl({
     rawValue: resolveHttpRequestBaseUrl(primaryTarget),
@@ -305,7 +318,8 @@ export function hasBridgeBoundPrimaryTarget(): boolean {
   return readThreadPrimaryTarget() !== null || isStandaloneDesktopPrimary();
 }
 
-export function readPrimaryEnvironmentTarget(): PrimaryEnvironmentTarget {
+export function readPrimaryEnvironmentTarget(): PrimaryEnvironmentTarget | null {
+  if (isLocalEnvironmentDisabled()) return null;
   const threadTarget = readThreadPrimaryTarget();
   if (threadTarget) return { source: "window-origin", target: threadTarget };
   if (isStandaloneDesktopPrimary()) return resolveWindowOriginPrimaryTarget();

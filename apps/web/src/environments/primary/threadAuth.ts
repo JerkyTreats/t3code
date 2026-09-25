@@ -61,7 +61,7 @@ export function makeThreadPrimaryAuth(): PrimaryEnvironmentAuth["Service"] | nul
   });
 
   return PrimaryEnvironmentAuth.of({
-    bearerToken: Effect.succeed(Option.none()),
+    bearerToken: Effect.succeedNone,
     // Providing the client inside the attempt preserves its interruption and abort signal.
     webSocketTicket: (target) => webSocketTicket(target).pipe(Effect.provide(clientLayer)),
   });

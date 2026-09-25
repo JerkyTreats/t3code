@@ -15,6 +15,7 @@ import {
   type DesktopLauncherActivationOwner,
   type DesktopLauncherActivationOutcome,
   desktopLauncherActivationOwner,
+  launcherPromptMatches,
   stageDesktopLauncherActivation,
 } from "../../fork/desktopLauncherActivation";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
@@ -138,10 +139,12 @@ export function useDesktopLauncherSubmitAdmission(
       (expectedPrompt) => {
         if (hostRef.current.draftId !== draftId) return "waiting";
         const draft = useComposerDraftStore.getState().getComposerDraft(draftId);
-        if (draft?.prompt !== expectedPrompt) return "refused";
+        if (!draft || !launcherPromptMatches(expectedPrompt, draft.prompt)) return "refused";
         // The store can lead the committed composer. Only the exact ref bytes used by onSend admit dispatch.
         const committed = hostRef.current.readComposerState();
-        return committed.ready && committed.prompt === expectedPrompt ? "ready" : "waiting";
+        return committed.ready && launcherPromptMatches(expectedPrompt, committed.prompt)
+          ? "ready"
+          : "waiting";
       },
     );
   }, [draftId, owner]);

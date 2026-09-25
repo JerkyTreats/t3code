@@ -34,7 +34,13 @@ import {
 } from "../../components/chat/MessagesTimeline";
 import { fileMarkdownSurfaceId } from "../../components/files/FileMarkdownPreview";
 import { pullRequestMarkdownSurfaceId } from "../../components/pullRequest/PullRequestMarkdown";
-import { composeChatPrompt, projectChatPromptForDisplay } from "../../fork/chatPromptContext";
+import { normalizeReferencedChatPrompt } from "../../fork/chatPromptContext";
+import {
+  buildMessageContext,
+  reviewCommentContextReference,
+  terminalContextReference,
+} from "../../lib/composerContextRecords";
+import { formatInlineContextReference } from "../../lib/composerContextReferences";
 import { buildFileReviewComment } from "../../reviewCommentContext";
 
 describe("Mermaid semantic host identities", () => {
@@ -61,29 +67,32 @@ describe("Mermaid semantic host identities", () => {
     const environmentId = EnvironmentId.make("environment-local");
     const createdAt = "2026-03-17T19:12:28.000Z";
     const authoredPrompt = "  Preserve this prompt\n\n ";
-    const text = composeChatPrompt({
-      prompt: authoredPrompt,
-      terminalContexts: [
-        {
-          terminalId: "synthetic",
-          terminalLabel: "Synthetic terminal",
-          lineStart: 1,
-          lineEnd: 1,
-          text: "ready",
-        },
-      ],
-      elementContexts: [],
+    const terminal = {
+      id: "synthetic-terminal",
+      threadId: ThreadId.make("thread-1"),
+      createdAt,
+      terminalId: "synthetic",
+      terminalLabel: "Synthetic terminal",
+      lineStart: 1,
+      lineEnd: 1,
+      text: "ready",
+    };
+    const review = buildFileReviewComment({
+      id: "synthetic-review",
+      filePath: "src/example.ts",
+      startLine: 1,
+      endLine: 1,
+      text: "Retain review",
+      contents: "export const value = 1;",
+    });
+    const text = normalizeReferencedChatPrompt(
+      `${authoredPrompt}${[terminalContextReference(terminal), reviewCommentContextReference(review)].map(formatInlineContextReference).join(" ")}`,
+      true,
+    );
+    const messageContext = buildMessageContext({
+      terminalContexts: [terminal],
+      reviewComments: [review],
       previewAnnotations: [],
-      reviewComments: [
-        buildFileReviewComment({
-          id: "synthetic-review",
-          filePath: "src/example.ts",
-          startLine: 1,
-          endLine: 1,
-          text: "Retain review",
-          contents: "export const value = 1;",
-        }),
-      ],
     });
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -99,6 +108,7 @@ describe("Mermaid semantic host identities", () => {
               id: MessageId.make("message-1"),
               role: "user",
               text,
+              context: messageContext,
               turnId: null,
               createdAt,
               updatedAt: createdAt,
@@ -108,11 +118,11 @@ describe("Mermaid semantic host identities", () => {
         ]}
         latestTurn={null}
         runningTurnId={null}
-        turnDiffSummaryByAssistantMessageId={new Map()}
+        turnDiffSummaries={[]}
         routeThreadKey="environment-local:thread-1"
         onOpenTurnDiff={() => undefined}
-        revertTurnCountByUserMessageId={new Map()}
-        onRevertUserMessage={() => undefined}
+        supportsConversationRollback={false}
+        onRevertToTurnCount={() => undefined}
         isRevertingCheckpoint={false}
         onImageExpand={() => undefined}
         activeThreadEnvironmentId={environmentId}
@@ -129,10 +139,10 @@ describe("Mermaid semantic host identities", () => {
       />,
     );
 
-    expect(projectChatPromptForDisplay(text).authoredText).toBe(authoredPrompt);
+    expect(text.startsWith(authoredPrompt)).toBe(true);
     expect(markup).toContain("Preserve this prompt");
     expect(markup).toContain("Synthetic terminal");
-    expect(markup).toContain("Retain review");
+    expect(markup).toContain("example.ts L1");
     expect(markup).not.toContain("&lt;terminal_context&gt;");
     expect(markup).not.toContain("&lt;review_comment");
   });

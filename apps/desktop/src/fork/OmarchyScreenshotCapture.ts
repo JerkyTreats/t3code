@@ -129,12 +129,15 @@ function changedScreenshotFile(
   );
 }
 
-function readClipboardPng(): Uint8Array | null {
+async function readClipboardPng(): Promise<Uint8Array | null> {
   try {
-    const image = clipboard.readImage();
-    if (image.isEmpty()) return null;
-    const data = image.toPNG();
-    return data.byteLength === 0 ? null : new Uint8Array(data);
+    const items = await clipboard.read();
+    const image = items.find((item) => item.types.includes("image/png"));
+    if (!image) return null;
+    const blob = await image.getType("image/png");
+    if (!("size" in blob) || !("slice" in blob) || blob.size === 0) return null;
+    const boundedBlob = blob.slice(0, DESKTOP_SCREENSHOT_CAPTURE_MAX_BYTES + 1);
+    return new Uint8Array(await boundedBlob.arrayBuffer());
   } catch {
     return null;
   }
@@ -185,7 +188,7 @@ async function readChangedArtifact(
     );
   }
 
-  const clipboardAfterCapture = readClipboardPng();
+  const clipboardAfterCapture = await readClipboardPng();
   if (clipboardAfterCapture && !equalBytes(clipboardAfterCapture, clipboardBeforeCapture)) {
     return artifactResult(inspectDesktopScreenshotPng(clipboardAfterCapture), screenshotFileName());
   }
@@ -213,7 +216,7 @@ export async function captureOmarchyScreenshot(
   const forceKillTimeoutMs = options.forceKillTimeoutMs ?? DEFAULT_FORCE_KILL_TIMEOUT_MS;
   const outputDirectory = await resolveOmarchyScreenshotOutputDirectory();
   const filesBeforeCapture = await listScreenshotFiles(outputDirectory);
-  const clipboardBeforeCapture = readClipboardPng();
+  const clipboardBeforeCapture = await readClipboardPng();
   const child = NodeChildProcess.spawn(command, [], {
     env: { ...NodeProcess.env },
     stdio: ["ignore", "pipe", "pipe"],

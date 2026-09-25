@@ -474,8 +474,10 @@ for (const state of forkMigrationStates) {
           return { migrationId, name: historicalNames.get(migrationId)! };
         }),
       );
-      assert.deepStrictEqual(latest, [{ migrationId: 58, name: "PairingEnrollmentClass" }]);
-    }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+      assert.deepStrictEqual(latest, [
+        { migrationId: 66, name: "ProjectionThreadsAutoSettleDisabledAt" },
+      ]);
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 }
 
@@ -497,7 +499,7 @@ it.effect("rejects a historical identity after a canonical suffix starts", () =>
 
     assert.match(error.message, /Unsupported fork migration lineage at 33/);
     assert.deepStrictEqual(laterJournal, []);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
 it.effect("rejects an isolated retired 49 journal identity", () =>
@@ -521,7 +523,7 @@ it.effect("rejects an isolated retired 49 journal identity", () =>
       /Unsupported fork migration lineage: incomplete retired 46 through 49 group/,
     );
     assert.deepStrictEqual(continuationJournal, []);
-  }).pipe(Effect.provide(NodeSqliteClient.layerMemory())),
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
 it.effect("preserves an accepted 51 database through initialization and reopen", () => {
@@ -562,12 +564,14 @@ it.effect("preserves an accepted 51 database through initialization and reopen",
       threadId,
       projectId,
       title: "Synthetic upgrade thread",
+      titleState: null,
       modelSelection,
       runtimeMode: "full-access",
       interactionMode: "default",
       branch: "synthetic-preserved-branch",
       worktreePath: "/synthetic/worktree",
       linkedPullRequest: null,
+      branchPullRequest: null,
       latestTurnId: null,
       createdAt: "2026-07-01T00:00:00.000Z",
       updatedAt: "2026-07-01T00:00:02.000Z",
@@ -579,6 +583,8 @@ it.effect("preserves an accepted 51 database through initialization and reopen",
       snoozedAt: "2026-07-01T00:00:03.000Z",
       pinnedAt: "2026-07-01T00:00:04.000Z",
       pinOrderKey: "synthetic-pin-order",
+      activeOrderKey: null,
+      autoSettleDisabledAt: null,
       titleRegenerationRequestId: null,
       titleRegenerationStartedAt: null,
       latestUserMessageAt: "2026-07-01T00:00:02.000Z",

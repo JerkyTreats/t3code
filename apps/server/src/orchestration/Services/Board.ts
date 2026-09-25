@@ -18,7 +18,7 @@ export interface TrustedBoardPublisher {
   readonly threadId: ThreadId;
 }
 
-export class BoardPublicationError extends Schema.TaggedErrorClass<BoardPublicationError>()(
+export class BoardPublicationError extends Schema.TaggedError<BoardPublicationError>()(
   "BoardPublicationError",
   {
     message: Schema.String,

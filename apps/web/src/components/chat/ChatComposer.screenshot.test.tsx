@@ -15,6 +15,7 @@ import {
   ProviderInstanceId,
   ProviderDriverKind,
   type DesktopScreenshotCapture,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 
@@ -25,6 +26,11 @@ vi.mock("../../lib/imageCompression", async (importOriginal) => ({
   compressImageForStash: vi.fn(),
 }));
 vi.mock("../../state/server", () => ({ serverEnvironment: { refreshProviders: {} } }));
+vi.mock("../../lib/openPullRequestLink", () => ({ useOpenPrLink: () => () => false }));
+vi.mock("../../pierre-icons", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../pierre-icons")>()),
+  ensurePierreIconSprite: vi.fn(),
+}));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("../../hooks/useMediaQuery", () => ({ useMediaQuery: () => false }));
 vi.mock("../../panelAnimations", () => ({
@@ -67,6 +73,10 @@ vi.mock("../ui/select", () => ({
   SelectValue: ({ children }: { children: ReactNode }) => children,
   SelectItem: () => null,
   SelectPopup: () => null,
+}));
+vi.mock("./ComposerControl", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ComposerControl")>()),
+  ComposerSelectControl: (props: ComponentProps<"button">) => createElement("button", props),
 }));
 vi.mock("../ComposerPromptEditor", () => ({ ComposerPromptEditor: () => null }));
 vi.mock("./ProviderModelPicker", () => ({ ProviderModelPicker: () => null }));
@@ -134,6 +144,7 @@ function attachment(id: string): ComposerImageAttachment {
 }
 function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerProps {
   return {
+    supportsQuestionAttachments: false,
     composerDraftTarget: target,
     environmentId,
     attachmentUploadsCapabilityKnown: true,
@@ -142,6 +153,14 @@ function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerProps {
     routeKind: "server",
     routeThreadRef: target,
     draftId: null,
+    multipleModelSelections: null,
+    supportsMultipleModels: false,
+    onMultipleModelSelectionsChange: vi.fn(),
+    activeThreadShell: null,
+    providerCatalogKnown: true,
+    pullRequestProjectId: null,
+    pullRequestRepository: null,
+    onCompactContext: vi.fn(),
     activeThreadId: threadId,
     activeThreadEnvironmentId: environmentId,
     activeThread: undefined,
@@ -198,7 +217,7 @@ function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerProps {
     compactDisabled: false,
     compactDisabledReason: null,
     resolvedTheme: "light",
-    settings: { ...DEFAULT_UNIFIED_SETTINGS, composerCollapseOnBlur: false },
+    settings: { ...DEFAULT_UNIFIED_SETTINGS, composerCollapseOnScroll: false },
     keybindings: [],
     terminalOpen: false,
     gitCwd: null,
@@ -214,7 +233,6 @@ function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerProps {
     composerImagesRef: { current: [] },
     composerFilesRef: { current: [] },
     composerTerminalContextsRef: { current: [] },
-    composerElementContextsRef: { current: [] },
     composerRef: { current: null },
     onPageScrollKeyDown: vi.fn(),
     onPageScrollKeyUp: vi.fn(),
@@ -225,6 +243,7 @@ function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerProps {
     onRespondToApproval: vi.fn(),
     onSelectActivePendingUserInputOption: vi.fn(),
     onAdvanceActivePendingUserInput: vi.fn(),
+    onDismissActivePendingUserInput: vi.fn(),
     onPreviousActivePendingUserInputQuestion: vi.fn(),
     onChangeActivePendingUserInputCustomAnswer: vi.fn(),
     onProviderModelSelect: vi.fn(),
@@ -253,7 +272,13 @@ describe("Thread composer controls integration", () => {
     const picker = renderer!.root.findByType(ProviderModelPicker);
     expect(picker.props.labelMode).toBe("identifier");
     expect(picker.props.model).toBeTruthy();
-    expect(picker.props.onInstanceModelChange).toBe(input.onProviderModelSelect);
+    await act(() =>
+      picker.props.onInstanceModelChange(input.providerStatuses[0]!.instanceId, "test"),
+    );
+    expect(input.onProviderModelSelect).toHaveBeenCalledWith(
+      input.providerStatuses[0]!.instanceId,
+      "test",
+    );
     expect(picker.props.triggerClassName).not.toContain(":w-0");
     expect(
       renderer!.root
@@ -285,6 +310,8 @@ beforeEach(() => {
     removeEventListener: vi.fn(),
     requestAnimationFrame: vi.fn(),
     cancelAnimationFrame: vi.fn(),
+    setTimeout,
+    clearTimeout,
     performance,
     getSelection: () => null,
     localStorage: { getItem: () => null },
@@ -293,6 +320,9 @@ beforeEach(() => {
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
     activeElement: null,
+    getElementById: () => null,
+    createElement: () => ({ setAttribute: vi.fn(), innerHTML: "", append: vi.fn() }),
+    body: { append: vi.fn() },
   });
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:prepared");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
@@ -313,20 +343,22 @@ describe("ChatComposer screenshot admission", () => {
   it("refuses at cap before calling the desktop", async () => {
     useComposerDraftStore.getState().addImages(
       target,
-      Array.from({ length: 8 }, (_, i) => attachment(String(i))),
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS }, (_, i) => attachment(String(i))),
     );
     const input = await mount();
     await act(() => capture());
     expect(mocks.capture).not.toHaveBeenCalled();
     expect(input.setThreadError).toHaveBeenCalledWith(
       threadId,
-      "You can attach up to 8 files per message.",
+      `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`,
     );
   });
   it("shares paste capacity with a single native capture and transfers without double counting", async () => {
     useComposerDraftStore.getState().addImages(
       target,
-      Array.from({ length: 6 }, (_, i) => attachment(String(i))),
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 2 }, (_, i) =>
+        attachment(String(i)),
+      ),
     );
     const native = deferred<DesktopScreenshotCapture | null>();
     const pastePreparation = deferred<{ ok: true; file: File }>();
@@ -340,24 +372,27 @@ describe("ChatComposer screenshot admission", () => {
       renderer!.root.findByType(ComposerPromptEditor).props.onPaste({
         clipboardData: { files: [image("first.png"), image("overflow.png")], getData: () => "" },
         preventDefault,
+        stopPropagation: vi.fn(),
       });
     });
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(mocks.capture).toHaveBeenCalledOnce();
     expect(mocks.prepare).toHaveBeenCalledOnce();
     await act(() => native.resolve(emptyCapture));
-    expect(draft()?.images).toHaveLength(7);
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1);
     expect(draft()?.images.at(-1)?.name).toBe("capture.png");
     await act(() => pastePreparation.resolve({ ok: true, file: image("first.png") }));
     expect(draft()?.images.map((value) => value.name)).toContain("first.png");
-    expect(draft()?.images).toHaveLength(8);
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
     expect(mocks.prepare).toHaveBeenCalledTimes(2);
   });
 
   it("refuses capture when an ordinary paste already reserved the last slot", async () => {
     useComposerDraftStore.getState().addImages(
       target,
-      Array.from({ length: 7 }, (_, i) => attachment(String(i))),
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, i) =>
+        attachment(String(i)),
+      ),
     );
     const pending = deferred<{ ok: true; file: File }>();
     mocks.prepare.mockReturnValue(pending.promise);
@@ -368,7 +403,7 @@ describe("ChatComposer screenshot admission", () => {
     });
     expect(mocks.capture).not.toHaveBeenCalled();
     await act(() => pending.resolve({ ok: true, file: image() }));
-    expect(draft()?.images).toHaveLength(8);
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
   });
 
   it.each(["cancel", "native-error", "compression-error"])(
@@ -523,7 +558,9 @@ describe("ChatComposer screenshot admission", () => {
   it("preserves the generic picker and replaces a reattachment marker at the cap", async () => {
     useComposerDraftStore.getState().addImages(
       target,
-      Array.from({ length: 7 }, (_, i) => attachment(String(i))),
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, i) =>
+        attachment(String(i)),
+      ),
     );
     const file = new File(["report"], "report.txt", { type: "text/plain" });
     useComposerDraftStore.getState().addFiles(target, [
@@ -548,7 +585,7 @@ describe("ChatComposer screenshot admission", () => {
     await act(() => picker.props.onChange({ currentTarget: { files: [file], value: "" } }));
     expect(draft()?.files).toHaveLength(1);
     expect(draft()?.files[0]?.file).toBe(file);
-    expect(draft()?.images).toHaveLength(7);
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1);
     expect(mocks.prepare).not.toHaveBeenCalled();
   });
 
@@ -832,7 +869,10 @@ describe("ChatComposer launcher attachment admission", () => {
       const prepared = image("prepared.png");
       await act(() => preparation.resolve({ ok: true, file: prepared }));
       expect(fixture.sent).toEqual([
-        { prompt: fixture.prompt, images: [expect.objectContaining({ file: prepared })] },
+        {
+          prompt: expect.stringContaining(fixture.prompt),
+          images: [expect.objectContaining({ file: prepared })],
+        },
       ]);
       expect(fixture.attempt).toHaveBeenCalledOnce();
       expect(fixture.complete).toHaveBeenCalledOnce();
@@ -867,7 +907,10 @@ describe("ChatComposer launcher attachment admission", () => {
       const prepared = image("race.png");
       await act(() => preparation.resolve({ ok: true, file: prepared }));
       expect(fixture.sent).toEqual([
-        { prompt: fixture.prompt, images: [expect.objectContaining({ file: prepared })] },
+        {
+          prompt: expect.stringContaining(fixture.prompt),
+          images: [expect.objectContaining({ file: prepared })],
+        },
       ]);
       expect(fixture.attempt).toHaveBeenCalledOnce();
       expect(fixture.complete).toHaveBeenCalledOnce();

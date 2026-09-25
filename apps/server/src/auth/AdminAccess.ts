@@ -22,22 +22,22 @@ import * as ClientConnectionRegistry from "./ClientConnectionRegistry.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as SessionStore from "./SessionStore.ts";
 
-export class AdminAccessInternalError extends Schema.TaggedErrorClass<AdminAccessInternalError>()(
+export class AdminAccessInternalError extends Schema.TaggedError<AdminAccessInternalError>()(
   "AdminAccessInternalError",
   { cause: Schema.Defect() },
 ) {}
 
-export class AdminAccessNotFoundError extends Schema.TaggedErrorClass<AdminAccessNotFoundError>()(
+export class AdminAccessNotFoundError extends Schema.TaggedError<AdminAccessNotFoundError>()(
   "AdminAccessNotFoundError",
   { resource: Schema.Literals(["client", "pairing-code"]) },
 ) {}
 
-export class AdminAccessRevisionConflictError extends Schema.TaggedErrorClass<AdminAccessRevisionConflictError>()(
+export class AdminAccessRevisionConflictError extends Schema.TaggedError<AdminAccessRevisionConflictError>()(
   "AdminAccessRevisionConflictError",
   { revision: NonNegativeInt },
 ) {}
 
-export class AdminAccessOutstandingPairingLimitError extends Schema.TaggedErrorClass<AdminAccessOutstandingPairingLimitError>()(
+export class AdminAccessOutstandingPairingLimitError extends Schema.TaggedError<AdminAccessOutstandingPairingLimitError>()(
   "AdminAccessOutstandingPairingLimitError",
   { limit: Schema.Int },
 ) {}

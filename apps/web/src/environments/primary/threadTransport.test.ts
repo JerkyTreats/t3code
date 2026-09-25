@@ -47,7 +47,7 @@ describe("protected Thread transport", () => {
     });
     vi.stubEnv("VITE_HTTP_URL", "https://ordinary.example.test");
     expect(hasBridgeBoundPrimaryTarget()).toBe(false);
-    expect(readPrimaryEnvironmentTarget().source).toBe("configured");
+    expect(readPrimaryEnvironmentTarget()!.source).toBe("configured");
     expect(
       resolveThreadPrimaryTarget({ threadBridgePresent: false, windowOrigin: origin }),
     ).toBeNull();

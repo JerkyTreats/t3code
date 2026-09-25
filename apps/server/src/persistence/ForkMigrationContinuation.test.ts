@@ -13,7 +13,7 @@ import { runMigrations } from "./Migrations.ts";
 import { ProjectionProjectRepository } from "./Services/ProjectionProjects.ts";
 import { ProjectionThreadRepository } from "./Services/ProjectionThreads.ts";
 
-const sqliteLayer = NodeSqliteClient.layerMemory();
+const sqliteLayer = NodeSqliteClient.layer({ filename: ":memory:" });
 const layer = it.layer(
   Layer.mergeAll(ProjectionProjectRepositoryLive, ProjectionThreadRepositoryLive).pipe(
     Layer.provideMerge(sqliteLayer),
@@ -366,6 +366,14 @@ layer("fork migration continuation", (it) => {
           [56, "RepairAutomaticSettlementTimestamps"],
           [57, "ProjectionProjectIcon"],
           [58, "PairingEnrollmentClass"],
+          [59, "InteractionCommandFingerprints"],
+          [60, "ProjectionThreadBranchPullRequest"],
+          [61, "ProjectionThreadsActiveOrderKey"],
+          [62, "ProjectionThreadPullRequests"],
+          [63, "ProjectionThreadMessageContext"],
+          [64, "ProjectionThreadTitleState"],
+          [65, "PullRequestFilesViewed"],
+          [66, "ProjectionThreadsAutoSettleDisabledAt"],
         ],
       );
 
@@ -376,6 +384,50 @@ layer("fork migration continuation", (it) => {
           project_icon_json = ${encodeJson({ kind: "emoji", emoji: "🧪" })}
         WHERE project_id = 'project-reset'
       `;
+      const titleState = {
+        source: "manual",
+        version: "synthetic-title-version",
+        needsRefinement: false,
+      };
+      yield* sql`
+        UPDATE projection_threads
+        SET title_state_json = ${encodeJson(titleState)},
+            branch_pull_request_json = ${encodeJson(LINKED_PULL_REQUEST)},
+            active_order_key = 'synthetic-active-order',
+            auto_settle_disabled_at = '2026-07-01T00:00:00.000Z'
+        WHERE thread_id = 'thread-automatic'
+      `;
+      const linkedRows = yield* sql<{
+        readonly repository: string;
+        readonly number: number;
+        readonly source: string;
+      }>`
+        SELECT repository, number, source
+        FROM projection_thread_pull_requests
+        WHERE thread_id = 'thread-automatic'
+      `;
+      assert.deepStrictEqual(linkedRows, [
+        { repository: LINKED_PULL_REQUEST.repository, number: 57, source: "manual" },
+      ]);
+      const messageColumns = yield* sql<{ readonly name: string }>`
+        PRAGMA table_info(projection_thread_messages)
+      `;
+      assert.isTrue(messageColumns.some(({ name }) => name === "context_json"));
+      yield* sql`
+        INSERT INTO pull_request_files_viewed (
+          provider, host, repository, number, viewer, path, revision, viewed_at
+        ) VALUES (
+          'github', 'example.test', 'example/t3code-fixture', 57,
+          'synthetic-viewer', 'src/example.ts', 'synthetic-revision',
+          '2026-07-01T00:00:00.000Z'
+        )
+      `;
+      const viewedFiles = yield* sql<{ readonly path: string; readonly revision: string }>`
+        SELECT path, revision FROM pull_request_files_viewed
+      `;
+      assert.deepStrictEqual(viewedFiles, [
+        { path: "src/example.ts", revision: "synthetic-revision" },
+      ]);
 
       const automaticProject = Option.getOrNull(
         yield* projects.getById({ projectId: ProjectId.make("project-automatic") }),
@@ -395,6 +447,10 @@ layer("fork migration continuation", (it) => {
         yield* threads.getById({ threadId: ThreadId.make("thread-automatic") }),
       );
       assert.deepStrictEqual(automaticThread?.linkedPullRequest, LINKED_PULL_REQUEST);
+      assert.deepStrictEqual(automaticThread?.branchPullRequest, LINKED_PULL_REQUEST);
+      assert.deepStrictEqual(automaticThread?.titleState, titleState);
+      assert.strictEqual(automaticThread?.activeOrderKey, "synthetic-active-order");
+      assert.strictEqual(automaticThread?.autoSettleDisabledAt, "2026-07-01T00:00:00.000Z");
       assert.strictEqual(automaticThread?.unsettledAt, "2026-07-01T00:00:00.000Z");
       assert.strictEqual(automaticThread?.settledAt, "2026-07-01T00:00:00.000Z");
 

@@ -25,3 +25,7 @@ Record fork feature retirement decisions without creating a current product cont
 | F24     | Composer activity shelf                                         | Outbox-specific presentation retires with F15.                                          | Retained plan appearance belongs to the chat presentation outcome; no queue shelf is restored.                               |
 
 These intake decisions do not authorize replay of the historical implementations. Source and product acceptance are tracked in the active intake ledger. Previously pending web outbox work requires an explicit disposition in the old client before that client's cutover; this record does not resend, acknowledge, delete or inspect any live work.
+
+## F29 local voice
+
+Retired by user approval during the latest upstream intake on 2026-09-25. Fork spoken replies, response-style steering, Pocket TTS proxy and catalog, device-local playback settings, and fork dictation customization are removed. Ordinary upstream input remains substrate. Existing external speech services are outside this source retirement. Historical records confer no replay obligation.

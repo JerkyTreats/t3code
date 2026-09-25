@@ -13,6 +13,7 @@ import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
+import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 
 const host = vi.hoisted(() => ({ events: [] as string[] }));
@@ -90,6 +91,9 @@ describe("current DesktopApp bootstrap", () => {
     () =>
       Effect.gen(function* () {
         const context = (yield* hostContext(false)).pipe(
+          Context.add(DesktopSnapShot.DesktopSnapShot, {
+            initialize: Effect.void,
+          } as DesktopSnapShot.DesktopSnapShot["Service"]),
           Context.add(DesktopBackendPool.DesktopBackendPool, {
             primary: Effect.sync(() => {
               host.events.push("allocate-primary");
@@ -103,6 +107,7 @@ describe("current DesktopApp bootstrap", () => {
           Context.add(DesktopAppSettings.DesktopAppSettings, {
             get: Effect.succeed({
               serverExposureMode: "local-only",
+              localEnvironmentEnabled: true,
               wslOnly: false,
               wslBackendEnabled: false,
             }),
@@ -129,10 +134,10 @@ describe("current DesktopApp bootstrap", () => {
         );
         yield* runHost(context);
         expect(host.events).toEqual([
-          "allocate-primary",
-          "exposure",
           "protocol",
           "ipc",
+          "allocate-primary",
+          "exposure",
           "backend-start",
           "upstream-activation",
           "wsl",

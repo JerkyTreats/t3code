@@ -4,6 +4,8 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
+import * as Queue from "effect/Queue";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
@@ -46,7 +48,7 @@ const makePairingGrantStoreTestLayer = (
         AuthPairingLinks.AuthPairingLinkRepository,
         AuthPairingLinks.AuthPairingLinkRepository.of({
           create: () => Effect.void,
-          consumeAvailable: () => Effect.succeed(Option.none()),
+          consumeAvailable: () => Effect.succeedNone,
           listActive: () => Effect.succeed([]),
           revoke: () => Effect.succeed(false),
           revokeAtRevision: () => Effect.succeed({ _tag: "not-found" }),

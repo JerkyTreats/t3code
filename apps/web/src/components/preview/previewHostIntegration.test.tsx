@@ -146,6 +146,7 @@ beforeEach(() => {
   element = new FocusElement();
   target = new EventTarget();
   vi.stubGlobal("HTMLElement", FocusElement);
+  vi.stubGlobal("Element", FocusElement);
   vi.stubGlobal("document", { activeElement: element, querySelector: () => null });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(

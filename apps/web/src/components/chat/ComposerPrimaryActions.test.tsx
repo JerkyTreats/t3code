@@ -44,7 +44,7 @@ function renderPendingActions(isRunning: boolean) {
   );
 }
 
-function renderRunningActions(showSendWhileRunning: boolean, hasSendableContent: boolean) {
+function renderRunningActions(hasSendableContent: boolean) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
@@ -58,7 +58,6 @@ function renderRunningActions(showSendWhileRunning: boolean, hasSendableContent:
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
       hasSendableContent,
-      showSendWhileRunning,
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -87,7 +86,7 @@ function renderSendButton(sendDisabledReason: string | null = null) {
   );
 }
 
-function renderEmptyDraftActions(voiceAvailable: boolean) {
+function renderEmptyDraftActions() {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
       compact: true,
@@ -101,13 +100,6 @@ function renderEmptyDraftActions(voiceAvailable: boolean) {
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
       hasSendableContent: false,
-      voiceInput: {
-        primaryAction: voiceAvailable ? "voice" : "send",
-        state: { phase: "idle", error: null },
-        start: () => {},
-        stop: () => {},
-        cancel: () => {},
-      },
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -129,41 +121,6 @@ function renderBlockedSendWithText() {
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
       hasSendableContent: true,
-      voiceInput: {
-        primaryAction: "send",
-        state: { phase: "idle", error: null },
-        start: () => {},
-        stop: () => {},
-        cancel: () => {},
-      },
-      onPreviousPendingQuestion: () => {},
-      onInterrupt: () => {},
-      onImplementPlanInNewThread: () => {},
-    }),
-  );
-}
-
-function renderVoiceError() {
-  return renderToStaticMarkup(
-    createElement(ComposerPrimaryActions, {
-      compact: true,
-      pendingAction: null,
-      isRunning: false,
-      showPlanFollowUpPrompt: false,
-      promptHasText: false,
-      isSendBusy: false,
-      sendDisabledReason: null,
-      isConnecting: false,
-      isEnvironmentUnavailable: false,
-      isPreparingWorktree: false,
-      hasSendableContent: false,
-      voiceInput: {
-        primaryAction: "voice",
-        state: { phase: "error", error: "No speech was detected." },
-        start: () => {},
-        stop: () => {},
-        cancel: () => {},
-      },
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -209,38 +166,23 @@ describe("ComposerPrimaryActions", () => {
     expect(markup).not.toContain("stage-nightly");
   });
 
-  it("only renders stop while running when Enter-to-send is available", () => {
-    const markup = renderRunningActions(false, true);
+  it("renders a queue action alongside stop while running with a sendable draft", () => {
+    const markup = renderRunningActions(true);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).not.toContain('aria-label="Send message"');
-  });
-
-  it("renders send alongside stop while running when Enter-to-send is unavailable", () => {
-    const markup = renderRunningActions(true, true);
-
-    expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).toContain('aria-label="Send message"');
+    expect(markup).toContain('aria-label="Queue message"');
     expect(markup).toContain('type="submit"');
   });
 
   it("keeps stop as the only action while running with an empty composer", () => {
-    const markup = renderRunningActions(true, false);
+    const markup = renderRunningActions(false);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).not.toContain('aria-label="Send message"');
-  });
-
-  it("uses one microphone as the empty draft primary action when local recognition is supported", () => {
-    const markup = renderEmptyDraftActions(true);
-
-    expect(markup).toContain('aria-label="Start voice input"');
-    expect(markup).not.toContain('aria-label="Send message"');
-    expect(markup).toContain('type="button"');
+    expect(markup).not.toContain('aria-label="Queue message"');
   });
 
   it("keeps the ordinary disabled Send fallback when local recognition is unsupported", () => {
-    const markup = renderEmptyDraftActions(false);
+    const markup = renderEmptyDraftActions();
 
     expect(markup).toContain('aria-label="Send message"');
     expect(markup).toContain("disabled");
@@ -250,14 +192,5 @@ describe("ComposerPrimaryActions", () => {
     const markup = renderBlockedSendWithText();
 
     expect(markup).toContain('aria-label="Waiting for an upload"');
-    expect(markup).not.toContain('aria-label="Start voice input"');
-  });
-
-  it("shows a recognition error beside the retry microphone", () => {
-    const markup = renderVoiceError();
-
-    expect(markup).toContain('role="status"');
-    expect(markup).toContain("No speech was detected.");
-    expect(markup).toContain('aria-label="Start voice input"');
   });
 });

@@ -255,7 +255,7 @@ it("requires the checksum-pinned default Codex provider runtime", () => {
     replaceFixtureSource(
       fixtureRoot,
       SERVER_IMAGE_DOCKERFILE_PATH,
-      "sha256:d28b4fd4bd9f07ea71083d0cc40c579595cebbd4c10bc8ca98a6d385432e7255",
+      "sha256:f15a756cb568359327c47afcb5a6c5a5ce03215a96bbb284eef9e0ebd991f214",
       `sha256:${"0".repeat(64)}`,
     );
     assert.throws(() => assertServerImagePublicationSafety(fixtureRoot));
@@ -264,7 +264,7 @@ it("requires the checksum-pinned default Codex provider runtime", () => {
     replaceFixtureSource(
       fixtureRoot,
       SERVER_IMAGE_DOCKERFILE_PATH,
-      "codex-cli 0.147.0",
+      "codex-cli 0.157.0",
       "codex-cli 0.148.0",
     );
     assert.throws(() => assertServerImagePublicationSafety(fixtureRoot));

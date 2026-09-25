@@ -12,15 +12,13 @@ export type VoiceComposerPresentation = {
 export function resolveVoiceComposerPresentation(
   state: VoiceInputState,
   elapsedSeconds: number,
-  hasDraftContent = true,
-  isVoiceAvailable = true,
 ): VoiceComposerPresentation {
   switch (state.phase) {
     case "idle":
       return {
         leadingAction: null,
         trailingAction: "mic",
-        showsSend: hasDraftContent || !isVoiceAvailable,
+        showsSend: true,
         statusKind: null,
         statusLabel: null,
         confirmationEnabled: false,
@@ -29,7 +27,7 @@ export function resolveVoiceComposerPresentation(
       return {
         leadingAction: null,
         trailingAction: "mic",
-        showsSend: hasDraftContent || !isVoiceAvailable,
+        showsSend: true,
         statusKind: "error",
         statusLabel: state.error,
         confirmationEnabled: false,

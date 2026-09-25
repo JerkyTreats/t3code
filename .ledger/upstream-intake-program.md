@@ -766,3 +766,15 @@ Final record review closes the product lane at SHA256 `f44d4316222f78d6f8f2969fb
 ### Commit effect — durable intake acceptance
 
 If applied, this commit records the accepted upstream intake and durable evidence for its retained and retired fork responsibilities.
+
+## 2026-09-25 source integration receipt
+
+Upstream `e5a46d6c5d00b89afba5274a94d42428c8d79763` is reconciled with fork baseline `cca47cc89888e9afdf4de0bd5097a2ac7e501ce1`. The retained feature contracts remain authoritative. Approved F29 voice retirement removes its runtime, settings, contracts and exclusive dependencies while ordinary upstream input remains available. Migration 59 retains the deployed interaction-fingerprint identity and body; new upstream migrations execute as 60 through 66. Synthetic file databases from both supported 58 and 59 histories continue and reopen successfully.
+
+Independent product and boundary reviews closed the Forgejo origin bypass, legacy-context whitespace loss and attachment Mermaid identity gap. Explicit schema checks preserve bounded launcher IPC under the new Effect version. A version-specific license metadata override uses the MIT notice already bundled with the retained Mermaid dependency.
+
+Formatting, lint, typecheck, the full test gate, release safety and the production build pass. The test gate reports 18,907 passed tests. Native mobile lint exits successfully but skips unavailable SwiftLint, ktlint and detekt; it is not native lint execution evidence. Browser acceptance verifies staging pairing, an actual provider turn, Board read and post display, chat and file Mermaid rendering, theme changes and reload. Installed artifact and container evidence are separate from this source receipt.
+
+### Commit effect — current upstream integration
+
+If applied, this commit integrates the current upstream application with retained fork Board, Thread, rendering, access and origin boundaries, preserves supported stored history, and removes fork voice features.

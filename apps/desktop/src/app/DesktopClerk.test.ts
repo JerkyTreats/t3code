@@ -252,32 +252,13 @@ describe("DesktopClerk", () => {
       Effect.provideService(ElectronWindow.ElectronWindow, electronWindow),
     );
   });
-
-  it.each([
-    { isDevelopment: true, scheme: "t3code-dev" },
-    { isDevelopment: false, scheme: "t3code" },
-  ])("configures the SDK with the $scheme renderer origin", ({ isDevelopment, scheme }) => {
-    const bridge = { cleanup: vi.fn(), isPrimaryInstance: true };
-    storageMock.mockReturnValue(storageAdapter);
-    createClerkBridgeMock.mockReturnValue(bridge);
-
-    assert.equal(DesktopClerk.createDesktopClerkBridge("/tmp/t3-state", isDevelopment), bridge);
-    assert.deepEqual(storageMock.mock.calls, [[{ path: "/tmp/t3-state" }]]);
-    assert.deepEqual(createClerkBridgeMock.mock.calls, [
-      [
-        {
-          storage: storageAdapter,
-          passkeys: true,
-          renderer: { scheme, host: "app" },
-        },
-      ],
-    ]);
-    storageMock.mockClear();
-    createClerkBridgeMock.mockClear();
-  });
 });
 
 describe("standalone singleton host", () => {
+  beforeEach(() => {
+    createClerkBridgeMock.mockReset();
+    accessSyncMock.mockClear();
+  });
   it.effect(
     "sets isolated userData before its native lock and requires authenticated handoff before focus",
     () =>

@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - realpathSync.native resolves Windows 8.3 short names, which the Effect realPath does not.
 import * as NodeFS from "node:fs";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { SourceControlProviderError } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -38,16 +39,20 @@ const makeRepositoryIdentityResolverTestLayer = (options: {
   ).pipe(Layer.provide(ProcessRunner.layer));
 
 it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
-  it.effect("reuses the cached Git root for repeated workspace lookups", () => {
+  it.effect("refreshes the Git root only when requested", () => {
     const calls: Array<ReadonlyArray<string>> = [];
+    let rootPath = "/repo";
+    let remoteUrl = "git@github.com:T3Tools/t3code.git";
+    let refinements = 0;
+    let refinementFails = false;
     const processRunner = Layer.succeed(ProcessRunner.ProcessRunner, {
       run: (input) =>
         Effect.sync(() => {
           calls.push(input.args);
           return {
             stdout: input.args.includes("rev-parse")
-              ? "/repo\n"
-              : "origin\tgit@github.com:T3Tools/t3code.git (fetch)\n",
+              ? `${rootPath}\n`
+              : `origin\t${remoteUrl} (fetch)\n`,
             stderr: "",
             code: ChildProcessSpawner.ExitCode(0),
             timedOut: false,
@@ -60,20 +65,64 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     });
     const resolverLayer = Layer.effect(
       RepositoryIdentityResolver.RepositoryIdentityResolver,
-      RepositoryIdentityResolver.make(),
+      RepositoryIdentityResolver.make({
+        refine: (identity) => {
+          refinements++;
+          if (refinementFails)
+            return Effect.fail(
+              new SourceControlProviderError({
+                provider: "forgejo",
+                operation: "detectProvider",
+                cwd: rootPath,
+                detail: "account unavailable",
+              }),
+            );
+          return Effect.succeed(
+            identity.canonicalKey.startsWith("ssh.forge.test/")
+              ? {
+                  ...identity,
+                  provider: "forgejo",
+                  webUrl: "http://forge.test:3000/git/team/repo",
+                }
+              : identity,
+          );
+        },
+      }),
     ).pipe(Layer.provide(processRunner));
 
     return Effect.gen(function* () {
       const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const first = yield* resolver.resolve("/repo/packages/web");
+      rootPath = "/repo/packages/web";
       const second = yield* resolver.resolve("/repo/packages/web");
 
       expect(first?.canonicalKey).toBe("github.com/t3tools/t3code");
       expect(second).toEqual(first);
+      expect(refinements).toBe(1);
       expect(calls).toEqual([
         ["-C", "/repo/packages/web", "rev-parse", "--show-toplevel"],
         ["-C", "/repo", "remote", "-v"],
       ]);
+
+      const refreshed = yield* resolver.resolve("/repo/packages/web", { refresh: true });
+      expect(refreshed?.rootPath).toBe("/repo/packages/web");
+      expect(yield* resolver.resolve("/repo/packages/web")).toEqual(refreshed);
+      expect(calls.slice(2)).toEqual([
+        ["-C", "/repo/packages/web", "rev-parse", "--show-toplevel"],
+        ["-C", "/repo/packages/web", "remote", "-v"],
+      ]);
+      remoteUrl = "git@ssh.forge.test:team/repo.git";
+      const forgejo = yield* resolver.resolve(rootPath, { refresh: true });
+      expect(forgejo?.webUrl).toBe("http://forge.test:3000/git/team/repo");
+      expect(forgejo?.provider).toBe("forgejo");
+      expect(forgejo?.canonicalKey).toBe("ssh.forge.test/team/repo");
+      expect(forgejo?.locator.remoteUrl).toBe(remoteUrl);
+      expect(yield* resolver.resolve(rootPath)).toEqual(forgejo);
+      expect(refinements).toBe(3);
+      refinementFails = true;
+      const unavailable = yield* resolver.resolve(rootPath, { refresh: true });
+      expect(unavailable?.webUrl).toBeUndefined();
+      expect(unavailable?.canonicalKey).toBe("ssh.forge.test/team/repo");
     }).pipe(Effect.provide(resolverLayer));
   });
 
@@ -203,14 +252,12 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       const cwd = yield* fileSystem.makeTempDirectoryScoped({
         prefix: "t3-repository-identity-upstream-test-",
       });
-
       yield* git(cwd, ["init"]);
-      yield* git(cwd, ["remote", "add", "origin", "git@github.com:julius/t3code.git"]);
       yield* git(cwd, ["remote", "add", "upstream", "git@github.com:T3Tools/t3code.git"]);
+      yield* git(cwd, ["remote", "add", "origin", "git@github.com:julius/t3code.git"]);
 
       const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const identity = yield* resolver.resolve(cwd);
-
       expect(identity).not.toBeNull();
       expect(identity?.locator.remoteName).toBe("origin");
       expect(identity?.canonicalKey).toBe("github.com/julius/t3code");

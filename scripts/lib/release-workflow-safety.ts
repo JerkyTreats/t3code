@@ -64,6 +64,8 @@ const READ_ONLY_RUN_SOURCES = new Set([
   'pnpm screenshots:mobile --platform android --appearance "${{ inputs.appearance }}" --theme "${{ inputs.theme }}" --validate-only',
   'pnpm screenshots:mobile --platform ios --appearance "${{ inputs.appearance }}" --theme "${{ inputs.theme }}"',
   'pnpm screenshots:mobile --platform ios --appearance "${{ inputs.appearance }}" --theme "${{ inputs.theme }}" --validate-only',
+  "python3 -B .github/scripts/stage-preview-bundle.test.py",
+  "node --test .github/scripts/check-nightly-release.test.cjs",
   "vp check",
   "vp run knip:check",
   "vp run --filter @t3tools/desktop ensure:electron",
@@ -78,6 +80,9 @@ const READ_ONLY_RUN_SOURCES = new Set([
 // Multiline shell is accepted only by an exact content digest. This keeps the
 // authority review local to this file without normalizing away shell meaning.
 const READ_ONLY_MULTILINE_RUN_DIGESTS = new Set([
+  "27908de417119324ff0990cd7aac3245803524aab0192bd9de66612b64decadf",
+  "ebe771316f705cdb97863284ed8364722d6f5683472fd67a4c81a89547c01c7e",
+  "f63ca73086445e1619f6224333d7215fbc76b138047ce7425d4f02853ba45c9e",
   "61c74164d6e160a58476fd65fd77914e251ad283a867569e84b6296f911a6d37",
   "12f50fd48fe1355d32721674cd800dd7912bf534e580c45b6d0a11bd0d41570d",
   "2a059c00011fff2b1effb058f4f92e9419396d0107fd4cbb2e3ed511fbb20e97",

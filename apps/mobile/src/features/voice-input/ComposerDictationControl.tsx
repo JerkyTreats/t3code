@@ -300,7 +300,7 @@ export function ComposerDictationStatus(props: {
     <View className="relative h-11 min-w-0 flex-1 justify-center">
       {isError ? (
         <View className="min-w-0 flex-row items-center gap-1.5 px-2">
-          <Text className="min-w-0 flex-1 text-sm text-red-400" numberOfLines={2}>
+          <Text className="min-w-0 flex-1 text-sm text-danger-foreground" numberOfLines={2}>
             {props.presentation.statusLabel}
           </Text>
           <Pressable
@@ -389,14 +389,13 @@ export function ComposerDictationPrimaryAction(props: {
     );
   }
 
-  return <ComposerDictationStartAction {...props} primary />;
+  return <ComposerDictationStartAction {...props} />;
 }
 
 export function ComposerDictationStartAction(props: {
   readonly state: VoiceInputState;
   readonly isAvailable: boolean;
   readonly disabled?: boolean;
-  readonly primary?: boolean;
   readonly onStart: () => void;
   readonly onCancel: () => void;
 }) {
@@ -415,7 +414,6 @@ export function ComposerDictationStartAction(props: {
             }
           : props.onStart
       }
-      variant={props.primary ? "primary" : "plain"}
     />
   );
 }

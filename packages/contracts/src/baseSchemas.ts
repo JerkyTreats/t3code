@@ -6,7 +6,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 export const TrimmedString = Schema.String.pipe(
   Schema.decodeTo(
     Schema.String,
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (value) => Effect.succeed(value.trim()),
       encode: (value) => Effect.succeed(value.trim()),
     }),
@@ -77,6 +77,31 @@ export const ForwardCompatibleNullable = <Value extends Schema.Top>(value: Value
       SchemaTransformation.transform<Value["Encoded"] | null, unknown>({
         decode: (raw) => (Option.isSome(decodeValue(raw)) ? (raw as Value["Encoded"]) : null),
         encode: (raw) => raw,
+      }),
+    ),
+  );
+};
+
+/**
+ * A nullable setting whose null is "unset" and never crosses the wire: it
+ * decodes from a missing or unknown key and encodes back to a missing key.
+ * For a field that older clients decode as a required literal, so a null
+ * on the wire would fail their whole settings snapshot.
+ */
+export const OmittedWhenNull = <Value extends Schema.Top>(value: Value) => {
+  const decodeValue = Schema.decodeUnknownOption(value as never);
+  return Schema.optionalKey(Schema.Unknown).pipe(
+    Schema.decodeTo(
+      Schema.NullOr(value),
+      SchemaTransformation.transformOptional<Value["Encoded"] | null, unknown>({
+        decode: (raw) =>
+          Option.some(
+            Option.isSome(raw) && Option.isSome(decodeValue(raw.value))
+              ? (raw.value as Value["Encoded"])
+              : null,
+          ),
+        encode: (raw) =>
+          Option.isSome(raw) && raw.value !== null ? Option.some(raw.value) : Option.none(),
       }),
     ),
   );
@@ -170,3 +195,15 @@ export const ApprovalRequestId = makeEntityId("ApprovalRequestId");
 export type ApprovalRequestId = typeof ApprovalRequestId.Type;
 export const CheckpointRef = makeEntityId("CheckpointRef");
 export type CheckpointRef = typeof CheckpointRef.Type;
+
+// Keep strict IPC boundaries independent of caller decoder options.
+export const strictStruct = <Fields extends Schema.Struct.Fields>(schema: Schema.Struct<Fields>) =>
+  Schema.Unknown.check(
+    Schema.makeFilter(
+      (value) =>
+        (typeof value === "object" &&
+          value !== null &&
+          Reflect.ownKeys(value).every((key) => Object.hasOwn(schema.fields, key))) ||
+        "Object contains an unexpected field.",
+    ),
+  ).pipe(Schema.decodeTo(schema));

@@ -19,7 +19,6 @@ import { createModelSelection } from "@t3tools/shared/model";
 import {
   ApprovalRequestId,
   CursorSettings,
-  EnvironmentId,
   ProviderDriverKind,
   type ProviderRuntimeEvent,
   ThreadId,
@@ -27,7 +26,6 @@ import {
 } from "@t3tools/contracts";
 
 import { ServerConfig } from "../../config.ts";
-import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import type { CursorAdapterShape } from "../Services/CursorAdapter.ts";
@@ -164,64 +162,61 @@ const cursorAdapterTestLayer = it.layer(
 );
 
 cursorAdapterTestLayer("CursorAdapterLive", (it) => {
-  it.effect("passes separate Board and preview servers into the Cursor ACP session", () =>
+  it.effect("rejects rollback without discarding the provider conversation", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
       const settings = yield* ServerSettingsService;
-      const threadId = ThreadId.make("cursor-board-preview-mcp");
-      const tempDir = yield* Effect.promise(() =>
-        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "cursor-board-preview-mcp-")),
-      );
-      const requestLogPath = NodePath.join(tempDir, "requests.ndjson");
-      const argvLogPath = NodePath.join(tempDir, "argv.txt");
-      yield* Effect.promise(() => NodeFSP.writeFile(requestLogPath, "", "utf8"));
-      const wrapperPath = yield* Effect.promise(() =>
-        makeProbeWrapper(requestLogPath, argvLogPath),
-      );
+      const threadId = ThreadId.make("cursor-unsupported-rollback");
+      const wrapperPath = yield* Effect.promise(() => makeMockAgentWrapper());
       yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
-      yield* Effect.sync(() =>
-        McpProviderSession.setMcpProviderSession({
-          environmentId: EnvironmentId.make("environment-cursor-board-preview"),
-          threadId,
-          providerSessionId: "provider-session-cursor-board-preview",
-          providerInstanceId: ProviderInstanceId.make("cursor"),
-          capabilities: new Set(["board", "preview"]),
-          boardEndpoint: "http://127.0.0.1:43123/mcp",
-          previewEndpoint: "http://127.0.0.1:43123/mcp/preview",
-          authorizationHeader: "Bearer synthetic-cursor-token",
+      yield* adapter.startSession({
+        threadId,
+        cwd: process.cwd(),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({ threadId, input: "Remember this turn", attachments: [] });
+      const originalTurns = [...(yield* adapter.readThread(threadId)).turns];
+      assert.isFalse(adapter.capabilities.supportsConversationRollback);
+      const error = yield* adapter.rollbackThread(threadId, 1).pipe(Effect.flip);
+      assert.equal(error._tag, "ProviderAdapterRequestError");
+      assert.deepStrictEqual((yield* adapter.readThread(threadId)).turns, originalTurns);
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("rejects a Cursor transport error returned as a successful assistant answer", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const threadId = ThreadId.make("cursor-transport-error-answer");
+      const wrapperPath = yield* Effect.promise(() =>
+        makeMockAgentWrapper({
+          T3_ACP_PROMPT_RESPONSE_TEXT: "Error: RetriableError: WritableIterable is closed",
         }),
       );
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+      const runtimeEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "session.exited"),
+        Stream.runCollect,
+        Effect.forkChild,
       );
-
       yield* adapter.startSession({
         threadId,
         provider: ProviderDriverKind.make("cursor"),
         cwd: process.cwd(),
         runtimeMode: "full-access",
       });
+      const error = yield* adapter
+        .sendTurn({ threadId, input: "continue", attachments: [] })
+        .pipe(Effect.flip);
+      assert.equal(error._tag, "ProviderAdapterRequestError");
+      if (error._tag === "ProviderAdapterRequestError") {
+        assert.equal(error.detail, "Cursor reported a transport failure.");
+        assert.equal(error.cause, "Error: RetriableError: WritableIterable is closed");
+      }
       yield* adapter.stopSession(threadId);
-
-      const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
-      const sessionNew = requests.find((entry) => entry.method === "session/new");
-      assert.deepStrictEqual(
-        (sessionNew?.params as { readonly mcpServers?: unknown } | undefined)?.mcpServers,
-        [
-          {
-            type: "http",
-            name: "t3-code",
-            url: "http://127.0.0.1:43123/mcp",
-            headers: [{ name: "Authorization", value: "Bearer synthetic-cursor-token" }],
-          },
-          {
-            type: "http",
-            name: "t3-code-preview",
-            url: "http://127.0.0.1:43123/mcp/preview",
-            headers: [{ name: "Authorization", value: "Bearer synthetic-cursor-token" }],
-          },
-        ],
-      );
+      const runtimeEvents = yield* Fiber.join(runtimeEventsFiber);
+      assert.isFalse(runtimeEvents.some((event) => event.type === "turn.completed"));
     }),
   );
 
@@ -307,7 +302,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
     }),
   );
 
-  it.effect("sends selected project skills in Cursor's native slash form", () =>
+  it.effect("sends skills in Cursor's native form and preserves exact slash command input", () =>
     Effect.gen(function* () {
       const adapter = yield* CursorAdapter;
       const settings = yield* ServerSettingsService;
@@ -352,6 +347,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
           ],
         ],
       );
+      yield* adapter.sendTurn({ threadId, input: "/copy-request-id" });
       yield* adapter.stopSession(threadId);
 
       const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
@@ -365,6 +361,7 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
             { type: "text", text: "please /review this" },
             { type: "text", text: buildRuntimeInstructions({ harness: "Cursor" }) },
           ],
+          [{ type: "text", text: "/copy-request-id" }],
         ],
       );
     }),
@@ -543,6 +540,49 @@ cursorAdapterTestLayer("CursorAdapterLive", (it) => {
         .pipe(Effect.result);
 
       assert.equal(result._tag, "Failure");
+    }),
+  );
+
+  it.effect("surfaces cursor-agent cli.json schema stderr instead of a closed-session error", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CursorAdapter;
+      const settings = yield* ServerSettingsService;
+      const workspace = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "cursor-cli-json-")),
+      );
+      const wrapperPath = writeFakeCli({
+        directory: workspace,
+        name: "fake-cursor-agent",
+        source: [
+          "process.stderr.write(`Invalid project config at ${process.cwd()}/.cursor/cli.json: schema validation failed. [`",
+          "  + JSON.stringify({",
+          '      code: "unrecognized_keys",',
+          '      keys: ["approvalMode", "sandbox"],',
+          "      path: [],",
+          "      message: \"Unrecognized key(s) in object: 'approvalMode', 'sandbox'\",",
+          '    }) + "]\\n");',
+          "process.exit(1);",
+        ].join("\n"),
+      });
+      yield* settings.updateSettings({ providers: { cursor: { binaryPath: wrapperPath } } });
+
+      const error = yield* adapter
+        .startSession({
+          threadId: ThreadId.make("cursor-cli-json-schema"),
+          provider: ProviderDriverKind.make("cursor"),
+          cwd: workspace,
+          runtimeMode: "full-access",
+        })
+        .pipe(Effect.flip);
+
+      assert.equal(error._tag, "ProviderAdapterProcessError");
+      assert.include(error.message, "cli.json");
+      assert.include(error.message, "Unrecognized key");
+      assert.notInclude(error.message, "adapter thread is closed");
+      if (error._tag === "ProviderAdapterProcessError") {
+        assert.include(error.detail, "approvalMode");
+        assert.include(error.detail, "sandbox");
+      }
     }),
   );
 

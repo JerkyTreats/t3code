@@ -166,8 +166,8 @@ export function MermaidDiagramBlock(props: {
 
   if (hasCurrentError) {
     return (
-      <div className="chat-markdown-mermaid-error">
-        <div className="chat-markdown-mermaid-error-copy">
+      <div data-mermaid-error="true">
+        <div data-mermaid-error-copy="true">
           <strong>Diagram render failed</strong>
           <span>{renderState.message}</span>
           <button

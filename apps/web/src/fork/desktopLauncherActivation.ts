@@ -1,5 +1,9 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
+import {
+  collectComposerContextReferences,
+  replaceComposerContextReferences,
+} from "@t3tools/shared/composerContextReferences";
 import type { DesktopLauncherActivation, EnvironmentId, ProjectId } from "@t3tools/contracts";
 
 import {
@@ -35,6 +39,15 @@ interface PendingLauncherCompletion {
 }
 
 type LauncherSubmitter = (expectedPrompt: string) => Promise<void | boolean>;
+/** Permit context links appended while attachment preparation was pending, preserving authored bytes. */
+export function launcherPromptMatches(expectedPrompt: string, admittedPrompt: string): boolean {
+  if (admittedPrompt === expectedPrompt) return true;
+  if (!admittedPrompt.startsWith(expectedPrompt)) return false;
+  const suffix = admittedPrompt.slice(expectedPrompt.length);
+  if (collectComposerContextReferences(suffix).length === 0) return false;
+  return replaceComposerContextReferences(suffix, () => "").trim().length === 0;
+}
+
 export type DesktopLauncherSubmitState = "waiting" | "sending" | "refused" | "uncertain" | null;
 export type DesktopLauncherSubmitReadiness = "ready" | "waiting" | "refused";
 interface RegisteredLauncherSubmitter {
@@ -177,7 +190,11 @@ export class DesktopLauncherActivationOwner {
 
   async completeAdmittedSubmit(draftId: DraftId | null, admittedPrompt: string): Promise<void> {
     const pending = this.pendingSubmit;
-    if (pending === null || pending.draftId !== draftId || pending.prompt !== admittedPrompt) {
+    if (
+      pending === null ||
+      pending.draftId !== draftId ||
+      !launcherPromptMatches(pending.prompt, admittedPrompt)
+    ) {
       return;
     }
     this.pendingSubmit = null;
