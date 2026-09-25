@@ -820,65 +820,76 @@ describe("linux desktop launcher", () => {
     assert.isTrue(calls.every(([command]) => command === "hyprctl"));
   });
 
-  it("does not mutate a symlinked launcher runtime root", async () => {
-    const fixture = await makeFixture();
-    const externalRuntimeRoot = await NodeFSP.mkdtemp(
-      NodePath.join(NodeOS.tmpdir(), "t3-launcher-external-runtime-"),
-    );
-    const sentinelFiles = new Map([
-      ["ready.json", "preserve readiness\n"],
-      ["service.env", "preserve environment\n"],
-      ["handoff-request.json", "preserve request\n"],
-      ["handoff-ack.json", "preserve acknowledgement\n"],
-    ]);
-    let lockAcquired = false;
-    try {
-      for (const [fileName, content] of sentinelFiles) {
-        await NodeFSP.writeFile(NodePath.join(externalRuntimeRoot, fileName), content);
-      }
-      await NodeFSP.symlink(externalRuntimeRoot, fixture.runtimeRoot);
-      const paths = {
-        installRoot: fixture.root,
-        manifestPath: fixture.manifestPath,
-        runtimeRoot: fixture.runtimeRoot,
-        readinessPath: NodePath.join(fixture.runtimeRoot, "ready.json"),
-        environmentPath: NodePath.join(fixture.runtimeRoot, "service.env"),
-        lockPath: NodePath.join(fixture.runtimeRoot, "launch.lock"),
-        handoffRequestPath: NodePath.join(fixture.runtimeRoot, "handoff-request.json"),
-        handoffAckPath: NodePath.join(fixture.runtimeRoot, "handoff-ack.json"),
-      };
-
-      await expect(
-        launchDesktop(
-          { paths, environment: {}, timeoutMs: 100 },
-          {
-            acquireLock: async () => {
-              lockAcquired = true;
-              return async () => undefined;
-            },
-          },
-        ),
-      ).rejects.toThrow(/runtime root must be a user-owned physical directory/);
-
-      assert.isFalse(lockAcquired);
-      assert.isTrue((await NodeFSP.lstat(fixture.runtimeRoot)).isSymbolicLink());
-      assert.deepEqual((await NodeFSP.readdir(externalRuntimeRoot)).sort(), [
-        "handoff-ack.json",
-        "handoff-request.json",
-        "ready.json",
-        "service.env",
+  for (const serviceState of ["active", "inactive"]) {
+    it(`does not mutate a symlinked launcher runtime root when the service is ${serviceState}`, async () => {
+      const fixture = await makeFixture();
+      const externalRuntimeRoot = await NodeFSP.mkdtemp(
+        NodePath.join(NodeOS.tmpdir(), "t3-launcher-external-runtime-"),
+      );
+      const sentinelFiles = new Map([
+        ["ready.json", "preserve readiness\n"],
+        ["service.env", "preserve environment\n"],
+        ["handoff-request.json", "preserve request\n"],
+        ["handoff-ack.json", "preserve acknowledgement\n"],
       ]);
-      for (const [fileName, content] of sentinelFiles) {
-        assert.equal(
-          await NodeFSP.readFile(NodePath.join(externalRuntimeRoot, fileName), "utf8"),
-          content,
-        );
+      let lockAcquired = false;
+      try {
+        for (const [fileName, content] of sentinelFiles) {
+          await NodeFSP.writeFile(NodePath.join(externalRuntimeRoot, fileName), content);
+        }
+        await NodeFSP.symlink(externalRuntimeRoot, fixture.runtimeRoot);
+        const paths = {
+          installRoot: fixture.root,
+          manifestPath: fixture.manifestPath,
+          runtimeRoot: fixture.runtimeRoot,
+          readinessPath: NodePath.join(fixture.runtimeRoot, "ready.json"),
+          environmentPath: NodePath.join(fixture.runtimeRoot, "service.env"),
+          lockPath: NodePath.join(fixture.runtimeRoot, "launch.lock"),
+          handoffRequestPath: NodePath.join(fixture.runtimeRoot, "handoff-request.json"),
+          handoffAckPath: NodePath.join(fixture.runtimeRoot, "handoff-ack.json"),
+        };
+
+        await expect(
+          launchDesktop(
+            { paths, environment: {}, timeoutMs: 100 },
+            {
+              runCommand: async (command, args) => {
+                assert.equal(command, "systemctl");
+                assert.deepEqual(args, ["--user", "is-active", "t3code-desktop.service"]);
+                return {
+                  code: serviceState === "active" ? 0 : 3,
+                  stdout: `${serviceState}\n`,
+                  stderr: "",
+                };
+              },
+              acquireLock: async () => {
+                lockAcquired = true;
+                return async () => undefined;
+              },
+            },
+          ),
+        ).rejects.toThrow(/runtime root must be a user-owned physical directory/);
+
+        assert.isFalse(lockAcquired);
+        assert.isTrue((await NodeFSP.lstat(fixture.runtimeRoot)).isSymbolicLink());
+        assert.deepEqual((await NodeFSP.readdir(externalRuntimeRoot)).sort(), [
+          "handoff-ack.json",
+          "handoff-request.json",
+          "ready.json",
+          "service.env",
+        ]);
+        for (const [fileName, content] of sentinelFiles) {
+          assert.equal(
+            await NodeFSP.readFile(NodePath.join(externalRuntimeRoot, fileName), "utf8"),
+            content,
+          );
+        }
+      } finally {
+        await NodeFSP.rm(fixture.root, { recursive: true, force: true });
+        await NodeFSP.rm(externalRuntimeRoot, { recursive: true, force: true });
       }
-    } finally {
-      await NodeFSP.rm(fixture.root, { recursive: true, force: true });
-      await NodeFSP.rm(externalRuntimeRoot, { recursive: true, force: true });
-    }
-  });
+    });
+  }
 
   it("focuses a verified active primary without changing its runtime state", async () => {
     const fixture = await makeFixture();

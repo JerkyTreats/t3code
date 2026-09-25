@@ -778,3 +778,9 @@ Formatting, lint, typecheck, the full test gate, release safety and the producti
 ### Commit effect — current upstream integration
 
 If applied, this commit integrates the current upstream application with retained fork Board, Thread, rendering, access and origin boundaries, preserves supported stored history, and removes fork voice features.
+
+## Intake runtime verification follow-up
+
+Commit Effect: If applied, this commit restores the container verification helper and makes launcher verification independent of the host desktop service state.
+
+The unavailable Skopeo manifest is replaced by the verified official1.22.3 immutable digest consistently across smoke, promotion and exact workflow checks. The launcher runtime-root test exercises active and inactive service states through its command seam. Formatting, lint, typecheck and the full test suite pass after these bounded verification corrections. Installed candidate acceptance continues separately.

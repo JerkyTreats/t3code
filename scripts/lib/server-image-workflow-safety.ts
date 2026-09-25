@@ -97,7 +97,7 @@ const EXPECTED_PROMOTION_SOURCE = `set -euo pipefail
 archive="\${{ steps.candidate.outputs.archive_path }}"
 candidate_digest="\${{ steps.candidate.outputs.digest }}"
 build_tag="\${{ steps.candidate.outputs.build_tag }}"
-skopeo_image="quay.io/skopeo/stable@sha256:8d25aabcf965e267b6a6ad02ff8da5512f77de1490063625093ff564797e88bc"
+skopeo_image="quay.io/skopeo/stable@sha256:c0ee1f4edca5c01cb8d5611124f92f3cc47196ecab68aee5d0f90834e00574d5"
 skopeo=(
   docker run --rm
   --platform linux/amd64
