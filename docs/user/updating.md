@@ -2,6 +2,9 @@
 
 The app you use and the server running your agents can be on different machines.
 When versions differ, update the machine named in the notice.
+Official server, Code, and Thread versions include the source revision after
+the base version, such as `0.0.42-abcdef0123`. Matching suffixes mean those
+artifacts were built from the same source commit.
 
 ## Before you update
 

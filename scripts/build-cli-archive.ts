@@ -37,10 +37,12 @@ import serverPackageJson from "../apps/server/package.json" with { type: "json" 
 import {
   createStagePatchedDependencies,
   createStageWorkspaceConfig,
+  resolveGitCommitHash,
   resolveFffNativeDependencies,
   STAGE_INSTALL_ARGS,
 } from "./build-desktop-artifact.ts";
 import { selectCliRuntimeExternalDependencies } from "./lib/cli-external-packages.ts";
+import { forkReleaseVersion } from "./lib/fork-release-version.mjs";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -466,6 +468,11 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const repoRoot = yield* RepoRoot;
+  forkReleaseVersion(
+    serverPackageJson.version,
+    yield* resolveGitCommitHash(repoRoot),
+    input.version,
+  );
   const serverDir = path.join(repoRoot, "apps/server");
   const executableName = input.platform === "win" ? "t3.exe" : "t3";
   // tsdown suffixes cross-built executables with their target (t3-darwin-x64);
@@ -570,7 +577,7 @@ const command = Command.make(
     platform: Flag.Literals("platform", BuildPlatform.literals),
     arch: Flag.Literals("arch", BuildArch.literals),
     version: Flag.String("version").pipe(
-      Flag.withDescription("Release version for the archive name."),
+      Flag.withDescription("Exact release source version for the archive name."),
     ),
     outputDir: Flag.String("output-dir").pipe(Flag.withDefault("release-cli")),
     resourceMonitorDir: Flag.String("resource-monitor-dir").pipe(

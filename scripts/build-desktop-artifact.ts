@@ -21,6 +21,7 @@ import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
 import gnomeCaptureBundle from "../apps/desktop/gnome-extension/bundle.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
+import { forkReleaseVersion } from "./lib/fork-release-version.mjs";
 
 import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
 import {
@@ -2587,7 +2588,7 @@ export class LinuxDesktopReleaseDescriptorGenerationError extends Schema.TaggedE
 }
 
 export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
-  return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
+  return /^[^-+]+-nightly\.\d{8}\.\d+(?:-[0-9a-f]{10})?$/.test(version) ? "nightly" : "latest";
 }
 
 // Pull request builds (`-pr.<n>.`) and the maintainers' preview train
@@ -2598,7 +2599,7 @@ export function resolveDesktopUpdateChannel(version: string): "latest" | "nightl
 // install can be pointed at one of these releases, and the build itself
 // reports that no update feed is configured instead of polling.
 export function isDesktopPreviewVersion(version: string): boolean {
-  return /-pr\./.test(version) || /-preview\.\d{8}\.\d+$/.test(version);
+  return /-pr\./.test(version) || /^[^-+]+-preview\.\d{8}\.\d+(?:-[0-9a-f]{10})?$/.test(version);
 }
 
 export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
@@ -3444,9 +3445,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       }),
   });
 
-  const appVersion = options.version ?? serverPackageJson.version;
-  const iconAssets = resolveDesktopBuildIconAssets(appVersion);
   const commitHash = yield* resolveGitCommitHash(repoRoot);
+  const appVersion = forkReleaseVersion(serverPackageJson.version, commitHash, options.version);
+  const iconAssets = resolveDesktopBuildIconAssets(appVersion);
   const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;
   const stageRoot = yield* mkdir({
     prefix: `t3code-desktop-${options.platform}-stage-`,

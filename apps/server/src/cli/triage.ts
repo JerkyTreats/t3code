@@ -26,7 +26,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/unstable/cli";
 
-import packageJson from "../../package.json" with { type: "json" };
+import { serverVersion } from "../serverVersion.ts";
 import * as ServerConfig from "../config.ts";
 import { resolveBaseDir } from "../os-jank.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
@@ -182,7 +182,7 @@ export const triageCommand = Command.make("triage", {
       );
       yield* fs.makeDirectory(scratchDir, { recursive: true });
 
-      const version = packageJson.version;
+      const version = serverVersion;
       const contextFilePath = path.join(scratchDir, "context.md");
       yield* fs.writeFileString(
         contextFilePath,

@@ -52,6 +52,23 @@ The desktop validation workflow runs only for the exact origin repository on
 
 The descriptor binds the artifact filename, SHA-256 digest, version, commit,
 architecture, product application identifier, and exact updater repository.
+Official server, Code, and Thread builds use the upstream server package base
+version followed by a hyphen and the first ten lowercase hex characters of the
+exact source commit. For example, base `0.0.42` and commit
+`abcdef0123456789abcdef0123456789abcdef01` produce `0.0.42-abcdef0123`.
+Keep tracked package versions at their upstream bases. Build from the final
+committed source so artifact versions and descriptors refer to that commit.
+The server image passes the validated commit into its build because the Docker
+context omits Git history. An explicit desktop or CLI archive version must
+match the derived value.
+Commit suffixes do not provide chronological SemVer ordering. Use explicit
+artifact deployment for successive builds of the same upstream base; the
+desktop updater can skip a newer commit whose suffix sorts below the installed
+one. Disable automatic desktop updates in managed deployments that use this
+version format.
+If a stable base meets a source commit whose ten-character prefix is all
+digits and begins with zero, the build stops because that exact suffix is not
+a valid SemVer prerelease identifier.
 Validation must fail if another updater repository is present or more than one
 final AppImage exists.
 

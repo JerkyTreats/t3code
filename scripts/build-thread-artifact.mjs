@@ -11,6 +11,7 @@ import {
   THREAD_BUILD_ARCHITECTURE,
   writeLinuxThreadReleaseDescriptor,
 } from "./linux-thread-release-artifact.mjs";
+import { forkReleaseVersion } from "./lib/fork-release-version.mjs";
 
 const runtimeProcess = process;
 
@@ -83,6 +84,17 @@ export async function buildThreadArtifact(options = {}, dependencies = {}) {
 
   // Provenance is admitted before any output deletion or build-side mutation.
   const initialSource = await readCleanThreadSourceState(repositoryRoot, runCommand);
+  const serverPackage = JSON.parse(
+    await fileSystem.readFile(
+      NodePath.join(repositoryRoot, "apps", "server", "package.json"),
+      "utf8",
+    ),
+  );
+  const version = forkReleaseVersion(
+    serverPackage.version,
+    initialSource.revision,
+    options.version,
+  );
   await fileSystem.rm(outputDirectory, { recursive: true, force: true });
   await runCommand("pnpm", ["--filter", "@t3tools/thread", "build"], {
     cwd: repositoryRoot,
@@ -99,6 +111,7 @@ export async function buildThreadArtifact(options = {}, dependencies = {}) {
       `--${THREAD_BUILD_ARCHITECTURE}`,
       "--publish",
       "never",
+      `--config.extraMetadata.version=${version}`,
     ],
     { cwd: repositoryRoot },
   );
@@ -122,13 +135,10 @@ export async function buildThreadArtifact(options = {}, dependencies = {}) {
   }
 
   const artifactPath = NodePath.join(outputDirectory, OFFICIAL_THREAD_ARTIFACT_NAME);
-  const packageDocument = JSON.parse(
-    await fileSystem.readFile(NodePath.join(threadRoot, "package.json"), "utf8"),
-  );
   const { descriptorPath } = await writeLinuxThreadReleaseDescriptor({
     artifactPath,
     launcherPath: launcherOutput,
-    version: packageDocument.version,
+    version,
     commitHash: initialSource.revision,
     architecture: THREAD_BUILD_ARCHITECTURE,
   });

@@ -15,7 +15,7 @@ import { McpProtocol, McpSchema, McpServer, Tool } from "effect/unstable/ai";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { PreviewAutomationError } from "@t3tools/contracts";
 
-import packageJson from "../../package.json" with { type: "json" };
+import { serverVersion } from "../serverVersion.ts";
 import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
@@ -679,28 +679,28 @@ export const DeviceToolkitRegistrationLive = Layer.mergeAll(
 
 const BoardMcpTransportLive = McpServer.layerHttp({
   name: "T3 Code Board",
-  version: packageJson.version,
+  version: serverVersion,
   path: "/mcp",
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(makeMcpAuthMiddlewareLive("board")));
 
 const PreviewMcpTransportLive = McpServer.layerHttp({
   name: "T3 Code Preview",
-  version: packageJson.version,
+  version: serverVersion,
   path: "/mcp/preview",
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(makeMcpAuthMiddlewareLive("preview")));
 
 const DeviceMcpTransportLive = McpServer.layerHttp({
   name: "T3 Code Device",
-  version: packageJson.version,
+  version: serverVersion,
   path: "/mcp/device",
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(makeMcpAuthMiddlewareLive("device")));
 
 const PullRequestsMcpTransportLive = McpServer.layerHttp({
   name: "T3 Code Pull Requests",
-  version: packageJson.version,
+  version: serverVersion,
   path: "/mcp/pull-requests",
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(makeMcpAuthMiddlewareLive("pull-requests")));

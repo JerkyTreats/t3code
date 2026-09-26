@@ -10,6 +10,8 @@ Retain upstream T3 Code product identity while binding official desktop updates 
 ## Required Behavior
 
 - Visible product naming, application identity, and ordinary packaging remain upstream owned.
+- Official server, Code, and Thread builds report the upstream server base version followed by a hyphen and the first ten lowercase hex characters of the exact release source commit. Tracked package versions retain their upstream bases.
+- Build-time version overrides must equal the version derived from that commit. The packaged server reports it without access to Git history, and the server image receives the validated commit through its private build input.
 - Official desktop update metadata names only `JerkyTreats/t3code`.
 - Desktop release links resolve only to `JerkyTreats/t3code`.
 - An official Linux release contains exactly one final AppImage and one versioned descriptor for that artifact.
@@ -32,6 +34,7 @@ Retain upstream T3 Code product identity while binding official desktop updates 
 | F01.D2   | A production Linux descriptor binds one physical AppImage to exact release identity and rejects another updater repository           | `scripts/linux-desktop-release-artifact.ts`; descriptor and artifact smoke tests                                      |
 | F01.D3   | Remote SSH launch uses an explicit development entry or a preinstalled `t3` executable and fails without public-registry acquisition | `packages/ssh/src/officialRuntimeAcquisition.ts`; direct missing-runtime execution and replacement-host process tests |
 | F01.D4   | Desktop and image validation remain read-only until a separately authorized exact-origin publication action                          | `scripts/lib/release-workflow-safety.ts`; full workflow safety scan                                                   |
+| F01.D5   | Server, Code, and Thread artifact versions derive from the same upstream server base and exact release source commit                 | `scripts/lib/fork-release-version.mjs`; helper, build adapter, and packaged runtime tests                             |
 
 ## Durable Owners
 
@@ -39,10 +42,15 @@ Retain upstream T3 Code product identity while binding official desktop updates 
 - `scripts/linux-desktop-release-artifact.ts`
 - `packages/ssh/src/officialRuntimeAcquisition.ts`
 - `scripts/lib/release-workflow-safety.ts`
+- `scripts/lib/fork-release-version.mjs`
 
 ## Upstream Sensitive Adapters
 
 - `scripts/build-desktop-artifact.ts`
+- `scripts/build-thread-artifact.mjs`
+- `apps/server/vite.config.ts`
+- `apps/server/src/serverVersion.ts`
+- `scripts/server-image-smoke.ts`
 - `scripts/desktop-artifact-smoke.ts`
 - `scripts/install-linux-desktop.mjs`
 - `apps/desktop/scripts/smoke-test.mjs`
@@ -86,6 +94,7 @@ Retain upstream T3 Code product identity while binding official desktop updates 
 - Marketing and contributor surface scans reject non-origin repository, release, download, source, issue, and contribution targets.
 - Triage tests require exact-origin playbook, source, and issue targets, explicit clone authorization, and source-cache preservation.
 - Invocation tests prove package-runner cache launches produce quoted direct commands without another public package resolution.
+- Version tests prove exact ten-character commit suffixes, reject mismatched overrides, and bind the server bundle, image label, desktop metadata, Thread metadata, and release descriptors to one version.
 - Workflow scanning rejects upstream targets, publication authority, credentials, unsafe triggers, and unapproved workflow actions.
 - Workflow scanning accepts the exact read-only CI commands and multiline scripts only by reviewed source or content digest.
 

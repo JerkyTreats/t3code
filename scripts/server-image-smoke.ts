@@ -5,6 +5,8 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
+import serverPackageJson from "../apps/server/package.json" with { type: "json" };
+import { forkReleaseVersion } from "./lib/fork-release-version.mjs";
 
 const MAX_CAPTURE_BYTES = 64_000;
 const DEFAULT_READINESS_ATTEMPTS = 120;
@@ -357,6 +359,7 @@ export async function runServerImageSmoke(
       process.env.GITHUB_SHA ??
       (await readGitRevision(dependencies, repositoryRoot, options.signal)),
   );
+  const releaseVersion = forkReleaseVersion(serverPackageJson.version, revision);
   const buildTag = validateBuildTag(options.buildTag ?? `smoke-${suffix}`);
   let resourcesReserved = false;
   let imageLoaded = false;
@@ -408,6 +411,8 @@ export async function runServerImageSmoke(
         SERVER_IMAGE_DOCKERFILE,
         "--tag",
         imageName,
+        "--build-arg",
+        `T3CODE_BUILD_COMMIT=${revision}`,
         "--label",
         `org.opencontainers.image.created=${created}`,
         "--label",
@@ -415,7 +420,7 @@ export async function runServerImageSmoke(
         "--label",
         `org.opencontainers.image.source=${SERVER_IMAGE_SOURCE}`,
         "--label",
-        `org.opencontainers.image.version=${buildTag}`,
+        `org.opencontainers.image.version=${releaseVersion}`,
         "--output",
         `type=oci,dest=${archivePath}`,
         "--attest",
@@ -550,6 +555,7 @@ export async function runServerImageSmoke(
           'test "$CODEX_HOME" = /data/codex',
           'test "$(command -v codex)" = /usr/local/bin/codex',
           `test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}"`,
+          `test "$(node /app/dist/bin.mjs --version)" = "t3 v${releaseVersion}"`,
           "test -f /data/userdata/state.sqlite",
           "touch /data/codex/.t3-server-image-codex-smoke",
           "touch /data/userdata/.t3-server-image-smoke",

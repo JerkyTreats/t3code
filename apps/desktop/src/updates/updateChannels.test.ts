@@ -7,6 +7,13 @@ describe("updateChannels", () => {
     expect(isNightlyDesktopVersion("0.0.41-preview.20260911.7")).toBe(true);
     expect(resolveDefaultDesktopUpdateChannel("0.0.41-preview.20260911.7")).toBe("latest");
     expect(resolveDefaultDesktopUpdateChannel("0.0.41-nightly.20260911.7")).toBe("nightly");
+    expect(resolveDefaultDesktopUpdateChannel("0.0.41-nightly.20260911.7-abcdef0123")).toBe(
+      "nightly",
+    );
+    expect(isNightlyDesktopVersion("0.0.41-preview.20260911.7-abcdef0123")).toBe(true);
+    expect(resolveDefaultDesktopUpdateChannel("0.0.41-preview.20260911.7-abcdef0123")).toBe(
+      "latest",
+    );
   });
 
   it("only matches the first prerelease identifier", () => {

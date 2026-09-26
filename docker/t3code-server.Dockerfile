@@ -2,6 +2,8 @@
 
 FROM node:24-bookworm-slim@sha256:65932751ed4073ed02f5c04e494e4b2572a891b7dbea0568a863dc80341bf848 AS build
 
+ARG T3CODE_BUILD_COMMIT
+
 ENV PNPM_HOME=/pnpm
 ENV PATH="${PNPM_HOME}:${PATH}"
 
@@ -22,7 +24,7 @@ COPY . .
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   pnpm install --frozen-lockfile
 
-RUN pnpm exec vp run --filter t3 build
+RUN test -n "$T3CODE_BUILD_COMMIT" && pnpm exec vp run --filter t3 build
 
 RUN pnpm deploy --filter t3 --prod --legacy /out \
   && cp -R apps/server/dist /out/dist

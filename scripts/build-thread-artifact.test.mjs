@@ -80,8 +80,13 @@ it("builds through stubs and binds the descriptor to unchanged clean source", as
   const launcherSource = NodePath.join(root, "scripts", "thread-launcher.mjs");
   await NodeFSP.mkdir(NodePath.dirname(launcherSource), { recursive: true });
   await NodeFSP.mkdir(threadRoot, { recursive: true });
+  await NodeFSP.mkdir(NodePath.join(root, "apps", "server"), { recursive: true });
   await NodeFSP.writeFile(launcherSource, "#!/usr/bin/env node\n", { mode: 0o755 });
   await NodeFSP.writeFile(NodePath.join(threadRoot, "package.json"), '{"version":"1.2.3"}\n');
+  await NodeFSP.writeFile(
+    NodePath.join(root, "apps", "server", "package.json"),
+    '{"version":"0.0.42"}\n',
+  );
   const commands = [];
   const runCommand = async (command, arguments_) => {
     commands.push([command, arguments_]);
@@ -105,6 +110,7 @@ it("builds through stubs and binds the descriptor to unchanged clean source", as
     });
     const descriptor = JSON.parse(await NodeFSP.readFile(result.descriptorPath, "utf8"));
     expect(descriptor).toMatchObject({
+      version: "0.0.42-1234567890",
       commitHash: COMMIT,
       sourceRepository: "JerkyTreats/t3code",
       artifactFileName: "T3-Thread.AppImage",
@@ -112,6 +118,9 @@ it("builds through stubs and binds the descriptor to unchanged clean source", as
     });
     expect(descriptor).not.toHaveProperty("updaterRepository");
     expect(commands.filter(([command]) => command === "pnpm")).toHaveLength(2);
+    expect(
+      commands.find(([, arguments_]) => arguments_.includes("electron-builder"))?.[1],
+    ).toContain("--config.extraMetadata.version=0.0.42-1234567890");
     expect(commands.filter(([command]) => command === "git")).toHaveLength(6);
   } finally {
     await NodeFSP.rm(root, { recursive: true, force: true });
@@ -125,8 +134,13 @@ it("refuses provenance when the source commit changes during the stubbed build",
   const launcherSource = NodePath.join(root, "scripts", "thread-launcher.mjs");
   await NodeFSP.mkdir(NodePath.dirname(launcherSource), { recursive: true });
   await NodeFSP.mkdir(threadRoot, { recursive: true });
+  await NodeFSP.mkdir(NodePath.join(root, "apps", "server"), { recursive: true });
   await NodeFSP.writeFile(launcherSource, "#!/usr/bin/env node\n", { mode: 0o755 });
   await NodeFSP.writeFile(NodePath.join(threadRoot, "package.json"), '{"version":"1.2.3"}\n');
+  await NodeFSP.writeFile(
+    NodePath.join(root, "apps", "server", "package.json"),
+    '{"version":"0.0.42"}\n',
+  );
   let revisionReads = 0;
   const runCommand = async (command, arguments_) => {
     if (command === "git") {

@@ -164,13 +164,14 @@ verify_remote "\${IMAGE_NAME}:main"
 
 const EXPECTED_DOCKERFILE_INSTRUCTIONS = [
   `FROM ${NODE_BASE} AS build`,
+  "ARG T3CODE_BUILD_COMMIT",
   "ENV PNPM_HOME=/pnpm",
   'ENV PATH="${PNPM_HOME}:${PATH}"',
   "WORKDIR /app",
   "RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates=20250419~deb12u1 g++=4:12.2.0-3 git=1:2.39.5-0+deb12u3 make=4.3-4.1 python3=3.11.2-1+b1 && rm -rf /var/lib/apt/lists/* && corepack enable",
   "COPY . .",
   "RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile",
-  "RUN pnpm exec vp run --filter t3 build",
+  'RUN test -n "$T3CODE_BUILD_COMMIT" && pnpm exec vp run --filter t3 build',
   "RUN pnpm deploy --filter t3 --prod --legacy /out && cp -R apps/server/dist /out/dist",
   `FROM ${NODE_BASE} AS runtime`,
   "ENV NODE_ENV=production",
