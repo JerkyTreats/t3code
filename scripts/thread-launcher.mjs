@@ -165,6 +165,27 @@ export async function prepareThreadRelease(appImagePath, dependencies = {}) {
       throw error;
     });
     if (sandboxStatus?.isFile() && sandboxStatus.nlink === 1) await NodeFSP.chmod(sandbox, 0o755);
+    // electron-builder's default AppImage icons are emitted with mode 0664.
+    // Normalize only those generated icons before the strict inventory check.
+    const iconRoot = NodePath.join(staging, "squashfs-root", "usr/share/icons/hicolor");
+    const iconSizes = await NodeFSP.readdir(iconRoot).catch((error) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    });
+    if (iconSizes.length > 0) await ownedReleaseDirectory(iconRoot);
+    for (const size of iconSizes) {
+      if (!/^\d+x\d+$/.test(size)) continue;
+      const apps = NodePath.join(iconRoot, size, "apps");
+      await ownedReleaseDirectory(NodePath.dirname(apps));
+      await ownedReleaseDirectory(apps);
+      const icon = NodePath.join(apps, "t3-thread.png");
+      const status = await NodeFSP.lstat(icon).catch((error) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (status?.isFile() && status.nlink === 1 && (status.mode & 0o7777) === 0o664)
+        await NodeFSP.chmod(icon, 0o644);
+    }
     const entries = await releaseInventory(NodePath.join(staging, "squashfs-root"));
     await NodeFSP.writeFile(
       NodePath.join(staging, "release.json"),
