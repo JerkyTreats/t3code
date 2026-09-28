@@ -41,6 +41,29 @@ it("prepares once and verifies reuse without extracting or rewriting code", () =
     expect((await NodeFSP.stat(executable)).mtimeMs).toBe(before.mtimeMs);
   }));
 
+it("normalizes generated AppImage icon permissions before sealing the release", () =>
+  fixture(async ({ artifact, extract }) => {
+    const executable = await prepareThreadRelease(artifact, {
+      extract: async (...args) => {
+        await extract(...args);
+        const apps = NodePath.join(
+          args[2].cwd,
+          "squashfs-root/usr/share/icons/hicolor/128x128/apps",
+        );
+        await NodeFSP.mkdir(apps, { recursive: true });
+        const icon = NodePath.join(apps, "t3-thread.png");
+        await NodeFSP.writeFile(icon, "synthetic icon");
+        await NodeFSP.chmod(icon, 0o664);
+      },
+    });
+    const icon = NodePath.join(
+      NodePath.dirname(executable),
+      "usr/share/icons/hicolor/128x128/apps/t3-thread.png",
+    );
+    expect((await NodeFSP.stat(icon)).mode & 0o777).toBe(0o644);
+    expect(await verifyThreadRelease(artifact)).toBe(executable);
+  }));
+
 it("publishes one complete release under concurrent cold preparation", () =>
   fixture(async ({ root, artifact, extract }) => {
     const paths = await Promise.all([
