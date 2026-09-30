@@ -17,7 +17,7 @@ const CLEANUP_TIMEOUT_MS = 5_000;
 export const SERVER_IMAGE_PLATFORM = "linux/amd64";
 export const SERVER_IMAGE_DOCKERFILE = "docker/t3code-server.Dockerfile";
 export const SERVER_IMAGE_SOURCE = "https://github.com/JerkyTreats/t3code";
-export const CODEX_CLI_VERSION = "0.157.0";
+export const CODEX_CLI_VERSION = "0.159.0";
 export const SKOPEO_IMAGE =
   "quay.io/skopeo/stable@sha256:c0ee1f4edca5c01cb8d5611124f92f3cc47196ecab68aee5d0f90834e00574d5";
 export const SBOM_GENERATOR_IMAGE =

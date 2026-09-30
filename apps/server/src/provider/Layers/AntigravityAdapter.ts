@@ -789,7 +789,7 @@ export const makeAntigravityAdapter = Effect.fn("makeAntigravityAdapter")(functi
               const mcpAttachments = mcp
                 ? McpProviderSession.getMcpProviderServerAttachments(mcp)
                 : [];
-              // The attachments dir grant lets the agent read pasted files at
+              // The attachments dir grant lets the agent read path-only uploads at
               // the paths ProviderService injects into the turn text. It is a
               // leaf directory holding only uploads.
               const runtime = yield* options.makeRuntime({

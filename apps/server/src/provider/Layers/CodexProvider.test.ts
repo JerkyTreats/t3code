@@ -1,6 +1,12 @@
 import { assert, it } from "@effect/vitest";
 
-import { applyPreferredCodexDefaultModel, mapCodexModelCapabilities } from "./CodexProvider.ts";
+import { serverVersion } from "../../serverVersion.ts";
+
+import {
+  buildCodexInitializeParams,
+  applyPreferredCodexDefaultModel,
+  mapCodexModelCapabilities,
+} from "./CodexProvider.ts";
 
 it("maps current Codex model capability fields", () => {
   const capabilities = mapCodexModelCapabilities({
@@ -81,6 +87,11 @@ it("uses standard routing when the catalog has no default service tier", () => {
         name: "Fast",
         description: "1.5x speed, increased usage",
       },
+      {
+        id: "ultrafast",
+        name: "Ultrafast",
+        description: "The fastest available responses for latency-sensitive work.",
+      },
     ],
     supportedReasoningEfforts: [],
   });
@@ -96,6 +107,11 @@ it("uses standard routing when the catalog has no default service tier", () => {
           id: "priority",
           label: "Fast",
           description: "1.5x speed, increased usage",
+        },
+        {
+          id: "ultrafast",
+          label: "Ultrafast",
+          description: "Even faster, more expensive",
         },
       ],
       currentValue: "default",
@@ -160,4 +176,12 @@ it("ignores custom models that shadow a preferred slug", () => {
   ]);
 
   assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-5.4");
+});
+
+it("reports the fork build version with the current Codex client identity", () => {
+  assert.deepEqual(buildCodexInitializeParams().clientInfo, {
+    name: "T3 Code",
+    title: "T3 Code",
+    version: serverVersion,
+  });
 });

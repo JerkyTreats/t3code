@@ -9,7 +9,7 @@ Build and verify a standalone non-root server image, then permit publication onl
 
 ## Required Behavior
 
-- The production image contains the current server, bundled web client, and the pinned Codex 0.157.0 provider runtime required by current upstream protocol compatibility.
+- The production image contains the current server, bundled web client, and the pinned Codex 0.159.0 provider runtime required by current upstream protocol compatibility.
 - Frozen dependency installation selects the lockfile's platform packages. The image does not globally force native dependencies to compile against unprovided system libraries.
 - The runtime uses Node.js 24 on Debian Bookworm, runs as a non-root user, and exposes explicit data and workspace volumes.
 - The server starts in headless mode as a non-root user and remains compatible with a read-only root filesystem when private temporary, data, and workspace mounts are supplied.

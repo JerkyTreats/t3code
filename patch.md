@@ -28,6 +28,8 @@ The web update owner also controls inferred reconnect progress. Only desktop-man
 
 The server image uses the frozen dependency graph's platform packages without globally forcing native compilation. Its exact Dockerfile policy remains enforced by the image workflow scanner. Local image verification and promotion share the same verified Skopeo 1.22.3 helper, pinned to its immutable manifest digest.
 
+The current image pins Codex 0.159.0 alongside the accepted upstream protocol bindings and model manifest. This provider runtime lists GPT-6.1 Sol where the account catalog admits it.
+
 ## External Admin
 
 [F17 external Admin authority](fork/F17-settings-admin.md) owns persisted and signed portal authority, the six-route HTTP boundary, explicit enrollment, private revisioned lifecycle, exact connection teardown and pre42 backup. Standard clients retain pairing consumption and ordinary authentication; embedded access inventory and mutation UI are absent. The transport adapters register the shared authority services and recheck admission before WebSocket work. Joined transport, independent-runtime authority and current installed disable/re-enable proof pass within the recorded synthetic fixture limits.
@@ -47,6 +49,8 @@ The provider capability owner admits Board for Codex, Claude, Cursor, Grok and l
 [F03 desktop screenshot capture](fork/F03-desktop-screenshot-capture.md) exposes optional top-level desktop capture independently of upstream preview capture. The composer uses a scoped reservation shared with ordinary attachment admission, then transfers one validated PNG through the current image path.
 
 [F04 context whitespace](fork/F04-composer-context-whitespace.md) preserves authored bytes when terminal, element or preview context is appended, including mixed upstream source review. The focused composition and display owner preserves generated ordering and removes only inserted separation. Ordinary and review-only trimming remains upstream behavior.
+
+Visible and offscreen queued sends share the retained-context composition owner, including preservation around upstream Claude effort prefixes.
 
 [F22 Mermaid rendering](fork/F22-serialized-mermaid-rendering.md) adds one fence adapter to upstream Markdown. A bounded visibility-gated serialized owner delays hidden diagram work while handling theme-sensitive rendering, stable semantic identity, retries and stale results across message, plan, file, attachment and PR surfaces. The retired document renderer and rendered-document review remain absent.
 

@@ -22,11 +22,13 @@ Preserve exact user-authored prompt whitespace when helper-owned rich context bl
 
 - `apps/web/src/fork/promptContextWhitespace.ts` owns exact generated separation.
 - `apps/web/src/fork/chatPromptContext.ts` owns retained-context composition and reverse display projection.
+- Its `formatReferencedChatPrompt` adapter preserves authored bytes around upstream Claude effort prefixes for retained context in visible and queued sends.
 - `apps/web/src/lib/terminalContext.ts`, `elementContext.ts` and `previewAnnotation.ts` keep their focused format and extraction decisions.
 
 ## Upstream Sensitive Adapters
 
 - `apps/web/src/components/ChatView.tsx` supplies the current raw prompt and context collections to composition.
+- `apps/web/src/components/chat/sendQueuedMessage.ts` uses the same composition and effort-prefix owner for queues sent while their thread is closed.
 - `packages/shared/src/composerContextLegacySend.ts` and `composerContextLegacy.ts` preserve the authored prefix around generated legacy context for older servers. The reader removes at most the two generated separator newlines; historical text without separator provenance cannot recover already discarded bytes.
 - `apps/web/src/components/chat/MessagesTimeline.tsx` renders the projected authored body and chips alongside upstream source-review segments.
 

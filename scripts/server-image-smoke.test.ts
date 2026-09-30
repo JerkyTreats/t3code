@@ -112,7 +112,7 @@ it("builds one attested OCI artifact, smokes that artifact, and cleans runtime r
   assert.include(build?.args ?? [], `type=sbom,generator=${SBOM_GENERATOR_IMAGE}`);
   assert.include(build?.args ?? [], "type=provenance,mode=max");
   assert.include(build?.args ?? [], `T3CODE_BUILD_COMMIT=${REVISION}`);
-  assert.include(build?.args ?? [], "org.opencontainers.image.version=0.0.42-aaaaaaaaaa");
+  assert.include(build?.args ?? [], "org.opencontainers.image.version=0.0.44-aaaaaaaaaa");
   assert.notInclude(build?.args ?? [], "--push");
   assert.strictEqual(build?.inherit, true);
 
@@ -141,7 +141,7 @@ it("builds one attested OCI artifact, smokes that artifact, and cleans runtime r
   assert.include(validationSource, 'test "$(id -u)" -ne 0');
   assert.include(validationSource, 'test "$CODEX_HOME" = /data/codex');
   assert.include(validationSource, `codex-cli ${CODEX_CLI_VERSION}`);
-  assert.include(validationSource, "t3 v0.0.42-aaaaaaaaaa");
+  assert.include(validationSource, "t3 v0.0.44-aaaaaaaaaa");
   assert.include(validationSource, "test -f /data/userdata/state.sqlite");
   assert.include(validationSource, "touch /data/codex/.t3-server-image-codex-smoke");
 

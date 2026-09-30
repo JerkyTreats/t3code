@@ -46,6 +46,35 @@ describe("KeybindingsSettings.logic", () => {
       );
     },
   );
+  it.each(["default", "reversed", "rotated"] as const)(
+    "orders Usage bindings and command choices like the page with %s inputs",
+    (order) => {
+      const expected = [
+        "usage.cost",
+        "usage.open",
+        "usage.tokens",
+        "usage.limits",
+        "usage.period.day",
+        "usage.period.week",
+        "usage.period.month",
+        "usage.period.quarter",
+      ];
+      const bindings =
+        order === "reversed"
+          ? DEFAULT_RESOLVED_KEYBINDINGS.toReversed()
+          : order === "rotated"
+            ? [
+                ...DEFAULT_RESOLVED_KEYBINDINGS.slice(7),
+                ...DEFAULT_RESOLVED_KEYBINDINGS.slice(0, 7),
+              ]
+            : DEFAULT_RESOLVED_KEYBINDINGS;
+      expect(buildKeybindingRows(bindings, "usage").map((row) => row.command)).toEqual(expected);
+      expect(
+        buildKeybindingCommandOptions(bindings).filter((command) => command.startsWith("usage.")),
+      ).toEqual(expected);
+    },
+  );
+
   it("builds searchable rows with readable key and when values", () => {
     const rows = buildKeybindingRows(
       [

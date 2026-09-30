@@ -183,7 +183,7 @@ combines pending and active Plan admissions and serializes capability updates wi
 provider sends. Its per-thread lifecycle gate registers local send fibers before asynchronous
 admission work, then cancels and awaits those sends before credential replacement or revocation.
 Cancellation completes local finalizers before the credential mutation, including pending Codex
-image reads and Grok preparation-lock waits. Ordinary sends remain concurrent. Invalid lifecycle
+managed authentication resolution and Grok preparation-lock waits. Ordinary sends remain concurrent. Invalid lifecycle
 requests do not cancel sends before validation; a failed stop retains ambiguous Plan denial.
 `McpSessionRegistry.ts` remains the sole credential capability mutator.
 
@@ -193,7 +193,7 @@ events lack generation identity, so they collapse live Plan state into the same 
 rather than allowing a late old exit to restore a new session's writes. Stop, restart, and recovery
 clear that state only with credential revocation or replacement. Late send responses retain their
 old admission generation and cannot alter replacement authority. Codex also captures its concrete
-session before image reads and rejects that send if the session was replaced during the read. Early terminal observations are
+session before managed authentication resolution and rejects that send if the session was replaced during asynchronous preparation. Native image upload consumes paths without embedding image bytes. Early terminal observations are
 bounded; overflow retains denial until credential reset. Reads remain available during denial.
 Default instructions describe the normal mode profile; overlapping Plan work can temporarily deny
 writes even for a Default root or liaison. The other adapters do not select global
@@ -257,7 +257,7 @@ Collective participation policy, or human editing behavior.
   response ordering, completion before response, same-token read retention and write denial,
   exact abort restoration, failed-send ambiguity, late exits, stop, restart, and recovery.
   Existing ordinary overlapping-send analytics regressions remain intact. Real Codex host tests
-  delay attachment reads across direct adapter replacement and ProviderService restart or stop,
+  delay managed authentication resolution across direct adapter replacement,
   checking unchanged read authority and denied writes with actual credentials. A real Grok host
   test holds image preparation, queues a Plan send on its lock, and verifies both local sends are
   cancelled before replacement and neither old prompt reaches the replacement session.
