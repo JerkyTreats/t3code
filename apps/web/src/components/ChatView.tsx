@@ -1,6 +1,7 @@
 import { useDesktopLauncherSubmitAdmission } from "./desktop/DesktopLauncherActivationCoordinator";
 import { desktopLauncherActivationOwner } from "../fork/desktopLauncherActivation";
 import { ThreadClientStatus } from "./thread/ThreadClientStatus";
+import { formatThreadWindowTitle } from "../fork/threadWindowTitle";
 import {
   formatReferencedChatPrompt,
   normalizeReferencedChatPrompt,
@@ -3298,6 +3299,26 @@ export default function ChatView(props: ChatViewProps) {
     isRevertingCheckpoint ||
     isCompacting ||
     awaitingBootstrapTurn;
+  useEffect(() => {
+    if (!compactThreadClient) return;
+    document.title = formatThreadWindowTitle({
+      title: activeThread?.title ?? "",
+      working: isWorking || activeThreadShell?.backgroundLiveness === "working",
+      latestTurnState: activeThread?.latestTurn?.state ?? null,
+    });
+  }, [
+    compactThreadClient,
+    activeThread?.title,
+    activeThread?.latestTurn?.state,
+    activeThreadShell?.backgroundLiveness,
+    isWorking,
+  ]);
+  useEffect(() => {
+    if (!compactThreadClient) return;
+    return () => {
+      document.title = "T3 Thread";
+    };
+  }, [compactThreadClient]);
   const isPreparingWorktree = isLocallyPreparingWorktree || awaitingBootstrapTurn;
   const activeWorkStartedAt = deriveActiveWorkStartedAt(
     activeLatestTurn,

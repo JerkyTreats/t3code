@@ -163,9 +163,13 @@ async function run(): Promise<void> {
         return false;
       }
     });
-    window.on("page-title-updated", (event) => {
+    window.on("page-title-updated", (event, title) => {
       event.preventDefault();
-      window?.setTitle("T3 Thread");
+      window?.setTitle(
+        typeof title === "string" && /^T3 Thread :: (working|done|idle) :: .{1,160}$/.test(title)
+          ? title
+          : "T3 Thread",
+      );
     });
     window.on("closed", () => {
       startupTrace.mark("electron", "electron.window-closed");

@@ -371,6 +371,7 @@ function DocumentTitleSync() {
   });
 
   useEffect(() => {
+    if (resolveThreadClientHostPolicy().compact) return;
     document.title = title;
   }, [title]);
 
