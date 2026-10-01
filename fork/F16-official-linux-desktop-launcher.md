@@ -17,6 +17,7 @@ Keep one canonical production server and one production T3 Code Electron identit
 - Run the verified AppImage in extract-and-run mode so Omarchy app-scope migration cannot detach Electron from a live FUSE mount owner during handoff.
 - After an authenticated handoff primary exits, verify and stop only its exact PID-derived Omarchy app scope so no bundled backend survives into the replacement generation.
 - Retain an isolated production T3 Code profile. Give every T3 Thread process a unique writable Chromium profile and connection; its protected enrollment is shared only under the F27 exact-origin contract.
+- Keep the profile config home private to managed Code. External links and editor deep links launch with the session config home, the parent of the profile directory, so they reach the session default handlers and their own profiles.
 - Set the managed production or staging Linux desktop name before Electron is ready so the native Wayland app ID matches the installed desktop entry and the launcher's exact class selection.
 - Leave the installer-owned protocol URL handler and scheme default untouched during managed Code startup.
 - Require an explicit credential-free HTTPS production origin at default installation. Require a separate matching staging origin only when staging development support is explicitly selected.
@@ -46,6 +47,7 @@ Keep one canonical production server and one production T3 Code Electron identit
 - `scripts/linux-desktop-launcher.mjs`
 - `apps/desktop/src/app/DesktopLauncherRuntime.ts`
 - `apps/desktop/src/fork/StandaloneDesktopPolicy.ts`
+- `apps/desktop/src/electron/ElectronShell.ts`
 - `apps/web/src/fork/desktopLauncherActivation.ts`
 
 The protected intake decision is `F16.INTAKE.OUTCOME`. Standalone selection belongs to `StandaloneDesktopPolicy.ts` and fails before local backend allocation when any identity field is incomplete. Launcher admission and readiness belong to `DesktopLauncherRuntime.ts`; hosted activation belongs to `desktopLauncherActivation.ts`. Current DesktopApp, Environment, Clerk, Window, preload, IPC, root route and ChatView are mechanical adapters. Normal upstream desktop startup remains available outside the explicit standalone identity.
