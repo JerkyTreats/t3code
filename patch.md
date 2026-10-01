@@ -62,7 +62,7 @@ These source adapters passed S5 source and visual acceptance. Their current host
 
 The server enforces F27 ticket consumption through the focused `WebSocketTicketAdmission.ts` owner inside its existing session store. A signed random nonce permits one admission attempt after current expiry and parent-authority checks. Pending tickets have a finite capacity, expire lazily and fail closed across restart or another runtime. Reusable enrollment remains unchanged; a new connection requests a fresh ticket.
 
-[F16 official Linux launcher](fork/F16-official-linux-desktop-launcher.md) owns isolated standalone Code identity, verified launch admission, readiness withdrawal and transactional production topology. Selection occurs before bundled backend allocation. Trusted Code launcher submission consumes ordinary send admission; completion retry does not resend. Server lifecycle remains independent.
+[F16 official Linux launcher](fork/F16-official-linux-desktop-launcher.md) owns isolated standalone Code identity, verified launch admission, readiness withdrawal and transactional production topology. Managed external links use the session config home to reach its default browser and editor handlers. Selection occurs before bundled backend allocation. Trusted Code launcher submission consumes ordinary send admission; completion retry does not resend. Server lifecycle remains independent.
 
 Desktop bootstrap acquires Clerk and resolves user data synchronously before Electron readiness. Launcher runtime I/O follows that acquisition; instance handlers obtain authenticated handoff support during configuration.
 
