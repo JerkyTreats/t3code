@@ -201,6 +201,17 @@ async function launch(input: {
 }
 
 describe("T3 Thread main composition", () => {
+  it("publishes hosted thread titles while rejecting unrelated page titles", async () => {
+    const process = await launch({ root: fixtureRoot() });
+    const window = process.windows[0]!;
+    const event = { preventDefault: vi.fn() };
+    window.emit("page-title-updated", event, "T3 Thread :: working :: Repair footer");
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(window.setTitle).toHaveBeenLastCalledWith("T3 Thread :: working :: Repair footer");
+    window.emit("page-title-updated", event, "Unrelated document");
+    expect(window.setTitle).toHaveBeenLastCalledWith("T3 Thread");
+  });
+
   it.each([
     [undefined, "t3-thread.desktop"],
     ["production", "t3-thread.desktop"],

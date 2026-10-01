@@ -80,6 +80,8 @@ Thread enrollment binds the request origin and rejects redirects while accepting
 
 Thread uses a headerless shared chat with composer-adjacent working and connection feedback. Its fork presentation owner keeps the selected model identifier readable at narrow widths and uses an accessible icon-only permission trigger. Ordinary chat presentation and all existing model, draft and execution authorities remain unchanged.
 
+Thread publishes its current conversation title and working, done or idle state through a bounded native window title. The hosted title formatter owns that status mapping; the Electron shell admits only its Thread title format.
+
 ## Verification
 
 Source and runtime build-input changes require `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test`. Native mobile changes also require `pnpm lint:mobile`. Use synthetic state and keep client installation, production changes and publication within their explicit authorization.
