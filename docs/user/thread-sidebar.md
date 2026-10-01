@@ -3,6 +3,11 @@
 Use a new thread for a separate task. Choose **New worktree** when its code changes
 need a separate branch and working directory.
 
+On web and desktop, choose **Projects** or **T3 Threads** above the sidebar search.
+T3 Threads shows conversations created in the T3 Thread app after the view was
+introduced. Earlier conversations remain under Projects because their creating
+app was not recorded. Project filters and search apply to the selected view.
+
 ## Start a thread
 
 On web and desktop, a new thread keeps the current project and carries your model

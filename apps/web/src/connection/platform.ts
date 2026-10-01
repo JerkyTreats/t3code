@@ -129,6 +129,7 @@ function clientMetadata() {
       maxTouchPoints: navigator.maxTouchPoints,
     },
     desktopBridge: window.desktopBridge,
+    threadBridge: window.t3ThreadBridge !== undefined,
   });
 }
 

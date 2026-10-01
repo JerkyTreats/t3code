@@ -374,6 +374,7 @@ layer("fork migration continuation", (it) => {
           [64, "ProjectionThreadTitleState"],
           [65, "PullRequestFilesViewed"],
           [66, "ProjectionThreadsAutoSettleDisabledAt"],
+          [67, "ProjectionThreadCreationSurface"],
         ],
       );
 

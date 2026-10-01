@@ -74,7 +74,17 @@ export function clientPresentationMetadata(input: {
   readonly hosted: boolean;
   readonly identity: BrowserIdentity;
   readonly desktopBridge: Pick<DesktopBridge, "getClientPlatform"> | undefined;
+  readonly threadBridge?: boolean;
 }): AuthClientPresentationMetadata {
+  if (input.threadBridge) {
+    return {
+      label: "T3 Thread",
+      deviceType: "desktop",
+      os: browserClientOs(input.identity),
+      surface: "thread",
+      ...(input.appVersion === "0.0.0" ? {} : { appVersion: input.appVersion }),
+    };
+  }
   if (input.desktopBridge !== undefined) {
     return {
       label: "T3 Code Desktop",

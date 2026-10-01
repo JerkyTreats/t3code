@@ -87,4 +87,16 @@ describe("client telemetry metadata", () => {
       appVersion: "1.2.3",
     });
   });
+
+  it("identifies the protected T3 Thread bridge as a separate client surface", () => {
+    expect(
+      clientPresentationMetadata({
+        appVersion: "1.2.3",
+        hosted: true,
+        identity: desktopChrome,
+        desktopBridge: undefined,
+        threadBridge: true,
+      }),
+    ).toMatchObject({ label: "T3 Thread", surface: "thread", deviceType: "desktop" });
+  });
 });

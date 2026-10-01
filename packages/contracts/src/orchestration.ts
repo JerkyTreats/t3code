@@ -915,6 +915,7 @@ export type OrchestrationProjectShell = typeof OrchestrationProjectShell.Type;
 export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
+  creationSurface: Schema.optional(ClientSurface),
   title: TrimmedNonEmptyString,
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,

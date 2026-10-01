@@ -401,7 +401,7 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
         commandId: CommandId.make("cmd-2"),
         causationEventId: null,
         correlationId: CommandId.make("cmd-2"),
-        metadata: {},
+        metadata: { origin: { surface: "thread" } },
         payload: {
           threadId: ThreadId.make("thread-1"),
           projectId: ProjectId.make("project-1"),
@@ -441,6 +441,13 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       });
 
       yield* projectionPipeline.bootstrap;
+
+      const creationSurface = yield* sql<{ readonly creationSurface: string | null }>`
+        SELECT creation_surface AS "creationSurface"
+        FROM projection_threads
+        WHERE thread_id = 'thread-1'
+      `;
+      assert.deepEqual(creationSurface, [{ creationSurface: "thread" }]);
 
       const projectRows = yield* sql<{
         readonly projectId: string;

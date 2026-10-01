@@ -118,6 +118,7 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
+import { isThreadInSidebarView, sidebarViewShowsDrafts } from "../fork/threadSidebarView";
 import {
   getThreadKeysToDeselectAfterDelete,
   useThreadSelectionStore,
@@ -2176,6 +2177,8 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 export default function Sidebar() {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
+  const sidebarView = useUiStateStore((store) => store.sidebarView);
+  const setSidebarView = useUiStateStore((store) => store.setSidebarView);
   const threads = useThreadShells();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
@@ -2483,6 +2486,7 @@ export default function Sidebar() {
   // an open never-left draft, which only softens the empty state.
   const routeDraftIdForRows = routeTarget?.kind === "draft" ? routeTarget.draftId : null;
   const visibleDraftSessionCount = useComposerDraftStore((store) => {
+    if (!sidebarViewShowsDrafts(sidebarView)) return 0;
     let count = 0;
     for (const [draftKey, session] of Object.entries(store.draftThreadsByThreadKey)) {
       if (session.promotedTo != null) {
@@ -2574,6 +2578,7 @@ export default function Sidebar() {
     const visible = threads.filter(
       (thread) =>
         thread.archivedAt === null &&
+        isThreadInSidebarView(thread, sidebarView) &&
         (scopedProjectKeys === null ||
           scopedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
     );
@@ -2661,7 +2666,15 @@ export default function Sidebar() {
       settledThreads: sortSettledThreads(settled),
       snoozeNow: preciseNow,
     };
-  }, [nowMinute, optimisticDrop, scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
+  }, [
+    nowMinute,
+    optimisticDrop,
+    scopedProjectKeys,
+    serverConfigs,
+    sidebarView,
+    snoozeWakeTick,
+    threads,
+  ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
@@ -4447,6 +4460,24 @@ export default function Sidebar() {
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="z-[1]">
+            <div role="group" aria-label="Sidebar view" className="mb-2 flex gap-1 px-1">
+              {(["projects", "threads"] as const).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  aria-pressed={sidebarView === view}
+                  onClick={() => setSidebarView(view)}
+                  className={cn(
+                    "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                    sidebarView === view
+                      ? "bg-sidebar-row-hover text-sidebar-foreground"
+                      : "text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                  )}
+                >
+                  {view === "projects" ? "Projects" : "T3 Threads"}
+                </button>
+              ))}
+            </div>
             <SidebarThreadHeader
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}
@@ -4836,14 +4867,16 @@ export default function Sidebar() {
                       };
                       const from = dragState?.activeSection ?? null;
                       const items: ReactNode[] = [
-                        <SidebarDraftBlock
-                          key="draft-sessions"
-                          projectByKey={projectByKey}
-                          projectDisplayNameByKey={projectDisplayNameByKey}
-                          scopedProjectKeys={scopedProjectKeys}
-                          routeDraftId={routeDraftIdForRows}
-                          onNavigateToDraft={navigateToDraft}
-                        />,
+                        sidebarViewShowsDrafts(sidebarView) ? (
+                          <SidebarDraftBlock
+                            key="draft-sessions"
+                            projectByKey={projectByKey}
+                            projectDisplayNameByKey={projectDisplayNameByKey}
+                            scopedProjectKeys={scopedProjectKeys}
+                            routeDraftId={routeDraftIdForRows}
+                            onNavigateToDraft={navigateToDraft}
+                          />
+                        ) : null,
                       ];
                       for (const item of sidebarListItems) {
                         if (item.kind === "thread") {
@@ -4976,7 +5009,13 @@ export default function Sidebar() {
             settledThreads.length ===
             0 ? (
             <div className="flex flex-col items-center gap-2 px-2 py-6 text-center text-xs text-muted-foreground/60">
-              {projects.length === 0 ? (
+              {sidebarView === "threads" ? (
+                scopedProjectGroup ? (
+                  `No T3 Threads in ${scopedProjectGroup.displayName} yet`
+                ) : (
+                  "No T3 Threads yet"
+                )
+              ) : projects.length === 0 ? (
                 <>
                   <span>No projects yet</span>
                   <button

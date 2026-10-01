@@ -157,7 +157,7 @@ export type RpcClientId = typeof RpcClientId.Type;
  * desktop are both "desktop"), this names the actual product surface.
  * Optional everywhere it appears: old clients never send it.
  */
-export const ClientSurface = Schema.Literals(["web", "desktop", "mobile", "cli"]);
+export const ClientSurface = Schema.Literals(["web", "desktop", "mobile", "cli", "thread"]);
 export type ClientSurface = typeof ClientSurface.Type;
 
 export const ClientOs = Schema.Literals([
