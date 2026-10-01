@@ -567,6 +567,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
+          creation_surface AS "creationSurface",
           title,
           title_state_json AS "titleState",
           model_selection_json AS "modelSelection",
@@ -615,6 +616,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
+          creation_surface AS "creationSurface",
           title,
           title_state_json AS "titleState",
           model_selection_json AS "modelSelection",
@@ -690,6 +692,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
+          creation_surface AS "creationSurface",
           title,
           title_state_json AS "titleState",
           model_selection_json AS "modelSelection",
@@ -1294,6 +1297,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         SELECT
           thread_id AS "threadId",
           project_id AS "projectId",
+          creation_surface AS "creationSurface",
           title,
           title_state_json AS "titleState",
           model_selection_json AS "modelSelection",
@@ -2774,6 +2778,7 @@ pending_approval_requests AS (
                     ? Result.succeed({
                         id: row.threadId,
                         projectId: row.projectId,
+                        ...(row.creationSurface ? { creationSurface: row.creationSurface } : {}),
                         title: row.title,
                         modelSelection: row.modelSelection,
                         runtimeMode: row.runtimeMode,
@@ -2960,6 +2965,7 @@ pending_approval_requests AS (
                 threads: threadRows.map((row): OrchestrationThreadShell => ({
                   id: row.threadId,
                   projectId: row.projectId,
+                  ...(row.creationSurface ? { creationSurface: row.creationSurface } : {}),
                   title: row.title,
                   modelSelection: row.modelSelection,
                   runtimeMode: row.runtimeMode,
@@ -3306,6 +3312,9 @@ pending_approval_requests AS (
       return Option.some({
         id: threadRow.value.threadId,
         projectId: threadRow.value.projectId,
+        ...(threadRow.value.creationSurface
+          ? { creationSurface: threadRow.value.creationSurface }
+          : {}),
         title: threadRow.value.title,
         modelSelection: threadRow.value.modelSelection,
         runtimeMode: threadRow.value.runtimeMode,

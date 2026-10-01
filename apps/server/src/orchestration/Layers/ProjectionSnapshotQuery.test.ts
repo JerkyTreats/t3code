@@ -646,6 +646,14 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         assert.deepEqual(threadShell.value, shellSnapshot.threads[0]);
       }
 
+      yield* sql`UPDATE projection_threads SET creation_surface = 'thread' WHERE thread_id = 'thread-1'`;
+      const threadClientShell = yield* snapshotQuery.getThreadShellById(ThreadId.make("thread-1"));
+      assert.equal(threadClientShell._tag, "Some");
+      if (threadClientShell._tag === "Some") {
+        assert.equal(threadClientShell.value.creationSurface, "thread");
+      }
+      assert.equal((yield* snapshotQuery.getShellSnapshot()).threads[0]?.creationSurface, "thread");
+
       const commandReadModel = yield* snapshotQuery.getCommandReadModel();
       assert.deepEqual(commandReadModel.threads[0]?.pullRequests, expectedPullRequests);
       assert.deepEqual(

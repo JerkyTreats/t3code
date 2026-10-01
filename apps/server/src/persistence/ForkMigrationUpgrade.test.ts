@@ -475,7 +475,7 @@ for (const state of forkMigrationStates) {
         }),
       );
       assert.deepStrictEqual(latest, [
-        { migrationId: 66, name: "ProjectionThreadsAutoSettleDisabledAt" },
+        { migrationId: 67, name: "ProjectionThreadCreationSurface" },
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
@@ -563,6 +563,7 @@ it.effect("preserves an accepted 51 database through initialization and reopen",
     assert.deepStrictEqual(first.thread, {
       threadId,
       projectId,
+      creationSurface: null,
       title: "Synthetic upgrade thread",
       titleState: null,
       modelSelection,

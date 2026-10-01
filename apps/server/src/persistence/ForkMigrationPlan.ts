@@ -64,6 +64,7 @@ import UpstreamMigration0051 from "./Migrations/051_ProjectionThreadMessageConte
 import UpstreamMigration0052 from "./Migrations/052_ProjectionThreadTitleState.ts";
 import UpstreamMigration0053 from "./Migrations/053_PullRequestFilesViewed.ts";
 import UpstreamMigration0054 from "./Migrations/054_ProjectionThreadsAutoSettleDisabledAt.ts";
+import Migration0067 from "./Migrations/067_ProjectionThreadCreationSurface.ts";
 
 export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -129,6 +130,7 @@ export const migrationEntries = [
   [64, "ProjectionThreadTitleState", UpstreamMigration0052],
   [65, "PullRequestFilesViewed", UpstreamMigration0053],
   [66, "ProjectionThreadsAutoSettleDisabledAt", UpstreamMigration0054],
+  [67, "ProjectionThreadCreationSurface", Migration0067],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
