@@ -20,6 +20,8 @@ Prefer a container? See [Dev container](../internals/devcontainer.md) for VS Cod
 Use `vp run dev` for server and web, or `vp run dev:desktop` for the Electron client.
 `dev:server` and `dev:web` start those processes separately.
 See the [mobile README](../../apps/mobile/README.md) for native builds and Metro.
+For a self-contained Android APK and its canonical local artifact location,
+see [local Android builds](./android-builds.md).
 
 Flags go directly after the task name, for example `vp run dev --home-dir /tmp/t3code-dev`.
 Add `--browser` to open a browser automatically.
