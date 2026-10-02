@@ -131,6 +131,12 @@ Runtime-discovered entrypoints and dependency exceptions belong in [knip.jsonc](
 
 ## Desktop artifacts
 
+`pnpm build` compiles the web, server, and Electron code. It does not package or
+install the desktop application used by a `.desktop` launcher. A build and
+deployment that includes desktop clients must also package an artifact, verify
+it, install it through the managed launcher, and check the installed client's
+readiness. Keep server and desktop deployment results separate.
+
 Local artifact builds are unsigned by default and write to `release/`:
 
 ```sh
@@ -142,6 +148,44 @@ vp run dist:desktop:win
 DMGs default to the host architecture. Use `--arch` to choose another target and `--keep-stage`
 to retain packaging files for inspection. Run `vp run dist:desktop:artifact --help` for other
 options.
+
+### Deploy the Linux desktop client
+
+Build in a separate detached worktree at the same clean, committed revision
+selected for the server. Packaging rebuilds web and server outputs, so never
+run it inside an active server deployment. Package
+the AppImage and verify its adjacent descriptor before installing those exact
+bytes:
+
+```sh
+pnpm dist:desktop:linux
+pnpm test:desktop-artifact-smoke -- \
+  release/T3-Code.AppImage \
+  release/T3-Code.AppImage.release.json
+node scripts/install-linux-desktop.mjs \
+  --artifact release/T3-Code.AppImage \
+  --descriptor release/T3-Code.AppImage.release.json \
+  --production-server-url https://server.example.test \
+  --staging-server-url https://staging.example.test
+```
+
+Use the actual generated filenames. Supply the staging URL when maintaining
+both managed desktop channels. The installer updates their `.desktop` entries,
+URL handler, user services, and content-addressed artifact pointer. Retain the
+prior artifact for rollback. Existing Electron processes keep running their
+previous package until they exit.
+
+After installation, stop each affected desktop user service and launch each
+channel through its installed `.desktop` entry or managed launcher. Require
+readiness to match the new commit and artifact hash, and verify process ownership
+against the channel's user service. Check that each client selects its intended
+server and retains its separate profile. A healthy server does not prove that
+the installed Electron package was updated.
+
+An environment with a dedicated staging artifact manager should use that
+manager's rebuild and verification commands instead. Inspect the installed
+effective service, including systemd drop-ins, and launcher first so verification checks the artifact actually used
+by the `.desktop` entry.
 
 ### Linux AppImage prerequisites
 
