@@ -27,7 +27,7 @@ import {
   preflightPublication,
 } from "../fork/originRepositoryPublicationPolicy.ts";
 import { ORIGIN_REMOTE_NAME } from "../fork/originOnlySourceControlPolicy.ts";
-import { ServerConfig } from "../config.ts";
+import * as ServerConfig from "../config.ts";
 import { expandHomePathWith } from "../pathExpansion.ts";
 import {
   parseGitCloneProgressLine,
@@ -163,7 +163,7 @@ function selectRemoteUrl(
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
-  const config = yield* ServerConfig;
+  const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const path = yield* Path.Path;

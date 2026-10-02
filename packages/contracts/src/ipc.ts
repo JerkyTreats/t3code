@@ -14,9 +14,8 @@ import {
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
 } from "./previewAutomation.ts";
-import { SnapShotSource } from "./orchestration.ts";
+import { SnapShotSource, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "./chatAttachment.ts";
 import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "./orchestration.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 import type {
   BrowserImportResult,

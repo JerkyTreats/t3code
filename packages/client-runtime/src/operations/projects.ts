@@ -2,12 +2,13 @@ import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 import type {
   CommandId,
   EnvironmentId,
-  OrchestrationCommand,
+  ProjectMutation,
   ProjectId,
   SourceControlDiscoveryResult,
   SourceControlProviderKind,
   SourceControlRepositoryInfo,
 } from "@t3tools/contracts";
+import { newProjectFolderName } from "@t3tools/shared/path";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";
@@ -283,6 +284,41 @@ export function getCloneDestinationPath(
 }
 
 /**
+ * Where `projects.createNew` will put a project named `name`. The server adds
+ * `-2`, `-3`, ... when that folder is taken, so this is a preview.
+ */
+export function getNewProjectPathPreview(newProjectsRoot: string, name: string): string {
+  return getCloneDestinationPath(newProjectsRoot, newProjectFolderName(name));
+}
+
+/**
+ * The discovered GitHub account and endpoint for a new project, or null when
+ * GitHub is not ready on that environment. A ready GitHub with an unknown
+ * account still publishes; `gh` picks the signed-in user.
+ */
+export function getNewProjectGitHubTarget(
+  discovery: SourceControlDiscoveryResult | null,
+): { readonly account: string | null; readonly providerBaseUrl: string } | null {
+  if (!buildAddProjectRemoteSourceReadiness(discovery).github.ready) return null;
+  const github = discovery?.sourceControlProviders.find((provider) => provider.kind === "github");
+  const host = github ? Option.getOrNull(github.auth.host) : null;
+  if (host === null || github === undefined) return null;
+  return {
+    account: Option.getOrNull(github.auth.account),
+    providerBaseUrl: `https://${host}`,
+  };
+}
+
+/** `owner/folder` for publishing a new project, or just the folder for `gh` to place. */
+export function getNewProjectGitHubRepository(
+  target: { readonly account: string | null },
+  workspaceRoot: string,
+): string {
+  const folderName = workspaceRoot.split(/[\\/]/).filter(Boolean).at(-1) ?? "";
+  return target.account ? `${target.account}/${folderName}` : folderName;
+}
+
+/**
  * Destination query after choosing a directory while the clone folder is
  * pinned in the path input. Selecting an existing directory with the pinned
  * name uses that directory directly instead of producing `repo/repo`.
@@ -341,8 +377,7 @@ export function buildProjectCreateCommand(input: {
   readonly commandId: CommandId;
   readonly projectId: ProjectId;
   readonly workspaceRoot: string;
-  readonly createdAt: string;
-}): Extract<OrchestrationCommand, { type: "project.create" }> {
+}): Extract<ProjectMutation, { type: "project.create" }> {
   return {
     type: "project.create",
     commandId: input.commandId,
@@ -351,6 +386,5 @@ export function buildProjectCreateCommand(input: {
     workspaceRoot: input.workspaceRoot,
     createWorkspaceRootIfMissing: true,
     defaultModelSelection: null,
-    createdAt: input.createdAt,
   };
 }

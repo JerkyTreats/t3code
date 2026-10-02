@@ -6,6 +6,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   resolveEarlyManagedLinuxIdentity,
   resolveStandaloneDesktopIdentity,
+  resolveStandaloneUserDataPath,
   type StandaloneDesktopInput,
 } from "./StandaloneDesktopPolicy.ts";
 
@@ -60,6 +61,30 @@ describe("StandaloneDesktopPolicy", () => {
       ),
     ).toBeNull();
   });
+
+  it.effect(
+    "retains isolated managed profiles independently of upstream V2 profile selection",
+    () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        for (const channel of ["production", "staging"]) {
+          const appDataDirectory = `/config/t3code-${channel}`;
+          expect(
+            resolveStandaloneUserDataPath({
+              standaloneServerUrl: Option.some(new URL("https://code.example.test/")),
+              appDataDirectory,
+              path,
+            }),
+          ).toEqual(Option.some(`${appDataDirectory}/t3code`));
+        }
+        expect(
+          resolveStandaloneUserDataPath({
+            appDataDirectory: "/config/ordinary",
+            path,
+          }),
+        ).toEqual(Option.none());
+      }).pipe(Effect.provide(NodePath.layerPosix)),
+  );
 
   it.effect("requires the complete isolated identity before selecting HTTPS", () =>
     Effect.gen(function* () {

@@ -35,6 +35,9 @@ vi.mock("~/hooks/useHandleNewThread", () => ({
     handleNewThread: vi.fn(),
   }),
 }));
+vi.mock("~/hooks/useScratchProject", () => ({
+  useScratchProject: () => ({ scratchEnvironmentId: null, startScratchThread: vi.fn() }),
+}));
 vi.mock("~/state/entities", () => ({ useProjects: () => [] }));
 vi.mock("~/state/environments", () => ({ usePrimaryEnvironmentId: () => "host-env" }));
 vi.mock("~/logicalProject", () => ({ selectProjectGroupingSettings: vi.fn() }));

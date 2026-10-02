@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetchInEffect:off - Hosted handoff test uses a real localhost listener without an OpenAI account.
 import * as NodeHttp from "node:http";
+import * as NodePath from "@effect/platform-node/NodePath";
 import { codexAuthHandoffUrl, readCodexAuthDelivery } from "@t3tools/shared/codexAuthHandoff";
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import { HostProcessArguments } from "@t3tools/shared/hostProcess";
@@ -49,11 +50,15 @@ import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopClerk from "./DesktopClerk.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import * as DesktopPreReadyFileSystem from "./DesktopPreReadyFileSystem.ts";
 
 const makeDesktopClerkLayer = (
   isDevelopment = true,
   events: string[] = [],
-  exists: FileSystem.FileSystem["exists"] = () => Effect.succeed(false),
+  platform: NodeJS.Platform = "darwin",
+  fileSystemLayer: Layer.Layer<FileSystem.FileSystem> = FileSystem.layerNoop({
+    exists: () => Effect.succeed(false),
+  }),
   shell: ElectronShell.ElectronShell["Service"] = {
     openExternal: () => Effect.succeed(true),
     openSystemSettings: () => Effect.succeed(false),
@@ -64,9 +69,7 @@ const makeDesktopClerkLayer = (
     stateDir: "/tmp/t3-state",
     isDevelopment,
     appDataDirectory: "/tmp/app-data",
-    userDataDirName: isDevelopment ? "t3code-dev" : "t3code",
-    legacyUserDataDirName: isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)",
-    path: { join: (...parts: ReadonlyArray<string>) => parts.join("/") },
+    platform,
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
 
   const electronApp = {
@@ -79,10 +82,11 @@ const makeDesktopClerkLayer = (
   return DesktopClerk.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        NodePath.layerPosix,
         Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment),
         Layer.succeed(ElectronApp.ElectronApp, electronApp),
-        FileSystem.layerNoop({ exists }),
         Layer.succeed(ElectronShell.ElectronShell, shell),
+        fileSystemLayer,
       ),
     ),
   );
@@ -92,31 +96,6 @@ describe("DesktopClerk", () => {
   beforeEach(() => {
     createClerkBridgeMock.mockReset();
     storageMock.mockReset();
-  });
-
-  it("creates the bridge before an asynchronous filesystem probe can emit Electron ready", () => {
-    const events: string[] = [];
-    let ready = false;
-    storageMock.mockReturnValue(storageAdapter);
-    createClerkBridgeMock.mockImplementation(() => {
-      assert.isFalse(ready);
-      events.push("createClerkBridge");
-      return { cleanup: vi.fn(), isPrimaryInstance: true };
-    });
-    const asyncExists = vi.fn(() =>
-      Effect.promise(async () => {
-        ready = true;
-        events.push("electron-ready");
-        return false;
-      }),
-    );
-
-    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- Electron scheme registration requires a fully synchronous acquisition; an async test runtime would hide an added yield.
-    Effect.runSync(Effect.scoped(Layer.build(makeDesktopClerkLayer(false, events, asyncExists))));
-
-    assert.deepEqual(events, ["setPath:userData:/tmp/app-data/t3code", "createClerkBridge"]);
-    assert.equal(asyncExists.mock.calls.length, 0);
-    assert.deepEqual(accessSyncMock.mock.calls, [["/tmp/app-data/T3 Code (Alpha)"]]);
   });
 
   it("derives the Clerk Frontend API hostname used by the desktop CSP", () => {
@@ -160,6 +139,43 @@ describe("DesktopClerk", () => {
       createClerkBridgeMock.mockClear();
     });
   });
+
+  it.each([
+    {
+      name: "packaged Windows",
+      isDevelopment: false,
+      platform: "win32" as const,
+      userData: "/tmp/app-data/t3code-v2",
+    },
+    {
+      name: "development",
+      isDevelopment: true,
+      platform: "win32" as const,
+      userData: "/tmp/app-data/t3code-dev",
+    },
+  ])(
+    "creates the bridge before startup can yield to the event loop ($name)",
+    ({ isDevelopment, platform, userData }) => {
+      const events: string[] = [];
+      storageMock.mockReturnValue(storageAdapter);
+      createClerkBridgeMock.mockImplementation(() => {
+        events.push("createClerkBridge");
+        return { cleanup: vi.fn(), isPrimaryInstance: true };
+      });
+      // runSync throws if the layer ever suspends, which would let Electron emit
+      // ready before the bridge exists. main.ts provides the same FileSystem.
+      // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- The assertion IS that the layer builds synchronously; it.effect would mask a regression to async.
+      Effect.runSync(
+        Effect.scoped(
+          Layer.build(
+            makeDesktopClerkLayer(isDevelopment, events, platform, DesktopPreReadyFileSystem.layer),
+          ),
+        ),
+      );
+
+      assert.deepEqual(events, [`setPath:userData:${userData}`, "createClerkBridge"]);
+    },
+  );
 
   it.effect("preserves bridge initialization failures", () => {
     const cause = new Error("bridge initialization failed");
@@ -271,6 +287,52 @@ describe("standalone singleton host", () => {
     createClerkBridgeMock.mockReset();
     accessSyncMock.mockClear();
   });
+  it("acquires the managed profile and native lock without yielding before ready", () => {
+    const events: string[] = [];
+    const environment = {
+      standaloneServerUrl: Option.some(new URL("https://code.example.test/")),
+      appDataDirectory: "/config/t3code-staging",
+      path: { join: (...parts: string[]) => parts.join("/") },
+    } as unknown as DesktopEnvironment.DesktopEnvironment["Service"];
+    const program = Layer.build(DesktopClerk.layer).pipe(
+      Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
+      Effect.provideService(ElectronApp.ElectronApp, {
+        setPath: (_name: string, value: string) =>
+          Effect.sync(() => {
+            events.push(value);
+          }),
+      } as unknown as ElectronApp.ElectronApp["Service"]),
+      Effect.provideService(ElectronShell.ElectronShell, {
+        openExternal: () => Effect.succeed(true),
+        openSystemSettings: () => Effect.succeed(false),
+        copyText: () => Effect.void,
+      }),
+      Effect.provideService(DesktopClerk.StandaloneInstanceLock, {
+        acquire: () => {
+          events.push("lock");
+          return true;
+        },
+        release: () => {
+          events.push("release");
+        },
+      }),
+      Effect.provide(
+        Layer.mergeAll(
+          NodePath.layerPosix,
+          FileSystem.layerNoop({
+            exists: () => Effect.die("managed startup must not probe profiles"),
+          }),
+        ),
+      ),
+      Effect.scoped,
+    );
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- Managed profile selection and native lock must acquire synchronously before Electron ready.
+    Effect.runSync(program);
+    assert.deepEqual(events, ["/config/t3code-staging/t3code", "lock", "release"]);
+    assert.equal(createClerkBridgeMock.mock.calls.length, 0);
+    assert.equal(accessSyncMock.mock.calls.length, 0);
+  });
+
   it.effect(
     "sets isolated userData before its native lock and requires authenticated handoff before focus",
     () =>
@@ -281,9 +343,8 @@ describe("standalone singleton host", () => {
         const environment = {
           standaloneServerUrl: Option.some(new URL("https://code.example.test/")),
           appDataDirectory: "/config/t3code-production",
-          userDataDirName: "t3code",
           path: { join: (...parts: string[]) => parts.join("/") },
-        } as DesktopEnvironment.DesktopEnvironment["Service"];
+        } as unknown as DesktopEnvironment.DesktopEnvironment["Service"];
         const app = {
           setPath: (_name: string, value: string) =>
             Effect.sync(() => {
@@ -298,7 +359,7 @@ describe("standalone singleton host", () => {
           }),
         } as unknown as ElectronApp.ElectronApp["Service"];
         const window = {
-          currentMainOrFirst: Effect.succeed(Option.some({} as never)),
+          currentMainOrFirst: Effect.succeedSome({} as never),
           reveal: () =>
             Effect.sync(() => {
               events.push("focus");
@@ -321,7 +382,7 @@ describe("standalone singleton host", () => {
           yield* Effect.yieldNow;
           assert.equal(events.at(-1), "focus");
         }).pipe(
-          Effect.provide(DesktopClerk.layer),
+          Effect.provide(DesktopClerk.layer.pipe(Layer.provide(NodePath.layerPosix))),
           Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
           Effect.provideService(ElectronApp.ElectronApp, app),
           Effect.provideService(ElectronWindow.ElectronWindow, window),
@@ -366,7 +427,7 @@ it.effect(
         }),
     } as unknown as ElectronApp.ElectronApp["Service"];
     const electronWindow = {
-      currentMainOrFirst: Effect.succeed(Option.some(window)),
+      currentMainOrFirst: Effect.succeedSome(window),
       reveal: () => Effect.sync(() => revealed.resolve()),
     } as unknown as ElectronWindow.ElectronWindow["Service"];
     return Effect.gen(function* () {
@@ -466,7 +527,7 @@ for (const entry of ["startup", "open-url"] as const) {
         assert.strictEqual(delivery?.flowId, request.flowId);
         assert.strictEqual(delivery?.returnUrl, request.returnUrl);
       }).pipe(
-        Effect.provide(makeDesktopClerkLayer(true, [], undefined, shell)),
+        Effect.provide(makeDesktopClerkLayer(true, [], "darwin", undefined, shell)),
         Effect.provideService(HostProcessArguments, entry === "startup" ? ["t3", link] : ["t3"]),
         Effect.provideService(ElectronApp.ElectronApp, electronApp),
         Effect.provideService(

@@ -217,6 +217,7 @@ export const make = Effect.gen(function* () {
       questionAttachments: true,
       fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
       pullRequests: true,
+      pullRequestChecks: true,
       inlineMessageContext: true,
       requiredWorktreeBootstrap: true,
       threadSettlement: true,
@@ -234,18 +235,15 @@ export const make = Effect.gen(function* () {
       threadActiveReorder: true,
       threadAutoSettleOptOut: true,
       threadTitleRegeneration: true,
+      threadVisitedTracking: true,
       threadPullRequests: true,
       pullRequestStackActions: true,
       threadPullRequestLinking: true,
+      serverResolvedCommandContext: true,
       environmentIcon: true,
       projectCloneTracking: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
-      ...(desktopAppUpdate
-        ? {
-            serverSelfUpdateProgress: true,
-            serverUpdateThreadContinuation: true,
-          }
-        : {}),
+      ...(desktopAppUpdate ? { serverSelfUpdateProgress: true } : {}),
       ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
     },
   };

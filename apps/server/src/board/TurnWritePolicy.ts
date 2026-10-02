@@ -25,7 +25,7 @@ interface Admission {
  * MCP credentials identify sessions, not invoking turns. A Plan admission therefore
  * denies writes for the entire session until its exact turn is terminal. Starts
  * cannot bind requests: providers may emit unrelated synthetic starts while a send
- * is pending. Only the send response supplies that association.
+ * is pending. The host supplies an exact admitted run or attempt identity for that association.
  */
 export const make = Effect.fn("BoardTurnWritePolicy.make")(function* (
   setWriteEnabled: (threadId: ThreadId, enabled: boolean) => Effect.Effect<void>,
@@ -83,6 +83,13 @@ export const make = Effect.fn("BoardTurnWritePolicy.make")(function* (
     );
 
   return {
+    refresh: (threadId: ThreadId) =>
+      synchronize(
+        Effect.suspend(() => {
+          const session = sessions.get(threadId);
+          return session ? update(threadId, session) : Effect.void;
+        }),
+      ),
     // Register before any asynchronous admission work. Replacement waits for local
     // sends and their finalizers to stop, including attachment reads and adapter
     // lock waits. Cancellation is not proof of remote rejection: failed admission
@@ -157,6 +164,15 @@ export const make = Effect.fn("BoardTurnWritePolicy.make")(function* (
           const { threadId, session, request } = admission;
           if (sessions.get(threadId) !== session || !session.pending.delete(request)) return;
           if (!session.earlyTerminals.has(turnId)) session.active.add(turnId);
+          clearEarlyTerminals(session);
+          yield* update(threadId, session);
+        }),
+      ),
+    accepted: (admission: Admission) =>
+      synchronize(
+        Effect.gen(function* () {
+          const { threadId, session, request } = admission;
+          if (sessions.get(threadId) !== session || !session.pending.delete(request)) return;
           clearEarlyTerminals(session);
           yield* update(threadId, session);
         }),

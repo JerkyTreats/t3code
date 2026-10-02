@@ -6,14 +6,14 @@ import { canonicalRepositoryKey } from "./sourceControl.ts";
  * is addressed, the repository path as that host writes it, and the number.
  *
  * The two strings are what `pullRequestHostOf` and the project's `repositoryIdentity` produce
- * from a git remote — lower case, no port, the full path below the host — because links are
- * matched against those. Anything else matches nothing.
+ * from a git remote: lower case and the full path below the host. The optional authority
+ * retains a non-default HTTP port for exact target comparisons.
  */
 export interface ChangeRequestLink {
   readonly host: string;
   readonly repository: string;
   readonly number: number;
-  /** Forgejo's HTTP host and port, separate from the portless repository identity. */
+  /** Explicit HTTP authority when a non-default port must remain part of the target. */
   readonly authority?: string;
 }
 
@@ -51,7 +51,7 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
   // GitHub, and any Enterprise install: /{owner}/{repo}/pull/{n}
   if (isHostOf(host, "github.com", "github")) {
     const match = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/|$)/u.exec(url.pathname);
-    if (match) return claim(host, match);
+    if (match) return claim(host, match, url.port ? url.host.toLowerCase() : undefined);
   }
   // Forgejo and Gitea use /pulls/ on arbitrary self-hosted domains.
   const forgejo = /^\/([^/]+(?:\/[^/]+)+)\/pulls\/(\d+)(?:\/|$)/u.exec(url.pathname);
@@ -62,26 +62,35 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
   // GitLab, self-hosted included: /{group}/[{subgroup}/...]{repo}/-/merge_requests/{n}. The `/-/`
   // separator is GitLab's own, so the hostname is not asked about.
   const gitlab = /^\/([^/]+(?:\/[^/]+)+)\/-\/merge_requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
-  if (gitlab) return claim(host, gitlab);
+  if (gitlab) return claim(host, gitlab, url.port ? url.host.toLowerCase() : undefined);
   // Bitbucket Cloud: /{workspace}/{repo}/pull-requests/{n}
   if (isHostOf(host, "bitbucket.org", "bitbucket")) {
     const match = /^\/([^/]+\/[^/]+)\/pull-requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
-    return claim(host, match);
+    return claim(host, match, url.port ? url.host.toLowerCase() : undefined);
   }
   // Azure DevOps, both the current host and the per-organisation one it replaced. `_git` is part
   // of the repository path there, as it is in the remote URL the identity is read from.
   if (isHostOf(host, "dev.azure.com") || host.endsWith(".visualstudio.com")) {
     const match = /^\/((?:[^/]+\/)*_git\/[^/]+)\/pullrequest\/(\d+)(?:\/|$)/u.exec(url.pathname);
-    return claim(host, match);
+    return claim(host, match, url.port ? url.host.toLowerCase() : undefined);
   }
   return null;
 }
 
-function claim(host: string, match: RegExpExecArray | null): ChangeRequestLink | null {
+function claim(
+  host: string,
+  match: RegExpExecArray | null,
+  authority?: string,
+): ChangeRequestLink | null {
   const repository = match?.[1];
   const number = Number(match?.[2]);
   return repository && Number.isSafeInteger(number) && number > 0
-    ? { host, repository: repository.toLowerCase(), number }
+    ? {
+        host,
+        repository: repository.toLowerCase(),
+        number,
+        ...(authority === undefined ? {} : { authority }),
+      }
     : null;
 }
 

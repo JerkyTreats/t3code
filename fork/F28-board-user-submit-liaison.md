@@ -73,7 +73,7 @@ keeps the cadence independent of Board event storage and provider lifecycle shap
 ## Upstream Sensitive Adapters
 
 - `apps/server/src/provider/CodexDeveloperInstructions.ts`
-- `apps/server/src/provider/Layers/CodexSessionRuntime.ts`
+- `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts`
 
 These adapters select the instruction profile from the current provider mode and append it only when
 the authenticated Board capability is attached. They do not select liaison cadence, trust Board
@@ -99,25 +99,20 @@ revision semantics, or human Board behavior.
 
 ## Verification
 
-- `apps/server/src/provider/Layers/CodexSessionRuntime.test.ts` verifies the Default mode prompt
-  declares eligible root-submit cadence, first-use spawn, later follow-up reuse, one activation path,
-  current-submit opt-out wording, root-only behavior, privacy-safe advisory interpretation,
-  non-blocking fallback, and the prompt-mediated limitation.
-- The same focused test verifies the Plan Mode prompt uses the same first-use and reuse cadence while
-  retaining read-only Board behavior and direct-root read-only fallback.
-- `apps/server/src/board/InteractionPolicy.test.ts` verifies F25 write admission remains writable in
-  Default mode and read-only in Plan Mode. The ProviderService lifecycle regressions execute the
-  actual credential registry and Board capability guards to verify conservative session-wide
-  denial across overlapping modes, early completion, failed sends, abort, and credential resets.
+- `apps/server/src/provider/CodexDeveloperInstructions.test.ts` checks capability-gated Default and
+  Plan context, first spawn, follow-up reuse, one activation path, child exclusion, current-submit
+  opt-out, advisory privacy language, and the prompt-mediated limitation.
+- `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts` checks the current context on
+  the native turn-start wire and explicit restoration after compaction.
+- `apps/server/src/board/InteractionPolicy.test.ts`, `TurnWritePolicyV2.test.ts`, and
+  `EventSinkAdmission.test.ts` cover the independent mode and run admission boundary.
 
 ## Host Replacement Evidence
 
-The focused instruction test evaluates the durable owner output inside the Codex session runtime
-test suite without requiring Board event storage, projection, WebSocket, browser, or a live spawned
-liaison. It proves a replacement Codex instruction host can preserve first-use creation, later reuse,
-root-only scope, opt-out, mode boundaries, safety language, failure fallback, and the explicit
-prompt-mediated limitation. F25 independently proves its tool and write-admission substrate, so
-replacing Board transport or presentation does not require restoring a duplicate liaison policy.
+The focused instruction tests evaluate owner output without requiring a live liaison. The v2
+adapter tests exercise current provider protocol integration and compaction restoration. F25
+independently owns tool registration, write admission, persistence, and human transport. These
+source boundaries do not claim browser, deployment, or installed acceptance for this intake.
 
 ## Dependencies And Compatibility
 

@@ -36,6 +36,7 @@ const ALLOWED_NON_PUBLICATION_ACTIONS = new Set([
   CHECKOUT_ACTION,
   "actions/setup-java@v5",
   "actions/upload-artifact@v7",
+  "actions/download-artifact@v8",
   "docker/setup-buildx-action@v4",
   "dtolnay/rust-toolchain@stable",
   "gradle/actions/setup-gradle@v5",
@@ -71,6 +72,8 @@ const READ_ONLY_RUN_SOURCES = new Set([
   "vp run --filter @t3tools/desktop ensure:electron",
   "vp run --filter t3 test --shard ${{ matrix.shard }}/${{ strategy.job-total }}",
   "vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' test",
+  "vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test",
+  "vp run --filter @t3tools/web test",
   "vp run build:desktop",
   "vp run dist:desktop:linux",
   "vp run lint:mobile",
@@ -80,6 +83,10 @@ const READ_ONLY_RUN_SOURCES = new Set([
 // Multiline shell is accepted only by an exact content digest. This keeps the
 // authority review local to this file without normalizing away shell meaning.
 const READ_ONLY_MULTILINE_RUN_DIGESTS = new Set([
+  "ae568dbbce1f1dc910a7835bfce0ea9cbc2eb67b8d5a50dd0401ba866e4139ae",
+  "c21bd18295ed6471015ac5afd3b5377edc2a957005be63c47ba82d2c5f9528d2",
+  "23e155c1bdfb5dda3d99db1d69f8d8d844a0bc3f5de3cf1de388406a528e49c7",
+  "f49051a371cf61458c754114be69308cd5a5f25b9a64ff62be406a734db1ca5e",
   "27908de417119324ff0990cd7aac3245803524aab0192bd9de66612b64decadf",
   "ebe771316f705cdb97863284ed8364722d6f5683472fd67a4c81a89547c01c7e",
   "f63ca73086445e1619f6224333d7215fbc76b138047ce7425d4f02853ba45c9e",

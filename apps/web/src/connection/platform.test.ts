@@ -1,3 +1,4 @@
+import { describe } from "vite-plus/test";
 import {
   AuthStandardClientScopes,
   EnvironmentId,
@@ -5,7 +6,7 @@ import {
   type DesktopBridge,
   type DesktopSshEnvironmentTarget,
 } from "@t3tools/contracts";
-import { afterEach, describe, expect, it, vi } from "@effect/vitest";
+import { afterEach, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -241,7 +242,7 @@ describe("primary topology cache", () => {
   });
 });
 
-describe.sequential("primary platform authentication", () => {
+describe("primary platform authentication", { concurrent: false }, () => {
   afterEach(() => {
     __resetDesktopPrimaryAuthForTests();
     vi.unstubAllGlobals();
@@ -404,7 +405,7 @@ describe.sequential("primary platform authentication", () => {
       ),
     );
     return Effect.gen(function* () {
-      const source = yield* PlatformConnectionSource;
+      const source = yield* PlatformConnectionSource.PlatformConnectionSource;
       const emissions = yield* source.registrations.pipe(Stream.take(1), Stream.runCollect);
       expect(emissions[0]?.[0]?.target.environmentId).toBe("synthetic-thread-environment");
     }).pipe(Effect.provide(platformConnectionSourceLayer));

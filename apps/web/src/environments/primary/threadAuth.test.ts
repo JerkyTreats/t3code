@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "@effect/vitest";
+import { describe } from "vite-plus/test";
+import { afterEach, expect, it, vi } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -28,7 +29,7 @@ function install(fetch: typeof globalThis.fetch) {
   return makeThreadPrimaryAuth()!.webSocketTicket!;
 }
 
-describe.sequential("protected Thread ticket acquisition", () => {
+describe("protected Thread ticket acquisition", { concurrent: false }, () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it.effect("uses generated POST decoding and a fresh ticket for every attempt", () => {

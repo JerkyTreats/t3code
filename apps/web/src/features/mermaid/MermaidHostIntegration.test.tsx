@@ -1,5 +1,7 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ProjectId, ThreadId, TurnItemId } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
+import { deriveTimelineEntriesFromVisibleTurnItems } from "../../session-logic";
 import { createRef, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { LegendListRef } from "@legendapp/list/react";
@@ -63,7 +65,7 @@ describe("Mermaid semantic host identities", () => {
     );
   });
 
-  it("keeps terminal chips beside upstream review cards without normalizing authored text", () => {
+  it("projects v2 retained context into chips beside upstream review without normalizing authored text", () => {
     const environmentId = EnvironmentId.make("environment-local");
     const createdAt = "2026-03-17T19:12:28.000Z";
     const authoredPrompt = "  Preserve this prompt\n\n ";
@@ -94,30 +96,60 @@ describe("Mermaid semantic host identities", () => {
       reviewComments: [review],
       previewAnnotations: [],
     });
+    const timelineEntries = deriveTimelineEntriesFromVisibleTurnItems({
+      optimisticMessages: [],
+      visibleTurnItems: [
+        {
+          position: 0,
+          visibility: "local",
+          sourceThreadId: ThreadId.make("thread-1"),
+          sourceItemId: TurnItemId.make("item-1"),
+          item: {
+            id: TurnItemId.make("item-1"),
+            threadId: ThreadId.make("thread-1"),
+            runId: null,
+            nodeId: null,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: 0,
+            status: "completed",
+            title: null,
+            startedAt: DateTime.makeUnsafe(createdAt),
+            completedAt: DateTime.makeUnsafe(createdAt),
+            updatedAt: DateTime.makeUnsafe(createdAt),
+            createdBy: "user",
+            creationSource: "web",
+            type: "user_message",
+            messageId: MessageId.make("message-1"),
+            inputIntent: "turn_start",
+            text,
+            context: messageContext,
+            attachments: [],
+          },
+        },
+      ],
+    });
+    expect(timelineEntries[0]).toMatchObject({
+      kind: "message",
+      message: { text, context: messageContext },
+      projectedItem: { item: { id: "item-1" } },
+    });
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         isWorking={false}
+        activeTurnInProgress={false}
+        providerStatuses={[]}
+        runs={[]}
+        onOpenThread={() => undefined}
+        onForkFromRun={async () => undefined}
+        onRollbackCheckpoint={() => undefined}
         activeTurnStartedAt={null}
         listRef={createRef<LegendListRef | null>()}
-        timelineEntries={[
-          {
-            id: "entry-1",
-            kind: "message",
-            createdAt,
-            message: {
-              id: MessageId.make("message-1"),
-              role: "user",
-              text,
-              context: messageContext,
-              turnId: null,
-              createdAt,
-              updatedAt: createdAt,
-              streaming: false,
-            },
-          },
-        ]}
-        latestTurn={null}
-        runningTurnId={null}
+        timelineEntries={timelineEntries}
+        latestRun={null}
+        runningRunId={null}
         turnDiffSummaries={[]}
         routeThreadKey="environment-local:thread-1"
         onOpenTurnDiff={() => undefined}
@@ -132,6 +164,7 @@ describe("Mermaid semantic host identities", () => {
         workspaceRoot={undefined}
         anchorMessageId={null}
         onAnchorReady={() => undefined}
+        onAnchorSizeChanged={() => undefined}
         contentInsetEndAdjustment={0}
         liveFollowEnabled
         onIsAtEndChange={() => undefined}

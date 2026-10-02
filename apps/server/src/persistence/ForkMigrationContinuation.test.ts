@@ -7,18 +7,10 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import { ProjectionProjectRepositoryLive } from "./Layers/ProjectionProjects.ts";
-import { ProjectionThreadRepositoryLive } from "./Layers/ProjectionThreads.ts";
 import { runMigrations } from "./Migrations.ts";
-import { ProjectionProjectRepository } from "./Services/ProjectionProjects.ts";
-import { ProjectionThreadRepository } from "./Services/ProjectionThreads.ts";
 
 const sqliteLayer = NodeSqliteClient.layer({ filename: ":memory:" });
-const layer = it.layer(
-  Layer.mergeAll(ProjectionProjectRepositoryLive, ProjectionThreadRepositoryLive).pipe(
-    Layer.provideMerge(sqliteLayer),
-  ),
-);
+const layer = it.layer(Layer.fresh(sqliteLayer));
 
 const MODEL_SELECTION = '{"instanceId":"codex","model":"gpt-5.6-sol"}';
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -31,11 +23,54 @@ const LINKED_PULL_REQUEST = {
 };
 
 layer("fork migration continuation", (it) => {
-  it.effect("applies repairs and exposes the continued fields through repositories", () =>
+  it.effect("applies repairs and preserves the continued legacy import fields", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      const projects = yield* ProjectionProjectRepository;
-      const threads = yield* ProjectionThreadRepository;
+      // These legacy tables are the recovery and V2 import substrate. Read the
+      // stored fields directly rather than revive the retired V1 repository hosts.
+      const projects = {
+        getById: ({ projectId }: { readonly projectId: ProjectId }) =>
+          sql`SELECT default_model_selection_json AS model, auto_pull AS autoPull,
+              project_icon_json AS icon FROM projection_projects WHERE project_id = ${projectId}`.pipe(
+            Effect.map((rows) =>
+              Option.fromNullishOr(
+                rows[0] === undefined
+                  ? undefined
+                  : {
+                      defaultModelSelection:
+                        rows[0].model === null ? null : decodeJson(String(rows[0].model)),
+                      autoPull: rows[0].autoPull === 1,
+                      projectIcon: rows[0].icon === null ? null : decodeJson(String(rows[0].icon)),
+                    },
+              ),
+            ),
+          ),
+      };
+      const threads = {
+        getById: ({ threadId }: { readonly threadId: ThreadId }) =>
+          sql`SELECT linked_pull_request_json AS linked, branch_pull_request_json AS branch,
+              title_state_json AS title, active_order_key AS activeOrderKey,
+              auto_settle_disabled_at AS autoSettleDisabledAt, unsettled_at AS unsettledAt,
+              settled_at AS settledAt FROM projection_threads WHERE thread_id = ${threadId}`.pipe(
+            Effect.map((rows) =>
+              Option.fromNullishOr(
+                rows[0] === undefined
+                  ? undefined
+                  : {
+                      linkedPullRequest:
+                        rows[0].linked === null ? null : decodeJson(String(rows[0].linked)),
+                      branchPullRequest:
+                        rows[0].branch === null ? null : decodeJson(String(rows[0].branch)),
+                      titleState: rows[0].title === null ? null : decodeJson(String(rows[0].title)),
+                      activeOrderKey: rows[0].activeOrderKey,
+                      autoSettleDisabledAt: rows[0].autoSettleDisabledAt,
+                      unsettledAt: rows[0].unsettledAt,
+                      settledAt: rows[0].settledAt,
+                    },
+              ),
+            ),
+          ),
+      };
 
       yield* runMigrations({ toMigrationInclusive: 53 });
 
@@ -353,7 +388,7 @@ layer("fork migration continuation", (it) => {
       }>`
         SELECT event_id AS "eventId", payload_json AS "payloadJson"
         FROM orchestration_events
-        WHERE event_id <> 'event-automatic-created'
+        WHERE event_id <> 'event-automatic-created' AND event_id NOT LIKE 'migration:%'
         ORDER BY event_id
       `;
 
@@ -375,6 +410,9 @@ layer("fork migration continuation", (it) => {
           [65, "PullRequestFilesViewed"],
           [66, "ProjectionThreadsAutoSettleDisabledAt"],
           [67, "ProjectionThreadCreationSurface"],
+          [68, "OrchestrationV2"],
+          [69, "RemoveRedundantProjectionIndexes"],
+          [70, "ApplicationBoardEventSequenceIndex"],
         ],
       );
 
@@ -482,7 +520,7 @@ layer("fork migration continuation", (it) => {
       }>`
         SELECT event_id AS "eventId", payload_json AS "payloadJson"
         FROM orchestration_events
-        WHERE event_id <> 'event-automatic-created'
+        WHERE event_id <> 'event-automatic-created' AND event_id NOT LIKE 'migration:%'
         ORDER BY event_id
       `;
       assert.deepStrictEqual(preservedEventsAfter, preservedEventsBefore);

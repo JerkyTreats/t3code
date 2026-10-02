@@ -1,9 +1,10 @@
 import {
-  OrchestrationGetSnapshotError,
+  BoardGetSnapshotError,
   type BoardPost,
   type BoardStreamItem,
   type BoardSubscribeInput,
-  type OrchestrationEvent,
+  type ApplicationBoardEvent,
+  type ApplicationStoredEvent,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
@@ -23,16 +24,16 @@ const BOARD_LIVE_WAKEUP_CAPACITY = 1;
  * subscription before reading a snapshot and recover dropped events from SQL.
  */
 export const makeBoardEventHub = Effect.gen(function* () {
-  const events = yield* PubSub.sliding<OrchestrationEvent>(BOARD_EVENT_BUFFER_CAPACITY);
+  const events = yield* PubSub.sliding<ApplicationBoardEvent>(BOARD_EVENT_BUFFER_CAPACITY);
   return {
-    publish: (event: OrchestrationEvent) =>
+    publish: (event: ApplicationStoredEvent) =>
       isBoardEvent(event) ? PubSub.publish(events, event).pipe(Effect.asVoid) : Effect.void,
     subscribe: PubSub.subscribe(events).pipe(Effect.map(Stream.fromSubscription)),
   };
 });
 
 export interface BoardSubscriptionDependencies {
-  readonly domainEvents: Stream.Stream<OrchestrationEvent>;
+  readonly domainEvents: Stream.Stream<ApplicationBoardEvent>;
   readonly query: BoardQueryShape;
 }
 
@@ -102,7 +103,7 @@ export const makeBoardSubscription = (dependencies: BoardSubscriptionDependencie
           Stream.flatMap((items) => Stream.fromIterable(items)),
           Stream.mapError(
             (cause) =>
-              new OrchestrationGetSnapshotError({
+              new BoardGetSnapshotError({
                 message: "Failed to recover the global Board live stream.",
                 cause,
               }),
@@ -131,7 +132,7 @@ export const makeBoardSubscription = (dependencies: BoardSubscriptionDependencie
     },
     Effect.mapError(
       (cause) =>
-        new OrchestrationGetSnapshotError({
+        new BoardGetSnapshotError({
           message: "Failed to subscribe to the global Board.",
           cause,
         }),

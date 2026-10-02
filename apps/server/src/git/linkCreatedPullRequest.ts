@@ -1,19 +1,16 @@
 import {
   type CommandId,
-  pullRequestHostOf,
   type GitRunStackedActionResult,
   type OrchestrationProjectShell,
-  type SourceControlProviderKind,
   type ThreadId,
 } from "@t3tools/contracts";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
-import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { originPullRequestRepository } from "../fork/sourceControlContextPolicy.ts";
+import { originCreatedPullRequestKey } from "../fork/sourceControlContextPolicy.ts";
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as ProjectService from "../project/ProjectService.ts";
 
 export interface CreatedPullRequestKey {
   readonly host: string;
@@ -34,18 +31,7 @@ export function createdPullRequestKey(
   if ((status !== "created" && status !== "opened_existing") || number === undefined || !url) {
     return null;
   }
-  const parsed = parseChangeRequestUrl(url);
-  const identity = project?.repositoryIdentity;
-  const kind = identity?.provider as SourceControlProviderKind | undefined;
-  const repository = originPullRequestRepository(identity);
-  if (!parsed || !identity || kind === undefined || repository === null) return null;
-  if (
-    parsed.host !== pullRequestHostOf(identity, kind) ||
-    parsed.repository !== repository.toLowerCase() ||
-    parsed.number !== number
-  )
-    return null;
-  return { ...parsed, url };
+  return originCreatedPullRequestKey(project?.repositoryIdentity, url, number);
 }
 
 /**
@@ -58,19 +44,15 @@ export const linkCreatedPullRequest = <E>(input: {
   readonly threadId: ThreadId;
   readonly result: Pick<GitRunStackedActionResult, "pr">;
   readonly commandId: Effect.Effect<CommandId, E>;
-}): Effect.Effect<
-  void,
-  never,
-  OrchestrationEngine.OrchestrationEngineService | ProjectionSnapshotQuery.ProjectionSnapshotQuery
-> =>
+}): Effect.Effect<void, never, Orchestrator.OrchestratorV2 | ProjectService.ProjectService> =>
   Effect.gen(function* () {
-    const engine = yield* OrchestrationEngine.OrchestrationEngineService;
-    const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-    const thread = yield* snapshots.getThreadShellById(input.threadId);
+    const engine = yield* Orchestrator.OrchestratorV2;
+    const projects = yield* ProjectService.ProjectService;
+    const thread = yield* engine
+      .getThreadShell(input.threadId)
+      .pipe(Effect.map(Option.fromNullishOr));
     if (Option.isNone(thread)) return;
-    const project = Option.getOrUndefined(
-      yield* snapshots.getProjectShellById(thread.value.projectId),
-    );
+    const project = Option.getOrUndefined(yield* projects.getShell(thread.value.projectId));
     const key = createdPullRequestKey(input.result, project);
     if (key === null) return;
     const commandId = yield* input.commandId;
@@ -82,7 +64,7 @@ export const linkCreatedPullRequest = <E>(input: {
         ...key,
         source: "created",
       })
-      .pipe(Effect.catchTags({ OrchestrationCommandInvariantError: () => Effect.void }));
+      .pipe(Effect.asVoid);
   }).pipe(
     Effect.withSpan("linkCreatedPullRequest"),
     Effect.catchCause((cause) =>

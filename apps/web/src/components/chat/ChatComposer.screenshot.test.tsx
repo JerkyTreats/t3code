@@ -14,6 +14,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ProviderDriverKind,
+  RuntimeRequestId,
   type DesktopScreenshotCapture,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@t3tools/contracts";
@@ -93,6 +94,7 @@ vi.mock("./ComposerStashBadge", () => ({ ComposerStashBadge: () => null }));
 vi.mock("./ComposerStashMenu", () => ({ ComposerStashMenu: () => null }));
 vi.mock("./ComposerActivityStatus", () => ({ ComposerActivityRow: () => null }));
 vi.mock("./ComposerBannerStack", () => ({ ComposerBannerStack: () => null }));
+vi.mock("./ComposerPendingUserInputPanel", () => ({ ComposerPendingUserInputPanel: () => null }));
 
 import { ChatComposer, type ChatComposerProps } from "./ChatComposer";
 import { ComposerPromptEditor } from "../ComposerPromptEditor";
@@ -105,6 +107,10 @@ import {
 import { DesktopLauncherActivationOwner } from "../../fork/desktopLauncherActivation";
 import { useDesktopLauncherSubmitAdmission } from "../desktop/DesktopLauncherActivationCoordinator";
 import { ComposerAttachmentAdmission } from "../../fork/composerAttachmentAdmission";
+import {
+  questionAttachmentDraftId,
+  useQuestionAttachmentPreparation,
+} from "../../questionAttachments";
 
 let renderer: ReactTestRenderer | null = null;
 const initialStore = useComposerDraftStore.getState();
@@ -170,6 +176,12 @@ function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerProps {
     forceExpandedOnMobile: false,
     projectSelectionRequired: false,
     phase: "ready",
+    canInterrupt: false,
+    canResume: false,
+    queuedRunsControl: null,
+    editingQueuedAttachments: null,
+    onRemoveEditingQueuedAttachment: vi.fn(),
+    onResume: vi.fn(),
     isConnecting: false,
     isSendBusy: false,
     sendDisabledReason: null,
@@ -327,6 +339,7 @@ beforeEach(() => {
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:prepared");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   useComposerDraftStore.setState(initialStore, true);
+  useQuestionAttachmentPreparation.setState({ counts: {} });
   mocks.capture.mockReset();
   mocks.prepare.mockReset();
   mocks.toast.mockClear();
@@ -945,4 +958,69 @@ describe("ChatComposer launcher attachment admission", () => {
       expect(fixture.owner.getSubmitState()).toBeNull();
     },
   );
+});
+
+describe("ChatComposer question attachment reservations", () => {
+  const requestId = RuntimeRequestId.make("synthetic-request");
+  function questionProps(questionId = "one") {
+    return props({
+      supportsQuestionAttachments: true,
+      pendingUserInputs: [
+        {
+          requestId,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          responseCapability: "live",
+          dismissible: true,
+          questions: ["one", "two"].map((id) => ({
+            id,
+            header: "Question",
+            question: "Synthetic question",
+            options: [],
+            multiSelect: false,
+            allowCustomAnswer: true,
+          })),
+        },
+      ],
+      activePendingProgress: {
+        questionIndex: questionId === "one" ? 0 : 1,
+        isLastQuestion: questionId === "two",
+        canAdvance: false,
+        customAnswer: "",
+        activeQuestion: { id: questionId, allowCustomAnswer: true },
+      },
+    });
+  }
+
+  it("admits an ordinary question image when the preserved thread draft is full", async () => {
+    useComposerDraftStore.getState().addImages(
+      target,
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS }, (_, i) => attachment(String(i))),
+    );
+    const input = await mount(questionProps());
+    await act(() => input.composerRef.current!.addDroppedFiles([image("answer.png")]));
+    const answerTarget = questionAttachmentDraftId(environmentId, threadId, requestId, "one");
+    expect(useComposerDraftStore.getState().getComposerDraft(answerTarget)?.images).toHaveLength(1);
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+    expect(mocks.capture).not.toHaveBeenCalled();
+  });
+
+  it("drops image preparation when the active question changes", async () => {
+    const preparation = deferred<{ ok: true; file: File }>();
+    mocks.prepare.mockReturnValue(preparation.promise);
+    const input = await mount(questionProps());
+    await act(() => {
+      input.composerRef.current!.addDroppedFiles([image("first.png")]);
+    });
+    await act(() => {
+      renderer!.update(<ChatComposer {...questionProps("two")} />);
+    });
+    await act(() => preparation.resolve({ ok: true, file: image("first.png") }));
+    for (const id of ["one", "two"]) {
+      const answerTarget = questionAttachmentDraftId(environmentId, threadId, requestId, id);
+      expect(
+        useComposerDraftStore.getState().getComposerDraft(answerTarget)?.images ?? [],
+      ).toHaveLength(0);
+    }
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
 });

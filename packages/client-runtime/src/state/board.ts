@@ -1,8 +1,4 @@
-import {
-  ORCHESTRATION_WS_METHODS,
-  type BoardStreamItem,
-  type EnvironmentId,
-} from "@t3tools/contracts";
+import { WS_METHODS, type BoardStreamItem, type EnvironmentId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -166,7 +162,7 @@ export const makeEnvironmentBoardState = Effect.fn("EnvironmentBoardState.make")
       olderRequestPending = false;
       return;
     }
-    yield* request(ORCHESTRATION_WS_METHODS.getBoardPage, { beforeCursor: cursor, limit: 50 }).pipe(
+    yield* request(WS_METHODS.getBoardPage, { beforeCursor: cursor, limit: 50 }).pipe(
       Effect.matchCauseEffect({
         onFailure: (cause) =>
           update((current) =>
@@ -197,7 +193,7 @@ export const makeEnvironmentBoardState = Effect.fn("EnvironmentBoardState.make")
   const refreshHead = Effect.fn("EnvironmentBoardState.refreshHead")(function* () {
     yield* update((current) => ({ ...current, refreshingHead: true, error: null }));
     let succeeded = false;
-    yield* request(ORCHESTRATION_WS_METHODS.getBoardPage, { limit: 50 }).pipe(
+    yield* request(WS_METHODS.getBoardPage, { limit: 50 }).pipe(
       Effect.matchCauseEffect({
         onFailure: (cause) =>
           update((current) => ({
@@ -256,7 +252,7 @@ export const makeEnvironmentBoardState = Effect.fn("EnvironmentBoardState.make")
 
   yield* Effect.forkScoped(
     subscribeDynamic(
-      ORCHESTRATION_WS_METHODS.subscribeBoard,
+      WS_METHODS.subscribeBoard,
       Effect.fn("EnvironmentBoardState.makeSubscribeInput")(function* () {
         const current = yield* SubscriptionRef.get(state);
         yield* update((value) => ({ ...value, status: "synchronizing", error: null }));
@@ -298,7 +294,7 @@ export function createEnvironmentBoardAtoms<R, E>(
     stateAtom: (environmentId: EnvironmentId) => family(environmentId),
     revisePost: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:board:revise-post",
-      tag: ORCHESTRATION_WS_METHODS.reviseBoardPost,
+      tag: WS_METHODS.reviseBoardPost,
       scheduler: commandScheduler,
       concurrency: {
         mode: "serial",
@@ -307,7 +303,7 @@ export function createEnvironmentBoardAtoms<R, E>(
     }),
     getPostHistory: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:board:get-post-history",
-      tag: ORCHESTRATION_WS_METHODS.getBoardPostHistory,
+      tag: WS_METHODS.getBoardPostHistory,
       scheduler: commandScheduler,
       concurrency: {
         mode: "singleFlight",

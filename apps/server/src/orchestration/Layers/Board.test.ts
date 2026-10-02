@@ -1,12 +1,14 @@
 import {
   AuthClientId,
-  BoardAuthorId,
+  BOARD_AGGREGATE_ID,
+  BoardPostId,
   CommandId,
+  EventId,
+  BoardAuthorId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -14,60 +16,27 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-import { ServerConfig } from "../../config.ts";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
-import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
+import { BOARD_POSTS_PROJECTOR } from "../../board/EventProjection.ts";
+import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
+import { BoardLive } from "./Board.ts";
 import { Board } from "../Services/Board.ts";
 import { BoardQuery } from "../Services/BoardQuery.ts";
-import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
-import { OrchestrationLayerLive } from "../runtimeLayer.ts";
-
-const TestLayer = OrchestrationLayerLive.pipe(
-  Layer.provide(RepositoryIdentityResolver.layer),
-  Layer.provideMerge(SqlitePersistenceMemory),
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-global-board-test-" })),
-  Layer.provideMerge(NodeServices.layer),
-);
-
-const createdAt = "2026-08-28T12:00:00.000Z";
-const modelSelection = {
-  instanceId: ProviderInstanceId.make("codex"),
-  model: "gpt-5-codex",
-} as const;
+import { BoardTestLayer as TestLayer, seedBoardThread } from "../../board/BoardTestSupport.ts";
 
 it.layer(TestLayer)("global Board owner", (it) => {
   it.effect(
     "publishes across projects and threads with trusted authors, global targets, and durable order",
     () =>
       Effect.gen(function* () {
-        const engine = yield* OrchestrationEngineService;
         const board = yield* Board;
         const query = yield* BoardQuery;
         const sql = yield* SqlClient.SqlClient;
 
         for (const suffix of ["one", "two"] as const) {
-          yield* engine.dispatch({
-            type: "project.create",
-            commandId: CommandId.make(`project-command-${suffix}`),
-            projectId: ProjectId.make(`project-${suffix}`),
-            title: `Project ${suffix}`,
-            workspaceRoot: `/workspace/project-${suffix}`,
-            defaultModelSelection: modelSelection,
-            createdAt,
-          });
-          yield* engine.dispatch({
-            type: "thread.create",
-            commandId: CommandId.make(`thread-command-${suffix}`),
-            threadId: ThreadId.make(`thread-${suffix}`),
-            projectId: ProjectId.make(`project-${suffix}`),
-            title: `Thread ${suffix}`,
-            modelSelection,
-            runtimeMode: "full-access",
-            interactionMode: "default",
-            branch: null,
-            worktreePath: null,
-            createdAt,
-          });
+          yield* seedBoardThread(
+            ThreadId.make(`thread-${suffix}`),
+            ProjectId.make(`project-${suffix}`),
+          );
         }
 
         const first = yield* board.publish(
@@ -117,11 +86,6 @@ it.layer(TestLayer)("global Board owner", (it) => {
         `;
         assert.deepStrictEqual(receipts, [{ count: 2 }]);
 
-        yield* engine.dispatch({
-          type: "thread.delete",
-          commandId: CommandId.make("thread-delete-one"),
-          threadId: ThreadId.make("thread-one"),
-        });
         const afterDeletion = yield* query.getPage({});
         assert.deepStrictEqual(afterDeletion.posts, page.posts);
         assert.strictEqual(afterDeletion.headSequence, page.headSequence);
@@ -130,33 +94,11 @@ it.layer(TestLayer)("global Board owner", (it) => {
 
   it.effect("revises through trusted agent and owner identities with durable conflicts", () =>
     Effect.gen(function* () {
-      const engine = yield* OrchestrationEngineService;
       const board = yield* Board;
       const query = yield* BoardQuery;
       const sql = yield* SqlClient.SqlClient;
 
-      yield* engine.dispatch({
-        type: "project.create",
-        commandId: CommandId.make("revision-project-command"),
-        projectId: ProjectId.make("revision-project"),
-        title: "Revision project",
-        workspaceRoot: "/workspace/revision-project",
-        defaultModelSelection: modelSelection,
-        createdAt,
-      });
-      yield* engine.dispatch({
-        type: "thread.create",
-        commandId: CommandId.make("revision-thread-command"),
-        threadId: ThreadId.make("revision-thread"),
-        projectId: ProjectId.make("revision-project"),
-        title: "Revision thread",
-        modelSelection,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        branch: null,
-        worktreePath: null,
-        createdAt,
-      });
+      yield* seedBoardThread(ThreadId.make("revision-thread"), ProjectId.make("revision-project"));
 
       const original = yield* board.publish(
         {
@@ -324,6 +266,125 @@ it.layer(TestLayer)("global Board owner", (it) => {
           ],
         );
       }
+    }),
+  );
+});
+
+it.layer(TestLayer)("Board transaction replacement host", (it) => {
+  it.effect(
+    "rolls back event, current content, history and cursor when receipt persistence fails",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const board = yield* Board;
+        const query = yield* BoardQuery;
+        yield* seedBoardThread(ThreadId.make("atomic-thread"), ProjectId.make("atomic-project"));
+        const before = yield* query.getPage({});
+        const counts = () => sql<{ events: number; posts: number; revisions: number }>`
+        SELECT (SELECT COUNT(*) FROM orchestration_events WHERE aggregate_kind = 'board') AS events,
+          (SELECT COUNT(*) FROM projection_board_posts) AS posts,
+          (SELECT COUNT(*) FROM projection_board_post_revisions) AS revisions
+      `;
+        const beforeCounts = yield* counts();
+        yield* sql`CREATE TRIGGER reject_board_receipt BEFORE INSERT ON orchestration_command_receipts
+        WHEN NEW.aggregate_kind = 'board' BEGIN SELECT RAISE(ABORT, 'synthetic receipt rejection'); END`;
+        const result = yield* Effect.result(
+          board.publish(
+            {
+              authorId: BoardAuthorId.make("board-public-atomic"),
+              providerInstanceId: ProviderInstanceId.make("codex"),
+              threadId: ThreadId.make("atomic-thread"),
+            },
+            { body: "Must roll back" },
+          ),
+        );
+        assert.isTrue(Result.isFailure(result));
+        assert.deepStrictEqual(yield* counts(), beforeCounts);
+        assert.deepStrictEqual(yield* query.getPage({}), before);
+        yield* sql`DROP TRIGGER reject_board_receipt`;
+      }),
+  );
+
+  it.effect("rebuilds historical Board publication and correction through the current owner", () =>
+    Effect.gen(function* () {
+      const store = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const query = yield* BoardQuery;
+      const source = {
+        kind: "collective-expedition" as const,
+        expeditionId: "synthetic-expedition",
+        residentId: "synthetic-resident",
+      };
+      const published = yield* store.appendBoardEvent({
+        eventId: EventId.make("historical-board-publication"),
+        aggregateKind: "board",
+        aggregateId: BOARD_AGGREGATE_ID,
+        type: "board.post-published",
+        occurredAt: "2026-08-20T00:00:00.000Z",
+        commandId: CommandId.make("historical-publish"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        payload: {
+          postId: BoardPostId.make("historical-post"),
+          author: {
+            kind: "agent",
+            id: BoardAuthorId.make("historical-private-session"),
+            providerInstanceId: ProviderInstanceId.make("codex"),
+          },
+          source,
+          body: "Historical original",
+          targets: [],
+          createdAt: "2026-08-20T00:00:00.000Z",
+        },
+      });
+      const revised = yield* store.appendBoardEvent({
+        eventId: EventId.make("historical-board-revision"),
+        aggregateKind: "board",
+        aggregateId: BOARD_AGGREGATE_ID,
+        type: "board.post-revised",
+        occurredAt: "2026-08-21T00:00:00.000Z",
+        commandId: CommandId.make("historical-revise"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        payload: {
+          postId: BoardPostId.make("historical-post"),
+          previousRevision: 1,
+          revision: 2,
+          editor: {
+            kind: "environment-owner",
+            clientId: AuthClientId.make("synthetic-private-owner"),
+          },
+          editorSource: null,
+          body: "Historical correction",
+          targets: ["attention"],
+          revisedAt: "2026-08-21T00:00:00.000Z",
+        },
+      });
+      yield* sql`UPDATE orchestration_events SET application_event_version = 1
+        WHERE sequence IN (${published.sequence}, ${revised.sequence})`;
+      yield* sql`DELETE FROM projection_board_post_revisions`;
+      yield* sql`DELETE FROM projection_board_posts`;
+      yield* sql`DELETE FROM projection_state WHERE projector = ${BOARD_POSTS_PROJECTOR}`;
+      yield* Board.pipe(Effect.provide(Layer.fresh(BoardLive)));
+      const current = yield* query.getPostById(BoardPostId.make("historical-post"));
+      assert.isTrue(Option.isSome(current));
+      if (Option.isNone(current)) return;
+      assert.strictEqual(current.value.author.id, "legacy-historical-post");
+      assert.strictEqual(current.value.sequence, published.sequence);
+      assert.strictEqual(current.value.updatedSequence, revised.sequence);
+      assert.strictEqual(current.value.revision, 2);
+      assert.strictEqual(current.value.body, "Historical correction");
+      assert.deepStrictEqual(current.value.source, source);
+      const history = yield* query.getHistory({ postId: current.value.id });
+      assert.isTrue(Option.isSome(history));
+      if (Option.isSome(history))
+        assert.deepStrictEqual(
+          history.value.revisions.map((row) => row.body),
+          ["Historical correction", "Historical original"],
+        );
+      assert.strictEqual(yield* query.getHeadSequence, revised.sequence);
     }),
   );
 });

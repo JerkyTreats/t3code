@@ -1,25 +1,26 @@
 import { BOARD_HISTORY_MAX_REVISIONS, BOARD_PAGE_MAX_POSTS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { toPersistenceSqlError } from "../../persistence/Errors.ts";
 import * as Option from "effect/Option";
 
 import { BOARD_POSTS_PROJECTOR } from "../../board/EventProjection.ts";
 import { ProjectionBoardPostRepositoryLive } from "../../persistence/Layers/ProjectionBoardPosts.ts";
-import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
 import { ProjectionBoardPostRepository } from "../../persistence/Services/ProjectionBoardPosts.ts";
-import { ProjectionStateRepository } from "../../persistence/Services/ProjectionState.ts";
 import { decodeBoardPageCursor, encodeBoardPostCursor } from "../board/Cursor.ts";
 import { BoardQuery, type BoardQueryShape } from "../Services/BoardQuery.ts";
 
 const makeBoardQuery = Effect.gen(function* () {
   const posts = yield* ProjectionBoardPostRepository;
-  const projectionState = yield* ProjectionStateRepository;
-
-  const getHeadSequence: BoardQueryShape["getHeadSequence"] = projectionState
-    .getByProjector({ projector: BOARD_POSTS_PROJECTOR })
-    .pipe(
-      Effect.map(Option.match({ onNone: () => 0, onSome: (state) => state.lastAppliedSequence })),
-    );
+  const sql = yield* SqlClient.SqlClient;
+  const getHeadSequence: BoardQueryShape["getHeadSequence"] = sql<{ readonly sequence: number }>`
+    SELECT last_applied_sequence AS sequence FROM projection_state
+    WHERE projector = ${BOARD_POSTS_PROJECTOR}
+  `.pipe(
+    Effect.map((rows) => rows[0]?.sequence ?? 0),
+    Effect.mapError(toPersistenceSqlError("BoardQuery.getHeadSequence")),
+  );
 
   const getPage: BoardQueryShape["getPage"] = Effect.fn("BoardQuery.getPage")(function* (input) {
     const limit = input.limit ?? BOARD_PAGE_MAX_POSTS;
@@ -77,5 +78,4 @@ export const BoardQueryCoreLive = Layer.effect(BoardQuery, makeBoardQuery);
 
 export const BoardQueryLive = BoardQueryCoreLive.pipe(
   Layer.provideMerge(ProjectionBoardPostRepositoryLive),
-  Layer.provideMerge(ProjectionStateRepositoryLive),
 );

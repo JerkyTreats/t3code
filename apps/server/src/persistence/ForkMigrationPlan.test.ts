@@ -98,3 +98,56 @@ it.layer(Layer.fresh(NodeSqliteClient.layer({ filename: ":memory:" })))(
     );
   },
 );
+
+it.effect("rolls back the V2 schema and baseline events together before retry", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: 67 });
+    yield* sql`INSERT INTO projection_projects (
+      project_id, title, workspace_root, scripts_json, created_at, updated_at
+    ) VALUES ('synthetic-v2-rollback', 'Retained project', '/synthetic/project', '[]',
+      '2026-01-01', '2026-01-01')`;
+    yield* sql`CREATE TRIGGER fail_v2_continuation BEFORE INSERT ON orchestration_events
+      WHEN NEW.event_id LIKE 'migration:%' BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END`;
+    assert.isTrue(Exit.isFailure(yield* Effect.exit(runMigrations())));
+    assert.deepStrictEqual(yield* sql`SELECT MAX(migration_id) AS id FROM effect_sql_migrations`, [
+      { id: 67 },
+    ]);
+    assert.deepStrictEqual(
+      yield* sql`SELECT name FROM sqlite_master
+      WHERE name = 'orchestration_v2_legacy_imports'`,
+      [],
+    );
+    assert.deepStrictEqual(yield* sql`SELECT event_id FROM orchestration_events`, []);
+    const columns = yield* sql<{ readonly name: string }>`PRAGMA table_info(orchestration_events)`;
+    assert.isFalse(columns.some(({ name }) => name === "application_event_version"));
+    assert.deepStrictEqual(yield* sql`SELECT title FROM projection_projects`, [
+      { title: "Retained project" },
+    ]);
+    yield* sql`DROP TRIGGER fail_v2_continuation`;
+    assert.deepStrictEqual(yield* runMigrations(), [
+      [68, "OrchestrationV2"],
+      [69, "RemoveRedundantProjectionIndexes"],
+      [70, "ApplicationBoardEventSequenceIndex"],
+    ]);
+    assert.deepStrictEqual(yield* runMigrations(), []);
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+);
+
+it.effect("rejects a populated journal-less database before the runner creates its journal", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`CREATE TABLE synthetic_legacy_data (text TEXT)`;
+    yield* sql`INSERT INTO synthetic_legacy_data VALUES ('Keep original data')`;
+    const error = yield* Effect.flip(runMigrations());
+    assert.match(error.message, /populated database without a migration journal/);
+    assert.deepStrictEqual(
+      yield* sql`SELECT name FROM sqlite_master
+      WHERE name = 'effect_sql_migrations'`,
+      [],
+    );
+    assert.deepStrictEqual(yield* sql`SELECT * FROM synthetic_legacy_data`, [
+      { text: "Keep original data" },
+    ]);
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+);

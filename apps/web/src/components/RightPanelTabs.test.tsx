@@ -123,16 +123,13 @@ function renderTabs(
       onAddPullRequests={() => undefined}
       onAddDiff={() => undefined}
       onAddFiles={() => undefined}
-      onAddAgents={() => undefined}
       onAddDevice={() => undefined}
-      liveAgentCount={0}
       browserAvailable
       terminalAvailable={false}
       diffAvailable={false}
       filesAvailable={false}
       pullRequestAvailable={false}
       pullRequestsAvailable={false}
-      agentsAvailable={false}
       deviceAvailable={false}
     >
       <div>content</div>
@@ -163,17 +160,14 @@ function renderBoardTabs(open: boolean) {
       onAddPullRequest={() => undefined}
       onAddDiff={() => undefined}
       onAddFiles={() => undefined}
-      onAddAgents={() => undefined}
       onAddBoard={() => undefined}
       onAddPullRequests={() => undefined}
       onAddDevice={() => undefined}
-      liveAgentCount={0}
       browserAvailable={false}
       terminalAvailable={false}
       diffAvailable={false}
       filesAvailable={false}
       pullRequestAvailable={false}
-      agentsAvailable={false}
       boardAvailable
       pullRequestsAvailable={false}
       deviceAvailable={false}

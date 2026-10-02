@@ -6,7 +6,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
-import { beforeEach, vi } from "vite-plus/test";
 
 import type * as Electron from "electron";
 
@@ -15,17 +14,7 @@ import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
-
-const { accessSyncMock } = vi.hoisted(() => ({ accessSyncMock: vi.fn() }));
-
-vi.mock("node:fs", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("node:fs")>()),
-  accessSync: accessSyncMock,
-}));
-
-beforeEach(() => {
-  accessSyncMock.mockReset();
-});
+import * as DesktopUserData from "./DesktopUserData.ts";
 
 const defaultEnvironmentInput = {
   dirname: "/repo/apps/desktop/dist-electron",
@@ -133,17 +122,18 @@ const withIdentity = <A, E, R>(
     setName: [],
   };
 
-  accessSyncMock.mockImplementation((path: string) => {
-    if (input.legacyPathProbeError) throw input.legacyPathProbeError;
-    if (input.legacyPathExists === true && path.includes("T3 Code (Alpha)")) return;
-    throw Object.assign(new Error("synthetic path does not exist"), { code: "ENOENT" });
-  });
-
   return effect.pipe(
     Effect.provide(
       DesktopAppIdentity.layer.pipe(
+        Layer.provide(NodePath.layerPosix),
         Layer.provideMerge(
           FileSystem.layerNoop({
+            exists: (path) =>
+              input.legacyPathProbeError
+                ? Effect.fail(input.legacyPathProbeError)
+                : Effect.succeed(
+                    input.legacyPathExists === true && /T3 Code \((Alpha|Dev)\)/.test(path),
+                  ),
             readFileString: () =>
               Effect.succeed(input.packageJson ?? '{"t3codeCommitHash":"abcdef1234567890"}'),
           }),
@@ -157,32 +147,36 @@ const withIdentity = <A, E, R>(
 };
 
 describe("DesktopAppIdentity", () => {
-  it.effect("selects the current userData path when the legacy path is absent", () =>
-    withIdentity(
-      Effect.gen(function* () {
-        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
-        assert.equal(
-          yield* identity.resolveUserDataPath,
-          "/Users/alice/Library/Application Support/t3code",
-        );
-      }),
-    ),
-  );
-
-  it.effect("keeps using the legacy userData path when it already exists", () =>
+  it.effect("isolates the V2 profile even when the legacy V1 profile exists", () =>
     withIdentity(
       Effect.gen(function* () {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const userDataPath = yield* identity.resolveUserDataPath;
 
-        assert.equal(userDataPath, "/Users/alice/Library/Application Support/T3 Code (Alpha)");
+        assert.equal(userDataPath, "/Users/alice/Library/Application Support/t3code-v2");
       }),
       { legacyPathExists: true },
     ),
   );
 
+  it.effect("keeps using the legacy development profile", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        assert.equal(
+          yield* identity.resolveUserDataPath,
+          "/Users/alice/Library/Application Support/T3 Code (Dev)",
+        );
+      }),
+      {
+        legacyPathExists: true,
+        environment: { env: { VITE_DEV_SERVER_URL: "http://localhost:5173" } },
+      },
+    ),
+  );
+
   it.effect("preserves failures while inspecting the legacy userData path", () => {
-    const legacyPath = "/Users/alice/Library/Application Support/T3 Code (Alpha)";
+    const legacyPath = "/Users/alice/Library/Application Support/T3 Code (Dev)";
     const cause = PlatformError.systemError({
       _tag: "PermissionDenied",
       module: "FileSystem",
@@ -196,15 +190,18 @@ describe("DesktopAppIdentity", () => {
         const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
         const error = yield* identity.resolveUserDataPath.pipe(Effect.flip);
 
-        assert.instanceOf(error, DesktopAppIdentity.DesktopUserDataPathResolutionError);
-        assert.equal(error.legacyPath, legacyPath);
+        assert.instanceOf(error, DesktopUserData.DesktopUserDataInitializationError);
+        assert.equal(error.resourcePath, legacyPath);
         assert.strictEqual(error.cause, cause);
         assert.equal(
           error.message,
-          `Failed to inspect legacy desktop user-data path at "${legacyPath}".`,
+          `Could not initialize Electron user data during inspect at ${legacyPath} (PermissionDenied).`,
         );
       }),
-      { legacyPathProbeError: cause },
+      {
+        legacyPathProbeError: cause,
+        environment: { env: { VITE_DEV_SERVER_URL: "http://localhost:5173" } },
+      },
     );
   });
 
@@ -267,22 +264,31 @@ describe("DesktopAppIdentity", () => {
 
 describe("standalone browser identity", () => {
   it.effect("never probes or adopts a legacy upstream profile", () =>
-    Effect.gen(function* () {
-      const environment = {
-        standaloneServerUrl: Option.some(new URL("https://code.example.test/")),
-        path: { join: (...parts: string[]) => parts.join("/") },
-        appDataDirectory: "/config/t3code-production",
-        userDataDirName: "t3code",
-        legacyUserDataDirName: "T3 Code (Alpha)",
-      } as DesktopEnvironment.DesktopEnvironment["Service"];
-      const path = yield* DesktopAppIdentity.resolveUserDataPath.pipe(
-        Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
-        Effect.provide(
-          FileSystem.layerNoop({ exists: () => Effect.die("must not inspect legacy profile") }),
-        ),
-      );
-      assert.equal(path, "/config/t3code-production/t3code");
-      assert.equal(accessSyncMock.mock.calls.length, 0);
-    }),
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        assert.equal(yield* identity.resolveUserDataPath, "/config/t3code-production/t3code");
+      }),
+      {
+        environment: {
+          platform: "linux",
+          homeDirectory: "/home/example",
+          env: {
+            T3CODE_DESKTOP_SERVER_URL: "https://code.example.test/",
+            T3CODE_DESKTOP_DISPLAY_NAME: "T3 Code",
+            XDG_CONFIG_HOME: "/config/t3code-production",
+            XDG_DATA_HOME: "/data",
+            T3CODE_HOME: "/data/t3code-production/state",
+            T3CODE_DISABLE_AUTO_UPDATE: "true",
+          },
+        },
+        legacyPathProbeError: PlatformError.systemError({
+          _tag: "PermissionDenied",
+          module: "FileSystem",
+          method: "exists",
+          pathOrDescriptor: "/config/t3code-production",
+        }),
+      },
+    ),
   );
 });

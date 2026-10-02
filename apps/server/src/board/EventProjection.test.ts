@@ -8,8 +8,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  type OrchestrationEvent,
-  type OrchestrationReadModel,
+  type ApplicationBoardEvent,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -19,7 +18,7 @@ import type {
   ReviseProjectionBoardPostInput,
   ReviseProjectionBoardPostOutcome,
 } from "../persistence/Services/ProjectionBoardPosts.ts";
-import { applyBoardEventProjection, projectBoardEventOntoReadModel } from "./EventProjection.ts";
+import { applyBoardEventProjection } from "./EventProjection.ts";
 
 const publishedAt = "2026-08-30T12:00:00.000Z";
 const revisedAt = "2026-08-30T12:01:00.000Z";
@@ -57,7 +56,7 @@ const publishedEvent = {
     targets: ["collective"],
     createdAt: publishedAt,
   },
-} satisfies Extract<OrchestrationEvent, { type: "board.post-published" }>;
+} satisfies Extract<ApplicationBoardEvent, { type: "board.post-published" }>;
 
 const revisedEvent = {
   sequence: 47,
@@ -83,7 +82,7 @@ const revisedEvent = {
     targets: ["verified"],
     revisedAt,
   },
-} satisfies Extract<OrchestrationEvent, { type: "board.post-revised" }>;
+} satisfies Extract<ApplicationBoardEvent, { type: "board.post-revised" }>;
 
 function makeRepository(input: {
   readonly insert?: (post: ProjectionBoardPost) => Effect.Effect<void>;
@@ -137,7 +136,7 @@ it.effect("Board projection preserves historical resident provenance without its
     const historicalEvent = {
       ...publishedEvent,
       payload: { ...publishedEvent.payload, source: historicalSource },
-    } satisfies Extract<OrchestrationEvent, { type: "board.post-published" }>;
+    } satisfies Extract<ApplicationBoardEvent, { type: "board.post-published" }>;
 
     yield* applyBoardEventProjection({
       event: historicalEvent,
@@ -212,18 +211,3 @@ it.effect("Board projection fails when a revised post is absent", () =>
     expect(error.detail).toBe("Board post 'post-board-projection-owner' was not found.");
   }),
 );
-
-it("Board read-model projection advances only the orchestration watermark", () => {
-  const model: OrchestrationReadModel = {
-    snapshotSequence: 40,
-    projects: [],
-    threads: [],
-    updatedAt: publishedAt,
-  };
-
-  expect(projectBoardEventOntoReadModel(model, revisedEvent)).toEqual({
-    ...model,
-    snapshotSequence: 47,
-    updatedAt: revisedAt,
-  });
-});

@@ -2,11 +2,10 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
-import { ORCHESTRATION_WS_METHODS } from "./orchestration.ts";
+import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
 import { WS_METHODS, WsRpcGroup, WsSubscribeServerConfigRpc } from "./rpc.ts";
 
-const oldServerPayload = Schema.Struct({});
-const decodeOldServerPayloadExit = Schema.decodeUnknownExit(oldServerPayload);
+const decodeOldServerPayloadExit = Schema.decodeUnknownExit(Schema.Struct({}));
 const decodeServerConfigSubscription = Schema.decodeUnknownSync(
   WsSubscribeServerConfigRpc.payloadSchema,
 );
@@ -36,21 +35,46 @@ describe("subscribeServerConfig payload compatibility", () => {
   });
 });
 
-describe("retired access inventory RPC", () => {
-  it("does not register the legacy access subscription", () => {
-    expect("subscribeAuthAccess" in WS_METHODS).toBe(false);
+describe("WebSocket RPC contracts", () => {
+  it("exposes only the V2 orchestration transport surface", () => {
+    const methods = [...WsRpcGroup.requests.keys()];
+
+    expect(methods).toEqual(expect.arrayContaining(Object.values(ORCHESTRATION_V2_WS_METHODS)));
+    expect(methods.filter((method) => method.startsWith("orchestrationV1."))).toEqual([]);
+  });
+
+  it("rejects server-internal commands sent to dispatchCommand", () => {
+    const dispatchCommand = WsRpcGroup.requests.get(ORCHESTRATION_V2_WS_METHODS.dispatchCommand);
+    if (dispatchCommand === undefined) throw new Error("dispatchCommand is not registered");
+    const decode = Schema.decodeUnknownExit(dispatchCommand.payloadSchema);
+
+    expect(
+      Exit.isFailure(
+        decode({
+          type: "checkpoint.rollback.fail",
+          commandId: "forged-rollback-failure",
+          threadId: "thread-1",
+          requestId: "rollback-1",
+          message: "Forged failure.",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      Exit.isSuccess(
+        decode({
+          type: "checkpoint.rollback",
+          commandId: "rollback-1",
+          threadId: "thread-1",
+          scopeId: "scope-1",
+          checkpointId: "checkpoint-1",
+        }),
+      ),
+    ).toBe(true);
   });
 });
 
-describe("RPC registration inventory", () => {
-  it("preserves the established project compatibility names and registers every other method", () => {
-    expect(Object.values(WS_METHODS).filter((method) => !WsRpcGroup.requests.has(method))).toEqual([
-      WS_METHODS.projectsList,
-      WS_METHODS.projectsAdd,
-      WS_METHODS.projectsRemove,
-    ]);
-    expect(
-      Object.values(ORCHESTRATION_WS_METHODS).filter((method) => !WsRpcGroup.requests.has(method)),
-    ).toEqual([]);
+describe("retired access inventory RPC", () => {
+  it("does not register the legacy access subscription", () => {
+    expect("subscribeAuthAccess" in WS_METHODS).toBe(false);
   });
 });

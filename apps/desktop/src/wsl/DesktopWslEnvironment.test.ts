@@ -69,6 +69,28 @@ const runShell = (script: string) => {
 
 const sh = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
+// Polls for up to five seconds until a background holder has taken effect.
+const awaitHolder = (condition: string) =>
+  `i=0; until ${condition}; do i=$((i + 1)); [ "$i" -lt 500 ] || exit 1; sleep 0.01; done`;
+
+// Holds a cache busy the way a running server does: the holder's argv[0] is the
+// runtime entry, which the prune and install scripts look for in /proc cmdline.
+// It reads a pipe the script keeps open on fd 7, so it exits with the script
+// instead of outliving it on a timer.
+const holdRuntimeBusy = (entry: string) =>
+  [
+    `exec 7> >(exec -a ${entry} cat >/dev/null 2>&1)`,
+    awaitHolder(`grep -qF -- ${entry} /proc/[0-9]*/cmdline 2>/dev/null`),
+  ].join("\n");
+
+// Holds a cache's install lock the way a concurrent install does, and likewise
+// releases it when the script exits.
+const holdInstallLock = (lock: string) =>
+  [
+    `exec 6> >(exec 9> ${lock}; flock -x 9; cat >/dev/null 2>&1)`,
+    awaitHolder(`! flock -n ${lock} true`),
+  ].join("\n");
+
 const readField = (stdout: string, field: string) => {
   const line = stdout.split("\n").find((candidate) => candidate.startsWith(`${field}:`));
   if (line === undefined) throw new Error(`missing ${field} in fixture output: ${stdout}`);
@@ -78,17 +100,6 @@ const readField = (stdout: string, field: string) => {
 // Stands in for the release's self-contained `t3` executable: the install
 // script only asks it for `--version`.
 const SERVER_ENTRY_SOURCE = '#!/bin/sh\necho "t3code wsl runtime test server 0.0.0"\n';
-
-// Running this file by its runtime path gives the /proc scan the same argv
-// shape as a real backend. The ready FIFO proves that exec completed before
-// the parent checks liveness, while the release FIFO blocks in the shell
-// without a child process that could outlive the captured holder PID.
-const RUNTIME_HOLDER_SOURCE = [
-  "#!/bin/sh",
-  "set -eu",
-  'printf "ready\\n" > "$1"',
-  'read -r _ < "$2"',
-].join("\n");
 
 const makeDistroListSpawner = (result: { readonly stdout?: string; readonly exitCode?: number }) =>
   ChildProcessSpawner.make(() =>
@@ -724,29 +735,8 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
         `runtime_root=${sh(fixture.runtimeRoot)}`,
         `runtime_parent=${sh(fixture.runtimeParent)}`,
         'rm "$runtime_root/.t3code-wsl-runtime-ready"',
-        'holder="$runtime_root/apps/server/dist/.t3code-test-runtime-holder.sh"',
-        'mkdir -p "$(dirname "$holder")"',
-        'holder_ready="$work/runtime-holder.ready"',
-        'holder_release="$work/runtime-holder.release"',
-        'mkfifo "$holder_ready" "$holder_release"',
-        "cat > \"$holder\" <<'T3CODE_RUNTIME_HOLDER'",
-        RUNTIME_HOLDER_SOURCE,
-        "T3CODE_RUNTIME_HOLDER",
-        'sh "$holder" "$holder_ready" "$holder_release" >/dev/null 2>&1 &',
-        "active_pid=$!",
-        "cleanup_holder() {",
-        '  kill "$active_pid" 2>/dev/null || true',
-        '  wait "$active_pid" 2>/dev/null || true',
-        '  rm -f "$holder_ready" "$holder_release"',
-        "}",
-        "trap cleanup_holder EXIT",
-        'read -r holder_state < "$holder_ready"',
-        'test "$holder_state" = ready',
-        'grep -qF -- "$runtime_root/" "/proc/$active_pid/cmdline"',
-        "cat > \"$work/install.sh\" <<'T3CODE_INSTALL_SCRIPT'",
+        holdRuntimeBusy('"$runtime_root/t3"'),
         fixture.installScript(),
-        "T3CODE_INSTALL_SCRIPT",
-        'sh "$work/install.sh"',
         'stale=$(find "$runtime_parent" -maxdepth 1 -type d -name ".sha256-*.stale.*" -print -quit)',
         'test -n "$stale"',
         'touch -d "180 minutes ago" "$stale"',
@@ -754,8 +744,6 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
         "export HOME",
         buildWslRuntimePruneScript(fixture.runtimeId),
         'test ! -e "$stale"',
-        "cleanup_holder",
-        "trap - EXIT",
       ].join("\n"),
     );
 
@@ -781,39 +769,8 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
         'touch -d "4 minutes ago" "$runtime_parent/sha256-active"',
         'touch -d "3 minutes ago" "$runtime_parent/sha256-old"',
         'touch -d "2 minutes ago" "$runtime_parent/sha256-locked"',
-        'active_runtime="$runtime_parent/sha256-active"',
-        'holder="$active_runtime/apps/server/dist/.t3code-test-runtime-holder.sh"',
-        'mkdir -p "$(dirname "$holder")"',
-        'holder_ready="$work/runtime-holder.ready"',
-        'holder_release="$work/runtime-holder.release"',
-        'lock_ready="$work/lock-holder.ready"',
-        'lock_release="$work/lock-holder.release"',
-        'mkfifo "$holder_ready" "$holder_release" "$lock_ready" "$lock_release"',
-        "cat > \"$holder\" <<'T3CODE_RUNTIME_HOLDER'",
-        RUNTIME_HOLDER_SOURCE,
-        "T3CODE_RUNTIME_HOLDER",
-        'touch -d "4 minutes ago" "$active_runtime"',
-        'sh "$holder" "$holder_ready" "$holder_release" >/dev/null 2>&1 &',
-        "active_pid=$!",
-        "(",
-        '  exec 9> "$runtime_parent/.sha256-locked.install.lock"',
-        "  flock -x 9",
-        '  printf "ready\\n" > "$lock_ready"',
-        '  read -r _ < "$lock_release"',
-        ") >/dev/null 2>&1 &",
-        "lock_pid=$!",
-        "cleanup_holders() {",
-        '  kill "$active_pid" "$lock_pid" 2>/dev/null || true',
-        '  wait "$active_pid" 2>/dev/null || true',
-        '  wait "$lock_pid" 2>/dev/null || true',
-        '  rm -f "$holder_ready" "$holder_release" "$lock_ready" "$lock_release"',
-        "}",
-        "trap cleanup_holders EXIT",
-        'read -r holder_state < "$holder_ready"',
-        'read -r lock_state < "$lock_ready"',
-        'test "$holder_state" = ready',
-        'test "$lock_state" = ready',
-        'grep -qF -- "$active_runtime/" "/proc/$active_pid/cmdline"',
+        holdRuntimeBusy('"$runtime_parent/sha256-active/t3"'),
+        holdInstallLock('"$runtime_parent/.sha256-locked.install.lock"'),
         `HOME="$home"`,
         "export HOME",
         buildWslRuntimePruneScript("sha256-current"),
@@ -824,8 +781,6 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
         'test -d "$runtime_parent/versions"',
         'test ! -e "$runtime_parent/sha256-old"',
         'test ! -e "$runtime_parent/sha256-markerless"',
-        "cleanup_holders",
-        "trap - EXIT",
         'rm -rf "$work"',
       ].join("\n"),
     );

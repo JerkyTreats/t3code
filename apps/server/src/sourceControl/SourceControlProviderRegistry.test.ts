@@ -43,6 +43,7 @@ function makeRegistry(input: {
   }>;
   readonly process?: Partial<VcsProcess.VcsProcess["Service"]>;
   readonly github?: Partial<GitHubCli.GitHubCli["Service"]>;
+  readonly forgejo?: Partial<ForgejoCli.ForgejoCli["Service"]>;
   readonly gitlab?: Partial<GitLabCli.GitLabCli["Service"]>;
   readonly resolve?: VcsDriverRegistry.VcsDriverRegistry["Service"]["resolve"];
 }) {
@@ -121,7 +122,10 @@ function makeRegistry(input: {
         Layer.mock(BitbucketApi.BitbucketApi)({}),
         Layer.mock(GitHubCli.GitHubCli)(input.github ?? {}),
         Layer.mock(GitLabCli.GitLabCli)(input.gitlab ?? {}),
-        Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
+        Layer.mock(ForgejoCli.ForgejoCli)({
+          listLogins: () => Effect.succeed([]),
+          ...input.forgejo,
+        }),
         ServerConfig.layerTest(process.cwd(), {
           prefix: "t3-source-control-registry-test-",
         }).pipe(Layer.provide(NodeServices.layer)),
@@ -528,4 +532,63 @@ it.effect("routes linked subjects only within the exact origin repository", () =
       assert.strictEqual(registry.resolveLink({ cwd: "/unrelated", url: new URL(url) }), undefined);
     }
   }).pipe(Effect.scoped),
+);
+
+it.effect(
+  "refines live origin SSH accounts by requested web authority without accepting a caller override",
+  () =>
+    Effect.gen(function* () {
+      const remoteUrl = "git@forge.example.test:team/repo.git";
+      const logins = [
+        {
+          name: "first",
+          url: "https://forge.example.test:3000",
+          user: "synthetic-first",
+          default: "false",
+          ssh_host: "forge.example.test",
+        },
+        {
+          name: "second",
+          url: "https://forge.example.test:4000",
+          user: "synthetic-second",
+          default: "false",
+          ssh_host: "forge.example.test",
+        },
+      ];
+      const registry = yield* makeRegistry({
+        remotes: [{ name: "origin", url: remoteUrl }],
+        forgejo: { listLogins: () => Effect.succeed(logins) },
+      });
+      const context = {
+        remoteName: "origin",
+        remoteUrl,
+        provider: {
+          kind: "unknown" as const,
+          name: "Forgejo",
+          baseUrl: "https://forge.example.test",
+        },
+      };
+      for (const port of [3000, 4000]) {
+        const handle = yield* registry.resolveHandle({
+          cwd: "/repo",
+          context: { ...context, requestedHost: `forge.example.test:${port}` },
+        });
+        assert.strictEqual(handle.provider.kind, "forgejo");
+        assert.strictEqual(handle.context?.provider.baseUrl, `https://forge.example.test:${port}`);
+        assert.strictEqual(handle.context?.remoteUrl, remoteUrl);
+      }
+      for (const foreign of [
+        { ...context, remoteName: "upstream", requestedHost: "forge.example.test:4000" },
+        {
+          ...context,
+          remoteUrl: "git@forge.example.test:foreign/repo.git",
+          requestedHost: "forge.example.test:4000",
+        },
+        { ...context, requestedHost: "foreign.example.test:4000" },
+      ]) {
+        const handle = yield* registry.resolveHandle({ cwd: "/repo", context: foreign });
+        assert.strictEqual(handle.context?.provider.kind, "unknown");
+        assert.strictEqual(handle.context?.remoteUrl, remoteUrl);
+      }
+    }),
 );

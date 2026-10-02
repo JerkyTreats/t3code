@@ -5,7 +5,6 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
-  CommandId,
   EventId,
   MessageId,
   ProjectId,
@@ -17,26 +16,17 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-import { OrchestrationEventStoreLive } from "./Layers/OrchestrationEventStore.ts";
-import { ProjectionProjectRepositoryLive } from "./Layers/ProjectionProjects.ts";
-import { ProjectionThreadMessageRepositoryLive } from "./Layers/ProjectionThreadMessages.ts";
-import { ProjectionThreadRepositoryLive } from "./Layers/ProjectionThreads.ts";
 import { makeSqlitePersistenceLive } from "./Layers/Sqlite.ts";
 import { runMigrations } from "./Migrations.ts";
+import { initializeV2Database } from "./initializeV2Database.ts";
 import {
   forkMigrationStates,
   prepareForkMigrationState,
   prepareReleasedForkMigration41State,
 } from "./Migrations/fixtures/AuthLineageFixtures.ts";
-import { OrchestrationEventStore } from "./Services/OrchestrationEventStore.ts";
-import { ProjectionProjectRepository } from "./Services/ProjectionProjects.ts";
-import { ProjectionThreadMessageRepository } from "./Services/ProjectionThreadMessages.ts";
-import { ProjectionThreadRepository } from "./Services/ProjectionThreads.ts";
 
 const retiredHistoricalNames = [
   [46, "CollectiveResidentRuntime"],
@@ -62,7 +52,6 @@ const projectId = ProjectId.make("synthetic-upgrade-project");
 const threadId = ThreadId.make("synthetic-upgrade-thread");
 const messageId = MessageId.make("synthetic-upgrade-message");
 const eventId = EventId.make("synthetic-upgrade-event");
-const commandId = CommandId.make("synthetic-upgrade-command");
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const modelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
@@ -422,17 +411,6 @@ const seedAccepted51Fixture = Effect.fn("seedAccepted51Fixture")(function* () {
 
 const readInitializedFixture = Effect.fn("readInitializedFixture")(function* () {
   const sql = yield* SqlClient.SqlClient;
-  const projects = yield* ProjectionProjectRepository;
-  const threads = yield* ProjectionThreadRepository;
-  const messages = yield* ProjectionThreadMessageRepository;
-  const events = yield* OrchestrationEventStore;
-
-  const project = Option.getOrNull(yield* projects.getById({ projectId }));
-  const thread = Option.getOrNull(yield* threads.getById({ threadId }));
-  const messageRows = yield* messages.listByThreadId({ threadId });
-  const eventRows = yield* Stream.runCollect(events.readAll()).pipe(
-    Effect.map((chunk) => Array.from(chunk)),
-  );
   const preserved = yield* preservedFixtureRows();
   const journal = yield* sql<{ readonly migrationId: number; readonly name: string }>`
     SELECT migration_id AS "migrationId", name
@@ -441,7 +419,7 @@ const readInitializedFixture = Effect.fn("readInitializedFixture")(function* () 
   `;
   const executed = yield* runMigrations();
 
-  return { project, thread, messageRows, eventRows, preserved, journal, executed };
+  return { preserved, journal, executed };
 });
 
 for (const state of forkMigrationStates) {
@@ -475,7 +453,7 @@ for (const state of forkMigrationStates) {
         }),
       );
       assert.deepStrictEqual(latest, [
-        { migrationId: 67, name: "ProjectionThreadCreationSurface" },
+        { migrationId: 70, name: "ApplicationBoardEventSequenceIndex" },
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
@@ -526,133 +504,58 @@ it.effect("rejects an isolated retired 49 journal identity", () =>
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
-it.effect("preserves an accepted 51 database through initialization and reopen", () => {
-  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-upgrade-"));
-  const dbPath = NodePath.join(tempDir, "state.sqlite");
-  const rawFileLayer = NodeSqliteClient.layer({ filename: dbPath });
-  const persistenceLayer = makeSqlitePersistenceLive(dbPath).pipe(
-    Layer.provide(NodeServices.layer),
-  );
-  const repositoriesLayer = Layer.mergeAll(
-    OrchestrationEventStoreLive,
-    ProjectionProjectRepositoryLive,
-    ProjectionThreadRepositoryLive,
-    ProjectionThreadMessageRepositoryLive,
-  ).pipe(Layer.provideMerge(persistenceLayer));
+it.effect(
+  "preserves an accepted 51 database through V2 copy, reopen and matching-old recovery",
+  () => {
+    const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-upgrade-"));
+    const sourcePath = NodePath.join(tempDir, "state.sqlite");
+    const dbPath = NodePath.join(tempDir, "statev2.sqlite");
+    const rawFileLayer = NodeSqliteClient.layer({ filename: sourcePath });
+    const persistenceLayer = makeSqlitePersistenceLive(dbPath).pipe(
+      Layer.provide(NodeServices.layer),
+    );
+    const repositoriesLayer = persistenceLayer;
 
-  return Effect.gen(function* () {
-    const before = yield* seedAccepted51Fixture().pipe(Effect.provide(rawFileLayer));
-    const first = yield* readInitializedFixture().pipe(Effect.provide(repositoriesLayer));
+    return Effect.gen(function* () {
+      const before = yield* seedAccepted51Fixture().pipe(Effect.provide(rawFileLayer));
+      const sourceBytes = NodeFS.readFileSync(sourcePath);
+      yield* initializeV2Database(dbPath).pipe(Effect.provide(NodeServices.layer));
+      const first = yield* readInitializedFixture().pipe(Effect.provide(repositoriesLayer));
 
-    assert.deepStrictEqual(first.preserved, before);
-    assert.deepStrictEqual(first.executed, []);
-    assert.deepStrictEqual(first.project, {
-      projectId,
-      title: "Synthetic upgrade project",
-      workspaceRoot: "/synthetic/upgrade-project",
-      defaultModelSelection: modelSelection,
-      defaultThreadEnvMode: "worktree",
-      autoPull: false,
-      faviconPath: "/synthetic/favicon.svg",
-      projectIcon: null,
-      scripts: [],
-      createdAt: "2026-07-01T00:00:00.000Z",
-      updatedAt: "2026-07-01T00:00:01.000Z",
-      deletedAt: null,
-    });
-    assert.deepStrictEqual(first.thread, {
-      threadId,
-      projectId,
-      creationSurface: null,
-      title: "Synthetic upgrade thread",
-      titleState: null,
-      modelSelection,
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      branch: "synthetic-preserved-branch",
-      worktreePath: "/synthetic/worktree",
-      linkedPullRequest: null,
-      branchPullRequest: null,
-      latestTurnId: null,
-      createdAt: "2026-07-01T00:00:00.000Z",
-      updatedAt: "2026-07-01T00:00:02.000Z",
-      archivedAt: null,
-      settledOverride: "active",
-      settledAt: null,
-      unsettledAt: null,
-      snoozedUntil: "2026-07-02T00:00:00.000Z",
-      snoozedAt: "2026-07-01T00:00:03.000Z",
-      pinnedAt: "2026-07-01T00:00:04.000Z",
-      pinOrderKey: "synthetic-pin-order",
-      activeOrderKey: null,
-      autoSettleDisabledAt: null,
-      titleRegenerationRequestId: null,
-      titleRegenerationStartedAt: null,
-      latestUserMessageAt: "2026-07-01T00:00:02.000Z",
-      pendingApprovalCount: 2,
-      pendingUserInputCount: 3,
-      hasActionableProposedPlan: 1,
-      deletedAt: null,
-    });
-    assert.deepStrictEqual(first.messageRows, [
-      {
-        messageId,
-        threadId,
-        turnId: null,
-        role: "user",
-        text: "Preserve this message",
-        attachments: [attachment],
-        isStreaming: false,
-        createdAt: "2026-07-01T00:00:02.000Z",
-        updatedAt: "2026-07-01T00:00:02.000Z",
-      },
-    ]);
-    assert.deepStrictEqual(first.eventRows, [
-      {
-        sequence: 1,
-        eventId,
-        aggregateKind: "thread",
-        aggregateId: threadId,
-        occurredAt: "2026-07-01T00:00:02.000Z",
-        commandId,
-        causationEventId: null,
-        correlationId: commandId,
-        metadata: eventMetadata,
-        type: "thread.message-sent",
-        payload: {
-          threadId,
-          messageId,
-          role: "user",
-          text: "Preserve this message",
-          attachments: [attachment],
-          turnId: null,
-          streaming: false,
-          createdAt: "2026-07-01T00:00:02.000Z",
-          updatedAt: "2026-07-01T00:00:02.000Z",
+      assert.deepStrictEqual(first.preserved, before);
+      assert.deepStrictEqual(first.executed, []);
+      assert.equal(first.preserved.messages[0]?.text, "Preserve this message");
+      assert.equal(first.preserved.messages[0]?.attachments_json, encodeJson([attachment]));
+      assert.equal(first.preserved.events[0]?.payload_json, before.events[0]?.payload_json);
+      assert.deepStrictEqual(first.preserved.clients, [
+        {
+          client_id: "synthetic-managed-client",
+          label: "Synthetic managed device",
+          device_type: "desktop",
+          platform: "Synthetic OS",
+          granted_scopes: '["access:read","access:write"]',
+          management_class: "portal-managed-device",
+          created_at: "2026-07-01T00:00:00.000Z",
+          last_connected_at: "2026-07-01T00:00:01.000Z",
+          disabled_at: null,
+          deleted_at: null,
+          revision: 7,
         },
-      },
-    ]);
-    assert.deepStrictEqual(first.preserved.clients, [
-      {
-        client_id: "synthetic-managed-client",
-        label: "Synthetic managed device",
-        device_type: "desktop",
-        platform: "Synthetic OS",
-        granted_scopes: '["access:read","access:write"]',
-        management_class: "portal-managed-device",
-        created_at: "2026-07-01T00:00:00.000Z",
-        last_connected_at: "2026-07-01T00:00:01.000Z",
-        disabled_at: null,
-        deleted_at: null,
-        revision: 7,
-      },
-    ]);
-    assert.equal(first.preserved.sessions[0]?.client_id, "synthetic-portal-client");
-    assert.equal(first.preserved.sessions[0]?.authority_class, "device-administrator");
+      ]);
+      assert.equal(first.preserved.sessions[0]?.client_id, "synthetic-portal-client");
+      assert.equal(first.preserved.sessions[0]?.authority_class, "device-administrator");
 
-    const reopened = yield* readInitializedFixture().pipe(Effect.provide(repositoriesLayer));
-    assert.deepStrictEqual(reopened, first);
-  }).pipe(
-    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
-  );
-});
+      const reopened = yield* readInitializedFixture().pipe(Effect.provide(repositoriesLayer));
+      assert.deepStrictEqual(reopened, first);
+      assert.deepStrictEqual(NodeFS.readFileSync(sourcePath), sourceBytes);
+      // The original remains the matching historical database, with its old
+      // journal and records. V2-only writes are deliberately not merged back.
+      yield* Effect.gen(function* () {
+        assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 51 }), []);
+        assert.deepStrictEqual(yield* preservedFixtureRows(), before);
+      }).pipe(Effect.provide(rawFileLayer));
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+    );
+  },
+);

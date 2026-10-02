@@ -3,16 +3,10 @@ import * as Schema from "effect/Schema";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Result from "effect/Result";
-import {
-  SourceControlProviderError,
-  type ChangeRequest,
-  type ChangeRequestState,
-} from "@t3tools/contracts";
+import { SourceControlProviderError, type ChangeRequest } from "@t3tools/contracts";
 
 import * as GitHubCli from "./GitHubCli.ts";
 import { findAuthenticatedGitHubAccount, parseGitHubAuthStatus } from "./gitHubAuthStatus.ts";
-import { decodeGitHubPullRequestListJson } from "./gitHubPullRequests.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 import {
   combinedAuthOutput,
@@ -122,103 +116,44 @@ export const make = Effect.gen(function* () {
   const github = yield* GitHubCli.GitHubCli;
 
   const listChangeRequests: SourceControlProvider.SourceControlProvider["Service"]["listChangeRequests"] =
-    (input) => {
-      if (input.state === "open") {
-        return requireGitHubRepository({
-          cwd: input.cwd,
-          operation: "listChangeRequests",
-          context: input.context,
-          reference: input.headSelector,
-        }).pipe(
-          Effect.flatMap((repository) =>
-            github.listOpenPullRequests({
-              cwd: input.cwd,
-              repository,
-              headSelector: input.headSelector,
-              ...(input.context === undefined
-                ? {}
-                : { rateLimitHost: new URL(input.context.provider.baseUrl).host }),
-              ...(input.limit !== undefined ? { limit: input.limit } : {}),
-            }),
-          ),
-          Effect.map((items) => items.map(toChangeRequest)),
-          Effect.mapError(
-            (error) =>
-              new SourceControlProviderError({
-                provider: "github",
-                operation: "listChangeRequests",
-                command: error.command,
-                cwd: input.cwd,
-                reference: SourceControlProvider.transportSafeSourceControlErrorValue(
-                  input.headSelector,
-                ),
-                detail: error.detail,
-                cause: error,
-              }),
-          ),
-        );
-      }
-
-      const stateArg: ChangeRequestState | "all" = input.state;
-      return requireGitHubRepository({
+    (input) =>
+      requireGitHubRepository({
         cwd: input.cwd,
         operation: "listChangeRequests",
         context: input.context,
         reference: input.headSelector,
       }).pipe(
-        Effect.flatMap((repository) =>
-          github.execute({
+        Effect.flatMap((repository) => {
+          const target = {
             cwd: input.cwd,
+            repository,
+            headSelector: input.headSelector,
             ...(input.context === undefined
               ? {}
               : { rateLimitHost: new URL(input.context.provider.baseUrl).host }),
-            args: [
-              "pr",
-              "list",
-              "--repo",
-              repository,
-              "--head",
-              input.headSelector,
-              "--state",
-              stateArg,
-              "--limit",
-              String(input.limit ?? 20),
-              "--json",
-              "number,title,url,baseRefName,headRefName,state,isDraft,mergedAt,closedAt,updatedAt,isCrossRepository,headRepository,headRepositoryOwner",
-            ],
-          }),
-        ),
-        Effect.flatMap((result) => {
-          const raw = result.stdout.trim();
-          if (raw.length === 0) {
-            return Effect.succeed([]);
-          }
-          return Effect.sync(() => decodeGitHubPullRequestListJson(raw)).pipe(
-            Effect.flatMap((decoded) =>
-              Result.isSuccess(decoded)
-                ? Effect.succeed(
-                    decoded.success.map((item) => {
-                      const { updatedAt, ...summary } = item;
-                      return {
-                        ...toChangeRequest({
-                          ...summary,
-                          ...(Option.isSome(updatedAt)
-                            ? { updatedAt: DateTime.formatIso(updatedAt.value) }
-                            : {}),
-                        }),
-                        updatedAt,
-                      };
-                    }),
-                  )
-                : Effect.fail(
-                    new GitHubCli.GitHubChangeRequestListDecodeError({
-                      command: "gh",
-                      cwd: input.cwd,
-                      cause: decoded.failure,
-                    }),
+          };
+          return input.state === "open"
+            ? github
+                .listOpenPullRequests({
+                  ...target,
+                  ...(input.limit === undefined ? {} : { limit: input.limit }),
+                })
+                .pipe(Effect.map((items) => items.map(toChangeRequest)))
+            : github
+                .listPullRequestsByHead({ ...target, state: input.state, limit: input.limit ?? 20 })
+                .pipe(
+                  Effect.map((items) =>
+                    items.map(({ updatedAt, ...summary }) => ({
+                      ...toChangeRequest({
+                        ...summary,
+                        ...(Option.isSome(updatedAt)
+                          ? { updatedAt: DateTime.formatIso(updatedAt.value) }
+                          : {}),
+                      }),
+                      updatedAt,
+                    })),
                   ),
-            ),
-          );
+                );
         }),
         Effect.mapError(
           (error) =>
@@ -235,7 +170,6 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
-    };
 
   const readLinkSubject = Effect.fn("GitHubSourceControlProvider.readLinkSubject")(function* (
     input: { readonly cwd: string; readonly url: URL },

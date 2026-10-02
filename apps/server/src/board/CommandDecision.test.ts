@@ -7,7 +7,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  type OrchestrationCommand,
+  type BoardOrchestrationCommand,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -50,7 +50,7 @@ it.effect("Board command decision owns publication event semantics and aggregate
       body: "The original Board claim",
       targets: ["collective"],
       createdAt,
-    } satisfies Extract<OrchestrationCommand, { type: "board.post.publish" }>;
+    } satisfies Extract<BoardOrchestrationCommand, { type: "board.post.publish" }>;
 
     expect(boardCommandAggregateRef(command)).toBe(BOARD_AGGREGATE_REF);
     const event = yield* decideBoardCommand({ command, makeEventBase });
@@ -93,7 +93,7 @@ it.effect("Board command decision preserves trusted revision audit data", () =>
       body: "The corrected Board claim",
       targets: ["verified"],
       revisedAt: createdAt,
-    } satisfies Extract<OrchestrationCommand, { type: "board.post.revise" }>;
+    } satisfies Extract<BoardOrchestrationCommand, { type: "board.post.revise" }>;
 
     const event = yield* decideBoardCommand({ command, makeEventBase });
 
@@ -129,7 +129,7 @@ it.effect(
         body: "Invalid skipped revision",
         targets: [],
         revisedAt: createdAt,
-      } satisfies Extract<OrchestrationCommand, { type: "board.post.revise" }>;
+      } satisfies Extract<BoardOrchestrationCommand, { type: "board.post.revise" }>;
 
       const error = yield* decideBoardCommand({
         command,
@@ -139,7 +139,7 @@ it.effect(
         },
       }).pipe(Effect.flip);
 
-      expect(error._tag).toBe("OrchestrationCommandInvariantError");
+      expect(error._tag).toBe("BoardCommandInvariantError");
       expect(error.commandType).toBe("board.post.revise");
       expect(error.detail).toBe("A Board revision must advance exactly one version.");
       expect(eventBaseCalls).toBe(0);

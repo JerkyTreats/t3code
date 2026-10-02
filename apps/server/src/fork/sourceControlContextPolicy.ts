@@ -1,13 +1,22 @@
-import type { RepositoryIdentity } from "@t3tools/contracts";
+import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
+import {
+  azureDevOpsRepositoryTargetFromOrigin,
+  azureDevOpsRepositoryTargetFromRemoteUrl,
+} from "../sourceControl/AzureDevOpsRepositoryTarget.ts";
+import type { RepositoryIdentity, SourceControlProviderKind } from "@t3tools/contracts";
 import { gitLabRepositoryTargetFromOrigin } from "../sourceControl/GitLabRepositoryTarget.ts";
-import { SourceControlProviderError } from "@t3tools/contracts";
+import { SourceControlProviderError, pullRequestHostOf } from "@t3tools/contracts";
 import { normalizeGitRemoteMutationTarget, normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import * as Effect from "effect/Effect";
 import * as SourceControlProvider from "../sourceControl/SourceControlProvider.ts";
 import type * as OriginRepositoryMutationAuthority from "./OriginRepositoryMutationAuthority.ts";
 import { isOriginRemoteName } from "./originOnlySourceControlPolicy.ts";
 import type { SourceControlProviderInfo } from "@t3tools/contracts";
-import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
+import {
+  isSshRemoteUrl,
+  detectSourceControlProviderFromRemoteUrl,
+} from "@t3tools/shared/sourceControl";
 
 import { selectOriginRemote } from "./originOnlySourceControlPolicy.ts";
 
@@ -36,6 +45,28 @@ export function pickOriginSourceControlContext(
         remoteUrl: origin.url,
       }
     : null;
+}
+
+/** Preserve authenticated SSH endpoint hints only after rebinding to the live origin. */
+export function originProviderRefinementContext(
+  origin: SourceControlProvider.SourceControlProviderContext | null,
+  requested: SourceControlProvider.SourceControlProviderContext | undefined,
+): SourceControlProvider.SourceControlProviderContext | null {
+  if (
+    !origin ||
+    !requested ||
+    !isOriginRemoteName(requested.remoteName) ||
+    normalizeGitRemoteMutationTarget(origin.remoteUrl) !==
+      normalizeGitRemoteMutationTarget(requested.remoteUrl) ||
+    !isSshRemoteUrl(origin.remoteUrl) ||
+    (origin.provider.kind !== "unknown" && origin.provider.kind !== "forgejo")
+  )
+    return origin;
+  return {
+    ...origin,
+    provider: { ...origin.provider, kind: "unknown" },
+    ...(requested.requestedHost === undefined ? {} : { requestedHost: requested.requestedHost }),
+  };
 }
 
 export function originContainsHostedLink(
@@ -169,4 +200,42 @@ export function originPullRequestRepository(
   return identity.provider === "azure-devops"
     ? (target.repository.split("/").at(-1) ?? null)
     : target.repository;
+}
+
+/** Validate the native provider URL before deriving the app's origin-bound link key. */
+export function originCreatedPullRequestKey(
+  identity: RepositoryIdentity | null | undefined,
+  url: string,
+  number: number,
+): {
+  readonly host: string;
+  readonly repository: string;
+  readonly number: number;
+  readonly url: string;
+} | null {
+  const parsed = parseChangeRequestUrl(url);
+  const repository = originPullRequestRepository(identity);
+  if (!identity || !parsed || parsed.number !== number || repository === null) return null;
+  if (identity.provider === "azure-devops") {
+    const expected = azureDevOpsRepositoryTargetFromOrigin(identity.locator);
+    const actual = azureDevOpsRepositoryTargetFromRemoteUrl(url);
+    if (!expected || !actual) return null;
+    const key = (target: typeof expected) =>
+      canonicalRepositoryKey(
+        normalizeGitRemoteMutationTarget(
+          `${target.organization}/${target.project}/_git/${target.repository}`,
+        ),
+      );
+    if (key(expected) !== key(actual)) return null;
+  } else if (
+    `${parsed.authority ?? parsed.host}/${parsed.repository}` !==
+    normalizeGitRemoteMutationTarget(identity.locator.remoteUrl)
+  )
+    return null;
+  return {
+    host: pullRequestHostOf(identity, identity.provider as SourceControlProviderKind),
+    repository: repository.toLowerCase(),
+    number,
+    url,
+  };
 }
