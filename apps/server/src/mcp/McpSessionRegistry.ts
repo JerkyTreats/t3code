@@ -20,7 +20,14 @@ import * as McpProviderSession from "./McpProviderSession.ts";
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
-  readonly capabilities: ReadonlySet<McpInvocationContext.McpCapability>;
+  /**
+   * When false, the credential is minted without the "preview" capability so
+   * the user's choice to withhold agent browser access holds everywhere the
+   * token is honored (#7083). Defaults to upstream toolkit access.
+   */
+  readonly browserToolsAvailable?: boolean;
+  /** When provided, this is the complete grant. No additional toolkit is inferred. */
+  readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
 }
 
 export interface McpIssuedCredential {
@@ -130,16 +137,21 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       );
       const rawToken = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
       const tokenHash = yield* hashToken(rawToken);
+      const browserToolsAvailable = request.browserToolsAvailable ?? true;
       const scope: McpInvocationContext.McpInvocationScope = {
         environmentId,
         threadId: ThreadId.make(request.threadId),
         providerSessionId,
         boardAuthorId,
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
-        capabilities: new Set<McpInvocationContext.McpCapability>([
-          "pull-requests",
-          ...request.capabilities,
-        ]),
+        capabilities: new Set<McpInvocationContext.McpCapability>(
+          request.capabilities ?? [
+            "orchestration",
+            "worktree",
+            "pull-requests",
+            ...(browserToolsAvailable ? (["preview"] as const) : []),
+          ],
+        ),
         issuedAt,
       };
       yield* SynchronizedRef.update(state, ({ records }) => {
@@ -153,15 +165,21 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           threadId: scope.threadId,
           providerSessionId,
           providerInstanceId: scope.providerInstanceId,
-          endpoint: `${endpointBase}/mcp/pull-requests`,
-          ...(scope.capabilities.has("board") ? { boardEndpoint: endpoint } : {}),
+          endpoint,
+          ...(scope.capabilities.has("board")
+            ? { boardEndpoint: `${endpointBase}/mcp/board` }
+            : {}),
           ...(scope.capabilities.has("preview")
             ? { previewEndpoint: `${endpointBase}/mcp/preview` }
             : {}),
           ...(scope.capabilities.has("device")
             ? { deviceEndpoint: `${endpointBase}/mcp/device` }
             : {}),
+          ...(scope.capabilities.has("pull-requests")
+            ? { pullRequestsEndpoint: `${endpointBase}/mcp/pull-requests` }
+            : {}),
           authorizationHeader: `Bearer ${rawToken}`,
+          browserToolsAvailable: scope.capabilities.has("preview"),
           capabilities: scope.capabilities,
         },
       };

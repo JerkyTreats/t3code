@@ -14,12 +14,12 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 
 import { ProjectionBoardPostRepository } from "../../persistence/Services/ProjectionBoardPosts.ts";
-import { ProjectionStateRepository } from "../../persistence/Services/ProjectionState.ts";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { encodeBoardPageCursor } from "../board/Cursor.ts";
 import { BoardQuery } from "../Services/BoardQuery.ts";
 import { BoardQueryCoreLive, BoardQueryLive } from "./BoardQuery.ts";
-import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
+import { BOARD_POSTS_PROJECTOR } from "../../board/EventProjection.ts";
 
 function makePost(sequence: number) {
   return {
@@ -50,6 +50,17 @@ function makePost(sequence: number) {
   };
 }
 
+const setHead = Effect.fn("setHead")(function* (input: {
+  projector: string;
+  lastAppliedSequence: number;
+  updatedAt: string;
+}) {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`INSERT INTO projection_state (projector, last_applied_sequence, updated_at)
+    VALUES (${input.projector}, ${input.lastAppliedSequence}, ${input.updatedAt})
+    ON CONFLICT(projector) DO UPDATE SET last_applied_sequence = excluded.last_applied_sequence`;
+});
+
 const TestLayer = BoardQueryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
 
 it.layer(TestLayer)("BoardQuery", (it) => {
@@ -57,13 +68,12 @@ it.layer(TestLayer)("BoardQuery", (it) => {
     Effect.gen(function* () {
       const query = yield* BoardQuery;
       const posts = yield* ProjectionBoardPostRepository;
-      const projectionState = yield* ProjectionStateRepository;
       for (const sequence of [1, 3, 5, 7]) {
         yield* posts.insert(makePost(sequence));
       }
       yield* posts.insert(makePost(11));
-      yield* projectionState.upsert({
-        projector: ORCHESTRATION_PROJECTOR_NAMES.boardPosts,
+      yield* setHead({
+        projector: BOARD_POSTS_PROJECTOR,
         lastAppliedSequence: 9,
         updatedAt: "2026-08-28T00:00:00.000Z",
       });
@@ -113,7 +123,6 @@ it.layer(TestLayer)("BoardQuery", (it) => {
     Effect.gen(function* () {
       const query = yield* BoardQuery;
       const posts = yield* ProjectionBoardPostRepository;
-      const projectionState = yield* ProjectionStateRepository;
       const historical = {
         ...makePost(10),
         source: {
@@ -128,8 +137,8 @@ it.layer(TestLayer)("BoardQuery", (it) => {
         },
       };
       yield* posts.insert(historical);
-      yield* projectionState.upsert({
-        projector: ORCHESTRATION_PROJECTOR_NAMES.boardPosts,
+      yield* setHead({
+        projector: BOARD_POSTS_PROJECTOR,
         lastAppliedSequence: 10,
         updatedAt: "2026-08-28T00:00:00.000Z",
       });
@@ -170,26 +179,9 @@ it.effect("captures the projector head before a concurrent page read", () =>
       listBeforeCursor: () => Effect.succeed([]),
       listAfterSequenceThroughHead: () => Effect.succeed([]),
     });
-    const projectionState = ProjectionStateRepository.of({
-      upsert: () => Effect.void,
-      upsertMany: () => Effect.void,
-      getByProjector: () =>
-        Effect.succeed(
-          Option.some({
-            projector: ORCHESTRATION_PROJECTOR_NAMES.boardPosts,
-            lastAppliedSequence: 1,
-            updatedAt: "2026-08-28T00:00:00.000Z",
-          }),
-        ),
-      listAll: () => Effect.succeed([]),
-    });
     const layer = BoardQueryCoreLive.pipe(
-      Layer.provide(
-        Layer.merge(
-          Layer.succeed(ProjectionBoardPostRepository, repository),
-          Layer.succeed(ProjectionStateRepository, projectionState),
-        ),
-      ),
+      Layer.provide(Layer.succeed(ProjectionBoardPostRepository, repository)),
+      Layer.provide(SqlitePersistenceMemory),
     );
 
     const pageFiber = yield* BoardQuery.pipe(
@@ -215,7 +207,6 @@ it.layer(TestLayer)("BoardQuery replay", (it) => {
     Effect.gen(function* () {
       const query = yield* BoardQuery;
       const posts = yield* ProjectionBoardPostRepository;
-      const projectionState = yield* ProjectionStateRepository;
       const publishedThenRevised = makePost(101);
       const laterPublication = makePost(102);
       const interveningPublication = makePost(150);
@@ -234,8 +225,8 @@ it.layer(TestLayer)("BoardQuery replay", (it) => {
         eventSequence: 200,
       });
       assert.deepStrictEqual(revised, { _tag: "changed" });
-      yield* projectionState.upsert({
-        projector: ORCHESTRATION_PROJECTOR_NAMES.boardPosts,
+      yield* setHead({
+        projector: BOARD_POSTS_PROJECTOR,
         lastAppliedSequence: 200,
         updatedAt: "2026-08-28T00:05:00.000Z",
       });

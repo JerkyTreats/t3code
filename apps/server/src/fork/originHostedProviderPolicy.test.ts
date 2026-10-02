@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import {
   bitbucketOriginHostFailure,
   originChangeRequestSelector,
+  gitHubRepositoryTargetFromSelector,
   requireGitHubRepository,
   requireGitLabRepositoryTarget,
   requireAzureDevOpsRepositoryTarget,
@@ -120,3 +121,22 @@ for (const provider of ["github", "gitlab"] as const) {
     }
   });
 }
+
+it("decodes explicit GitHub origin selectors and rejects implicit or malformed targets", () => {
+  assert.deepStrictEqual(gitHubRepositoryTargetFromSelector("github.example.test:8443/Acme/Web"), {
+    host: "github.example.test:8443",
+    owner: "Acme",
+    name: "Web",
+  });
+  for (const repository of [
+    "acme/web",
+    "https://github.com/acme/web",
+    "github.com/acme/web/other",
+    "user@github.com/acme/web",
+    "github.com/acme/web?other",
+    "github.com/acme/web#other",
+    "",
+  ]) {
+    assert.strictEqual(gitHubRepositoryTargetFromSelector(repository), null);
+  }
+});

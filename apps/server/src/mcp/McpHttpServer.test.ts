@@ -1,9 +1,10 @@
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   BoardAuthorId,
-  CommandId,
   EnvironmentId,
   PreviewTabId,
   ProjectId,
@@ -21,20 +22,33 @@ import * as Stream from "effect/Stream";
 import { McpProtocol, McpSchema, McpServer } from "effect/unstable/ai";
 import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http";
 
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectService from "../project/ProjectService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import * as Board from "../orchestration/Services/Board.ts";
 import * as BoardQuery from "../orchestration/Services/BoardQuery.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
-import { OrchestrationLayerLive } from "../orchestration/runtimeLayer.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
-import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import { BoardTestLayer, seedBoardThread } from "../board/BoardTestSupport.ts";
+import * as BoardWritePolicy from "../board/TurnWritePolicyV2.ts";
+import * as IdAllocator from "../orchestration-v2/IdAllocator.ts";
+import * as PreviewManager from "../preview/Manager.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
+import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
+import * as ScheduledTasks from "../scheduledTasks/ScheduledTaskService.ts";
+import * as GitWorkflow from "../git/GitWorkflowService.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import * as SetupScript from "../project/ProjectSetupScriptRunner.ts";
+import * as VcsStatus from "../vcs/VcsStatusBroadcaster.ts";
+import * as ManagedFolders from "../project/ManagedProjectFolders.ts";
+import * as SourceControl from "../sourceControl/SourceControlRepositoryService.ts";
+import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
+import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
+import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -72,20 +86,38 @@ const PullRequestsTestLayer = McpHttpServer.PullRequestsToolkitRegistrationLive.
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provide(
     Layer.mergeAll(
-      Layer.mock(ProjectionSnapshotQuery)({
-        getThreadShellById: () => Effect.succeedNone,
-      }),
-      Layer.mock(OrchestrationEngineService)({}),
+      Layer.mock(ProjectService.ProjectService)({}),
+      Layer.mock(Orchestrator.OrchestratorV2)({}),
+      Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
       NodeServices.layer,
     ),
   ),
 );
 const mcpRouteTestDependencies = Layer.mergeAll(
+  IdAllocator.layer,
+  Layer.effect(
+    BoardWritePolicy.BoardTurnWritePolicyV2,
+    BoardWritePolicy.make(() => Effect.void),
+  ),
   Layer.mock(DeviceService.DeviceService)({}),
-  Layer.mock(OrchestrationEngineService)({}),
-  Layer.mock(ProjectionSnapshotQuery)({
-    getThreadShellById: () => Effect.succeedNone,
-  }),
+  Layer.mock(PreviewManager.PreviewManager)({}),
+  Layer.mock(ProjectService.ProjectService)({}),
+  Layer.mock(Orchestrator.OrchestratorV2)({}),
+  Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+  Layer.mock(ThreadManagement.ThreadManagementService)({}),
+  Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+  Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
+  Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
+  Layer.mock(GitWorkflow.GitWorkflowService)({}),
+  Layer.mock(ServerSettings.ServerSettingsService)({}),
+  Layer.mock(SetupScript.ProjectSetupScriptRunner)({}),
+  Layer.mock(VcsStatus.VcsStatusBroadcaster)({}),
+  Layer.mock(ManagedFolders.ManagedProjectFolders)({ namedProjectsRoot: "/workspace/projects" }),
+  Layer.mock(SourceControl.SourceControlRepositoryService)({}),
+  Layer.mock(ThreadLaunch.ThreadLaunchService)({}),
+  Layer.mock(ThreadSearch.ThreadSearch)({}),
+  Layer.mock(ThreadCommandExecutor.ThreadCommandExecutor)({}),
+  Layer.mock(ServerEnvironment.ServerEnvironment)({}),
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-route-test-" }),
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
@@ -145,7 +177,6 @@ it.effect(
   () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const engine = yield* OrchestrationEngineService;
         const board = yield* Board.Board;
         const query = yield* BoardQuery.BoardQuery;
         const registry = yield* McpSessionRegistry.__testing.make().pipe(
@@ -157,34 +188,12 @@ it.effect(
             }),
           ),
         );
-        const createdAt = "2026-09-05T00:00:00.000Z";
         const projectId = ProjectId.make("http-board-project");
         const modelSelection = {
           instanceId: ProviderInstanceId.make("codex"),
           model: "gpt-5-codex",
         };
-        yield* engine.dispatch({
-          type: "project.create",
-          commandId: CommandId.make("http-board-project"),
-          projectId,
-          title: "Board HTTP",
-          workspaceRoot: "/workspace/http-board",
-          defaultModelSelection: modelSelection,
-          createdAt,
-        });
-        yield* engine.dispatch({
-          type: "thread.create",
-          commandId: CommandId.make("http-board-thread"),
-          threadId,
-          projectId,
-          title: "Board HTTP",
-          modelSelection,
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-          createdAt,
-        });
+        yield* seedBoardThread(threadId, projectId);
 
         const issued = yield* registry.issue({
           threadId,
@@ -194,18 +203,16 @@ it.effect(
         const authorization = issued.config.authorizationHeader;
         const trusted = yield* registry.resolve(authorization.slice("Bearer ".length));
         expect(trusted).toBeDefined();
-        const routes = McpHttpServer.layer.pipe(
+        const routes = McpHttpServer.BoardHttpLive.pipe(
           Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
           Layer.provide(Layer.succeed(Board.Board, board)),
           Layer.provide(Layer.succeed(BoardQuery.BoardQuery, query)),
-          Layer.provide(PreviewAutomationBroker.layer),
-          Layer.provide(Layer.mock(DeviceService.DeviceService)({})),
         );
         yield* HttpRouter.serve(routes, { disableListenLog: true, disableLogger: true }).pipe(
           Layer.build,
         );
         const httpClient = yield* HttpClient.HttpClient;
-        const initialized = yield* httpClient.post("/mcp", {
+        const initialized = yield* httpClient.post("/mcp/board", {
           headers: { accept: "application/json, text/event-stream", authorization },
           body: HttpBody.jsonUnsafe({
             jsonrpc: "2.0",
@@ -223,7 +230,7 @@ it.effect(
         let requestId = 2;
         const call = (name: string, input: object) =>
           Effect.gen(function* () {
-            const response = yield* httpClient.post("/mcp", {
+            const response = yield* httpClient.post("/mcp/board", {
               headers: {
                 accept: "application/json, text/event-stream",
                 authorization,
@@ -298,14 +305,11 @@ it.effect(
     ).pipe(
       Effect.provide(
         Layer.mergeAll(
-          OrchestrationLayerLive.pipe(
-            Layer.provide(RepositoryIdentityResolver.layer),
-            Layer.provideMerge(SqlitePersistenceMemory),
-            Layer.provideMerge(
-              ServerConfig.layerTest(process.cwd(), { prefix: "t3-board-http-proof-" }),
-            ),
-            Layer.provideMerge(NodeServices.layer),
+          BoardTestLayer,
+          ServerConfig.layerTest(process.cwd(), { prefix: "t3-board-http-proof-" }).pipe(
+            Layer.provide(NodeServices.layer),
           ),
+          NodeServices.layer,
           NodeHttpServer.layerTest,
         ),
       ),
@@ -947,6 +951,7 @@ it.effect("requires bearer authentication for the MCP server that registers Boar
         publish: () => Effect.die("unused"),
         reviseAsAgent: () => Effect.die("unused"),
         reviseAsOwner: () => Effect.die("unused"),
+        subscribeBoardDomainEvents: Effect.succeed(Stream.never),
       });
       const boardQuery = BoardQuery.BoardQuery.of({
         getPage: () => Effect.succeed({ posts: [], beforeCursor: null, headSequence: 0 }),
@@ -975,13 +980,13 @@ it.effect("requires bearer authentication for the MCP server that registers Boar
         "application/json",
       );
 
-      const unauthorizedResponse = yield* httpClient.post("/mcp", {
+      const unauthorizedResponse = yield* httpClient.post("/mcp/board", {
         headers: { accept: "application/json, text/event-stream" },
         body: initializeBody,
       });
       expect(unauthorizedResponse.status).toBe(401);
 
-      const initializeResponse = yield* httpClient.post("/mcp", {
+      const initializeResponse = yield* httpClient.post("/mcp/board", {
         headers: {
           accept: "application/json, text/event-stream",
           authorization: "Bearer trusted-board-token",
@@ -1011,7 +1016,16 @@ it.effect("lists only admitted toolkit tools and rejects cross-endpoint credenti
                     ...invocation,
                     capabilities: new Set<McpInvocationContext.McpCapability>(["board", "preview"]),
                   }
-                : undefined,
+                : token === "orchestrator-only-token"
+                  ? {
+                      ...invocation,
+                      capabilities: new Set<McpInvocationContext.McpCapability>([
+                        "orchestration",
+                        "worktree",
+                        "pull-requests",
+                      ]),
+                    }
+                  : undefined,
           ),
         touch: () => Effect.void,
         setBoardWriteEnabled: () => Effect.void,
@@ -1023,6 +1037,7 @@ it.effect("lists only admitted toolkit tools and rejects cross-endpoint credenti
         publish: () => Effect.die("unused"),
         reviseAsAgent: () => Effect.die("unused"),
         reviseAsOwner: () => Effect.die("unused"),
+        subscribeBoardDomainEvents: Effect.succeed(Stream.never),
       });
       const boardQuery = BoardQuery.BoardQuery.of({
         getPage: () => Effect.succeed({ posts: [], beforeCursor: null, headSequence: 0 }),
@@ -1084,19 +1099,49 @@ it.effect("lists only admitted toolkit tools and rejects cross-endpoint credenti
           };
         });
 
-      const boardOnlySession = yield* listTools("/mcp", "board-only-token");
+      const boardOnlySession = yield* listTools("/mcp/board", "board-only-token");
       expect(boardOnlySession.names).toEqual([
         "board_edit",
         "board_history",
         "board_post",
         "board_read",
       ]);
-      const boardWithPreviewSession = yield* listTools("/mcp", "board-preview-token");
+      const boardWithPreviewSession = yield* listTools("/mcp/board", "board-preview-token");
       expect(boardWithPreviewSession.names).toEqual(boardOnlySession.names);
       const previewTools = (yield* listTools("/mcp/preview", "board-preview-token")).names;
       expect(previewTools.length).toBeGreaterThan(0);
-      expect(previewTools.every((name) => name.startsWith("preview_"))).toBe(true);
-      for (const endpoint of ["/mcp/preview", "/mcp/device", "/mcp/pull-requests"]) {
+      expect(
+        previewTools.every((name) => name.startsWith("preview_") || name.startsWith("t3_preview_")),
+      ).toBe(true);
+      const upstreamTools = (yield* listTools("/mcp", "orchestrator-only-token")).names;
+      expect(upstreamTools).toContain("t3_thread_launch");
+      expect(upstreamTools).toContain("t3_thread_organize");
+      expect(
+        upstreamTools.every(
+          (name) =>
+            !name.startsWith("board_") &&
+            !name.startsWith("preview_") &&
+            !name.startsWith("t3_preview_") &&
+            !name.startsWith("device_"),
+        ),
+      ).toBe(true);
+      for (const method of ["initialize", "tools/list", "tools/call"] as const) {
+        const denied = yield* httpClient.post("/mcp/board", {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: "Bearer orchestrator-only-token",
+            "mcp-session-id": boardOnlySession.sessionId,
+          },
+          body: HttpBody.jsonUnsafe({
+            jsonrpc: "2.0",
+            id: 3,
+            method,
+            params: method === "tools/call" ? { name: "board_read", arguments: {} } : {},
+          }),
+        });
+        expect(denied.status).toBe(403);
+      }
+      for (const endpoint of ["/mcp", "/mcp/preview", "/mcp/device", "/mcp/pull-requests"]) {
         const denied = yield* httpClient.post(endpoint, {
           headers: {
             accept: "application/json, text/event-stream",
@@ -1105,6 +1150,22 @@ it.effect("lists only admitted toolkit tools and rejects cross-endpoint credenti
           body: initializeBody,
         });
         expect(denied.status).toBe(403);
+        for (const method of ["tools/list", "tools/call"] as const) {
+          const rejected = yield* httpClient.post(endpoint, {
+            headers: {
+              accept: "application/json, text/event-stream",
+              authorization: "Bearer board-only-token",
+              "mcp-session-id": boardOnlySession.sessionId,
+            },
+            body: HttpBody.jsonUnsafe({
+              jsonrpc: "2.0",
+              id: 4,
+              method,
+              params: method === "tools/call" ? { name: "t3_thread_organize", arguments: {} } : {},
+            }),
+          });
+          expect(rejected.status).toBe(403);
+        }
       }
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),

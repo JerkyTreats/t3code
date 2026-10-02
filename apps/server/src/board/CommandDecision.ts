@@ -1,7 +1,12 @@
-import type { OrchestrationEvent } from "@t3tools/contracts";
+import type { ApplicationBoardEvent } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
-import { OrchestrationCommandInvariantError } from "../orchestration/Errors.ts";
+import * as Schema from "effect/Schema";
+
+export class BoardCommandInvariantError extends Schema.TaggedError<BoardCommandInvariantError>()(
+  "BoardCommandInvariantError",
+  { commandType: Schema.String, detail: Schema.String },
+) {}
 import { BOARD_AGGREGATE_REF, type BoardCommand, type BoardEvent } from "./Event.ts";
 
 type PlannedBoardEvent = BoardEvent extends infer Event
@@ -10,7 +15,7 @@ type PlannedBoardEvent = BoardEvent extends infer Event
     : never
   : never;
 
-type PlannedEventBase = Omit<OrchestrationEvent, "sequence" | "type" | "payload">;
+type PlannedEventBase = Omit<ApplicationBoardEvent, "sequence" | "type" | "payload">;
 
 export interface BoardEventBaseInput {
   readonly aggregateKind: typeof BOARD_AGGREGATE_REF.aggregateKind;
@@ -27,7 +32,7 @@ export interface BoardEventBaseInput {
 export function decideBoardCommand<R, E>(input: {
   readonly command: BoardCommand;
   readonly makeEventBase: (input: BoardEventBaseInput) => Effect.Effect<PlannedEventBase, E, R>;
-}): Effect.Effect<PlannedBoardEvent, E | OrchestrationCommandInvariantError, R> {
+}): Effect.Effect<PlannedBoardEvent, E | BoardCommandInvariantError, R> {
   return Effect.gen(function* () {
     const { command } = input;
     switch (command.type) {
@@ -52,7 +57,7 @@ export function decideBoardCommand<R, E>(input: {
 
       case "board.post.revise": {
         if (command.revision !== command.previousRevision + 1) {
-          return yield* new OrchestrationCommandInvariantError({
+          return yield* new BoardCommandInvariantError({
             commandType: command.type,
             detail: "A Board revision must advance exactly one version.",
           });

@@ -50,6 +50,7 @@ Retain upstream T3 Code product identity while binding official desktop updates 
 - `scripts/build-thread-artifact.mjs`
 - `apps/server/vite.config.ts`
 - `apps/server/src/serverVersion.ts`
+- `apps/server/src/binCli.ts`
 - `scripts/server-image-smoke.ts`
 - `scripts/desktop-artifact-smoke.ts`
 - `scripts/install-linux-desktop.mjs`

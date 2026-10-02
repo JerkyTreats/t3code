@@ -9,8 +9,9 @@ import {
   parseChangeRequestUrl,
   pullRequestCandidateUrlFromReferenceAutolink,
   shouldOpenPullRequestExternally,
+  resolvePullRequestPreviewTarget,
 } from "./openPullRequestLink";
-import { ProjectId, type RepositoryIdentity } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, type RepositoryIdentity } from "@t3tools/contracts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 
 function repositoryIdentity(
@@ -184,11 +185,17 @@ describe("matchesLinkedPullRequestUrl", () => {
     ).toBe(expected);
   });
 
-  it("keeps other providers' existing port normalization", () => {
+  it("keeps GitHub links on different web ports separate", () => {
     expect(
       matchesLinkedPullRequestUrl(
         linkedPullRequest,
         "https://github.com:8443/pingdotgg/t3code/pull/42",
+      ),
+    ).toBe(false);
+    expect(
+      matchesLinkedPullRequestUrl(
+        { ...linkedPullRequest, url: "https://github.com:8443/pingdotgg/t3code/pull/42" },
+        "https://github.com:8443/PingDotGG/T3Code/pull/42/files",
       ),
     ).toBe(true);
   });
@@ -329,6 +336,59 @@ describe("parseChangeRequestUrl", () => {
 });
 
 describe("findProjectOnChangeRequestHost", () => {
+  it.each([
+    { provider: "github", host: "github.example.test", path: "pull" },
+    { provider: "gitlab", host: "code.example.test", path: "-/merge_requests" },
+  ])("opens $provider links only through their exact host and port", ({ provider, host, path }) => {
+    const environmentId = EnvironmentId.make("environment-test");
+    const checkout = {
+      environmentId,
+      id: ProjectId.make("project-test"),
+      repositoryIdentity: {
+        ...repositoryIdentity(provider, `${host}/team/repo`, `https://${host}:8443/team/repo.git`),
+        displayName: "team/repo",
+      },
+    } as never;
+    const url = `https://${host}:8443/team/repo/${path}/42`;
+    const reference = parseChangeRequestUrl(url)!;
+    expect(findProjectForChangeRequest([checkout], reference)).toBe(checkout);
+    expect(
+      findProjectOnChangeRequestHost([checkout], { ...reference, repository: "team/other" }),
+    ).toBe(checkout);
+    expect(
+      resolvePullRequestPreviewTarget({
+        environmentId,
+        projects: [checkout],
+        pullRequestsEnabled: true,
+        url,
+      }),
+    ).toEqual({
+      environmentId,
+      input: {
+        projectId: ProjectId.make("project-test"),
+        host: `${host}:8443`,
+        repository: "team/repo",
+        number: 42,
+      },
+    });
+    for (const authority of [host, `${host}:9443`, `foreign.${host}:8443`]) {
+      const foreignUrl = `https://${authority}/team/repo/${path}/42`;
+      const foreign = parseChangeRequestUrl(foreignUrl)!;
+      expect(findProjectForChangeRequest([checkout], foreign)).toBeUndefined();
+      expect(
+        findProjectOnChangeRequestHost([checkout], { ...foreign, repository: "team/other" }),
+      ).toBeUndefined();
+      expect(
+        resolvePullRequestPreviewTarget({
+          environmentId,
+          projects: [checkout],
+          pullRequestsEnabled: true,
+          url: foreignUrl,
+        }),
+      ).toBeNull();
+    }
+  });
+
   const project = (id: string, identity: Record<string, unknown>) =>
     ({ id, repositoryIdentity: identity }) as never;
   const frontend = project("frontend", {

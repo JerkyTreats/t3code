@@ -67,6 +67,23 @@ export function originChangeRequestSelector(input: {
   }
 }
 
+/** Decode an explicit origin selector without consulting checkout or CLI defaults. */
+export function gitHubRepositoryTargetFromSelector(repository: string): {
+  readonly host: string;
+  readonly owner: string;
+  readonly name: string;
+} | null {
+  try {
+    const target = new URL(`https://${repository}`);
+    const match = /^\/([a-z\d][a-z\d-]*)\/([a-z\d_.-]+)$/iu.exec(target.pathname);
+    if (!match || target.username || target.password || target.search || target.hash) return null;
+    if (`${target.host}${target.pathname}`.toLowerCase() !== repository.toLowerCase()) return null;
+    return { host: target.host.toLowerCase(), owner: match[1]!, name: match[2]! };
+  } catch {
+    return null;
+  }
+}
+
 function repositoryFromContext(
   context: SourceControlProvider.SourceControlProviderContext | undefined,
 ): string | null {

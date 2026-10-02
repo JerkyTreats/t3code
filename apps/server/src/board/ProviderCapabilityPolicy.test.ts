@@ -31,7 +31,7 @@ describe("provider MCP capability admission", () => {
     },
   );
 
-  it.each(["antigravity", "future_driver", "codex_personal", "Codex"])(
+  it.each(["antigravity", "pi", "acp", "opencode2", "future_driver", "codex_personal", "Codex"])(
     "does not infer Board support for %s",
     (kind) => {
       const provider = ProviderDriverKind.make(kind);

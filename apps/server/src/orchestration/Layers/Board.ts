@@ -1,6 +1,8 @@
 import {
   BoardPostId,
   CommandId,
+  EventId,
+  type BoardOrchestrationCommand,
   OrchestrationBoardRevisionError,
   type OrchestrationBoardAuditEditor,
   type BoardPost,
@@ -13,31 +15,106 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+
+import { decideBoardCommand } from "../../board/CommandDecision.ts";
+import { makeBoardEventHub } from "../../board/BoardSubscription.ts";
+import { applyBoardEventProjection, BOARD_POSTS_PROJECTOR } from "../../board/EventProjection.ts";
+import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
+import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
+import { ProjectionBoardPostRepository } from "../../persistence/Services/ProjectionBoardPosts.ts";
+import { ProjectionStoreV2 } from "../../orchestration-v2/ProjectionStore.ts";
 
 import { Board, BoardPublicationError, type BoardShape } from "../Services/Board.ts";
 import { BoardQuery } from "../Services/BoardQuery.ts";
-import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 
 const isBoardPublicationError = Schema.is(BoardPublicationError);
 
 const makeBoard = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
-  const engine = yield* OrchestrationEngineService;
+  const sql = yield* SqlClient.SqlClient;
+  const events = yield* OrchestrationEventStore;
+  const posts = yield* ProjectionBoardPostRepository;
+  const receipts = yield* OrchestrationCommandReceiptRepository;
+  const gate = yield* Semaphore.make(1);
+  const hub = yield* makeBoardEventHub;
   const query = yield* BoardQuery;
-  const snapshotQuery = yield* ProjectionSnapshotQuery;
+  const snapshotQuery = yield* ProjectionStoreV2;
+
+  const writeCursor = (sequence: number, occurredAt: string) => sql`
+    INSERT INTO projection_state (projector, last_applied_sequence, updated_at)
+    VALUES (${BOARD_POSTS_PROJECTOR}, ${sequence}, ${occurredAt})
+    ON CONFLICT(projector) DO UPDATE SET
+      last_applied_sequence = excluded.last_applied_sequence,
+      updated_at = excluded.updated_at
+  `;
+
+  // Historical rows replay through the same owner without reviving v1 hosts.
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const cursor = yield* query.getHeadSequence;
+      yield* events.readBoardEvents({ afterSequence: cursor }).pipe(
+        Stream.runForEach((event) =>
+          Effect.gen(function* () {
+            yield* applyBoardEventProjection({ event, repository: posts });
+            yield* writeCursor(event.sequence, event.occurredAt);
+          }),
+        ),
+      );
+    }),
+  );
+
+  const dispatch = Effect.fn("Board.commit")(function* (command: BoardOrchestrationCommand) {
+    const event = yield* sql.withTransaction(
+      Effect.gen(function* () {
+        const planned = yield* decideBoardCommand({
+          command,
+          makeEventBase: (input) =>
+            crypto.randomUUIDv4.pipe(
+              Effect.map((id) => ({
+                ...input,
+                eventId: EventId.make(id),
+                causationEventId: null,
+                correlationId: command.commandId,
+                metadata: {},
+              })),
+            ),
+        });
+        const appended = yield* events.appendBoardEvent(planned);
+        yield* applyBoardEventProjection({ event: appended, repository: posts });
+        yield* writeCursor(appended.sequence, appended.occurredAt);
+        yield* receipts.insertIfAbsent({
+          commandId: command.commandId,
+          commandType: command.type,
+          aggregateKind: "board",
+          aggregateId: appended.aggregateId,
+          acceptedAt: appended.occurredAt,
+          resultSequence: appended.sequence,
+          status: "accepted",
+          error: null,
+        });
+        return appended;
+      }),
+    );
+    // Notification follows commit. Cancellation cannot leave a committed update silent.
+    yield* events.publishCommitted([event]);
+    yield* hub.publish(event);
+    return event;
+  });
 
   const publish: BoardShape["publish"] = Effect.fn("Board.publish")(
     function* (publisher, input) {
-      const thread = yield* snapshotQuery.getThreadShellById(publisher.threadId);
-      if (Option.isNone(thread)) {
+      const thread = yield* snapshotQuery.getThreadShell(publisher.threadId);
+      if (thread === null) {
         return yield* new BoardPublicationError({
           message: "The trusted Board publisher thread is unavailable.",
         });
       }
       const identifier = yield* crypto.randomUUIDv4;
       const createdAt = DateTime.formatIso(yield* DateTime.now);
-      const result = yield* engine.dispatch({
+      const result = yield* dispatch({
         type: "board.post.publish",
         commandId: CommandId.make(`provider:board:${identifier}`),
         postId: BoardPostId.make(identifier),
@@ -47,7 +124,7 @@ const makeBoard = Effect.gen(function* () {
           providerInstanceId: publisher.providerInstanceId,
         },
         source: {
-          projectId: thread.value.projectId,
+          projectId: thread.projectId,
           threadId: publisher.threadId,
         },
         body: input.body,
@@ -132,7 +209,7 @@ const makeBoard = Effect.gen(function* () {
     );
     const revisedAt = DateTime.formatIso(yield* DateTime.now);
     const dispatched = yield* Effect.result(
-      engine.dispatch({
+      dispatch({
         type: "board.post.revise",
         commandId: CommandId.make(`board:revise:${identifier}`),
         postId: input.postId,
@@ -188,7 +265,7 @@ const makeBoard = Effect.gen(function* () {
 
   const reviseAsAgent: BoardShape["reviseAsAgent"] = Effect.fn("Board.reviseAsAgent")(
     function* (publisher, input) {
-      const thread = yield* snapshotQuery.getThreadShellById(publisher.threadId).pipe(
+      const thread = yield* snapshotQuery.getThreadShell(publisher.threadId).pipe(
         Effect.mapError(
           (cause) =>
             new OrchestrationBoardRevisionError({
@@ -198,7 +275,7 @@ const makeBoard = Effect.gen(function* () {
             }),
         ),
       );
-      if (Option.isNone(thread)) {
+      if (thread === null) {
         return yield* new OrchestrationBoardRevisionError({
           reason: "forbidden",
           message: "The trusted Board editor thread is unavailable.",
@@ -210,7 +287,7 @@ const makeBoard = Effect.gen(function* () {
         providerInstanceId: publisher.providerInstanceId,
       };
       const editorSource = {
-        projectId: thread.value.projectId,
+        projectId: thread.projectId,
         threadId: publisher.threadId,
       };
       return yield* revise(
@@ -231,7 +308,15 @@ const makeBoard = Effect.gen(function* () {
     },
   );
 
-  return Board.of({ publish, reviseAsAgent, reviseAsOwner });
+  return Board.of({
+    publish: (publisher, input) =>
+      gate.withPermits(1)(publish(publisher, input).pipe(Effect.uninterruptible)),
+    reviseAsAgent: (publisher, input) =>
+      gate.withPermits(1)(reviseAsAgent(publisher, input).pipe(Effect.uninterruptible)),
+    reviseAsOwner: (clientId, input) =>
+      gate.withPermits(1)(reviseAsOwner(clientId, input).pipe(Effect.uninterruptible)),
+    subscribeBoardDomainEvents: hub.subscribe,
+  });
 });
 
 export const BoardLive = Layer.effect(Board, makeBoard);

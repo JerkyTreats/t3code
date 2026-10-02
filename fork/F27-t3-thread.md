@@ -87,3 +87,12 @@ V1 activation accepts only exact keys, a lowercase UUID v4, at most 64 KiB UTF-8
 Source tests cover these owners and adapters. Electron token exchange uses the exact HTTPS request URL with redirects rejected. Electron responses omit URL metadata; absent metadata does not reject an otherwise valid exchange, while supplied foreign URL metadata and already-followed redirects remain rejected. Packed checks supplement actual preload execution. Current installed acceptance passes clean-build artifacts, real protected storage, portal-managed enrollment, fresh HTTPS session and WSS transport, multiple independent Thread processes plus Code, byte-exact staged drafts, acknowledged reload and all six close/crash isolation cases against synthetic state. Both used-ticket replays return 401; fresh tickets reconnect. Managed-device disable denies Thread sessions and tickets, re-enable restores them, and Code remains independently authenticated. The fixture sends no provider turn. The intake ledger records source and installed acceptance separately. No source test or readiness ACK alone establishes installed acceptance.
 
 Successful pairing resumes the currently discovered primary connection through the existing runtime retry command before navigating to chat. The durable `threadAuth.ts` owner reads the current primary identity after enrollment, covering discovery that finishes during pairing. The pairing route is the mechanical command adapter. This retries a primary supervisor blocked by a ticket denial before enrollment without reloading the document, changing credentials or sending the staged draft. `ThreadPairingResume.test.tsx` executes the actual route and owner handoff; the shared supervisor tests establish blocked-to-connected retry semantics.
+
+## Current v2 integration
+
+`creationSurface` is persisted in the v2 thread projection and preserved by
+`apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts`, including metadata repair for
+previous imports. `apps/web/src/fork/threadSidebarView.ts` selects the separate Thread sidebar view
+from that field rather than inferring it from titles or paths. `threadWindowTitle.ts` consumes the
+current `latestRunStatus` for title state; it does not restore v1 turn ownership. These are source
+integration boundaries and do not establish new installed or browser acceptance.

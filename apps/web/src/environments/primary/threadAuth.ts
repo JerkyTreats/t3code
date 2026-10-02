@@ -1,4 +1,4 @@
-import { PrimaryEnvironmentAuth } from "@t3tools/client-runtime/platform";
+import { ClientCapabilities } from "@t3tools/client-runtime/platform";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   ConnectionBlockedError,
@@ -20,7 +20,9 @@ import {
   type ThreadPrimaryTarget,
 } from "./threadTransport";
 
-export function makeThreadPrimaryAuth(): PrimaryEnvironmentAuth["Service"] | null {
+export function makeThreadPrimaryAuth():
+  | ClientCapabilities.PrimaryEnvironmentAuth["Service"]
+  | null {
   const initial = readThreadPrimaryTarget();
   if (!initial) return null;
   const applicationOrigin = new URL(initial.httpBaseUrl).origin;
@@ -60,7 +62,7 @@ export function makeThreadPrimaryAuth(): PrimaryEnvironmentAuth["Service"] | nul
     return result;
   });
 
-  return PrimaryEnvironmentAuth.of({
+  return ClientCapabilities.PrimaryEnvironmentAuth.of({
     bearerToken: Effect.succeedNone,
     // Providing the client inside the attempt preserves its interruption and abort signal.
     webSocketTicket: (target) => webSocketTicket(target).pipe(Effect.provide(clientLayer)),

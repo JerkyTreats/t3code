@@ -44,12 +44,13 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
       capabilities: new Set(["preview"]),
     });
     expect(issued.config.previewEndpoint).toBe("http://127.0.0.1:43123/mcp/preview");
-    expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp/pull-requests");
+    expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     expect(token.length).toBeGreaterThan(20);
 
     const resolved = yield* registry.resolve(token);
     expect(resolved?.threadId).toBe(threadId);
+    expect(resolved?.capabilities).toEqual(new Set(["preview"]));
 
     yield* registry.revokeThread(threadId);
     expect(yield* registry.resolve(token)).toBeUndefined();
@@ -58,7 +59,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
   }),
 );
 
-it.effect("always grants pull-requests and gates browser and device access independently", () =>
+it.effect("honors explicit capabilities and gates browser and device access independently", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry(() => 1_000);
     const withPreview = yield* registry.issue({
@@ -81,9 +82,9 @@ it.effect("always grants pull-requests and gates browser and device access indep
         .resolve(issued.config.authorizationHeader.replace(/^Bearer\s+/, ""))
         .pipe(Effect.map((scope) => [...(scope?.capabilities ?? [])].sort()));
 
-    expect(yield* capabilitiesOf(withPreview)).toEqual(["preview", "pull-requests"]);
-    expect(yield* capabilitiesOf(withoutPreview)).toEqual(["pull-requests"]);
-    expect(yield* capabilitiesOf(withDevice)).toEqual(["device", "pull-requests"]);
+    expect(yield* capabilitiesOf(withPreview)).toEqual(["preview"]);
+    expect(yield* capabilitiesOf(withoutPreview)).toEqual([]);
+    expect(yield* capabilitiesOf(withDevice)).toEqual(["device"]);
   }),
 );
 
@@ -166,7 +167,7 @@ it.effect("does not keep credentials of other threads alive", () =>
   }),
 );
 
-it.effect("adds pull-request access while admitting each toolkit endpoint independently", () =>
+it.effect("preserves exact toolkit admission and independently generates Board pseudonyms", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry(() => 1_000);
     const cases: ReadonlyArray<ReadonlyArray<McpCapability>> = [
@@ -187,11 +188,11 @@ it.effect("adds pull-request access while admitting each toolkit endpoint indepe
       const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
       capabilities.add("board-write");
       const resolved = yield* registry.resolve(token);
-      expect(resolved?.capabilities).toEqual(new Set(["pull-requests", ...requested]));
-      expect(issued.config.capabilities).toEqual(new Set(["pull-requests", ...requested]));
-      expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp/pull-requests");
+      expect(resolved?.capabilities).toEqual(new Set(requested));
+      expect(issued.config.capabilities).toEqual(new Set(requested));
+      expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
       expect(issued.config.boardEndpoint).toBe(
-        requested.includes("board") ? "http://127.0.0.1:43123/mcp" : undefined,
+        requested.includes("board") ? "http://127.0.0.1:43123/mcp/board" : undefined,
       );
       expect(issued.config.previewEndpoint).toBe(
         requested.includes("preview") ? "http://127.0.0.1:43123/mcp/preview" : undefined,
@@ -224,22 +225,16 @@ it.effect(
       const original = yield* registry.resolve(boardToken);
       yield* registry.setBoardWriteEnabled(boardThread, false);
       expect((yield* registry.resolve(boardToken))?.capabilities).toEqual(
-        new Set(["pull-requests", "board", "preview"]),
+        new Set(["board", "preview"]),
       );
-      expect((yield* registry.resolve(previewToken))?.capabilities).toEqual(
-        new Set(["pull-requests", "preview"]),
-      );
+      expect((yield* registry.resolve(previewToken))?.capabilities).toEqual(new Set(["preview"]));
       yield* registry.setBoardWriteEnabled(boardThread, true);
       const restored = yield* registry.resolve(boardToken);
-      expect(restored?.capabilities).toEqual(
-        new Set(["pull-requests", "board", "board-write", "preview"]),
-      );
+      expect(restored?.capabilities).toEqual(new Set(["board", "board-write", "preview"]));
       expect(restored?.boardAuthorId).toBe(original?.boardAuthorId);
       for (const enabled of [false, true, false, true]) {
         yield* registry.setBoardWriteEnabled(previewThread, enabled);
-        expect((yield* registry.resolve(previewToken))?.capabilities).toEqual(
-          new Set(["pull-requests", "preview"]),
-        );
+        expect((yield* registry.resolve(previewToken))?.capabilities).toEqual(new Set(["preview"]));
       }
     }),
 );
@@ -268,5 +263,30 @@ it.effect("cannot restore revoked or expired credentials through mode updates", 
     yield* registry.revokeThread(threadId);
     yield* registry.setBoardWriteEnabled(threadId, true);
     expect(yield* registry.resolve(replacementToken)).toBeUndefined();
+  }),
+);
+
+it.effect("keeps upstream defaults only when explicit capability admission is absent", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    for (const browserToolsAvailable of [false, true]) {
+      const issued = yield* registry.issue({
+        threadId: ThreadId.make(`default-${browserToolsAvailable}`),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        browserToolsAvailable,
+      });
+      const resolved = yield* registry.resolve(issued.config.authorizationHeader.slice(7));
+      expect(resolved?.capabilities).toEqual(
+        new Set([
+          "orchestration",
+          "worktree",
+          "pull-requests",
+          ...(browserToolsAvailable ? ["preview"] : []),
+        ]),
+      );
+      expect(issued.config.boardEndpoint).toBeUndefined();
+      expect(issued.config.pullRequestsEndpoint).toBe("http://127.0.0.1:43123/mcp/pull-requests");
+      expect(issued.config.browserToolsAvailable).toBe(browserToolsAvailable);
+    }
   }),
 );

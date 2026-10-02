@@ -27,7 +27,10 @@ export interface RunMigrationsOptions {
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
-  const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
+  // Select the supported lineage before the upstream runner creates a journal.
+  // Otherwise a populated database without a journal would look like a fresh install.
+  const selected = yield* makeMigrationLoader(toMigrationInclusive);
+  const executedMigrations = yield* run({ loader: Effect.succeed(selected) });
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
   yield* migrations.length === 0
     ? Effect.logDebug("Database schema is current")

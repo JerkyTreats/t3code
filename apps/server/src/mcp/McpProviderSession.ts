@@ -1,27 +1,39 @@
 import type { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 
-import type { McpCapability } from "./McpInvocationContext.ts";
-
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
-  readonly capabilities: ReadonlySet<McpCapability>;
+  readonly capabilities?: ReadonlySet<string>;
+  readonly browserToolsAvailable: boolean;
   readonly endpoint: string;
   readonly boardEndpoint?: string;
   readonly previewEndpoint?: string;
   readonly deviceEndpoint?: string;
+  readonly pullRequestsEndpoint?: string;
   readonly authorizationHeader: string;
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
 }
 
 export interface McpProviderServerAttachment {
-  readonly name: "t3-code" | "t3-code-preview" | "t3-code-device" | "t3-code-pull-requests";
+  readonly name:
+    | "t3-code"
+    | "t3-code-board"
+    | "t3-code-preview"
+    | "t3-code-device"
+    | "t3-code-pull-requests";
   readonly endpoint: string;
   readonly authorizationHeader: string;
-  /** Capabilities the credential grants ("preview", "device"). */
-  readonly capabilities: ReadonlySet<string>;
+  /**
+   * Whether this credential includes the "preview" capability. Adapters read
+   * it to keep developer instructions truthful: when the user withholds agent
+   * browser access, the prompt must not advertise `preview_*` tools that every
+   * call would reject.
+   */
+  readonly browserToolsAvailable: boolean;
+  /** Explicit server-issued toolkit grants; Board is never inferred from provider defaults. */
+  readonly capabilities?: ReadonlySet<string>;
   /**
    * Set when the session may drive devices. Adapters spread this into the
    * provider subprocess environment so the `agent-device` CLI is on PATH and
@@ -52,23 +64,39 @@ export function getMcpProviderServerAttachments(
   config: McpProviderSessionConfig,
 ): ReadonlyArray<McpProviderServerAttachment> {
   const attachments: McpProviderServerAttachment[] = [];
+  const capabilities =
+    config.capabilities ??
+    new Set([
+      "orchestration",
+      "worktree",
+      "pull-requests",
+      ...(config.browserToolsAvailable ? ["preview"] : []),
+    ]);
+  const siblingEndpoint = (name: string) =>
+    `${config.endpoint.replace(/\/mcp\/?$/, "")}/mcp/${name}`;
   const attach = (name: McpProviderServerAttachment["name"], endpoint: string) =>
     attachments.push({
       name,
       endpoint,
       authorizationHeader: config.authorizationHeader,
-      capabilities: config.capabilities,
+      capabilities,
+      browserToolsAvailable: capabilities.has("preview"),
       ...(config.agentDeviceEnvironment
         ? { agentDeviceEnvironment: config.agentDeviceEnvironment }
         : {}),
     });
-  if (config.capabilities.has("board") && config.boardEndpoint)
-    attach("t3-code", config.boardEndpoint);
-  if (config.capabilities.has("preview") && config.previewEndpoint)
-    attach("t3-code-preview", config.previewEndpoint);
-  if (config.capabilities.has("device") && config.deviceEndpoint)
-    attach("t3-code-device", config.deviceEndpoint);
-  if (config.capabilities.has("pull-requests")) attach("t3-code-pull-requests", config.endpoint);
+  if (capabilities.has("orchestration")) attach("t3-code", config.endpoint);
+  if (capabilities.has("board") && config.boardEndpoint)
+    attach("t3-code-board", config.boardEndpoint);
+  if (capabilities.has("preview"))
+    attach("t3-code-preview", config.previewEndpoint ?? siblingEndpoint("preview"));
+  if (capabilities.has("device"))
+    attach("t3-code-device", config.deviceEndpoint ?? siblingEndpoint("device"));
+  if (capabilities.has("pull-requests"))
+    attach(
+      "t3-code-pull-requests",
+      config.pullRequestsEndpoint ?? siblingEndpoint("pull-requests"),
+    );
   return attachments;
 }
 

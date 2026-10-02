@@ -6,7 +6,6 @@ import {
   BOARD_POST_MAX_BODY_BYTES,
   BOARD_POST_MAX_TARGETS,
   BoardGetPageInput,
-  BoardGetHistoryInput,
   BoardHistoryPage,
   BoardPage,
   BoardPost,
@@ -16,19 +15,16 @@ import {
   BoardStreamItem,
   BoardSubscribeInput,
 } from "./coordinationBoard.ts";
-import {
-  ClientOrchestrationCommand,
-  ORCHESTRATION_WS_METHODS,
-  OrchestrationBoardRevisionError,
-  OrchestrationEvent,
-  OrchestrationRpcSchemas,
-} from "./orchestration.ts";
+import { OrchestrationBoardRevisionError } from "./coordinationBoardOrchestration.ts";
+import { ApplicationBoardEvent } from "./applicationEvent.ts";
+import { OrchestrationV2Command } from "./orchestrationV2.ts";
 import {
   WsOrchestrationGetBoardPageRpc,
   WsOrchestrationGetBoardPostHistoryRpc,
   WsOrchestrationReviseBoardPostRpc,
   WsOrchestrationSubscribeBoardRpc,
   WsRpcGroup,
+  WS_METHODS,
 } from "./rpc.ts";
 
 const decodePublishInput = Schema.decodeUnknownSync(BoardPublishInput);
@@ -37,11 +33,11 @@ const decodePostSource = Schema.decodeUnknownSync(BoardPostSource);
 const decodePage = Schema.decodeUnknownSync(BoardPage);
 const decodePageInput = Schema.decodeUnknownSync(BoardGetPageInput);
 const decodeSubscribeInput = Schema.decodeUnknownSync(BoardSubscribeInput);
-const decodeClientCommand = Schema.decodeUnknownSync(ClientOrchestrationCommand);
+const decodeClientCommand = Schema.decodeUnknownSync(OrchestrationV2Command);
 const decodeStreamItem = Schema.decodeUnknownSync(BoardStreamItem);
 const decodeReviseInput = Schema.decodeUnknownSync(BoardReviseInput);
 const decodeHistoryPage = Schema.decodeUnknownSync(BoardHistoryPage);
-const decodeEvent = Schema.decodeUnknownSync(OrchestrationEvent);
+const decodeEvent = Schema.decodeUnknownSync(ApplicationBoardEvent);
 const decodeRevisionError = Schema.decodeUnknownSync(OrchestrationBoardRevisionError);
 const decodeHistoryRpcError = Schema.decodeUnknownSync(
   WsOrchestrationGetBoardPostHistoryRpc.errorSchema,
@@ -160,22 +156,18 @@ describe("global Board contracts", () => {
     expect(decodeSubscribeInput({ afterSequence: 4 })).toEqual({
       afterSequence: 4,
     });
-    expect(ORCHESTRATION_WS_METHODS.getBoardPage).toBe("orchestration.getBoardPage");
-    expect(ORCHESTRATION_WS_METHODS.subscribeBoard).toBe("orchestration.subscribeBoard");
-    expect(ORCHESTRATION_WS_METHODS.getBoardPostHistory).toBe("orchestration.getBoardPostHistory");
-    expect(ORCHESTRATION_WS_METHODS.reviseBoardPost).toBe("orchestration.reviseBoardPost");
-    expect(OrchestrationRpcSchemas.getBoardPage.input).toBe(BoardGetPageInput);
-    expect(OrchestrationRpcSchemas.subscribeBoard.input).toBe(BoardSubscribeInput);
-    expect(WsOrchestrationGetBoardPageRpc._tag).toBe(ORCHESTRATION_WS_METHODS.getBoardPage);
-    expect(WsOrchestrationSubscribeBoardRpc._tag).toBe(ORCHESTRATION_WS_METHODS.subscribeBoard);
-    expect(WsOrchestrationGetBoardPostHistoryRpc._tag).toBe(
-      ORCHESTRATION_WS_METHODS.getBoardPostHistory,
-    );
-    expect(WsOrchestrationReviseBoardPostRpc._tag).toBe(ORCHESTRATION_WS_METHODS.reviseBoardPost);
-    expect(WsRpcGroup.requests.has(ORCHESTRATION_WS_METHODS.getBoardPage)).toBe(true);
-    expect(WsRpcGroup.requests.has(ORCHESTRATION_WS_METHODS.subscribeBoard)).toBe(true);
-    expect(WsRpcGroup.requests.has(ORCHESTRATION_WS_METHODS.getBoardPostHistory)).toBe(true);
-    expect(WsRpcGroup.requests.has(ORCHESTRATION_WS_METHODS.reviseBoardPost)).toBe(true);
+    expect(WS_METHODS.getBoardPage).toBe("orchestration.getBoardPage");
+    expect(WS_METHODS.subscribeBoard).toBe("orchestration.subscribeBoard");
+    expect(WS_METHODS.getBoardPostHistory).toBe("orchestration.getBoardPostHistory");
+    expect(WS_METHODS.reviseBoardPost).toBe("orchestration.reviseBoardPost");
+    expect(WsOrchestrationGetBoardPageRpc._tag).toBe(WS_METHODS.getBoardPage);
+    expect(WsOrchestrationSubscribeBoardRpc._tag).toBe(WS_METHODS.subscribeBoard);
+    expect(WsOrchestrationGetBoardPostHistoryRpc._tag).toBe(WS_METHODS.getBoardPostHistory);
+    expect(WsOrchestrationReviseBoardPostRpc._tag).toBe(WS_METHODS.reviseBoardPost);
+    expect(WsRpcGroup.requests.has(WS_METHODS.getBoardPage)).toBe(true);
+    expect(WsRpcGroup.requests.has(WS_METHODS.subscribeBoard)).toBe(true);
+    expect(WsRpcGroup.requests.has(WS_METHODS.getBoardPostHistory)).toBe(true);
+    expect(WsRpcGroup.requests.has(WS_METHODS.reviseBoardPost)).toBe(true);
   });
 
   it("bounds public correction input and excludes caller supplied provenance", () => {
@@ -234,8 +226,6 @@ describe("global Board contracts", () => {
         beforeRevision: null,
       }),
     ).toThrow();
-    expect(OrchestrationRpcSchemas.getBoardPostHistory.input).toBe(BoardGetHistoryInput);
-    expect(OrchestrationRpcSchemas.reviseBoardPost.input).toBe(BoardReviseInput);
   });
 
   it("decodes revision events and structured conflicts", () => {

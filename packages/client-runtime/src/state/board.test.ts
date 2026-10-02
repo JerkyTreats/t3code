@@ -1,4 +1,4 @@
-import { EnvironmentId, ORCHESTRATION_WS_METHODS } from "@t3tools/contracts";
+import { EnvironmentId, WS_METHODS } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -251,7 +251,7 @@ describe("environment Board state", () => {
         const subscriptionInputs = yield* Queue.unbounded<Record<string, unknown>>();
         const expectedFailure = new Error("Board subscription unavailable");
         const client = {
-          [ORCHESTRATION_WS_METHODS.subscribeBoard]: (input: Record<string, unknown>) =>
+          [WS_METHODS.subscribeBoard]: (input: Record<string, unknown>) =>
             Stream.unwrap(
               Queue.offer(subscriptionInputs, input).pipe(
                 Effect.as(
@@ -329,7 +329,7 @@ describe("environment Board state", () => {
         ) =>
           ({
             client: {
-              [ORCHESTRATION_WS_METHODS.subscribeBoard]: (input: Record<string, unknown>) =>
+              [WS_METHODS.subscribeBoard]: (input: Record<string, unknown>) =>
                 Stream.unwrap(
                   Queue.offer(subscriptionInputs, { connection, input }).pipe(
                     Effect.as(Stream.fromQueue(events)),
@@ -396,8 +396,8 @@ describe("environment Board state", () => {
         const events = yield* Queue.unbounded<Parameters<typeof applyBoardStreamItem>[1]>();
         const pageRequests = yield* Queue.unbounded<Record<string, unknown>>();
         const client = {
-          [ORCHESTRATION_WS_METHODS.subscribeBoard]: () => Stream.fromQueue(events),
-          [ORCHESTRATION_WS_METHODS.getBoardPage]: (input: Record<string, unknown>) =>
+          [WS_METHODS.subscribeBoard]: () => Stream.fromQueue(events),
+          [WS_METHODS.getBoardPage]: (input: Record<string, unknown>) =>
             Queue.offer(pageRequests, input).pipe(
               Effect.andThen(Effect.die("Board page unavailable")),
             ),
@@ -466,6 +466,6 @@ describe("environment Board state", () => {
   });
 
   it("exposes no human publication command through the Board read state", () => {
-    expect(Object.values(ORCHESTRATION_WS_METHODS)).not.toContain("board.post.publish");
+    expect(Object.values(WS_METHODS)).not.toContain("board.post.publish");
   });
 });

@@ -9,7 +9,7 @@ import {
   ThreadId,
   type BoardPage,
   type BoardPost,
-  type OrchestrationEvent,
+  type ApplicationBoardEvent,
 } from "@t3tools/contracts";
 import { it } from "@effect/vitest";
 import * as NodeAssert from "node:assert/strict";
@@ -60,7 +60,7 @@ const page = (posts: ReadonlyArray<BoardPost>, headSequence: number): BoardPage 
 
 const makePublishedEvent = (
   sequence: number,
-): Extract<OrchestrationEvent, { type: "board.post-published" }> => ({
+): Extract<ApplicationBoardEvent, { type: "board.post-published" }> => ({
   sequence,
   eventId: EventId.make(`event-${sequence}`),
   aggregateKind: "board",
@@ -193,7 +193,7 @@ it.effect("rebases an unreplayable cursor with a bounded snapshot", () =>
 
 it.effect("catches up from a live Board wakeup through the focused owner", () =>
   Effect.gen(function* () {
-    const domainEvents = yield* Queue.unbounded<OrchestrationEvent>();
+    const domainEvents = yield* Queue.unbounded<ApplicationBoardEvent>();
     const published = makePost(11);
     const subscribe = makeBoardSubscription({
       domainEvents: Stream.fromQueue(domainEvents),
@@ -218,7 +218,7 @@ it.effect("catches up from a live Board wakeup through the focused owner", () =>
 
 it.effect("rebases a slow live subscriber beyond the replay window", () =>
   Effect.gen(function* () {
-    const domainEvents = yield* Queue.unbounded<OrchestrationEvent>();
+    const domainEvents = yield* Queue.unbounded<ApplicationBoardEvent>();
     const snapshot = page([makePost(2_000)], 2_000);
     const subscribe = makeBoardSubscription({
       domainEvents: Stream.fromQueue(domainEvents),

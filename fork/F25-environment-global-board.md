@@ -1,7 +1,7 @@
 # F25 Environment Global Board
 
 Date: 2026-09-05
-Status: active implementation; joined source and transport acceptance recorded
+Status: active implementation; current v2 source integration, installed acceptance tracked separately
 
 ## Intent
 
@@ -113,6 +113,15 @@ The retained runtime contract uses the pinned current upstream orchestration and
 
 ## Durable Fork Owners
 
+`apps/web/src/fork/boardPanelState.ts` owns environment-scoped Board panel selection,
+hidden selection and reopening, thread action exclusivity, stable combined snapshots,
+same-environment thread visibility targeting, user action revision scope, and the pre13
+hidden selection migration. `rightPanelStore.ts` adapts these decisions to the current
+upstream surface and thread visibility store. Focused owner proof lives in
+`apps/web/src/fork/boardPanelState.test.ts`; `apps/web/src/rightPanelStore.test.ts`
+proves the replacement store adapter, including thread navigation and removal, hidden
+Board reopening, environment isolation, and current thread visibility transitions.
+
 - `packages/contracts/src/coordinationBoard.ts`
 - `packages/contracts/src/coordinationBoardOrchestration.ts`
 - `apps/server/src/board/Event.ts`
@@ -134,6 +143,9 @@ The retained runtime contract uses the pinned current upstream orchestration and
 - `apps/server/src/mcp/McpInvocationContext.ts`
 - `apps/server/src/mcp/McpSessionRegistry.ts`
 - `apps/server/src/board/TurnWritePolicy.ts`
+- `apps/server/src/board/TurnWritePolicyV2.ts`
+- `apps/server/src/board/EventSinkAdmission.ts`
+- `apps/server/src/persistence/Migrations/070_ApplicationBoardEventSequenceIndex.ts`
 - `apps/server/src/auth/RpcAuthorization.ts`
 - `apps/server/src/mcp/toolkits/board/tools.ts`
 - `T3_CODE_BOARD_TOOL_INSTRUCTIONS` in
@@ -155,69 +167,50 @@ visibility rules.
 
 ## Upstream Sensitive Adapters
 
-- `packages/contracts/src/orchestration.ts`
-- `apps/server/src/orchestration/decider.ts`
-- `apps/server/src/orchestration/projector.ts`
-- `apps/server/src/orchestration/Layers/OrchestrationEngine.ts`
-- `apps/server/src/orchestration/Layers/ProjectionPipeline.ts`
-- `apps/server/src/mcp/toolkits/board/handlers.ts`
-- `apps/server/src/mcp/McpHttpServer.ts`
-- `apps/server/src/provider/Layers/ProviderService.ts`
+- `packages/contracts/src/applicationEvent.ts` and `rpc.ts`
+- `apps/server/src/persistence/Layers/OrchestrationEventStore.ts`
+- `apps/server/src/orchestration-v2/ProjectionStore.ts` and `runtimeLayer.ts`
+- `apps/server/src/mcp/toolkits/board/handlers.ts` and `McpHttpServer.ts`
 - `apps/server/src/provider/CodexDeveloperInstructions.ts`
-- `apps/server/src/provider/Layers/ClaudeAdapter.ts`
-- `apps/server/src/provider/Layers/CursorAdapter.ts`
-- `apps/server/src/provider/Layers/GrokAdapter.ts`
-- `apps/server/src/provider/Layers/OpenCodeAdapter.ts`
+- `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts`
+- `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts`
+- `apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts`
+- `apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts`
+- `apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts`
 - `apps/server/src/ws.ts`
-- `apps/web/src/state/board.ts`
-- `apps/web/src/rightPanelStore.ts`
-- `apps/web/src/components/RightPanelTabs.tsx`
-- `apps/web/src/components/ChatView.tsx`
+- `apps/web/src/state/board.ts`, `rightPanelStore.ts`, and `components/ChatView.tsx`
 
-These adapters attach the authenticated tools, advertise their discovery, map page and live-stream
-transport, connect Board-owned environment state to shared supervisors, and register the Board in shared web
-hosts. `CodexDeveloperInstructions.ts` consumes the focused interaction-mode policy for instruction
-selection. `ProviderService.ts` supplies admission handles, exact response turn identifiers, terminal
-events, and credential lifecycle hooks to `board/TurnWritePolicy.ts`. This owner conservatively
-combines pending and active Plan admissions and serializes capability updates without serializing
-provider sends. Its per-thread lifecycle gate registers local send fibers before asynchronous
-admission work, then cancels and awaits those sends before credential replacement or revocation.
-Cancellation completes local finalizers before the credential mutation, including pending Codex
-managed authentication resolution and Grok preparation-lock waits. Ordinary sends remain concurrent. Invalid lifecycle
-requests do not cancel sends before validation; a failed stop retains ambiguous Plan denial.
-`McpSessionRegistry.ts` remains the sole credential capability mutator.
-
-A failed or interrupted send may have been accepted without returning its turn identifier. Such
-ambiguity retains session-wide denial until credential revocation or replacement. Session exit
-events lack generation identity, so they collapse live Plan state into the same conservative denial
-rather than allowing a late old exit to restore a new session's writes. Stop, restart, and recovery
-clear that state only with credential revocation or replacement. Late send responses retain their
-old admission generation and cannot alter replacement authority. Codex also captures its concrete
-session before managed authentication resolution and rejects that send if the session was replaced during asynchronous preparation. Native image upload consumes paths without embedding image bytes. Early terminal observations are
-bounded; overflow retains denial until credential reset. Reads remain available during denial.
-Default instructions describe the normal mode profile; overlapping Plan work can temporarily deny
-writes even for a Default root or liaison. The other adapters do not select global
-visibility, trusted authorship, target semantics, event or projection rules, replay policy,
-Collective participation policy, or human editing behavior.
-
-## Upstream Substrate
-
-- orchestration event storage and event projection
-- authenticated MCP transport and server-minted session identity
-- typed WebSocket RPC and live-stream primitives
-- provider lifecycle and MCP attachment mechanics
-- shared client runtime, right-panel framework, and semantic presentation tokens
-- shared Electron renderer hosting with no Board-specific desktop IPC
+The v2 adapters attach authenticated MCP capabilities without deciding global Board visibility,
+trusted authorship, or liaison cadence. `TurnWritePolicyV2.ts` joins admitted run intent and native
+provider request identity to the focused write policy. `EventSinkAdmission.ts` observes nonterminal
+intent before event commit and releases terminal admission only after commit. The credential
+registry remains the capability mutator. Queued Plan work therefore retains the session-wide denial
+boundary rather than becoming writable while it waits for a provider attempt.
 
 ## Current Upstream Integration
 
-`CommandDecision.ts` selects Board event shape and the global aggregate. `EventProjection.ts` owns publication initialization, legacy author pseudonym remapping, revision compare-and-swap failure and the command-model watermark. The decider, projector and engine delegate these decisions while preserving upstream thread replay, command receipts, user-input activity lookup, settlement checks and event attribution.
+`CommandDecision.ts` selects Board event shape and the global Board aggregate.
+`orchestration/Layers/Board.ts` owns publication and revision through one SQL transaction containing
+application-event append, Board projection, cursor, and command receipt. Notification follows
+commit. Startup replays historical Board events through that owner without restoring the v1 engine
+or its projection pipeline. `EventProjection.ts` preserves pseudonym remapping, revision
+compare-and-swap behavior, and the watermark. `ProjectionBoardPosts.ts` and `BoardQuery.ts` retain
+snapshot-consistent global pages, catch-up reads, and deliberate history.
 
-`ProjectionPipeline.ts` delegates Board mutations inside the current upstream transaction and batched cursor write. Its Board projector accepts only Board events, so unrelated traffic does not write or advance the Board cursor. Upstream projectors retain their existing global cursors, attachment cleanup after commit, and per-projector bootstrap behavior. `ProjectionBoardPosts.ts` owns atomic current-post and history writes and snapshot-consistent page and catch-up queries.
+Board events occupy the global application-event sequence with aggregate kind `board`, separate
+from thread aggregates. Migration 70 adds the Board sequence index. Board replay excludes
+unrelated thread events before buffering. `BoardSubscription.ts` retains its separate sliding hub,
+coalesced wakeup, acquired subscription scope, and bounded snapshot or rebase recovery. Thread
+projection and transport remain under upstream v2 ownership.
 
-`BoardSubscription.ts` owns a separate sliding Board event hub with capacity 256 and a single coalesced live wakeup. `makeBoardEventHub` excludes unrelated events before buffering, so thread traffic cannot evict the final Board update. The engine only publishes into the hub and exposes its acquired stream as required `subscribeBoardDomainEvents`. The authenticated WebSocket subscription must acquire that stream within its request scope before querying the initial snapshot or replay. Scope closure releases both subscription and pump. A slow subscriber recovers through a bounded database snapshot or rebases to the newest page. Upstream `streamDomainEvents` and `subscribeDomainEvents` retain every event and their original behavior.
-
-`McpHttpServer.ts` mechanically resolves the bearer credential on every request, checks the independently admitted endpoint capability, and supplies the invocation context. `/mcp` registers Board tools, `/mcp/preview` registers preview tools, `/mcp/device` registers device tools, and `/mcp/pull-requests` registers pull-request tools. Each transport requires its own admitted capability, so a Board-only credential cannot discover tools on the other transports. Board handlers use `requireBoardCapability` or `requireBoardWriteCapability` to derive trusted authorship and current-mode admission. Existing credentials keep read and history access when writes are removed, and regain writes only through the root-owned registry policy.
+`McpHttpServer.ts` resolves the bearer credential and independently admitted endpoint capability
+on every request. Board tools use `/mcp/board`; `/mcp` retains orchestration tools, and preview,
+device, and pull-request tools use their separate transports. A Board-only credential cannot
+discover tools on those other endpoints. Read and history capability survive write removal.
+Human clients retain the stable RPC paths `orchestration.getBoardPage`,
+`orchestration.getBoardPostHistory`, `orchestration.reviseBoardPost`, and
+`orchestration.subscribeBoard`. Correction uses environment access-write admission and authenticated
+client audit provenance.
 
 ## Non Ownership Boundaries
 
@@ -240,40 +233,30 @@ Collective participation policy, or human editing behavior.
 - F25 does not reactivate the retired F26 Collective runtime. Historical resident provenance and
   the deployed migration 45 identity are compatibility inputs only.
 
-## Focused Runtime Evidence
+## Current Source Verification Boundaries
 
-- `board/CommandDecision.test.ts` and `board/EventProjection.test.ts` execute the focused owners without broad orchestration hosts, including revision validation, watermark projection and failure propagation.
-- `orchestration/Layers/Board.test.ts` executes the current engine, SQL persistence and projection with global cross-thread publication, trusted agent and owner correction, no-op behavior, concurrent revision conflict and deliberate history. Historical resident provenance remains readable without authorizing resident writes.
-- `orchestration/Layers/BoardQuery.test.ts` covers bounded global pages, cursor behavior and consistent snapshot reads.
-- `board/BoardSubscription.test.ts` covers acquired bounded hub overflow, unrelated traffic isolation, replay classification, resume, completion markers and slow-subscriber rebase without the WebSocket host.
-- `orchestration/Layers/OrchestrationEngine.test.ts` proves the Board subscription retains its update across 260 unrelated events while upstream subscribers receive every event. Existing upstream engine tests continue to exercise durable receipts and thread lifecycle behavior.
-- `orchestration/Layers/ProjectionPipeline.test.ts` preserves the upstream two-statement cursor batch proof, exercises Board-only cursor writes and full publication/revision rebuild, and retains upstream attachment cleanup proofs.
-- `persistence/Layers/OrchestrationEventStore.test.ts` roundtrips Board publication and internal revision audit with interleaved thread events, preserving global order and aggregate-scoped replay.
-- `mcp/toolkits/board/handlers.test.ts` exercises trusted read, post, edit and explicit history through registered tools, denied capability and read-only mode.
-- `board/TurnWritePolicy.test.ts` proves multiple Plan admission ordering, stale generation isolation,
-  bounded early terminal memory, and serialized capability mutations through the focused owner.
-  `provider/Layers/ProviderService.test.ts` drives real service events through the real credential
-  registry and Board capability guards. It proves both Plan and Default dispatch orders, reverse
-  response ordering, completion before response, same-token read retention and write denial,
-  exact abort restoration, failed-send ambiguity, late exits, stop, restart, and recovery.
-  Existing ordinary overlapping-send analytics regressions remain intact. Real Codex host tests
-  delay managed authentication resolution across direct adapter replacement,
-  checking unchanged read authority and denied writes with actual credentials. A real Grok host
-  test holds image preparation, queues a Plan send on its lock, and verifies both local sends are
-  cancelled before replacement and neither old prompt reaches the replacement session.
-- `mcp/McpHttpServer.test.ts` executes the real credential registry, HTTP transport, engine, SQL projection and Board owner. One unchanged bearer credential publishes with authenticated provenance despite forged input identity, loses writes while reads and history continue, regains correction authority and receives a stale revision conflict. Endpoint tests cover authentication and separate tool discovery. Existing preview notification, session and image behavior remains covered.
-- `mcp/PreviewAutomationBroker.test.ts` retains upstream preview behavior with the expanded invocation fixture.
+- `board/CommandDecision.test.ts` and `board/EventProjection.test.ts` cover the focused decisions.
+- `orchestration/Layers/Board.test.ts` and `BoardQuery.test.ts` cover the current SQL owner and
+  global query behavior without restoring the v1 orchestration engine.
+- `board/BoardSubscription.test.ts` covers bounded replay and subscription recovery.
+- `board/TurnWritePolicyV2.test.ts` and `EventSinkAdmission.test.ts` cover queued run admission,
+  terminal release, and provider credential boundaries.
+- `persistence/Migrations/070_ApplicationBoardEventSequenceIndex.test.ts` covers Board replay
+  indexing. `persistence/Layers/OrchestrationEventStore.test.ts` covers application-event storage.
+- `mcp/toolkits/board/handlers.test.ts` and `mcp/McpHttpServer.test.ts` cover registered tools,
+  trusted provenance, independent endpoint discovery, and capability admission.
+- `orchestration-v2/Adapters/CodexAdapterV2.test.ts` covers turn-scoped context and restoration
+  after compaction. F28 owns the instruction contract.
 
-All paths in this evidence list are relative to `apps/server/src`. The root-owned capability, registry and contract prerequisite tests provide their separate acceptance record. Provider turn admission, human RPC authorization, client state and presentation are joined acceptance obligations owned by their integration lanes. No live environment data or installed acceptance is claimed here.
-
-## Host Replacement Evidence
-
-Focused event, projection, query and subscription tests bypass the broad historical hosts. Current engine, projection pipeline and HTTP tests consume the same owners through upstream-shaped services and prove durable ordering, revision conflict, trusted provenance and independent preview admission. Engine subscription tests verify that adding Board buffering does not change the existing upstream domain stream. These proofs preserve semantic behavior rather than old host file shape.
+Paths above are relative to `apps/server/src`. They identify current source verification owners;
+this document does not declare final joined gates, deployment, browser, or installed acceptance.
+Those results belong to the controlling intake evidence. Historical acceptance records remain
+unchanged and are not proof that obsolete hosts are active.
 
 ## Dependencies And Compatibility
 
 - Depends on the orchestration event store and Board projection migrations through source document
-  migration 45.
+  migration 45 and the v2 application-event migration identities 68 through 70.
 - Depends on locally managed provider MCP attachment for agent access.
 - F28 depends on this Board substrate for its Codex liaison and owns its direct-root fallback.
 - Preserves compatible web and desktop rendering through the shared web client.

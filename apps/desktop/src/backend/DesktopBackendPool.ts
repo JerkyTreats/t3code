@@ -217,7 +217,7 @@ export const layer = Layer.effect(
     // Layer construction must not allocate a backend in standalone mode, including lazy IPC callers.
     if (isStandaloneDesktop(environment)) {
       return DesktopBackendPool.of({
-        get: () => Effect.succeed(Option.none()),
+        get: () => Effect.succeedNone,
         list: Effect.succeed([]),
         primary: Effect.die("Standalone desktop has no local backend"),
         register: () => Effect.die("Standalone desktop cannot allocate local backends"),

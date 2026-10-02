@@ -180,6 +180,12 @@ export const make = Effect.gen(function* () {
           })),
         ),
 
+    getChangeRequestChecks: (input) =>
+      Effect.all([api.getPullRequest(input), api.listChecks(input)], { concurrency: 2 }).pipe(
+        Effect.map(([pullRequest, checks]) => ({ state: pullRequest.state, checks })),
+        Effect.mapError(fail("getChangeRequestChecks")),
+      ),
+
     getChangeRequest: (input) => {
       const target = {
         originHost: input.host,

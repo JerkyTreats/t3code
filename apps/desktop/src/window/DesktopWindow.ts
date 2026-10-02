@@ -342,9 +342,7 @@ export const make = Effect.gen(function* () {
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
-  const withdrawRendererReadiness = launcher.markRendererNotReady.pipe(
-    Effect.catchCause(() => Effect.void),
-  );
+  const withdrawRendererReadiness = launcher.markRendererNotReady.pipe(Effect.ignoreCause);
   yield* Effect.addFinalizer(() => withdrawRendererReadiness);
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
 

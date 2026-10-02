@@ -27,10 +27,11 @@ import { isOriginRemoteName } from "../fork/originOnlySourceControlPolicy.ts";
 import * as OriginRepositoryMutationAuthority from "../fork/OriginRepositoryMutationAuthority.ts";
 import {
   pickOriginSourceControlContext,
+  originProviderRefinementContext,
   bindOriginProviderContext,
   originContainsHostedLink,
 } from "../fork/sourceControlContextPolicy.ts";
-import { ServerConfig } from "../config.ts";
+import * as ServerConfig from "../config.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 
@@ -149,7 +150,7 @@ function selectProviderContext(
 /** @public Service construction is part of the canonical Effect module API. */
 export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWithProviders")(
   function* (registrations: ReadonlyArray<SourceControlProviderRegistration>) {
-    const config = yield* ServerConfig;
+    const config = yield* ServerConfig.ServerConfig;
     const process = yield* VcsProcess.VcsProcess;
     const mutationAuthority = yield* OriginRepositoryMutationAuthority.make;
     const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
@@ -165,7 +166,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
     };
 
     const detectProviderContext = Effect.fn("SourceControlProviderRegistry.detectProviderContext")(
-      function* (cwd: string) {
+      function* (cwd: string, requested?: SourceControlProvider.SourceControlProviderContext) {
         const handle = yield* vcsRegistry.resolve({ cwd }).pipe(
           Effect.mapError(
             (error) =>
@@ -190,7 +191,10 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               }),
           ),
         );
-        const context = selectProviderContext(remotes.remotes);
+        const context = originProviderRefinementContext(
+          selectProviderContext(remotes.remotes),
+          requested,
+        );
 
         return yield* refineUnknownRemoteProvider({
           specs: discoverySpecs,
@@ -205,13 +209,16 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
       string,
       SourceControlProvider.SourceControlProviderContext | null,
       SourceControlProviderError
-    >(detectProviderContext, {
+    >((cwd) => detectProviderContext(cwd), {
       capacity: PROVIDER_DETECTION_CACHE_CAPACITY,
       timeToLive: (exit) => (Exit.isSuccess(exit) ? PROVIDER_DETECTION_CACHE_TTL : Duration.zero),
     });
 
     const resolveHandle: SourceControlProviderRegistry["Service"]["resolveHandle"] = (input) =>
-      Cache.get(providerContextCache, input.cwd).pipe(
+      (input.context === undefined
+        ? Cache.get(providerContextCache, input.cwd)
+        : detectProviderContext(input.cwd, input.context)
+      ).pipe(
         Effect.map((context) => {
           const kind = context?.provider.kind ?? "unknown";
           const provider = providers.get(kind) ?? unsupportedProvider(kind);

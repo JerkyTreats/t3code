@@ -46,13 +46,15 @@ Keep one canonical production server and one production T3 Code Electron identit
 - `scripts/linux-thread-release-artifact.mjs`
 - `scripts/linux-desktop-launcher.mjs`
 - `apps/desktop/src/app/DesktopLauncherRuntime.ts`
+- `apps/desktop/src/app/DesktopUserData.ts`
+- `apps/desktop/src/app/DesktopAppIdentity.ts`
 - `apps/desktop/src/fork/StandaloneDesktopPolicy.ts`
 - `apps/desktop/src/electron/ElectronShell.ts`
 - `apps/web/src/fork/desktopLauncherActivation.ts`
 
 The protected intake decision is `F16.INTAKE.OUTCOME`. Standalone selection belongs to `StandaloneDesktopPolicy.ts` and fails before local backend allocation when any identity field is incomplete. Launcher admission and readiness belong to `DesktopLauncherRuntime.ts`; hosted activation belongs to `desktopLauncherActivation.ts`. Current DesktopApp, Environment, Clerk, Window, preload, IPC, root route and ChatView are mechanical adapters. Normal upstream desktop startup remains available outside the explicit standalone identity.
 
-Desktop bootstrap resolves the legacy user-data choice and acquires Clerk synchronously before Electron readiness. Launcher runtime I/O starts afterward, and Clerk obtains authenticated handoff support when configuring its instance handler. This preserves the user-data-before-lock order and keeps normal bundled startup available alongside standalone launch admission.
+Desktop bootstrap resolves user data and acquires Clerk before Electron readiness. `StandaloneDesktopPolicy.ts` selects the explicit managed profile before the upstream `DesktopUserData.ts` fallback. Normal production fallback selects `t3code-v2`; Windows may copy only `Local State` preferences for safe-storage compatibility, never Chromium databases. Launcher runtime I/O starts afterward, and Clerk obtains authenticated handoff support when configuring its instance handler. This preserves the user-data-before-lock order and keeps normal bundled startup available alongside standalone launch admission.
 
 Trusted Code launcher submission waits for the actual mounted composer text and send readiness, then uses the ordinary chat send path. A direct committed-context notification observes child-only changes without polling. Known pre-submit refusal requires explicit retry. An uncertain send outcome cannot retry through the launcher owner; the user must inspect the ordinary conversation before deciding to send again. Completion follows successful admission of the exact staged prompt and draft identity. Completion retries do not resend. Missing projects, unavailable drafts and invested drafts remain visible recovery states. Thread launch text always remains under user Send control.
 

@@ -1,8 +1,6 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   BoardAuthorId,
-  CommandId,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
@@ -12,20 +10,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { McpSchema, McpServer } from "effect/unstable/ai";
 
-import { ServerConfig } from "../../../config.ts";
 import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
-import { SqlitePersistenceMemory } from "../../../persistence/Layers/Sqlite.ts";
-import * as RepositoryIdentityResolver from "../../../project/RepositoryIdentityResolver.ts";
-import { OrchestrationEngineService } from "../../../orchestration/Services/OrchestrationEngine.ts";
-import { OrchestrationLayerLive } from "../../../orchestration/runtimeLayer.ts";
-
-const BoardServicesTestLayer = OrchestrationLayerLive.pipe(
-  Layer.provide(RepositoryIdentityResolver.layer),
-  Layer.provideMerge(SqlitePersistenceMemory),
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-board-mcp-test-" })),
-  Layer.provideMerge(NodeServices.layer),
-);
+import {
+  BoardTestLayer as BoardServicesTestLayer,
+  seedBoardThread,
+} from "../../../board/BoardTestSupport.ts";
 
 const TestLayer = McpHttpServer.BoardToolkitRegistrationLive.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
@@ -78,35 +68,11 @@ it.layer(TestLayer)("global Board MCP toolkit", (it) => {
     () =>
       Effect.gen(function* () {
         const server = yield* McpServer.McpServer;
-        const engine = yield* OrchestrationEngineService;
-        const modelSelection = {
-          instanceId: ProviderInstanceId.make("codex"),
-          model: "gpt-5-codex",
-        } as const;
-
         for (const suffix of ["one", "two"] as const) {
-          yield* engine.dispatch({
-            type: "project.create",
-            commandId: CommandId.make(`project-command-${suffix}`),
-            projectId: ProjectId.make(`project-${suffix}`),
-            title: `Project ${suffix}`,
-            workspaceRoot: `/workspace/project-${suffix}`,
-            defaultModelSelection: modelSelection,
-            createdAt: "2026-08-28T12:00:00.000Z",
-          });
-          yield* engine.dispatch({
-            type: "thread.create",
-            commandId: CommandId.make(`thread-command-${suffix}`),
-            threadId: ThreadId.make(`thread-${suffix}`),
-            projectId: ProjectId.make(`project-${suffix}`),
-            title: `Thread ${suffix}`,
-            modelSelection,
-            runtimeMode: "full-access",
-            interactionMode: "default",
-            branch: null,
-            worktreePath: null,
-            createdAt: "2026-08-28T12:00:00.000Z",
-          });
+          yield* seedBoardThread(
+            ThreadId.make(`thread-${suffix}`),
+            ProjectId.make(`project-${suffix}`),
+          );
         }
 
         const firstInvocation = makeInvocation({

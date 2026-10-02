@@ -39,7 +39,7 @@ import * as SessionStore from "./SessionStore.ts";
 import { REUSABLE_DEV_SESSION_EXPIRES_AT, resolveReusableDevAuth } from "./ReusableDevAuth.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
 import { parseAuthorizationCredential } from "./authorizationCredential.ts";
-import { layerConfig as SqlitePersistenceLayer } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Layers/Sqlite.ts";
 
 const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
 export const INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT = "administrative-bootstrap";
@@ -1107,7 +1107,7 @@ export const layer = Layer.effect(EnvironmentAuth, make).pipe(
   Layer.provideMerge(EnvironmentAuthPolicy.layer),
 );
 
-const storageLayer = Layer.mergeAll(ServerSecretStore.layer, SqlitePersistenceLayer);
+const storageLayer = Layer.mergeAll(ServerSecretStore.layer, SqlitePersistence.layerConfig);
 
 export const runtimeLayer = layer.pipe(
   Layer.provideMerge(storageLayer),

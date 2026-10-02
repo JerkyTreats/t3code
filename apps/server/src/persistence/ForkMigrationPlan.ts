@@ -65,6 +65,9 @@ import UpstreamMigration0052 from "./Migrations/052_ProjectionThreadTitleState.t
 import UpstreamMigration0053 from "./Migrations/053_PullRequestFilesViewed.ts";
 import UpstreamMigration0054 from "./Migrations/054_ProjectionThreadsAutoSettleDisabledAt.ts";
 import Migration0067 from "./Migrations/067_ProjectionThreadCreationSurface.ts";
+import Migration0070 from "./Migrations/070_ApplicationBoardEventSequenceIndex.ts";
+import UpstreamMigration0055 from "./Migrations/055_OrchestrationV2.ts";
+import UpstreamMigration0056 from "./Migrations/056_RemoveRedundantProjectionIndexes.ts";
 
 export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -131,6 +134,9 @@ export const migrationEntries = [
   [65, "PullRequestFilesViewed", UpstreamMigration0053],
   [66, "ProjectionThreadsAutoSettleDisabledAt", UpstreamMigration0054],
   [67, "ProjectionThreadCreationSurface", Migration0067],
+  [68, "OrchestrationV2", UpstreamMigration0055],
+  [69, "RemoveRedundantProjectionIndexes", UpstreamMigration0056],
+  [70, "ApplicationBoardEventSequenceIndex", Migration0070],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -176,9 +182,8 @@ const currentNames = new Map<number, string>(migrationManifest);
 export const makeMigrationLoader = (throughId?: number): Migrator.Loader<SqlClient.SqlClient> =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    const journal = yield* sql<{ readonly migrationId: number; readonly name: string }>`
-      SELECT migration_id AS "migrationId", name FROM effect_sql_migrations
-      ORDER BY migration_id ASC
+    const tables = yield* sql<{ readonly name: string }>`
+      SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
     `.pipe(
       Effect.mapError(
         (cause) =>
@@ -189,6 +194,29 @@ export const makeMigrationLoader = (throughId?: number): Migrator.Loader<SqlClie
           }),
       ),
     );
+    const hasJournal = tables.some(({ name }) => name === "effect_sql_migrations");
+    if (!hasJournal && tables.length > 0) {
+      return yield* new Migrator.MigrationError({
+        kind: "Failed",
+        message:
+          "Unsupported fork migration lineage: populated database without a migration journal",
+      });
+    }
+    const journal = !hasJournal
+      ? []
+      : yield* sql<{ readonly migrationId: number; readonly name: string }>`
+      SELECT migration_id AS "migrationId", name FROM effect_sql_migrations
+      ORDER BY migration_id ASC
+    `.pipe(
+          Effect.mapError(
+            (cause) =>
+              new Migrator.MigrationError({
+                cause,
+                kind: "Failed",
+                message: "Could not inspect the fork migration journal",
+              }),
+          ),
+        );
     for (const row of journal) {
       if (
         currentNames.get(row.migrationId) !== row.name &&

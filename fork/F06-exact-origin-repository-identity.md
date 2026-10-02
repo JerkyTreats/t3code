@@ -22,6 +22,20 @@ Server fork owners reside under `apps/server/src/fork/`. The provider target par
 
 `packages/contracts/src/sourceControl.ts` requires an explicit provider endpoint for lookup and publication and permits it for provider-based clone. Project creation clients and the publication wizard supply the selected authenticated endpoint. Shared project operations own lookup request preparation. The web and mobile components remain adapters around their current flows.
 
+`originProviderRefinementContext` in `sourceControlContextPolicy.ts` binds caller provider hints to
+the live origin remote, preserving transport and port identity before registry refinement.
+`originCreatedPullRequestKey` validates a newly created native URL against origin before linking it
+to the thread. The Azure path compares the full organization, project, and repository target;
+foreign URLs and mismatched numbers do not become linked product state.
+
+## Current Batched Read Boundary
+
+`apps/server/src/pullRequest/PullRequestService.ts` retains upstream repository batching,
+per-repository cursors, cached reads, and individual fallback after a batched read fails. The
+origin-derived project selector binds every repository before the batch is formed. Batching does
+not grant mutation authority: `requireMutationProject` separately revalidates current origin
+through `OriginRepositoryMutationAuthority` before permission or provider mutation calls.
+
 ## Non Ownership Boundaries
 
 F06 does not own provider authentication, response parsing, permission semantics, UI presentation, ordinary worktree mechanics, submodule algorithms or the upstream cache lifecycle. Cross-repository head metadata returned by the bound origin provider remains supported. Arbitrary local non-origin refs and tracking cannot choose a product head association. Generic local reconciliation may inspect or fetch other remotes without publishing their identity as product state.

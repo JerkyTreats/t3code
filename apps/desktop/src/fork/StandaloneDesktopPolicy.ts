@@ -130,6 +130,17 @@ export function isStandaloneDesktop(environment: {
   return Option.isSome(environment.standaloneServerUrl ?? Option.none());
 }
 
+/** Managed Code retains its installer-owned Chromium profile across runtime upgrades. */
+export function resolveStandaloneUserDataPath(input: {
+  readonly standaloneServerUrl?: Option.Option<URL>;
+  readonly appDataDirectory: string;
+  readonly path: Pick<Path.Path, "join">;
+}): Option.Option<string> {
+  return isStandaloneDesktop(input)
+    ? Option.some(input.path.join(input.appDataDirectory, "t3code"))
+    : Option.none();
+}
+
 export function standaloneDesktopBranding(
   identity: StandaloneDesktopIdentity,
   fallback: DesktopAppBranding,

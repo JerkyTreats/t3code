@@ -250,3 +250,9 @@ export const BoardStreamItem = Schema.Union([
   }),
 ]);
 export type BoardStreamItem = typeof BoardStreamItem.Type;
+
+/** Board query failure keeps its deployed wire tag without depending on thread hosts. */
+export class BoardGetSnapshotError extends Schema.TaggedError<BoardGetSnapshotError>()(
+  "OrchestrationGetSnapshotError",
+  { message: Schema.String, cause: Schema.optional(Schema.Defect()) },
+) {}

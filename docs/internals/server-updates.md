@@ -40,6 +40,16 @@ This readiness sequence is owned by
 [server activation](../../apps/server/src/serverActivation.ts). It is independent
 of the desktop preparation token and does not provide an application rollback.
 
+## Orchestration v2 cutover
+
+The v2 runtime uses `statev2.sqlite`, seeded once from a validated snapshot of `state.sqlite`.
+Stop the old runtime before this cutover and keep one writable runtime active. The copied auth
+and access tables are an authority snapshot, not a shared grant registry. Before rollback, stop
+v2 and reconcile grants and revocations in the database selected by the prior runtime. Retain
+both databases and compatible artifacts for recovery. See
+[legacy orchestration migration](./legacy-orchestration-migration.md) for stable fork migration
+identities, imported transcript coverage, and the fail-closed journal boundary.
+
 ## Migration 42 backup
 
 The persistence layer creates a validated, durable SQLite backup exactly once

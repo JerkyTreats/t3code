@@ -1,34 +1,18 @@
 import {
   BOARD_AUTHOR_PSEUDONYM_PREFIX,
   BoardAuthorId,
-  type OrchestrationEvent,
-  type OrchestrationReadModel,
+  type ApplicationStoredEvent,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
 import { PersistenceSqlError, type ProjectionRepositoryError } from "../persistence/Errors.ts";
 import type { ProjectionBoardPostRepositoryShape } from "../persistence/Services/ProjectionBoardPosts.ts";
-import { isBoardEvent, type BoardEvent } from "./Event.ts";
+import { isBoardEvent } from "./Event.ts";
 
 type BoardProjectionRepository = Pick<ProjectionBoardPostRepositoryShape, "insert" | "revise">;
 
 /** Durable projection cursor identity shared by Board projection and query owners. */
 export const BOARD_POSTS_PROJECTOR = "projection.board-posts";
-
-/**
- * Board events do not add Board rows to the orchestration command read model.
- * They advance its global watermark so later commands observe the durable head.
- */
-export function projectBoardEventOntoReadModel(
-  model: OrchestrationReadModel,
-  event: BoardEvent,
-): OrchestrationReadModel {
-  return {
-    ...model,
-    snapshotSequence: event.sequence,
-    updatedAt: event.occurredAt,
-  };
-}
 
 /**
  * Applies one Board event to the current-post and append-only history
@@ -37,7 +21,7 @@ export function projectBoardEventOntoReadModel(
  * Unmatched orchestration events are ignored for mechanical host delegation.
  */
 export function applyBoardEventProjection(input: {
-  readonly event: OrchestrationEvent;
+  readonly event: ApplicationStoredEvent;
   readonly repository: BoardProjectionRepository;
 }): Effect.Effect<void, ProjectionRepositoryError> {
   const { event, repository } = input;

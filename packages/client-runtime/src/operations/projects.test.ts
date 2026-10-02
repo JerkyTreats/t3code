@@ -16,6 +16,7 @@ import {
   getCloneDestinationBrowsePath,
   getCloneDestinationPath,
   getCloneDirectoryName,
+  getNewProjectGitHubTarget,
   getDefaultCloneUrl,
   normalizePastedCloneUrl,
   resolveAddProjectRepositoryLookupTarget,
@@ -25,6 +26,34 @@ import {
 import type { EnvironmentProject } from "../state/models.ts";
 
 describe("add project shared logic", () => {
+  it.each(["github.com", "git.example.test", "git.example.test:8443"])(
+    "keeps the discovered GitHub publication endpoint %s",
+    (host) => {
+      const target = getNewProjectGitHubTarget({
+        versionControlSystems: [],
+        sourceControlProviders: [
+          {
+            kind: "github",
+            label: "GitHub",
+            status: "available",
+            installHint: "Install gh",
+            version: Option.none(),
+            detail: Option.none(),
+            auth: {
+              status: "authenticated",
+              account: Option.some("example"),
+              host: Option.fromNullishOr(host),
+              detail: Option.none(),
+            },
+          },
+        ],
+      });
+      expect(target).toEqual({
+        account: "example",
+        providerBaseUrl: `https://${host ?? "github.com"}`,
+      });
+    },
+  );
   it("only allows project creation in connected environments", () => {
     expect(canCreateProjectInEnvironment("connected")).toBe(true);
     expect(canCreateProjectInEnvironment("available")).toBe(false);
@@ -340,13 +369,12 @@ describe("add project shared logic", () => {
     );
   });
 
-  it("builds the existing project.create command shape", () => {
+  it("builds the V2 project.create mutation", () => {
     expect(
       buildProjectCreateCommand({
         commandId: CommandId.make("command"),
         projectId: ProjectId.make("project"),
         workspaceRoot: "/work/repo",
-        createdAt: "2026-01-01T00:00:00.000Z",
       }),
     ).toMatchObject({
       type: "project.create",

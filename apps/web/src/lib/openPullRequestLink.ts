@@ -56,6 +56,19 @@ function matchesChangeRequestAuthority(
   return true;
 }
 
+/** Compare the requested web authority before borrowing a checkout's credentials. */
+function matchesChangeRequestHost(
+  project: EnvironmentProject,
+  kind: SourceControlProviderKind,
+  link: ChangeRequestLink,
+): boolean {
+  const selectedHost = pullRequestHostOf(project.repositoryIdentity, kind);
+  if (selectedHost === (link.authority ?? link.host).toLowerCase()) return true;
+  // Forgejo SSH checkouts can rely on tea's explicit web login. Known HTTP
+  // origins are still checked by matchesChangeRequestAuthority before this path.
+  return kind === "forgejo" && selectedHost === link.host.toLowerCase();
+}
+
 /**
  * The project a link belongs to, or nothing. Matched the way the server matches: the repository
  * identity is the full path below the host where one was recorded — which is what nested GitLab
@@ -89,8 +102,7 @@ export function findProjectForChangeRequest(
     return (
       repository !== null &&
       repository.toLowerCase() === link.repository.toLowerCase() &&
-      (pullRequestHostOf(identity, kind) === link.host.toLowerCase() ||
-        pullRequestHostOf(identity, kind) === link.authority)
+      matchesChangeRequestHost(project, kind, link)
     );
   });
 }
@@ -178,8 +190,7 @@ export function findProjectOnChangeRequestHost(
       kind !== undefined &&
       kind !== "azure-devops" &&
       matchesChangeRequestAuthority(project, link) &&
-      (pullRequestHostOf(identity, kind) === link.host.toLowerCase() ||
-        pullRequestHostOf(identity, kind) === link.authority)
+      matchesChangeRequestHost(project, kind, link)
     );
   });
 }

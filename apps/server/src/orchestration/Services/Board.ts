@@ -1,5 +1,6 @@
 import type {
   AuthClientId,
+  ApplicationBoardEvent,
   BoardAuthorId,
   BoardPost,
   BoardPublishInput,
@@ -10,6 +11,8 @@ import type {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import type * as Scope from "effect/Scope";
+import type * as Stream from "effect/Stream";
 import * as Schema from "effect/Schema";
 
 export interface TrustedBoardPublisher {
@@ -27,6 +30,13 @@ export class BoardPublicationError extends Schema.TaggedError<BoardPublicationEr
 ) {}
 
 export interface BoardShape {
+  /** Acquire before querying SQL to avoid a snapshot-to-live race. */
+  readonly subscribeBoardDomainEvents: Effect.Effect<
+    Stream.Stream<ApplicationBoardEvent>,
+    never,
+    Scope.Scope
+  >;
+
   /** Publishes as a server-authenticated agent. Caller data never supplies authorship. */
   readonly publish: (
     publisher: TrustedBoardPublisher,

@@ -256,7 +256,7 @@ export const layer = Layer.effect(
 
     const startupRequest = Option.isSome(input)
       ? yield* readAuthenticatedHandoffRequest(input.value).pipe(
-          Effect.catchCause(() => Effect.succeed(Option.none())),
+          Effect.catchCause(() => Effect.succeedNone),
         )
       : Option.none<DesktopLauncherHandoffRequest>();
     const pendingActivation = yield* Ref.make(
@@ -409,9 +409,7 @@ export const layer = Layer.effect(
         }),
       );
 
-    yield* Effect.addFinalizer(() =>
-      withdrawCurrentGeneration.pipe(Effect.catchCause(() => Effect.void)),
-    );
+    yield* Effect.addFinalizer(() => withdrawCurrentGeneration.pipe(Effect.ignoreCause));
 
     return DesktopLauncherRuntime.of({
       markBackendReady: transition(backendReady, true),

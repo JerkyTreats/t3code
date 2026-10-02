@@ -1,6 +1,6 @@
 import {
   AuthAccessWriteScope,
-  ORCHESTRATION_WS_METHODS,
+  ORCHESTRATION_V2_WS_METHODS,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
@@ -19,15 +19,13 @@ import {
 describe("RPC authorization scopes", () => {
   it("separates global Board reading from human correction authority", () => {
     for (const method of [
-      ORCHESTRATION_WS_METHODS.getBoardPage,
-      ORCHESTRATION_WS_METHODS.getBoardPostHistory,
-      ORCHESTRATION_WS_METHODS.subscribeBoard,
+      WS_METHODS.getBoardPage,
+      WS_METHODS.getBoardPostHistory,
+      WS_METHODS.subscribeBoard,
     ]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
     }
-    expect(requiredScopeForRpcMethod(ORCHESTRATION_WS_METHODS.reviseBoardPost)).toBe(
-      AuthAccessWriteScope,
-    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.reviseBoardPost)).toBe(AuthAccessWriteScope);
   });
   it("declares exactly one scope for every RPC in the server group", () => {
     expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));
@@ -70,9 +68,36 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("separates ACP Registry discovery from provisioning", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverSearchAcpRegistry)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverPrepareAcpRegistryAgent)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverUninstallAcpRegistryManagedBinary)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverAcceptAcpRegistryUrlAuth)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverListAcpRegistrySessions)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverImportAcpRegistrySession)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.serverLogoutAcpRegistry)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("reads the reviewer menu under the same scope as the pull request it belongs to", () => {
     // The candidate list is a read like the detail beside it, and asking somebody for a review is
     // a write like every other pull request operation.
+    expect(requiredScopeForRpcMethod(WS_METHODS.pullRequestsChecks)).toBe(
+      AuthOrchestrationReadScope,
+    );
     expect(requiredScopeForRpcMethod(WS_METHODS.pullRequestsReviewerCandidates)).toBe(
       requiredScopeForRpcMethod(WS_METHODS.pullRequestsDetail),
     );
@@ -102,4 +127,15 @@ it("requires operate permission for tool updates even alongside a read-only chec
     AuthOrchestrationOperateScope,
   );
   expect(requiredScopeForDeviceList({ updateTool: "hub" })).toBe(AuthOrchestrationOperateScope);
+});
+
+it("assigns every v2 transport operation an explicit scope", () => {
+  for (const method of Object.values(ORCHESTRATION_V2_WS_METHODS)) {
+    expect(requiredScopeForRpcMethod(method)).toBe(
+      method === ORCHESTRATION_V2_WS_METHODS.dispatchCommand ||
+        method === ORCHESTRATION_V2_WS_METHODS.launchThread
+        ? AuthOrchestrationOperateScope
+        : AuthOrchestrationReadScope,
+    );
+  }
 });
