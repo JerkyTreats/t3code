@@ -78,75 +78,89 @@ export function ConnectionEnvironmentRow(props: {
 
   return (
     <Animated.View layout={LinearTransition.duration(250)} className="bg-grouped-card">
-      <Pressable
-        className="flex-row items-center gap-3 px-4 py-3.5 active:opacity-70"
-        accessibilityRole="button"
-        accessibilityLabel={
-          props.opensDetails ? `Manage ${props.environment.environmentLabel}` : undefined
-        }
-        onPress={props.onToggle}
-      >
-        <View className="flex-1 gap-0.5">
-          <View className="flex-row items-center gap-1.5">
-            <ConnectionStatusDot
-              state={enabled || unsupported ? props.environment.connectionState : "available"}
-              pulse={isRetrying}
-              size={8}
-            />
-            <EnvironmentMachineSymbol
-              kind={resolveEnvironmentMachineKind(serverConfig)}
-              size={14}
-              tintColorClassName="accent-foreground-muted"
-            />
-            <Text
-              className="min-w-0 flex-shrink text-base font-t3-bold leading-snug text-foreground"
-              numberOfLines={1}
-            >
-              {props.environment.environmentLabel}
-            </Text>
+      <View className="flex-row items-center gap-3 px-4 py-3.5">
+        <Pressable
+          className="flex-1 active:opacity-70"
+          accessibilityRole="button"
+          accessibilityLabel={
+            props.opensDetails ? `Manage ${props.environment.environmentLabel}` : undefined
+          }
+          onPress={props.onToggle}
+        >
+          <View className="gap-0.5">
+            <View className="flex-row items-center gap-1.5">
+              <ConnectionStatusDot
+                state={enabled || unsupported ? props.environment.connectionState : "available"}
+                pulse={isRetrying}
+                size={8}
+              />
+              <EnvironmentMachineSymbol
+                kind={resolveEnvironmentMachineKind(serverConfig)}
+                size={14}
+                tintColorClassName="accent-foreground-muted"
+              />
+              <Text
+                className="min-w-0 flex-shrink text-base font-t3-bold leading-snug text-foreground"
+                numberOfLines={1}
+              >
+                {props.environment.environmentLabel}
+              </Text>
+            </View>
+            {!props.environment.isRelayManaged && props.environment.displayUrl.trim() ? (
+              <Text className="text-xs text-foreground-muted" numberOfLines={1}>
+                {props.environment.displayUrl}
+              </Text>
+            ) : null}
+            {statusLabel ? (
+              <Text
+                className={cn(
+                  "text-xs",
+                  hasConnectionFailure ? "text-danger-foreground" : "text-foreground-muted",
+                )}
+                numberOfLines={props.expanded ? undefined : 1}
+                selectable={props.expanded}
+              >
+                {statusLabel}
+                {statusTraceId ? (
+                  <ConnectionTraceId
+                    traceId={statusTraceId}
+                    tone={hasConnectionFailure ? "danger" : "muted"}
+                    activation="longPress"
+                  />
+                ) : null}
+              </Text>
+            ) : null}
           </View>
-          {!props.environment.isRelayManaged && props.environment.displayUrl.trim() ? (
-            <Text className="text-xs text-foreground-muted" numberOfLines={1}>
-              {props.environment.displayUrl}
-            </Text>
-          ) : null}
-          {statusLabel ? (
-            <Text
-              className={cn(
-                "text-xs",
-                hasConnectionFailure ? "text-danger-foreground" : "text-foreground-muted",
-              )}
-              numberOfLines={props.expanded ? undefined : 1}
-              selectable={props.expanded}
-            >
-              {statusLabel}
-              {statusTraceId ? (
-                <ConnectionTraceId
-                  traceId={statusTraceId}
-                  tone={hasConnectionFailure ? "danger" : "muted"}
-                  activation="longPress"
-                />
-              ) : null}
-            </Text>
-          ) : null}
-        </View>
+        </Pressable>
 
         <ThemedSwitch
+          accessibilityLabel={`Connect to ${props.environment.environmentLabel}`}
           style={{ alignSelf: "center" }}
           disabled={unsupported}
           onValueChange={(next) => props.onSetEnabled(props.environment.environmentId, next)}
           value={enabled}
         />
-        <SymbolView
-          name={props.opensDetails ? "chevron.right" : "chevron.down"}
-          size={12}
-          tintColorClassName="accent-icon-subtle"
-          type="monochrome"
-          style={{
-            transform: [{ rotate: props.expanded ? "180deg" : "0deg" }],
-          }}
-        />
-      </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            props.opensDetails
+              ? `Manage ${props.environment.environmentLabel}`
+              : `${props.expanded ? "Collapse" : "Expand"} ${props.environment.environmentLabel}`
+          }
+          hitSlop={8}
+          onPress={props.onToggle}
+        >
+          <SymbolView
+            name={props.opensDetails ? "chevron.right" : "chevron.down"}
+            size={12}
+            tintColorClassName="accent-icon-subtle"
+            type="monochrome"
+            style={{
+              transform: [{ rotate: props.expanded ? "180deg" : "0deg" }],
+            }}
+          />
+        </Pressable>
+      </View>
 
       {props.expanded ? (
         <Animated.View

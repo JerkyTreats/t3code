@@ -219,30 +219,24 @@ function ConnectedCloudEnvironmentRow(props: {
     setLastDescriptor(props.descriptor);
   }
   return (
-    <Pressable
-      accessibilityHint="Long press to remove from this device"
-      accessibilityRole={props.onOpen ? "button" : undefined}
-      accessibilityLabel={props.onOpen ? `Manage ${props.environment.environmentLabel}` : undefined}
-      onPress={props.onOpen}
-      onLongPress={props.onRemove}
-    >
-      <CloudEnvironmentRowShell
-        opensDetails={props.onOpen !== undefined}
-        connectionError={enabled || unsupported ? props.environment.connectionError : null}
-        connectionErrorTraceId={enabled ? props.environment.connectionErrorTraceId : null}
-        connectionState={enabled || unsupported ? props.environment.connectionState : "available"}
-        errorExpanded={props.errorExpanded}
-        label={props.environment.environmentLabel}
-        machine={resolveEnvironmentMachineKind(
-          serverConfig ?? (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
-        )}
-        onValueChange={props.onSetEnabled}
-        onToggleError={props.onToggleError}
-        disabled={unsupported}
-        {...(enabled || unsupported ? {} : { statusText: "Off" })}
-        value={enabled}
-      />
-    </Pressable>
+    <CloudEnvironmentRowShell
+      onOpen={props.onOpen}
+      onRemove={props.onRemove}
+      opensDetails={props.onOpen !== undefined}
+      connectionError={enabled || unsupported ? props.environment.connectionError : null}
+      connectionErrorTraceId={enabled ? props.environment.connectionErrorTraceId : null}
+      connectionState={enabled || unsupported ? props.environment.connectionState : "available"}
+      errorExpanded={props.errorExpanded}
+      label={props.environment.environmentLabel}
+      machine={resolveEnvironmentMachineKind(
+        serverConfig ?? (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
+      )}
+      onValueChange={props.onSetEnabled}
+      onToggleError={props.onToggleError}
+      disabled={unsupported}
+      {...(enabled || unsupported ? {} : { statusText: "Off" })}
+      value={enabled}
+    />
   );
 }
 
@@ -297,6 +291,8 @@ function CloudEnvironmentRowShell(props: {
   readonly label: string;
   readonly machine: EnvironmentMachineKind;
   readonly onToggleError: () => void;
+  readonly onOpen?: (() => void) | undefined;
+  readonly onRemove?: (() => void) | undefined;
   readonly onValueChange: (enabled: boolean) => void;
   readonly statusText?: string;
   readonly value: boolean;
@@ -344,7 +340,14 @@ function CloudEnvironmentRowShell(props: {
   );
   return (
     <View collapsable={false} className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5">
-      <View className="min-w-0 flex-1 gap-0.5">
+      <Pressable
+        className="min-w-0 flex-1 gap-0.5"
+        accessibilityHint={props.onRemove ? "Long press to remove from this device" : undefined}
+        accessibilityRole={props.onOpen ? "button" : undefined}
+        accessibilityLabel={props.onOpen ? `Manage ${props.label}` : undefined}
+        onPress={props.onOpen}
+        onLongPress={props.onRemove}
+      >
         <View className="min-w-0 flex-row items-center gap-2">
           <ConnectionStatusDot state={props.connectionState} pulse={shouldPulse} size={7} />
           <EnvironmentMachineSymbol
@@ -404,17 +407,25 @@ function CloudEnvironmentRowShell(props: {
             />
           ) : null}
         </StatusContainer>
-      </View>
+      </Pressable>
       <ThemedSwitch
+        accessibilityLabel={`Connect to ${props.label}`}
         style={{ alignSelf: "center" }}
         disabled={props.disabled}
         onValueChange={props.onValueChange}
         value={props.value}
       />
       {props.opensDetails || props.showChevron ? (
-        <View style={{ opacity: props.opensDetails ? 1 : 0.4 }}>
+        <Pressable
+          accessibilityRole={props.onOpen ? "button" : undefined}
+          accessibilityLabel={props.onOpen ? `Manage ${props.label}` : undefined}
+          hitSlop={8}
+          onPress={props.onOpen}
+          onLongPress={props.onRemove}
+          style={{ opacity: props.opensDetails ? 1 : 0.4 }}
+        >
           <SymbolView name="chevron.right" size={12} tintColorClassName="accent-icon-subtle" />
-        </View>
+        </Pressable>
       ) : null}
     </View>
   );
