@@ -1,6 +1,6 @@
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
@@ -40,6 +40,7 @@ beforeEach(() => {
   resetPreviewStateForTests();
   useRightPanelStore.setState({ byThreadKey: {} });
   element = new FocusElement();
+  vi.stubGlobal("window", { desktopBridge: { preview: {} } });
   vi.stubGlobal("HTMLElement", FocusElement);
   vi.stubGlobal("document", { activeElement: element });
   reconcilePreviewServerSessions(ref, { serverEpoch: "epoch", revision: 1, sessions: [] });
@@ -182,8 +183,9 @@ describe("host confirmation and delayed mutation", () => {
     const guarded = guardPreviewHostMutation(mutation, () => current);
     const pending = guarded(undefined);
     current = false;
-    finish(AsyncResult.success("stale"));
-    expect(await pending).toEqual(AsyncResult.success("stale"));
+    const success = AsyncResult.success("stale");
+    finish(success);
+    expect(await pending).toBe(success);
     expect((await guarded(undefined))._tag).toBe("Failure");
     expect(mutation).toHaveBeenCalledOnce();
   });

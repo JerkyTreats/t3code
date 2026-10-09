@@ -1,7 +1,7 @@
 import { afterEach, assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import * as GitLabCli from "../sourceControl/GitLabCli.ts";
 import * as GitLabPullRequestCli from "./GitLabPullRequestCli.ts";
@@ -231,10 +231,8 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
   it.effect("advances the cursor through malformed raw rows", () =>
     Effect.gen(function* () {
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const rows = JSON.parse(mergeRequests(2, 1)) as ReadonlyArray<unknown>;
       mockedExecute.mockReturnValueOnce(
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         Effect.succeed(output(JSON.stringify([{ iid: "malformed" }, ...rows]))),
       );
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
@@ -319,7 +317,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
     Effect.gen(function* () {
       // Full pages of unusable rows: nothing is collected, so the collected-count bound never
       // trips and only the page bound can end the walk.
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const unusable = JSON.stringify(Array.from({ length: 100 }, () => ({ iid: "nope" })));
       mockedExecute.mockReturnValue(Effect.succeed(output(unusable)));
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
@@ -659,7 +656,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
   it.effect("reports a commit with no parent as a structured error", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         Effect.succeed(output(JSON.stringify({ id: "a1b2c3d", parent_ids: [] }))),
       );
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
@@ -686,7 +682,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
   it.effect("expands a new file from a root commit without requiring a parent", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         Effect.succeed(output(JSON.stringify({ id: "a1b2c3d", parent_ids: [] }))),
       );
       mockedExecute.mockReturnValueOnce(Effect.succeed(output("first contents\n")));
@@ -712,7 +707,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               diff_refs: {
                 base_sha: "a1b2c3d",
@@ -750,7 +744,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               diff_refs: {
                 base_sha: "a1b2c3d",
@@ -790,7 +783,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               diff_refs: {
                 base_sha: "a1b2c3d",
@@ -855,7 +847,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
   it.effect("offers no squash when the project does not say it allows one", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         Effect.succeed(output(JSON.stringify({ merge_method: "merge" }))),
       );
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
@@ -872,7 +863,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
   it.effect("reads the project's merge settings as its merge capabilities", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         Effect.succeed(output(JSON.stringify({ merge_method: "ff", squash_option: "never" }))),
       );
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
@@ -914,7 +904,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
 
   it.effect("fails when the authenticated account has no username", () =>
     Effect.gen(function* () {
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       mockedExecute.mockReturnValueOnce(Effect.succeed(output(JSON.stringify({ username: "" }))));
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
 
@@ -967,7 +956,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 id: "abc123",
@@ -1026,7 +1014,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               iid: 7,
               title: "t",
@@ -1062,7 +1049,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       // The diff revisions first, because a positioned comment cannot be placed without them.
       expect(argsOfCall(0)[1]).toContain("merge_requests/7");
       expect(argsOfCall(1)[1]).toContain("/discussions");
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       expect(JSON.parse(callAt(1).stdin ?? "")).toEqual({
         body: "why remove?",
         position: {
@@ -1118,7 +1104,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       expect(argsOfCall(0)).toContain("--method");
       expect(argsOfCall(0)).toContain("PUT");
       expect(argsOfCall(0)[1]).toContain("/discussions/abc123");
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       expect(JSON.parse(callAt(0).stdin ?? "")).toEqual({ resolved: true });
     }),
   );
@@ -1151,13 +1136,11 @@ layer("GitLabPullRequestCli.layer", (it) => {
   it.effect("removes an award by listing them and deleting the reader's own id", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         Effect.succeed(output(JSON.stringify({ username: "bilal" }))),
       );
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               { id: 5, name: "thumbsup", user: { username: "bilal" } },
               { id: 6, name: "thumbsup", user: { username: "julius" } },
@@ -1191,7 +1174,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
   it.effect("does nothing when the reader has no award of that name to take back", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         Effect.succeed(output(JSON.stringify({ username: "bilal" }))),
       );
       mockedExecute.mockReturnValueOnce(Effect.succeed(output("[]")));
@@ -1215,7 +1197,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               iid: 7,
               title: "t",
@@ -1253,10 +1234,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute
         .mockReturnValueOnce(Effect.succeed(output(mergeRequestJson({ reviewers: [reviewer] }))))
         .mockReturnValueOnce(
-          Effect.succeed(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
-            output(JSON.stringify([author, reviewer, { id: 9, username: "hubot" }])),
-          ),
+          Effect.succeed(output(JSON.stringify([author, reviewer, { id: 9, username: "hubot" }]))),
         );
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
 
@@ -1294,7 +1272,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       // GitLab replaces the whole set, so the reviewer already on the merge request has to be
       // sent back with the new one or the request would take them off it.
       expect(argsOfCall(1)).toContain("PUT");
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       expect(JSON.parse(callAt(1).stdin ?? "")).toEqual({ reviewer_ids: [5, 9] });
     }),
   );
@@ -1318,7 +1295,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
         requested: false,
       });
 
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       expect(JSON.parse(callAt(1).stdin ?? "")).toEqual({ reviewer_ids: [5] });
     }),
   );
@@ -1339,7 +1315,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       });
 
       // Sending it as a number would rewrite the reviewer set around something nobody chose.
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       expect(JSON.parse(callAt(1).stdin ?? "")).toEqual({ reviewer_ids: [5] });
     }),
   );
@@ -1368,7 +1343,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
         "--header",
         "Content-Type: application/json",
       ]);
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       expect(JSON.parse(callAt(0).stdin ?? "")).toEqual({ title: "A better title" });
     }),
   );
@@ -1386,7 +1360,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       });
 
       // A title sent as an empty string would wipe the one the merge request already has.
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       expect(JSON.parse(callAt(0).stdin ?? "")).toEqual({ description: "What this changes." });
     }),
   );
@@ -1405,7 +1378,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       });
 
       assert.strictEqual(mockedExecute.mock.calls.length, 1);
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       expect(JSON.parse(callAt(0).stdin ?? "")).toEqual({
         title: "A better title",
         description: "What this changes.",
@@ -1447,7 +1419,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               iid: 7,
               title: "t",
@@ -1464,7 +1435,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               data: {
                 project: { repository: { blobs: { nodes: [{ path: "src/a.ts", oid: "aaa" }] } } },
@@ -1490,7 +1460,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
         ["src/gone.ts", ""],
       ]);
       // The head the reader is looking at, not whatever the source branch has moved on to.
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const body: unknown = JSON.parse(callAt(1).stdin ?? "{}");
       expect(body).toMatchObject({
         variables: { fullPath: "acme/web", ref: "head", paths: ["src/a.ts", "src/gone.ts"] },
@@ -1503,7 +1472,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               iid: 7,
               title: "t",
@@ -1521,10 +1489,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       // these files, and reading it that way would report every file the reader has cleared as
       // changed on nothing worse than a permission.
       mockedExecute.mockReturnValueOnce(
-        Effect.succeed(
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
-          output(JSON.stringify({ data: { project: null } })),
-        ),
+        Effect.succeed(output(JSON.stringify({ data: { project: null } }))),
       );
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
 
@@ -1563,7 +1528,6 @@ layer("GitLabPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               iid: 7,
               title: "t",

@@ -20,6 +20,13 @@ export type PreviewAction =
 
 const EVENT_NAME = "t3code:preview-action";
 
+/** Fork tab lifecycle shortcuts belong only to a focused native Electron guest. */
+export function isNativePreviewTabCommand(command: KeybindingCommand | null): boolean {
+  return (
+    command === "preview.new" || command === "preview.close" || command === "preview.reopenClosed"
+  );
+}
+
 export function previewActionForFocusedCommand(
   command: KeybindingCommand | null,
   previewFocused: boolean,

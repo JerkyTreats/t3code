@@ -9,11 +9,10 @@ import {
 } from "./chatPromptContext";
 
 describe("referenced prompt context composition", () => {
-  for (const prompt of ["  lead", "tail  ", "\n\nlead\n\n\n", " \n\t\n ", "", "a\r\nb\n\n"]) {
-    it(`preserves authored bytes with retained context: ${JSON.stringify(prompt)}`, () => {
-      expect(normalizeReferencedChatPrompt(prompt, true)).toBe(prompt);
-    });
-  }
+  it.each(["  lead", "tail  ", "\n\nlead\n\n\n", " \n\t\n ", "", "a\r\nb\n\n"])(
+    "preserves authored bytes with retained context: %j",
+    (prompt) => expect(normalizeReferencedChatPrompt(prompt, true)).toBe(prompt),
+  );
 
   it("preserves upstream ordinary and review-only trimming", () => {
     expect(normalizeReferencedChatPrompt("  ordinary\n\n", false)).toBe("ordinary");

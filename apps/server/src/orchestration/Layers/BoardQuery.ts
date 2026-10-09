@@ -1,12 +1,12 @@
 import { BOARD_HISTORY_MAX_REVISIONS, BOARD_PAGE_MAX_POSTS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import { toPersistenceSqlError } from "../../persistence/Errors.ts";
 import * as Option from "effect/Option";
 
 import { BOARD_POSTS_PROJECTOR } from "../../board/EventProjection.ts";
-import { ProjectionBoardPostRepositoryLive } from "../../persistence/Layers/ProjectionBoardPosts.ts";
+import { ProjectionBoardPostRepositoryLive } from "../../persistence/ProjectionBoardPosts.ts";
 import { ProjectionBoardPostRepository } from "../../persistence/Services/ProjectionBoardPosts.ts";
 import { decodeBoardPageCursor, encodeBoardPostCursor } from "../board/Cursor.ts";
 import { BoardQuery, type BoardQueryShape } from "../Services/BoardQuery.ts";

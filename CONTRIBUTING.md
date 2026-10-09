@@ -49,6 +49,9 @@ Explain exactly what changed.
 
 Explain exactly why the change should exist.
 
+This rule is for outside contributions. Maintainers, the logins in
+[.github/TRIAGE_EXEMPTIONS.td](.github/TRIAGE_EXEMPTIONS.td), may batch related fixes in one PR.
+
 Follow the [documentation rules](AGENTS.md#documentation). Keep internal docs for decisions and
 hard-to-discover constraints. Update user guides when how to use a feature changes; skip descriptions
 of obvious controls and cosmetic changes.

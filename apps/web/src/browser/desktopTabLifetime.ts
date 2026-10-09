@@ -32,6 +32,14 @@ const enqueueDesktopTabOperation = (
   return pending;
 };
 
+/**
+ * Runs a call against a desktop tab after the tab's create and earlier calls,
+ * so a setting sent while the tab is being created still lands on it.
+ */
+export function withDesktopTab(tabId: string, operation: () => Promise<void>): void {
+  void enqueueDesktopTabOperation(tabId, operation).catch(() => undefined);
+}
+
 export interface AcquiredDesktopTab {
   readonly ready: Promise<void>;
   readonly release: () => void;
@@ -40,6 +48,7 @@ export interface AcquiredDesktopTab {
 export function acquireDesktopTab(
   tabId: string,
   restoration?: DesktopPreviewTabDefaults,
+  serverTab?: { readonly threadId: string; readonly tabId: string },
 ): AcquiredDesktopTab {
   // Capture values before settings hydration or a queued close can suspend creation.
   const capturedRestoration = restoration ? { ...restoration } : undefined;
@@ -54,6 +63,7 @@ export function acquireDesktopTab(
         previewBridge?.createTab(tabId, {
           ...browserDefaultTabState(await resolveBrowserDefaults()),
           ...capturedRestoration,
+          ...(serverTab === undefined ? {} : { serverTab }),
         }),
       ),
     } satisfies DesktopTabLease);

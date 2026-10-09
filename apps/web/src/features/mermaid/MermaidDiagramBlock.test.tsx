@@ -26,6 +26,7 @@ const RESULT: RenderResult = {
 function diagram(input?: {
   key?: string;
   isStreaming?: boolean;
+  onExpand?: (imageUrl: string) => void;
   code?: string;
   theme?: "light" | "dark";
 }) {
@@ -43,6 +44,7 @@ function diagram(input?: {
       }
       theme={input?.theme ?? "dark"}
       isStreaming={input?.isStreaming ?? false}
+      {...(input?.onExpand ? { onExpand: input.onExpand } : {})}
     />
   );
 }
@@ -71,6 +73,20 @@ describe("MermaidDiagramBlock", () => {
     expect(isMermaidFenceLanguage("MMD")).toBe(true);
     expect(isMermaidFenceLanguage("mermaid-js")).toBe(false);
     expect(isMermaidFenceLanguage("")).toBe(false);
+  });
+
+  it("expands the serialized rendered SVG without starting another render", async () => {
+    renderMermaidDiagram.mockResolvedValue(RESULT);
+    const onExpand = vi.fn();
+    const renderer = await createDiagram(diagram({ onExpand }));
+    await React.act(async () =>
+      renderer.root.findByProps({ "aria-label": "Expand Mermaid diagram" }).props.onClick(),
+    );
+    expect(onExpand).toHaveBeenCalledExactlyOnceWith(
+      `data:image/svg+xml;charset=utf-8,${encodeURIComponent(RESULT.svg)}`,
+    );
+    expect(renderMermaidDiagram).toHaveBeenCalledOnce();
+    await React.act(async () => renderer.unmount());
   });
 
   it("keeps a streaming placeholder without starting work", async () => {

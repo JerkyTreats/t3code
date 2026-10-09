@@ -116,26 +116,22 @@ describe("StandaloneDesktopPolicy", () => {
     { xdgDataHome: Option.some("relative") },
     { legacyServerUrl: Option.some(new URL("https://other.example.test")) },
   ];
-  for (const [index, overrides] of invalidIdentities.entries()) {
-    it.effect(`rejects incomplete identity ${index}`, () =>
-      Effect.gen(function* () {
-        expect(yield* identity(overrides).pipe(Effect.isFailure)).toBe(true);
-      }),
-    );
-  }
-  for (const url of [
+  it.effect.each(invalidIdentities)("rejects incomplete identity %#", (overrides) =>
+    Effect.gen(function* () {
+      expect(yield* identity(overrides).pipe(Effect.isFailure)).toBe(true);
+    }),
+  );
+  it.effect.each([
     "http://code.example.test/",
     "https://user:pass@code.example.test/",
     "https://code.example.test/path",
     "https://code.example.test/?token=x",
     "https://code.example.test/#x",
-  ]) {
-    it.effect(`rejects non-origin URL ${url}`, () =>
-      Effect.gen(function* () {
-        expect(
-          yield* identity({ serverUrl: Option.some(new URL(url)) }).pipe(Effect.isFailure),
-        ).toBe(true);
-      }),
-    );
-  }
+  ])("rejects non-origin URL %s", (url) =>
+    Effect.gen(function* () {
+      expect(yield* identity({ serverUrl: Option.some(new URL(url)) }).pipe(Effect.isFailure)).toBe(
+        true,
+      );
+    }),
+  );
 });

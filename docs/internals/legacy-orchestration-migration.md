@@ -73,8 +73,9 @@ names are explicit compatibility inputs rather than alternate implementations. T
 validates the first v2 snapshot before publishing it. Startup does not merely warn and continue.
 
 The deployed migration identities remain stable. New upstream migrations receive the next fork
-identities rather than overwriting a deployed id. `reconcileV2PreviewMigration.ts` handles the
-explicitly supported preview lineage; it is not a general repair for arbitrary journals.
+identities rather than overwriting a deployed id. Fork startup delegates directly to
+`ForkMigrationPlan.ts`; it rejects preview migration identities before continuation writes.
+The upstream `reconcileV2PreviewMigration.ts` helper is not part of fork startup.
 
 ## Recovery
 

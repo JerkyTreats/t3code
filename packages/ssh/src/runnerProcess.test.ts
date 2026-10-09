@@ -8,13 +8,14 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as NodeNet from "node:net";
 
 import { buildOfficialRemoteT3RunnerScript } from "./officialRuntimeAcquisition.ts";
 
 const REPLACEMENT_NODE_ENVIRONMENT =
   "ensure_remote_node_path() { command -v node >/dev/null 2>&1; }";
+import { remoteStateKey } from "./command.ts";
 import { buildRemoteStopScript } from "./tunnel.ts";
 
 const Started = Schema.Struct({
@@ -198,12 +199,14 @@ server.listen(0, "127.0.0.1", () => {
           for (const [name, contents] of Object.entries(savedState)) {
             yield* fs.writeFileString(path.join(fixture, name), contents);
           }
-          const script = buildRemoteStopScript({
-            alias: "fixture",
-            hostname: "fixture",
-            username: null,
-            port: null,
-          });
+          const script = buildRemoteStopScript(
+            yield* remoteStateKey({
+              alias: "fixture",
+              hostname: "fixture",
+              username: null,
+              port: null,
+            }),
+          );
           // Redirect only the state directory. Never use the developer's SSH state.
           const isolatedScript = script.replace(
             /^STATE_DIR=.*$/mu,

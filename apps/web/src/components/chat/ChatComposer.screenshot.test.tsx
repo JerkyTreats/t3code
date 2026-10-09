@@ -26,6 +26,10 @@ vi.mock("../../lib/imageCompression", async (importOriginal) => ({
   prepareImageForAttachment: mocks.prepare,
   compressImageForStash: vi.fn(),
 }));
+vi.mock("../../state/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../state/session")>()),
+  readEnvironmentScope: () => true,
+}));
 vi.mock("../../state/server", () => ({ serverEnvironment: { refreshProviders: {} } }));
 vi.mock("../../lib/openPullRequestLink", () => ({ useOpenPrLink: () => () => false }));
 vi.mock("../../pierre-icons", async (importOriginal) => ({
@@ -150,6 +154,10 @@ function attachment(id: string): ComposerImageAttachment {
 }
 function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerProps {
   return {
+    canOperateThread: true,
+    resumeCompactionTokens: null,
+    keepFullHistory: false,
+    onToggleKeepFullHistory: vi.fn(),
     supportsQuestionAttachments: false,
     composerDraftTarget: target,
     environmentId,

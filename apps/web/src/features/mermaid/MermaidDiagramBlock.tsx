@@ -69,6 +69,7 @@ export function MermaidDiagramBlock(props: {
   readonly fallback: ReactNode;
   readonly theme: "light" | "dark";
   readonly isStreaming: boolean;
+  readonly onExpand?: (imageUrl: string) => void;
 }) {
   const reactId = useId();
   const renderSequenceRef = useRef(0);
@@ -189,6 +190,20 @@ export function MermaidDiagramBlock(props: {
 
   return (
     <figure ref={figureRef} className="chat-markdown-mermaid" aria-label="Rendered Mermaid diagram">
+      {currentResult && props.onExpand ? (
+        <button
+          type="button"
+          aria-label="Expand Mermaid diagram"
+          className="absolute right-2 top-2 z-10 rounded bg-background/80 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() =>
+            props.onExpand?.(
+              `data:image/svg+xml;charset=utf-8,${encodeURIComponent(currentResult.svg)}`,
+            )
+          }
+        >
+          Expand
+        </button>
+      ) : null}
       <div
         ref={containerRef}
         className="chat-markdown-mermaid-viewport"

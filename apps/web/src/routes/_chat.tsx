@@ -1,3 +1,4 @@
+import { AuthPreviewOperateScope } from "@t3tools/contracts";
 import { Outlet, createFileRoute, redirect, useRouter, useParams } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
@@ -8,12 +9,15 @@ import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useClientSettings, useLegacySidebarEnabled } from "../hooks/useSettings";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useProjects } from "../state/entities";
+import { isPreviewAvailableFor } from "../browser/previewRuntime";
 import { usePrimaryEnvironmentId } from "../state/environments";
+import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import {
   dispatchPreviewAction,
   previewActionForFocusedCommand,
+  isNativePreviewTabCommand,
 } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useScratchProject } from "../hooks/useScratchProject";
@@ -30,7 +34,6 @@ import { isModelPickerOpen } from "../modelPickerVisibility";
 import { undoLatestThreadAction } from "../hooks/showThreadUndoNotice";
 import { resolveShortcutCommand } from "../keybindings";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
-import { isPreviewSupportedInRuntime } from "../previewStateStore";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -42,6 +45,10 @@ export function ChatRouteGlobalShortcuts() {
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
     useHandleNewThread();
+  const canOperatePreview = useEnvironmentScope(
+    routeThreadRef?.environmentId ?? null,
+    AuthPreviewOperateScope,
+  );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
@@ -74,11 +81,14 @@ export function ChatRouteGlobalShortcuts() {
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      const currentThreadRef = resolveThreadRouteRef(router.state.matches.at(-1)?.params ?? {});
+      const nativePreviewFocus = readFocusedPreviewHost(currentThreadRef) !== null;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
           terminalFocus: isTerminalFocused(),
           terminalOpen,
           previewFocus: isPreviewFocused(),
+          nativePreviewFocus,
           previewOpen,
           editableFocus: isEditableFocused(event.target),
           modelPickerOpen: isModelPickerOpen(),
@@ -149,8 +159,8 @@ export function ChatRouteGlobalShortcuts() {
       if (command === "preview.toggle") {
         event.preventDefault();
         event.stopPropagation();
-        if (!routeThreadRef) return;
-        if (!isPreviewSupportedInRuntime()) {
+        if (!routeThreadRef || (!canOperatePreview && !previewOpen)) return;
+        if (!isPreviewAvailableFor(routeThreadRef.environmentId)) {
           toastManager.add(
             stackedThreadToast({
               type: "info",
@@ -164,14 +174,14 @@ export function ChatRouteGlobalShortcuts() {
         return;
       }
 
-      const currentThreadRef = resolveThreadRouteRef(router.state.matches.at(-1)?.params ?? {});
       const action = previewActionForFocusedCommand(
         command,
-        readFocusedPreviewHost(currentThreadRef) !== null,
+        isNativePreviewTabCommand(command) ? nativePreviewFocus : isPreviewFocused(),
       );
       if (action) {
         event.preventDefault();
         event.stopPropagation();
+        if (!canOperatePreview) return;
         dispatchPreviewAction(action);
       }
     };
@@ -184,6 +194,7 @@ export function ChatRouteGlobalShortcuts() {
     activeDraftThread,
     activeThread,
     clearSelection,
+    canOperatePreview,
     handleNewThread,
     keybindings,
     defaultProjectRef,
@@ -205,6 +216,11 @@ export function ChatRouteGlobalShortcuts() {
         if (isCommandPaletteOpen()) return;
         // Read router state inside the native callback, including before the next React render.
         const currentThreadRef = resolveThreadRouteRef(router.state.matches.at(-1)?.params ?? {});
+        if (
+          !currentThreadRef ||
+          !readEnvironmentScope(currentThreadRef.environmentId, AuthPreviewOperateScope)
+        )
+          return;
         const action = previewDesktopActionForCurrentHost(event, currentThreadRef);
         if (action) dispatchPreviewAction(action);
       }),

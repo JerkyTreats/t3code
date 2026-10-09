@@ -14,10 +14,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { BOARD_POSTS_PROJECTOR } from "../../board/EventProjection.ts";
-import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
+import { OrchestrationEventStore } from "../../persistence/OrchestrationEventStore.ts";
 import { BoardLive } from "./Board.ts";
 import { Board } from "../Services/Board.ts";
 import { BoardQuery } from "../Services/BoardQuery.ts";

@@ -2,11 +2,14 @@ import {
   mapAtomCommandResult,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import type {
-  EnvironmentId,
-  PreviewResizeInput,
-  PreviewSessionSnapshot,
-  ScopedThreadRef,
+import * as Schema from "effect/Schema";
+import {
+  PreviewZoomFactor,
+  type EnvironmentId,
+  type PreviewAdjustInput,
+  type PreviewResizeInput,
+  type PreviewSessionSnapshot,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 import type { OpenPreviewMutation } from "~/browser/openFileInPreview";
 import {
@@ -24,6 +27,10 @@ export async function reopenClosedPreviewSession<E>(input: {
   readonly openPreview: OpenPreviewMutation<E>;
   /** Only route presentation is conditional after a dispatched open succeeds. */
   readonly canFocus?: () => boolean;
+  readonly adjustPreview: (input: {
+    readonly environmentId: EnvironmentId;
+    readonly input: PreviewAdjustInput;
+  }) => Promise<AtomCommandResult<PreviewSessionSnapshot, E>>;
   readonly resizePreview: (input: {
     readonly environmentId: EnvironmentId;
     readonly input: PreviewResizeInput;
@@ -41,6 +48,7 @@ export async function reopenClosedPreviewSession<E>(input: {
         threadId: input.threadRef.threadId,
         ...(closedTab.url === null ? {} : { url: closedTab.url }),
         ...(closedTab.profileId === undefined ? {} : { profileId: closedTab.profileId }),
+        ...(closedTab.runtime === undefined ? {} : { runtime: closedTab.runtime }),
         viewport: closedTab.viewport,
       },
     });
@@ -52,10 +60,12 @@ export async function reopenClosedPreviewSession<E>(input: {
     opened = true;
     const snapshot = result.value;
     applyPreviewServerSnapshot(input.threadRef, snapshot);
-    setPendingPreviewRestoration(input.threadRef, snapshot.tabId, {
-      zoomFactor: closedTab.zoomFactor,
-      colorScheme: closedTab.colorScheme,
-    });
+    if (snapshot.runtime !== "server") {
+      setPendingPreviewRestoration(input.threadRef, snapshot.tabId, {
+        zoomFactor: closedTab.zoomFactor,
+        colorScheme: closedTab.colorScheme,
+      });
+    }
     if (!input.canFocus || input.canFocus())
       useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
     // An opened replacement consumes history even if the resize confirmation fails.
@@ -69,7 +79,22 @@ export async function reopenClosedPreviewSession<E>(input: {
     });
     if (isCurrent() && resized._tag === "Success")
       updatePreviewServerSnapshot(input.threadRef, resized.value);
-    return mapAtomCommandResult(resized, () => undefined);
+    if (!isCurrent() || resized._tag === "Failure" || snapshot.runtime !== "server")
+      return mapAtomCommandResult(resized, () => undefined);
+    // Server tabs publish their rendering to all clients. Restore through the
+    // public mutation so subsequent snapshots and guest attachment agree.
+    const adjusted = await input.adjustPreview({
+      environmentId: input.threadRef.environmentId,
+      input: {
+        threadId: input.threadRef.threadId,
+        tabId: snapshot.tabId,
+        zoomFactor: Schema.decodeUnknownSync(PreviewZoomFactor)(closedTab.zoomFactor),
+        colorScheme: closedTab.colorScheme,
+      },
+    });
+    if (isCurrent() && adjusted._tag === "Success")
+      updatePreviewServerSnapshot(input.threadRef, adjusted.value);
+    return mapAtomCommandResult(adjusted, () => undefined);
   } catch (error) {
     if (!opened && isCurrent()) restoreClosedPreviewTab(input.threadRef, closedTab);
     throw error;

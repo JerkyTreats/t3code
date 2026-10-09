@@ -9,7 +9,7 @@ import { it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { Command } from "effect/unstable/cli";
+import { Command } from "effect/cli";
 import { afterEach, expect, vi } from "vite-plus/test";
 
 import { sshHelperCommand } from "./sshHelper.ts";

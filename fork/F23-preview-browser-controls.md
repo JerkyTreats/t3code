@@ -90,4 +90,8 @@ Retain upstream preview sessions, focus mechanics, panel surfaces, and browser p
 
 ## Restoration Compatibility
 
-New guest leases capture presentation before asynchronous settings reads. If an opened event creates a guest before the open mutation result, the current optional `preview.setZoomFactor` method restores through the existing normalized Manager zoom operation after lease and registration readiness. Identity is rechecked before subsequent writes and consumption. Older shells without that optional setter cannot guarantee exact late zoom restoration; the pending restoration is retained rather than reported as complete. No keyboard synthesis, alternate zoom ladder or page-state persistence is introduced.
+New guest leases capture presentation before asynchronous settings reads. If an opened event creates a guest before the open mutation result, the current `preview.setZoomFactor` method restores through the existing normalized Manager zoom operation after lease and registration readiness. Identity is rechecked before subsequent writes and consumption. The current upstream bridge requires that setter and shares it with server-driven presentation. No keyboard synthesis, alternate zoom ladder or page-state persistence is introduced.
+
+Current browser hosts retain upstream authorization scopes and server-tab identity while adapting fork restoration. The right-panel store retains upstream close revisions alongside Board selection. Focused preview reopen consumes the F23 thread-local history; the upstream global reopen shortcut skips preview focus and retains nonbrowser reopening. No persisted global browser history replaces the bounded F23 history.
+
+Focused protected browser chords take precedence over generic configured host shortcut forwarding. Unfocused guest input cannot reload the preview or emit preview actions. Current Manager tests exercise shortcut collisions and focus rejection.

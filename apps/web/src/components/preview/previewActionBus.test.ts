@@ -6,6 +6,7 @@ import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import {
   previewActionForDesktopBrowserEvent,
   previewActionForFocusedCommand,
+  isNativePreviewTabCommand,
 } from "./previewActionBus";
 
 describe("previewActionForFocusedCommand", () => {
@@ -55,5 +56,24 @@ describe("previewActionForFocusedCommand", () => {
         true,
       ),
     ).toBeNull();
+  });
+});
+
+describe("native preview tab command ownership", () => {
+  it.each([
+    ["preview.new", true],
+    ["preview.close", true],
+    ["preview.reopenClosed", true],
+    ["preview.refresh", false],
+    ["preview.focusUrl", false],
+    ["preview.zoomIn", false],
+    ["preview.zoomOut", false],
+    ["preview.resetZoom", false],
+    ["view.reopenClosed", false],
+    ["rightPanel.new", false],
+    ["rightPanel.close", false],
+    [null, false],
+  ] as const)("classifies %s as native-only=%s", (command, expected) => {
+    expect(isNativePreviewTabCommand(command)).toBe(expected);
   });
 });

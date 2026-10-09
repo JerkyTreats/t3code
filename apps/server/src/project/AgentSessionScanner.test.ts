@@ -22,6 +22,7 @@ import * as ServerConfig from "../config.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AgentSessionScanner from "./AgentSessionScanner.ts";
+import * as RetiredNativeSessions from "./RetiredNativeSessions.ts";
 
 const makeProjectShell = (workspaceRoot: string): OrchestrationProjectShell => ({
   id: ProjectId.make("project-1"),
@@ -33,7 +34,7 @@ const makeProjectShell = (workspaceRoot: string): OrchestrationProjectShell => (
   updatedAt: "2026-01-01T00:00:00.000Z",
 });
 
-const makeProjectStoreLayer = (importedWorkspaceRoots: ReadonlyArray<string>) =>
+const layerProjectStore = (importedWorkspaceRoots: ReadonlyArray<string>) =>
   Layer.mock(ProjectStore.ProjectStoreV2)({
     listShells: () =>
       Effect.succeed(
@@ -52,26 +53,38 @@ interface ScannerTestInput {
   /** Base dir for the test ServerConfig; worktreesDir derives from it. */
   readonly configBaseDir?: string;
   readonly providerInstances?: ContractServerSettings["providerInstances"];
+  readonly retiredNative?: ReadonlyArray<{ readonly driver: string; readonly id: string }>;
 }
 
-const makeScannerTestLayer = (input: ScannerTestInput) =>
+const layerScannerTest = (input: ScannerTestInput) =>
   AgentSessionScanner.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         ServerSettings.layerTest({
-          providers: {
-            claudeAgent: { homePath: input.claudeHomePath },
-            codex: { homePath: input.codexHomePath },
+          // Default slots point at the fixture homes; explicit test instances
+          // replace a slot with the same id.
+          providerInstances: {
+            [ProviderInstanceId.make("claudeAgent")]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              config: { homePath: input.claudeHomePath },
+            },
+            [ProviderInstanceId.make("codex")]: {
+              driver: ProviderDriverKind.make("codex"),
+              config: { homePath: input.codexHomePath },
+            },
+            ...input.providerInstances,
           },
-          ...(input.providerInstances === undefined
-            ? {}
-            : { providerInstances: input.providerInstances }),
         }),
         ServerConfig.layerTest(
           input.claudeHomePath,
           input.configBaseDir ?? { prefix: "t3code-scanner-config-" },
         ),
-        makeProjectStoreLayer(input.importedWorkspaceRoots ?? []),
+        layerProjectStore(input.importedWorkspaceRoots ?? []),
+        Layer.succeed(RetiredNativeSessions.RetiredNativeSessions, {
+          contains: (driver, id) =>
+            input.retiredNative?.some((entry) => entry.driver === driver && entry.id === id) ??
+            false,
+        }),
       ),
     ),
   );
@@ -80,7 +93,7 @@ const runScan = (input: ScannerTestInput) =>
   Effect.gen(function* () {
     const scanner = yield* AgentSessionScanner.AgentSessionScanner;
     return yield* scanner.scan;
-  }).pipe(Effect.provide(makeScannerTestLayer(input)));
+  }).pipe(Effect.provide(layerScannerTest(input)));
 
 const runRecentThreadOutcomes = (input: ScannerTestInput & { readonly workspaceRoot: string }) =>
   Effect.gen(function* () {
@@ -89,7 +102,7 @@ const runRecentThreadOutcomes = (input: ScannerTestInput & { readonly workspaceR
       Stream.runCollect,
       Effect.map((outcomes) => Array.from(outcomes)),
     );
-  }).pipe(Effect.provide(makeScannerTestLayer(input)));
+  }).pipe(Effect.provide(layerScannerTest(input)));
 
 const runRecentThreads = (input: ScannerTestInput & { readonly workspaceRoot: string }) =>
   runRecentThreadOutcomes(input).pipe(
@@ -154,6 +167,108 @@ function makeRecordLimitTranscript(cwd: string, overflow: boolean): string {
 }
 
 it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
+  it.effect.each([
+    { source: "claudeAgent", location: "filename", expectedOpens: 0 },
+    { source: "codex", location: "filename", expectedOpens: 0 },
+    { source: "claudeAgent", location: "metadata", expectedOpens: 1 },
+    { source: "codex", location: "metadata", expectedOpens: 1 },
+    { source: "codex", location: "metadata-alias", expectedOpens: 1 },
+    { source: "claudeAgent", location: "later-record", expectedOpens: 2 },
+    { source: "codex", location: "later-record", expectedOpens: 2 },
+  ] as const)(
+    "excludes a retired $source identity in $location through alternate provider instances",
+    ({ source, location, expectedOpens }) =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("t3code-retired-claude-");
+        const codexHomePath = yield* makeTempDir("t3code-retired-codex-");
+        const workspace = yield* makeTempDir("t3code-retired-workspace-");
+        const home = source === "codex" ? codexHomePath : claudeHomePath;
+        const transcriptPath = (id: string) =>
+          source === "codex"
+            ? path.join(
+                home,
+                "sessions",
+                "2026",
+                "08",
+                "24",
+                `rollout-2026-08-24T12-00-00-${id}.jsonl`,
+              )
+            : path.join(home, "projects", "-fixture", `${id}.jsonl`);
+        const record = (id: string, alias?: string) =>
+          source === "codex"
+            ? { type: "session_meta", payload: { id, session_id: alias, cwd: workspace } }
+            : {
+                type: "user",
+                cwd: workspace,
+                sessionId: id,
+                message: { content: "Synthetic prompt" },
+              };
+        const ordinaryMessage = {
+          type: "event_msg",
+          payload: { type: "user_message", message: "Synthetic prompt" },
+        };
+        const retiredId = "retired-session";
+        const retiredPath = transcriptPath(location === "filename" ? retiredId : "renamed");
+        const firstId = location === "metadata" ? retiredId : "ordinary-looking-alias";
+        const records: Array<unknown> = [
+          record(firstId, location === "metadata-alias" ? retiredId : undefined),
+        ];
+        if (location === "later-record") records.push(record(retiredId));
+        records.push(ordinaryMessage);
+        yield* writeTranscript({
+          filePath: retiredPath,
+          contents: records.map((record) => encodeTranscriptRecord(record)).join("\n"),
+          mtimeMs: nowMs,
+        });
+        yield* writeTranscript({
+          filePath: transcriptPath("ordinary-session"),
+          contents: [record("ordinary-session"), ordinaryMessage]
+            .map((record) => encodeTranscriptRecord(record))
+            .join("\n"),
+          mtimeMs: nowMs - 1,
+        });
+        let retiredOpens = 0;
+        const trackedFileSystem = FileSystem.FileSystem.of({
+          ...fileSystem,
+          open: (filePath, options) => {
+            if (filePath === retiredPath) retiredOpens += 1;
+            return fileSystem.open(filePath, options);
+          },
+        });
+        const alternateInstance = ProviderInstanceId.make(`${source}-alternate`);
+        const outcomes = yield* runRecentThreadOutcomes({
+          claudeHomePath,
+          codexHomePath,
+          workspaceRoot: workspace,
+          retiredNative: [{ driver: source, id: retiredId }],
+          providerInstances: {
+            [ProviderInstanceId.make(source)]: {
+              driver: ProviderDriverKind.make(source),
+              enabled: false,
+              config: { homePath: home },
+            },
+            [alternateInstance]: {
+              driver: ProviderDriverKind.make(source),
+              config: { homePath: home },
+            },
+          },
+        }).pipe(Effect.provideService(FileSystem.FileSystem, trackedFileSystem));
+        expect(retiredOpens).toBe(expectedOpens);
+        expect(
+          outcomes
+            .filter((outcome) => outcome._tag === "Importable")
+            .map((outcome) => ({
+              id: outcome.thread.providerSessionId,
+              instance: outcome.thread.providerInstanceId,
+            })),
+        ).toEqual([{ id: "ordinary-session", instance: alternateInstance }]);
+      }),
+  );
+
   describe("scan", () => {
     it.effect("reads Claude project cwds from transcripts, newest first", () =>
       Effect.gen(function* () {
@@ -533,7 +648,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
-    it.effect("uses explicit provider instance homes instead of overridden legacy homes", () =>
+    it.effect("uses explicit default-slot homes instead of the fixture homes", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
         const claudeHomePath = yield* makeTempDir("t3code-claude-legacy-");
@@ -1705,7 +1820,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           expect(scan.candidates[0]?.threadCount).toBe(5);
           return yield* scanner.recentThreads(workspace).pipe(Stream.runCollect);
         }).pipe(
-          Effect.provide(makeScannerTestLayer({ claudeHomePath, codexHomePath })),
+          Effect.provide(layerScannerTest({ claudeHomePath, codexHomePath })),
           Effect.provideService(FileSystem.FileSystem, trackedFileSystem),
         );
 
@@ -1855,7 +1970,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
                 } else {
                   expect(outcomes).toEqual([{ _tag: "Skipped" }]);
                 }
-              }).pipe(Effect.provide(makeScannerTestLayer({ claudeHomePath, codexHomePath })));
+              }).pipe(Effect.provide(layerScannerTest({ claudeHomePath, codexHomePath })));
             }),
         );
       }
@@ -1926,7 +2041,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             thread: { providerSessionId: "replaced-session" },
             source: { size: imported.source.size, mtimeMs: imported.source.mtimeMs },
           });
-        }).pipe(Effect.provide(makeScannerTestLayer({ claudeHomePath, codexHomePath })));
+        }).pipe(Effect.provide(layerScannerTest({ claudeHomePath, codexHomePath })));
       }),
     );
 
@@ -2350,7 +2465,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             Effect.map((items) => Array.from(items)),
           );
         }).pipe(
-          Effect.provide(makeScannerTestLayer({ claudeHomePath, codexHomePath })),
+          Effect.provide(layerScannerTest({ claudeHomePath, codexHomePath })),
           Effect.provideService(FileSystem.FileSystem, simulatedFileSystem),
         );
 
@@ -2573,7 +2688,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           expect(scan.truncated).toBe(true);
           return yield* scanner.recentThreads(recentWorkspace).pipe(Stream.runCollect);
         }).pipe(
-          Effect.provide(makeScannerTestLayer(input)),
+          Effect.provide(layerScannerTest(input)),
           Effect.provideService(FileSystem.FileSystem, simulatedFileSystem),
         );
 

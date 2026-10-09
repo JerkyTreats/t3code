@@ -5,6 +5,9 @@ const mocks = vi.hoisted(() => ({
   primaryId: "primary" as string | null,
   retry: vi.fn(),
   navigate: vi.fn(),
+  replace: vi.fn(),
+  flush: vi.fn(),
+  reload: vi.fn(),
   pairingProps: null as { onAuthenticated: () => void | Promise<void> } | null,
 }));
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
@@ -15,6 +18,7 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
   }),
   redirect: vi.fn(),
   useNavigate: () => mocks.navigate,
+  useRouter: () => ({ history: { replace: mocks.replace, flush: mocks.flush } }),
 }));
 vi.mock("../../connection/catalog", () => ({ environmentCatalog: { retryNow: {} } }));
 vi.mock("../../rpc/atomRegistry", () => ({
@@ -43,6 +47,9 @@ beforeEach(() => {
   mocks.primaryId = EnvironmentId.make("primary");
   mocks.retry.mockReset().mockResolvedValue({ _tag: "Success", value: undefined });
   mocks.navigate.mockReset().mockResolvedValue(undefined);
+  mocks.replace.mockReset();
+  mocks.flush.mockReset();
+  mocks.reload.mockReset();
   mocks.pairingProps = null;
   vi.stubGlobal("window", { t3ThreadBridge: {} });
 });
@@ -88,14 +95,23 @@ describe("Thread pairing connection recovery", () => {
   it.each(["ordinary browser", "primary not discovered"])(
     "preserves navigation for %s",
     async (scenario) => {
-      if (scenario === "ordinary browser") vi.stubGlobal("window", {});
+      if (scenario === "ordinary browser")
+        vi.stubGlobal("window", { location: { reload: mocks.reload } });
       else mocks.primaryId = null;
       await renderPairing();
       await React.act(async () => {
         await mocks.pairingProps!.onAuthenticated();
       });
       expect(mocks.retry).not.toHaveBeenCalled();
-      expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/", replace: true });
+      if (scenario === "ordinary browser") {
+        expect(mocks.replace).toHaveBeenCalledExactlyOnceWith("/");
+        expect(mocks.flush).toHaveBeenCalledOnce();
+        expect(mocks.reload).toHaveBeenCalledOnce();
+        expect(mocks.navigate).not.toHaveBeenCalled();
+      } else {
+        expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({ to: "/", replace: true });
+        expect(mocks.reload).not.toHaveBeenCalled();
+      }
     },
   );
 });

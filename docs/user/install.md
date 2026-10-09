@@ -55,9 +55,16 @@ node scripts/install-linux-desktop.mjs \
 
 The installer verifies the descriptor and artifact before changing its managed
 destination. It installs the launcher, desktop entry, URL handler, and Linux
-user service together. The source checks for this procedure pass in the current
-candidate. An actual AppImage installation and independent client acceptance on
-an installed Linux machine remain pending.
+user service together. Source checks and installed acceptance are recorded against the exact build being installed. Prior artifact evidence does not establish acceptance of a later build.
+
+### The `t3` command
+
+The desktop app includes the `t3` command-line tool. To run it from any
+terminal, open **Settings → General → About** and choose **Install** next to
+**t3 command**. On macOS and Linux it adds a `t3` link to a folder on your
+`PATH`; on Windows it adds the app's command folder to your `PATH`. Open a new
+terminal afterwards. **Remove** takes it off again. If you already have `t3`
+from npm, it stays as it is.
 
 ### Windows Subsystem for Linux
 
@@ -93,6 +100,22 @@ The phone connects to a server on another machine. Follow
 [remote access](./remote-access.md) to link it through T3 Connect or a pairing
 URL.
 
+Upstream Nightly builds require the beta mobile app; store releases cannot connect to
+that Nightly protocol. This describes the upstream distribution channel, not validation
+of a store or beta build against this fork. Nightly clients also show beta links as QR
+codes in **Settings → General → Mobile app**.
+
+- **iPhone and iPad:** join the [TestFlight beta](https://testflight.apple.com/join/XgaxaRtd).
+- **Android:** join the [beta group](https://groups.google.com/g/t3-code-v2-beta). With the same
+  Google account, open the [Google Play testing page](https://play.google.com/apps/testing/com.t3tools.t3code)
+  and become a tester.
+
+If the mobile app crashes during launch, open **Settings → Diagnostics** on the next
+successful launch. It lists startup crashes from the last seven days, including the
+error and component stack omitted from store crash reports. Copy the report when filing
+an [exact-origin issue](https://github.com/JerkyTreats/t3code/issues). Review it before
+sharing because error messages can quote values from the app.
+
 ## Providers
 
 Open **Settings → Providers** in the web or desktop app, select the environment,
@@ -109,6 +132,7 @@ computer.
 | OpenCode    | Install [OpenCode](https://opencode.ai), then run `opencode auth login`.                                                                                  |
 | Antigravity | Install and sign in with Google from T3 Code's provider settings.                                                                                         |
 | Pi          | Install [Pi](https://pi.dev), then run `pi` once to finish its login or API-key setup.                                                                    |
+| Muse Code   | Install [Muse Code](https://dev.meta.ai/docs/muse-code) on the server, run `muse login`, then enable it in Settings → Providers.                          |
 
 Provider CLIs must be on the server's `PATH`. If T3 Code cannot find one, set its
 **Binary path** in provider settings, especially when using a version manager.
@@ -116,11 +140,20 @@ Cursor's executable is `cursor-agent`, although its login command is
 `agent login`. Codex connected through ChatGPT and Antigravity can use their
 managed runtimes without a `PATH` entry.
 
-When a provider CLI is behind its latest release, its provider card can show the
-available version. **Update now** appears only when T3 Code recognizes how that
-provider was installed. Otherwise update the provider CLI the same way you
-installed it. This provider update behavior does not install or update T3 Code
-itself.
+T3 Code warns when a provider version has known compatibility problems with your
+release. Check **Settings → Providers** on that environment for the recommended
+version or range. When its package manager supports installing a specific version,
+you can install the recommendation there. Otherwise use the provider's installer
+on the environment's machine. An unlisted version is unverified.
+
+When a provider CLI is behind its latest release, its provider card shows the
+available version. **Update now** uses the installer that owns the CLI, such as
+Homebrew or a global npm, pnpm, Yarn, Bun, Volta or Vite+ installation. Supported
+providers can also use their own update command when installer ownership is unknown.
+Update a CLI installed with mise through mise. Managed Cursor and Antigravity runtimes
+update with T3 Code. Homebrew installations compare against the version Homebrew
+offers, which can lag the npm release. These provider updates do not install or update
+T3 Code itself; replace the fork runtime only through its exact-origin distribution.
 
 Add another provider instance for a separate account or configuration. Each
 instance can have its own environment variables, such as API keys or a custom
@@ -129,7 +162,8 @@ original values after saving.
 
 For provider-specific setup and accounts, see [Codex](./providers-codex.md),
 [Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
-[Antigravity](./providers-antigravity.md), and [Pi](./providers-pi.md).
+[Antigravity](./providers-antigravity.md), [Pi](./providers-pi.md), and
+[Muse Code](./providers-muse.md).
 
 ## Next steps
 

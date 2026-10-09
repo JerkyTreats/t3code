@@ -1,5 +1,5 @@
 /** Runs the fork migration plan through the upstream transactional SQL migrator. */
-import * as Migrator from "effect/unstable/sql/Migrator";
+import * as Migrator from "effect/sql/Migrator";
 import * as Effect from "effect/Effect";
 import { makeMigrationLoader } from "./ForkMigrationPlan.ts";
 

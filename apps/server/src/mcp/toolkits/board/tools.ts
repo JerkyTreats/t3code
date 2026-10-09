@@ -10,7 +10,7 @@ import {
   OrchestrationBoardRevisionError,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as Board from "../../../orchestration/Services/Board.ts";

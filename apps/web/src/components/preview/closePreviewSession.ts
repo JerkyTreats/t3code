@@ -6,6 +6,9 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 
+import { rendersPreviewTabNatively } from "~/browser/previewRuntime";
+import { useClosedViewStore } from "~/closedViewStore";
+
 import {
   applyPreviewDesktopState,
   setPendingPreviewRestoration,
@@ -38,8 +41,10 @@ export async function closePreviewSession<E>(
   const isCurrent = previewStateLifetimeIsCurrent(input.threadRef);
   const current = readThreadPreviewState(input.threadRef);
   const snapshot = current.sessions[input.tabId] ?? input.snapshot;
+  const native = rendersPreviewTabNatively(input.threadRef.environmentId, snapshot);
+  const canRemember = snapshot !== null && !current.suppressedTabIds.has(input.tabId);
   const reservation =
-    snapshot && !current.suppressedTabIds.has(input.tabId)
+    snapshot && canRemember && native
       ? reserveClosedPreviewTab(
           input.threadRef,
           snapshot,
@@ -66,8 +71,14 @@ export async function closePreviewSession<E>(
       input: { threadId: input.threadRef.threadId, tabId: input.tabId },
     });
     if (result._tag === "Failure") rollback();
-    else if (reservation && isCurrent())
-      commitClosedPreviewTab(input.threadRef, reservation.reservationId);
+    else if (isCurrent()) {
+      if (reservation) commitClosedPreviewTab(input.threadRef, reservation.reservationId);
+      else if (!native && canRemember && snapshot) {
+        useClosedViewStore
+          .getState()
+          .remember({ kind: "browser", threadRef: input.threadRef, snapshot });
+      }
+    }
     return result;
   } catch (error) {
     rollback();

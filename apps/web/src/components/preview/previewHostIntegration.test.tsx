@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => ({
@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
     state: { matches: [{ params: { environmentId: "host-env", threadId: "host-thread" } }] },
   },
   command: "preview.new",
+  canOperate: true,
   desktopListener: null as ((event: DesktopPreviewBrowserActionEvent) => void) | null,
 }));
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
@@ -42,6 +43,10 @@ vi.mock("~/state/entities", () => ({ useProjects: () => [] }));
 vi.mock("~/state/environments", () => ({ usePrimaryEnvironmentId: () => "host-env" }));
 vi.mock("~/logicalProject", () => ({ selectProjectGroupingSettings: vi.fn() }));
 vi.mock("~/sidebarProjectGrouping", () => ({ buildSidebarProjectSnapshots: () => [] }));
+vi.mock("~/state/session", () => ({
+  useEnvironmentScope: () => mocks.canOperate,
+  readEnvironmentScope: () => mocks.canOperate,
+}));
 vi.mock("~/state/server", () => ({ primaryServerKeybindingsAtom: {} }));
 vi.mock("~/keybindings", () => ({ resolveShortcutCommand: () => mocks.command }));
 vi.mock("~/lib/chatThreadActions", () => ({ startNewThreadFromContext: vi.fn() }));
@@ -52,6 +57,7 @@ vi.mock("~/components/ui/toast", () => ({
 }));
 
 import { ChatRouteGlobalShortcuts } from "~/routes/_chat";
+import { subscribePreviewAction } from "./previewActionBus";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import {
   applyPreviewDesktopState,
@@ -142,6 +148,7 @@ beforeEach(() => {
   useRightPanelStore.setState({ byThreadKey: {} });
   mocks.router.state.matches[0]!.params = { environmentId: "host-env", threadId: "host-thread" };
   mocks.command = "preview.new";
+  mocks.canOperate = true;
   createTab.mockClear();
   reopen.mockClear();
   confirm.mockReset().mockResolvedValue(true);
@@ -196,6 +203,17 @@ async function key(command: string) {
 }
 
 describe("preview route and current chat host", () => {
+  it("rejects preview mutations when the current grant cannot operate previews", async () => {
+    mocks.canOperate = false;
+    await mount();
+    await key("preview.new");
+    await key("preview.reopenClosed");
+    await key("preview.close");
+    expect(createTab).not.toHaveBeenCalled();
+    expect(reopen).not.toHaveBeenCalled();
+    expect(closeMutation).not.toHaveBeenCalled();
+  });
+
   it("routes focused new and reopen but rejects a misconfigured shortcut outside the preview", async () => {
     await mount();
     expect((await key("preview.new")).defaultPrevented).toBe(true);
@@ -206,6 +224,55 @@ describe("preview route and current chat host", () => {
     expect((await key("preview.new")).defaultPrevented).toBe(false);
     expect(createTab).toHaveBeenCalledOnce();
   });
+
+  it.each(["web", "streamed"] as const)(
+    "preserves upstream preview actions but rejects native tab commands in %s previews",
+    async (runtime) => {
+      if (runtime === "web")
+        vi.stubGlobal("window", Object.assign(target, { desktopBridge: undefined }));
+      else
+        reconcilePreviewServerSessions(ref, {
+          serverEpoch: "epoch",
+          revision: 2,
+          sessions: [{ ...snapshot, runtime: "server" }],
+        });
+      const actions = vi.fn();
+      const unsubscribe = subscribePreviewAction(actions);
+      try {
+        await mount();
+        for (const command of ["preview.new", "preview.close", "preview.reopenClosed"]) {
+          expect((await key(command)).defaultPrevented).toBe(false);
+        }
+        expect(createTab).not.toHaveBeenCalled();
+        expect(reopen).not.toHaveBeenCalled();
+        expect(closeMutation).not.toHaveBeenCalled();
+        for (const [command, action] of [
+          ["preview.refresh", "refresh"],
+          ["preview.focusUrl", "focus-url"],
+          ["preview.zoomIn", "zoom-in"],
+          ["preview.zoomOut", "zoom-out"],
+          ["preview.resetZoom", "reset-zoom"],
+        ]) {
+          expect((await key(command!)).defaultPrevented).toBe(true);
+          expect(actions).toHaveBeenLastCalledWith(action);
+        }
+        actions.mockClear();
+        mocks.canOperate = false;
+        await act(() =>
+          renderer?.update(
+            <>
+              <ChatRouteGlobalShortcuts />
+              <Host />
+            </>,
+          ),
+        );
+        await key("preview.refresh");
+        expect(actions).not.toHaveBeenCalled();
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
 
   it("uses live router, epoch and guest identity before admitting native actions", async () => {
     await mount();

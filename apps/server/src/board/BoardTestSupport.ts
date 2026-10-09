@@ -6,9 +6,9 @@ import * as Layer from "effect/Layer";
 import { BoardLive } from "../orchestration/Layers/Board.ts";
 import { BoardQueryLive } from "../orchestration/Layers/BoardQuery.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
-import { OrchestrationEventStoreLive } from "../persistence/Layers/OrchestrationEventStore.ts";
-import { OrchestrationCommandReceiptRepositoryLive } from "../persistence/Layers/OrchestrationCommandReceipts.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { layer as OrchestrationEventStoreLive } from "../persistence/OrchestrationEventStore.ts";
+import { layer as OrchestrationCommandReceiptRepositoryLive } from "../persistence/OrchestrationCommandReceipts.ts";
+import { layerMemory as SqlitePersistenceMemory } from "../persistence/Sqlite.ts";
 
 /** Synthetic current-host fixture shared by Board and authenticated transport proofs. */
 export const BoardTestLayer = BoardLive.pipe(

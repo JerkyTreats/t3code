@@ -1,4 +1,7 @@
-import { bitbucketOriginHostFailure } from "../fork/originHostedProviderPolicy.ts";
+import {
+  bitbucketOriginHostFailure,
+  selectBitbucketOrigin,
+} from "../fork/originHostedProviderPolicy.ts";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -16,7 +19,7 @@ import {
   type SourceControlRepositoryCloneUrls,
   type SourceControlRepositoryVisibility,
 } from "@t3tools/contracts";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { sanitizeBranchFragment } from "@t3tools/shared/git";
 import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 
@@ -26,7 +29,7 @@ import {
   normalizeBitbucketPullRequestRecord,
   type NormalizedBitbucketPullRequestRecord,
 } from "./bitbucketPullRequests.ts";
-import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
+import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -70,12 +73,14 @@ export class BitbucketRepositoryLocatorError extends Schema.TaggedError<Bitbucke
     repository: Schema.String,
   },
 ) {
+  static readonly detail = "Bitbucket repositories must be specified as workspace/repository.";
+
   get detail(): string {
-    return "Bitbucket repositories must be specified as workspace/repository.";
+    return BitbucketRepositoryLocatorError.detail;
   }
 
   override get message(): string {
-    return `Bitbucket API failed in createRepository: ${this.detail}`;
+    return `Bitbucket API failed: ${this.detail}`;
   }
 }
 
@@ -492,18 +497,6 @@ function parseBitbucketRemoteUrl(remoteUrl: string): BitbucketRepositoryLocator 
   }
 }
 
-function remoteHost(remoteUrl: string): string | null {
-  const trimmed = remoteUrl.trim();
-  const scpMatch = /^[a-zA-Z0-9._-]+@([^:/\s]+):/.exec(trimmed);
-  if (scpMatch?.[1]) return scpMatch[1].toLowerCase();
-
-  try {
-    return new URL(trimmed).host.toLowerCase();
-  } catch {
-    return null;
-  }
-}
-
 function normalizeRepositoryCloneUrls(
   raw: typeof RawBitbucketRepositorySchema.Type,
 ): SourceControlRepositoryCloneUrls {
@@ -778,38 +771,33 @@ export const make = Effect.gen(function* () {
     readonly cwd: string;
     readonly context?: SourceControlProvider.SourceControlProviderContext;
   }) {
-    if (input.context?.provider.kind === "bitbucket" && input.context.remoteName === "origin") {
-      const host = remoteHost(input.context.remoteUrl);
-      yield* authorizeOriginHost(host === null ? {} : { originHost: host });
-      return input.context.remoteUrl;
+    let selection = selectBitbucketOrigin({ ...input, apiHost });
+    if (selection.kind === "inspect-remotes") {
+      const handle = yield* vcsRegistry.resolve({ cwd: input.cwd }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new BitbucketRepositoryVcsResolveError({
+              cwd: input.cwd,
+              cause,
+            }),
+        ),
+      );
+      const remotes = yield* handle.driver.listRemotes(input.cwd).pipe(
+        Effect.mapError(
+          (cause) =>
+            new BitbucketRepositoryRemotesListError({
+              cwd: input.cwd,
+              cause,
+            }),
+        ),
+      );
+
+      selection = selectBitbucketOrigin({ ...input, apiHost, remotes: remotes.remotes });
     }
-
-    const handle = yield* vcsRegistry.resolve({ cwd: input.cwd }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new BitbucketRepositoryVcsResolveError({
-            cwd: input.cwd,
-            cause,
-          }),
-      ),
-    );
-    const remotes = yield* handle.driver.listRemotes(input.cwd).pipe(
-      Effect.mapError(
-        (cause) =>
-          new BitbucketRepositoryRemotesListError({
-            cwd: input.cwd,
-            cause,
-          }),
-      ),
-    );
-
-    const origin = remotes.remotes.find((remote) => remote.name === "origin");
-    const host = origin === undefined ? null : remoteHost(origin.url);
-    if (origin !== undefined && host !== null) {
-      yield* authorizeOriginHost({ originHost: host });
-      return origin.url;
+    if (selection.kind === "target") return selection.url;
+    if (selection.kind === "host-refused") {
+      return yield* new BitbucketOriginHostError({ ...selection.failure, apiHost });
     }
-
     return yield* new BitbucketRepositoryRemoteNotFoundError({
       cwd: input.cwd,
     });
@@ -820,9 +808,9 @@ export const make = Effect.gen(function* () {
     readonly context?: SourceControlProvider.SourceControlProviderContext;
     readonly repository?: string;
   }) {
-    const originUrl = yield* resolveBoundOriginUrl(input);
     const fromRepository =
-      input.repository !== undefined ? parseBitbucketRepositorySlug(input.repository) : null;
+      input.repository === undefined ? null : yield* requireRepositoryLocator(input.repository);
+    const originUrl = yield* resolveBoundOriginUrl(input);
     if (fromRepository) return fromRepository;
 
     const fromOrigin = parseBitbucketRemoteUrl(originUrl);

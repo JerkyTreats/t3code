@@ -1,7 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 import type { RepositoryIdentity } from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
@@ -162,8 +162,9 @@ it.effect("fails closed when exact origin is unavailable", () =>
   }),
 );
 
-for (const redirectKey of ["remote.pushDefault", "branch.main.pushRemote"]) {
-  it.effect(`revalidates live ${redirectKey} before allowing hosted mutations`, () =>
+it.effect.each(["remote.pushDefault", "branch.main.pushRemote"])(
+  "revalidates live %s before allowing hosted mutations",
+  (redirectKey) =>
     Effect.gen(function* () {
       const authority = yield* OriginRepositoryMutationAuthority.make.pipe(
         Effect.provide(
@@ -188,5 +189,4 @@ for (const redirectKey of ["remote.pushDefault", "branch.main.pushRemote"]) {
         .pipe(Effect.flip);
       assert.equal(error.reason, "push-redirect");
     }),
-  );
-}
+);

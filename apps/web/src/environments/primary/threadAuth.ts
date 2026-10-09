@@ -13,7 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import { PrimaryEnvironmentHttpClient, layer as primaryClientLayer } from "./httpClient";
-import { primaryEnvironmentHttpLayer } from "./httpLayer";
+import { layer as primaryEnvironmentHttpLayer } from "./httpLayer";
 import {
   assertThreadPrimaryTarget,
   readThreadPrimaryTarget,

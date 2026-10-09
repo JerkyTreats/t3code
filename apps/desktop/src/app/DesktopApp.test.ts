@@ -5,6 +5,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as DesktopApp from "./DesktopApp.ts";
+import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
+import * as DesktopLegacyLocalStorage from "./DesktopLegacyLocalStorage.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopAppActivation from "./DesktopAppActivation.ts";
@@ -91,6 +93,18 @@ describe("current DesktopApp bootstrap", () => {
     () =>
       Effect.gen(function* () {
         const context = (yield* hostContext(false)).pipe(
+          Context.add(DesktopAppIdentity.DesktopAppIdentity, {
+            resolveUserDataPath: Effect.succeed("/workspace/profile"),
+            configure: Effect.void,
+          }),
+          Context.add(DesktopLegacyLocalStorage.DesktopLegacyLocalStorage, {
+            load: (path) =>
+              Effect.sync(() => {
+                host.events.push(`legacy-storage:${path}`);
+              }),
+            take: Effect.succeedNone,
+            complete: Effect.void,
+          }),
           Context.add(DesktopSnapShot.DesktopSnapShot, {
             initialize: Effect.void,
           } as DesktopSnapShot.DesktopSnapShot["Service"]),
@@ -136,6 +150,7 @@ describe("current DesktopApp bootstrap", () => {
         expect(host.events).toEqual([
           "protocol",
           "ipc",
+          "legacy-storage:/workspace/profile",
           "allocate-primary",
           "exposure",
           "backend-start",

@@ -4,16 +4,15 @@ import {
   AuthStandardClientScopes,
 } from "@t3tools/contracts";
 import * as Console from "effect/Console";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
-import { Argument, Command, Flag, GlobalFlag } from "effect/unstable/cli";
-import * as CliError from "effect/unstable/cli/CliError";
+import { Argument, Command, Flag, GlobalFlag } from "effect/cli";
+import * as CliError from "effect/cli/CliError";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
-import { MAX_DEVICE_ADMINISTRATOR_SESSION_TTL } from "../auth/SessionStore.ts";
+import * as SessionAuthorityPolicy from "../auth/SessionAuthorityPolicy.ts";
 
 import {
   formatIssuedPairingCredential,
@@ -22,6 +21,7 @@ import {
   formatSessionList,
 } from "../cliAuthFormat.ts";
 import * as ServerConfig from "../config.ts";
+import { authScopesFlag } from "./authScopes.ts";
 import {
   authLocationFlags,
   type CliAuthLocationFlags,
@@ -45,7 +45,7 @@ const runWithEnvironmentAuth = <A, E>(
       return yield* run(environmentAuth);
     }).pipe(
       Effect.provide(
-        Layer.mergeAll(EnvironmentAuth.runtimeLayer).pipe(
+        Layer.mergeAll(EnvironmentAuth.layerRuntime).pipe(
           Layer.provide(ServerConfig.layer(config)),
           Layer.provide(Layer.succeed(References.MinimumLogLevel, minimumLogLevel)),
         ),
@@ -99,6 +99,7 @@ class DeviceAdministratorTtlError extends CliError.UserError {
 
 const pairingCreateCommand = Command.make("create", {
   ...authLocationFlags,
+  scopes: authScopesFlag(AuthStandardClientScopes),
   ttl: ttlFlag,
   label: labelFlag,
   baseUrl: baseUrlFlag,
@@ -111,7 +112,7 @@ const pairingCreateCommand = Command.make("create", {
       (environmentAuth) =>
         Effect.gen(function* () {
           const issued = yield* environmentAuth.createPairingLink({
-            scopes: AuthStandardClientScopes,
+            scopes: flags.scopes,
             subject: "one-time-token",
             ...(Option.isSome(flags.ttl) ? { ttl: flags.ttl.value } : {}),
             ...(Option.isSome(flags.label) ? { label: flags.label.value } : {}),
@@ -177,6 +178,7 @@ const pairingCommand = Command.make("pairing").pipe(
 
 const sessionIssueCommand = Command.make("issue", {
   ...authLocationFlags,
+  scopes: authScopesFlag(AuthAdministrativeScopes),
   ttl: ttlFlag,
   label: labelFlag,
   subject: subjectFlag,
@@ -190,27 +192,26 @@ const sessionIssueCommand = Command.make("issue", {
       flags,
       (environmentAuth) =>
         Effect.gen(function* () {
-          if (flags.deviceAdministrator && Option.isNone(flags.ttl)) {
-            return yield* new DeviceAdministratorTtlError({
-              cause: "Device administrator authority requires an explicit --ttl up to 7 days.",
-            });
-          }
-          if (
-            flags.deviceAdministrator &&
-            Option.isSome(flags.ttl) &&
-            Duration.toMillis(flags.ttl.value) >
-              Duration.toMillis(MAX_DEVICE_ADMINISTRATOR_SESSION_TTL)
-          ) {
-            return yield* new DeviceAdministratorTtlError({
-              cause: "Device administrator authority TTL cannot exceed 7 days.",
-            });
-          }
-          const issued = yield* environmentAuth.issueSession({
-            scopes: flags.deviceAdministrator ? [] : AuthAdministrativeScopes,
-            ...(flags.deviceAdministrator
-              ? { authorityClass: "device-administrator" as const }
-              : {}),
+          const authorityInput = {
+            authorityClass: flags.deviceAdministrator
+              ? ("device-administrator" as const)
+              : ("client" as const),
+            method: "bearer-access-token" as const,
+            scopes: flags.deviceAdministrator ? [] : flags.scopes,
             ...(Option.isSome(flags.ttl) ? { ttl: flags.ttl.value } : {}),
+          };
+          yield* SessionAuthorityPolicy.resolveIssuance(authorityInput).pipe(
+            Effect.catchTags({
+              SessionAuthorityIssuanceError: (error) =>
+                Effect.fail(
+                  new DeviceAdministratorTtlError({
+                    cause: `Invalid --ttl: ${error.message}`,
+                  }),
+                ),
+            }),
+          );
+          const issued = yield* environmentAuth.issueSession({
+            ...authorityInput,
             ...(Option.isSome(flags.label) ? { label: flags.label.value } : {}),
             ...(Option.isSome(flags.subject) ? { subject: flags.subject.value } : {}),
           });

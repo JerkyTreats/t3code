@@ -17,13 +17,13 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { decideBoardCommand } from "../../board/CommandDecision.ts";
 import { makeBoardEventHub } from "../../board/BoardSubscription.ts";
 import { applyBoardEventProjection, BOARD_POSTS_PROJECTOR } from "../../board/EventProjection.ts";
-import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
-import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
+import { OrchestrationEventStore } from "../../persistence/OrchestrationEventStore.ts";
+import { OrchestrationCommandReceiptRepository } from "../../persistence/OrchestrationCommandReceipts.ts";
 import { ProjectionBoardPostRepository } from "../../persistence/Services/ProjectionBoardPosts.ts";
 import { ProjectionStoreV2 } from "../../orchestration-v2/ProjectionStore.ts";
 
