@@ -22,7 +22,6 @@ import * as ServerConfig from "../config.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AgentSessionScanner from "./AgentSessionScanner.ts";
-import * as RetiredNativeSessions from "./RetiredNativeSessions.ts";
 
 const makeProjectShell = (workspaceRoot: string): OrchestrationProjectShell => ({
   id: ProjectId.make("project-1"),
@@ -53,7 +52,6 @@ interface ScannerTestInput {
   /** Base dir for the test ServerConfig; worktreesDir derives from it. */
   readonly configBaseDir?: string;
   readonly providerInstances?: ContractServerSettings["providerInstances"];
-  readonly retiredNative?: ReadonlyArray<{ readonly driver: string; readonly id: string }>;
 }
 
 const layerScannerTest = (input: ScannerTestInput) =>
@@ -80,11 +78,6 @@ const layerScannerTest = (input: ScannerTestInput) =>
           input.configBaseDir ?? { prefix: "t3code-scanner-config-" },
         ),
         layerProjectStore(input.importedWorkspaceRoots ?? []),
-        Layer.succeed(RetiredNativeSessions.RetiredNativeSessions, {
-          contains: (driver, id) =>
-            input.retiredNative?.some((entry) => entry.driver === driver && entry.id === id) ??
-            false,
-        }),
       ),
     ),
   );
@@ -167,108 +160,6 @@ function makeRecordLimitTranscript(cwd: string, overflow: boolean): string {
 }
 
 it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
-  it.effect.each([
-    { source: "claudeAgent", location: "filename", expectedOpens: 0 },
-    { source: "codex", location: "filename", expectedOpens: 0 },
-    { source: "claudeAgent", location: "metadata", expectedOpens: 1 },
-    { source: "codex", location: "metadata", expectedOpens: 1 },
-    { source: "codex", location: "metadata-alias", expectedOpens: 1 },
-    { source: "claudeAgent", location: "later-record", expectedOpens: 2 },
-    { source: "codex", location: "later-record", expectedOpens: 2 },
-  ] as const)(
-    "excludes a retired $source identity in $location through alternate provider instances",
-    ({ source, location, expectedOpens }) =>
-      Effect.gen(function* () {
-        const path = yield* Path.Path;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
-        yield* TestClock.setTime(nowMs);
-        const claudeHomePath = yield* makeTempDir("t3code-retired-claude-");
-        const codexHomePath = yield* makeTempDir("t3code-retired-codex-");
-        const workspace = yield* makeTempDir("t3code-retired-workspace-");
-        const home = source === "codex" ? codexHomePath : claudeHomePath;
-        const transcriptPath = (id: string) =>
-          source === "codex"
-            ? path.join(
-                home,
-                "sessions",
-                "2026",
-                "08",
-                "24",
-                `rollout-2026-08-24T12-00-00-${id}.jsonl`,
-              )
-            : path.join(home, "projects", "-fixture", `${id}.jsonl`);
-        const record = (id: string, alias?: string) =>
-          source === "codex"
-            ? { type: "session_meta", payload: { id, session_id: alias, cwd: workspace } }
-            : {
-                type: "user",
-                cwd: workspace,
-                sessionId: id,
-                message: { content: "Synthetic prompt" },
-              };
-        const ordinaryMessage = {
-          type: "event_msg",
-          payload: { type: "user_message", message: "Synthetic prompt" },
-        };
-        const retiredId = "retired-session";
-        const retiredPath = transcriptPath(location === "filename" ? retiredId : "renamed");
-        const firstId = location === "metadata" ? retiredId : "ordinary-looking-alias";
-        const records: Array<unknown> = [
-          record(firstId, location === "metadata-alias" ? retiredId : undefined),
-        ];
-        if (location === "later-record") records.push(record(retiredId));
-        records.push(ordinaryMessage);
-        yield* writeTranscript({
-          filePath: retiredPath,
-          contents: records.map((record) => encodeTranscriptRecord(record)).join("\n"),
-          mtimeMs: nowMs,
-        });
-        yield* writeTranscript({
-          filePath: transcriptPath("ordinary-session"),
-          contents: [record("ordinary-session"), ordinaryMessage]
-            .map((record) => encodeTranscriptRecord(record))
-            .join("\n"),
-          mtimeMs: nowMs - 1,
-        });
-        let retiredOpens = 0;
-        const trackedFileSystem = FileSystem.FileSystem.of({
-          ...fileSystem,
-          open: (filePath, options) => {
-            if (filePath === retiredPath) retiredOpens += 1;
-            return fileSystem.open(filePath, options);
-          },
-        });
-        const alternateInstance = ProviderInstanceId.make(`${source}-alternate`);
-        const outcomes = yield* runRecentThreadOutcomes({
-          claudeHomePath,
-          codexHomePath,
-          workspaceRoot: workspace,
-          retiredNative: [{ driver: source, id: retiredId }],
-          providerInstances: {
-            [ProviderInstanceId.make(source)]: {
-              driver: ProviderDriverKind.make(source),
-              enabled: false,
-              config: { homePath: home },
-            },
-            [alternateInstance]: {
-              driver: ProviderDriverKind.make(source),
-              config: { homePath: home },
-            },
-          },
-        }).pipe(Effect.provideService(FileSystem.FileSystem, trackedFileSystem));
-        expect(retiredOpens).toBe(expectedOpens);
-        expect(
-          outcomes
-            .filter((outcome) => outcome._tag === "Importable")
-            .map((outcome) => ({
-              id: outcome.thread.providerSessionId,
-              instance: outcome.thread.providerInstanceId,
-            })),
-        ).toEqual([{ id: "ordinary-session", instance: alternateInstance }]);
-      }),
-  );
-
   describe("scan", () => {
     it.effect("reads Claude project cwds from transcripts, newest first", () =>
       Effect.gen(function* () {

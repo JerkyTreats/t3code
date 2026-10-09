@@ -52,7 +52,6 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ServerSettings from "../serverSettings.ts";
-import * as RetiredNativeSessions from "./RetiredNativeSessions.ts";
 import {
   createTranscriptJsonReader,
   createTranscriptJsonSelector,
@@ -626,31 +625,6 @@ export const make = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const projectStore = yield* ProjectStore.ProjectStoreV2;
-  const retiredNativeSessions = yield* RetiredNativeSessions.RetiredNativeSessions;
-  const isRetiredRecord = (source: AgentSessionSource, record: DecodedTranscriptRecord) => {
-    const aliases =
-      source === "claudeAgent"
-        ? [record.sessionId]
-        : record.type === "session_meta"
-          ? [record.payload?.id, record.payload?.session_id]
-          : [];
-    return aliases.some(
-      (id) => id !== undefined && retiredNativeSessions.contains(source, id.trim()),
-    );
-  };
-  const isRetiredFile = (source: AgentSessionSource, filePath: string) => {
-    const stem = path.basename(filePath, ".jsonl");
-    // Codex's native UUID follows the timestamp in a rollout filename. Check
-    // the basename too, for historical aliases retained in the fingerprint set.
-    const codexId = /^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-(.+)$/.exec(stem)?.[1];
-    return (
-      retiredNativeSessions.contains(source, stem) ||
-      (source === "codex" &&
-        ((codexId !== undefined && retiredNativeSessions.contains(source, codexId)) ||
-          (stem.startsWith("rollout-") &&
-            retiredNativeSessions.contains(source, stem.slice("rollout-".length)))))
-    );
-  };
   const baseDir = path.resolve(serverConfig.baseDir);
   const worktreesDir = path.resolve(serverConfig.worktreesDir);
   // Windows filesystems are case-insensitive, so path prefix checks there
@@ -756,11 +730,9 @@ export const make = Effect.gen(function* () {
   // A large history snapshot can precede session metadata. Read bounded
   // chunks until a complete record names its cwd or the safety budget ends.
   const readCwd = Effect.fn("AgentSessionScanner.readCwd")(function* (
-    source: AgentSessionSource,
     transcript: TranscriptCandidate,
     budget: MetadataReadBudget,
   ) {
-    if (isRetiredFile(source, transcript.filePath)) return null;
     if (transcript.size === 0) return null;
     if (
       budget.bytesRemaining === 0 ||
@@ -779,15 +751,6 @@ export const make = Effect.gen(function* () {
             let remaining = "";
             let bytesRead = 0;
             let recordsRead = 0;
-            let retired = false;
-            const readRecord = (line: string) => {
-              const decoded = decodeTranscriptRecord(line);
-              if (Option.isSome(decoded) && isRetiredRecord(source, decoded.value)) {
-                retired = true;
-                return null;
-              }
-              return extractCwd(line);
-            };
             const maxBytes = Math.min(MAX_TRANSCRIPT_SCAN_BYTES, transcript.size);
             const reserveRecord = () => {
               if (
@@ -803,7 +766,7 @@ export const make = Effect.gen(function* () {
             };
             const readLastRecord = () => {
               const record = remaining + decoder.decode();
-              return record.length === 0 || !reserveRecord() ? null : readRecord(record.trim());
+              return record.length === 0 || !reserveRecord() ? null : extractCwd(record.trim());
             };
 
             while (bytesRead < maxBytes) {
@@ -830,8 +793,7 @@ export const make = Effect.gen(function* () {
 
               for (const line of lines) {
                 if (!reserveRecord()) return null;
-                const cwd = readRecord(line.trim());
-                if (retired) return null;
+                const cwd = extractCwd(line.trim());
                 if (cwd !== null) return cwd;
               }
             }
@@ -858,7 +820,6 @@ export const make = Effect.gen(function* () {
     recordLimit: number,
     source: AgentSessionSource,
   ) {
-    if (isRetiredFile(source, filePath)) return null;
     if (expected.size > MAX_IMPORTED_TRANSCRIPT_BYTES) return null;
 
     return yield* Effect.scoped(
@@ -890,7 +851,6 @@ export const make = Effect.gen(function* () {
               recordCount += 1;
               if (recordCount > recordLimit) return false;
               const decoded = decodeTranscriptValue(reader.finish());
-              if (Option.isSome(decoded) && isRetiredRecord(source, decoded.value)) return false;
               if (Option.isSome(decoded) && shouldRetainDecodedRecord(source, decoded.value)) {
                 records.push(decoded.value);
                 historyBytes += recordBytes;
@@ -1095,7 +1055,7 @@ export const make = Effect.gen(function* () {
     >();
 
     for (const transcript of transcripts) {
-      const cwd = yield* readCwd(source, transcript, budget);
+      const cwd = yield* readCwd(transcript, budget);
       if (cwd === null) continue;
       const key = `${transcript.providerInstanceId}\0${cwd}`;
       const existing = byOwnerAndCwd.get(key);
@@ -1421,9 +1381,6 @@ export const make = Effect.gen(function* () {
     return Stream.fromIteratorSucceed(eligibleTranscripts.values(), 1).pipe(
       Stream.mapEffect(({ candidate, transcript }) =>
         Effect.gen(function* () {
-          if (isRetiredFile(candidate.source, transcript.filePath)) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
-          }
           const completed = completedByFile.get(
             `${candidate.providerInstanceId}\0${transcript.filePath}`,
           );
@@ -1443,11 +1400,6 @@ export const make = Effect.gen(function* () {
               source.provider === candidate.source && sameTranscriptIdentity(source, identity),
           );
           if (completedSource !== undefined) {
-            if (
-              retiredNativeSessions.contains(candidate.source, completedSource.providerSessionId)
-            ) {
-              return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
-            }
             const sessionKey = `${completedSource.providerInstanceId}\0${completedSource.providerSessionId}`;
             if (importedSessions.has(sessionKey)) return Option.none<AgentSessionRecentThread>();
             importedSessions.add(sessionKey);
@@ -1504,10 +1456,7 @@ export const make = Effect.gen(function* () {
             },
             snapshot.records,
           );
-          if (
-            parsedThread === null ||
-            retiredNativeSessions.contains(candidate.source, parsedThread.providerSessionId)
-          ) {
+          if (parsedThread === null) {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           }
 

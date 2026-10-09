@@ -16,7 +16,6 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import * as McpSessionRegistryTestkit from "../mcp/McpSessionRegistry.testkit.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import * as RetiredNativeSessions from "../project/RetiredNativeSessions.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -153,7 +152,6 @@ const layerRuntime = (dbPath: string) => {
       }),
     ),
     Layer.provide(McpSessionRegistryTestkit.layer),
-    Layer.provide(RetiredNativeSessions.layer),
     Layer.provideMerge(SqlitePersistence.layerFromPath(dbPath)),
     Layer.provide(layerCheckpointStore),
     Layer.provide(layerServerConfig),
