@@ -57,6 +57,27 @@ describe("preview tab history policy without a store", () => {
     });
   });
 
+  it.each([null, { zoomFactor: 1.75, colorScheme: "dark" as const }])(
+    "captures server runtime and uses snapshot presentation when no overlay exists: %s",
+    (overlay) => {
+      const { reservation } = reservePreviewTabClose(
+        EMPTY_PREVIEW_TAB_HISTORY,
+        {
+          ...snapshot("server-tab"),
+          runtime: "server",
+          zoomFactor: 1.25,
+          colorScheme: "light",
+        },
+        overlay,
+      );
+      expect(reservation).toMatchObject({
+        runtime: "server",
+        zoomFactor: overlay?.zoomFactor ?? 1.25,
+        colorScheme: overlay?.colorScheme ?? "light",
+      });
+    },
+  );
+
   it("retains ten successful closes while pending reservations settle or roll back", () => {
     let state = EMPTY_PREVIEW_TAB_HISTORY;
     for (let i = 0; i < 14; i += 1) state = remember(state, `closed-${i}`);

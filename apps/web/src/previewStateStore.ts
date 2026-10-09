@@ -15,7 +15,7 @@ import {
   type PreviewSessionSnapshot,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { PREVIEW_RECENT_URL_LIMIT } from "./components/preview/previewConstants";
 import { appAtomRegistry } from "./rpc/atomRegistry";
@@ -61,6 +61,8 @@ export interface ThreadPreviewState extends PreviewTabHistory {
   desktopOverlay: DesktopPreviewOverlay | null;
   desktopByTabId: Record<string, DesktopPreviewOverlay>;
   recentlySeenUrls: string[];
+  /** Whether the first authoritative tab list has arrived. */
+  listLoaded: boolean;
   /** Server process currently authoritative for revision ordering. */
   serverEpoch: string | null;
   /** Latest ordered server revision applied from a list response or event. */
@@ -77,6 +79,7 @@ const EMPTY_THREAD_PREVIEW_STATE: ThreadPreviewState = Object.freeze({
   desktopByTabId: {},
   recentlySeenUrls: [] as string[],
   ...EMPTY_PREVIEW_TAB_HISTORY,
+  listLoaded: false,
   serverEpoch: null,
   serverRevision: 0,
 });
@@ -251,6 +254,7 @@ export function applyPreviewServerEvent(ref: ScopedThreadRef, event: PreviewEven
               title: event.title,
               code: event.code,
               description: event.description,
+              ...(event.download === undefined ? {} : { download: event.download }),
             },
             updatedAt: event.createdAt,
           };
@@ -352,7 +356,9 @@ export function reconcilePreviewServerSessions(
 ): void {
   updateThreadPreviewState(ref, (current) => {
     const sameServer = current.serverEpoch === result.serverEpoch;
-    if (sameServer && result.revision < current.serverRevision) return current;
+    if (sameServer && result.revision < current.serverRevision) {
+      return current;
+    }
     const snapshots = result.sessions;
     const sessions: Record<string, PreviewSessionSnapshot> = {};
     const currentSuppressedTabIds = sameServer ? current.suppressedTabIds : new Set<string>();
@@ -392,6 +398,7 @@ export function reconcilePreviewServerSessions(
       lifetime: sameServer ? current.lifetime : {},
       desktopOverlay: activeTabId ? (desktopByTabId[activeTabId] ?? null) : null,
       recentlySeenUrls,
+      listLoaded: true,
       serverEpoch: result.serverEpoch,
       serverRevision: result.revision,
     };
@@ -492,6 +499,35 @@ export function setActivePreviewTab(ref: ScopedThreadRef, tabId: string): void {
   });
 }
 
+/**
+ * Runs `action` once the thread's preview state has the tab, which a popup's
+ * `opened` event may deliver after the stream that announced it. Gives up
+ * after `timeoutMs`. Returns a cancel function.
+ */
+export function whenPreviewTabKnown(
+  ref: ScopedThreadRef,
+  tabId: string,
+  action: () => void,
+  timeoutMs = 5_000,
+): () => void {
+  const atom = previewStateAtom(scopedThreadKey(ref));
+  if (appAtomRegistry.get(atom).sessions[tabId]) {
+    action();
+    return () => {};
+  }
+  const stop = () => {
+    clearTimeout(timer);
+    unsubscribe();
+  };
+  const unsubscribe = appAtomRegistry.subscribe(atom, (state) => {
+    if (!state.sessions[tabId]) return;
+    stop();
+    action();
+  });
+  const timer = setTimeout(stop, timeoutMs);
+  return stop;
+}
+
 export function rememberPreviewUrl(ref: ScopedThreadRef, url: string): void {
   if (url.trim().length === 0) return;
   updateThreadPreviewState(ref, (current) => ({
@@ -567,6 +603,16 @@ export function removePreviewThread(ref: ScopedThreadRef): void {
 export function isPreviewSupportedInRuntime(): boolean {
   if (typeof window === "undefined") return false;
   return Boolean(window.desktopBridge?.preview);
+}
+
+/**
+ * Forgets a deleted thread's previews. The server closes their sessions too,
+ * but the desktop host keeps a page for every session held here.
+ */
+export function clearThreadPreviewState(ref: ScopedThreadRef): void {
+  updateThreadPreviewState(ref, (current) =>
+    Object.keys(current.sessions).length === 0 ? current : EMPTY_THREAD_PREVIEW_STATE,
+  );
 }
 
 export function resetPreviewStateForTests(): void {

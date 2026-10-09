@@ -237,25 +237,23 @@ const invoke = (
   }
 };
 
-for (const method of methods) {
-  it.effect(
-    `${method} denies Plan writes before the replacement host can publish committed work`,
-    () =>
-      Effect.gen(function* () {
-        const f = yield* fixture();
-        f.setWriter((events) =>
-          Effect.gen(function* () {
-            assert.isFalse(f.writable());
-            return yield* f.persist(events);
-          }),
-        );
-        yield* invoke(f.sink, method, run(method));
-        assert.isFalse(f.writable());
-        yield* f.sink.write({ events: [event(run(method, "completed"))] });
-        assert.isTrue(f.writable());
-      }).pipe(Effect.provide(ProjectionStore.layerMemory)),
-  );
-}
+it.effect.each(methods)(
+  "%s denies Plan writes before the replacement host can publish committed work",
+  (method) =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      f.setWriter((events) =>
+        Effect.gen(function* () {
+          assert.isFalse(f.writable());
+          return yield* f.persist(events);
+        }),
+      );
+      yield* invoke(f.sink, method, run(method));
+      assert.isFalse(f.writable());
+      yield* f.sink.write({ events: [event(run(method, "completed"))] });
+      assert.isTrue(f.writable());
+    }).pipe(Effect.provide(ProjectionStore.layerMemory)),
+);
 
 it.effect("uses the current thread Plan mode when a run has no explicit interaction mode", () =>
   Effect.gen(function* () {

@@ -7,10 +7,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
-import { makeSqlitePersistenceLive } from "./Layers/Sqlite.ts";
+import { layerFromPath as makeSqlitePersistenceLive } from "./Sqlite.ts";
 import { runMigrations } from "./Migrations.ts";
 import { prepareReleasedForkMigration41State } from "./Migrations/fixtures/AuthLineageFixtures.ts";
 
@@ -419,11 +419,9 @@ it.effect("continues a released reconciled v0.0.28 journal", () =>
 
     assert.deepStrictEqual(
       executed.map(([migrationId]) => migrationId),
-      [52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70],
+      [52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 79, 80, 81, 82],
     );
-    assert.deepStrictEqual(latest, [
-      { migrationId: 70, name: "ApplicationBoardEventSequenceIndex" },
-    ]);
+    assert.deepStrictEqual(latest, [{ migrationId: 82, name: "ThreadSnapshotWindowIndexes" }]);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
@@ -505,8 +503,9 @@ it.effect("reopens an initialized file database without applying more migrations
   );
 });
 
-for (const lineageId of [58, 59] as const) {
-  it.effect(`continues and reopens a synthetic migration ${lineageId} database`, () => {
+it.effect.each([58, 59] as const)(
+  "continues and reopens a synthetic migration %s database",
+  (lineageId) => {
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-fork-lineage-"));
     const dbPath = NodePath.join(tempDir, "state.sqlite");
     const rawLayer = NodeSqliteClient.layer({ filename: dbPath });
@@ -562,8 +561,8 @@ for (const lineageId of [58, 59] as const) {
         name: "InteractionCommandFingerprints",
       });
       assert.deepStrictEqual(upgraded.journal.at(-1), {
-        migrationId: 70,
-        name: "ApplicationBoardEventSequenceIndex",
+        migrationId: 82,
+        name: "ThreadSnapshotWindowIndexes",
       });
       assert.deepStrictEqual(upgraded.receipts, [
         { payloadFingerprint: lineageId === 59 ? "synthetic-fingerprint" : null },
@@ -574,5 +573,5 @@ for (const lineageId of [58, 59] as const) {
     }).pipe(
       Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
     );
-  });
-}
+  },
+);

@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { runMigrations } from "../../Migrations.ts";
 import Migration0031 from "../031_AuthAuthorizationScopes.ts";

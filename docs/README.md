@@ -12,15 +12,17 @@
 - [Appearance and themes](./user/appearance.md)
 - [Keyboard shortcuts](./user/keybindings.md)
 - [SnapShots](./user/snap-shot.md)
+- [Visual replies](./user/html-renders.md)
 - [Import browser sessions](./user/browser-import.md)
 - [Devices](./user/devices.md)
 - [Usage and limits](./user/usage.md)
 - [Product usage data](./user/telemetry.md)
 - [Remote access](./user/remote-access.md)
+- [Outside agents through MCP](./user/outside-agents.md)
 - [Keeping a host available](./user/background-service.md)
 - [Environment Board](./user/environment-board.md)
 - [Updating exact-origin installations](./user/updating.md)
-- Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Pi](./user/providers-pi.md)
+- Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Pi](./user/providers-pi.md) · [Muse Code](./user/providers-muse.md)
 
 ---
 
@@ -37,6 +39,7 @@ Follow the [documentation rules](../governance/docs_style_policy.md) before addi
 - [Glossary](./internals/glossary.md)
 - [Connection runtime](./internals/connection-runtime.md)
 - [Providers](./internals/providers.md)
+- [Adding a provider](./internals/adding-a-provider.md)
 - [Pull request file revisions](./internals/pull-request-file-revisions.md)
 - [Model classification](./internals/model-manifest.md)
 - [Remote environments](./internals/remote.md)

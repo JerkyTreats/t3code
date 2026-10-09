@@ -1,6 +1,6 @@
 import type { PreviewOpenInput, PreviewSessionSnapshot, ScopedThreadRef } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -55,6 +55,10 @@ const rememberClosedPreviewTab = (
   commitClosedPreviewTab(threadRef, reservation.reservationId);
 };
 
+const unexpectedAdjust = vi.fn(async () => {
+  throw new Error("Desktop restoration must not adjust server rendering");
+});
+
 const resizeSuccess = (reopened: PreviewSessionSnapshot) =>
   vi.fn(async ({ input }: { input: { viewport: PreviewSessionSnapshot["viewport"] } }) =>
     AsyncResult.success({ ...reopened, viewport: input.viewport }),
@@ -62,6 +66,7 @@ const resizeSuccess = (reopened: PreviewSessionSnapshot) =>
 
 beforeEach(() => {
   resetPreviewStateForTests();
+  unexpectedAdjust.mockClear();
   useRightPanelStore.setState({ byThreadKey: {} });
 });
 
@@ -89,6 +94,7 @@ describe("reopenClosedPreviewSession", () => {
     const resizePreview = resizeSuccess(reopened);
 
     const result = await reopenClosedPreviewSession({
+      adjustPreview: unexpectedAdjust,
       threadRef,
       openPreview: ({ input }) => openPreview(input),
       resizePreview: resizePreview as never,
@@ -119,6 +125,101 @@ describe("reopenClosedPreviewSession", () => {
     ).toMatchObject({ isOpen: true, activeSurfaceId: "browser:reopened-tab" });
   });
 
+  it("restores server-owned presentation through the public adjustment after open and resize", async () => {
+    const closed: PreviewSessionSnapshot = {
+      ...snapshot("closed-server", { _tag: "Idle" }),
+      runtime: "server",
+      zoomFactor: 1.5,
+      colorScheme: "dark",
+    };
+    const reservation = reserveClosedPreviewTab(threadRef, closed, null);
+    commitClosedPreviewTab(threadRef, reservation.reservationId);
+    const reopened: PreviewSessionSnapshot = {
+      ...closed,
+      tabId: "replacement-server",
+      zoomFactor: 1,
+      colorScheme: "system",
+    };
+    const restored: PreviewSessionSnapshot = { ...reopened, zoomFactor: 1.5, colorScheme: "dark" };
+    const openPreview = vi.fn(async (_input: PreviewOpenInput) => AsyncResult.success(reopened));
+    const resizePreview = resizeSuccess(reopened);
+    const adjustPreview = vi.fn(async () => AsyncResult.success(restored));
+    const result = await reopenClosedPreviewSession({
+      threadRef,
+      openPreview: ({ input }) => openPreview(input),
+      resizePreview: resizePreview as never,
+      adjustPreview,
+    });
+    expect(result?._tag).toBe("Success");
+    expect(openPreview).toHaveBeenCalledWith({
+      threadId: threadRef.threadId,
+      runtime: "server",
+      viewport: { _tag: "fill" },
+    });
+    expect(adjustPreview).toHaveBeenCalledExactlyOnceWith({
+      environmentId: threadRef.environmentId,
+      input: {
+        threadId: threadRef.threadId,
+        tabId: reopened.tabId,
+        zoomFactor: 1.5,
+        colorScheme: "dark",
+      },
+    });
+    expect(adjustPreview.mock.invocationCallOrder[0]).toBeGreaterThan(
+      resizePreview.mock.invocationCallOrder[0]!,
+    );
+    expect(readThreadPreviewState(threadRef).sessions[reopened.tabId]).toEqual(restored);
+    expect(readThreadPreviewState(threadRef).pendingRestorations[reopened.tabId]).toBeUndefined();
+    expect(readThreadPreviewState(threadRef).closedTabs).toEqual([]);
+  });
+
+  it("reports a server appearance failure without restoring a consumed history entry", async () => {
+    const closed: PreviewSessionSnapshot = {
+      ...snapshot("closed-server", { _tag: "Idle" }),
+      runtime: "server",
+    };
+    rememberClosedPreviewTab(closed, 1.5, "dark");
+    const reopened = { ...closed, tabId: "replacement-server" };
+    const failure = AsyncResult.failure<PreviewSessionSnapshot, Error>(
+      Cause.fail(new Error("adjust failed")),
+    );
+    const openPreview = vi.fn(async () => AsyncResult.success(reopened));
+    const adjustPreview = vi.fn(async () => failure);
+    const input = {
+      threadRef,
+      openPreview,
+      adjustPreview,
+      resizePreview: resizeSuccess(reopened) as never,
+    };
+    expect((await reopenClosedPreviewSession(input))?._tag).toBe("Failure");
+    expect(readThreadPreviewState(threadRef).sessions[reopened.tabId]).toBeDefined();
+    expect(readThreadPreviewState(threadRef).closedTabs).toEqual([]);
+    expect(readThreadPreviewState(threadRef).pendingRestorations).toEqual({});
+    expect(await reopenClosedPreviewSession(input)).toBeNull();
+    expect(openPreview).toHaveBeenCalledOnce();
+  });
+
+  it("does not adjust a replacement after its preview lifetime ends during resize", async () => {
+    const closed: PreviewSessionSnapshot = {
+      ...snapshot("closed-server", { _tag: "Idle" }),
+      runtime: "server",
+    };
+    rememberClosedPreviewTab(closed);
+    const reopened = { ...closed, tabId: "replacement-server" };
+    const adjustPreview = vi.fn(async () => AsyncResult.success(reopened));
+    await reopenClosedPreviewSession({
+      threadRef,
+      openPreview: async () => AsyncResult.success(reopened),
+      adjustPreview,
+      resizePreview: async () => {
+        removePreviewThread(threadRef);
+        return AsyncResult.success(reopened);
+      },
+    });
+    expect(adjustPreview).not.toHaveBeenCalled();
+    expect(readThreadPreviewState(threadRef).sessions).toEqual({});
+  });
+
   it("reopens the last idle tab as a blank browser session", async () => {
     const reopenedIdle = snapshot("reopened-idle", { _tag: "Idle" });
     rememberClosedPreviewTab(snapshot("closed-idle", { _tag: "Idle" }));
@@ -127,6 +228,7 @@ describe("reopenClosedPreviewSession", () => {
     );
 
     await reopenClosedPreviewSession({
+      adjustPreview: unexpectedAdjust,
       threadRef,
       openPreview: ({ input }) => openPreview(input),
       resizePreview: resizeSuccess(reopenedIdle) as never,
@@ -147,6 +249,7 @@ describe("reopenClosedPreviewSession", () => {
     rememberClosedPreviewTab(closed);
 
     const result = await reopenClosedPreviewSession({
+      adjustPreview: unexpectedAdjust,
       threadRef,
       openPreview: async () => AsyncResult.failure(Cause.fail(new Error("open failed"))),
       resizePreview: resizeSuccess(closed) as never,
@@ -174,6 +277,7 @@ describe("reopenClosedPreviewSession", () => {
     });
 
     const result = await reopenClosedPreviewSession({
+      adjustPreview: unexpectedAdjust,
       threadRef,
       openPreview: async () => AsyncResult.success(reopened),
       resizePreview: async () => AsyncResult.failure(Cause.fail(new Error("resize failed"))),
@@ -193,6 +297,7 @@ describe("reopenClosedPreviewSession", () => {
     const failure = new Error("disconnected");
     await expect(
       reopenClosedPreviewSession({
+        adjustPreview: unexpectedAdjust,
         threadRef,
         openPreview: async () => {
           throw failure;
@@ -212,6 +317,7 @@ describe("reopenClosedPreviewSession", () => {
       let finish!: (value: ReturnType<typeof AsyncResult.success<PreviewSessionSnapshot>>) => void;
       const resizePreview = vi.fn();
       const reopening = reopenClosedPreviewSession({
+        adjustPreview: unexpectedAdjust,
         threadRef,
         openPreview: () =>
           new Promise<ReturnType<typeof AsyncResult.success<PreviewSessionSnapshot>>>((resolve) => {
@@ -255,6 +361,7 @@ describe("reopenClosedPreviewSession", () => {
     const replacement = { ...original, tabId: "replacement" };
     const resizePreview = resizeSuccess(replacement);
     const opening = reopenClosedPreviewSession({
+      adjustPreview: unexpectedAdjust,
       threadRef,
       openPreview: guardPreviewHostMutation(mutation, () => currentRoute),
       resizePreview: resizePreview as never,
@@ -289,6 +396,7 @@ describe("reopenClosedPreviewSession", () => {
     currentRoute = true;
     expect(
       await reopenClosedPreviewSession({
+        adjustPreview: unexpectedAdjust,
         threadRef,
         openPreview: mutation,
         resizePreview: resizePreview as never,

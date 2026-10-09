@@ -19,6 +19,7 @@ import {
   type AzureDevOpsRepositoryTarget,
 } from "../sourceControl/AzureDevOpsRepositoryTarget.ts";
 import type { NormalizedAzureDevOpsPullRequestRecord } from "../sourceControl/azureDevOpsPullRequests.ts";
+import { selectOriginRemote } from "./originOnlySourceControlPolicy.ts";
 
 /**
  * gh and glab let a URL selector override --repo. Reduce an origin-matching
@@ -296,4 +297,41 @@ export function bitbucketOriginHostFailure(
     (normalized === "bitbucket.org" && apiHost.toLowerCase() === "api.bitbucket.org")
     ? null
     : { reason: "origin-host-mismatch", originHost: normalized };
+}
+
+type BitbucketOriginSelection =
+  | { readonly kind: "inspect-remotes" }
+  | { readonly kind: "missing-origin" }
+  | { readonly kind: "target"; readonly url: string }
+  | {
+      readonly kind: "host-refused";
+      readonly failure: NonNullable<ReturnType<typeof bitbucketOriginHostFailure>>;
+    };
+
+/** A bound Bitbucket origin takes precedence; otherwise only a local literal origin may supply it. */
+export function selectBitbucketOrigin(input: {
+  readonly context?: SourceControlProvider.SourceControlProviderContext;
+  readonly remotes?: ReadonlyArray<{ readonly name: string; readonly url: string }>;
+  readonly apiHost: string;
+}): BitbucketOriginSelection {
+  const context = input.context;
+  const bound = context?.provider.kind === "bitbucket" && context.remoteName === "origin";
+  if (!bound && input.remotes === undefined) return { kind: "inspect-remotes" };
+  const url = bound ? context.remoteUrl : selectOriginRemote(input.remotes ?? [])?.url;
+  if (url === undefined) return { kind: "missing-origin" };
+  const host = bitbucketRemoteHost(url);
+  if (!bound && host === null) return { kind: "missing-origin" };
+  const failure = bitbucketOriginHostFailure(host ?? undefined, input.apiHost);
+  return failure === null ? { kind: "target", url } : { kind: "host-refused", failure };
+}
+
+function bitbucketRemoteHost(remoteUrl: string): string | null {
+  const trimmed = remoteUrl.trim();
+  const scpMatch = /^[a-zA-Z0-9._-]+@([^:/\s]+):/.exec(trimmed);
+  if (scpMatch?.[1]) return scpMatch[1].toLowerCase();
+  try {
+    return new URL(trimmed).host.toLowerCase();
+  } catch {
+    return null;
+  }
 }

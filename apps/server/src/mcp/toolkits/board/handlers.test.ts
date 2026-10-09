@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { McpSchema, McpServer } from "effect/unstable/ai";
+import { McpSchema, McpServer } from "effect/ai";
 
 import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -17,7 +17,7 @@ import {
   seedBoardThread,
 } from "../../../board/BoardTestSupport.ts";
 
-const TestLayer = McpHttpServer.BoardToolkitRegistrationLive.pipe(
+const TestLayer = McpHttpServer.layerBoardToolkit.pipe(
   Layer.provideMerge(McpServer.McpServer.layer),
   Layer.provideMerge(BoardServicesTestLayer),
 );
@@ -42,10 +42,14 @@ const makeInvocation = (input: {
   readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
 }): McpInvocationContext.McpInvocationScope => ({
   environmentId: EnvironmentId.make("environment-board-mcp-test"),
-  threadId: ThreadId.make(input.threadId),
-  providerSessionId: input.providerSessionId,
-  boardAuthorId: BoardAuthorId.make(`board-public-${input.providerSessionId}`),
-  providerInstanceId: ProviderInstanceId.make(input.providerInstanceId),
+  requestNamespace: input.providerSessionId,
+  thread: {
+    threadId: ThreadId.make(input.threadId),
+    providerSessionId: input.providerSessionId,
+    boardAuthorId: BoardAuthorId.make(`board-public-${input.providerSessionId}`),
+    providerInstanceId: ProviderInstanceId.make(input.providerInstanceId),
+  },
+  client: undefined,
   capabilities: input.capabilities ?? new Set(["board", "board-write"]),
   issuedAt: 1,
 });

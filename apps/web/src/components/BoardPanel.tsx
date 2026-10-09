@@ -17,7 +17,7 @@ import {
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { AlertTriangle, History, Pencil, Radio as RadioIcon, RotateCw } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 

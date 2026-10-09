@@ -10,11 +10,11 @@ import { ThreadId } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
-import * as SqlitePersistence from "./Layers/Sqlite.ts";
+import * as SqlitePersistence from "./Sqlite.ts";
 import { runMigrations } from "./Migrations.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
 import * as EventStore from "../orchestration-v2/EventStore.ts";
@@ -85,15 +85,15 @@ it.effect(
       const retained = yield* seed;
       const original = NodeFS.readFileSync(sourcePath);
       const config = yield* ServerConfig.ServerConfig;
-      const databaseLayer = SqlitePersistence.layerConfig.pipe(
+      const layerDatabase = SqlitePersistence.layerConfig.pipe(
         Layer.provide(ServerConfig.layer({ ...config, dbPath: destinationPath })),
       );
-      const stores = Layer.mergeAll(EventStore.layer, ProjectionStore.layer).pipe(
-        Layer.provideMerge(databaseLayer),
+      const layerStores = Layer.mergeAll(EventStore.layer, ProjectionStore.layer).pipe(
+        Layer.provideMerge(layerDatabase),
       );
-      const sink = EventSink.layer.pipe(Layer.provide(stores));
-      const importer = LegacyV1ThreadImporter.layer.pipe(
-        Layer.provideMerge(Layer.mergeAll(stores, sink)),
+      const layerSink = EventSink.layer.pipe(Layer.provide(layerStores));
+      const layerImporter = LegacyV1ThreadImporter.layer.pipe(
+        Layer.provideMerge(Layer.mergeAll(layerStores, layerSink)),
       );
       yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
@@ -122,7 +122,7 @@ it.effect(
         assert.isNotNull(imported[0]?.transcript_imported_at);
         yield* sql`CREATE TABLE v2_work (text TEXT)`;
         yield* sql`INSERT INTO v2_work VALUES ('Keep V2 work')`;
-      }).pipe(Effect.provide(importer));
+      }).pipe(Effect.provide(layerImporter));
       assert.deepEqual(NodeFS.readFileSync(sourcePath), original);
       const v1 = new NodeSqlite.DatabaseSync(sourcePath);
       try {
@@ -148,7 +148,7 @@ it.effect(
         assert.deepStrictEqual(yield* runMigrations(), []);
         assert.equal((yield* sql`SELECT text FROM v2_work`)[0]?.text, "Keep V2 work");
         assert.equal((yield* sql`SELECT title FROM projection_threads`)[0]?.title, "V1 thread");
-      }).pipe(Effect.provide(databaseLayer));
+      }).pipe(Effect.provide(layerDatabase));
     }).pipe(
       Effect.provide(
         ServerConfig.layerTest(directory, directory).pipe(Layer.provideMerge(NodeServices.layer)),
@@ -219,14 +219,14 @@ it.effect("starts fresh without V1 and never imports over existing V2 state", ()
   const destinationPath = NodePath.join(directory, "userdata", "statev2.sqlite");
   return Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
-    const database = SqlitePersistence.layerConfig.pipe(
+    const layerDatabase = SqlitePersistence.layerConfig.pipe(
       Layer.provide(ServerConfig.layer({ ...config, dbPath: destinationPath })),
     );
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* sql`CREATE TABLE v2_work (text TEXT)`;
       yield* sql`INSERT INTO v2_work VALUES ('fresh V2 work')`;
-    }).pipe(Effect.provide(database));
+    }).pipe(Effect.provide(layerDatabase));
     const sourcePath = NodePath.join(NodePath.dirname(destinationPath), "state.sqlite");
     assert.isFalse(NodeFS.existsSync(sourcePath));
     NodeFS.writeFileSync(sourcePath, "This source must never be opened once V2 exists");
@@ -234,7 +234,7 @@ it.effect("starts fresh without V1 and never imports over existing V2 state", ()
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       assert.equal((yield* sql`SELECT text FROM v2_work`)[0]?.text, "fresh V2 work");
-    }).pipe(Effect.provide(database));
+    }).pipe(Effect.provide(layerDatabase));
   }).pipe(
     Effect.provide(
       ServerConfig.layerTest(directory, directory).pipe(Layer.provideMerge(NodeServices.layer)),
@@ -243,35 +243,33 @@ it.effect("starts fresh without V1 and never imports over existing V2 state", ()
   );
 });
 
-for (const missingJournal of [false, true]) {
-  it.effect(
-    `rejects uncharacterized source history before publication, missing journal ${missingJournal}`,
-    () => {
-      const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-v2-lineage-"));
-      const sourcePath = NodePath.join(directory, "state.sqlite");
-      const destinationPath = NodePath.join(directory, "statev2.sqlite");
-      return Effect.gen(function* () {
-        yield* Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          yield* runMigrations({ toMigrationInclusive: 67 });
-          if (missingJournal) yield* sql`DROP TABLE effect_sql_migrations`;
-          else
-            yield* sql`UPDATE effect_sql_migrations SET name = 'UnknownFork' WHERE migration_id = 67`;
-          yield* sql`CREATE TABLE synthetic_work (text TEXT)`;
-          yield* sql`INSERT INTO synthetic_work VALUES ('retained')`;
-        }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: sourcePath })));
-        const original = NodeFS.readFileSync(sourcePath);
-        const error = yield* Effect.flip(initializeV2Database(destinationPath));
-        assert.equal(error._tag, "V2DatabaseImportError");
-        assert.isFalse(NodeFS.existsSync(destinationPath));
-        assert.deepStrictEqual(NodeFS.readFileSync(sourcePath), original);
-        assert.deepStrictEqual(NodeFS.readdirSync(directory), ["state.sqlite"]);
-      }).pipe(
-        Effect.provide(NodeServices.layer),
-        Effect.ensuring(
-          Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
-        ),
-      );
-    },
-  );
-}
+it.effect.each([false, true])(
+  "rejects uncharacterized source history before publication, missing journal %s",
+  (missingJournal) => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-v2-lineage-"));
+    const sourcePath = NodePath.join(directory, "state.sqlite");
+    const destinationPath = NodePath.join(directory, "statev2.sqlite");
+    return Effect.gen(function* () {
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations({ toMigrationInclusive: 67 });
+        if (missingJournal) yield* sql`DROP TABLE effect_sql_migrations`;
+        else
+          yield* sql`UPDATE effect_sql_migrations SET name = 'UnknownFork' WHERE migration_id = 67`;
+        yield* sql`CREATE TABLE synthetic_work (text TEXT)`;
+        yield* sql`INSERT INTO synthetic_work VALUES ('retained')`;
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: sourcePath })));
+      const original = NodeFS.readFileSync(sourcePath);
+      const error = yield* Effect.flip(initializeV2Database(destinationPath));
+      assert.equal(error._tag, "V2DatabaseImportError");
+      assert.isFalse(NodeFS.existsSync(destinationPath));
+      assert.deepStrictEqual(NodeFS.readFileSync(sourcePath), original);
+      assert.deepStrictEqual(NodeFS.readdirSync(directory), ["state.sqlite"]);
+    }).pipe(
+      Effect.provide(NodeServices.layer),
+      Effect.ensuring(
+        Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
+      ),
+    );
+  },
+);

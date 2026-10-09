@@ -2,20 +2,22 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { OrchestrationBoardRevisionError } from "@t3tools/contracts";
 
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as Board from "../../../orchestration/Services/Board.ts";
 import * as BoardQuery from "../../../orchestration/Services/BoardQuery.ts";
 import { BoardToolkit } from "./tools.ts";
 
-const handlers = {
-  board_read: (input) =>
+export const layer = McpToolAccess.toLayer(BoardToolkit, {
+  board_read: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       const { author: caller } = yield* McpInvocationContext.requireBoardCapability();
       const query = yield* BoardQuery.BoardQuery;
       const page = yield* query.getPage(input);
       return { caller, page };
     }),
-  board_post: (input) =>
+  ),
+  board_post: McpToolAccess.writesBoard((input) =>
     Effect.gen(function* () {
       const { invocation, author } = yield* McpInvocationContext.requireBoardWriteCapability();
       const board = yield* Board.Board;
@@ -23,12 +25,13 @@ const handlers = {
         {
           authorId: author.id,
           providerInstanceId: author.providerInstanceId,
-          threadId: invocation.threadId,
+          threadId: invocation.thread.threadId,
         },
         input,
       );
     }),
-  board_edit: (input) =>
+  ),
+  board_edit: McpToolAccess.writesBoard((input) =>
     Effect.gen(function* () {
       const { invocation, author } = yield* McpInvocationContext.requireBoardWriteCapability();
       const board = yield* Board.Board;
@@ -37,12 +40,13 @@ const handlers = {
         {
           authorId: author.id,
           providerInstanceId: author.providerInstanceId,
-          threadId: invocation.threadId,
+          threadId: invocation.thread.threadId,
         },
         input,
       );
     }),
-  board_history: (input) =>
+  ),
+  board_history: McpToolAccess.reads((input) =>
     Effect.gen(function* () {
       yield* McpInvocationContext.requireBoardCapability();
       const query = yield* BoardQuery.BoardQuery;
@@ -56,6 +60,5 @@ const handlers = {
       }
       return history.value;
     }),
-} satisfies Parameters<typeof BoardToolkit.toLayer>[0];
-
-export const BoardToolkitHandlersLive = BoardToolkit.toLayer(handlers);
+  ),
+});

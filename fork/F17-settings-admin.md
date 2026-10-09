@@ -105,6 +105,8 @@ The portal credential is intentionally a high-value device-admission root. Its a
 
 ## Compatibility Notes
 
+The current intake accepts upstream granular permissions. Existing stored and signed scope bytes remain unchanged; historical broad grants do not gain newly split permissions. Clients that need the current standard grant re-enroll through a fresh portal-issued one-time pairing credential after cutover. This operator transition does not add a scope-rewrite shim. Portal authority remains a separate signed and persisted class. Every RPC rechecks current session admission before checking its exact permission or invoking a handler.
+
 - Existing access-only portal credentials are invalid and must be rotated after deployment.
 - Clients without the server-issued managed-device class must be re-enrolled through the external portal before it can manage their lifecycle. Existing explicitly enrolled clients retain that class through this intake.
 - The portal HTTP paths may remain stable while their credential class and authorization semantics become stricter.
@@ -125,7 +127,7 @@ The portal credential is intentionally a high-value device-admission root. Its a
 | F17-D03 durable managed-device enrollment                           | `auth/PairingGrantStore.ts`, `persistence/AuthPairingLinks.ts`         | `auth/EnvironmentAuth.ts`, migration 58                          | `DeviceAdministratorAuthority.test.ts` closes and reopens the real database around portal issuance, grant consumption, and inventory; an identical spoofed subject stays unclassified                             |
 | F17-D04 private inventory and revisioned lifecycle                  | `auth/AdminAccess.ts`, `persistence/AuthClients.ts`                    | six Admin HTTP handlers                                          | `AdminAccess.test.ts` and `DeviceAdministratorAuthority.test.ts` prove private keys, fixed scopes, hidden operators, stale conflicts, expiry and outstanding limits                                               |
 | F17-D05 post-commit exact connection teardown                       | `auth/ClientConnectionRegistry.ts`, `auth/SessionAuthorityPolicy.ts`   | `auth/SessionStore.ts`, WebSocket client and session guards      | `SessionAuthorityPolicy.test.ts` directly proves lifecycle admission and failure ordering; `AdminAccess.test.ts` and `DeviceAdministratorAuthority.test.ts` prove committed exact teardown and admission rechecks |
-| F17-D06 pre42 rollback snapshot                                     | `persistence/Migration42Backup.ts`                                     | shared SQLite initialization in `persistence/Layers/Sqlite.ts`   | `Migration42Backup.test.ts` covers pending canonical schemas and restoration; `Layers/Sqlite.test.ts` migrates released fork 41 through the real startup adapter, closes, restores, and reopens journal 41        |
+| F17-D06 pre42 rollback snapshot                                     | `persistence/Migration42Backup.ts`                                     | shared SQLite initialization in `persistence/Sqlite.ts`          | `Migration42Backup.test.ts` covers pending canonical schemas and restoration; `Sqlite.test.ts` migrates released fork 41 through the real startup adapter, closes, restores, and reopens journal 41               |
 
 Paths in this table are relative to `apps/server/src` unless a migration or contract is named.
 

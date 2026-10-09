@@ -91,7 +91,7 @@ describe("protected Thread ticket acquisition", { concurrent: false }, () => {
     });
   });
 
-  for (const [status, body, reason] of [
+  it.effect.each([
     [
       401,
       {
@@ -116,17 +116,15 @@ describe("protected Thread ticket acquisition", { concurrent: false }, () => {
     [200, { ticket: "", expiresAt: "2099-01-01T00:00:00.000Z" }, "remote-unavailable"],
     [200, { ticket: "invalid-date", expiresAt: "not-a-date" }, "remote-unavailable"],
     [200, { ticket: "expired", expiresAt: "1970-01-01T00:00:00.000Z" }, "remote-unavailable"],
-  ] as const) {
-    it.effect(`maps response ${status} ${JSON.stringify(body)}`, () => {
-      const issue = install(
-        vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(body, status)),
-      );
-      return Effect.gen(function* () {
-        const error = yield* issue(target).pipe(Effect.flip);
-        expect(error.reason).toBe(reason);
-      });
+  ] as const)("maps response %j", ([status, body, reason]) => {
+    const issue = install(
+      vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(body, status)),
+    );
+    return Effect.gen(function* () {
+      const error = yield* issue(target).pipe(Effect.flip);
+      expect(error.reason).toBe(reason);
     });
-  }
+  });
 
   it.effect("does not retry or follow a redirect rejected by fetch", () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new TypeError("fetch failed"));

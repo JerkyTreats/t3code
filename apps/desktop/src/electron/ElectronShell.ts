@@ -19,8 +19,8 @@ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { isStandaloneDesktop } from "../fork/StandaloneDesktopPolicy.ts";
 
 // Remote open-in-editor deep links (`vscode://vscode-remote/ssh-remote+…`,
-// `zed://ssh/<host>/<path>`) must reach the OS handler; every other non-web
-// scheme stays blocked.
+// `zed://ssh/<host>/<path>`, `jetbrains://gateway/ssh/environment?h=…`) must
+// reach the OS handler; every other non-web scheme stays blocked.
 const SAFE_WEB_PROTOCOLS = new Set(["http:", "https:"]);
 const REMOTE_EDITOR_PROTOCOLS = new Set(
   REMOTE_CAPABLE_EDITOR_IDS.flatMap((id) => {
@@ -38,9 +38,13 @@ const isRemoteEditorUrl = (url: URL) =>
   url.password.length === 0 &&
   (url.protocol === "zed:"
     ? url.host === "ssh" && ZED_SSH_PATHNAME.test(url.pathname)
-    : url.host === "vscode-remote" &&
-      url.pathname.startsWith("/ssh-remote+") &&
-      url.pathname.length > "/ssh-remote+".length);
+    : url.protocol === "jetbrains:"
+      ? url.host === "gateway" &&
+        url.pathname === "/ssh/environment" &&
+        (url.searchParams.get("h") ?? "").length > 0
+      : url.host === "vscode-remote" &&
+        url.pathname.startsWith("/ssh-remote+") &&
+        url.pathname.length > "/ssh-remote+".length);
 
 export function parseSafeExternalUrl(rawUrl: unknown): Option.Option<string> {
   if (typeof rawUrl !== "string") {

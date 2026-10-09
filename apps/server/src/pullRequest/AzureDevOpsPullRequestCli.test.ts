@@ -1,7 +1,7 @@
 import { afterEach, assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import * as AzureDevOpsCli from "../sourceControl/AzureDevOpsCli.ts";
 import * as AzureDevOpsPullRequestCli from "./AzureDevOpsPullRequestCli.ts";
@@ -243,7 +243,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         ...row,
         description: "x".repeat(10_000),
       }));
-      // @effect-diagnostics-next-line preferSchemaOverJson:off
       const response = JSON.stringify(rows);
       expect(Buffer.byteLength(response)).toBeGreaterThan(1_000_000);
 
@@ -386,7 +385,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         .mockReturnValueOnce(
           Effect.succeed(
             output(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 { pullRequestId: "malformed" },
                 pullRequestRows(1, 1)[0],
@@ -479,7 +477,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
     Effect.gen(function* () {
       // `--query user` unwraps the object, so the wrapper has to put it back.
       mockedExecute.mockReturnValueOnce(
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         Effect.succeed(output(JSON.stringify({ name: "bilal@acme.dev", type: "user" }))),
       );
       const cli = yield* AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli;
@@ -660,7 +657,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
   it.effect("rewrites through the provider, which says it takes one", () =>
     Effect.gen(function* () {
       mockedExecute
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
         .mockReturnValueOnce(Effect.succeed(output(JSON.stringify(pullRequestRows(1, 42)[0]))))
         .mockReturnValueOnce(Effect.succeed(output("{}")));
       const provider = yield* AzureDevOpsPullRequestProvider.make;
@@ -688,10 +684,7 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         ...pullRequestRows(1, 42)[0],
         url: "https://dev.azure.com/upstream/_apis/git/repositories/web/pullRequests/42",
       };
-      mockedExecute.mockReturnValueOnce(
-        // @effect-diagnostics-next-line preferSchemaOverJson:off
-        Effect.succeed(output(JSON.stringify(row))),
-      );
+      mockedExecute.mockReturnValueOnce(Effect.succeed(output(JSON.stringify(row))));
       const provider = yield* AzureDevOpsPullRequestProvider.make;
 
       const error = yield* Effect.flip(
@@ -729,7 +722,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         .mockReturnValueOnce(
           Effect.succeed(
             output(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify({
                 pullRequestId: 42,
                 title: "Add the page",
@@ -746,7 +738,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         .mockReturnValueOnce(
           Effect.succeed(
             output(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify({
                 value: [
                   {
@@ -767,7 +758,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         .mockReturnValueOnce(
           Effect.succeed(
             output(
-              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify({
                 changeEntries: [
                   { changeType: "edit", item: { path: "/README.md", objectId: "8f80" } },
@@ -807,7 +797,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
       // pull request read every time they checked whether a file had been pushed to.
       const pullRequest = Effect.succeed(
         output(
-          // @effect-diagnostics-next-line preferSchemaOverJson:off
           JSON.stringify({
             pullRequestId: 42,
             title: "Add the page",
@@ -1327,7 +1316,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
       mockedExecute.mockReturnValueOnce(
         Effect.succeed(
           output(
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               value: [
                 {
@@ -1488,7 +1476,6 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
         Effect.succeed(
           output(
             // Well-formed, but with nothing to build a link from: not a decode failure.
-            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify({
               pullRequestId: 42,
               title: "Add the page",

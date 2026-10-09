@@ -2,8 +2,8 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
-import * as Migrator from "effect/unstable/sql/Migrator";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Migrator from "effect/sql/Migrator";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { makeMigrationLoader, migrationManifest } from "./ForkMigrationPlan.ts";
@@ -129,6 +129,10 @@ it.effect("rolls back the V2 schema and baseline events together before retry", 
       [68, "OrchestrationV2"],
       [69, "RemoveRedundantProjectionIndexes"],
       [70, "ApplicationBoardEventSequenceIndex"],
+      [79, "ScheduledTaskWebhooks"],
+      [80, "WebhookRelayDeliveries"],
+      [81, "McpAppModelContext"],
+      [82, "ThreadSnapshotWindowIndexes"],
     ]);
     assert.deepStrictEqual(yield* runMigrations(), []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),

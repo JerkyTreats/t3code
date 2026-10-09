@@ -11,7 +11,7 @@ Preserve exact user-authored prompt whitespace when helper-owned rich context bl
 
 - Terminal, selected element and preview annotation composition preserve authored prompt bytes before appending generated context.
 - When retained context accompanies upstream source review, the final composition owner consumes upstream review serialization as an opaque suffix without trimming the authored prefix.
-- Ordinary and review-only composition retain upstream trimming. Retired rendered-document comments create no preservation obligation.
+- Upstream timeline find wrappers consume the same exact-byte body and structured-context projection. Ordinary and review-only composition retain upstream trimming. Retired rendered-document comments create no preservation obligation.
 - An empty prompt produces only the helper-owned context block.
 - A whitespace-only prompt remains intact ahead of the helper-owned separator and context block.
 - Helpers that expose prompt extraction remove only the two-newline separator they inserted.

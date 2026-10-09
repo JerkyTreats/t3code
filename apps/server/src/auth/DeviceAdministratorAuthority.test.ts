@@ -9,11 +9,11 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import * as HttpEffect from "effect/unstable/http/HttpEffect";
-import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as HttpEffect from "effect/http/HttpEffect";
+import type * as HttpServerRequest from "effect/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { guardDeviceAdministratorHttpRequest } from "./http.ts";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
 import * as AdminAccess from "./AdminAccess.ts";
@@ -24,7 +24,7 @@ import * as SessionStore from "./SessionStore.ts";
 
 const runtime = AdminAccess.layer.pipe(
   Layer.provideMerge(ClientConnectionRegistry.layer),
-  Layer.provideMerge(EnvironmentAuth.runtimeLayer),
+  Layer.provideMerge(EnvironmentAuth.layerRuntime),
 );
 const config = ServerConfig.layerTest(process.cwd(), { prefix: "t3-authority-proof-" });
 
@@ -117,6 +117,46 @@ it.layer(NodeServices.layer)("persisted external device authority", (it) => {
         ).toEqual([managed.clientId]);
       }).pipe(Effect.provide(runtime), Effect.scoped);
     }).pipe(Effect.provide(config)),
+  );
+
+  it.effect(
+    "keeps portal enrollment through browser replacement and rejects portal MCP subjects",
+    () =>
+      Effect.gen(function* () {
+        const admin = yield* AdminAccess.AdminAccess;
+        const auth = yield* EnvironmentAuth.EnvironmentAuth;
+        const sessions = yield* SessionStore.SessionStore;
+        const ordinaryGrant = yield* auth.createPairingLink();
+        const ordinary = yield* auth.createBrowserSession(ordinaryGrant.credential, {
+          deviceType: "desktop",
+        });
+        const managedGrant = yield* admin.createPairingCode({ ttlSeconds: 60 });
+        const managed = yield* auth.createBrowserSession(
+          managedGrant.credential,
+          { deviceType: "desktop" },
+          ordinary.sessionToken,
+        );
+        expect((yield* sessions.verify(ordinary.sessionToken).pipe(Effect.flip))._tag).toBe(
+          "SessionTokenRevokedError",
+        );
+        const managedSession = yield* sessions.verify(managed.sessionToken);
+        const portal = yield* auth.issueSession({
+          authorityClass: "device-administrator",
+          subject: "mcp-client",
+          ttl: Duration.hours(1),
+        });
+        const portalSession = yield* sessions.verify(portal.token);
+        expect(
+          (yield* admin.snapshot(portalSession.clientId)).clients.map((client) => client.clientId),
+        ).toEqual([managedSession.clientId]);
+        const request = {
+          cookies: {},
+          headers: { authorization: `Bearer ${portal.token}` },
+        } as unknown as HttpServerRequest.HttpServerRequest;
+        expect((yield* auth.authenticateMcpClient(request).pipe(Effect.flip))._tag).toBe(
+          "ServerAuthInvalidCredentialError",
+        );
+      }).pipe(Effect.provide(runtime.pipe(Layer.provide(config)))),
   );
 
   it.effect(
@@ -255,9 +295,10 @@ it.layer(NodeServices.layer)("persisted external device authority", (it) => {
               return HttpServerResponse.empty({ status: 204 });
             }),
           ),
-          Effect.catchTag("EnvironmentOperationForbiddenError", () =>
-            Effect.succeed(HttpServerResponse.empty({ status: 403 })),
-          ),
+          Effect.catchTags({
+            EnvironmentOperationForbiddenError: () =>
+              Effect.succeed(HttpServerResponse.empty({ status: 403 })),
+          }),
         ),
       );
       for (const [pathname, headers, status] of [

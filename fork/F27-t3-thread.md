@@ -96,3 +96,5 @@ previous imports. `apps/web/src/fork/threadSidebarView.ts` selects the separate 
 from that field rather than inferring it from titles or paths. `threadWindowTitle.ts` consumes the
 current `latestRunStatus` for title state; it does not restore v1 turn ownership. These are source
 integration boundaries and do not establish new installed or browser acceptance.
+
+Current shared HTTP and connection layer adapters consume the protected Thread transport through upstream layer composition. Thread pairing resumes the primary connection without reloading the document; ordinary upstream pairing retains its reload behavior. The separate T3 Threads view filters the current inbox and search presentation using trusted creation surface.

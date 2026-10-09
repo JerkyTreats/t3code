@@ -2,8 +2,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import { HttpServer } from "effect/unstable/http";
-import * as NetAddress from "effect/unstable/net/NetAddress";
+import { HttpServer } from "effect/http";
+import * as NetAddress from "effect/net/NetAddress";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
@@ -49,7 +49,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
     expect(token.length).toBeGreaterThan(20);
 
     const resolved = yield* registry.resolve(token);
-    expect(resolved?.threadId).toBe(threadId);
+    expect(resolved?.thread.threadId).toBe(threadId);
     expect(resolved?.capabilities).toEqual(new Set(["preview"]));
 
     yield* registry.revokeThread(threadId);
@@ -144,7 +144,7 @@ it.effect("keeps a credential alive across turns that never touch an MCP tool", 
       yield* registry.touch(threadId);
     }
 
-    expect((yield* registry.resolve(token))?.threadId).toBe(threadId);
+    expect((yield* registry.resolve(token))?.thread.threadId).toBe(threadId);
   }),
 );
 
@@ -197,9 +197,9 @@ it.effect("preserves exact toolkit admission and independently generates Board p
       expect(issued.config.previewEndpoint).toBe(
         requested.includes("preview") ? "http://127.0.0.1:43123/mcp/preview" : undefined,
       );
-      expect(resolved?.boardAuthorId).toBeTruthy();
-      expect(resolved?.boardAuthorId).not.toBe(resolved?.providerSessionId);
-      if (resolved) authors.add(resolved.boardAuthorId);
+      expect(resolved?.thread.boardAuthorId).toBeTruthy();
+      expect(resolved?.thread.boardAuthorId).not.toBe(resolved?.thread.providerSessionId);
+      if (resolved) authors.add(resolved.thread.boardAuthorId!);
     }
     expect(authors.size).toBe(cases.length);
   }),
@@ -231,7 +231,7 @@ it.effect(
       yield* registry.setBoardWriteEnabled(boardThread, true);
       const restored = yield* registry.resolve(boardToken);
       expect(restored?.capabilities).toEqual(new Set(["board", "board-write", "preview"]));
-      expect(restored?.boardAuthorId).toBe(original?.boardAuthorId);
+      expect(restored?.thread.boardAuthorId).toBe(original?.thread.boardAuthorId);
       for (const enabled of [false, true, false, true]) {
         yield* registry.setBoardWriteEnabled(previewThread, enabled);
         expect((yield* registry.resolve(previewToken))?.capabilities).toEqual(new Set(["preview"]));

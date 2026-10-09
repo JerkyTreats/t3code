@@ -12,7 +12,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 
 import * as EffectAcpAgent from "effect-acp/agent";
 import * as AcpError from "effect-acp/errors";
-import type * as AcpSchema from "effect-acp/schema";
+import * as AcpSchema from "effect-acp/schema";
 import type * as AcpCompat from "effect-acp/compat";
 
 import { beginAcpMockPrompt } from "./acpMockCancellationState.ts";
@@ -440,8 +440,26 @@ function modelState(): AcpCompat.SessionModelState {
   };
 }
 
+const decodeMcpConnectRequest = Schema.decodeUnknownEffect(AcpSchema.ConnectMcpRequest);
+const decodeMcpMessageRequest = Schema.decodeUnknownEffect(AcpSchema.MessageMcpRequest);
+const decodeMcpDisconnectRequest = Schema.decodeUnknownEffect(AcpSchema.DisconnectMcpRequest);
+
 const program = Effect.gen(function* () {
   const agent = yield* EffectAcpAgent.AcpAgent;
+  const programScope = yield* Effect.scope;
+  // A test trigger must return before waiting on reverse ACP requests, because
+  // the extension dispatcher also processes their responses.
+  const startMcpTestCall = <A>(call: Effect.Effect<A, AcpError.AcpError>) =>
+    call.pipe(
+      Effect.matchEffect({
+        onFailure: (error) =>
+          agent.client.extNotification("_test/mcp-result", { ok: false, error: error.message }),
+        onSuccess: (result) =>
+          agent.client.extNotification("_test/mcp-result", { ok: true, result }),
+      }),
+      Effect.forkIn(programScope),
+      Effect.as({}),
+    );
   const resumeRelease = yield* Deferred.make<void>();
   const nativeCancelRequested = yield* Deferred.make<void>();
   const nativeCancelRelease = yield* Deferred.make<void>();
@@ -1076,6 +1094,70 @@ const program = Effect.gen(function* () {
             kind: "search",
             status: "completed",
             rawInput: { query: "TODO", path: "apps/web" },
+          },
+          // Grok backend searches: the query only arrives in the completed rawOutput.
+          {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "grok-x-search",
+            title: "X search:",
+            kind: "search",
+            status: "in_progress",
+            rawInput: { variant: "XSearch", backend: true },
+          },
+          {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "grok-x-search",
+            title: "X search:",
+            status: "completed",
+            rawOutput: {
+              call_id: "xs_call-1",
+              input: '{"query":"conversation_id:42","limit":"10","mode":"Latest"}',
+              name: "x_keyword_search",
+              id: "grok-x-search",
+            },
+          },
+          {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "grok-web-search",
+            title: "Web search:",
+            kind: "search",
+            status: "completed",
+            rawInput: { variant: "WebSearch", backend: true },
+            rawOutput: {
+              action: {
+                type: "search",
+                query: "t3 code",
+                sources: [
+                  { type: "url", url: "https://t3.codes" },
+                  { type: "url", url: "https://t3.codes" },
+                  { type: "url", url: "https://github.com/pingdotgg/t3code" },
+                ],
+              },
+              id: "grok-web-search",
+              status: "completed",
+            },
+          },
+          {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "grok-web-fetch",
+            title: "Fetch: https://t3.codes",
+            kind: "fetch",
+            status: "completed",
+            rawInput: { variant: "WebFetch", url: "https://t3.codes" },
+            rawOutput: {
+              type: "WebFetch",
+              Content: { url: "https://t3.codes", content: "T3 Code page" },
+            },
+            content: [{ type: "content", content: { type: "text", text: "T3 Code page" } }],
+          },
+          {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "antigravity-shell",
+            title: "run_command",
+            kind: "execute",
+            status: "completed",
+            rawInput: { command: "cat probe.txt" },
+            rawOutput: { commandLine: "cat probe.txt", exitCode: 0, combinedOutput: "after\n" },
           },
           {
             sessionUpdate: "compaction_update",
@@ -2261,6 +2343,24 @@ const program = Effect.gen(function* () {
   );
 
   yield* agent.handleUnknownExtRequest((method, params) => {
+    if (method === "_test/mcp-connect") {
+      return decodeMcpConnectRequest(params).pipe(
+        Effect.flatMap((request) => startMcpTestCall(agent.client.connectMcp(request))),
+        Effect.mapError((cause) => AcpError.AcpRequestError.internalError(String(cause))),
+      );
+    }
+    if (method === "_test/mcp-message") {
+      return decodeMcpMessageRequest(params).pipe(
+        Effect.flatMap((request) => startMcpTestCall(agent.client.messageMcp(request))),
+        Effect.mapError((cause) => AcpError.AcpRequestError.internalError(String(cause))),
+      );
+    }
+    if (method === "_test/mcp-disconnect") {
+      return decodeMcpDisconnectRequest(params).pipe(
+        Effect.flatMap((request) => startMcpTestCall(agent.client.disconnectMcp(request))),
+        Effect.mapError((cause) => AcpError.AcpRequestError.internalError(String(cause))),
+      );
+    }
     if (method === "_test/environment") {
       return Effect.succeed({
         inherited: process.env.T3_ACP_RUNTIME_AMBIENT === "sentinel",

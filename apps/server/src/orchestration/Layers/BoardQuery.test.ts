@@ -14,8 +14,8 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 
 import { ProjectionBoardPostRepository } from "../../persistence/Services/ProjectionBoardPosts.ts";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlClient from "effect/sql/SqlClient";
+import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import { encodeBoardPageCursor } from "../board/Cursor.ts";
 import { BoardQuery } from "../Services/BoardQuery.ts";
 import { BoardQueryCoreLive, BoardQueryLive } from "./BoardQuery.ts";

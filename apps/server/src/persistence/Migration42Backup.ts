@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no incremental digest; stream database backups without buffering the whole file.
 import * as NodeCrypto from "node:crypto";
 
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -8,7 +9,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 const DATABASE_SUFFIXES = ["", "-wal", "-shm"] as const;
 const BACKUP_DIRECTORY_SUFFIX = ".pre-migration-42-backup";

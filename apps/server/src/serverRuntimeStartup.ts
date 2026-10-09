@@ -31,6 +31,7 @@ import * as Keybindings from "./keybindings.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as EffectWorker from "./orchestration-v2/EffectWorker.ts";
 import * as LegacyV1ThreadImporter from "./orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
+import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProviderRuntimeRecovery from "./orchestration-v2/ProviderRuntimeRecoveryService.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ThreadLaunch from "./orchestration-v2/ThreadLaunchService.ts";
@@ -394,21 +395,26 @@ export function runOrderedV2StartupPhases<
   Bootstrap,
   ImportError,
   RecoveryError,
+  DelegationError,
   WorkerError,
   BootstrapError,
   ImportContext,
   RecoveryContext,
+  DelegationContext,
   WorkerContext,
   BootstrapContext,
 >(input: {
   readonly importLegacyShells: Effect.Effect<Import, ImportError, ImportContext>;
   readonly recover: Effect.Effect<Recovery, RecoveryError, RecoveryContext>;
+  /** Settles delegated tasks whose runs recovery just terminalized. */
+  readonly recoverDelegatedTasks: Effect.Effect<void, DelegationError, DelegationContext>;
   readonly startEffectWorker: Effect.Effect<void, WorkerError, WorkerContext>;
   readonly autoBootstrap: Effect.Effect<Bootstrap, BootstrapError, BootstrapContext>;
 }) {
   return Effect.gen(function* () {
     yield* input.importLegacyShells;
     const recovery = yield* input.recover;
+    yield* input.recoverDelegatedTasks;
     yield* input.startEffectWorker;
     const bootstrap = yield* input.autoBootstrap;
     return { recovery, bootstrap } as const;
@@ -421,6 +427,7 @@ const make = (options?: StartupOptions) =>
     const keybindings = yield* Keybindings.Keybindings;
     const legacyV1ThreadImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
     const providerRuntimeRecovery = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService;
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const agentAwarenessRelay = yield* AgentAwarenessRelay.AgentAwarenessRelay;
     const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
@@ -516,6 +523,10 @@ const make = (options?: StartupOptions) =>
           ),
         ),
         recover: runStartupPhase("orchestration-v2.recovery", providerRuntimeRecovery.recover),
+        recoverDelegatedTasks: runStartupPhase(
+          "orchestration-v2.delegated-tasks.recover",
+          orchestrator.recoverDelegatedTasks,
+        ),
         startEffectWorker: runStartupPhase(
           "orchestration-v2.effect-worker.start",
           startEffectWorkerWithRelay({
@@ -533,6 +544,8 @@ const make = (options?: StartupOptions) =>
         ).pipe(Effect.map((targets): AutoBootstrapWelcomeTargets => targets)),
       });
       yield* Effect.logInfo("V2 orchestration recovery completed", recovery);
+      // Runs after activation: the status check fetches every enabled project's
+      // remote, and awaiting it here held command readiness for that long.
       yield* runStartupPhase(
         "projects.auto-pull",
         Effect.gen(function* () {
@@ -540,6 +553,11 @@ const make = (options?: StartupOptions) =>
           const settings = yield* serverSettings.getSettings;
           yield* autoPullProjects(projects, settings);
         }),
+      ).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Failed to load projects for automatic pull", { cause }),
+        ),
+        forkParked,
       );
 
       const importPendingTranscripts = legacyV1ThreadImporter.importPendingTranscripts.pipe(

@@ -3,9 +3,10 @@ import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import { DesktopPreviewBrowserActionEventSchema, type ScopedThreadRef } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useEffect, useEffectEvent } from "react";
 
+import { rendersPreviewTabNatively } from "~/browser/previewRuntime";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import { isPreviewFocused } from "~/lib/previewFocus";
 import {
@@ -37,6 +38,13 @@ export function readFocusedPreviewHost(threadRef: ScopedThreadRef | null) {
   if (!panel.isOpen || surface?.kind !== "preview") return null;
   const state = readThreadPreviewState(threadRef);
   const tabId = surface.resourceId;
+  if (
+    !rendersPreviewTabNatively(
+      threadRef.environmentId,
+      tabId === null ? null : state.sessions[tabId],
+    )
+  )
+    return null;
   if (tabId !== null && (!state.sessions[tabId] || state.activeTabId !== tabId)) return null;
   const runtimeTabId =
     tabId === null ? null : previewRuntimeTabId(threadRef, state.serverEpoch, tabId);

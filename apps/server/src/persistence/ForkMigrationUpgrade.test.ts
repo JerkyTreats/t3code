@@ -17,9 +17,9 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
-import { makeSqlitePersistenceLive } from "./Layers/Sqlite.ts";
+import { layerFromPath as makeSqlitePersistenceLive } from "./Sqlite.ts";
 import { runMigrations } from "./Migrations.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
 import {
@@ -422,42 +422,38 @@ const readInitializedFixture = Effect.fn("readInitializedFixture")(function* () 
   return { preserved, journal, executed };
 });
 
-for (const state of forkMigrationStates) {
-  it.effect(`upgrades the released historical ${state} prefix`, () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      yield* prepareForkMigrationState(state);
-      yield* runMigrations();
+it.effect.each(forkMigrationStates)("upgrades the released historical %s prefix", (state) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* prepareForkMigrationState(state);
+    yield* runMigrations();
 
-      const historicalPrefix = yield* sql<{
-        readonly migrationId: number;
-        readonly name: string;
-      }>`
+    const historicalPrefix = yield* sql<{
+      readonly migrationId: number;
+      readonly name: string;
+    }>`
         SELECT migration_id AS "migrationId", name
         FROM effect_sql_migrations
         WHERE migration_id BETWEEN 31 AND ${state}
         ORDER BY migration_id
       `;
-      const latest = yield* sql<{ readonly migrationId: number; readonly name: string }>`
+    const latest = yield* sql<{ readonly migrationId: number; readonly name: string }>`
         SELECT migration_id AS "migrationId", name
         FROM effect_sql_migrations
         ORDER BY migration_id DESC
         LIMIT 1
       `;
 
-      assert.deepStrictEqual(
-        historicalPrefix,
-        Array.from({ length: state - 30 }, (_, index) => {
-          const migrationId = index + 31;
-          return { migrationId, name: historicalNames.get(migrationId)! };
-        }),
-      );
-      assert.deepStrictEqual(latest, [
-        { migrationId: 70, name: "ApplicationBoardEventSequenceIndex" },
-      ]);
-    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
-  );
-}
+    assert.deepStrictEqual(
+      historicalPrefix,
+      Array.from({ length: state - 30 }, (_, index) => {
+        const migrationId = index + 31;
+        return { migrationId, name: historicalNames.get(migrationId)! };
+      }),
+    );
+    assert.deepStrictEqual(latest, [{ migrationId: 82, name: "ThreadSnapshotWindowIndexes" }]);
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+);
 
 it.effect("rejects a historical identity after a canonical suffix starts", () =>
   Effect.gen(function* () {

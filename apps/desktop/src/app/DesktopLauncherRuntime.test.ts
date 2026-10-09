@@ -71,8 +71,9 @@ describe("DesktopLauncherRuntime", () => {
     );
   });
 
-  for (const channel of ["production", "staging"] as const) {
-    it.effect(`${channel} publishes only after backend and renderer readiness match`, () =>
+  it.effect.each(["production", "staging"] as const)(
+    "%s publishes only after backend and renderer readiness match",
+    (channel) =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-launcher-runtime-" });
@@ -200,8 +201,7 @@ describe("DesktopLauncherRuntime", () => {
           assert.isTrue(yield* fileSystem.exists(readinessPath));
         }
       }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
-    );
-  }
+  );
 
   it("rejects unknown channels without using production handoff state", () => {
     assert.isUndefined(

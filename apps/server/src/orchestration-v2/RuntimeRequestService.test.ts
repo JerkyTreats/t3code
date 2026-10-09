@@ -12,7 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
-import type { ProviderAdapterV2RuntimeRequestResponseInput } from "./ProviderAdapter.ts";
+import type { ProviderAdapterV2RuntimeRequestResponseInput } from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as RuntimeRequestService from "./RuntimeRequestService.ts";
@@ -45,7 +45,7 @@ function resolvedRuntimeRequest(
   };
 }
 
-function runtimeRequestTestLayer(
+function layerRuntimeRequestTest(
   projection: OrchestrationV2ThreadProjection,
   getSession: ProviderSessionManager.ProviderSessionManagerV2Shape["get"],
 ) {
@@ -96,7 +96,7 @@ it.effect("forwards orchestrator-resolved runtime requests to the live adapter",
       },
     ],
   } as unknown as OrchestrationV2ThreadProjection;
-  const testLayer = RuntimeRequestService.layer.pipe(
+  const layerTest = RuntimeRequestService.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
@@ -126,7 +126,7 @@ it.effect("forwards orchestrator-resolved runtime requests to the live adapter",
       requestId,
       decision: "accept",
     });
-  }).pipe(Effect.provide(testLayer));
+  }).pipe(Effect.provide(layerTest));
 });
 
 it.effect("rejects expired runtime requests before invoking the live adapter", () => {
@@ -161,7 +161,7 @@ it.effect("rejects expired runtime requests before invoking the live adapter", (
       },
     ],
   } as unknown as OrchestrationV2ThreadProjection;
-  const testLayer = RuntimeRequestService.layer.pipe(
+  const layerTest = RuntimeRequestService.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
@@ -194,7 +194,7 @@ it.effect("rejects expired runtime requests before invoking the live adapter", (
     assert.isUndefined(error.cause);
     assert.equal(getSession.mock.calls.length, 0);
     assert.equal(respondToRuntimeRequest.mock.calls.length, 0);
-  }).pipe(Effect.provide(testLayer));
+  }).pipe(Effect.provide(layerTest));
 });
 
 it.effect("classifies runtime request response validation failures", () => {
@@ -205,15 +205,15 @@ it.effect("classifies runtime request response validation failures", () => {
   );
   const requestId = RuntimeRequestId.make("request-validation");
   const unexpectedGetSession = vi.fn(() => Effect.succeed(Option.none()));
-  const missingLayer = runtimeRequestTestLayer(
+  const layerMissing = layerRuntimeRequestTest(
     projectionWithRuntimeRequest(),
     unexpectedGetSession,
   );
-  const notResumableLayer = runtimeRequestTestLayer(
+  const layerNotResumable = layerRuntimeRequestTest(
     projectionWithRuntimeRequest(resolvedRuntimeRequest(requestId, otherProviderSessionId)),
     unexpectedGetSession,
   );
-  const inactiveLayer = runtimeRequestTestLayer(
+  const layerInactive = layerRuntimeRequestTest(
     projectionWithRuntimeRequest(resolvedRuntimeRequest(requestId, providerSessionId)),
     () => Effect.succeed(Option.none()),
   );
@@ -230,7 +230,7 @@ it.effect("classifies runtime request response validation failures", () => {
   });
 
   return Effect.gen(function* () {
-    const missing = yield* respond.pipe(Effect.provide(missingLayer));
+    const missing = yield* respond.pipe(Effect.provide(layerMissing));
     assert.equal(missing.reason, "request-missing");
     assert.equal(
       missing.message,
@@ -238,7 +238,7 @@ it.effect("classifies runtime request response validation failures", () => {
     );
     assert.isUndefined(missing.cause);
 
-    const notResumable = yield* respond.pipe(Effect.provide(notResumableLayer));
+    const notResumable = yield* respond.pipe(Effect.provide(layerNotResumable));
     assert.equal(notResumable.reason, "request-not-resumable");
     assert.equal(
       notResumable.message,
@@ -246,7 +246,7 @@ it.effect("classifies runtime request response validation failures", () => {
     );
     assert.isUndefined(notResumable.cause);
 
-    const inactive = yield* respond.pipe(Effect.provide(inactiveLayer));
+    const inactive = yield* respond.pipe(Effect.provide(layerInactive));
     assert.equal(inactive.reason, "provider-session-not-active");
     assert.equal(
       inactive.message,
@@ -267,7 +267,7 @@ it.effect("preserves genuine provider session lookup failures as the cause", () 
     providerSessionId,
     cause: "lookup failed",
   });
-  const testLayer = runtimeRequestTestLayer(
+  const layerTest = layerRuntimeRequestTest(
     projectionWithRuntimeRequest(resolvedRuntimeRequest(requestId, providerSessionId)),
     () => Effect.fail(lookupFailure),
   );
@@ -290,5 +290,5 @@ it.effect("preserves genuine provider session lookup failures as the cause", () 
       `Failed to respond to runtime request ${requestId} on thread ${threadId} via provider session ${providerSessionId}.`,
     );
     assert.strictEqual(error.cause, lookupFailure);
-  }).pipe(Effect.provide(testLayer));
+  }).pipe(Effect.provide(layerTest));
 });

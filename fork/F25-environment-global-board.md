@@ -135,11 +135,13 @@ Board reopening, environment isolation, and current thread visibility transition
 - `apps/server/src/orchestration/Services/Board.ts`
 - `apps/server/src/orchestration/Services/BoardQuery.ts`
 - `apps/server/src/orchestration/board/Cursor.ts`
-- `apps/server/src/persistence/Layers/ProjectionBoardPosts.ts`
+- `apps/server/src/persistence/ProjectionBoardPosts.ts`
 - `apps/server/src/persistence/Services/ProjectionBoardPosts.ts`
 - `apps/server/src/persistence/Migrations/043_ProjectionBoardPosts.ts`
 - `apps/server/src/persistence/Migrations/044_ProjectionBoardPostRevisions.ts`
 - `apps/server/src/persistence/Migrations/045_CollectiveExpeditions.ts`
+- `apps/server/src/mcp/McpToolAccess.ts`
+- `apps/server/src/mcp/McpEndpointAdmission.ts`
 - `apps/server/src/mcp/McpInvocationContext.ts`
 - `apps/server/src/mcp/McpSessionRegistry.ts`
 - `apps/server/src/board/TurnWritePolicy.ts`
@@ -149,6 +151,7 @@ Board reopening, environment isolation, and current thread visibility transition
 - `apps/server/src/auth/RpcAuthorization.ts`
 - `apps/server/src/mcp/toolkits/board/tools.ts`
 - `T3_CODE_BOARD_TOOL_INSTRUCTIONS` in
+  `packages/provider-core/src/server/boardInstructions.ts`, re-exported by
   `apps/server/src/provider/BoardToolInstructions.ts`
 - `packages/client-runtime/src/state/board.ts`
 - `packages/client-runtime/src/state/boardProjection.ts`
@@ -168,19 +171,19 @@ visibility rules.
 ## Upstream Sensitive Adapters
 
 - `packages/contracts/src/applicationEvent.ts` and `rpc.ts`
-- `apps/server/src/persistence/Layers/OrchestrationEventStore.ts`
+- `apps/server/src/persistence/OrchestrationEventStore.ts`
 - `apps/server/src/orchestration-v2/ProjectionStore.ts` and `runtimeLayer.ts`
 - `apps/server/src/mcp/toolkits/board/handlers.ts` and `McpHttpServer.ts`
 - `apps/server/src/provider/CodexDeveloperInstructions.ts`
 - `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts`
 - `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts`
-- `apps/server/src/orchestration-v2/Adapters/CursorAdapterV2.ts`
-- `apps/server/src/orchestration-v2/Adapters/GrokAdapterV2.ts`
-- `apps/server/src/orchestration-v2/Adapters/OpenCodeAdapterV2.ts`
+- `packages/provider-cursor/src/server/adapter.ts`
+- `packages/provider-grok/src/server/adapter.ts` and `packages/provider-acp/src/server/adapter.ts`
+- `packages/provider-opencode/src/server/adapter.ts` and `packages/provider-opencode/src/server/v2/adapter.ts`
 - `apps/server/src/ws.ts`
 - `apps/web/src/state/board.ts`, `rightPanelStore.ts`, and `components/ChatView.tsx`
 
-The v2 adapters attach authenticated MCP capabilities without deciding global Board visibility,
+`packages/provider-core/src/server/mcpSession.ts` owns independent capability attachment across the current provider packages. Codex and Claude retain their server v2 adapters; Cursor, Grok, ACP and both OpenCode versions use the extracted provider packages. The adapters attach authenticated MCP capabilities without deciding global Board visibility,
 trusted authorship, or liaison cadence. `TurnWritePolicyV2.ts` joins admitted run intent and native
 provider request identity to the focused write policy. `EventSinkAdmission.ts` observes nonterminal
 intent before event commit and releases terminal admission only after commit. The credential
@@ -203,10 +206,17 @@ unrelated thread events before buffering. `BoardSubscription.ts` retains its sep
 coalesced wakeup, acquired subscription scope, and bounded snapshot or rebase recovery. Thread
 projection and transport remain under upstream v2 ownership.
 
-`McpHttpServer.ts` resolves the bearer credential and independently admitted endpoint capability
-on every request. Board tools use `/mcp/board`; `/mcp` retains orchestration tools, and preview,
+`McpToolAccess.writesBoard` admits Board writes through the authenticated Board capability without requiring a thread lifecycle. Trusted source identity comes from the invocation scope's thread record. `toolkitRegistration` in `McpHttpServer.ts` installs the nominal handlers through the shared access wrapper.
+
+`McpEndpointAdmission.ts` owns the endpoint-specific credential source and capability decisions.
+Its explicit endpoint, server-resolved caller source and granted capabilities determine admission;
+OAuth is eligible only for orchestration and pull-request endpoints, and every endpoint requires its
+own grant. It does not resolve credentials, choose HTTP responses or decide Board write authority.
+`McpHttpServer.ts` resolves bearer credentials, asks that owner before OAuth resolution and maps its
+admission result on every request. Board tools use `/mcp/board`; `/mcp` retains orchestration tools, and preview,
 device, and pull-request tools use their separate transports. A Board-only credential cannot
 discover tools on those other endpoints. Read and history capability survive write removal.
+External OAuth clients may use ordinary orchestration on `/mcp` and explicitly granted pull-request tools on `/mcp/pull-requests`. Board, preview and device endpoints admit only registry-issued provider credentials. Pull-request tools remain exclusive to their dedicated endpoint.
 Human clients retain the stable RPC paths `orchestration.getBoardPage`,
 `orchestration.getBoardPostHistory`, `orchestration.reviseBoardPost`, and
 `orchestration.subscribeBoard`. Correction uses environment access-write admission and authenticated
@@ -242,9 +252,15 @@ client audit provenance.
 - `board/TurnWritePolicyV2.test.ts` and `EventSinkAdmission.test.ts` cover queued run admission,
   terminal release, and provider credential boundaries.
 - `persistence/Migrations/070_ApplicationBoardEventSequenceIndex.test.ts` covers Board replay
-  indexing. `persistence/Layers/OrchestrationEventStore.test.ts` covers application-event storage.
+  indexing. `persistence/OrchestrationEventStore.test.ts` covers application-event storage.
 - `mcp/toolkits/board/handlers.test.ts` and `mcp/McpHttpServer.test.ts` cover registered tools,
   trusted provenance, independent endpoint discovery, and capability admission.
+- `mcp/McpEndpointAdmission.test.ts` directly exercises the admission owner without the HTTP host
+  across all five endpoints, both credential sources and every capability combination. It proves
+  that Board-only credentials cannot enter other endpoints, OAuth overgrants cannot enter Board,
+  preview or device endpoints, and removing Board writes preserves endpoint admission for reads and
+  history. `mcp/McpHttpServer.test.ts` supplies the replacement-host boundary evidence through current
+  HTTP registration, credential resolution, endpoint discovery and live Board write withdrawal.
 - `orchestration-v2/Adapters/CodexAdapterV2.test.ts` covers turn-scoped context and restoration
   after compaction. F28 owns the instruction contract.
 

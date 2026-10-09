@@ -8,7 +8,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as AdminAccess from "./AdminAccess.ts";
 import * as ClientConnectionRegistry from "./ClientConnectionRegistry.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
@@ -57,20 +57,20 @@ const expectPrivacySafe = (value: unknown) => {
   ).toEqual([]);
 };
 
-const makeServerConfigLayer = () =>
+const layerServerConfig = () =>
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-admin-access-test-" });
 
 const makeAdminAccessLayer = () => {
   const environmentAuth = EnvironmentAuth.layer.pipe(
     Layer.provideMerge(ServerSecretStore.layer),
-    Layer.provideMerge(SqlitePersistenceMemory),
-    Layer.provide(ServerEnvironment.identityLayer),
-    Layer.provide(makeServerConfigLayer()),
+    Layer.provideMerge(SqlitePersistence.layerMemory),
+    Layer.provide(ServerEnvironment.layerIdentity),
+    Layer.provide(layerServerConfig()),
   );
   const dependencies = Layer.mergeAll(environmentAuth, ClientConnectionRegistry.layer);
   return AdminAccess.layer.pipe(
     Layer.provideMerge(dependencies),
-    Layer.provideMerge(SqlitePersistenceMemory),
+    Layer.provideMerge(SqlitePersistence.layerMemory),
   );
 };
 

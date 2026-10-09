@@ -75,6 +75,10 @@ keeps the cadence independent of Board event storage and provider lifecycle shap
 - `apps/server/src/provider/CodexDeveloperInstructions.ts`
 - `apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts`
 
+The current Codex turn-start owner merges upstream MCP app context without allowing an app-authored `t3_code_board` key to replace server-owned Board guidance. Direct turn-start and compaction-restoration tests exercise that boundary.
+
+The Codex instruction adapter consumes upstream runtime instructions from `packages/provider-core/src/server/runtimeInstructions.ts`. Shared Board tool guidance lives in `packages/provider-core/src/server/boardInstructions.ts`; the server owner retains the F28 cadence profiles.
+
 These adapters select the instruction profile from the current provider mode and append it only when
 the authenticated Board capability is attached. They do not select liaison cadence, trust Board
 content, create durable submit receipts, or provide a second Board authority model.

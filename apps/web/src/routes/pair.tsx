@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate, useRouter } from "@tanstack/react-router";
 
 import { environmentCatalog } from "../connection/catalog";
 import { resumeThreadPrimaryConnection } from "../environments/primary/threadAuth";
@@ -32,6 +32,7 @@ export const Route = createFileRoute("/pair")({
 });
 
 function PairRouteView() {
+  const router = useRouter();
   const { authGateState } = Route.useRouteContext();
   const navigate = useNavigate();
   const retryPrimaryConnection = useAtomCommand(environmentCatalog.retryNow);
@@ -48,6 +49,12 @@ function PairRouteView() {
     <PairingRouteSurface
       auth={authGateState.auth}
       onAuthenticated={async () => {
+        if (!window.t3ThreadBridge) {
+          router.history.replace("/");
+          router.history.flush();
+          window.location.reload();
+          return;
+        }
         await resumeThreadPrimaryConnection({
           readPrimaryEnvironmentId: () => appAtomRegistry.get(primaryEnvironmentIdAtom),
           retry: retryPrimaryConnection,

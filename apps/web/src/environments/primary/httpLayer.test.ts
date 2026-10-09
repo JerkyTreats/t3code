@@ -1,10 +1,10 @@
 import type { DesktopBridge } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/http";
 
 import { __resetDesktopPrimaryAuthForTests } from "./desktopAuth";
-import { makePrimaryEnvironmentHttpLayer } from "./httpLayer";
+import * as PrimaryEnvironmentHttpLayer from "./httpLayer";
 
 describe("primary environment HTTP layer", { concurrent: false }, () => {
   afterEach(() => {
@@ -32,7 +32,7 @@ describe("primary environment HTTP layer", { concurrent: false }, () => {
       const request = new Request(fetchMock.mock.calls[0]?.[0], fetchMock.mock.calls[0]?.[1]);
       expect(request.credentials).toBe("include");
       expect(request.headers.get("authorization")).toBeNull();
-    }).pipe(Effect.provide(makePrimaryEnvironmentHttpLayer()));
+    }).pipe(Effect.provide(PrimaryEnvironmentHttpLayer.layerForCurrentOrigin()));
   });
 
   it.effect("uses cookies without reading a bearer for standalone Code", () => {
@@ -52,7 +52,7 @@ describe("primary environment HTTP layer", { concurrent: false }, () => {
       const request = new Request(fetchMock.mock.calls[0]?.[0], fetchMock.mock.calls[0]?.[1]);
       expect(request.credentials).toBe("include");
       expect(request.headers.get("authorization")).toBeNull();
-    }).pipe(Effect.provide(makePrimaryEnvironmentHttpLayer()));
+    }).pipe(Effect.provide(PrimaryEnvironmentHttpLayer.layerForCurrentOrigin()));
   });
 
   it.effect("omits cookies and refuses redirects for bridge-selected Thread", () => {
@@ -75,7 +75,7 @@ describe("primary environment HTTP layer", { concurrent: false }, () => {
       expect(request.credentials).toBe("omit");
       expect(request.redirect).toBe("error");
       expect(request.headers.get("authorization")).toBeNull();
-    }).pipe(Effect.provide(makePrimaryEnvironmentHttpLayer()));
+    }).pipe(Effect.provide(PrimaryEnvironmentHttpLayer.layerForCurrentOrigin()));
   });
 
   it.effect("uses bearer auth without cookies for desktop-managed primaries", () => {
@@ -103,6 +103,6 @@ describe("primary environment HTTP layer", { concurrent: false }, () => {
       const request = new Request(fetchMock.mock.calls[0]?.[0], fetchMock.mock.calls[0]?.[1]);
       expect(request.credentials).not.toBe("include");
       expect(request.headers.get("authorization")).toBe("Bearer desktop-bearer-token");
-    }).pipe(Effect.provide(makePrimaryEnvironmentHttpLayer()));
+    }).pipe(Effect.provide(PrimaryEnvironmentHttpLayer.layerForCurrentOrigin()));
   });
 });

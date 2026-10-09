@@ -53,6 +53,7 @@ const SERVER_IMAGE_MUTATION_RUN_DIGESTS = new Set([
   "8f558399233b6fec115b4bfbc154fc61bf65ab6079fa504d0fda6a0040d07ec9",
 ]);
 const READ_ONLY_RUN_SOURCES = new Set([
+  "node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium",
   "brew bundle install --file apps/mobile/Brewfile",
   "cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check",
   "cargo test --locked --manifest-path native/resource-monitor/Cargo.toml",

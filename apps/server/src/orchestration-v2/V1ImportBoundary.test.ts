@@ -32,7 +32,7 @@ const legacyReaderFiles: Record<
     tables: ["projection_state"],
     reason: "the surviving Board query reads its own global cursor",
   },
-  "persistence/Layers/ProjectionBoardPosts.ts": {
+  "persistence/ProjectionBoardPosts.ts": {
     tables: ["projection_state"],
     reason: "Board current-row reads share one SQL snapshot with their cursor",
   },

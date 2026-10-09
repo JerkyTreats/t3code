@@ -3,7 +3,7 @@ import { appendUserInputAttachmentPaths } from "../provider/userInputAttachments
 import type { ChatAttachment, OrchestrationV2Command } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { BoardTurnWritePolicyV2 } from "../board/TurnWritePolicyV2.ts";
-import { IdAllocatorV2 } from "./IdAllocator.ts";
+import { IdAllocatorV2 } from "@t3tools/provider-core/server/IdAllocator";
 import * as Schema from "effect/Schema";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -25,6 +25,7 @@ function dispatchWasNotAccepted(
     case "OrchestratorCommandPreviouslyRejectedError":
     case "OrchestratorCommandIdConflictError":
     case "OrchestratorSubagentThreadReadOnlyError":
+    case "OrchestratorThreadAboveModeLimitError":
       return true;
     default:
       return false;

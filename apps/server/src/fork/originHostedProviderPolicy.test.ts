@@ -1,7 +1,8 @@
-import { assert, it } from "@effect/vitest";
+import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import {
   bitbucketOriginHostFailure,
+  selectBitbucketOrigin,
   originChangeRequestSelector,
   gitHubRepositoryTargetFromSelector,
   requireGitHubRepository,
@@ -78,7 +79,83 @@ it("Bitbucket endpoint authority preserves custom ports and the cloud API mappin
   });
 });
 
-for (const provider of ["github", "gitlab"] as const) {
+const bitbucketContext = {
+  remoteName: "origin",
+  remoteUrl: "git@bitbucket.org:acme/web.git",
+  provider: { kind: "bitbucket" as const, name: "Bitbucket", baseUrl: "https://bitbucket.org" },
+};
+
+it.each<{
+  name: string;
+  input: Parameters<typeof selectBitbucketOrigin>[0];
+  expected: ReturnType<typeof selectBitbucketOrigin>;
+}>([
+  {
+    name: "bound context wins over conflicting local remotes",
+    input: {
+      context: bitbucketContext,
+      apiHost: "api.bitbucket.org",
+      remotes: [{ name: "origin", url: "https://wrong.test/other/repo" }],
+    },
+    expected: { kind: "target", url: bitbucketContext.remoteUrl },
+  },
+  {
+    name: "unbound context requests local inspection",
+    input: {
+      context: { ...bitbucketContext, remoteName: "upstream" },
+      apiHost: "api.bitbucket.org",
+    },
+    expected: { kind: "inspect-remotes" },
+  },
+  {
+    name: "local fallback ignores upstream and case variants",
+    input: {
+      apiHost: "api.bitbucket.org",
+      remotes: [
+        { name: "upstream", url: bitbucketContext.remoteUrl },
+        { name: "Origin", url: bitbucketContext.remoteUrl },
+      ],
+    },
+    expected: { kind: "missing-origin" },
+  },
+  {
+    name: "local literal origin retains its port",
+    input: {
+      apiHost: "bitbucket.example.test:8443",
+      remotes: [{ name: "origin", url: "https://bitbucket.example.test:8443/acme/web.git" }],
+    },
+    expected: { kind: "target", url: "https://bitbucket.example.test:8443/acme/web.git" },
+  },
+  {
+    name: "malformed bound context refuses without fallback",
+    input: {
+      context: { ...bitbucketContext, remoteUrl: "invalid" },
+      apiHost: "api.bitbucket.org",
+      remotes: [{ name: "origin", url: bitbucketContext.remoteUrl }],
+    },
+    expected: { kind: "host-refused", failure: { reason: "origin-context-required" } },
+  },
+  {
+    name: "malformed local origin stays unavailable",
+    input: { apiHost: "api.bitbucket.org", remotes: [{ name: "origin", url: "invalid" }] },
+    expected: { kind: "missing-origin" },
+  },
+  {
+    name: "foreign local origin cannot use the configured endpoint",
+    input: {
+      apiHost: "bitbucket.example.test:8443",
+      remotes: [{ name: "origin", url: "https://bitbucket.example.test:9443/acme/web.git" }],
+    },
+    expected: {
+      kind: "host-refused",
+      failure: { reason: "origin-host-mismatch", originHost: "bitbucket.example.test:9443" },
+    },
+  },
+])("Bitbucket replacement host selection: $name", ({ input, expected }) => {
+  assert.deepStrictEqual(selectBitbucketOrigin(input), expected);
+});
+
+describe.each(["github", "gitlab"] as const)("origin selectors for %s", (provider) => {
   const host = `${provider}.example.test:8443`;
   const repository = provider === "github" ? "acme/web" : "acme/nested/web";
   const suffix = provider === "github" ? "pull/42" : "-/merge_requests/42";
@@ -120,7 +197,7 @@ for (const provider of ["github", "gitlab"] as const) {
       assert.isNull(selector, reference);
     }
   });
-}
+});
 
 it("decodes explicit GitHub origin selectors and rejects implicit or malformed targets", () => {
   assert.deepStrictEqual(gitHubRepositoryTargetFromSelector("github.example.test:8443/Acme/Web"), {

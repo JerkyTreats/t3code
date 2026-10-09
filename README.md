@@ -9,7 +9,7 @@
 
 This repository maintains an opinionated T3 Code fork. Fork changes are accepted from exact `origin` only. Upstream is a read-only implementation source, and inherited upstream work remains credited in Git history.
 
-The current branch is a reconstruction on pinned upstream main. During reconstruction, the [patch guide](patch.md) lists only fork behavior that already exists in this tree. Planned features remain in the [intake ledger](.ledger/upstream-intake-program.md) until their implementation and evidence land.
+This fork integrates pinned upstream source while retaining the current outcomes in the [patch guide](patch.md). Fleet manager is retired. Historical intake ledgers describe their own tested revisions; they do not establish acceptance of a later build.
 
 ## Start Here
 

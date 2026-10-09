@@ -7,7 +7,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import type { BoardPage, BoardPost } from "@t3tools/contracts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";

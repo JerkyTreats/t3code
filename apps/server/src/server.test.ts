@@ -41,11 +41,11 @@ import {
   HttpServerRequest,
   HttpServerRespondable,
   HttpServerResponse,
-} from "effect/unstable/http";
-import * as HttpApi from "effect/unstable/httpapi/HttpApi";
-import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
-import { Rpc, RpcClient, RpcGroup, RpcSerialization, RpcServer } from "effect/unstable/rpc";
-import * as Socket from "effect/unstable/socket/Socket";
+} from "effect/http";
+import * as HttpApi from "effect/http-api/HttpApi";
+import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import { Rpc, RpcClient, RpcGroup, RpcSerialization, RpcServer } from "effect/rpc";
+import * as Socket from "effect/socket/Socket";
 import * as ServerConfig from "./config.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -56,11 +56,11 @@ import * as ClientConnectionRegistry from "./auth/ClientConnectionRegistry.ts";
 import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
 import {
   adminHttpApiLayer,
-  authHttpApiLayer,
-  environmentAuthenticatedAuthLayer,
+  layer as authHttpApiLayer,
+  layerAuthenticatedAuth as environmentAuthenticatedAuthLayer,
   failEnvironmentAuthInvalid,
 } from "./auth/http.ts";
-import { makeSqlitePersistenceLive } from "./persistence/Layers/Sqlite.ts";
+import { layerFromPath } from "./persistence/Sqlite.ts";
 import { deviceAdministratorBoundaryLayer } from "./server.ts";
 import {
   authorizeClientRpc,
@@ -117,9 +117,9 @@ const withClient = <A, E, R>(
 
 const authLayerFor = (config: ServerConfig.ServerConfig["Service"]) =>
   EnvironmentAuth.layer.pipe(
-    Layer.provideMerge(makeSqlitePersistenceLive(config.dbPath)),
+    Layer.provideMerge(layerFromPath(config.dbPath)),
     Layer.provideMerge(ServerSecretStore.layer),
-    Layer.provide(ServerEnvironment.identityLayer),
+    Layer.provide(ServerEnvironment.layerIdentity),
     Layer.provide(ServerConfig.layer(config)),
   );
 
@@ -215,7 +215,7 @@ const buildAuthorityHost = Effect.gen(function* () {
           return yield* httpEffect;
         }),
       );
-    }).pipe(Effect.catchTag("EnvironmentAuthInvalidError", HttpServerRespondable.toResponse)),
+    }).pipe(Effect.catchTags({ EnvironmentAuthInvalidError: HttpServerRespondable.toResponse })),
   );
   const apiRoutes = HttpApiBuilder.layer(AuthorityTestApi).pipe(
     Layer.provide(authHttpApiLayer),

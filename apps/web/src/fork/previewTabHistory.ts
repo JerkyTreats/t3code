@@ -16,6 +16,7 @@ export interface ClosedPreviewTab extends PreviewDesktopRestoration {
   readonly tabId: string;
   readonly url: string | null;
   readonly profileId: string | undefined;
+  readonly runtime: PreviewSessionSnapshot["runtime"];
   readonly viewport: PreviewViewportSetting;
 }
 export interface PreviewTabHistory {
@@ -54,9 +55,10 @@ export function reservePreviewTabClose(
     tabId: snapshot.tabId,
     url: snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url,
     profileId: snapshot.profileId,
+    runtime: snapshot.runtime,
     viewport: snapshot.viewport ?? FILL_PREVIEW_VIEWPORT,
-    zoomFactor: overlay?.zoomFactor ?? 1,
-    colorScheme: overlay?.colorScheme ?? "system",
+    zoomFactor: overlay?.zoomFactor ?? snapshot.zoomFactor ?? 1,
+    colorScheme: overlay?.colorScheme ?? snapshot.colorScheme ?? "system",
   };
   return {
     reservation,

@@ -75,6 +75,25 @@ describe("desktopTabLifetime", () => {
     await vi.advanceTimersByTimeAsync(0);
   });
 
+  it("passes native server identity alongside captured restored presentation", async () => {
+    vi.useFakeTimers();
+    createTab.mockResolvedValueOnce(undefined);
+    const serverTab = { threadId: "thread-native", tabId: "tab-native" };
+    const lease = acquireDesktopTab(
+      "runtime-native",
+      { zoomFactor: 1.5, colorScheme: "dark" },
+      serverTab,
+    );
+    await lease.ready;
+    expect(createTab).toHaveBeenCalledExactlyOnceWith("runtime-native", {
+      zoomFactor: 1.5,
+      colorScheme: "dark",
+      serverTab,
+    });
+    lease.release();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
   it("shares tab creation readiness across concurrent leases", async () => {
     let resolveCreation: (() => void) | undefined;
     createTab.mockReturnValueOnce(

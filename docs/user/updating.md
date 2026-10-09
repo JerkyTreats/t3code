@@ -26,6 +26,10 @@ before continuing an important older thread. Stop the old server before the firs
 new runtime on the same data directory. Keep one writable server active, and review access grants
 and revocations before a downgrade because authentication is copied only at the first cutover.
 
+## Reconnect after permission changes
+
+After an update that splits permissions, an older connection can lack access to new actions. Re-enroll the affected browser or Electron client using a fresh one-time pairing credential from the external Admin portal. Existing credentials are not silently granted broader access. The portal remains the place to manage enrolled devices.
+
 ## When versions don't match
 
 A client and server must speak the same orchestration protocol. If they do not, the connection is

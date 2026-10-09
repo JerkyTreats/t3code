@@ -43,10 +43,14 @@ const makeScope = (
   capabilities: ReadonlySet<McpInvocationContext.McpCapability>,
 ): McpInvocationContext.McpInvocationScope => ({
   environmentId,
-  threadId,
-  providerSessionId: "provider-session-worktree-test",
-  boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
-  providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+  requestNamespace: "provider-session-worktree-test",
+  thread: {
+    boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
+    threadId,
+    providerSessionId: "provider-session-worktree-test",
+    providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+  },
+  client: undefined,
   capabilities,
   issuedAt: 1,
 });
@@ -292,7 +296,7 @@ const makeHarness = (options: HarnessOptions = {}) => {
   // inlined so the test does not depend on the host's path module.
   const win32IsAbsolute = (value: string) => /^(?:[a-zA-Z]:[\\/]|[\\/])/.test(value);
   const posixIsAbsolute = (value: string) => value.startsWith("/");
-  const serviceLayer =
+  const layerService =
     options.pathSemantics === undefined
       ? WorktreeMcpService.layer
       : WorktreeMcpService.layer.pipe(
@@ -302,7 +306,7 @@ const makeHarness = (options: HarnessOptions = {}) => {
             } as unknown as Path.Path),
           ),
         );
-  const layer = serviceLayer.pipe(
+  const layer = layerService.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ThreadManagementService.ThreadManagementService)({

@@ -75,8 +75,9 @@ it("publishes one complete release under concurrent cold preparation", () =>
     expect(await verifyThreadRelease(artifact)).toBe(paths[0]);
   }));
 
-for (const mutation of ["content", "missing", "extra", "mode", "link", "manifest"]) {
-  it(`rejects ${mutation} damage without silently repairing a published release`, () =>
+it.each(["content", "missing", "extra", "mode", "link", "manifest"])(
+  "rejects %s damage without silently repairing a published release",
+  (mutation) =>
     fixture(async ({ artifact, extract, count }) => {
       const executable = await prepareThreadRelease(artifact, { extract });
       const code = NodePath.dirname(executable);
@@ -93,8 +94,8 @@ for (const mutation of ["content", "missing", "extra", "mode", "link", "manifest
         await NodeFSP.writeFile(NodePath.join(code, "..", "release.json"), "{}");
       await expect(prepareThreadRelease(artifact, { extract })).rejects.toThrow();
       expect(count()).toBe(1);
-    }));
-}
+    }),
+);
 
 it("discards only unpublished staging after failed extraction or unsafe code", () =>
   fixture(async ({ root, artifact, extract }) => {

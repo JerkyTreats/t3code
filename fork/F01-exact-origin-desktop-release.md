@@ -91,7 +91,7 @@ Retain upstream T3 Code product identity while binding official desktop updates 
 - Artifact smoke verifies extraction identity, exact updater metadata, isolated installation, launcher manifest compatibility, readiness, early exit, and bounded cleanup.
 - Runtime acquisition tests execute the exact missing-runtime failure without the SSH tunnel host and reject every public-registry fallback.
 - Replacement-host runner tests execute preinstalled and explicit-entry paths while preserving child process ownership and graceful shutdown.
-- SSH tunnel integration tests retain current Node discovery and inject the owner-produced runner into launch and pairing mechanics.
+- SSH tunnel integration tests retain current Node discovery, keyed locking and effectful hashed state keys, and inject the owner-produced runner into launch and pairing mechanics.
 - Marketing and contributor surface scans reject non-origin repository, release, download, source, issue, and contribution targets.
 - Triage tests require exact-origin playbook, source, and issue targets, explicit clone authorization, and source-cache preservation.
 - Invocation tests prove package-runner cache launches produce quoted direct commands without another public package resolution.

@@ -820,8 +820,9 @@ describe("linux desktop launcher", () => {
     assert.isTrue(calls.every(([command]) => command === "hyprctl"));
   });
 
-  for (const serviceState of ["active", "inactive"]) {
-    it(`does not mutate a symlinked launcher runtime root when the service is ${serviceState}`, async () => {
+  it.each(["active", "inactive"])(
+    "does not mutate a symlinked launcher runtime root when the service is %s",
+    async (serviceState) => {
       const fixture = await makeFixture();
       const externalRuntimeRoot = await NodeFSP.mkdtemp(
         NodePath.join(NodeOS.tmpdir(), "t3-launcher-external-runtime-"),
@@ -888,8 +889,8 @@ describe("linux desktop launcher", () => {
         await NodeFSP.rm(fixture.root, { recursive: true, force: true });
         await NodeFSP.rm(externalRuntimeRoot, { recursive: true, force: true });
       }
-    });
-  }
+    },
+  );
 
   it("focuses a verified active primary without changing its runtime state", async () => {
     const fixture = await makeFixture();
@@ -1114,14 +1115,14 @@ describe("linux desktop launcher", () => {
     }
   });
 
-  for (const scenario of [
+  describe.each([
     { name: "transport error", result: { code: null, stdout: "", stderr: "bus unavailable" } },
     { name: "transitional state", result: { code: 0, stdout: "activating\n", stderr: "" } },
     { name: "missing or unknown unit", result: { code: 4, stdout: "unknown\n", stderr: "" } },
     { name: "malformed active output", result: { code: 0, stdout: " active\n", stderr: "" } },
     { name: "malformed inactive output", result: { code: 3, stdout: "inactive\n\n", stderr: "" } },
-  ]) {
-    for (const launch of [
+  ])("fails closed for a $name desktop service state", (scenario) => {
+    it.each([
       { name: "ordinary activation", options: {} },
       {
         name: "payload activation",
@@ -1133,62 +1134,58 @@ describe("linux desktop launcher", () => {
           },
         },
       },
-    ]) {
-      it(`fails closed for ${launch.name} with a ${scenario.name} desktop service state`, async () => {
-        const fixture = await makeFixture();
-        const paths = {
-          installRoot: fixture.root,
-          manifestPath: fixture.manifestPath,
-          runtimeRoot: fixture.runtimeRoot,
-          readinessPath: NodePath.join(fixture.runtimeRoot, "ready.json"),
-          environmentPath: NodePath.join(fixture.runtimeRoot, "service.env"),
-          lockPath: NodePath.join(fixture.runtimeRoot, "launch.lock"),
-          handoffRequestPath: NodePath.join(fixture.runtimeRoot, "handoff-request.json"),
-          handoffAckPath: NodePath.join(fixture.runtimeRoot, "handoff-ack.json"),
-        };
-        const calls = [];
-        try {
-          await NodeFSP.mkdir(paths.runtimeRoot, { recursive: true, mode: 0o700 });
-          await Promise.all([
-            NodeFSP.writeFile(paths.readinessPath, "preserve readiness\n"),
-            NodeFSP.writeFile(paths.environmentPath, "preserve environment\n"),
-            NodeFSP.writeFile(paths.handoffRequestPath, "preserve request\n"),
-            NodeFSP.writeFile(paths.handoffAckPath, "preserve acknowledgement\n"),
-          ]);
-          const runtimeFiles = [
-            paths.readinessPath,
-            paths.environmentPath,
-            paths.handoffRequestPath,
-            paths.handoffAckPath,
-          ];
-          const before = await Promise.all(
-            runtimeFiles.map((path) => NodeFSP.readFile(path, "utf8")),
-          );
-          await expect(
-            launchDesktop(
-              { paths, environment: {}, ...launch.options },
-              {
-                runCommand: async (command, args) => {
-                  calls.push([command, args]);
-                  if (command === "systemctl" && args.includes("is-active")) return scenario.result;
-                  throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
-                },
+    ])("preserves runtime state during $name", async (launch) => {
+      const fixture = await makeFixture();
+      const paths = {
+        installRoot: fixture.root,
+        manifestPath: fixture.manifestPath,
+        runtimeRoot: fixture.runtimeRoot,
+        readinessPath: NodePath.join(fixture.runtimeRoot, "ready.json"),
+        environmentPath: NodePath.join(fixture.runtimeRoot, "service.env"),
+        lockPath: NodePath.join(fixture.runtimeRoot, "launch.lock"),
+        handoffRequestPath: NodePath.join(fixture.runtimeRoot, "handoff-request.json"),
+        handoffAckPath: NodePath.join(fixture.runtimeRoot, "handoff-ack.json"),
+      };
+      const calls = [];
+      try {
+        await NodeFSP.mkdir(paths.runtimeRoot, { recursive: true, mode: 0o700 });
+        await Promise.all([
+          NodeFSP.writeFile(paths.readinessPath, "preserve readiness\n"),
+          NodeFSP.writeFile(paths.environmentPath, "preserve environment\n"),
+          NodeFSP.writeFile(paths.handoffRequestPath, "preserve request\n"),
+          NodeFSP.writeFile(paths.handoffAckPath, "preserve acknowledgement\n"),
+        ]);
+        const runtimeFiles = [
+          paths.readinessPath,
+          paths.environmentPath,
+          paths.handoffRequestPath,
+          paths.handoffAckPath,
+        ];
+        const before = await Promise.all(
+          runtimeFiles.map((path) => NodeFSP.readFile(path, "utf8")),
+        );
+        await expect(
+          launchDesktop(
+            { paths, environment: {}, ...launch.options },
+            {
+              runCommand: async (command, args) => {
+                calls.push([command, args]);
+                if (command === "systemctl" && args.includes("is-active")) return scenario.result;
+                throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
               },
-            ),
-          ).rejects.toThrow(/Could not verify the desktop service state/);
-          assert.deepEqual(calls, [
-            ["systemctl", ["--user", "is-active", "t3code-desktop.service"]],
-          ]);
-          assert.deepEqual(
-            await Promise.all(runtimeFiles.map((path) => NodeFSP.readFile(path, "utf8"))),
-            before,
-          );
-        } finally {
-          await NodeFSP.rm(fixture.root, { recursive: true, force: true });
-        }
-      });
-    }
-  }
+            },
+          ),
+        ).rejects.toThrow(/Could not verify the desktop service state/);
+        assert.deepEqual(calls, [["systemctl", ["--user", "is-active", "t3code-desktop.service"]]]);
+        assert.deepEqual(
+          await Promise.all(runtimeFiles.map((path) => NodeFSP.readFile(path, "utf8"))),
+          before,
+        );
+      } finally {
+        await NodeFSP.rm(fixture.root, { recursive: true, force: true });
+      }
+    });
+  });
 
   it("starts the owned desktop service only when no primary is active", async () => {
     const fixture = await makeFixture();

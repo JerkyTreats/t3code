@@ -6,15 +6,20 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import * as Schema from "effect/Schema";
+import { ChildProcessSpawner } from "effect/process";
 
 import { GitCommandError, SourceControlProviderError } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as BitbucketApi from "./BitbucketApi.ts";
+import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
 import type * as SourceControlProvider from "./SourceControlProvider.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./SourceControlRepositoryService.ts";
+
+const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
 const CLONE_URLS = {
   nameWithOwner: "octocat/t3code",
@@ -60,12 +65,12 @@ function processOutput(): GitVcsDriver.ExecuteGitResult {
   };
 }
 
-function makeLayer(input: {
+function layer(input: {
   readonly provider?: SourceControlProvider.SourceControlProvider["Service"];
   readonly git?: Partial<GitVcsDriver.GitVcsDriver["Service"]>;
   readonly fileSystem?: FileSystem.FileSystem;
 }) {
-  const serviceLayer = SourceControlRepositoryService.layer.pipe(
+  const layerService = SourceControlRepositoryService.layer.pipe(
     Layer.provide(
       Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
         resolveLink: () => undefined,
@@ -100,11 +105,11 @@ function makeLayer(input: {
   );
 
   return input.fileSystem
-    ? serviceLayer.pipe(
+    ? layerService.pipe(
         Layer.provide(Layer.succeed(FileSystem.FileSystem, input.fileSystem)),
         Layer.provideMerge(NodePath.layer),
       )
-    : serviceLayer.pipe(Layer.provideMerge(NodeServices.layer));
+    : layerService.pipe(Layer.provideMerge(NodeServices.layer));
 }
 
 it.effect("looks up repositories through the requested provider and exact endpoint", () => {
@@ -138,7 +143,7 @@ it.effect("looks up repositories through the requested provider and exact endpoi
         repository: "octocat/t3code",
       },
     ]);
-  }).pipe(Effect.provide(makeLayer({ provider })));
+  }).pipe(Effect.provide(layer({ provider })));
 });
 
 it.effect("rejects an enterprise lookup when one returned clone URL targets another host", () => {
@@ -162,7 +167,7 @@ it.effect("rejects an enterprise lookup when one returned clone URL targets anot
       .pipe(Effect.flip);
 
     assert.include(error.detail, "do not match the selected provider endpoint and repository");
-  }).pipe(Effect.provide(makeLayer({ provider })));
+  }).pipe(Effect.provide(layer({ provider })));
 });
 
 it.effect("preserves provider failures without deriving the repository message from them", () => {
@@ -196,8 +201,120 @@ it.effect("preserves provider failures without deriving the repository message f
       "Source control repository operation lookupRepository failed for github: The source control operation could not be completed.",
     );
     assert.strictEqual(error.cause, providerCause);
-  }).pipe(Effect.provide(makeLayer({ provider })));
+  }).pipe(Effect.provide(layer({ provider })));
 });
+
+it.effect(
+  "reports the safe Bitbucket locator detail through repository lookup and publishing",
+  () =>
+    Effect.gen(function* () {
+      const locatorCause = new BitbucketApi.BitbucketRepositoryLocatorError({
+        repository: "credential-token-abc123",
+      });
+      const provider = yield* BitbucketSourceControlProvider.make.pipe(
+        Effect.provide(
+          Layer.mock(BitbucketApi.BitbucketApi)({
+            getRepositoryCloneUrls: () => Effect.fail(locatorCause),
+            createRepository: () => Effect.fail(locatorCause),
+          }),
+        ),
+      );
+
+      yield* Effect.gen(function* () {
+        const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+        const input = {
+          provider: "bitbucket" as const,
+          providerBaseUrl: "https://bitbucket.org",
+          repository: "workspace/repository",
+          cwd: "/workspace",
+        };
+        for (const operation of [
+          service.lookupRepository(input).pipe(Effect.asVoid),
+          service.publishRepository({ ...input, visibility: "private" }).pipe(Effect.asVoid),
+        ]) {
+          const error = yield* Effect.flip(operation);
+
+          assert.strictEqual(error.provider, "bitbucket");
+          assert.strictEqual(
+            error.detail,
+            "Bitbucket repositories must be specified as workspace/repository.",
+          );
+          assert.notInclude(error.message, locatorCause.repository);
+          assert.instanceOf(error.cause, SourceControlProviderError);
+          assert.strictEqual(
+            isSourceControlProviderError(error.cause) ? error.cause.cause : null,
+            locatorCause,
+          );
+        }
+      }).pipe(Effect.provide(layer({ provider })));
+    }),
+);
+
+it.effect("keeps a plain Bitbucket locator lookalike out of the repository message", () => {
+  const provider = makeProvider({
+    kind: "bitbucket",
+    getRepositoryCloneUrls: () =>
+      Effect.fail(
+        new SourceControlProviderError({
+          provider: "bitbucket",
+          operation: "getRepositoryCloneUrls",
+          cwd: "/workspace",
+          detail: "credential token abc123 was rejected",
+          cause: {
+            _tag: "BitbucketRepositoryLocatorError",
+            repository: "t3code",
+            detail: "credential token abc123 was rejected",
+          },
+        }),
+      ),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* Effect.flip(
+      service.lookupRepository({
+        provider: "bitbucket",
+        providerBaseUrl: "https://bitbucket.org",
+        repository: "workspace/repository",
+      }),
+    );
+
+    assert.strictEqual(error.detail, "The source control operation could not be completed.");
+    assert.notInclude(error.message, "abc123");
+  }).pipe(Effect.provide(layer({ provider })));
+});
+
+it.effect("keeps arbitrary Bitbucket request failures out of the repository message", () =>
+  Effect.gen(function* () {
+    const cause = new BitbucketApi.BitbucketRequestError({
+      operation: "getRepository",
+      cause: new Error("credential token abc123 was rejected"),
+    });
+    const provider = yield* BitbucketSourceControlProvider.make.pipe(
+      Effect.provide(
+        Layer.mock(BitbucketApi.BitbucketApi)({
+          getRepositoryCloneUrls: () => Effect.fail(cause),
+        }),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const error = yield* Effect.flip(
+        service.lookupRepository({
+          provider: "bitbucket",
+          providerBaseUrl: "https://bitbucket.org",
+          repository: "pingdotgg/t3code",
+          cwd: "/workspace",
+        }),
+      );
+
+      assert.strictEqual(error.detail, "The source control operation could not be completed.");
+      assert.notInclude(error.message, "abc123");
+      assert.notInclude(error.message, cause.detail);
+    }).pipe(Effect.provide(layer({ provider })));
+  }),
+);
 
 it.effect("clones a looked-up repository into the requested destination", () =>
   Effect.gen(function* () {
@@ -227,12 +344,12 @@ it.effect("clones a looked-up repository into the requested destination", () =>
       assert.deepStrictEqual(cloneCalls, [
         {
           cwd: parent,
-          args: ["clone", "--progress", CLONE_URLS.url, "t3code"],
+          args: ["clone", "--progress", "--", CLONE_URLS.url, "t3code"],
         },
       ]);
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           git: {
             execute: (input) =>
               Effect.sync(() => {
@@ -244,6 +361,43 @@ it.effect("clones a looked-up repository into the requested destination", () =>
       ),
     );
   }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect.each(["--bare", "source.git"])(
+  "clones a local repository named %s as a working tree",
+  (repositoryName) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const git = yield* GitVcsDriver.GitVcsDriver;
+      const parent = yield* fs.makeTempDirectoryScoped({ prefix: "t3-clone-options-" });
+      yield* git.execute({
+        operation: "test.init",
+        cwd: parent,
+        args: ["init", "--bare", path.join(parent, repositoryName)],
+      });
+      const destinationPath = path.join(parent, "checkout");
+      yield* Effect.gen(function* () {
+        const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+        const result = yield* service.cloneRepository({
+          remoteUrl: repositoryName,
+          destinationPath,
+        });
+        assert.strictEqual(result.cwd, destinationPath);
+        assert.isTrue(yield* fs.exists(path.join(destinationPath, ".git")));
+      }).pipe(Effect.provide(layer({ git: { execute: git.execute } })));
+    }).pipe(
+      Effect.provide(
+        GitVcsDriver.layer.pipe(
+          Layer.provide(
+            ServerConfig.layerTest(process.cwd(), {
+              prefix: "t3-clone-options-config-",
+            }),
+          ),
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+    ),
 );
 
 it.effect("reports clone progress from git's stderr and keeps its error text on failure", () =>
@@ -274,7 +428,7 @@ it.effect("reports clone progress from git's stderr and keeps its error text on 
       );
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           git: {
             execute: (input) =>
               Effect.gen(function* () {
@@ -322,7 +476,7 @@ it.effect("strips embedded credentials from the remote URL it reports", () =>
       });
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           git: {
             execute: (input) =>
               Effect.sync(() => {
@@ -364,7 +518,7 @@ it.effect("discards only a directory git wrote to", () =>
       assert.include(replacedError.detail, "could not be inspected");
       // A destination that never got created is nothing to discard.
       yield* service.discardClone(path.join(parent, "missing"));
-    }).pipe(Effect.provide(makeLayer({})));
+    }).pipe(Effect.provide(layer({})));
 
     // The partial clone is emptied but its directory (the workspace root) stays.
     assert.deepStrictEqual(yield* fs.readDirectory(partial), []);
@@ -390,7 +544,7 @@ it.effect("redacts query tokens and userinfo containing '@' from reported URLs",
         destinationPath: path.join(parent, "b"),
       });
       assert.equal(nested.remoteUrl, "https://github.com/octocat/t3code.git");
-    }).pipe(Effect.provide(makeLayer({})));
+    }).pipe(Effect.provide(layer({})));
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
@@ -416,7 +570,7 @@ it.effect("preserves destination probe failures instead of treating them as miss
     assert.strictEqual(error.cause, fileSystemCause);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         fileSystem: FileSystem.makeNoop({
           exists: () => Effect.fail(fileSystemCause),
           makeDirectory: () => Effect.void,
@@ -458,7 +612,7 @@ it.effect(
       assert.equal(pushCalls, 0);
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           provider,
           git: {
             execute: (input) =>
@@ -537,7 +691,7 @@ it.effect("publishes by creating the repository, adding a remote, and pushing up
     assert.deepStrictEqual(pushCalls, [{ cwd: "/workspace", remoteName: "origin" }]);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           execute: (input) =>
@@ -595,7 +749,7 @@ it.effect("rejects an unusable occupied origin before external repository creati
     assert.equal(pushCalls, 0);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           execute: (input) =>
@@ -647,7 +801,7 @@ it.effect("rejects a mismatched provider endpoint before external repository cre
 
     assert.include(error.detail, "does not match the selected provider");
     assert.equal(createCalls, 0);
-  }).pipe(Effect.provide(makeLayer({ provider })));
+  }).pipe(Effect.provide(layer({ provider })));
 });
 
 it.effect("rejects a matching non-origin remote before external repository creation", () => {
@@ -680,7 +834,7 @@ it.effect("rejects a matching non-origin remote before external repository creat
     assert.equal(ensureRemoteCalls, 0);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           execute: (input) =>
@@ -733,7 +887,7 @@ it.effect(
       assert.equal(ensureRemoteCalls, 0);
     }).pipe(
       Effect.provide(
-        makeLayer({
+        layer({
           provider,
           git: {
             execute: (input) =>
@@ -787,7 +941,7 @@ it.effect("does not reject the same repository path on another host during prefl
     assert.equal(createCalls, 1);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           execute: (input) =>
@@ -834,7 +988,7 @@ it.effect("includes a non-default endpoint port in publication preflight matchin
     assert.equal(createCalls, 1);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           execute: (input) =>
@@ -879,7 +1033,7 @@ it.effect("rejects an exact neutral enterprise target on a non-origin remote", (
     assert.equal(createCalls, 0);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           execute: (input) =>
@@ -924,7 +1078,7 @@ it.effect("rejects an exact Azure target on a non-origin remote", () => {
     assert.equal(createCalls, 0);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           execute: (input) =>
@@ -970,7 +1124,7 @@ it.effect("rejects a conflicting origin before external creation or remote mutat
     assert.equal(ensureRemoteCalls, 0);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           readConfigValue: (_cwd, key) =>
@@ -1029,7 +1183,7 @@ it.effect("reuses a matching existing origin without recreating the repository",
     ]);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           readConfigValue: (_cwd, key) =>
@@ -1074,7 +1228,7 @@ it.effect("rejects existing origin reuse against another selected endpoint", () 
     assert.equal(readCalls, 0);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           readConfigValue: (_cwd, key) =>
@@ -1132,7 +1286,7 @@ it.effect("reuses an explicitly selected neutral enterprise origin", () => {
     ]);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           readConfigValue: (_cwd, key) =>
@@ -1190,7 +1344,7 @@ it.effect("reuses the exact Azure origin repository selector", () => {
     ]);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider,
         git: {
           readConfigValue: (_cwd, key) =>
@@ -1221,7 +1375,7 @@ it.effect("rejects any divergent origin push URL before remote mutation", () => 
     assert.equal(ensureRemoteCalls, 0);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         git: {
           readConfigValue: (_cwd, key) =>
             Effect.succeed(key === "remote.origin.url" ? CLONE_URLS.url : null),
@@ -1270,7 +1424,7 @@ it.effect("rejects an origin push URL on a different non-default port", () => {
     assert.equal(ensureRemoteCalls, 0);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         provider: makeProvider({ getRepositoryCloneUrls: () => Effect.succeed(portUrls) }),
         git: {
           readConfigValue: (_cwd, key) =>
@@ -1321,7 +1475,7 @@ it.effect("publish succeeds with status remote_added when the local repo has no 
     assert.strictEqual(pushCalls, 0);
   }).pipe(
     Effect.provide(
-      makeLayer({
+      layer({
         git: {
           execute: (input) =>
             input.args[0] === "rev-parse"

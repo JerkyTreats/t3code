@@ -40,6 +40,34 @@ This readiness sequence is owned by
 [server activation](../../apps/server/src/serverActivation.ts). It is independent
 of the desktop preparation token and does not provide an application rollback.
 
+## Restart recovery and delegated work
+
+Restart continuation is an environment-owned preference, off by default. The
+[v2 recovery service](../../apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts)
+requires a matching durable run, provider thread, session and strong native resume
+identity. Queued runs never started, so recovery leaves them held behind the interrupted
+run. Current continuation resumes only unfinished root turns or a prepared restart
+continuation. Cancelled background work from a settled run is retained for the next
+user turn; it does not wake that settled run automatically.
+
+The [continuation handler](../../apps/server/src/orchestration-v2/RestartContinuation.ts)
+rechecks the preference, archive state, provider selection, newer user work, a user-requested
+stop and maintenance turns such as `/compact` before dispatching. Stable command and
+message IDs prevent duplicate submissions after an outbox retry. Codex resumes without
+adding provider prompt text unless the turn lost background work; other adapters receive
+the continuation through their normal turn path.
+
+Delegated `delegate_task` child threads reconcile independently, rather than as the
+parent's background work. The [orchestrator](../../apps/server/src/orchestration-v2/Orchestrator.ts)
+settles child results and completion deliveries in a startup pass after reconciliation,
+because its terminal-run listener skips reconciliation cancellations. A cancelled child
+with a pending restart continuation is not a completed result yet. Its continuation run
+settles it, or the handler settles it when continuation is declined. Schedulers wait for
+activation so they cannot start runs that startup reconciliation would then cancel.
+
+These recovery mechanics also apply after an operator-managed restart. They neither
+replace the deployment supervisor nor grant a headless runtime self-update authority.
+
 ## Orchestration v2 cutover
 
 The v2 runtime uses `statev2.sqlite`, seeded once from a validated snapshot of `state.sqlite`.
@@ -75,3 +103,9 @@ general rollback must preserve compatible application and database backups befor
 the update, stop all database users before restoring data, and redeploy the prior
 runtime through the same supervisor. The retained pre-migration 42 image is a
 separate migration safeguard and does not replace that policy.
+
+## Fleet-free continuation and client enrollment
+
+The current fork preserves the characterized production journal through retired identities 71 through 78 without starting Fleet. Upstream migrations 57 through 60 continue at fork identities 79 through 82. The [persistence contract](../../fork/persistence-compatibility.md) owns that ordering and rejection boundary. Existing history and admission fences remain available; a pre-Fleet database restore would discard later user data.
+
+Current upstream permissions split several historical broad grants. Stored and signed scopes are preserved exactly. Re-enroll affected clients through fresh portal-issued one-time grants after cutover, then verify their current permissions. Enrollment does not restore a retired embedded access-management surface. Preserve the pre-cutover database and runtime together and keep one writable runtime active.
