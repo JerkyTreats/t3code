@@ -155,3 +155,76 @@ it.effect("rejects a populated journal-less database before the runner creates i
     ]);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
+
+it.effect("continues the current journal with stable upstream identities", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: 70 });
+    const before = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
+    assert.deepStrictEqual(yield* runMigrations(), [
+      [79, "ScheduledTaskWebhooks"],
+      [80, "WebhookRelayDeliveries"],
+      [81, "McpAppModelContext"],
+      [82, "ThreadSnapshotWindowIndexes"],
+    ]);
+    assert.deepStrictEqual(
+      yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 70 ORDER BY migration_id`,
+      before,
+    );
+    assert.deepStrictEqual(
+      yield* sql`SELECT name FROM sqlite_master
+        WHERE name IN ('scheduled_task_webhook_deliveries', 'scheduled_task_webhook_relay_deliveries', 'mcp_app_model_context')
+        ORDER BY name`,
+      [
+        { name: "mcp_app_model_context" },
+        { name: "scheduled_task_webhook_deliveries" },
+        { name: "scheduled_task_webhook_relay_deliveries" },
+      ],
+    );
+    assert.deepStrictEqual(yield* runMigrations(), []);
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+);
+
+it.effect.each([71, 78, 999])("rejects unsupported journal identity %s before writes", (id) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: 70 });
+    yield* sql`INSERT INTO effect_sql_migrations (migration_id, name)
+      VALUES (${id}, 'SyntheticUnsupportedMigration')`;
+    const journal = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
+    const schema = yield* sql`SELECT * FROM sqlite_master ORDER BY type, name`;
+    const error = yield* Effect.flip(runMigrations());
+    assert.equal(
+      error.message,
+      `Unsupported fork migration identity at ${id}: SyntheticUnsupportedMigration`,
+    );
+    assert.deepStrictEqual(
+      yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`,
+      journal,
+    );
+    assert.deepStrictEqual(yield* sql`SELECT * FROM sqlite_master ORDER BY type, name`, schema);
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+);
+
+it.effect("rolls back upstream continuation schema and journal before retry", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* runMigrations({ toMigrationInclusive: 70 });
+    // Fail index creation after the preceding continuation has attempted its DDL.
+    yield* sql`CREATE TABLE scheduled_task_webhook_relay_deliveries (relay_delivery_id TEXT)`;
+    const journal = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
+    const schema = yield* sql`SELECT * FROM sqlite_master ORDER BY type, name`;
+    assert.isTrue(Exit.isFailure(yield* Effect.exit(runMigrations())));
+    assert.deepStrictEqual(
+      yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`,
+      journal,
+    );
+    assert.deepStrictEqual(yield* sql`SELECT * FROM sqlite_master ORDER BY type, name`, schema);
+    yield* sql`DROP TABLE scheduled_task_webhook_relay_deliveries`;
+    assert.deepStrictEqual(
+      yield* runMigrations(),
+      migrationManifest.filter(([id]) => id > 70),
+    );
+    assert.deepStrictEqual(yield* runMigrations(), []);
+  }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+);

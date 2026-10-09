@@ -1,4 +1,3 @@
-import * as RetiredNativeSessions from "../project/RetiredNativeSessions.ts";
 import type {
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -796,7 +795,6 @@ function lastDeliveredRunForProviderThread(
 }
 
 const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(function* () {
-  const retiredNativeSessions = yield* RetiredNativeSessions.RetiredNativeSessions;
   const checkpointService = yield* CheckpointServiceV2;
   const commandPolicy = yield* CommandPolicyV2;
   const contextHandoffService = yield* ContextHandoffServiceV2;
@@ -10442,36 +10440,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       "orchestration_v2.thread_id": commandThreadId(command),
     });
 
-    // Refuse before receipt handling or event emission: a new application ID
-    // cannot grant admission to an already retired native conversation.
-    if (command.type === "thread.create" && command.importedNativeThread !== undefined) {
-      const ref = command.importedNativeThread.ref;
-      const adapterDriver = yield* providerAdapters.get(command.modelSelection.instanceId).pipe(
-        Effect.map((adapter) => adapter.driver),
-        // Offline imports retain the supplied native driver until a provider is
-        // registered. Every later provider operation checks its actual driver.
-        Effect.catchTags({ ProviderAdapterRegistryLookupError: () => Effect.succeed(ref.driver) }),
-        Effect.mapError(
-          (cause) =>
-            new OrchestratorProviderAdapterError({
-              commandId: command.commandId,
-              providerInstanceId: command.modelSelection.instanceId,
-              cause,
-            }),
-        ),
-      );
-      if (
-        retiredNativeSessions.contains(ref.driver, ref.nativeId) ||
-        retiredNativeSessions.contains(adapterDriver, ref.nativeId)
-      ) {
-        return yield* new OrchestratorCommandRejectedError({
-          commandId: command.commandId,
-          commandType: command.type,
-          cause: "This native conversation has been retired and cannot be imported.",
-        });
-      }
-    }
-
     const existingReceipt = yield* commandReceipts.getByCommandId(command.commandId).pipe(
       Effect.mapError(
         (cause) =>
@@ -10992,7 +10960,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 export const layer: Layer.Layer<
   OrchestratorV2,
   never,
-  | RetiredNativeSessions.RetiredNativeSessions
   | CheckpointServiceV2
   | FileSystem.FileSystem
   | Path.Path

@@ -104,8 +104,8 @@ the update, stop all database users before restoring data, and redeploy the prio
 runtime through the same supervisor. The retained pre-migration 42 image is a
 separate migration safeguard and does not replace that policy.
 
-## Fleet-free continuation and client enrollment
+## Supported history and client enrollment
 
-The current fork preserves the characterized production journal through retired identities 71 through 78 without starting Fleet. Upstream migrations 57 through 60 continue at fork identities 79 through 82. The [persistence contract](../../fork/persistence-compatibility.md) owns that ordering and rejection boundary. Existing history and admission fences remain available; a pre-Fleet database restore would discard later user data.
+The current fork assumes Fleet was never installed. Upstream migrations 57 through 60 retain fork execution identities 79 through 82. The [persistence contract](../../fork/persistence-compatibility.md) owns the supported history and rejection boundary. A former Fleet database is unsupported until the operator has separately aligned it offline and verified preservation of surviving user data and retirement of native conversation sources. Startup does not rewrite that history or provide a Fleet compatibility mode.
 
 Current upstream permissions split several historical broad grants. Stored and signed scopes are preserved exactly. Re-enroll affected clients through fresh portal-issued one-time grants after cutover, then verify their current permissions. Enrollment does not restore a retired embedded access-management surface. Preserve the pre-cutover database and runtime together and keep one writable runtime active.

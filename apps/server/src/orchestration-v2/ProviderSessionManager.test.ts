@@ -1,4 +1,3 @@
-import * as RetiredNativeSessions from "../project/RetiredNativeSessions.ts";
 import * as NetAddress from "effect/net/NetAddress";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -318,7 +317,6 @@ function unimplemented(detail: string) {
 function makeProviderAdapter(
   state: Ref.Ref<TestProviderRuntimeState>,
   options: {
-    readonly optionalNativeCalls?: Ref.Ref<number>;
     readonly failEventStream?: boolean;
     readonly capabilities?: OrchestrationV2ProviderCapabilities;
     readonly mcpConfigs?: Ref.Ref<
@@ -424,29 +422,6 @@ function makeProviderAdapter(
             : {
                 hasPendingBackgroundWorkForThread: () => options.hasPendingBackgroundWorkForThread!,
               }),
-          ...(options.optionalNativeCalls === undefined
-            ? {}
-            : {
-                compactThread: () => Ref.update(options.optionalNativeCalls!, (n) => n + 1),
-                injectHistory: () =>
-                  Ref.update(options.optionalNativeCalls!, (n) => n + 1).pipe(Effect.as(true)),
-                uploadFeedback: () =>
-                  Ref.update(options.optionalNativeCalls!, (n) => n + 1).pipe(
-                    Effect.as({ feedbackId: "synthetic" }),
-                  ),
-                mcpApps: {
-                  listTools: () =>
-                    Ref.update(options.optionalNativeCalls!, (n) => n + 1).pipe(Effect.as([])),
-                  callTool: () =>
-                    Ref.update(options.optionalNativeCalls!, (n) => n + 1).pipe(
-                      Effect.as({ content: [] }),
-                    ),
-                  readResource: () =>
-                    Ref.update(options.optionalNativeCalls!, (n) => n + 1).pipe(
-                      Effect.as({ contents: [] }),
-                    ),
-                },
-              }),
           ensureThread: () => unimplemented("ensureThread unused in test"),
           resumeThread: (threadInput) =>
             Ref.update(state, (current) => ({
@@ -485,7 +460,6 @@ function layerTest(input: {
   readonly state: Ref.Ref<TestProviderRuntimeState>;
   readonly idleTimeoutMs: number;
   readonly maxIdlePinMs?: number;
-  readonly optionalNativeCalls?: Ref.Ref<number>;
   readonly failEventStream?: boolean;
   readonly capabilities?: OrchestrationV2ProviderCapabilities;
   readonly mcpConfigs?: Ref.Ref<
@@ -497,7 +471,6 @@ function layerTest(input: {
   }) => Effect.Effect<void>;
   readonly failReleaseEventWrites?: boolean;
   readonly failBoardRunReads?: boolean | Ref.Ref<boolean>;
-  readonly retiredNativeSessions?: RetiredNativeSessions.RetiredNativeSessions["Service"];
   readonly flakyReleaseWrites?: FlakyReleaseWrites;
   readonly pauseAttachWrite?: Parameters<typeof layerPausingAttachEventSink>[0];
   /** Once armed, holds the next credential lookup until it is interrupted. */
@@ -527,9 +500,6 @@ function layerTest(input: {
   const layerRegistry = ProviderAdapterRegistry.layerSingle(
     makeProviderAdapter(input.state, {
       failEventStream: input.failEventStream ?? false,
-      ...(input.optionalNativeCalls === undefined
-        ? {}
-        : { optionalNativeCalls: input.optionalNativeCalls }),
       ...(input.capabilities === undefined ? {} : { capabilities: input.capabilities }),
       ...(input.mcpConfigs === undefined ? {} : { mcpConfigs: input.mcpConfigs }),
       ...(input.beforeOpen === undefined ? {} : { beforeOpen: input.beforeOpen }),
@@ -618,14 +588,7 @@ function layerTest(input: {
         ),
       ),
     ),
-  ).pipe(
-    Layer.provide(
-      input.retiredNativeSessions === undefined
-        ? RetiredNativeSessions.layer.pipe(Layer.provide(layerTestDatabase))
-        : Layer.succeed(RetiredNativeSessions.RetiredNativeSessions, input.retiredNativeSessions),
-    ),
-    Layer.provide(NodeServices.layer),
-  );
+  ).pipe(Layer.provide(NodeServices.layer));
 }
 
 const fakeHttpServer = HttpServer.HttpServer.of({
@@ -4917,166 +4880,4 @@ it.effect("credential revocation awaits delayed native Plan preparation finalize
     });
     yield* effect.pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60_000, beforeStart })));
   }),
-);
-
-it.effect(
-  "retired native IDs cannot open or reenter a provider through alias thread operations",
-  () =>
-    Effect.gen(function* () {
-      const state = yield* Ref.make(emptyState);
-      const starts = yield* Ref.make(0);
-      const optionalNativeCalls = yield* Ref.make(0);
-      yield* Effect.gen(function* () {
-        const sink = yield* EventSink.EventSinkV2;
-        const ids = yield* IdAllocator.IdAllocatorV2;
-        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
-        const now = yield* DateTime.now;
-        const threadId = ThreadId.make("retired-native-boundaries");
-        const threadEvent = yield* makeThreadCreatedEvent({ idAllocator: ids, threadId, now });
-        yield* sink.write({ events: [threadEvent] });
-        const providerSessionId = yield* ids.allocate.providerSession({
-          providerInstanceId: modelSelection.instanceId,
-          threadId,
-        });
-        const openInput = { threadId, providerSessionId, modelSelection, runtimePolicy };
-        const beforeOpen = yield* sink.latestSequence();
-        const deniedOpen = yield* manager
-          .open({ ...openInput, initialNativeThreadId: "retired-native" })
-          .pipe(Effect.flip);
-        assert.equal(deniedOpen._tag, "ProviderSessionOpenError");
-        assert.equal((yield* Ref.get(state)).openCount, 0);
-        assert.equal(yield* sink.latestSequence(), beforeOpen);
-        assert.isUndefined(McpProviderSession.readMcpProviderSession(threadId));
-
-        const runtime = yield* manager.open({
-          ...openInput,
-          initialNativeThreadId: "allowed-native",
-        });
-        const providerThread = makeProviderThread({
-          idAllocator: ids,
-          threadId,
-          providerSessionId,
-          now,
-          nativeThreadId: "retired-native",
-        });
-        const turnInput = {
-          appThread: threadEvent.payload,
-          threadId,
-          runId: RunId.make("retired-native-run"),
-          runOrdinal: 1,
-          providerTurnOrdinal: 1,
-          attemptId: RunAttemptId.make("retired-native-attempt"),
-          rootNodeId: NodeId.make("retired-native-root"),
-          providerThread,
-          message: {
-            messageId: MessageId.make("retired-native-message"),
-            text: "synthetic",
-            attachments: [],
-            createdBy: "user" as const,
-            creationSource: "web" as const,
-          },
-          modelSelection,
-          runtimePolicy,
-        };
-        const beforeOperations = yield* sink.latestSequence();
-        const initialConfig = McpProviderSession.readMcpProviderSession(threadId);
-        const operations = [
-          runtime.ensureThread({
-            threadId,
-            modelSelection,
-            runtimePolicy,
-            existingProviderThread: providerThread,
-          }),
-          runtime.resumeThread({ providerThread }),
-          runtime.resumeThread({ providerThread: { ...providerThread, appThreadId: null } }),
-          runtime.resumeThread({
-            providerThread: {
-              ...providerThread,
-              nativeThreadRef: {
-                driver: ProviderDriverKind.make("codex-alias"),
-                nativeId: "retired-native",
-                strength: "strong",
-              },
-            },
-          }),
-          runtime.forkThread({
-            sourceProviderThread: providerThread,
-            targetThreadId: ThreadId.make("retired-native-fork"),
-          }),
-          runtime.startTurn(turnInput),
-          runtime.steerTurn({
-            threadId,
-            runId: turnInput.runId,
-            providerThread,
-            providerTurnId: ProviderTurnId.make("retired-native-turn"),
-            message: turnInput.message,
-          }),
-          runtime.compactThread!(turnInput),
-          runtime.injectHistory!({ providerThread, messages: [], context: "" }),
-          runtime.uploadFeedback!({ providerThread }),
-          runtime.mcpApps!.listTools({ providerThread, server: "synthetic" }),
-          runtime.mcpApps!.callTool({
-            providerThread,
-            server: "synthetic",
-            tool: "synthetic",
-            arguments: {},
-          }),
-          runtime.mcpApps!.readResource({
-            providerThread,
-            server: "synthetic",
-            uri: "synthetic://retired",
-          }),
-          runtime.readThreadSnapshot({ providerThread }),
-          runtime.rollbackThread({
-            providerThread,
-            providerThreadTurns: [],
-            target: {
-              type: "thread_start",
-              checkpointId: CheckpointId.make("retired-native-checkpoint"),
-              appRunOrdinal: 0,
-            },
-          }),
-        ];
-        for (const operation of operations) {
-          const denied = yield* operation.pipe(Effect.flip);
-          assert.equal(denied._tag, "ProviderAdapterProtocolError");
-          if (denied._tag === "ProviderAdapterProtocolError")
-            assert.equal(denied.detail, "This native conversation has been retired.");
-        }
-        const deniedReuse = yield* manager
-          .open({ ...openInput, initialNativeThreadId: "retired-native" })
-          .pipe(Effect.flip);
-        assert.equal(deniedReuse._tag, "ProviderSessionOpenError");
-        assert.equal(yield* sink.latestSequence(), beforeOperations);
-        assert.deepEqual(McpProviderSession.readMcpProviderSession(threadId), initialConfig);
-        assert.equal((yield* Ref.get(state)).resumeCount, 0);
-        assert.equal(yield* Ref.get(starts), 0);
-        assert.equal(yield* Ref.get(optionalNativeCalls), 0);
-        assert.equal((yield* Ref.get(state)).openCount, 1);
-
-        const allowed = makeProviderThread({
-          idAllocator: ids,
-          threadId,
-          providerSessionId,
-          now,
-          nativeThreadId: "allowed-native",
-        });
-        yield* runtime.resumeThread({ providerThread: { ...allowed, appThreadId: null } });
-        yield* runtime.startTurn({ ...turnInput, providerThread: allowed });
-        assert.equal((yield* Ref.get(state)).resumeCount, 1);
-        assert.equal(yield* Ref.get(starts), 1);
-      }).pipe(
-        Effect.provide(
-          layerTest({
-            state,
-            idleTimeoutMs: 60_000,
-            optionalNativeCalls,
-            startTurn: Ref.update(starts, (count) => count + 1),
-            retiredNativeSessions: {
-              contains: (driver, nativeId) => driver === "codex" && nativeId === "retired-native",
-            },
-          }),
-        ),
-      );
-    }),
 );

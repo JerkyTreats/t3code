@@ -172,20 +172,7 @@ const reconciledV0028HistoricalNames = [
   [34, "AuthPairingProofKeyThumbprint"],
   [36, "ReconcileV0028MigrationHistories"],
 ] as const;
-// Production already retired Fleet. These identities are inert evidence only:
-// no Fleet migration implementation is loaded or replayed on any database.
-const retiredFleetHistoricalNames = [
-  [71, "ThreadFleets"],
-  [72, "FleetDefinitions"],
-  [73, "BrokerDecisions"],
-  [74, "AgentCreationRequests"],
-  [75, "FleetTypeIdentity"],
-  [76, "FleetAutomaticAttachment"],
-  [77, "RetireFleetExecution"],
-  [78, "ManualRecoveryAdmission"],
-] as const;
 const historicalNames = new Map<number, string>([
-  ...retiredFleetHistoricalNames,
   ...reconciledV0028HistoricalNames,
   [35, "ProjectionThreadStatusSummary"],
   [37, "ProjectionThreadRuntimeSummary"],
@@ -272,51 +259,6 @@ export const makeMigrationLoader = (throughId?: number): Migrator.Loader<SqlClie
         kind: "Failed",
         message: "Unsupported fork migration lineage: incomplete retired 46 through 49 group",
       });
-    }
-    const fleetEntries = journal.filter(
-      ({ migrationId }) => migrationId >= 71 && migrationId <= 78,
-    );
-    if (fleetEntries.length !== 0) {
-      if (fleetEntries.length !== retiredFleetHistoricalNames.length) {
-        return yield* new Migrator.MigrationError({
-          kind: "Failed",
-          message: "Unsupported fork migration lineage: incomplete retired 71 through 78 group",
-        });
-      }
-      const retirementTables = [
-        "fleet_retirement",
-        "fleet_retired_threads",
-        "fleet_purged_executions",
-        "manual_recovery_guard",
-        "manual_recovery_native_fences",
-      ];
-      if (retirementTables.some((table) => !tables.some(({ name }) => name === table))) {
-        return yield* new Migrator.MigrationError({
-          kind: "Failed",
-          message: "Retired Fleet continuation requires preserved retirement evidence",
-        });
-      }
-      const retired = yield* sql`
-        SELECT 1 FROM fleet_retirement retirement, manual_recovery_guard recovery
-        WHERE retirement.id = 1 AND retirement.retired_at <> ''
-          AND retirement.reason = 'Fleet retired; verified owned conversations permanently purged'
-          AND recovery.id = 1 AND recovery.native_fences_ready = 1
-      `.pipe(
-        Effect.mapError(
-          (cause) =>
-            new Migrator.MigrationError({
-              kind: "Failed",
-              cause,
-              message: "Could not inspect Fleet retirement evidence",
-            }),
-        ),
-      );
-      if (retired.length !== 1) {
-        return yield* new Migrator.MigrationError({
-          kind: "Failed",
-          message: "Retired Fleet continuation requires completed retirement and native fences",
-        });
-      }
     }
     const latest = journal.at(-1)?.migrationId ?? 0;
     const applied = new Set(journal.map((row) => row.migrationId));

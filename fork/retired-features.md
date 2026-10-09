@@ -29,3 +29,7 @@ These intake decisions do not authorize replay of the historical implementations
 ## F29 local voice
 
 Retired by user approval during the latest upstream intake on 2026-09-25. Fork spoken replies, response-style steering, Pocket TTS proxy and catalog, device-local playback settings, and fork dictation customization are removed. Ordinary upstream input remains substrate. Existing external speech services are outside this source retirement. Historical records confer no replay obligation.
+
+## Fleet production continuation
+
+Retired by user instruction on 2026-10-09. Main assumes Fleet manager was never installed. The one-time `PERSIST.D8` continuation, Fleet journal identities, retirement evidence checks, native-session fingerprint guards, and their dedicated fixtures are no longer active application responsibilities. Upstream migration execution identities 79 through 82 remain stable. Historical deployment records remain evidence only; they do not require Fleet support to return in later builds.

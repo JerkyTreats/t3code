@@ -1,4 +1,3 @@
-import * as RetiredNativeSessions from "../../project/RetiredNativeSessions.ts";
 import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -194,7 +193,6 @@ export function runOrchestratorV2ProviderReplayScenario<
     // Reconcile a previous runtime's state before the effect worker starts,
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
-    readonly retiredNativeSessions?: RetiredNativeSessions.RetiredNativeSessions["Service"];
     readonly continueThreadsAfterServerUpdate?: boolean;
   } = {},
 ): Effect.Effect<
@@ -238,7 +236,6 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
     // Reconcile a previous runtime's state before the effect worker starts,
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
-    readonly retiredNativeSessions?: RetiredNativeSessions.RetiredNativeSessions["Service"];
     readonly continueThreadsAfterServerUpdate?: boolean;
     readonly replayGate?: ProviderReplayGate;
   } = {},
@@ -271,7 +268,6 @@ export function layerWithRegistry<Error>(
     // Reconcile a previous runtime's state before the effect worker starts,
     // as server startup does after a crash or restart.
     readonly recoverOnStartup?: boolean;
-    readonly retiredNativeSessions?: RetiredNativeSessions.RetiredNativeSessions["Service"];
     readonly continueThreadsAfterServerUpdate?: boolean;
   } = {},
 ): Layer.Layer<
@@ -505,15 +501,7 @@ export function layerWithRegistry<Error>(
     layerEffectWorkerProvided,
     layerEventSinkProvided,
     layerContinuationWorkerProvided,
-  ).pipe(
-    Layer.provide(
-      options.retiredNativeSessions === undefined
-        ? RetiredNativeSessions.layer.pipe(Layer.provide(layerDatabase))
-        : Layer.succeed(RetiredNativeSessions.RetiredNativeSessions, options.retiredNativeSessions),
-    ),
-    Layer.provide(ProviderTurnStartServiceTestkit.layer),
-    Layer.provide(NodeServices.layer),
-  );
+  ).pipe(Layer.provide(ProviderTurnStartServiceTestkit.layer), Layer.provide(NodeServices.layer));
 
   // Build the daemon from the exact worker instance exposed alongside the
   // orchestrator. Keeping this acquisition in the replay layer makes the

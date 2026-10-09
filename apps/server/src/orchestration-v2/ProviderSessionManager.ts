@@ -1,4 +1,3 @@
-import * as RetiredNativeSessions from "../project/RetiredNativeSessions.ts";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
@@ -52,7 +51,6 @@ import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import {
   ProviderAdapterEventStreamError,
   ProviderAdapterV2RuntimePolicy,
-  ProviderAdapterProtocolError,
   type ProviderAdapterV2Error,
   type ProviderAdapterV2Event,
   type ProviderAdapterV2EventSubscription,
@@ -329,7 +327,6 @@ export const layerWithOptions = (
 ): Layer.Layer<
   ProviderSessionManagerV2,
   never,
-  | RetiredNativeSessions.RetiredNativeSessions
   | BoardTurnWritePolicyV2
   | EventSink.EventSinkV2
   | FileSystem.FileSystem
@@ -342,7 +339,6 @@ export const layerWithOptions = (
   Layer.effect(
     ProviderSessionManagerV2,
     Effect.gen(function* () {
-      const retiredNativeSessions = yield* RetiredNativeSessions.RetiredNativeSessions;
       const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
       const fileSystem = yield* FileSystem.FileSystem;
       const mcpSessionRegistry = yield* McpSessionRegistry.McpSessionRegistry;
@@ -1753,7 +1749,7 @@ export const layerWithOptions = (
               modelFamily: normalizeModelMetricLabel(model),
             },
           });
-        const decorated: ProviderAdapterV2SessionRuntime = {
+        return {
           ...runtime,
           subscribeEvents,
           events: Stream.unwrap(
@@ -2002,88 +1998,6 @@ export const layerWithOptions = (
                   }),
                 ),
         };
-        const admitNative = <A, E, R>(
-          providerThread: OrchestrationV2ProviderThread | undefined,
-          operation: () => Effect.Effect<A, E, R>,
-        ): Effect.Effect<A, E | ProviderAdapterProtocolError, R> =>
-          Effect.suspend((): Effect.Effect<A, E | ProviderAdapterProtocolError, R> => {
-            const ref = providerThread?.nativeThreadRef;
-            return ref?.nativeId != null &&
-              (retiredNativeSessions.contains(ref.driver, ref.nativeId) ||
-                retiredNativeSessions.contains(runtime.driver, ref.nativeId))
-              ? Effect.fail(
-                  new ProviderAdapterProtocolError({
-                    driver: runtime.driver,
-                    detail: "This native conversation has been retired.",
-                  }),
-                )
-              : operation();
-          });
-        // Guard before decoration can attach credentials or persist activity.
-        return {
-          ...decorated,
-          ensureThread: (input) =>
-            admitNative(input.existingProviderThread, () => decorated.ensureThread(input)),
-          resumeThread: (input) =>
-            admitNative(input.providerThread, () => decorated.resumeThread(input)),
-          forkThread: (input) =>
-            admitNative(input.sourceProviderThread, () => decorated.forkThread(input)),
-          startTurn: (input) => admitNative(input.providerThread, () => decorated.startTurn(input)),
-          steerTurn: (input) => admitNative(input.providerThread, () => decorated.steerTurn(input)),
-          readThreadSnapshot: (input) =>
-            admitNative(input.providerThread, () => decorated.readThreadSnapshot(input)),
-          rollbackThread: (input) =>
-            admitNative(input.providerThread, () => decorated.rollbackThread(input)),
-          ...(decorated.compactThread === undefined
-            ? {}
-            : {
-                compactThread: (
-                  input: Parameters<
-                    NonNullable<ProviderAdapterV2SessionRuntime["compactThread"]>
-                  >[0],
-                ) => admitNative(input.providerThread, () => decorated.compactThread!(input)),
-              }),
-          ...(decorated.injectHistory === undefined
-            ? {}
-            : {
-                injectHistory: (
-                  input: Parameters<
-                    NonNullable<ProviderAdapterV2SessionRuntime["injectHistory"]>
-                  >[0],
-                ) => admitNative(input.providerThread, () => decorated.injectHistory!(input)),
-              }),
-          ...(decorated.mcpApps === undefined
-            ? {}
-            : {
-                mcpApps: {
-                  listTools: (
-                    input: Parameters<
-                      NonNullable<ProviderAdapterV2SessionRuntime["mcpApps"]>["listTools"]
-                    >[0],
-                  ) => admitNative(input.providerThread, () => decorated.mcpApps!.listTools(input)),
-                  callTool: (
-                    input: Parameters<
-                      NonNullable<ProviderAdapterV2SessionRuntime["mcpApps"]>["callTool"]
-                    >[0],
-                  ) => admitNative(input.providerThread, () => decorated.mcpApps!.callTool(input)),
-                  readResource: (
-                    input: Parameters<
-                      NonNullable<ProviderAdapterV2SessionRuntime["mcpApps"]>["readResource"]
-                    >[0],
-                  ) =>
-                    admitNative(input.providerThread, () => decorated.mcpApps!.readResource(input)),
-                },
-              }),
-          ...(decorated.uploadFeedback === undefined
-            ? {}
-            : {
-                uploadFeedback: (
-                  input: Parameters<
-                    NonNullable<ProviderAdapterV2SessionRuntime["uploadFeedback"]>
-                  >[0],
-                ) => admitNative(input.providerThread, () => decorated.uploadFeedback!(input)),
-              }),
-        };
       };
 
       const persistProviderSessionUpdate = (
@@ -2309,19 +2223,6 @@ export const layerWithOptions = (
               const existing = (yield* Ref.get(sessions)).get(key);
               if (existing !== undefined) {
                 if (
-                  input.initialNativeThreadId !== undefined &&
-                  retiredNativeSessions.contains(
-                    existing.runtime.driver,
-                    input.initialNativeThreadId,
-                  )
-                ) {
-                  return yield* new ProviderSessionOpenError({
-                    instanceId: input.modelSelection.instanceId,
-                    providerSessionId: input.providerSessionId,
-                    cause: "This native conversation has been retired.",
-                  });
-                }
-                if (
                   !existing.attachedThreadIds.has(input.threadId) &&
                   !existing.supportsMultipleProviderThreads
                 ) {
@@ -2350,16 +2251,6 @@ export const layerWithOptions = (
                     }),
                 ),
               );
-              if (
-                input.initialNativeThreadId !== undefined &&
-                retiredNativeSessions.contains(adapter.driver, input.initialNativeThreadId)
-              ) {
-                return yield* new ProviderSessionOpenError({
-                  instanceId: input.modelSelection.instanceId,
-                  providerSessionId: input.providerSessionId,
-                  cause: "This native conversation has been retired.",
-                });
-              }
               const prepared = yield* prepareMcpSession(
                 input.threadId,
                 input.modelSelection.instanceId,

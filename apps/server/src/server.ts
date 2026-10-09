@@ -1,4 +1,3 @@
-import * as RetiredNativeSessions from "./project/RetiredNativeSessions.ts";
 import { BoardLive } from "./orchestration/Layers/Board.ts";
 import { BoardQueryLive } from "./orchestration/Layers/BoardQuery.ts";
 import { ProjectionBoardPostRepositoryLive } from "./persistence/ProjectionBoardPosts.ts";
@@ -1095,9 +1094,6 @@ const layerMakeServer = Layer.unwrap(
       // The connect routes and the startup/shutdown link work share one instance.
       Layer.provide(CloudLink.layer),
       Layer.provideMerge(layerRuntimeServices),
-      Layer.provideMerge(
-        RetiredNativeSessions.layer.pipe(Layer.provide(SqlitePersistence.layerConfig)),
-      ),
       Layer.provideMerge(
         McpSessionRegistry.layer.pipe(
           Layer.provide(ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer))),
