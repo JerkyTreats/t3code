@@ -5,7 +5,16 @@ import {
   type CDPSession,
   type Page,
 } from "playwright-core";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vite-plus/test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vite-plus/test";
 
 import { presentAsChrome } from "./ServerBrowserContexts.ts";
 import * as ServerBrowserPage from "./ServerBrowserPage.ts";
@@ -71,6 +80,122 @@ describe("server browser element refs", () => {
       "row 3delete",
       "row 4delete",
     ]);
+  });
+
+  it("waits for a render opportunity before the first viewport capture", async () => {
+    await page.setContent(`<style>body { background: #2478ce; }</style><p>first frame</p>`);
+    await page.evaluate(`(() => {
+      const nativeFrame = requestAnimationFrame;
+      const callbacks = [];
+      window.requestAnimationFrame = (callback) => { callbacks.push(callback); return callbacks.length; };
+      window.pendingCaptureFrames = () => callbacks.length;
+      window.releaseCaptureFrame = () => new Promise(resolve => nativeFrame(time => {
+        for (const callback of callbacks.splice(0)) callback(time);
+        resolve();
+      }));
+    })()`);
+    const send = vi.spyOn(cdp, "send");
+    const pending = ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale: 1 });
+    // Observe early rejection too: the old immediate capture must not become an unhandled error.
+    void pending.catch(() => undefined);
+    try {
+      await expect.poll(() => page.evaluate("pendingCaptureFrames()")).toBe(1);
+      expect(send.mock.calls.some(([method]) => method === "Page.captureScreenshot")).toBe(false);
+      await page.evaluate("releaseCaptureFrame()");
+      await expect.poll(() => page.evaluate("pendingCaptureFrames()")).toBe(1);
+      expect(send.mock.calls.some(([method]) => method === "Page.captureScreenshot")).toBe(false);
+      await page.evaluate("releaseCaptureFrame()");
+      const png = Buffer.from(await pending, "base64");
+      expect(png.subarray(1, 4).toString()).toBe("PNG");
+      expect(png.readUInt32BE(16)).toBe(page.viewportSize()!.width);
+      expect(png.readUInt32BE(20)).toBe(page.viewportSize()!.height);
+      expect(
+        send.mock.calls.filter(([method]) => method === "Page.captureScreenshot"),
+      ).toHaveLength(1);
+    } finally {
+      send.mockRestore();
+    }
+  });
+
+  it.each([1, 0.5])(
+    "captures an inactive tab at scale %s with another page open",
+    async (scale) => {
+      await page.setContent(
+        "<style>body { height: 2000px; background: #2478ce }</style><p>background</p>",
+      );
+      await page.evaluate("scrollTo(0, 120)");
+      const other = await context.newPage();
+      await other.setContent("<p>other tab</p>");
+      const png = Buffer.from(
+        await ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale }),
+        "base64",
+      );
+      expect(png.readUInt32BE(16)).toBe(page.viewportSize()!.width * scale);
+      expect(png.readUInt32BE(20)).toBe(page.viewportSize()!.height * scale);
+      expect(await page.evaluate("scrollY")).toBe(120);
+    },
+  );
+
+  it("captures a document reporting hidden without requesting an animation frame", async () => {
+    await page.setContent("<p>hidden guest</p>");
+    // Playwright forces focus emulation on its own CDP session, even with another
+    // tab open. Model the hidden-guest API boundary, without claiming native UI proof.
+    await page.evaluate(`(() => {
+      Object.defineProperty(document, "visibilityState", { get: () => "hidden" });
+      window.requestAnimationFrame = () => { throw new Error("Hidden document requested a frame"); };
+    })()`);
+    const png = Buffer.from(
+      await ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale: 1 }),
+      "base64",
+    );
+    expect(png.readUInt32BE(16)).toBe(page.viewportSize()!.width);
+  });
+
+  it("releases a rendering wait when the document becomes hidden", async () => {
+    await page.setContent("<p>guest being hidden</p>");
+    await page.evaluate(`(() => {
+      window.requestedCaptureFrame = false;
+      window.requestAnimationFrame = () => { window.requestedCaptureFrame = true; return 1; };
+    })()`);
+    const pending = ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale: 1 });
+    void pending.catch(() => undefined);
+    await expect.poll(() => page.evaluate("requestedCaptureFrame")).toBe(true);
+    await page.evaluate(`(() => {
+      Object.defineProperty(document, "visibilityState", { get: () => "hidden" });
+      document.dispatchEvent(new Event("visibilitychange"));
+    })()`);
+    const png = Buffer.from(await pending, "base64");
+    expect(png.readUInt32BE(16)).toBe(page.viewportSize()!.width);
+  });
+
+  it("propagates the original capture error once readiness completes without retrying", async () => {
+    await page.setContent("<p>ready</p>");
+    const failure = new Error("capture failed");
+    const send = vi.spyOn(cdp, "send").mockRejectedValue(failure);
+    try {
+      await expect(
+        ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale: 1 }),
+      ).rejects.toBe(failure);
+      expect(send).toHaveBeenCalledExactlyOnceWith("Page.captureScreenshot", { format: "png" });
+    } finally {
+      send.mockRestore();
+    }
+  });
+
+  it("does not capture when the bounded rendering wait fails", async () => {
+    const failure = new Error("rendering deadline expired");
+    const wait = vi.spyOn(page, "waitForFunction").mockRejectedValue(failure);
+    const send = vi.spyOn(cdp, "send");
+    try {
+      await expect(
+        ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale: 1 }),
+      ).rejects.toBe(failure);
+      expect(wait.mock.calls[0]?.[2]).toEqual({ timeout: 15_000 });
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      wait.mockRestore();
+      send.mockRestore();
+    }
   });
 
   it("returns from a click once it opens a dialog", async () => {
