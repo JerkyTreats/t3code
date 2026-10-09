@@ -83,7 +83,7 @@ Earlier recursive attempts exposed mechanical test-registration issues, a long-n
 | Upstream usage shortcut ordering drift                          | Restored upstream ordering; focused tests and web typecheck pass                                                                                                                                                                                          |
 | Muse independent MCP attachment                                 | Closed by adapter repair and fresh review; 26 adapter tests and five orchestration replays pass                                                                                                                                                           |
 | Pi and native MCP-over-ACP attachment branches                  | Closed through canonical independent attachments and connection-scoped routing, including activation changes, revocation races and shutdown; 124 Pi, 44 ACP runtime and six bridge tests pass                                                             |
-| Decision-level attribution                                      | All 180 selected decisions have source evidence, with four renderer outcomes also visually accepted; all 325 original hunk occurrences have reviewed dispositions. Final audit binds 492 fingerprints across 329 paths with no unresolved source mismatch |
+| Decision-level attribution                                      | All 180 selected decisions have source evidence, with four renderer outcomes also visually accepted; all 325 original hunk occurrences have reviewed dispositions. Final audit binds 496 fingerprints across 333 paths with no unresolved source mismatch |
 | Final source and artifact binding                               | Source gates and bounded follow-up proofs reconciled; immutable release acceptance must bind final clean-tree gates and artifact smoke to this delivery commit                                                                                            |
 
 Deferred observations are six unused package exports and an unused composer-padding helper. Neither prevents the selected outcomes; unrelated cleanup is excluded. Native installed-client behavior and unavailable mobile native linters remain explicit acceptance limits.
@@ -99,3 +99,13 @@ Release acceptance must bind clean immutable-build gates, artifact hashes and is
 ## Deliverable closeout
 
 The source delivers the complete pinned upstream intake without Fleet manager implementations. The sole retained production database continues forward without rewriting history or restoring a pre-Fleet checkpoint. Protected source outcomes have decision-level review, current owner and host proofs, and ordinary plus compact renderer acceptance. Production remains unchanged. Immutable release verification is recorded against this delivery commit separately; native installed acceptance and skipped native mobile linters are not implied by source, renderer or database proofs.
+
+## Preview snapshot readiness correction
+
+The first clean immutable candidate reproduced the same first-screenshot failure seen in the integration run and was not accepted. Every other recursive test passed. Chromium reports this error when the screenshot result contains an empty image. A render-readiness race is an inference from that condition and the first-capture pattern, not a proven diagnosis of the compositor.
+
+`ServerBrowserPage.captureViewport` now waits for a bounded render opportunity before a visible-document capture. Hidden documents use their existing surface, and a visibility change releases the wait. Capture scale, scroll offsets, image options and original errors remain unchanged; the operation does not retry or suppress capture failures.
+
+The deterministic frame-ordering regression fails the earlier helper and passes the correction. All 70 focused tests pass, including the original first test, inactive-page captures at full and half scale, explicit hidden-state handling, visibility changes and error propagation. Three concurrent cold Chromium suite runs pass all 26 tests each. Server typecheck, scoped lint, formatting and whitespace checks pass. Hidden-state simulation does not establish native installed-window acceptance. The corrected immutable release must pass the full recursive test command before acceptance.
+
+If applied, this commit waits for preview rendering readiness before capturing screenshots while preserving background capture and error reporting.
