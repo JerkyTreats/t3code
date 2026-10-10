@@ -1,6 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Electron main owns the independent client profile and process lifecycle.
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
+import {
+  readDesktopSystemTheme,
+  watchDesktopSystemTheme,
+} from "@t3tools/shared/omarchySystemThemeSource";
 
 import { decodeThreadAppActivationCompletion } from "@t3tools/shared/threadAppActivation";
 import {
@@ -19,6 +23,8 @@ import {
   THREAD_CLIENT_ACTIVATION_COMPLETION_CHANNEL,
   THREAD_ENROLLMENT_SUBMISSION_CHANNEL,
   THREAD_STARTUP_MARK_CHANNEL,
+  THREAD_SYSTEM_THEME_GET_CHANNEL,
+  THREAD_SYSTEM_THEME_CHANGED_CHANNEL,
 } from "./bridge.ts";
 import {
   authorizeThreadSessionRequest,
@@ -62,6 +68,7 @@ function reveal(window: BrowserWindow): void {
 async function run(): Promise<void> {
   const readyChannel = new ThreadAppReadyChannel();
   let window: BrowserWindow | undefined;
+  let stopTheme: (() => void) | undefined;
   try {
     const desktopName = resolveThreadDesktopName(process.env.T3_THREAD_CHANNEL);
     // Linux identity must be set before Electron readiness, including while stdin is pending.
@@ -132,6 +139,17 @@ async function run(): Promise<void> {
         senderFrameUrl: event.senderFrame?.url ?? null,
         applicationOrigin,
       });
+    ipcMain.handle(THREAD_SYSTEM_THEME_GET_CHANNEL, (event) =>
+      acceptsWindowMessage(event) ? readDesktopSystemTheme() : null,
+    );
+    stopTheme = watchDesktopSystemTheme((theme) => {
+      if (
+        window &&
+        !window.isDestroyed() &&
+        isThreadApplicationTarget(window.webContents.getURL(), applicationOrigin)
+      )
+        window.webContents.send(THREAD_SYSTEM_THEME_CHANGED_CHANNEL, theme);
+    });
     if (startupTraceInstalled) {
       ipcMain.on(THREAD_STARTUP_MARK_CHANNEL, (event, value: unknown) => {
         if (
@@ -176,6 +194,8 @@ async function run(): Promise<void> {
       ipcMain.removeHandler(THREAD_ENROLLMENT_SUBMISSION_CHANNEL);
       ipcMain.removeHandler(THREAD_CLIENT_ACTIVATION_COMPLETION_CHANNEL);
       if (startupTraceInstalled) ipcMain.removeAllListeners(THREAD_STARTUP_MARK_CHANNEL);
+      stopTheme?.();
+      ipcMain.removeHandler(THREAD_SYSTEM_THEME_GET_CHANNEL);
       startupTrace.close();
       window = undefined;
       app.quit();
@@ -219,6 +239,8 @@ async function run(): Promise<void> {
     ipcMain.removeHandler(THREAD_ENROLLMENT_SUBMISSION_CHANNEL);
     ipcMain.removeHandler(THREAD_CLIENT_ACTIVATION_COMPLETION_CHANNEL);
     if (startupTraceInstalled) ipcMain.removeAllListeners(THREAD_STARTUP_MARK_CHANNEL);
+    stopTheme?.();
+    ipcMain.removeHandler(THREAD_SYSTEM_THEME_GET_CHANNEL);
     startupTrace.close();
     if (window && !window.isDestroyed()) window.destroy();
     throw error;

@@ -587,12 +587,15 @@ function subscribe(listener: () => void): () => void {
     const mq = typeof window.matchMedia === "function" ? window.matchMedia(MEDIA_QUERY) : null;
     mq?.addEventListener("change", handleSystemAppearanceChange);
     window.addEventListener("storage", handleStorageChange);
-    const stopLocalTheme = observeDesktopSystemTheme(window.desktopBridge, (next) => {
-      desktopSystemTheme = next;
-      systemThemeRevision += 1;
-      applyTheme(getStored(), { suppressTransitions: true });
-      emitChange();
-    });
+    const stopLocalTheme = observeDesktopSystemTheme(
+      window.t3ThreadBridge ?? window.desktopBridge,
+      (next) => {
+        desktopSystemTheme = next;
+        systemThemeRevision += 1;
+        applyTheme(getStored(), { suppressTransitions: true });
+        emitChange();
+      },
+    );
     removeWindowListeners = () => {
       stopLocalTheme();
       mq?.removeEventListener("change", handleSystemAppearanceChange);

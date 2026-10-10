@@ -1,12 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import type { DesktopSystemTheme } from "@t3tools/contracts";
 import type { ThreadAppActivation } from "@t3tools/contracts/threadAppActivation";
 import {
   THREAD_CLIENT_ACTIVATION_CHANNEL,
   THREAD_CLIENT_ACTIVATION_COMPLETION_CHANNEL,
   THREAD_ENROLLMENT_SUBMISSION_CHANNEL,
+  THREAD_SYSTEM_THEME_GET_CHANNEL,
+  THREAD_SYSTEM_THEME_CHANGED_CHANNEL,
 } from "./bridge.ts";
 
-const electron = vi.hoisted(() => ({ on: vi.fn(), invoke: vi.fn(), exposeInMainWorld: vi.fn() }));
+const electron = vi.hoisted(() => ({
+  on: vi.fn(),
+  invoke: vi.fn(),
+  removeListener: vi.fn(),
+  exposeInMainWorld: vi.fn(),
+}));
 vi.mock("electron", () => ({ ipcRenderer: electron, contextBridge: electron }));
 const activation = {
   contractVersion: 1,
@@ -22,6 +30,8 @@ async function preload() {
   return {
     receive: electron.on.mock.calls[0]![1] as (event: unknown, value: unknown) => void,
     bridge: electron.exposeInMainWorld.mock.calls[0]![1] as {
+      getSystemTheme: () => Promise<DesktopSystemTheme | null>;
+      onSystemTheme: (listener: (theme: DesktopSystemTheme | null) => void) => () => void;
       subscribe: (listener: (activation: ThreadAppActivation) => void) => () => void;
       submitPairingCredential: (credential: string) => Promise<unknown>;
       completeActivation: (completion: unknown) => Promise<boolean>;
@@ -31,6 +41,36 @@ async function preload() {
 afterEach(() => vi.clearAllMocks());
 
 describe("protected Thread preload", () => {
+  it("reads validated local theme data and releases its fixed change channel", async () => {
+    const { bridge } = await preload();
+    const theme = {
+      source: "omarchy",
+      name: "Synthetic",
+      mode: "dark",
+      colors: { background: "#050806", foreground: "#edf2ed", accent: "#7fff9f" },
+    };
+    electron.invoke.mockResolvedValueOnce(theme);
+    expect(await bridge.getSystemTheme()).toEqual(theme);
+    expect(electron.invoke).toHaveBeenCalledExactlyOnceWith(THREAD_SYSTEM_THEME_GET_CHANNEL);
+    electron.invoke.mockResolvedValueOnce({ ...theme, colors: {} });
+    await expect(bridge.getSystemTheme()).rejects.toThrow();
+    const listener = vi.fn();
+    const unsubscribe = bridge.onSystemTheme(listener);
+    const receive = electron.on.mock.calls.find(
+      ([name]) => name === THREAD_SYSTEM_THEME_CHANGED_CHANNEL,
+    )![1] as (event: unknown, value: unknown) => void;
+    receive({}, { ...theme, source: "foreign" });
+    expect(listener).not.toHaveBeenCalled();
+    receive({}, theme);
+    receive({}, null);
+    expect(listener.mock.calls).toEqual([[theme], [null]]);
+    unsubscribe();
+    expect(electron.removeListener).toHaveBeenCalledExactlyOnceWith(
+      THREAD_SYSTEM_THEME_CHANGED_CHANNEL,
+      receive,
+    );
+  });
+
   it("retains only the first valid activation for every later subscription", async () => {
     const { bridge, receive } = await preload();
     receive({}, { ...activation, launchId: "bad" });
@@ -70,6 +110,8 @@ describe("protected Thread preload", () => {
     const { bridge } = await preload();
     expect(Object.keys(bridge).sort()).toEqual([
       "completeActivation",
+      "getSystemTheme",
+      "onSystemTheme",
       "submitPairingCredential",
       "subscribe",
     ]);
