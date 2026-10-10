@@ -13,8 +13,8 @@ layer("055_OrchestrationV2", (it) => {
     Effect.sync(() => {
       assert.deepStrictEqual(
         migrationEntries.map(([id]) => id),
-        Array.from({ length: 82 }, (_, index) => index + 1).filter(
-          (id) => (id < 46 || id > 49) && (id < 71 || id > 78),
+        Array.from({ length: 83 }, (_, index) => index + 1).filter(
+          (id) => (id < 43 || id > 49) && (id < 70 || id > 78),
         ),
       );
     }),
@@ -29,11 +29,11 @@ layer("055_OrchestrationV2", (it) => {
       assert.deepStrictEqual(executed, [
         [68, "OrchestrationV2"],
         [69, "RemoveRedundantProjectionIndexes"],
-        [70, "ApplicationBoardEventSequenceIndex"],
         [79, "ScheduledTaskWebhooks"],
         [80, "WebhookRelayDeliveries"],
         [81, "McpAppModelContext"],
         [82, "ThreadSnapshotWindowIndexes"],
+        [83, "RetireBoardAndCollective"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
 
@@ -57,11 +57,11 @@ layer("055_OrchestrationV2", (it) => {
         { migration_id: 67, name: "ProjectionThreadCreationSurface" },
         { migration_id: 68, name: "OrchestrationV2" },
         { migration_id: 69, name: "RemoveRedundantProjectionIndexes" },
-        { migration_id: 70, name: "ApplicationBoardEventSequenceIndex" },
         { migration_id: 79, name: "ScheduledTaskWebhooks" },
         { migration_id: 80, name: "WebhookRelayDeliveries" },
         { migration_id: 81, name: "McpAppModelContext" },
         { migration_id: 82, name: "ThreadSnapshotWindowIndexes" },
+        { migration_id: 83, name: "RetireBoardAndCollective" },
       ]);
 
       const tables = yield* sql<{ readonly name: string }>`

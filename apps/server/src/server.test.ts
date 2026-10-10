@@ -21,11 +21,12 @@ import {
   ORCHESTRATION_V2_WS_METHODS,
   ServerSettings,
   WS_METHODS,
-  WsOrchestrationGetBoardPageRpc,
-  WsOrchestrationSubscribeBoardRpc,
+  WsSubscribeBackgroundPolicyRpc,
+  type BackgroundPolicySnapshot,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -80,11 +81,29 @@ const AuthorityRpcGroup = RpcGroup.make(
     success: ServerSettings,
     error: EnvironmentAuthorizationError,
   }),
-  WsOrchestrationGetBoardPageRpc,
-  WsOrchestrationSubscribeBoardRpc,
+  WsSubscribeBackgroundPolicyRpc,
   WsServerImportAcpRegistrySessionRpc,
 );
-const emptyPage = { posts: [], beforeCursor: null, headSequence: 0 } as const;
+
+const backgroundPolicy: BackgroundPolicySnapshot = {
+  hostPower: {
+    source: "unknown",
+    idle: "unknown",
+    idleSeconds: null,
+    locked: "unknown",
+    suspended: false,
+    onBattery: "unknown",
+    lowPowerMode: "unknown",
+    thermalState: "unknown",
+    stale: true,
+    updatedAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
+  },
+  leases: [],
+  activeForegroundLeaseCount: 0,
+  activeScopeKeys: [],
+  shouldRunOpportunisticWork: true,
+  updatedAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
+};
 const makeClient = RpcClient.make(AuthorityRpcGroup);
 const withClient = <A, E, R>(
   url: string,
@@ -181,25 +200,13 @@ const buildAuthorityHost = Effect.gen(function* () {
             requiredScopeForRpcMethod(WS_METHODS.serverGetSettings),
             Effect.succeed(DEFAULT_SERVER_SETTINGS),
           ),
-        [WS_METHODS.getBoardPage]: () =>
-          authorizeClientRpc(
-            sessions,
-            session,
-            requiredScopeForRpcMethod(WS_METHODS.getBoardPage),
-            Effect.succeed(emptyPage),
-          ),
-        [WS_METHODS.subscribeBoard]: () =>
+        [WS_METHODS.subscribeBackgroundPolicy]: () =>
           Stream.unwrap(
             authorizeClientRpc(
               sessions,
               session,
-              requiredScopeForRpcMethod(WS_METHODS.subscribeBoard),
-              Effect.succeed(
-                Stream.concat(
-                  Stream.make({ kind: "snapshot" as const, page: emptyPage }),
-                  Stream.never,
-                ),
-              ),
+              requiredScopeForRpcMethod(WS_METHODS.subscribeBackgroundPolicy),
+              Effect.succeed(Stream.concat(Stream.make(backgroundPolicy), Stream.never)),
             ),
           ),
       });
@@ -306,7 +313,7 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
       }).pipe(Effect.provide(AuthorityHttpServerLive)),
     );
 
-    it.effect("confines portal credentials before public, v2, Board and preflight dispatch", () =>
+    it.effect("confines portal credentials before public, v2 and preflight dispatch", () =>
       Effect.gen(function* () {
         const host = yield* buildAuthorityHost;
         const portal = yield* host.sessions.issue({
@@ -351,9 +358,8 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
         const session = yield* host.sessions.verify(portal.token);
         for (const method of [
           ...Object.values(ORCHESTRATION_V2_WS_METHODS),
-          WS_METHODS.getBoardPage,
-          WS_METHODS.subscribeBoard,
-          WS_METHODS.reviseBoardPost,
+          WS_METHODS.serverGetSettings,
+          WS_METHODS.subscribeBackgroundPolicy,
         ]) {
           const outcome = yield* authorizeClientRpc(
             host.sessions,
@@ -372,7 +378,7 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
     );
 
     it.effect(
-      "executes all six Admin routes and commits exact-device disable before closing its live Board subscription",
+      "executes all six Admin routes and commits exact-device disable before closing its live background policy subscription",
       () =>
         Effect.gen(function* () {
           const host = yield* buildAuthorityHost;
@@ -397,7 +403,7 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
             host.wsUrl,
             `${host.sessions.cookieName}=${browser.sessionToken}`,
             (client) =>
-              client[WS_METHODS.subscribeBoard]({}).pipe(
+              client[WS_METHODS.subscribeBackgroundPolicy]({}).pipe(
                 Stream.tap(() => Deferred.succeed(ready, undefined)),
                 Stream.runDrain,
               ),
@@ -462,7 +468,7 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
             withClient(
               host.wsUrl,
               `${host.sessions.cookieName}=${browser.sessionToken}`,
-              (client) => client[WS_METHODS.getBoardPage]({}),
+              (client) => client[WS_METHODS.serverGetSettings]({}),
             ),
           );
           const deleted = yield* requestJson(
@@ -503,7 +509,7 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
             `${host.sessions.cookieName}=${target.token}`,
             (client) =>
               Effect.gen(function* () {
-                const subscription = yield* client[WS_METHODS.subscribeBoard]({}).pipe(
+                const subscription = yield* client[WS_METHODS.subscribeBackgroundPolicy]({}).pipe(
                   Stream.tap(() => Deferred.succeed(targetStarted, undefined)),
                   Stream.runDrain,
                   Effect.forkChild,
@@ -522,7 +528,7 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
             `${host.sessions.cookieName}=${peer.token}`,
             (client) =>
               Effect.gen(function* () {
-                const subscription = yield* client[WS_METHODS.subscribeBoard]({}).pipe(
+                const subscription = yield* client[WS_METHODS.subscribeBackgroundPolicy]({}).pipe(
                   Stream.tap(() => Deferred.succeed(peerStarted, undefined)),
                   Stream.runDrain,
                   Effect.forkChild,
@@ -559,9 +565,9 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
           const ticket = yield* host.auth.issueWebSocketTicket(session);
           const url = `${host.wsUrl}?wsTicket=${encodeURIComponent(ticket.ticket)}`;
           const page = yield* Effect.scoped(
-            withClient(url, "", (client) => client[WS_METHODS.getBoardPage]({})),
+            withClient(url, "", (client) => client[WS_METHODS.serverGetSettings]({})),
           );
-          assert.deepEqual(page, emptyPage);
+          assert.deepEqual(page, DEFAULT_SERVER_SETTINGS);
           const reused = yield* HttpClient.get(`/ws?wsTicket=${encodeURIComponent(ticket.ticket)}`);
           assert.equal(reused.status, 401);
         }).pipe(Effect.provide(AuthorityHttpServerLive)),

@@ -1,12 +1,6 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
-import { resolveBoardInteractionPolicy } from "../board/InteractionPolicy.ts";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
-import {
-  T3_CODE_BOARD_TOOL_INSTRUCTIONS,
-  boardCollectiveInstructionsForProfile,
-} from "./BoardToolInstructions.ts";
-
 import {
   T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
   T3_CODE_ORCHESTRATION_INSTRUCTIONS,
@@ -19,15 +13,12 @@ The \`t3-code-device\` MCP server exposes \`device_*\` tools for iOS Simulators 
 export interface T3CodeToolAvailability {
   readonly browser: boolean;
   readonly device: boolean;
-  readonly board?: boolean;
 }
 
 const normalizeAvailability = (
   availability: boolean | T3CodeToolAvailability,
 ): T3CodeToolAvailability =>
-  typeof availability === "boolean"
-    ? { browser: availability, device: false, board: false }
-    : availability;
+  typeof availability === "boolean" ? { browser: availability, device: false } : availability;
 
 /**
  * Each block is omitted entirely when its tools aren't attached. Describing
@@ -219,14 +210,8 @@ export function buildCodexAdditionalContext(
    * setting, so the prompt cannot claim tools the turn doesn't have.
    */
   toolsAvailable: boolean | T3CodeToolAvailability = true,
-  interactionMode: ProviderInteractionMode = "default",
 ): Record<string, V2TurnStartParams__AdditionalContextEntry> {
   const tools = toolInstructions(toolsAvailable);
-  const board = normalizeAvailability(toolsAvailable).board
-    ? `${T3_CODE_BOARD_TOOL_INSTRUCTIONS}\n\n${boardCollectiveInstructionsForProfile(
-        resolveBoardInteractionPolicy(interactionMode).collectiveInstructionProfile,
-      )}`
-    : "";
   // Separate keys keep each value under Codex's per-entry token cap.
   return {
     t3_code_orchestration: { kind: "application", value: T3_CODE_ORCHESTRATION_INSTRUCTIONS },
@@ -235,6 +220,5 @@ export function buildCodexAdditionalContext(
       value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
     },
     ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
-    ...(board ? { t3_code_board: { kind: "application", value: board } } : {}),
   };
 }

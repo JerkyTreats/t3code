@@ -6,14 +6,7 @@
  *
  * @module OrchestrationCommandReceiptRepository
  */
-import {
-  BoardAggregateId,
-  CommandId,
-  IsoDateTime,
-  NonNegativeInt,
-  ProjectId,
-  ThreadId,
-} from "@t3tools/contracts";
+import { CommandId, IsoDateTime, NonNegativeInt, ProjectId, ThreadId } from "@t3tools/contracts";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 import * as Context from "effect/Context";
@@ -29,8 +22,8 @@ import {
 
 export const OrchestrationCommandReceipt = Schema.Struct({
   commandId: CommandId,
-  aggregateKind: Schema.Literals(["project", "thread", "board"]),
-  aggregateId: Schema.Union([ProjectId, ThreadId, BoardAggregateId]),
+  aggregateKind: Schema.Literals(["project", "thread"]),
+  aggregateId: Schema.Union([ProjectId, ThreadId]),
   commandType: Schema.String,
   acceptedAt: IsoDateTime,
   resultSequence: NonNegativeInt,

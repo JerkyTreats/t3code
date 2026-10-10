@@ -1,5 +1,3 @@
-import { layer as boardEventSinkAdmissionLayer } from "../board/EventSinkAdmission.ts";
-import { layer as boardTurnWritePolicyLayer } from "../board/TurnWritePolicyV2.ts";
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
@@ -82,9 +80,7 @@ const layerStores = Layer.mergeAll(
 );
 
 export const layerEventSink = EventSink.layerFromStores.pipe(Layer.provide(layerStores));
-const layerEventSinkProvided = boardEventSinkAdmissionLayer.pipe(
-  Layer.provide(Layer.mergeAll(layerEventSink, ProjectionStore.layer, boardTurnWritePolicyLayer)),
-);
+const layerEventSinkProvided = layerEventSink;
 const layerProjectionMaintenanceProvided = ProjectionMaintenance.layer.pipe(
   Layer.provide(layerStores),
 );
@@ -133,7 +129,6 @@ const layerProviderSwitchServiceProvided = ProviderSwitchService.layer.pipe(
 const layerProviderSessionManagerProvided = ProviderSessionManager.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
-      boardTurnWritePolicyLayer,
       layerProviderAdapterRegistryProvided,
       layerEventSinkProvided,
       IdAllocator.layer,
@@ -219,7 +214,6 @@ const layerOrchestratorProvided = Orchestrator.layer.pipe(
       layerContextHandoffServiceProvided,
       IdAllocator.layer,
       ProjectStore.layer,
-      boardTurnWritePolicyLayer,
       layerProviderAdapterRegistryProvided,
       // Same layer reference as the continuation worker and the adapter
       // infrastructure so layer memoization yields one shared request queue.
@@ -339,7 +333,6 @@ const layerMcpAppRequestsProvided = McpAppRequests.layer.pipe(
 
 export const layer = Layer.mergeAll(
   IdAllocator.layer,
-  boardTurnWritePolicyLayer,
   layerOrchestratorProvided,
   layerMcpAppRequestsProvided,
   layerThreadManagementProvided,

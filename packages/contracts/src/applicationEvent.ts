@@ -11,11 +11,6 @@ import {
   ProviderItemId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
-import { BoardAggregateId } from "./coordinationBoard.ts";
-import {
-  BoardPostPublishedPayload,
-  BoardPostRevisedPayload,
-} from "./coordinationBoardOrchestration.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import type { OrchestrationV2StoredEvent } from "./orchestrationV2.ts";
@@ -125,35 +120,5 @@ export const ApplicationProjectEvent = Schema.Union([
 ]);
 export type ApplicationProjectEvent = typeof ApplicationProjectEvent.Type;
 
-const ApplicationBoardEventBaseFields = {
-  sequence: NonNegativeInt,
-  eventId: EventId,
-  aggregateKind: Schema.Literal("board"),
-  aggregateId: BoardAggregateId,
-  occurredAt: IsoDateTime,
-  commandId: Schema.NullOr(CommandId),
-  causationEventId: Schema.NullOr(EventId),
-  correlationId: Schema.NullOr(CommandId),
-  metadata: ApplicationEventMetadata,
-} as const;
-
-/** The global Board retains its historical event envelope in the shared log. */
-export const ApplicationBoardEvent = Schema.Union([
-  Schema.Struct({
-    ...ApplicationBoardEventBaseFields,
-    type: Schema.Literal("board.post-published"),
-    payload: BoardPostPublishedPayload,
-  }),
-  Schema.Struct({
-    ...ApplicationBoardEventBaseFields,
-    type: Schema.Literal("board.post-revised"),
-    payload: BoardPostRevisedPayload,
-  }),
-]);
-export type ApplicationBoardEvent = typeof ApplicationBoardEvent.Type;
-
 /** Events exposed by the retained application event source. */
-export type ApplicationStoredEvent =
-  | ApplicationProjectEvent
-  | ApplicationBoardEvent
-  | OrchestrationV2StoredEvent;
+export type ApplicationStoredEvent = ApplicationProjectEvent | OrchestrationV2StoredEvent;

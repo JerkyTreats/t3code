@@ -1,6 +1,3 @@
-import { BoardLive } from "./orchestration/Layers/Board.ts";
-import { BoardQueryLive } from "./orchestration/Layers/BoardQuery.ts";
-import { ProjectionBoardPostRepositoryLive } from "./persistence/ProjectionBoardPosts.ts";
 import * as Clock from "effect/Clock";
 import * as Random from "effect/Random";
 import * as Semaphore from "effect/Semaphore";
@@ -574,13 +571,6 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ReplayMarkers.layer,
 ).pipe(
   // Core Services
-  Layer.provideMerge(
-    BoardLive.pipe(
-      Layer.provideMerge(BoardQueryLive),
-      Layer.provideMerge(ProjectionBoardPostRepositoryLive),
-      Layer.provide(ProjectionStoreV2.layer),
-    ),
-  ),
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
   Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),

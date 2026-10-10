@@ -189,11 +189,11 @@ it.live("keeps project settings through the V2 migrations and the first V2 boot"
         assert.deepEqual(yield* runMigrations(), [
           [68, "OrchestrationV2"],
           [69, "RemoveRedundantProjectionIndexes"],
-          [70, "ApplicationBoardEventSequenceIndex"],
           [79, "ScheduledTaskWebhooks"],
           [80, "WebhookRelayDeliveries"],
           [81, "McpAppModelContext"],
           [82, "ThreadSnapshotWindowIndexes"],
+          [83, "RetireBoardAndCollective"],
         ]);
         assert.deepEqual(yield* readSettings, expectedSettings);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));

@@ -1,6 +1,6 @@
 # Retired Fork Features
 
-Date: 2026-09-05
+Date: 2026-10-09
 Status: historical
 Authority: none
 
@@ -18,7 +18,7 @@ Record fork feature retirement decisions without creating a current product cont
 | F12     | Provider instance identity seam                                 | Generic provider-instance runtime behavior now carries the retained product needs.      | No fork replay or override. Accept current upstream behavior or absence during future reconciliation.                        |
 | F13     | Connect and managed relay lifecycle                             | Connect and relay behavior no longer requires a fork preservation contract.             | No fork replay or override. Accept current upstream behavior or absence during future reconciliation.                        |
 | F14     | Unified project context and inference dashboard                 | The custom project and inference surfaces no longer justify fork complexity.            | No fork replay or override. Accept current upstream behavior or absence during future reconciliation.                        |
-| F26     | Collective resident runtime                                     | Runtime, quota, fanout, and swarm behavior are excluded from the accepted product line. | Preserve historical Board provenance and deployed migration journals only. Do not restore runtime behavior.                  |
+| F26     | Collective resident runtime                                     | Runtime, quota, fanout, and swarm behavior are excluded from the accepted product line. | Retain deployed migration journal meaning under generic persistence authority only. Do not restore runtime behavior.         |
 | F09     | Document Markdown and plan preview                              | The user accepted upstream rendered Markdown and retired the custom renderer.           | Accept upstream Markdown. Mermaid has its own retained F22 responsibility.                                                   |
 | F15     | Durable web turn outbox                                         | The user explicitly retired the fork web outbox during upstream intake.                 | Accept ordinary upstream sending. Mobile outbox and prompt stash remain upstream-owned.                                      |
 | F21     | Markdown document review                                        | The user dropped inline commenting for now.                                             | Remove rendered-document commenting and its exclusive draft/send state. Ordinary source and PR review remain upstream-owned. |
@@ -33,3 +33,17 @@ Retired by user approval during the latest upstream intake on 2026-09-25. Fork s
 ## Fleet production continuation
 
 Retired by user instruction on 2026-10-09. Main assumes Fleet manager was never installed. The one-time `PERSIST.D8` continuation, Fleet journal identities, retirement evidence checks, native-session fingerprint guards, and their dedicated fixtures are no longer active application responsibilities. Upstream migration execution identities 79 through 82 remain stable. Historical deployment records remain evidence only; they do not require Fleet support to return in later builds.
+
+## F25 message Board and F28 automatic liaison
+
+Retired by user instruction on 2026-10-09. The environment-global message Board and automatic
+subagent Board submitter are removed together, including client presentation, provider tools,
+participation instructions, contracts, event handling, and dedicated storage. Ordinary explicitly
+delegated subagents remain available through upstream orchestration. F25 and F28 create no active
+replay, preservation, compatibility, or verification obligation. Historical reconciliation baselines
+remain immutable evidence for their recorded revisions.
+
+On upgrade, migration 83 deletes the retired posts, revisions, events, receipts, cursor, and
+Collective tables. Supported migration journal identities remain evidence under the surviving
+persistence owner. Fresh databases omit the retired schemas and migration bodies. This source
+retirement does not inspect or migrate a running installation.

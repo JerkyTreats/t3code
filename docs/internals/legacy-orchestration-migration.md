@@ -44,13 +44,13 @@ For rollback, stop v2, retain its database, and reconcile authentication and aut
 chosen rollback database before admitting clients. In particular, do not resurrect revoked grants
 from the original snapshot. This is an operator boundary, not an automatic authority merge.
 
-`ForkMigrationPlan.ts` retains deployed fork journal identities through 67 and registers
-`68_OrchestrationV2`, `69_RemoveRedundantProjectionIndexes`, and
-`70_ApplicationBoardEventSequenceIndex`. Migration 68 runs the upstream v2 schema body under the
-fork's next stable identity; migration 70 indexes Board application-event sequence reads.
-The copied legacy event log, transcript projections, Board audit history, and attachment references
-remain available. Retention does not imply conversion of legacy tools, approvals, plans,
-checkpoints, or provider sessions into v2 timeline items.
+`ForkMigrationPlan.ts` retains supported deployed journal meaning and registers
+`68_OrchestrationV2` and `69_RemoveRedundantProjectionIndexes` under stable fork identities.
+Migration 68 runs the upstream v2 schema body. Retired identities are journal evidence only
+and have no fresh migration bodies. The appended storage cleanup removes retired data while
+preserving ordinary events, transcript projections, authentication, and attachment references.
+Retention does not imply conversion of legacy tools, approvals, plans, checkpoints, or provider
+sessions into v2 timeline items.
 
 ## Client and server cutover
 

@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
-import { BoardAuthorId, EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -14,7 +14,6 @@ const scope: McpInvocationContext.McpInvocationScope = {
   environmentId: EnvironmentId.make("environment:metadata-test"),
   requestNamespace: "provider-session:metadata-test",
   thread: {
-    boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
     threadId,
     providerSessionId: "provider-session:metadata-test",
     providerInstanceId: ProviderInstanceId.make("codex"),

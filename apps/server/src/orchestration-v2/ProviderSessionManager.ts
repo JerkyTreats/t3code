@@ -31,8 +31,6 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
-import { BoardTurnWritePolicyV2 } from "../board/TurnWritePolicyV2.ts";
-import { resolveProviderMcpCapabilities } from "../board/ProviderCapabilityPolicy.ts";
 import { normalizeModelMetricLabel } from "../observability/Attributes.ts";
 import {
   providerSessionsTotal,
@@ -327,7 +325,6 @@ export const layerWithOptions = (
 ): Layer.Layer<
   ProviderSessionManagerV2,
   never,
-  | BoardTurnWritePolicyV2
   | EventSink.EventSinkV2
   | FileSystem.FileSystem
   | IdAllocator.IdAllocatorV2
@@ -342,30 +339,6 @@ export const layerWithOptions = (
       const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
       const fileSystem = yield* FileSystem.FileSystem;
       const mcpSessionRegistry = yield* McpSessionRegistry.McpSessionRegistry;
-      const boardWritePolicy = yield* BoardTurnWritePolicyV2;
-      const turnAdmissions = new Map<
-        string,
-        { threadId: ThreadId; instanceId: ProviderInstanceId; turnKey: string }
-      >();
-      const steerAdmissions = new Map<
-        string,
-        Array<{ threadId: ThreadId; instanceId: ProviderInstanceId; turnKey: string }>
-      >();
-      const forgetNativeAdmissions = (threadId: ThreadId) => {
-        for (const [key, admission] of turnAdmissions) {
-          if (admission.threadId === threadId) turnAdmissions.delete(key);
-        }
-        for (const [key, admissions] of steerAdmissions) {
-          const remaining = admissions.filter((admission) => admission.threadId !== threadId);
-          if (remaining.length === 0) steerAdmissions.delete(key);
-          else if (remaining.length !== admissions.length) steerAdmissions.set(key, remaining);
-        }
-      };
-      const turnAdmissionKey = (
-        sessionId: ProviderSessionId,
-        providerThreadId: string,
-        ordinal: number,
-      ) => `${sessionId}:${providerThreadId}:${ordinal}`;
       /**
        * Optional so the many focused tests that assemble this layer by hand do
        * not each need a settings stub; the production composition always
@@ -485,17 +458,6 @@ export const layerWithOptions = (
       const isMcpCredentialReserved = (threadId: ThreadId, mcpCredentialId: string) =>
         (mcpCredentialReservations.get(mcpReservationKey(threadId, mcpCredentialId)) ?? 0) > 0;
       const mcpPrepareLock = yield* KeyedLock.make<ThreadId>();
-      const loadDurableBoardAdmissions = (threadId: ThreadId) =>
-        projectionStore.getThreadRecords(threadId, ["runs"]).pipe(
-          Effect.map((records) =>
-            records.runs.map((run) => ({
-              run,
-              mode: run.interactionMode ?? records.thread.interactionMode,
-            })),
-          ),
-          Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed([]) }),
-          Effect.orDie,
-        );
       /**
        * Resolves (or mints) the thread's MCP credential and returns it with a
        * reservation held; the caller must drop the reservation exactly once.
@@ -511,90 +473,61 @@ export const layerWithOptions = (
               McpProviderSession.clearMcpProviderSession(threadId);
               return { mcpCredentialId: undefined, issued: false };
             })
-          : boardWritePolicy.withCredentialLifecycle(
+          : mcpPrepareLock.withLock(
               threadId,
-              mcpPrepareLock.withLock(
-                threadId,
-                Effect.gen(function* () {
-                  // Reuse a still-valid credential for this thread instead of
-                  // rotating: long-lived provider processes (codex app-server)
-                  // build their MCP client once per conversation and keep using
-                  // the credential it started with, so a thread that detaches and
-                  // re-attaches across a workspace handoff must come back to the
-                  // same token or the process's tool calls fail auth.
-                  const { browser: browserToolsAvailable, device: deviceToolsAvailable } =
-                    yield* agentAccessSettings(threadId);
-                  const adapter = yield* registry.get(providerInstanceId).pipe(Effect.orDie);
-                  const thread = yield* Effect.option(projectionStore.getThread(threadId));
-                  for (const { run, mode } of yield* loadDurableBoardAdmissions(threadId))
-                    yield* boardWritePolicy.observeRun(run, mode);
-                  const capabilities = new Set<
-                    import("../mcp/McpInvocationContext.ts").McpCapability
-                  >([
-                    "orchestration",
-                    "worktree",
-                    "pull-requests",
-                    ...resolveProviderMcpCapabilities({
-                      provider: adapter.driver,
-                      interactionMode: Option.isSome(thread)
-                        ? thread.value.interactionMode
-                        : "plan",
-                      previewEnabled: browserToolsAvailable,
-                    }),
-                  ]);
-                  if (browserToolsAvailable) capabilities.add("preview");
-                  if (deviceToolsAvailable) capabilities.add("device");
-                  const existing = McpProviderSession.readMcpProviderSession(threadId);
-                  if (existing !== undefined) {
-                    // Reserve before the async resolve so a release cannot
-                    // revoke the credential between validation and reservation.
-                    reserveMcpCredential(threadId, existing.providerSessionId);
-                    const rawToken = existing.authorizationHeader.replace(/^Bearer\s+/, "");
-                    const resolved = yield* mcpSessionRegistry
-                      .resolve(rawToken)
-                      .pipe(
-                        Effect.onInterrupt(() =>
-                          Effect.sync(() =>
-                            dropMcpCredentialReservation(threadId, existing.providerSessionId),
-                          ),
+              Effect.gen(function* () {
+                // Reuse a still-valid credential for this thread instead of
+                // rotating: long-lived provider processes (codex app-server)
+                // build their MCP client once per conversation and keep using
+                // the credential it started with, so a thread that detaches and
+                // re-attaches across a workspace handoff must come back to the
+                // same token or the process's tool calls fail auth.
+                const { browser: browserToolsAvailable, device: deviceToolsAvailable } =
+                  yield* agentAccessSettings(threadId);
+                const capabilities = new Set<
+                  import("../mcp/McpInvocationContext.ts").McpCapability
+                >(["orchestration", "worktree", "pull-requests"]);
+                if (browserToolsAvailable) capabilities.add("preview");
+                if (deviceToolsAvailable) capabilities.add("device");
+                const existing = McpProviderSession.readMcpProviderSession(threadId);
+                if (existing !== undefined) {
+                  // Reserve before the async resolve so a release cannot
+                  // revoke the credential between validation and reservation.
+                  reserveMcpCredential(threadId, existing.providerSessionId);
+                  const rawToken = existing.authorizationHeader.replace(/^Bearer\s+/, "");
+                  const resolved = yield* mcpSessionRegistry
+                    .resolve(rawToken)
+                    .pipe(
+                      Effect.onInterrupt(() =>
+                        Effect.sync(() =>
+                          dropMcpCredentialReservation(threadId, existing.providerSessionId),
                         ),
-                      );
-                    if (
-                      resolved !== undefined &&
-                      resolved.thread.threadId === threadId &&
-                      resolved.thread.providerInstanceId === providerInstanceId &&
-                      // A flipped browser-access setting must not survive through
-                      // credential reuse: rotate so the new scope reflects it.
-                      resolved.capabilities.has("preview") === browserToolsAvailable &&
-                      resolved.capabilities.has("device") === deviceToolsAvailable &&
-                      resolved.capabilities.has("board") === capabilities.has("board")
-                    ) {
-                      yield* boardWritePolicy.refresh(threadId);
-                      return { mcpCredentialId: existing.providerSessionId, issued: false };
-                    }
-                    dropMcpCredentialReservation(threadId, existing.providerSessionId);
-                  }
-                  if (existing !== undefined) yield* boardWritePolicy.cancelDispatches(threadId);
-                  yield* mcpSessionRegistry.revokeThread(threadId);
-                  if (existing !== undefined) {
-                    yield* boardWritePolicy.credentialChanged(
-                      threadId,
-                      loadDurableBoardAdmissions(threadId),
+                      ),
                     );
-                    forgetNativeAdmissions(threadId);
+                  if (
+                    resolved !== undefined &&
+                    resolved.thread.threadId === threadId &&
+                    resolved.thread.providerInstanceId === providerInstanceId &&
+                    // A flipped browser-access setting must not survive through
+                    // credential reuse: rotate so the new scope reflects it.
+                    resolved.capabilities.has("preview") === browserToolsAvailable &&
+                    resolved.capabilities.has("device") === deviceToolsAvailable
+                  ) {
+                    return { mcpCredentialId: existing.providerSessionId, issued: false };
                   }
-                  const credential = yield* mcpSessionRegistry.issue({
-                    threadId,
-                    providerInstanceId,
-                    browserToolsAvailable,
-                    capabilities,
-                  });
-                  yield* boardWritePolicy.refresh(threadId);
-                  McpProviderSession.setMcpProviderSession(credential.config);
-                  reserveMcpCredential(threadId, credential.config.providerSessionId);
-                  return { mcpCredentialId: credential.config.providerSessionId, issued: true };
-                }),
-              ),
+                  dropMcpCredentialReservation(threadId, existing.providerSessionId);
+                }
+                yield* mcpSessionRegistry.revokeThread(threadId);
+                const credential = yield* mcpSessionRegistry.issue({
+                  threadId,
+                  providerInstanceId,
+                  browserToolsAvailable,
+                  capabilities,
+                });
+                McpProviderSession.setMcpProviderSession(credential.config);
+                reserveMcpCredential(threadId, credential.config.providerSessionId);
+                return { mcpCredentialId: credential.config.providerSessionId, issued: true };
+              }),
             );
       /**
        * With a credential id, revocation is scoped to that credential and the
@@ -603,22 +536,16 @@ export const layerWithOptions = (
        * a credential was recorded), fall back to thread-wide revocation.
        */
       const clearMcpSession = (threadId: ThreadId, mcpCredentialId?: string) =>
-        boardWritePolicy.withCredentialLifecycle(
+        mcpPrepareLock.withLock(
           threadId,
           Effect.gen(function* () {
             const currentId =
               McpProviderSession.readMcpProviderSession(threadId)?.providerSessionId;
             const affectsCurrent = mcpCredentialId === undefined || currentId === mcpCredentialId;
-            if (affectsCurrent) yield* boardWritePolicy.cancelDispatches(threadId);
             if (mcpCredentialId === undefined) yield* mcpSessionRegistry.revokeThread(threadId);
             else yield* mcpSessionRegistry.revokeProviderSession(mcpCredentialId);
             if (affectsCurrent) {
-              yield* boardWritePolicy.credentialChanged(
-                threadId,
-                loadDurableBoardAdmissions(threadId),
-              );
               McpProviderSession.clearMcpProviderSession(threadId);
-              forgetNativeAdmissions(threadId);
             }
           }),
         );
@@ -1884,35 +1811,7 @@ export const layerWithOptions = (
                     ),
                   ),
                   () =>
-                    boardWritePolicy.trackDispatch(
-                      input.threadId,
-                      Effect.gen(function* () {
-                        const admission = yield* boardWritePolicy.begin(
-                          input.threadId,
-                          runtime.instanceId,
-                          input.runtimePolicy.interactionMode,
-                        );
-                        const turnKey = `attempt:${providerSessionId}:${input.attemptId}`;
-                        turnAdmissions.set(
-                          turnAdmissionKey(
-                            providerSessionId,
-                            input.providerThread.id,
-                            input.runOrdinal,
-                          ),
-                          {
-                            threadId: input.threadId,
-                            instanceId: runtime.instanceId,
-                            turnKey,
-                          },
-                        );
-
-                        yield* runtime.startTurn(input).pipe(
-                          turnMetrics("send", input.modelSelection.model),
-                          Effect.tap(() => boardWritePolicy.associate(admission, turnKey)),
-                          Effect.onError(() => boardWritePolicy.failed(admission)),
-                        );
-                      }),
-                    ),
+                    runtime.startTurn(input).pipe(turnMetrics("send", input.modelSelection.model)),
                   (_, exit) =>
                     Exit.isFailure(exit)
                       ? observeActivity(
@@ -1924,79 +1823,21 @@ export const layerWithOptions = (
               ),
             ),
           steerTurn: (input) =>
-            boardWritePolicy.trackDispatch(
-              input.threadId,
-              Effect.gen(function* () {
-                const thread = yield* projectionStore.getThread(input.threadId).pipe(Effect.orDie);
-                const admission = yield* boardWritePolicy.begin(
-                  input.threadId,
-                  runtime.instanceId,
-                  input.interactionMode ?? thread.interactionMode,
-                );
-                const key = `${providerSessionId}:${input.providerTurnId}`;
-                const turnKey = `steer:${key}:${input.message.messageId}`;
-                steerAdmissions.set(key, [
-                  ...(steerAdmissions.get(key) ?? []),
-                  {
-                    threadId: input.threadId,
-                    instanceId: runtime.instanceId,
-                    turnKey,
-                  },
-                ]);
-                yield* observeActivity(providerSessionId, touchActivity(providerSessionId));
-                yield* runtime.steerTurn(input).pipe(
-                  turnMetrics("steer"),
-                  Effect.tap(() => boardWritePolicy.associate(admission, turnKey)),
-                  Effect.onError(() => boardWritePolicy.failed(admission)),
-                );
-              }),
+            observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
+              Effect.andThen(runtime.steerTurn(input).pipe(turnMetrics("steer"))),
             ),
           interruptTurn: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
               Effect.andThen(runtime.interruptTurn(input).pipe(turnMetrics("interrupt"))),
             ),
           respondToRuntimeRequest: (input) =>
-            input.threadId === undefined
-              ? observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
-                  Effect.andThen(runtime.respondToRuntimeRequest(input)),
-                )
-              : boardWritePolicy.trackDispatch(
-                  input.threadId,
-                  Effect.gen(function* () {
-                    const threadId = input.threadId!;
-                    const thread = yield* projectionStore.getThread(threadId).pipe(Effect.orDie);
-                    const request = yield* projectionStore
-                      .getRuntimeRequest(threadId, input.requestId)
-                      .pipe(Effect.orDie);
-                    const admission = yield* boardWritePolicy.begin(
-                      threadId,
-                      runtime.instanceId,
-                      input.interactionMode ?? thread.interactionMode,
-                    );
-                    const turnKey = `response:${providerSessionId}:${input.requestId}`;
-                    if (request?.providerTurnId != null) {
-                      const key = `${providerSessionId}:${request.providerTurnId}`;
-                      steerAdmissions.set(key, [
-                        ...(steerAdmissions.get(key) ?? []),
-                        {
-                          threadId,
-                          instanceId: runtime.instanceId,
-                          turnKey,
-                        },
-                      ]);
-                    }
-                    yield* observeActivity(providerSessionId, touchActivity(providerSessionId));
-                    yield* runtime.respondToRuntimeRequest(input).pipe(
-                      turnMetrics("runtime-request-response"),
-                      Effect.tap(() =>
-                        request?.providerTurnId == null
-                          ? boardWritePolicy.accepted(admission)
-                          : boardWritePolicy.associate(admission, turnKey),
-                      ),
-                      Effect.onError(() => boardWritePolicy.failed(admission)),
-                    );
-                  }),
-                ),
+            observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
+              Effect.andThen(
+                runtime
+                  .respondToRuntimeRequest(input)
+                  .pipe(turnMetrics("runtime-request-response")),
+              ),
+            ),
         };
       };
 
@@ -2037,51 +1878,16 @@ export const layerWithOptions = (
             ) {
               stoppedByProvider = true;
             }
-            const boardTerminal =
+            return observeActivity(
+              entry.runtime.providerSessionId,
               event.type === "turn.terminal"
-                ? Effect.gen(function* () {
-                    yield* boardWritePolicy.terminalRequests(
-                      entry.runtime.providerSessionId,
-                      event.providerTurnId,
-                    );
-                    const key = turnAdmissionKey(
-                      entry.runtime.providerSessionId,
-                      event.providerThreadId,
-                      event.runOrdinal,
-                    );
-                    const admission = turnAdmissions.get(key);
-                    if (admission) {
-                      turnAdmissions.delete(key);
-                      yield* boardWritePolicy.terminal(
-                        admission.threadId,
-                        admission.instanceId,
-                        admission.turnKey,
-                      );
-                    }
-                    const steerKey = `${entry.runtime.providerSessionId}:${event.providerTurnId}`;
-                    const steers = steerAdmissions.get(steerKey) ?? [];
-                    steerAdmissions.delete(steerKey);
-                    for (const steer of steers)
-                      yield* boardWritePolicy.terminal(
-                        steer.threadId,
-                        steer.instanceId,
-                        steer.turnKey,
-                      );
-                  })
-                : Effect.void;
-            return boardTerminal.pipe(
-              Effect.andThen(
-                observeActivity(
-                  entry.runtime.providerSessionId,
-                  event.type === "turn.terminal"
-                    ? markIdle(
-                        entry.runtime.providerSessionId,
-                        event.providerThreadId,
-                        event.runOrdinal,
-                      )
-                    : touchActivity(entry.runtime.providerSessionId),
-                ),
-              ),
+                ? markIdle(
+                    entry.runtime.providerSessionId,
+                    event.providerThreadId,
+                    event.runOrdinal,
+                  )
+                : touchActivity(entry.runtime.providerSessionId),
+            ).pipe(
               Effect.andThen(
                 event.type === "provider_session.updated"
                   ? persistProviderSessionUpdate(entry, event)

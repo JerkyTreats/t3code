@@ -1,9 +1,6 @@
 import * as NodeV8 from "node:v8";
 
 import {
-  BOARD_AGGREGATE_ID,
-  BoardAuthorId,
-  BoardPostId,
   CommandId,
   EventId,
   ProjectId,
@@ -395,116 +392,6 @@ layer("OrchestrationEventStore", (it) => {
         },
       );
     }),
-  );
-  it.effect(
-    "roundtrips Board publication and trusted revision audit in global sequence order",
-    () =>
-      Effect.gen(function* () {
-        const store = yield* OrchestrationEventStore.OrchestrationEventStore;
-        const occurredAt = "2026-09-05T00:00:00.000Z";
-        const postId = BoardPostId.make("store-board-post");
-        const author = {
-          kind: "agent" as const,
-          id: BoardAuthorId.make("board-public-store"),
-          providerInstanceId: ProviderInstanceId.make("codex"),
-        };
-        const source = {
-          projectId: ProjectId.make("store-board-project"),
-          threadId: ThreadId.make("store-board-thread"),
-        };
-        const published = yield* store.appendBoardEvent({
-          type: "board.post-published",
-          eventId: EventId.make("store-board-published"),
-          aggregateKind: "board",
-          aggregateId: BOARD_AGGREGATE_ID,
-          occurredAt,
-          commandId: CommandId.make("store-board-publish"),
-          causationEventId: null,
-          correlationId: null,
-          metadata: {},
-          payload: { postId, author, source, body: "Original", targets: [], createdAt: occurredAt },
-        });
-        const [thread] = yield* store.appendAgentEvents({
-          events: [
-            {
-              id: EventId.make("store-interleaved-thread"),
-              threadId: source.threadId,
-              type: "thread.deleted",
-              occurredAt: DateTime.makeUnsafe(occurredAt),
-              payload: {
-                createdBy: "user",
-                creationSource: "web",
-                id: source.threadId,
-                projectId: source.projectId,
-                title: "Interleaved current thread",
-                providerInstanceId: author.providerInstanceId,
-                modelSelection: { instanceId: author.providerInstanceId, model: "synthetic" },
-                runtimeMode: "full-access",
-                interactionMode: "default",
-                branch: null,
-                worktreePath: null,
-                activeProviderThreadId: null,
-                lineage: {
-                  parentThreadId: null,
-                  relationshipToParent: null,
-                  rootThreadId: source.threadId,
-                },
-                forkedFrom: null,
-                createdAt: DateTime.makeUnsafe(occurredAt),
-                updatedAt: DateTime.makeUnsafe(occurredAt),
-                archivedAt: null,
-                settledOverride: null,
-                settledAt: null,
-                lastVisitedAt: null,
-                deletedAt: DateTime.makeUnsafe(occurredAt),
-              },
-            },
-          ],
-        });
-        const revised = yield* store.appendBoardEvent({
-          type: "board.post-revised",
-          eventId: EventId.make("store-board-revised"),
-          aggregateKind: "board",
-          aggregateId: BOARD_AGGREGATE_ID,
-          occurredAt,
-          commandId: CommandId.make("store-board-revise"),
-          causationEventId: null,
-          correlationId: null,
-          metadata: {},
-          payload: {
-            postId,
-            previousRevision: 1,
-            revision: 2,
-            editor: author,
-            editorSource: source,
-            body: "Correction",
-            targets: ["review"],
-            revisedAt: occurredAt,
-          },
-        });
-        const all = yield* store
-          .readApplicationEvents({
-            afterSequence: published.sequence - 1,
-            throughSequence: revised.sequence,
-          })
-          .pipe(Stream.runCollect);
-        assert.deepEqual(all, [published, thread!, revised]);
-        const board = yield* store
-          .readBoardEvents({
-            afterSequence: published.sequence - 1,
-            throughSequence: revised.sequence,
-          })
-          .pipe(Stream.runCollect);
-        assert.deepEqual(board, [published, revised]);
-        const threadOnly = yield* store
-          .readAgentEvents({
-            threadId: source.threadId,
-            afterSequence: published.sequence - 1,
-            throughSequence: revised.sequence,
-          })
-          .pipe(Stream.runCollect);
-        assert.deepEqual(threadOnly, [thread]);
-      }),
   );
 });
 

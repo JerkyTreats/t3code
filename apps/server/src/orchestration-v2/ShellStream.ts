@@ -70,24 +70,10 @@ export type ShellRelevantApplicationEvent =
       readonly event: Pick<OrchestrationV2StoredEvent["event"], "threadId">;
     };
 
-/** Board wakeups keep only their watermark until shell coalescing excludes them. */
-export type ShellApplicationEvent =
-  | ShellRelevantApplicationEvent
-  | Pick<
-      Extract<ApplicationStoredEvent, { readonly aggregateKind: "board" }>,
-      "aggregateKind" | "aggregateId" | "type" | "sequence"
-    >;
+export type ShellApplicationEvent = ShellRelevantApplicationEvent;
 
 /** Shell updates refetch an aggregate; drop transcript bodies before retaining an event. */
 export function toShellApplicationEvent(stored: ApplicationStoredEvent): ShellApplicationEvent {
-  if ("aggregateKind" in stored && stored.aggregateKind === "board") {
-    return {
-      aggregateKind: stored.aggregateKind,
-      aggregateId: stored.aggregateId,
-      type: stored.type,
-      sequence: stored.sequence,
-    };
-  }
   return "aggregateKind" in stored
     ? {
         aggregateKind: stored.aggregateKind,
@@ -104,7 +90,6 @@ export function coalesceShellApplicationEvents(
 ): ReadonlyArray<ShellRelevantApplicationEvent> {
   const latestByAggregate = new Map<string, ShellRelevantApplicationEvent>();
   for (const stored of events) {
-    if ("aggregateKind" in stored && stored.aggregateKind === "board") continue;
     const key =
       "aggregateKind" in stored
         ? `project:${stored.aggregateId}`

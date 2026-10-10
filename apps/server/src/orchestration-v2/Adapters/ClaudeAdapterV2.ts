@@ -126,7 +126,6 @@ import {
 import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
 import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-import { T3_CODE_BOARD_TOOL_INSTRUCTIONS } from "../../provider/BoardToolInstructions.ts";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriver,
@@ -915,10 +914,7 @@ export function makeClaudeQueryOptions(input: {
       preset: "claude_code" as const,
       append:
         buildRuntimeInstructions({ harness: "Claude Code" }) +
-        (input.mcpServers === undefined ? "" : T3_CODE_ORCHESTRATION_INSTRUCTIONS) +
-        (input.mcpServers?.["t3-code-board"] === undefined
-          ? ""
-          : `\n\n${T3_CODE_BOARD_TOOL_INSTRUCTIONS}`),
+        (input.mcpServers === undefined ? "" : T3_CODE_ORCHESTRATION_INSTRUCTIONS),
     },
     ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
   };
@@ -992,17 +988,12 @@ export function claudeMcpQueryOverrides(input: {
   }
   const servers = McpProviderSession.getMcpProviderServerAttachments(session);
   const mcpAllowedTools = input.readOnlySandbox
-    ? [
-        ...CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS.map((tool) =>
-          tool === "mcp__t3-code__t3_preview_list" &&
-          servers.some((server) => server.name === "t3-code-preview")
-            ? "mcp__t3-code-preview__t3_preview_list"
-            : tool,
-        ),
-        ...(servers.some((server) => server.name === "t3-code-board")
-          ? ["mcp__t3-code-board__board_read", "mcp__t3-code-board__board_history"]
-          : []),
-      ]
+    ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS.map((tool) =>
+        tool === "mcp__t3-code__t3_preview_list" &&
+        servers.some((server) => server.name === "t3-code-preview")
+          ? "mcp__t3-code-preview__t3_preview_list"
+          : tool,
+      )
     : servers.map((server) => `mcp__${server.name}__*`);
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),

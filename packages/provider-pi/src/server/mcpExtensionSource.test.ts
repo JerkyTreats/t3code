@@ -284,7 +284,6 @@ describe("Pi independent MCP endpoints", () => {
         arguments: { source: server.name },
       });
     }
-    assert.isFalse(bridge.tools.some(({ name }) => name.includes("board")));
   });
 
   it.each(independentServers.slice(1))(

@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
-  BoardAuthorId,
   CommandId,
   EnvironmentId,
   type OrchestrationV2ThreadProjection,
@@ -45,7 +44,6 @@ const makeScope = (
   environmentId,
   requestNamespace: "provider-session-worktree-test",
   thread: {
-    boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
     threadId,
     providerSessionId: "provider-session-worktree-test",
     providerInstanceId: ProviderInstanceId.make("claudeAgent"),

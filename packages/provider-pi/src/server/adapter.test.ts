@@ -1294,7 +1294,6 @@ describe("PiAdapterV2", () => {
         authorizationHeader: "Bearer secret-pi-token",
         browserToolsAvailable: true,
         capabilities: new Set(["orchestration", "preview", "device", "pull-requests"]),
-        boardEndpoint: "http://127.0.0.1:43123/mcp/board",
       });
       const fake = yield* makeFakePi;
       yield* openRuntime(fake);

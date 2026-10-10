@@ -4,11 +4,9 @@ import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
-  BoardAuthorId,
   EnvironmentId,
   OrchestratorMcpFailure,
   PreviewTabId,
-  ProjectId,
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
@@ -16,12 +14,11 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { McpProtocol, McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
-import { HttpBody, HttpClient, HttpRouter, HttpServerResponse } from "effect/http";
+import { HttpBody, HttpClient, HttpRouter } from "effect/http";
 
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpHttpServer from "./McpHttpServer.ts";
@@ -30,13 +27,9 @@ import * as McpToolAccessTestkit from "./McpToolAccess.testkit.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
-import * as Board from "../orchestration/Services/Board.ts";
-import * as BoardQuery from "../orchestration/Services/BoardQuery.ts";
 import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import { BoardTestLayer, seedBoardThread } from "../board/BoardTestSupport.ts";
-import * as BoardWritePolicy from "../board/TurnWritePolicyV2.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as PreviewManager from "../preview/Manager.ts";
 import * as PreviewBrowser from "../preview/PreviewBrowser.ts";
@@ -64,7 +57,6 @@ const invocation = {
   environmentId,
   requestNamespace: "provider-session-mcp-test",
   thread: {
-    boardAuthorId: BoardAuthorId.make("board-author-mcp-test"),
     threadId,
     providerSessionId: "provider-session-mcp-test",
     providerInstanceId: ProviderInstanceId.make("codex"),
@@ -106,10 +98,6 @@ const layerPullRequestsTest = McpHttpServer.layerPullRequestsToolkit.pipe(
 );
 const mcpRouteTestDependencies = Layer.mergeAll(
   IdAllocator.layer,
-  Layer.effect(
-    BoardWritePolicy.BoardTurnWritePolicyV2,
-    BoardWritePolicy.make(() => Effect.void),
-  ),
   Layer.mock(DeviceService.DeviceService)({}),
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(PreviewBrowser.PreviewBrowser)({}),
@@ -184,162 +172,6 @@ const callSnapshot = (args: Record<string, unknown>) =>
         Effect.provideService(McpSchema.McpServerClient, client),
       );
   });
-
-it.effect(
-  "rechecks a live credential's mode and authorship through HTTP and durable Board hosts",
-  () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const board = yield* Board.Board;
-        const query = yield* BoardQuery.BoardQuery;
-        const registry = yield* McpSessionRegistry.__testing.make().pipe(
-          Effect.provideService(
-            ServerEnvironment.ServerEnvironment,
-            ServerEnvironment.ServerEnvironment.of({
-              getEnvironmentId: Effect.succeed(environmentId),
-              getDescriptor: Effect.die("unused"),
-            }),
-          ),
-        );
-        const projectId = ProjectId.make("http-board-project");
-        const modelSelection = {
-          instanceId: ProviderInstanceId.make("codex"),
-          model: "gpt-5-codex",
-        };
-        yield* seedBoardThread(threadId, projectId);
-
-        const issued = yield* registry.issue({
-          threadId,
-          providerInstanceId: modelSelection.instanceId,
-          capabilities: new Set(["board", "board-write"]),
-        });
-        const authorization = issued.config.authorizationHeader;
-        const trusted = yield* registry.resolve(authorization.slice("Bearer ".length));
-        expect(trusted).toBeDefined();
-        const routes = McpHttpServer.layerBoardHttp.pipe(
-          Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
-          Layer.provide(Layer.succeed(Board.Board, board)),
-          Layer.provide(Layer.succeed(BoardQuery.BoardQuery, query)),
-        );
-        yield* HttpRouter.serve(routes, { disableListenLog: true, disableLogger: true }).pipe(
-          Layer.build,
-        );
-        const httpClient = yield* HttpClient.HttpClient;
-        const initialized = yield* httpClient.post("/mcp/board", {
-          headers: { accept: "application/json, text/event-stream", authorization },
-          body: HttpBody.jsonUnsafe({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "initialize",
-            params: {
-              protocolVersion: "2025-06-18",
-              capabilities: {},
-              clientInfo: { name: "board-mode-proof", version: "1" },
-            },
-          }),
-        });
-        expect(initialized.status).toBe(200);
-        const sessionId = initialized.headers["mcp-session-id"]!;
-        let requestId = 2;
-        const call = (name: string, input: object) =>
-          Effect.gen(function* () {
-            const response = yield* httpClient.post("/mcp/board", {
-              headers: {
-                accept: "application/json, text/event-stream",
-                authorization,
-                "mcp-session-id": sessionId,
-                "mcp-protocol-version": "2025-06-18",
-              },
-              body: HttpBody.jsonUnsafe({
-                jsonrpc: "2.0",
-                id: requestId++,
-                method: "tools/call",
-                params: { name, arguments: input },
-              }),
-            });
-            expect(response.status).toBe(200);
-            return (yield* response.json) as { result: { isError?: boolean } };
-          });
-        const published = yield* call("board_post", {
-          body: "Original claim",
-          authorId: "forged-author",
-          source: { threadId: "forged-thread" },
-        });
-        expect(published.result.isError ?? false).toBe(false);
-        const original = (yield* query.getPage({})).posts[0]!;
-        expect(original.author.id).toBe(trusted?.thread.boardAuthorId);
-        expect(original.source).toEqual({ projectId, threadId });
-
-        yield* registry.setBoardWriteEnabled(threadId, false);
-        expect((yield* call("board_read", {})).result.isError ?? false).toBe(false);
-        expect(
-          (yield* call("board_history", { postId: original.id })).result.isError ?? false,
-        ).toBe(false);
-        for (const [name, input] of [
-          ["board_post", { body: "Denied publication" }],
-          [
-            "board_edit",
-            { postId: original.id, expectedRevision: 1, body: "Denied correction", targets: [] },
-          ],
-        ] as const) {
-          expect((yield* call(name, input)).result.isError).toBe(true);
-        }
-        expect((yield* query.getPage({})).posts).toEqual([original]);
-
-        yield* registry.setBoardWriteEnabled(threadId, true);
-        expect(
-          (yield* call("board_edit", {
-            postId: original.id,
-            expectedRevision: 1,
-            body: "Verified correction",
-            targets: [],
-          })).result.isError ?? false,
-        ).toBe(false);
-        const current = (yield* query.getPage({})).posts[0]!;
-        expect(current.body).toBe("Verified correction");
-        expect(current.sequence).toBe(original.sequence);
-        expect(current.revision).toBe(2);
-        expect(current.author).toEqual(original.author);
-        expect(
-          (yield* call("board_edit", {
-            postId: original.id,
-            expectedRevision: 1,
-            body: "Stale correction",
-            targets: [],
-          })).result.isError,
-        ).toBe(true);
-        const revisions = yield* query.getHistory({ postId: original.id });
-        expect(
-          Option.isSome(revisions)
-            ? revisions.value.revisions.map((revision) => revision.body)
-            : [],
-        ).toEqual(["Verified correction", "Original claim"]);
-      }),
-    ).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          BoardTestLayer,
-          ServerConfig.layerTest(process.cwd(), { prefix: "t3-board-http-proof-" }).pipe(
-            Layer.provide(NodeServices.layer),
-          ),
-          NodeServices.layer,
-          NodeHttpServer.layerTest,
-        ),
-      ),
-    ),
-);
-
-it("normalizes empty successful notification responses to accepted", () => {
-  const notificationResponse = McpHttpServer.normalizeMcpHttpResponse(
-    HttpServerResponse.text("", { status: 200, contentType: "application/json" }),
-  );
-  expect(notificationResponse.status).toBe(202);
-
-  const resultResponse = McpHttpServer.normalizeMcpHttpResponse(
-    HttpServerResponse.jsonUnsafe({ jsonrpc: "2.0", id: 1, result: {} }),
-  );
-  expect(resultResponse.status).toBe(200);
-});
 
 it.effect.each([{}, { includeImage: false }])(
   "returns bounded structural preview snapshot failures %#",
@@ -997,46 +829,27 @@ it.effect("terminates HTTP MCP sessions with DELETE", () =>
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
-it.effect("requires bearer authentication for the MCP server that registers Board tools", () =>
+it.effect("requires bearer authentication for the MCP server that registers preview tools", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const registry = McpSessionRegistry.McpSessionRegistry.of({
         issue: () => Effect.die("unused"),
         resolve: (token) =>
           Effect.succeed(
-            token === "trusted-board-token"
+            token === "trusted-preview-token"
               ? {
                   ...invocation,
-                  capabilities: new Set<McpInvocationContext.McpCapability>(["board", "preview"]),
+                  capabilities: new Set<McpInvocationContext.McpCapability>(["preview"]),
                 }
               : undefined,
           ),
         touch: () => Effect.void,
-        setBoardWriteEnabled: () => Effect.void,
         revokeProviderSession: () => Effect.void,
         revokeThread: () => Effect.void,
         revokeAll: Effect.void,
       });
-      const board = Board.Board.of({
-        publish: () => Effect.die("unused"),
-        reviseAsAgent: () => Effect.die("unused"),
-        reviseAsOwner: () => Effect.die("unused"),
-        subscribeBoardDomainEvents: Effect.succeed(Stream.never),
-      });
-      const boardQuery = BoardQuery.BoardQuery.of({
-        getPage: () => Effect.succeed({ posts: [], beforeCursor: null, headSequence: 0 }),
-        getHeadSequence: Effect.succeed(0),
-        getPostBySequence: () => Effect.succeed(Option.none()),
-        getPostById: () => Effect.succeed(Option.none()),
-        getHistory: () => Effect.succeed(Option.none()),
-        listAfterSequenceThroughHead: () => Effect.succeed([]),
-        readAfterSequenceSnapshot: () =>
-          Effect.succeed({ posts: [], headSequence: 0, replayable: true }),
-      });
       const routes = McpHttpServer.layer.pipe(
         Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
-        Layer.provide(Layer.succeed(Board.Board, board)),
-        Layer.provide(Layer.succeed(BoardQuery.BoardQuery, boardQuery)),
         Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
         Layer.provide(mcpRouteTestDependencies),
       );
@@ -1046,20 +859,20 @@ it.effect("requires bearer authentication for the MCP server that registers Boar
       }).pipe(Layer.build);
       const httpClient = yield* HttpClient.HttpClient;
       const initializeBody = HttpBody.text(
-        `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"board-auth-test","version":"1.0.0"}}}`,
+        `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"preview-auth-test","version":"1.0.0"}}}`,
         "application/json",
       );
 
-      const unauthorizedResponse = yield* httpClient.post("/mcp/board", {
+      const unauthorizedResponse = yield* httpClient.post("/mcp/preview", {
         headers: { accept: "application/json, text/event-stream" },
         body: initializeBody,
       });
       expect(unauthorizedResponse.status).toBe(401);
 
-      const initializeResponse = yield* httpClient.post("/mcp/board", {
+      const initializeResponse = yield* httpClient.post("/mcp/preview", {
         headers: {
           accept: "application/json, text/event-stream",
-          authorization: "Bearer trusted-board-token",
+          authorization: "Bearer trusted-preview-token",
         },
         body: initializeBody,
       });
@@ -1076,15 +889,15 @@ it.effect("lists only admitted toolkit tools and rejects cross-endpoint credenti
         issue: () => Effect.die("unused"),
         resolve: (token) =>
           Effect.succeed(
-            token === "board-only-token"
+            token === "device-only-token"
               ? {
                   ...invocation,
-                  capabilities: new Set<McpInvocationContext.McpCapability>(["board"]),
+                  capabilities: new Set<McpInvocationContext.McpCapability>(["device"]),
                 }
-              : token === "board-preview-token"
+              : token === "preview-only-token"
                 ? {
                     ...invocation,
-                    capabilities: new Set<McpInvocationContext.McpCapability>(["board", "preview"]),
+                    capabilities: new Set<McpInvocationContext.McpCapability>(["preview"]),
                   }
                 : token === "orchestrator-only-token"
                   ? {
@@ -1098,26 +911,9 @@ it.effect("lists only admitted toolkit tools and rejects cross-endpoint credenti
                   : undefined,
           ),
         touch: () => Effect.void,
-        setBoardWriteEnabled: () => Effect.void,
         revokeProviderSession: () => Effect.void,
         revokeThread: () => Effect.void,
         revokeAll: Effect.void,
-      });
-      const board = Board.Board.of({
-        publish: () => Effect.die("unused"),
-        reviseAsAgent: () => Effect.die("unused"),
-        reviseAsOwner: () => Effect.die("unused"),
-        subscribeBoardDomainEvents: Effect.succeed(Stream.never),
-      });
-      const boardQuery = BoardQuery.BoardQuery.of({
-        getPage: () => Effect.succeed({ posts: [], beforeCursor: null, headSequence: 0 }),
-        getHeadSequence: Effect.succeed(0),
-        getPostBySequence: () => Effect.succeed(Option.none()),
-        getPostById: () => Effect.succeed(Option.none()),
-        getHistory: () => Effect.succeed(Option.none()),
-        listAfterSequenceThroughHead: () => Effect.succeed([]),
-        readAfterSequenceSnapshot: () =>
-          Effect.succeed({ posts: [], headSequence: 0, replayable: true }),
       });
       const routes = McpHttpServer.layer.pipe(
         Layer.provide(
@@ -1131,15 +927,13 @@ it.effect("lists only admitted toolkit tools and rejects cross-endpoint credenti
                 capabilities: new Set<McpInvocationContext.McpCapability>(
                   request.headers.authorization === "Bearer external.no-pr"
                     ? ["orchestration"]
-                    : ["orchestration", "board", "preview", "device", "pull-requests"],
+                    : ["orchestration", "preview", "device", "pull-requests"],
                 ),
                 issuedAt: 1,
               }),
           }),
         ),
         Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
-        Layer.provide(Layer.succeed(Board.Board, board)),
-        Layer.provide(Layer.succeed(BoardQuery.BoardQuery, boardQuery)),
         Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
         Layer.provide(mcpRouteTestDependencies),
       );
@@ -1186,7 +980,7 @@ it.effect("lists only admitted toolkit tools and rejects cross-endpoint credenti
           };
         });
 
-      for (const endpoint of ["/mcp/board", "/mcp/preview", "/mcp/device"]) {
+      for (const endpoint of ["/mcp/preview", "/mcp/device"]) {
         const denied = yield* httpClient.post(endpoint, {
           headers: {
             accept: "application/json, text/event-stream",
@@ -1213,16 +1007,8 @@ it.effect("lists only admitted toolkit tools and rejects cross-endpoint credenti
         body: initializeBody,
       });
       expect(noPullRequests.status).toBe(403);
-      const boardOnlySession = yield* listTools("/mcp/board", "board-only-token");
-      expect(boardOnlySession.names).toEqual([
-        "board_edit",
-        "board_history",
-        "board_post",
-        "board_read",
-      ]);
-      const boardWithPreviewSession = yield* listTools("/mcp/board", "board-preview-token");
-      expect(boardWithPreviewSession.names).toEqual(boardOnlySession.names);
-      const previewTools = (yield* listTools("/mcp/preview", "board-preview-token")).names;
+      const previewSession = yield* listTools("/mcp/preview", "preview-only-token");
+      const previewTools = previewSession.names;
       expect(previewTools.length).toBeGreaterThan(0);
       expect(
         previewTools.every((name) => name.startsWith("preview_") || name.startsWith("t3_preview_")),
@@ -1233,33 +1019,32 @@ it.effect("lists only admitted toolkit tools and rejects cross-endpoint credenti
       expect(
         upstreamTools.every(
           (name) =>
-            !name.startsWith("board_") &&
             !name.startsWith("preview_") &&
             !name.startsWith("t3_preview_") &&
             !name.startsWith("device_"),
         ),
       ).toBe(true);
       for (const method of ["initialize", "tools/list", "tools/call"] as const) {
-        const denied = yield* httpClient.post("/mcp/board", {
+        const denied = yield* httpClient.post("/mcp/preview", {
           headers: {
             accept: "application/json, text/event-stream",
             authorization: "Bearer orchestrator-only-token",
-            "mcp-session-id": boardOnlySession.sessionId,
+            "mcp-session-id": previewSession.sessionId,
           },
           body: HttpBody.jsonUnsafe({
             jsonrpc: "2.0",
             id: 3,
             method,
-            params: method === "tools/call" ? { name: "board_read", arguments: {} } : {},
+            params: method === "tools/call" ? { name: "preview_list_tabs", arguments: {} } : {},
           }),
         });
         expect(denied.status).toBe(403);
       }
-      for (const endpoint of ["/mcp", "/mcp/preview", "/mcp/device", "/mcp/pull-requests"]) {
+      for (const endpoint of ["/mcp", "/mcp/preview", "/mcp/pull-requests"]) {
         const denied = yield* httpClient.post(endpoint, {
           headers: {
             accept: "application/json, text/event-stream",
-            authorization: "Bearer board-only-token",
+            authorization: "Bearer device-only-token",
           },
           body: initializeBody,
         });
@@ -1268,8 +1053,8 @@ it.effect("lists only admitted toolkit tools and rejects cross-endpoint credenti
           const rejected = yield* httpClient.post(endpoint, {
             headers: {
               accept: "application/json, text/event-stream",
-              authorization: "Bearer board-only-token",
-              "mcp-session-id": boardOnlySession.sessionId,
+              authorization: "Bearer device-only-token",
+              "mcp-session-id": previewSession.sessionId,
             },
             body: HttpBody.jsonUnsafe({
               jsonrpc: "2.0",

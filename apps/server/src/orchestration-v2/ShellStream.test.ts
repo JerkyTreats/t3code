@@ -90,12 +90,6 @@ describe("coalesceShellApplicationEvents", () => {
         thread(2, "thread-a"),
         project(3, "project-a"),
         thread(4, "thread-b"),
-        {
-          sequence: 7,
-          aggregateKind: "board",
-          aggregateId: "environment-global-board",
-          type: "board.post-revised",
-        },
         thread(5, "thread-a"),
         project(6, "project-a"),
       ]).map((event) => event.sequence),

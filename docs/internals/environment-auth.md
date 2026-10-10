@@ -40,7 +40,7 @@ The result is an ordinary session with subject `mcp-client`. A read-only
 grant holds `orchestration:read` alone. On `/mcp` it passes only tools
 declared as reads in [McpToolAccess](../../apps/server/src/mcp/McpToolAccess.ts),
 where every tool must declare who may call it to compile. Any other grant adds
-`orchestration:operate` and a signed ceiling. Ordinary orchestration uses `/mcp`. Explicitly granted pull-request tools use only `/mcp/pull-requests`. Board, preview and device endpoints require registry-issued provider credentials. Other application HTTP and WebSocket paths reject external MCP sessions, because the RPC surface would let the agent act above its ceiling. Inside MCP the credential sets the limits and tool
+`orchestration:operate` and a signed ceiling. Ordinary orchestration uses `/mcp`. Explicitly granted pull-request tools use only `/mcp/pull-requests`. Preview and device endpoints require registry-issued provider credentials. Other application HTTP and WebSocket paths reject external MCP sessions, because the RPC surface would let the agent act above its ceiling. Inside MCP the credential sets the limits and tool
 parameters only pick targets; see
 [threadAccess](../../apps/server/src/mcp/threadAccess.ts).
 

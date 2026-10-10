@@ -57,7 +57,6 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
-import { T3_CODE_BOARD_TOOL_INSTRUCTIONS } from "@t3tools/provider-core/server/boardInstructions";
 import {
   structuralProtocolMethod,
   summarizeNativeProtocolPayload,
@@ -3265,9 +3264,6 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               }
               const systemPrompt = [
                 orchestrationSystemPrompt,
-                hasT3Mcp && mcpSession?.capabilities?.has("board")
-                  ? T3_CODE_BOARD_TOOL_INSTRUCTIONS
-                  : "",
                 buildRuntimeInstructions({
                   harness: "OpenCode",
                   model: turnInput.modelSelection.model,

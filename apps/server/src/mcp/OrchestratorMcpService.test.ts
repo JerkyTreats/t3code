@@ -1,7 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
-  BoardAuthorId,
   CommandId,
   EnvironmentId,
   NodeId,
@@ -141,7 +140,6 @@ describe("OrchestratorMcpService", () => {
         environmentId: EnvironmentId.make("environment:mcp-ack"),
         requestNamespace: "provider-session:mcp-ack",
         thread: {
-          boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
           threadId: parentThreadId,
           providerSessionId: "provider-session:mcp-ack",
           providerInstanceId: ProviderInstanceId.make("codex"),
@@ -316,7 +314,6 @@ describe("OrchestratorMcpService", () => {
         environmentId: EnvironmentId.make("environment:mcp-cancel"),
         requestNamespace: "provider-session:mcp-cancel",
         thread: {
-          boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
           threadId: parentThreadId,
           providerSessionId: "provider-session:mcp-cancel",
           providerInstanceId: ProviderInstanceId.make("codex"),
@@ -393,7 +390,6 @@ describe("OrchestratorMcpService", () => {
         environmentId: EnvironmentId.make("environment:mcp-cancel-failed"),
         requestNamespace: "provider-session:mcp-cancel-failed",
         thread: {
-          boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
           threadId: parentThreadId,
           providerSessionId: "provider-session:mcp-cancel-failed",
           providerInstanceId: ProviderInstanceId.make("codex"),
@@ -478,7 +474,6 @@ describe("OrchestratorMcpService", () => {
         environmentId: EnvironmentId.make("environment:mcp-cancel-dispose-failed"),
         requestNamespace: "provider-session:mcp-cancel-dispose-failed",
         thread: {
-          boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
           threadId: parentThreadId,
           providerSessionId: "provider-session:mcp-cancel-dispose-failed",
           providerInstanceId: ProviderInstanceId.make("codex"),
@@ -770,7 +765,6 @@ describe("OrchestratorMcpService provider resolution", () => {
     environmentId: EnvironmentId.make("environment:mcp-providers"),
     requestNamespace: "provider-session:mcp-providers",
     thread: {
-      boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
       threadId: parentThreadId,
       providerSessionId: "provider-session:mcp-providers",
       providerInstanceId: codexInstanceId,

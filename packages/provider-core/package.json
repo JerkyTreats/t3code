@@ -166,10 +166,6 @@
     "./server/usageLimits": {
       "types": "./src/server/usageLimits.ts",
       "import": "./src/server/usageLimits.ts"
-    },
-    "./server/boardInstructions": {
-      "types": "./src/server/boardInstructions.ts",
-      "import": "./src/server/boardInstructions.ts"
     }
   },
   "scripts": {

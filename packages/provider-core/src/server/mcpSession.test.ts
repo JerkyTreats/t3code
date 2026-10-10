@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { BoardAuthorId, EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { getMcpProviderServerAttachments, withAgentDeviceEnvironment } from "./mcpSession.ts";
 
 it("attaches only admitted toolkit endpoints", () => {
@@ -7,24 +7,12 @@ it("attaches only admitted toolkit endpoints", () => {
     environmentId: EnvironmentId.make("synthetic-environment"),
     threadId: ThreadId.make("synthetic-thread"),
     providerSessionId: "synthetic-session",
-    boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
     providerInstanceId: ProviderInstanceId.make("codex"),
     endpoint: "http://127.0.0.1:43123/mcp",
-    boardEndpoint: "http://127.0.0.1:43123/mcp/board",
     previewEndpoint: "http://127.0.0.1:43123/mcp/preview",
     authorizationHeader: "Bearer synthetic-token",
     browserToolsAvailable: false,
   };
-  const boardCapabilities = new Set(["board"] as const);
-  expect(getMcpProviderServerAttachments({ ...config, capabilities: boardCapabilities })).toEqual([
-    {
-      name: "t3-code-board",
-      endpoint: config.boardEndpoint,
-      authorizationHeader: config.authorizationHeader,
-      capabilities: boardCapabilities,
-      browserToolsAvailable: false,
-    },
-  ]);
   const previewCapabilities = new Set(["preview"] as const);
   expect(getMcpProviderServerAttachments({ ...config, capabilities: previewCapabilities })).toEqual(
     [
@@ -67,29 +55,25 @@ describe("device CLI environment", () => {
   });
 });
 
-it("keeps orchestration, Board, browser, device and pull request attachments independent", () => {
+it("keeps orchestration, browser, device and pull request attachments independent", () => {
   const config = {
     environmentId: EnvironmentId.make("synthetic-environment"),
     threadId: ThreadId.make("synthetic-thread"),
     providerSessionId: "synthetic-session",
-    boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
     providerInstanceId: ProviderInstanceId.make("codex"),
     endpoint: "http://127.0.0.1:43123/mcp",
-    boardEndpoint: "http://127.0.0.1:43123/mcp/board",
     authorizationHeader: "Bearer synthetic-token",
     browserToolsAvailable: false,
   };
   const cases = [
     [[], []],
-    [["board-write"], []],
-    [["board"], ["t3-code-board"]],
     [["orchestration"], ["t3-code"]],
     [["preview"], ["t3-code-preview"]],
     [["device"], ["t3-code-device"]],
     [["pull-requests"], ["t3-code-pull-requests"]],
     [
-      ["orchestration", "board", "preview", "device", "pull-requests"],
-      ["t3-code", "t3-code-board", "t3-code-preview", "t3-code-device", "t3-code-pull-requests"],
+      ["orchestration", "preview", "device", "pull-requests"],
+      ["t3-code", "t3-code-preview", "t3-code-device", "t3-code-pull-requests"],
     ],
   ] as const;
   for (const [grants, names] of cases) {
@@ -104,13 +88,6 @@ it("keeps orchestration, Board, browser, device and pull request attachments ind
       ),
     ).toBe(true);
   }
-  const { boardEndpoint: _boardEndpoint, ...withoutBoardEndpoint } = config;
-  expect(
-    getMcpProviderServerAttachments({
-      ...withoutBoardEndpoint,
-      capabilities: new Set(["board"]),
-    }),
-  ).toEqual([]);
   const defaults = getMcpProviderServerAttachments(config);
   expect(defaults.map((attachment) => attachment.name)).toEqual([
     "t3-code",

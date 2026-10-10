@@ -7,7 +7,7 @@ import { assert, it } from "@effect/vitest";
 const sourceRoot = NodePath.resolve(import.meta.dirname, "..");
 const forbiddenImport =
   /from\s+["'][^"']*(?:ProviderService|ProviderSessionDirectory|ProviderSessionReaper|ProviderCommandReactor|ProviderRuntimeIngestion)[^"']*["']/;
-// Historical projection tables. Projects remain the V2 project store; Board retains only its named cursor in projection_state.
+// Historical projection tables. Projects remain the V2 project store.
 const legacyTable =
   /\bprojection_(?:threads|thread_messages|thread_activities|thread_proposed_plans|thread_pull_requests|thread_sessions|turns|pending_approvals|state)\b/;
 /** Directories whose files may read the V1 tables: the importer and the schema history. */
@@ -24,32 +24,12 @@ const legacyReaderFiles: Record<
     tables: ["projection_thread_sessions"],
     reason: "one-time provider history for settings migration",
   },
-  "orchestration/Layers/Board.ts": {
-    tables: ["projection_state"],
-    reason: "the surviving global Board owner commits its cursor with publication and correction",
-  },
-  "orchestration/Layers/BoardQuery.ts": {
-    tables: ["projection_state"],
-    reason: "the surviving Board query reads its own global cursor",
-  },
-  "persistence/ProjectionBoardPosts.ts": {
-    tables: ["projection_state"],
-    reason: "Board current-row reads share one SQL snapshot with their cursor",
-  },
   "orchestration-v2/ResourceCleanupService.ts": {
     tables: ["projection_thread_messages"],
     reason: "attachment deletion protects references in the immutable legacy recovery source",
   },
 };
 
-/** These standalone fork owners do not provide a V1 thread runtime. */
-const retainedOrchestrationFiles = [
-  "orchestration/Layers/Board.ts",
-  "orchestration/Layers/BoardQuery.ts",
-  "orchestration/Services/Board.ts",
-  "orchestration/Services/BoardQuery.ts",
-  "orchestration/board/Cursor.ts",
-] as const;
 const retiredPaths = [
   "orchestration/decider.ts",
   "orchestration/projector.ts",
@@ -92,8 +72,8 @@ it("keeps the V1 agent runtime and engine deleted", () => {
       .filter(({ path }) => path.startsWith("orchestration/"))
       .map(({ path }) => path)
       .toSorted(),
-    [...retainedOrchestrationFiles].toSorted(),
-    "Only the declared standalone Board owners may remain under orchestration",
+    [],
+    "The legacy orchestration runtime remains retired",
   );
   const violations = relativeSources
     .filter(({ path, source }) => !path.includes("/legacy/") && forbiddenImport.test(source))

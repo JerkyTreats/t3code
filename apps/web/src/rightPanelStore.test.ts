@@ -18,281 +18,6 @@ import {
 
 const refA = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-A"));
 const refB = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-B"));
-const refOtherEnvironment = scopeThreadRef("env-2" as EnvironmentId, ThreadId.make("thread-C"));
-
-beforeEach(async () => {
-  useRightPanelStore.setState({ byThreadKey: {} });
-  await useRightPanelStore.persist.clearStorage();
-});
-
-describe("rightPanelStore", () => {
-  it("opens environment Board through the current thread-panel visibility transition", () => {
-    const store = useRightPanelStore.getState();
-    store.setThreadPanelOpen(refA, "popover", true);
-    store.setThreadPanelOpen(refB, "popover", true);
-    store.setThreadPanelOpen(refOtherEnvironment, "popover", true);
-    store.open(refA, "board");
-    const visibility = useRightPanelStore.getState().threadPanelVisibilityByThreadKey;
-    expect(selectThreadPanelOpen(visibility, refA, "popover")).toBe(false);
-    expect(selectThreadPanelOpen(visibility, refB, "popover")).toBe(false);
-    expect(selectThreadPanelOpen(visibility, refOtherEnvironment, "popover")).toBe(true);
-  });
-
-  it("treats a later environment Board choice as a user choice for proactive thread panels", () => {
-    const store = useRightPanelStore.getState();
-    const revision = store.getUserActionRevision(refA);
-    store.open(refB, "board");
-    expect(store.openProactive(refA, { id: "diff", kind: "diff" }, revision)).toBe(false);
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("board");
-  });
-  it("opens Board as a first-class right-panel surface", () => {
-    useRightPanelStore.getState().open(refA, "board");
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("board");
-  });
-
-  it("keeps Board visible when switching or removing threads in its environment", () => {
-    useRightPanelStore.getState().open(refA, "board");
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBe("board");
-    useRightPanelStore.getState().removeThread(refA);
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBe("board");
-  });
-
-  it("keeps the combined Board snapshot stable until its inputs change", () => {
-    useRightPanelStore.getState().open(refA, "files");
-    useRightPanelStore.getState().open(refA, "board");
-
-    const firstSnapshot = selectThreadRightPanelState(
-      useRightPanelStore.getState().byThreadKey,
-      refA,
-    );
-    const secondSnapshot = selectThreadRightPanelState(
-      useRightPanelStore.getState().byThreadKey,
-      refA,
-    );
-    expect(secondSnapshot).toBe(firstSnapshot);
-    expect(secondSnapshot.surfaces).toBe(firstSnapshot.surfaces);
-
-    useRightPanelStore.getState().open(refOtherEnvironment, "files");
-    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toBe(
-      firstSnapshot,
-    );
-  });
-
-  it("lets every thread-local opener replace the environment Board selection", () => {
-    const openers = [
-      () => useRightPanelStore.getState().open(refB, "files"),
-      () => useRightPanelStore.getState().openBrowser(refB, "tab-1"),
-      () => useRightPanelStore.getState().openFile(refB, "README.md"),
-      () => useRightPanelStore.getState().openTerminal(refB, "terminal-1"),
-      () =>
-        useRightPanelStore.getState().openPullRequest(refB, {
-          projectId: "project-a",
-          repository: "example/repository",
-          number: 1,
-        }),
-    ];
-
-    for (const open of openers) {
-      useRightPanelStore.setState({ byThreadKey: {} });
-      useRightPanelStore.getState().open(refA, "board");
-      open();
-      expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).not.toBe(
-        "board",
-      );
-      expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
-    }
-  });
-
-  it("keeps Board scoped to its own environment", () => {
-    useRightPanelStore.getState().open(refA, "board");
-    expect(
-      selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refOtherEnvironment),
-    ).toBeNull();
-  });
-
-  it("hides Board over an open thread panel and reopens Board through the layout toggle", () => {
-    useRightPanelStore.getState().open(refA, "files");
-    useRightPanelStore.getState().open(refA, "board");
-
-    useRightPanelStore.getState().close(refA);
-
-    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
-      isOpen: false,
-      activeSurfaceId: "board",
-      surfaces: [
-        { id: "files", kind: "files" },
-        { id: "board", kind: "board" },
-      ],
-    });
-    expect(
-      selectSelectedRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
-    ).toEqual({ id: "board", kind: "board" });
-
-    useRightPanelStore.getState().toggleVisibility(refA);
-
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("board");
-  });
-
-  it("reopens a sole Board selection across threads without affecting another environment", () => {
-    useRightPanelStore.getState().open(refA, "board");
-    useRightPanelStore.getState().close(refA);
-
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBeNull();
-    expect(
-      selectSelectedRightPanelSurface(useRightPanelStore.getState().byThreadKey, refB),
-    ).toEqual({ id: "board", kind: "board" });
-    expect(
-      selectSelectedRightPanelSurface(
-        useRightPanelStore.getState().byThreadKey,
-        refOtherEnvironment,
-      ),
-    ).toBeNull();
-
-    useRightPanelStore.getState().toggleVisibility(refB);
-
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("board");
-    expect(
-      selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refOtherEnvironment),
-    ).toBeNull();
-  });
-
-  it("lets explicit thread surface selection replace a hidden Board selection", () => {
-    useRightPanelStore.getState().open(refA, "files");
-    useRightPanelStore.getState().open(refA, "board");
-    useRightPanelStore.getState().close(refA);
-
-    useRightPanelStore.getState().activateSurface(refA, "files");
-
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("files");
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBeNull();
-  });
-
-  it("keeps the explicit thread selection from legacy inactive Board persistence", () => {
-    const migrated = migratePersistedRightPanelState(
-      {
-        byThreadKey: {
-          "env-1:thread-A": {
-            isOpen: true,
-            activeSurfaceId: "files",
-            surfaces: [{ id: "files", kind: "files" }],
-          },
-          "env-1\u0000environment-board": {
-            isOpen: false,
-            activeSurfaceId: "board",
-            surfaces: [{ id: "board", kind: "board" }],
-          },
-        },
-      },
-      12,
-    );
-
-    expect(selectThreadRightPanelState(migrated.byThreadKey, refA)).toEqual({
-      isOpen: true,
-      activeSurfaceId: "files",
-      surfaces: [{ id: "files", kind: "files" }],
-    });
-  });
-
-  it("preserves hidden Board selection in current persisted right-panel state", () => {
-    const migrated = migratePersistedRightPanelState(
-      {
-        byThreadKey: {
-          "env-1:thread-A": {
-            isOpen: true,
-            activeSurfaceId: "files",
-            surfaces: [{ id: "files", kind: "files" }],
-          },
-          "env-1\u0000environment-board": {
-            isOpen: false,
-            activeSurfaceId: "board",
-            surfaces: [{ id: "board", kind: "board" }],
-          },
-        },
-      },
-      13,
-    );
-
-    expect(selectThreadRightPanelState(migrated.byThreadKey, refA)).toEqual({
-      isOpen: false,
-      activeSurfaceId: "board",
-      surfaces: [
-        { id: "files", kind: "files" },
-        { id: "board", kind: "board" },
-      ],
-    });
-  });
-
-  it("rehydrates exact origin version 12 Board-to-Files state with Files selected", async () => {
-    const storage = useRightPanelStore.persist.getOptions().storage;
-    expect(storage).toBeDefined();
-    await storage?.setItem("t3code:right-panel-state:v2", {
-      version: 12,
-      state: {
-        byThreadKey: {
-          "env-1:thread-A": {
-            isOpen: true,
-            activeSurfaceId: "files",
-            surfaces: [{ id: "files", kind: "files" }],
-          },
-          "env-1\u0000environment-board": {
-            isOpen: false,
-            activeSurfaceId: "board",
-            surfaces: [{ id: "board", kind: "board" }],
-          },
-        },
-      },
-    } as never);
-
-    await useRightPanelStore.persist.rehydrate();
-
-    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
-      isOpen: true,
-      activeSurfaceId: "files",
-      surfaces: [{ id: "files", kind: "files" }],
-    });
-  });
-
-  it("roundtrips a hidden Board selection through current store persistence", async () => {
-    const storage = useRightPanelStore.persist.getOptions().storage;
-    expect(storage).toBeDefined();
-    useRightPanelStore.getState().open(refA, "files");
-    useRightPanelStore.getState().open(refA, "board");
-    useRightPanelStore.getState().close(refA);
-    const persisted = await storage?.getItem("t3code:right-panel-state:v2");
-    expect(persisted).toMatchObject({ version: 14 });
-
-    useRightPanelStore.setState({ byThreadKey: {} });
-    await storage?.setItem("t3code:right-panel-state:v2", persisted as never);
-    await useRightPanelStore.persist.rehydrate();
-
-    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
-      isOpen: false,
-      activeSurfaceId: "board",
-      surfaces: [
-        { id: "files", kind: "files" },
-        { id: "board", kind: "board" },
-      ],
-    });
-    useRightPanelStore.getState().toggleVisibility(refA);
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("board");
-  });
-
-  it("applies close-other and close-all actions to the combined Board surface list", () => {
-    useRightPanelStore.getState().open(refA, "files");
-    useRightPanelStore.getState().open(refA, "board");
-    useRightPanelStore.getState().closeOtherSurfaces(refA, "board");
-
-    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
-      isOpen: true,
-      activeSurfaceId: "board",
-      surfaces: [{ id: "board", kind: "board" }],
-    });
-
-    useRightPanelStore.getState().closeAllSurfaces(refA);
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
-    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBeNull();
-  });
-});
 
 beforeEach(() => {
   useClosedViewStore.setState({ entries: [] });
@@ -305,6 +30,94 @@ beforeEach(() => {
 });
 
 describe("rightPanelStore", () => {
+  it("keeps panel choices and proactive revisions isolated between threads", () => {
+    const store = useRightPanelStore.getState();
+    const revision = store.getUserActionRevision(refA);
+    store.open(refB, "files");
+
+    expect(store.openProactive(refA, { id: "diff", kind: "diff" }, revision)).toBe(true);
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("diff");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBe("files");
+
+    store.closeAllSurfaces(refA);
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBe("files");
+  });
+
+  it("transitions only the current thread's popover when opening a right panel", () => {
+    const store = useRightPanelStore.getState();
+    store.setThreadPanelOpen(refA, "popover", true);
+    store.setThreadPanelOpen(refB, "popover", true);
+    store.open(refA, "files");
+
+    const visibility = useRightPanelStore.getState().threadPanelVisibilityByThreadKey;
+    expect(selectThreadPanelOpen(visibility, refA, "popover")).toBe(false);
+    expect(selectThreadPanelOpen(visibility, refB, "popover")).toBe(true);
+  });
+
+  it("accepts only registered surface kinds when loading persisted state", () => {
+    const migrated = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "unsupported",
+          surfaces: [
+            { id: "unsupported", kind: "unsupported" },
+            { id: "files", kind: "files" },
+          ],
+        },
+      },
+    });
+
+    expect(selectThreadRightPanelState(migrated.byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "files",
+      surfaces: [{ id: "files", kind: "files" }],
+    });
+  });
+
+  it("rehydrates version 14 using registered kinds and preserves surviving panel selections", async () => {
+    const { storage, name } = useRightPanelStore.persist.getOptions();
+    expect(storage).toBeDefined();
+    await storage!.setItem(name!, {
+      version: 14,
+      state: {
+        byThreadKey: {
+          "env-1:thread-A": {
+            isOpen: true,
+            activeSurfaceId: "files",
+            surfaces: [
+              { id: "unsupported", kind: "unsupported" },
+              { id: "files", kind: "files" },
+            ],
+          },
+          "env-1:thread-B": {
+            isOpen: true,
+            activeSurfaceId: "unsupported",
+            surfaces: [
+              { id: "unsupported", kind: "unsupported" },
+              { id: "diff", kind: "diff" },
+            ],
+          },
+        },
+      },
+    } as never);
+
+    await useRightPanelStore.persist.rehydrate();
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "files",
+      surfaces: [{ id: "files", kind: "files" }],
+    });
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refB)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "diff",
+      surfaces: [{ id: "diff", kind: "diff" }],
+    });
+    expect(await storage!.getItem(name!)).toMatchObject({ version: 15 });
+  });
+
   it("records single and bulk tab closes, newest first", () => {
     const store = useRightPanelStore.getState();
     const pr = pullRequestSurface({

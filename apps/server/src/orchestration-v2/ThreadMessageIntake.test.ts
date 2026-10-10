@@ -19,12 +19,8 @@ import {
   type UserInputAttachments,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as BoardWritePolicy from "../board/TurnWritePolicyV2.ts";
 import { emptyProjection } from "./ProjectionStore.ts";
 import { createPendingAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -33,101 +29,13 @@ import {
   OrchestratorDispatchError,
 } from "./Orchestrator.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
-import { dispatchCommand } from "./ThreadMessageIntake.ts";
-
-it.effect("credential replacement waits for a delayed Plan attachment copy and its rollback", () =>
-  Effect.gen(function* () {
-    const config = yield* ServerConfig.ServerConfig;
-    const fileSystem = yield* FileSystem.FileSystem;
-    const copying = yield* Deferred.make<void>();
-    const releaseCopy = yield* Deferred.make<void>();
-    const cancelling = yield* Deferred.make<void>();
-    const replaced = yield* Deferred.make<void>();
-    const threadId = ThreadId.make("synthetic-plan-copy");
-    const id = ChatAttachmentId.make(createPendingAttachmentId()!);
-    NodeFS.writeFileSync(
-      NodePath.join(config.attachmentsDir, `${id}.png`),
-      new Uint8Array([1, 2, 3]),
-    );
-    let writable = true;
-    let dispatched = false;
-    const policy = yield* BoardWritePolicy.make((_, enabled) =>
-      Effect.sync(() => {
-        writable = enabled;
-      }),
-    );
-    const threads = Layer.mock(ThreadManagementService.ThreadManagementService)({
-      getThreadRecords: () =>
-        Effect.succeed(
-          emptyProjection({
-            id: EventId.make("synthetic-plan-created"),
-            type: "thread.created",
-            threadId,
-            occurredAt: NOW,
-            payload: { ...intakeThread(threadId), interactionMode: "plan" },
-          }),
-        ),
-      dispatch: () =>
-        Effect.sync(() => {
-          dispatched = true;
-        }).pipe(Effect.andThen(Effect.die("unexpected dispatch"))),
-    });
-    const send = yield* Effect.forkChild(
-      dispatchCommand({
-        type: "runtime-request.respond",
-        commandId: CommandId.make("synthetic-copy-answer"),
-        threadId,
-        requestId: RuntimeRequestId.make("synthetic-copy-request"),
-        answers: {},
-        attachmentsByQuestionId: {
-          q: [{ type: "image", id, name: "synthetic.png", mimeType: "image/png", sizeBytes: 3 }],
-        },
-      }).pipe(
-        Effect.provide(threads),
-        Effect.provideService(BoardWritePolicy.BoardTurnWritePolicyV2, policy),
-        Effect.provideService(FileSystem.FileSystem, {
-          ...fileSystem,
-          copyFile: (source, target) =>
-            Deferred.succeed(copying, undefined).pipe(
-              Effect.andThen(Deferred.await(releaseCopy)),
-              Effect.andThen(fileSystem.copyFile(source, target)),
-            ),
-        }),
-      ),
-    );
-    yield* Deferred.await(copying);
-    expect(writable).toBe(false);
-    const replacement = yield* Effect.forkChild(
-      policy.withCredentialLifecycle(
-        threadId,
-        Deferred.succeed(cancelling, undefined).pipe(
-          Effect.andThen(policy.cancelDispatches(threadId)),
-          Effect.andThen(policy.credentialChanged(threadId)),
-          Effect.andThen(Deferred.succeed(replaced, undefined)),
-        ),
-      ),
-    );
-    yield* Deferred.await(cancelling);
-    expect(yield* Deferred.isDone(replaced)).toBe(false);
-    yield* Deferred.succeed(releaseCopy, undefined);
-    yield* Fiber.join(replacement);
-    yield* Fiber.await(send);
-    expect(dispatched).toBe(false);
-    expect(NodeFS.readdirSync(config.attachmentsDir)).toEqual([`${id}.png`]);
-  }).pipe(Effect.provide(layerIntakeTest)),
-);
+import { dispatchCommand, launchThread } from "./ThreadMessageIntake.ts";
+import * as ThreadLaunch from "./ThreadLaunchService.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 
 const layerIntakeTest = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-question-intake-",
-}).pipe(
-  Layer.provideMerge(NodeServices.layer),
-  Layer.provideMerge(
-    Layer.effect(
-      BoardWritePolicy.BoardTurnWritePolicyV2,
-      BoardWritePolicy.make(() => Effect.void),
-    ),
-  ),
-);
+}).pipe(Layer.provideMerge(NodeServices.layer));
 
 const layerFailingDispatch = (captured: OrchestrationV2ServerCommand[]) =>
   Layer.mock(ThreadManagementService.ThreadManagementService)({
@@ -953,5 +861,58 @@ it.effect("applies the image budget across all questions before dispatch", () =>
     expect(result._tag).toBe("Failure");
     if (result._tag === "Failure") expect(String(result.cause)).toContain("80 MiB");
     expect(captured).toEqual([]);
+  }).pipe(Effect.provide(layerIntakeTest)),
+);
+
+it.effect("allocates a thread identity before claiming initial uploaded attachments", () =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const pendingId = ChatAttachmentId.make(createPendingAttachmentId()!);
+    NodeFS.writeFileSync(
+      NodePath.join(config.attachmentsDir, `${pendingId}.png`),
+      new Uint8Array([1, 2, 3]),
+    );
+    const captured: ThreadLaunch.ThreadLaunchInput[] = [];
+    yield* launchThread({
+      commandId: CommandId.make("synthetic-upload-launch"),
+      projectId: ProjectId.make("synthetic-launch-project"),
+      title: "Synthetic upload launch",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "synthetic-model" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      workspaceStrategy: { type: "root" },
+      createdBy: "user",
+      creationSource: "web",
+      initialMessage: {
+        text: "Inspect this image",
+        attachments: [
+          {
+            type: "image",
+            id: pendingId,
+            name: "synthetic.png",
+            mimeType: "image/png",
+            sizeBytes: 3,
+          },
+        ],
+      },
+    }).pipe(
+      Effect.provide([
+        Layer.mock(ThreadLaunch.ThreadLaunchService)({
+          launch: (input) => {
+            captured.push(input);
+            return Effect.die("Stop after launch intake");
+          },
+        }),
+        IdAllocator.layer,
+      ]),
+      Effect.exit,
+    );
+    expect(captured).toHaveLength(1);
+    const input = captured[0]!;
+    expect(input.threadId).toBeDefined();
+    const attachment = input.initialMessage!.attachments[0]!;
+    expect(attachment.id).not.toBe(pendingId);
+    const path = resolveAttachmentPath({ attachmentsDir: config.attachmentsDir, attachment });
+    expect(NodeFS.readFileSync(path!)).toEqual(Buffer.from([1, 2, 3]));
   }).pipe(Effect.provide(layerIntakeTest)),
 );

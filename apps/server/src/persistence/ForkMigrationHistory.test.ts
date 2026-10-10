@@ -15,6 +15,9 @@ import { runMigrations } from "./Migrations.ts";
 import { prepareReleasedForkMigration41State } from "./Migrations/fixtures/AuthLineageFixtures.ts";
 
 const retiredHistoricalNames = [
+  [43, "ProjectionBoardPosts"],
+  [44, "ProjectionBoardPostRevisions"],
+  [45, "CollectiveExpeditions"],
   [46, "CollectiveResidentRuntime"],
   [47, "CollectiveResidentTurnSettlements"],
   [48, "CollectiveWeeklyQuotaObservations"],
@@ -113,81 +116,10 @@ it.effect("constructs a fresh database without retired adapter tables", () =>
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
-it.effect("preserves Board provenance, revisions and auth identities from accepted 51", () =>
+it.effect("preserves auth identities and migration journal evidence from accepted 51", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* prepareAcceptedFork51();
-    yield* sql`
-        INSERT INTO projection_board_posts (
-          post_id,
-          event_sequence,
-          author_json,
-          source_json,
-          targets_json,
-          body,
-          created_at,
-          revision,
-          updated_event_sequence,
-          updated_at,
-          last_editor_json,
-          last_editor_source_json
-        ) VALUES (
-          'synthetic-board-post',
-          701,
-          '{"kind":"agent","id":"synthetic-author","providerInstanceId":"synthetic-provider"}',
-          '{"projectId":"synthetic-project","threadId":"synthetic-thread"}',
-          '[{"kind":"agent","id":"synthetic-target"}]',
-          'Synthetic edited body',
-          '2026-01-03T00:00:00.000Z',
-          2,
-          702,
-          '2026-01-04T00:00:00.000Z',
-          '{"kind":"agent","id":"synthetic-editor"}',
-          '{"projectId":"synthetic-project","threadId":"synthetic-editor-thread"}'
-        )
-      `;
-    yield* sql`
-        INSERT INTO projection_board_post_revisions (
-          post_id,
-          revision,
-          event_sequence,
-          body,
-          targets_json,
-          editor_json,
-          editor_source_json,
-          edited_at
-        ) VALUES
-          (
-            'synthetic-board-post',
-            1,
-            701,
-            'Synthetic original body',
-            '[]',
-            '{"kind":"agent","id":"synthetic-author"}',
-            '{"projectId":"synthetic-project","threadId":"synthetic-thread"}',
-            '2026-01-03T00:00:00.000Z'
-          ),
-          (
-            'synthetic-board-post',
-            2,
-            702,
-            'Synthetic edited body',
-            '[{"kind":"agent","id":"synthetic-target"}]',
-            '{"kind":"agent","id":"synthetic-editor"}',
-            '{"projectId":"synthetic-project","threadId":"synthetic-editor-thread"}',
-            '2026-01-04T00:00:00.000Z'
-          )
-      `;
-
-    const boardBefore = yield* sql`
-        SELECT * FROM projection_board_posts WHERE post_id = 'synthetic-board-post'
-      `;
-    const revisionsBefore = yield* sql`
-        SELECT *
-        FROM projection_board_post_revisions
-        WHERE post_id = 'synthetic-board-post'
-        ORDER BY revision
-      `;
     const clientsBefore = yield* sql`
         SELECT * FROM auth_clients ORDER BY client_id
       `;
@@ -202,15 +134,6 @@ it.effect("preserves Board provenance, revisions and auth identities from accept
 
     yield* runMigrations();
 
-    const boardAfter = yield* sql`
-        SELECT * FROM projection_board_posts WHERE post_id = 'synthetic-board-post'
-      `;
-    const revisionsAfter = yield* sql`
-        SELECT *
-        FROM projection_board_post_revisions
-        WHERE post_id = 'synthetic-board-post'
-        ORDER BY revision
-      `;
     const clientsAfter = yield* sql`
         SELECT * FROM auth_clients ORDER BY client_id
       `;
@@ -232,8 +155,6 @@ it.effect("preserves Board provenance, revisions and auth identities from accept
         ORDER BY migration_id
       `;
 
-    assert.deepStrictEqual(boardAfter, boardBefore);
-    assert.deepStrictEqual(revisionsAfter, revisionsBefore);
     assert.deepStrictEqual(clientsAfter, clientsBefore);
     assert.deepStrictEqual(sessionsAfter, sessionsBefore);
     assert.deepStrictEqual(pairingLinksAfter, pairingLinksBefore);
@@ -254,9 +175,6 @@ it.effect("preserves Board provenance, revisions and auth identities from accept
       { migrationId: 40, name: "SettingsAdminClients" },
       { migrationId: 41, name: "ReconcileUpstreamAndSettingsAdmin" },
       { migrationId: 42, name: "ReconcileUpstreamAndSettingsAdmin" },
-      { migrationId: 43, name: "ProjectionBoardPosts" },
-      { migrationId: 44, name: "ProjectionBoardPostRevisions" },
-      { migrationId: 45, name: "CollectiveExpeditions" },
       ...retiredHistoricalNames.map(([migrationId, name]) => ({ migrationId, name })),
     ]);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -419,9 +337,9 @@ it.effect("continues a released reconciled v0.0.28 journal", () =>
 
     assert.deepStrictEqual(
       executed.map(([migrationId]) => migrationId),
-      [52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 79, 80, 81, 82],
+      [52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 79, 80, 81, 82, 83],
     );
-    assert.deepStrictEqual(latest, [{ migrationId: 82, name: "ThreadSnapshotWindowIndexes" }]);
+    assert.deepStrictEqual(latest, [{ migrationId: 83, name: "RetireBoardAndCollective" }]);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
@@ -561,8 +479,8 @@ it.effect.each([58, 59] as const)(
         name: "InteractionCommandFingerprints",
       });
       assert.deepStrictEqual(upgraded.journal.at(-1), {
-        migrationId: 82,
-        name: "ThreadSnapshotWindowIndexes",
+        migrationId: 83,
+        name: "RetireBoardAndCollective",
       });
       assert.deepStrictEqual(upgraded.receipts, [
         { payloadFingerprint: lineageId === 59 ? "synthetic-fingerprint" : null },

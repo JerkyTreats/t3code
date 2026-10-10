@@ -1,5 +1,4 @@
 import {
-  AuthAccessWriteScope,
   CLIENT_GUARDED_RPC_SCOPES,
   type DeviceListInput,
   clientRpcRequiredScopes,
@@ -57,10 +56,6 @@ export const RPC_REQUIRED_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: AuthOrchestrationReadScope,
   [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsMutate]: AuthOrchestrationOperateScope,
-  [WS_METHODS.getBoardPage]: AuthOrchestrationReadScope,
-  [WS_METHODS.getBoardPostHistory]: AuthOrchestrationReadScope,
-  [WS_METHODS.reviseBoardPost]: AuthAccessWriteScope,
-  [WS_METHODS.subscribeBoard]: AuthOrchestrationReadScope,
   [WS_METHODS.serverProbe]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetConfig]: AuthOrchestrationReadScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationReadScope,

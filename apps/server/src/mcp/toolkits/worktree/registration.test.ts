@@ -1,6 +1,3 @@
-import * as Board from "../../../orchestration/Services/Board.ts";
-import * as BoardQuery from "../../../orchestration/Services/BoardQuery.ts";
-import * as BoardWritePolicy from "../../../board/TurnWritePolicyV2.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as PreviewManager from "../../../preview/Manager.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
@@ -34,12 +31,6 @@ import * as PreviewBrowser from "../../../preview/PreviewBrowser.ts";
 
 const layerStubServices = Layer.mergeAll(
   IdAllocator.layer,
-  Layer.effect(
-    BoardWritePolicy.BoardTurnWritePolicyV2,
-    BoardWritePolicy.make(() => Effect.void),
-  ),
-  Layer.mock(Board.Board)({}),
-  Layer.mock(BoardQuery.BoardQuery)({}),
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(Orchestrator.OrchestratorV2)({}),
   Layer.mock(ProjectionStore.ProjectionStoreV2)({}),

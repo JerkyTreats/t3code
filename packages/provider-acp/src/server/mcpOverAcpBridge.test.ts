@@ -82,10 +82,10 @@ describe("AcpMcpOverAcpBridge", () => {
         endpoint: "http://synthetic/root",
         authorizationHeader: "Bearer root",
       };
-      const board = {
-        name: "t3-code-board" as const,
-        endpoint: "http://synthetic/board",
-        authorizationHeader: "Bearer board-read",
+      const preview = {
+        name: "t3-code-preview" as const,
+        endpoint: "http://synthetic/preview",
+        authorizationHeader: "Bearer preview-read",
       };
       const prs = {
         name: "t3-code-pull-requests" as const,
@@ -93,7 +93,7 @@ describe("AcpMcpOverAcpBridge", () => {
         authorizationHeader: "Bearer pr",
       };
       const bridge = yield* makeAcpMcpOverAcpBridge({
-        servers: [root, board, prs],
+        servers: [root, preview, prs],
         allocateConnectionId: Ref.updateAndGet(ids, (id) => id + 1).pipe(Effect.map(String)),
         fetchImplementation: async (url, init) => {
           const method = init?.method ?? "POST";
@@ -113,7 +113,7 @@ describe("AcpMcpOverAcpBridge", () => {
           );
         },
       });
-      const connected = yield* Effect.forEach([root, board, prs], (server) =>
+      const connected = yield* Effect.forEach([root, preview, prs], (server) =>
         bridge.connect({ serverId: server.name }),
       );
       for (const connection of connected) {
@@ -123,20 +123,20 @@ describe("AcpMcpOverAcpBridge", () => {
       expect(requests.map((request) => request.url)).toEqual([
         root.endpoint,
         root.endpoint,
-        board.endpoint,
-        board.endpoint,
+        preview.endpoint,
+        preview.endpoint,
         prs.endpoint,
         prs.endpoint,
       ]);
       expect(requests.map((request) => request.headers.get("authorization"))).toEqual([
         root.authorizationHeader,
         root.authorizationHeader,
-        board.authorizationHeader,
-        board.authorizationHeader,
+        preview.authorizationHeader,
+        preview.authorizationHeader,
         prs.authorizationHeader,
         prs.authorizationHeader,
       ]);
-      expect(requests[3]?.headers.get("mcp-session-id")).toBe(`session:${board.endpoint}`);
+      expect(requests[3]?.headers.get("mcp-session-id")).toBe(`session:${preview.endpoint}`);
       expect(requests[5]?.headers.get("mcp-session-id")).toBe(`session:${prs.endpoint}`);
       expect(yield* bridge.connect({ serverId: "t3-code-device" }).pipe(Effect.flip)).toMatchObject(
         { _tag: "AcpMcpOverAcpError" },
@@ -148,7 +148,7 @@ describe("AcpMcpOverAcpBridge", () => {
         endpoint: "http://synthetic/child-pr",
         authorizationHeader: "Bearer child-pr",
       };
-      yield* bridge.replaceServers([board, rotated]);
+      yield* bridge.replaceServers([preview, rotated]);
       expect(
         requests
           .slice(-2)
@@ -175,11 +175,11 @@ describe("AcpMcpOverAcpBridge", () => {
           .slice(-2)
           .map((request) => [request.method, request.url, request.headers.get("mcp-session-id")]),
       ).toEqual([
-        ["DELETE", board.endpoint, `session:${board.endpoint}`],
+        ["DELETE", preview.endpoint, `session:${preview.endpoint}`],
         ["DELETE", rotated.endpoint, `session:${rotated.endpoint}`],
       ]);
       yield* bridge.replaceServers([]);
-      expect(yield* bridge.connect({ serverId: board.name }).pipe(Effect.flip)).toMatchObject({
+      expect(yield* bridge.connect({ serverId: preview.name }).pipe(Effect.flip)).toMatchObject({
         _tag: "AcpMcpOverAcpError",
       });
     }),
@@ -194,7 +194,7 @@ describe("AcpMcpOverAcpBridge", () => {
         const bridge = yield* makeAcpMcpOverAcpBridge({
           servers: [
             {
-              name: "t3-code-board",
+              name: "t3-code-preview",
               endpoint: "http://synthetic/old",
               authorizationHeader: "Bearer old",
             },
@@ -206,13 +206,13 @@ describe("AcpMcpOverAcpBridge", () => {
           fetchImplementation: () => Promise.reject(new Error("No stale connection may fetch")),
         });
         const connecting = yield* bridge
-          .connect({ serverId: "t3-code-board" })
+          .connect({ serverId: "t3-code-preview" })
           .pipe(Effect.result, Effect.forkChild);
         yield* Deferred.await(started);
         if (change === "replace") {
           yield* bridge.replaceServers([
             {
-              name: "t3-code-board",
+              name: "t3-code-preview",
               endpoint: "http://synthetic/new",
               authorizationHeader: "Bearer new",
             },
@@ -229,7 +229,7 @@ describe("AcpMcpOverAcpBridge", () => {
         ).toMatchObject({ _tag: "AcpMcpOverAcpError" });
         if (change === "dispose") {
           expect(
-            yield* bridge.connect({ serverId: "t3-code-board" }).pipe(Effect.flip),
+            yield* bridge.connect({ serverId: "t3-code-preview" }).pipe(Effect.flip),
           ).toMatchObject({ _tag: "AcpMcpOverAcpError" });
         }
       }).pipe(Effect.scoped),

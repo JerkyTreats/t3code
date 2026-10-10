@@ -28,9 +28,6 @@ it.layer(Layer.fresh(NodeSqliteClient.layer({ filename: ":memory:" })))(
             journal.filter(({ id }) => id >= 42 && id <= 51),
             [
               { id: 42, name: "ReconcileUpstreamAndSettingsAdmin" },
-              { id: 43, name: "ProjectionBoardPosts" },
-              { id: 44, name: "ProjectionBoardPostRevisions" },
-              { id: 45, name: "CollectiveExpeditions" },
               { id: 50, name: "ThreadAdapterLaunchBindings" },
               { id: 51, name: "RetireThreadAdapterAuthority" },
             ],
@@ -128,11 +125,11 @@ it.effect("rolls back the V2 schema and baseline events together before retry", 
     assert.deepStrictEqual(yield* runMigrations(), [
       [68, "OrchestrationV2"],
       [69, "RemoveRedundantProjectionIndexes"],
-      [70, "ApplicationBoardEventSequenceIndex"],
       [79, "ScheduledTaskWebhooks"],
       [80, "WebhookRelayDeliveries"],
       [81, "McpAppModelContext"],
       [82, "ThreadSnapshotWindowIndexes"],
+      [83, "RetireBoardAndCollective"],
     ]);
     assert.deepStrictEqual(yield* runMigrations(), []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -166,6 +163,7 @@ it.effect("continues the current journal with stable upstream identities", () =>
       [80, "WebhookRelayDeliveries"],
       [81, "McpAppModelContext"],
       [82, "ThreadSnapshotWindowIndexes"],
+      [83, "RetireBoardAndCollective"],
     ]);
     assert.deepStrictEqual(
       yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 70 ORDER BY migration_id`,

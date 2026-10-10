@@ -12,8 +12,6 @@
  */
 import {
   ApplicationEventMetadata,
-  ApplicationBoardEvent,
-  BOARD_AGGREGATE_ID,
   ApplicationProjectEvent,
   type ApplicationStoredEvent,
   CommandId,
@@ -52,25 +50,10 @@ export type UnsequencedProjectEvent = ApplicationProjectEvent extends infer Even
     : never
   : never;
 
-export type UnsequencedBoardEvent = ApplicationBoardEvent extends infer Event
-  ? Event extends ApplicationBoardEvent
-    ? Omit<Event, "sequence">
-    : never
-  : never;
-
 /** OrchestrationEventStore - Service tag for the shared application event log. */
 export class OrchestrationEventStore extends Context.Service<
   OrchestrationEventStore,
   {
-    /** Append the global Board aggregate without inventing a thread. */
-    readonly appendBoardEvent: (
-      event: UnsequencedBoardEvent,
-    ) => Effect.Effect<ApplicationBoardEvent, OrchestrationEventStoreError>;
-    readonly readBoardEvents: (input?: {
-      readonly afterSequence?: number;
-      readonly throughSequence?: number;
-    }) => Stream.Stream<ApplicationBoardEvent, OrchestrationEventStoreError>;
-
     /** Append one project event to the shared application log. */
     readonly appendProjectEvent: (
       event: UnsequencedProjectEvent,
@@ -159,7 +142,6 @@ export class OrchestrationEventStore extends Context.Service<
 >()("t3/persistence/OrchestrationEventStore") {}
 
 const encodeProjectIcon = Schema.encodeSync(StoredProjectIcon);
-const decodeBoardEvent = Schema.decodeUnknownEffect(ApplicationBoardEvent);
 const decodeProjectEvent = Schema.decodeUnknownEffect(ApplicationProjectEvent);
 const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown);
 const EventMetadataFromJsonString = Schema.fromJsonString(ApplicationEventMetadata);
@@ -203,7 +185,7 @@ interface ApplicationEventRow {
   readonly sequence: number;
   readonly event_id: string;
   readonly command_id: string | null;
-  readonly aggregate_kind: "project" | "thread" | "board";
+  readonly aggregate_kind: "project" | "thread";
   readonly stream_id: string;
   readonly event_type: string;
   readonly occurred_at: string;
@@ -281,23 +263,6 @@ const rowToProjectEvent = Effect.fn("OrchestrationEventStore.rowToProjectEvent")
 function rowToApplicationStoredEvent(
   row: ApplicationEventRow,
 ): Effect.Effect<ApplicationStoredEvent, Schema.SchemaError> {
-  if (row.aggregate_kind === "board") {
-    return Effect.gen(function* () {
-      return yield* decodeBoardEvent({
-        sequence: row.sequence,
-        eventId: row.event_id,
-        type: row.event_type,
-        aggregateKind: row.aggregate_kind,
-        aggregateId: row.stream_id,
-        occurredAt: row.occurred_at,
-        commandId: row.command_id,
-        causationEventId: row.causation_event_id,
-        correlationId: row.correlation_id,
-        payload: yield* decodeJson(row.payload_json),
-        metadata: yield* decodeJson(row.metadata_json),
-      });
-    });
-  }
   return row.aggregate_kind === "project" ? rowToProjectEvent(row) : rowToV2StoredEvent(row);
 }
 
@@ -417,64 +382,6 @@ const makeEventStore = Effect.gen(function* () {
       ),
     );
 
-  const appendBoardEvent: OrchestrationEventStore["Service"]["appendBoardEvent"] = Effect.fn(
-    "OrchestrationEventStore.appendBoardEvent",
-  )(
-    function* (event) {
-      const rows = yield* sql<{ readonly sequence: number }>`
-        INSERT INTO orchestration_events (
-          event_id, aggregate_kind, stream_id, stream_version, event_type,
-          occurred_at, command_id, causation_event_id, correlation_id,
-          actor_kind, payload_json, metadata_json, application_event_version
-        ) VALUES (
-          ${event.eventId}, 'board', ${event.aggregateId},
-          COALESCE((SELECT MAX(stream_version) + 1 FROM orchestration_events
-            WHERE aggregate_kind = 'board' AND stream_id = ${event.aggregateId}), 0),
-          ${event.type}, ${event.occurredAt}, ${event.commandId},
-          ${event.causationEventId}, ${event.correlationId},
-          ${event.commandId?.startsWith("provider:") ? "provider" : "client"},
-          ${yield* encodeJson(event.payload)}, ${yield* encodeJson(event.metadata)}, 2
-        ) RETURNING sequence
-      `;
-      return yield* decodeBoardEvent({ ...event, sequence: rows[0]?.sequence });
-    },
-    Effect.mapError(
-      toPersistenceSqlOrDecodeError(
-        "OrchestrationEventStore.appendBoardEvent:insert",
-        "OrchestrationEventStore.appendBoardEvent:decode",
-      ),
-    ),
-  );
-
-  const readBoardEvents: OrchestrationEventStore["Service"]["readBoardEvents"] = (input) =>
-    Stream.paginate(input?.afterSequence ?? 0, (cursor) =>
-      sql<ApplicationEventRow>`
-        SELECT * FROM orchestration_events
-        WHERE aggregate_kind = 'board' AND stream_id = ${BOARD_AGGREGATE_ID}
-          AND sequence > ${cursor}
-          AND sequence <= ${input?.throughSequence ?? Number.MAX_SAFE_INTEGER}
-        ORDER BY sequence ASC LIMIT ${READ_PAGE_SIZE}
-      `.pipe(
-        Effect.mapError(toPersistenceSqlError("OrchestrationEventStore.readBoardEvents:query")),
-        Effect.map(
-          (rows) =>
-            [
-              rows,
-              rows.length < READ_PAGE_SIZE ? Option.none() : Option.some(rows.at(-1)!.sequence),
-            ] as const,
-        ),
-      ),
-    ).pipe(
-      Stream.mapEffect((row) =>
-        rowToApplicationStoredEvent(row).pipe(
-          Effect.flatMap((event) => decodeBoardEvent(event)),
-          Effect.mapError(
-            toPersistenceDecodeError("OrchestrationEventStore.readBoardEvents:decode"),
-          ),
-        ),
-      ),
-    );
-
   const readApplicationRows = (input: {
     readonly afterSequence: number;
     readonly throughSequence?: number;
@@ -514,7 +421,7 @@ const makeEventStore = Effect.gen(function* () {
           ${
             input.onlyAgentEvents === true
               ? sql`application_event_version = 2 AND aggregate_kind = 'thread'`
-              : sql`aggregate_kind IN ('project', 'board')
+              : sql`aggregate_kind = 'project'
                     OR (application_event_version = 2 AND aggregate_kind = 'thread')`
           }
         )
@@ -676,7 +583,7 @@ const makeEventStore = Effect.gen(function* () {
       WHERE sequence > ${input.afterSequence}
         AND sequence <= ${input.throughSequence}
         AND (
-          aggregate_kind IN ('project', 'board')
+          aggregate_kind = 'project'
           OR (application_event_version = 2 AND aggregate_kind = 'thread')
         )
     `.pipe(
@@ -710,7 +617,7 @@ const makeEventStore = Effect.gen(function* () {
   const latestApplicationSequence = sql<{ readonly sequence: number | null }>`
     SELECT MAX(sequence) AS sequence
     FROM orchestration_events INDEXED BY idx_orchestration_events_application_high_water
-    WHERE aggregate_kind IN ('project', 'board')
+    WHERE aggregate_kind = 'project'
       OR (application_event_version = 2 AND aggregate_kind = 'thread')
   `.pipe(
     Effect.map((rows) => rows[0]?.sequence ?? 0),
@@ -793,8 +700,6 @@ const makeEventStore = Effect.gen(function* () {
 
   return {
     appendProjectEvent,
-    appendBoardEvent,
-    readBoardEvents,
     appendAgentEvents,
     readAgentEvents,
     getAgentReplayStats,

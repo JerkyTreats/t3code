@@ -3,7 +3,6 @@ import { describe, expect, it } from "@effect/vitest";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation";
 import {
-  BoardAuthorId,
   CommandId,
   EnvironmentId,
   EventId,
@@ -746,7 +745,6 @@ describe("orchestrator MCP toolkit", () => {
               environmentId: EnvironmentId.make("environment:mcp-orchestrator"),
               requestNamespace: "mcp-provider-session-parent",
               thread: {
-                boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
                 threadId: parentThreadId,
                 providerSessionId: "mcp-provider-session-parent",
                 providerInstanceId: codexInstanceId,
@@ -3882,7 +3880,6 @@ describe("orchestrator MCP toolkit", () => {
             environmentId: EnvironmentId.make("environment:mcp-replay"),
             requestNamespace: "mcp-provider-session-replay-parent",
             thread: {
-              boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
               threadId: parentThreadId,
               providerSessionId: "mcp-provider-session-replay-parent",
               providerInstanceId: codexInstanceId,

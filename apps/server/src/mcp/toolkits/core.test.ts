@@ -4,7 +4,6 @@ import { expect, it } from "@effect/vitest";
 import { AjvJsonSchemaValidator } from "@modelcontextprotocol/sdk/validation/ajv";
 import type { JsonSchemaType } from "@modelcontextprotocol/sdk/validation";
 import {
-  BoardAuthorId,
   DEFAULT_SERVER_SETTINGS,
   ChatImageAttachment,
   CommandId,
@@ -114,7 +113,6 @@ const scope: McpInvocationContext.McpInvocationScope = {
   environmentId: EnvironmentId.make("mcp-core-environment"),
   requestNamespace: "mcp-core-session",
   thread: {
-    boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
     threadId,
     providerSessionId: "mcp-core-session",
     providerInstanceId: ProviderInstanceId.make("codex"),

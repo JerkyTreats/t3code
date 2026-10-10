@@ -241,7 +241,7 @@ setting `T3CODE_SERVER_BROWSER_SANDBOX=0` for the environment disables that sand
 Claude Code, Codex, ChatGPT and other agents T3 Code did not start can drive
 threads through the environment's MCP server. See [outside agents](./outside-agents.md)
 for setup and approval. This does not give an outside agent external Admin authority
-or access to the locally managed agents' Board, preview or device endpoints.
+or access to the locally managed agents' preview or device endpoints.
 
 ## Manage pairing and device access
 

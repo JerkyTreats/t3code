@@ -83,8 +83,6 @@ const T3_MCP_SERVER_ALIASES = new Set([
   "t3-code",
   "t3_code",
   "t3code",
-  "t3-code-board",
-  "t3_code_board",
   "t3-code-preview",
   "t3_code_preview",
   "t3-code-device",
@@ -343,7 +341,7 @@ function normalizeT3McpToolLabel(value: string): string {
  * ACP agents disagree on how the injected T3 server prefixes its tools:
  * `mcp__t3-code__x` (Claude/Cursor), `t3-code.x` (Codex), plus single
  * underscore, colon, slash, dash, and space separators seen from registry
- * agents. Independently admitted Board, preview, device and pull-request
+ * agents. Independently admitted preview, device and pull-request
  * servers use the same labels as their ordinary T3 tools. The prefix match
  * is deliberately loose because the display-name
  * inventory is the real gate; unknown tools stay on the generic renderer.
@@ -361,7 +359,7 @@ function resolveT3McpToolName(value: string): string | null {
   }
 
   const namespaceMatch =
-    /^(?<server>t3-code(?:-(?:board|preview|device|pull-requests))?|t3_code(?:_(?:board|preview|device|pull_requests))?|t3code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(
+    /^(?<server>t3-code(?:-(?:preview|device|pull-requests))?|t3_code(?:_(?:preview|device|pull_requests))?|t3code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(
       label,
     );
   if (namespaceMatch?.groups) {
@@ -369,7 +367,7 @@ function resolveT3McpToolName(value: string): string | null {
   }
 
   const prefixed =
-    /^(?:mcp[-_]{1,2})?t3[-_ ]?code(?:[-_](?:board|preview|device|pull[-_]requests))?(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(
+    /^(?:mcp[-_]{1,2})?t3[-_ ]?code(?:[-_](?:preview|device|pull[-_]requests))?(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(
       label,
     );
   const candidate = prefixed?.groups?.tool ?? label;

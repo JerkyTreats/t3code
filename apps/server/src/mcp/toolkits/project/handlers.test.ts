@@ -1,6 +1,5 @@
 import { expect, it } from "@effect/vitest";
 import {
-  BoardAuthorId,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
@@ -17,7 +16,6 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
-import * as BoardWritePolicy from "../../../board/TurnWritePolicyV2.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -52,15 +50,10 @@ it.effect("attributes a launched thread's first message to the calling thread", 
     const layerDependencies = Layer.mergeAll(
       NodeCrypto.layer,
       IdAllocator.layer,
-      Layer.effect(
-        BoardWritePolicy.BoardTurnWritePolicyV2,
-        BoardWritePolicy.make(() => Effect.void),
-      ),
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("environment"),
         requestNamespace: "session",
         thread: {
-          boardAuthorId: BoardAuthorId.make("synthetic-project-mcp-author"),
           threadId: sourceThreadId,
           providerSessionId: "session",
           providerInstanceId,
@@ -129,15 +122,10 @@ it.effect("launches a scratch thread into the Scratch project", () =>
     const layerDependencies = Layer.mergeAll(
       NodeCrypto.layer,
       IdAllocator.layer,
-      Layer.effect(
-        BoardWritePolicy.BoardTurnWritePolicyV2,
-        BoardWritePolicy.make(() => Effect.void),
-      ),
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("environment"),
         requestNamespace: "session",
         thread: {
-          boardAuthorId: BoardAuthorId.make("synthetic-project-mcp-author"),
           threadId: sourceThreadId,
           providerSessionId: "session",
           providerInstanceId,
@@ -232,15 +220,10 @@ it.effect("starts a project from just a title when workspaceRoot is omitted", ()
     const layerDependencies = Layer.mergeAll(
       NodeCrypto.layer,
       IdAllocator.layer,
-      Layer.effect(
-        BoardWritePolicy.BoardTurnWritePolicyV2,
-        BoardWritePolicy.make(() => Effect.void),
-      ),
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId: EnvironmentId.make("environment"),
         requestNamespace: "session",
         thread: {
-          boardAuthorId: BoardAuthorId.make("synthetic-project-mcp-author"),
           threadId: sourceThreadId,
           providerSessionId: "session",
           providerInstanceId,
@@ -328,10 +311,6 @@ const clientLaunchHarness = (input: {
   const layerDependencies = Layer.mergeAll(
     NodeCrypto.layer,
     IdAllocator.layer,
-    Layer.effect(
-      BoardWritePolicy.BoardTurnWritePolicyV2,
-      BoardWritePolicy.make(() => Effect.void),
-    ),
     Layer.succeed(McpInvocationContext.McpInvocationContext, {
       environmentId: EnvironmentId.make("environment"),
       requestNamespace: "client:session-1",
