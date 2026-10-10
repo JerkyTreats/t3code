@@ -1,3 +1,5 @@
+import { applyPotetoMode, potetoModeScope, type PotetoModeSelection } from "../fork/potetoMode";
+import { usePotetoModeStore } from "../fork/potetoModeStore";
 import { useDesktopLauncherSubmitAdmission } from "./desktop/DesktopLauncherActivationCoordinator";
 import { desktopLauncherActivationOwner } from "../fork/desktopLauncherActivation";
 import { ThreadClientStatus } from "./thread/ThreadClientStatus";
@@ -829,10 +831,15 @@ function formatOutgoingPrompt(params: {
   effort: string | null;
   text: string;
   hasRetainedContext?: boolean;
+  potetoMode: PotetoModeSelection | null;
 }): string {
   const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
   const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
-  return formatReferencedChatPrompt(params.text, promptEffort, params.hasRetainedContext === true);
+  return formatReferencedChatPrompt(
+    applyPotetoMode(params.text, params.potetoMode),
+    promptEffort,
+    params.hasRetainedContext === true,
+  );
 }
 const SCRIPT_TERMINAL_COLS = 120;
 const SCRIPT_TERMINAL_ROWS = 30;
@@ -9218,6 +9225,7 @@ export default function ChatView(props: ChatViewProps) {
         hasRetainedContext: hasRetainedFollowUpContext,
       });
       const outgoingFollowUpText = formatOutgoingPrompt({
+        potetoMode: sendCtx.potetoMode,
         provider: ctxSelectedProvider,
         model: ctxSelectedModel,
         models: ctxSelectedProviderModels,
@@ -9387,6 +9395,7 @@ export default function ChatView(props: ChatViewProps) {
     const shouldQueueBehindActiveRun =
       compactBeforeSend || (phase === "running" && dispatchMode === "queue");
     const outgoingMessageText = formatOutgoingPrompt({
+      potetoMode: sendCtx.potetoMode,
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
@@ -9439,6 +9448,7 @@ export default function ChatView(props: ChatViewProps) {
         planModeEnabled: settings.planModeEnabled,
       });
       const text = formatOutgoingPrompt({
+        potetoMode: sendCtx.potetoMode,
         provider: provider.driverKind,
         model: selection.model,
         models: provider.models,
@@ -10553,6 +10563,7 @@ export default function ChatView(props: ChatViewProps) {
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const outgoingMessageText = formatOutgoingPrompt({
+      potetoMode: sendCtx.potetoMode,
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
@@ -10560,6 +10571,7 @@ export default function ChatView(props: ChatViewProps) {
       text: messageText,
       hasRetainedContext,
     });
+    if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) return false;
 
     sendInFlightRef.current = true;
     beginLocalDispatch({ preparingWorktree: false });
@@ -10693,12 +10705,14 @@ export default function ChatView(props: ChatViewProps) {
     const planMarkdown = activeProposedPlan.planMarkdown;
     const implementationPrompt = buildPlanImplementationPrompt(planMarkdown);
     const outgoingImplementationPrompt = formatOutgoingPrompt({
+      potetoMode: sendCtx.potetoMode,
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
       text: implementationPrompt,
     });
+    if (composerRef.current?.validateProviderInput(outgoingImplementationPrompt) === false) return;
     const nextThreadTitle = truncate(buildPlanImplementationThreadTitle(planMarkdown));
     const nextThreadModelSelection: ModelSelection = ctxSelectedModelSelection;
 
@@ -10727,6 +10741,9 @@ export default function ChatView(props: ChatViewProps) {
       createResult._tag === "Failure" ? createResult : null;
 
     if (failure === null) {
+      usePotetoModeStore
+        .getState()
+        .setSelection(potetoModeScope(environmentId, nextThreadId), sendCtx.potetoMode);
       const startResult = await startThreadTurn({
         environmentId,
         input: {

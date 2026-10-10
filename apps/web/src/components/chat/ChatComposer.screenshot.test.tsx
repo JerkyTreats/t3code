@@ -1,3 +1,5 @@
+import { potetoModeScope } from "../../fork/potetoMode";
+import { usePotetoModeStore } from "../../fork/potetoModeStore";
 import {
   act,
   cloneElement,
@@ -347,6 +349,7 @@ beforeEach(() => {
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:prepared");
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
   useComposerDraftStore.setState(initialStore, true);
+  usePotetoModeStore.setState({ selections: {} });
   useQuestionAttachmentPreparation.setState({ counts: {} });
   mocks.capture.mockReset();
   mocks.prepare.mockReset();
@@ -1030,5 +1033,67 @@ describe("ChatComposer question attachment reservations", () => {
       ).toHaveLength(0);
     }
     expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChatComposer Poteto toggle", () => {
+  const skill = {
+    name: "poteto-mode",
+    path: "/fixture/skills/poteto-mode/SKILL.md",
+    enabled: true,
+  };
+  const toggle = () => renderer!.root.findByProps({ "aria-label": "Poteto Mode" });
+  const availableProps = () => {
+    const input = props();
+    input.providerStatuses = input.providerStatuses.map((provider) => ({
+      ...provider,
+      skills: [skill],
+    }));
+    return input;
+  };
+  it("toggles through the real control, survives draft clearing and remount, then stays off", async () => {
+    const input = availableProps();
+    await mount(input);
+    expect(toggle().props["aria-pressed"]).toBe(false);
+    await act(() => toggle().props.onClick());
+    expect(toggle().props["aria-pressed"]).toBe(true);
+    expect(input.composerRef.current!.getSendContext().potetoMode).toEqual({
+      instanceId: "codex",
+      path: skill.path,
+    });
+    await act(() => useComposerDraftStore.getState().clearComposerContent(target));
+    expect(input.composerRef.current!.getSendContext().potetoMode).not.toBeNull();
+    await act(() => renderer!.unmount());
+    await mount(input);
+    expect(toggle().props["aria-pressed"]).toBe(true);
+    await act(() => toggle().props.onClick());
+    expect(input.composerRef.current!.getSendContext().potetoMode).toBeNull();
+    await act(() => renderer!.unmount());
+    await mount(input);
+    expect(toggle().props["aria-pressed"]).toBe(false);
+  });
+  it("explains missing skills and prevents enabling an unavailable workflow", async () => {
+    const input = await mount();
+    expect(toggle().props["aria-disabled"]).toBe(true);
+    await act(() => toggle().props.onClick());
+    expect(input.composerRef.current!.getSendContext().potetoMode).toBeNull();
+  });
+  it("blocks natural turns after a skill disappears, permits commands and remains switchable off", async () => {
+    usePotetoModeStore.getState().setSelection(potetoModeScope(environmentId, threadId), {
+      instanceId: "codex",
+      path: skill.path,
+    });
+    const input = await mount();
+    expect(toggle().props["aria-pressed"]).toBe(true);
+    expect(toggle().props["aria-disabled"]).toBeUndefined();
+    expect(input.composerRef.current!.validateProviderInput("/compact")).toBe(true);
+    await act(() => {
+      expect(input.composerRef.current!.validateProviderInput("ordinary task")).toBe(false);
+    });
+    const error = "Poteto Mode skill is unavailable. Restore the skill or turn it off.";
+    expect(renderer!.root.findAllByProps({ message: error }).length).toBeGreaterThan(0);
+    await act(() => toggle().props.onClick());
+    expect(renderer!.root.findAllByProps({ message: error })).toHaveLength(0);
+    expect(input.composerRef.current!.validateProviderInput("ordinary task")).toBe(true);
   });
 });

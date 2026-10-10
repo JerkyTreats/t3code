@@ -1,3 +1,12 @@
+import { PotetoModeControl } from "../../fork/PotetoModeControl";
+import {
+  isPotetoModeCommand,
+  potetoModeScope,
+  potetoModeUnavailableReason,
+  resolvePotetoModeSkill,
+  type PotetoModeSelection,
+} from "../../fork/potetoMode";
+import { usePotetoModeStore } from "../../fork/potetoModeStore";
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import { runtimeModeConfig, runtimeModeOptions as runtimeModes } from "./runtimeModeConfig";
@@ -1528,6 +1537,7 @@ export interface ChatComposerHandle {
     previewAnnotations: PreviewAnnotationPayload[];
     reviewComments: ReviewCommentContext[];
     threadContexts: ThreadContextRecord[];
+    potetoMode: PotetoModeSelection | null;
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
@@ -2265,7 +2275,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderEntry?.snapshot,
     selectedModel,
   );
-  const sendDisabledReason =
+  const baseSendDisabledReason =
     externalSendDisabledReason ??
     (pendingAttachmentCount > 0 ? "Preparing attachments" : null) ??
     (multipleModelSelections?.length === 0 ? "Select at least one model." : null) ??
@@ -2273,7 +2283,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ? attachmentBlockReason
       : (attachmentBlockReason ??
         (multipleModelSelections === null ? providerSendBlockReason : null)));
-  const isSendDisabled = sendDisabledReason !== null;
   const selectedProviderStatus = useMemo(
     () => selectedProviderEntry?.snapshot ?? null,
     [selectedProviderEntry],
@@ -2285,6 +2294,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedProviderStatus ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd) : [],
     [gitCwd, selectedProviderStatus],
   );
+  const potetoModeKey = potetoModeScope(environmentId, activeThreadId ?? composerDraftTargetKey);
+  const potetoMode = usePotetoModeStore((state) => state.selections[potetoModeKey] ?? null);
+  const potetoUnavailableReason = potetoModeUnavailableReason(
+    potetoMode,
+    selectedInstanceId,
+    selectedProvider,
+    selectedProviderSkills,
+    multipleModelSelections !== null,
+  );
+  const sendDisabledReason =
+    baseSendDisabledReason ??
+    (potetoMode && !activePendingProgress && !isEditingQueuedMessage && !isPotetoModeCommand(prompt)
+      ? potetoUnavailableReason
+      : null);
+  const isSendDisabled = sendDisabledReason !== null;
   const selectedProviderSlashCommands = useMemo(
     () =>
       selectedProviderStatus
@@ -3503,6 +3527,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedModel,
     selectedPromptEffort,
     selectedProvider,
+    potetoMode,
+    potetoUnavailableReason,
   ]);
 
   useEffect(() => {
@@ -5577,21 +5603,45 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const hiddenRestingBlockIds = restingBlockDefs
     .slice(restingBlockDefs.length - restingHiddenBlockCount)
     .map((def) => def.id);
-  const composerControls = showProviderUnavailable ? (
-    <ComposerControl
-      type="button"
-      disabled={!providerSetupInstanceId}
-      onClick={() => {
-        if (providerSetupInstanceId) {
-          onOpenProviderSetup(providerSetupInstanceId);
+  const potetoControl = (
+    <PotetoModeControl
+      on={potetoMode !== null}
+      unavailableReason={potetoUnavailableReason}
+      size={composerControlsCollapsed ? "xs" : "sm"}
+      hidden={composerControlsHidden}
+      onToggle={() => {
+        if (potetoMode) {
+          usePotetoModeStore.getState().setSelection(potetoModeKey, null);
+        } else if (!potetoUnavailableReason) {
+          const skill = resolvePotetoModeSkill(selectedProvider, selectedProviderSkills);
+          if (skill)
+            usePotetoModeStore.getState().setSelection(potetoModeKey, {
+              instanceId: selectedInstanceId,
+              path: skill.path,
+            });
         }
       }}
-      data-chat-provider-unavailable="true"
-      className="shrink-0"
-    >
-      <CircleAlertIcon className="size-4" />
-      {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
-    </ComposerControl>
+    />
+  );
+  const composerControls = showProviderUnavailable ? (
+    <>
+      {potetoControl}
+
+      <ComposerControl
+        type="button"
+        disabled={!providerSetupInstanceId}
+        onClick={() => {
+          if (providerSetupInstanceId) {
+            onOpenProviderSetup(providerSetupInstanceId);
+          }
+        }}
+        data-chat-provider-unavailable="true"
+        className="shrink-0"
+      >
+        <CircleAlertIcon className="size-4" />
+        {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
+      </ComposerControl>
+    </>
   ) : (
     <>
       {composerControlsCollapsed &&
@@ -5693,6 +5743,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onOpenProviderSetup={onOpenProviderSetup}
       />
 
+      {potetoControl}
       <>
         {restingBlockDefs.map((def, index) => {
           const hidden = index >= restingBlockDefs.length - restingHiddenBlockCount;
@@ -6675,6 +6726,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         previewAnnotations: composerPreviewAnnotations,
         reviewComments: composerReviewComments,
         threadContexts: composerThreadContexts,
+        potetoMode: usePotetoModeStore.getState().selections[potetoModeKey] ?? null,
         selectedPromptEffort,
         selectedModelOptionsForDispatch,
         selectedModelSelection,
@@ -6703,11 +6755,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }),
       setMultipleModelSelections,
       validateProviderInput: (providerInput: string) => {
-        const validationMessage = getComposerSubmissionValidationMessage({
-          prompt: promptRef.current,
-          providerInput,
-          submissionTarget: "provider-turn",
-        });
+        const currentPotetoMode = usePotetoModeStore.getState().selections[potetoModeKey] ?? null;
+        const modeError =
+          currentPotetoMode && !isPotetoModeCommand(providerInput)
+            ? potetoModeUnavailableReason(
+                currentPotetoMode,
+                selectedInstanceId,
+                selectedProvider,
+                selectedProviderSkills,
+                multipleModelSelections !== null,
+              )
+            : null;
+        const validationMessage =
+          modeError ??
+          getComposerSubmissionValidationMessage({
+            prompt: promptRef.current,
+            providerInput,
+            submissionTarget: "provider-turn",
+          });
         providerInputRejectedRef.current = validationMessage !== null;
         setProviderInputSubmissionError(validationMessage);
         return validationMessage === null;
@@ -6754,6 +6819,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       providerSendBlockReason,
       isSendDisabled,
       attachmentAdmission,
+      potetoModeKey,
+      selectedInstanceId,
+      selectedProviderSkills,
       selectedPromptEffort,
       selectedProvider,
       selectedProviderModels,
