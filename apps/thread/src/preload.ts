@@ -4,6 +4,8 @@ import type {
 } from "@t3tools/contracts/threadAppActivation";
 import { decodeThreadAppActivationCompletion } from "@t3tools/shared/threadAppActivation";
 import { contextBridge, ipcRenderer } from "electron";
+import type { DesktopSystemTheme } from "@t3tools/contracts";
+import { decodeDesktopSystemTheme } from "@t3tools/shared/desktopSystemTheme";
 
 import { decodeThreadAppActivation } from "./activationContract.ts";
 import {
@@ -11,6 +13,8 @@ import {
   THREAD_CLIENT_ACTIVATION_COMPLETION_CHANNEL,
   THREAD_ENROLLMENT_SUBMISSION_CHANNEL,
   THREAD_STARTUP_MARK_CHANNEL,
+  THREAD_SYSTEM_THEME_GET_CHANNEL,
+  THREAD_SYSTEM_THEME_CHANGED_CHANNEL,
   type ThreadEnrollmentSubmissionResult,
 } from "./bridge.ts";
 import type { ThreadRendererStartupMark } from "./startupTrace.ts";
@@ -161,6 +165,21 @@ ipcRenderer.on(THREAD_CLIENT_ACTIVATION_CHANNEL, (_event, value: unknown) => {
 contextBridge.exposeInMainWorld(
   "t3ThreadBridge",
   Object.freeze({
+    getSystemTheme: () =>
+      ipcRenderer.invoke(THREAD_SYSTEM_THEME_GET_CHANNEL).then(decodeDesktopSystemTheme),
+    onSystemTheme(listener: (theme: DesktopSystemTheme | null) => void): () => void {
+      const receive = (_event: unknown, value: unknown) => {
+        let theme: DesktopSystemTheme | null;
+        try {
+          theme = decodeDesktopSystemTheme(value);
+        } catch {
+          return;
+        }
+        listener(theme);
+      };
+      ipcRenderer.on(THREAD_SYSTEM_THEME_CHANGED_CHANNEL, receive);
+      return () => ipcRenderer.removeListener(THREAD_SYSTEM_THEME_CHANGED_CHANNEL, receive);
+    },
     subscribe(listener: (activation: ThreadAppActivation) => void): () => void {
       listeners.add(listener);
       if (retained !== null) notifyActivation(listener, retained);

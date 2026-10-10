@@ -140,6 +140,28 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("Thread system theme integration", () => {
+  it("uses the protected Thread source and the same transient palette without preference writes", async () => {
+    const host = installSyntheticThemeHost(lightSystemTheme);
+    const codeRead = vi.fn();
+    vi.stubGlobal("window", {
+      ...window,
+      desktopBridge: { getSystemTheme: codeRead },
+      t3ThreadBridge: { getSystemTheme: host.getSystemTheme, onSystemTheme: host.onSystemTheme },
+    });
+    const { useTheme } = await import("./useTheme");
+    useTheme();
+    await flushThemeSource();
+    expect(host.getSystemTheme).toHaveBeenCalledOnce();
+    expect(codeRead).not.toHaveBeenCalled();
+    expect(host.root.dataset.themeId).toBe("omarchy-system");
+    expect(host.storageSetItem).not.toHaveBeenCalled();
+    expect(host.storageRemoveItem).not.toHaveBeenCalled();
+    for (const cleanup of host.subscriptionCleanups) cleanup();
+    expect(host.stopSystemTheme).toHaveBeenCalledOnce();
+  });
+});
+
 describe("theme failure handling", () => {
   it("preserves exact storage causes and operation context", async () => {
     const readCause = new Error("storage read blocked");

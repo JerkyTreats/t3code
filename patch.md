@@ -36,7 +36,7 @@ The current image pins Codex 0.159.0 alongside the accepted upstream protocol bi
 
 ## Retained Presentation And Client Adapters
 
-[F02 Omarchy system theme](fork/F02-omarchy-system-theme.md) keeps coherent local observation and an exact-seed restrained transient palette through current semantic roles. Explicit appearance, preview and onboarding retain upstream precedence. No Omarchy preference or general theme generator is added.
+[F02 Omarchy system theme](fork/F02-omarchy-system-theme.md) keeps coherent local observation and an exact-seed restrained transient palette through current semantic roles. Explicit appearance, preview and onboarding retain upstream precedence. Code and independent Thread shells share the bounded local source and the hosted client projection through fixed read-only bridge methods. No Omarchy preference or general theme generator is added.
 
 [F03 desktop screenshot capture](fork/F03-desktop-screenshot-capture.md) exposes optional top-level desktop capture independently of upstream preview capture. The composer uses a scoped reservation shared with ordinary attachment admission, then transfers one validated PNG through the current image path.
 

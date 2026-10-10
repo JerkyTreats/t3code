@@ -483,6 +483,14 @@
     "./PtyAdapter": {
       "types": "./src/PtyAdapter.ts",
       "import": "./src/PtyAdapter.ts"
+    },
+    "./omarchySystemThemeSource": {
+      "types": "./src/omarchySystemThemeSource.ts",
+      "import": "./src/omarchySystemThemeSource.ts"
+    },
+    "./desktopSystemTheme": {
+      "types": "./src/desktopSystemTheme.ts",
+      "import": "./src/desktopSystemTheme.ts"
     }
   },
   "scripts": {

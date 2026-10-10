@@ -98,3 +98,7 @@ current `latestRunStatus` for title state; it does not restore v1 turn ownership
 integration boundaries and do not establish new installed or browser acceptance.
 
 Current shared HTTP and connection layer adapters consume the protected Thread transport through upstream layer composition. Thread pairing resumes the primary connection without reloading the document; ordinary upstream pairing retains its reload behavior. The separate T3 Threads view filters the current inbox and search presentation using trusted creation surface.
+
+## Local Theme Observation
+
+The independent shell uses F02 shared local observation and exposes optional `getSystemTheme` and `onSystemTheme` through its protected bridge. Main validates the current window, main frame and exact application origin, and disposes the watcher and handler on close or failed launch. Sandboxed preload accepts only bounded theme snapshots. The hosted client reuses Code semantic projection and respects explicit appearance choices. It never grants tray plugins native geometry or client preference authority. Linux hosts without a usable Omarchy snapshot retain the ordinary client theme path.

@@ -28,7 +28,7 @@ interface ImportMeta {
 declare global {
   interface Window {
     desktopBridge?: DesktopBridge;
-    t3ThreadBridge?: {
+    t3ThreadBridge?: Pick<DesktopBridge, "getSystemTheme" | "onSystemTheme"> & {
       readonly subscribe: (listener: (activation: ThreadAppActivation) => void) => () => void;
       readonly completeActivation?: (completion: ThreadAppActivationCompletion) => Promise<boolean>;
       readonly submitPairingCredential: (

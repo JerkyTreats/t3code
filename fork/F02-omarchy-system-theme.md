@@ -12,6 +12,7 @@ Project the current Omarchy desktop theme into upstream semantic theme roles onl
 - Linux desktop prefers the bounded coherent Quattro snapshot under `.local/state`, including its explicit mode, and falls back to the legacy `.config` snapshot with its light-mode marker only when preferred current state is absent.
 - Malformed preferred state fails closed instead of exposing a stale legacy snapshot.
 - Theme observation follows atomic current-theme replacement, including same-path directory replacement, and changes to every decision-bearing directory. Failed watchers retire only their current instance and recreate observation even when directory identity is unchanged. Stale callbacks cannot retire a replacement or restart disposed observation.
+- Code and Thread share the bounded local source owner; each independent shell disposes its own watcher.
 - Desktop IPC exposes the initial theme and validated change notifications through the optional desktop bridge.
 - A newer change notification wins over a late initial read.
 - Omarchy colors apply only when the active appearance mode and active light or dark half select `system`.
@@ -24,7 +25,9 @@ Project the current Omarchy desktop theme into upstream semantic theme roles onl
 
 ## Durable Owners
 
-- `apps/desktop/src/fork/OmarchyThemeSource.ts`
+- `packages/shared/src/omarchySystemThemeSource.ts`
+- `packages/shared/src/desktopSystemTheme.ts`
+- `apps/desktop/src/fork/OmarchyThemeSource.ts` preserves the existing desktop import boundary.
 - `apps/web/src/fork/omarchySystemTheme.ts`
 - `apps/web/src/fork/desktopSystemTheme.ts`
 
@@ -70,3 +73,5 @@ Retain upstream theme persistence, appearance resolution, and semantic roles. Pr
 The source uses bounded `DesktopSystemThemeSchema` through optional `getSystemTheme` and `onSystemTheme`. The subscription owner validates a usable palette, observes before reading, gives newer pushes precedence and clears local state at the last subscriber. The current hook includes source revision in memoization and listener snapshots so same-mode color changes apply. The active local mode resolves only system appearance.
 
 The focused projection specializes the accepted exact-seed restrained mapping using current exported color primitives. It does not restore the retired general theme generator. `applyThemePalette` accepts a transient palette with the `omarchy-system` document marker and complete existing semantic roles. That marker is never stored as a preference. Upstream theme preview and onboarding precedence remain authoritative.
+
+Thread exposes only the fixed initial-read and change-subscription capabilities through its protected preload. Main admits the current window, main frame and application origin. The portable preload decoder is tested against the canonical schema and grants no filesystem or theme-write capability. The hosted hook chooses the Thread bridge when present and uses the same observation, palette projection, preview and explicit appearance precedence as Code. Tray host CSS does not own the client palette.
