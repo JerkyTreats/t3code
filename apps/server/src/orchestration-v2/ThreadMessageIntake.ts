@@ -2,7 +2,6 @@ import { remapComposerContextAttachments } from "@t3tools/shared/composerContext
 import { appendUserInputAttachmentPaths } from "../provider/userInputAttachments.ts";
 import type { ChatAttachment, OrchestrationV2Command } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import { BoardTurnWritePolicyV2 } from "../board/TurnWritePolicyV2.ts";
 import { IdAllocatorV2 } from "@t3tools/provider-core/server/IdAllocator";
 import * as Schema from "effect/Schema";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
@@ -52,7 +51,7 @@ const releaseUnusedClaims = Effect.fn("ThreadMessageIntake.releaseUnusedClaims")
   );
 });
 
-const dispatchPreparedCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(function* (
+export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(function* (
   command: OrchestrationV2Command,
 ) {
   const threads = yield* ThreadManagement.ThreadManagementService;
@@ -166,7 +165,7 @@ const dispatchPreparedCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")
     );
 });
 
-const sendPreparedToThread = Effect.fn("ThreadMessageIntake.sendToThread")(function* (
+export const sendToThread = Effect.fn("ThreadMessageIntake.sendToThread")(function* (
   input: ThreadManagement.ThreadManagementSendInput,
 ) {
   const threads = yield* ThreadManagement.ThreadManagementService;
@@ -181,9 +180,18 @@ const sendPreparedToThread = Effect.fn("ThreadMessageIntake.sendToThread")(funct
   );
 });
 
-const launchPreparedThread = Effect.fn("ThreadMessageIntake.launchThread")(function* (
-  input: ThreadLaunch.ThreadLaunchInput,
+export const launchThread = Effect.fn("ThreadMessageIntake.launchThread")(function* (
+  request: ThreadLaunch.ThreadLaunchInput,
 ) {
+  const input =
+    request.initialMessage === undefined
+      ? request
+      : {
+          ...request,
+          threadId:
+            request.threadId ??
+            (yield* (yield* IdAllocatorV2).allocate.thread({ projectId: request.projectId })),
+        };
   const launches = yield* ThreadLaunch.ThreadLaunchService;
   yield* AttachmentClaims.validateAttachmentLimits(input.initialMessage?.attachments ?? []);
   if (!input.initialMessage?.attachments.some(AttachmentClaims.attachmentIsPendingUpload)) {
@@ -239,108 +247,4 @@ const launchPreparedThread = Effect.fn("ThreadMessageIntake.launchThread")(funct
           : Effect.void;
       }),
     );
-});
-
-/** Register local preparation before reading attachments or entering a native send queue. */
-export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchWithBoardAdmission")(
-  function* (command: OrchestrationV2Command) {
-    if (command.type !== "message.dispatch" && command.type !== "runtime-request.respond")
-      return yield* dispatchPreparedCommand(command);
-    const policy = yield* BoardTurnWritePolicyV2;
-    const threads = yield* ThreadManagement.ThreadManagementService;
-    return yield* policy.trackDispatch(
-      command.threadId,
-      Effect.gen(function* () {
-        const { thread, runtimeRequests } = yield* threads.getThreadRecords(command.threadId, [
-          "runtimeRequests",
-        ]);
-        const request =
-          command.type === "runtime-request.respond"
-            ? runtimeRequests.find((entry) => entry.id === command.requestId)
-            : undefined;
-        const admission = yield* policy.begin(
-          thread.id,
-          thread.providerInstanceId,
-          thread.interactionMode,
-        );
-        const requestKey =
-          request?.responseCapability.type === "live" && request.providerTurnId !== null
-            ? yield* policy.registerRequest({
-                threadId: thread.id,
-                instanceId: thread.providerInstanceId,
-                requestId: request.id,
-                providerSessionId: request.responseCapability.providerSessionId,
-                providerTurnId: request.providerTurnId,
-              })
-            : undefined;
-        return yield* dispatchPreparedCommand(command).pipe(
-          Effect.tap(() =>
-            requestKey === undefined
-              ? policy.accepted(admission)
-              : policy.associate(admission, requestKey),
-          ),
-          Effect.tapError((error) =>
-            (isOrchestratorError(error) ||
-              Schema.is(ThreadManagement.ThreadManagementError)(error)) &&
-            dispatchWasNotAccepted(error)
-              ? policy.accepted(admission)
-              : Effect.void,
-          ),
-          Effect.onError(() => policy.failed(admission)),
-        );
-      }),
-    );
-  },
-);
-
-export const sendToThread = Effect.fn("ThreadMessageIntake.sendWithBoardAdmission")(function* (
-  input: ThreadManagement.ThreadManagementSendInput,
-) {
-  const policy = yield* BoardTurnWritePolicyV2;
-  const threads = yield* ThreadManagement.ThreadManagementService;
-  return yield* policy.trackDispatch(
-    input.threadId,
-    Effect.gen(function* () {
-      const { thread } = yield* threads.getThreadRecords(input.threadId, []);
-      const admission = yield* policy.begin(
-        thread.id,
-        input.modelSelection?.instanceId ?? thread.providerInstanceId,
-        thread.interactionMode,
-      );
-      return yield* sendPreparedToThread(input).pipe(
-        Effect.tap(() => policy.accepted(admission)),
-        Effect.tapError((error) =>
-          (isOrchestratorError(error) ||
-            Schema.is(ThreadManagement.ThreadManagementError)(error)) &&
-          dispatchWasNotAccepted(error)
-            ? policy.accepted(admission)
-            : Effect.void,
-        ),
-        Effect.onError(() => policy.failed(admission)),
-      );
-    }),
-  );
-});
-
-export const launchThread = Effect.fn("ThreadMessageIntake.launchWithBoardAdmission")(function* (
-  input: ThreadLaunch.ThreadLaunchInput,
-) {
-  if (!input.initialMessage) return yield* launchPreparedThread(input);
-  const policy = yield* BoardTurnWritePolicyV2;
-  const ids = yield* IdAllocatorV2;
-  const threadId = input.threadId ?? (yield* ids.allocate.thread({ projectId: input.projectId }));
-  return yield* policy.trackDispatch(
-    threadId,
-    Effect.gen(function* () {
-      const admission = yield* policy.begin(
-        threadId,
-        input.modelSelection.instanceId,
-        input.interactionMode,
-      );
-      return yield* launchPreparedThread({ ...input, threadId }).pipe(
-        Effect.tap(() => policy.accepted(admission)),
-        Effect.onError(() => policy.failed(admission)),
-      );
-    }),
-  );
 });

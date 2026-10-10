@@ -167,17 +167,16 @@ it.effect("does not keep credentials of other threads alive", () =>
   }),
 );
 
-it.effect("preserves exact toolkit admission and independently generates Board pseudonyms", () =>
+it.effect("preserves exact toolkit admission", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry(() => 1_000);
     const cases: ReadonlyArray<ReadonlyArray<McpCapability>> = [
       [],
       ["preview"],
-      ["board"],
-      ["board", "board-write"],
-      ["board", "preview"],
+      ["device"],
+      ["orchestration", "worktree"],
+      ["pull-requests", "preview"],
     ];
-    const authors = new Set<string>();
     for (const requested of cases) {
       const capabilities = new Set(requested);
       const issued = yield* registry.issue({
@@ -186,83 +185,15 @@ it.effect("preserves exact toolkit admission and independently generates Board p
         capabilities,
       });
       const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
-      capabilities.add("board-write");
+      capabilities.add("worktree");
       const resolved = yield* registry.resolve(token);
       expect(resolved?.capabilities).toEqual(new Set(requested));
       expect(issued.config.capabilities).toEqual(new Set(requested));
       expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
-      expect(issued.config.boardEndpoint).toBe(
-        requested.includes("board") ? "http://127.0.0.1:43123/mcp/board" : undefined,
-      );
       expect(issued.config.previewEndpoint).toBe(
         requested.includes("preview") ? "http://127.0.0.1:43123/mcp/preview" : undefined,
       );
-      expect(resolved?.thread.boardAuthorId).toBeTruthy();
-      expect(resolved?.thread.boardAuthorId).not.toBe(resolved?.thread.providerSessionId);
-      if (resolved) authors.add(resolved.thread.boardAuthorId!);
     }
-    expect(authors.size).toBe(cases.length);
-  }),
-);
-
-it.effect(
-  "changes Board write mode on the existing token without escalating preview-only tokens",
-  () =>
-    Effect.gen(function* () {
-      const registry = yield* makeRegistry(() => 1_000);
-      const boardThread = ThreadId.make("board-thread");
-      const previewThread = ThreadId.make("preview-thread");
-      const issue = (threadId: ThreadId, capabilities: ReadonlySet<McpCapability>) =>
-        registry.issue({
-          threadId,
-          providerInstanceId: ProviderInstanceId.make("instance"),
-          capabilities,
-        });
-      const board = yield* issue(boardThread, new Set(["board", "board-write", "preview"]));
-      const preview = yield* issue(previewThread, new Set(["preview"]));
-      const boardToken = board.config.authorizationHeader.replace(/^Bearer\s+/, "");
-      const previewToken = preview.config.authorizationHeader.replace(/^Bearer\s+/, "");
-      const original = yield* registry.resolve(boardToken);
-      yield* registry.setBoardWriteEnabled(boardThread, false);
-      expect((yield* registry.resolve(boardToken))?.capabilities).toEqual(
-        new Set(["board", "preview"]),
-      );
-      expect((yield* registry.resolve(previewToken))?.capabilities).toEqual(new Set(["preview"]));
-      yield* registry.setBoardWriteEnabled(boardThread, true);
-      const restored = yield* registry.resolve(boardToken);
-      expect(restored?.capabilities).toEqual(new Set(["board", "board-write", "preview"]));
-      expect(restored?.thread.boardAuthorId).toBe(original?.thread.boardAuthorId);
-      for (const enabled of [false, true, false, true]) {
-        yield* registry.setBoardWriteEnabled(previewThread, enabled);
-        expect((yield* registry.resolve(previewToken))?.capabilities).toEqual(new Set(["preview"]));
-      }
-    }),
-);
-
-it.effect("cannot restore revoked or expired credentials through mode updates", () =>
-  Effect.gen(function* () {
-    let timestamp = 1_000;
-    const registry = yield* makeRegistry(() => timestamp);
-    const threadId = ThreadId.make("mode-expiry");
-    const issued = yield* registry.issue({
-      threadId,
-      providerInstanceId: ProviderInstanceId.make("codex"),
-      capabilities: new Set(["board", "board-write"]),
-    });
-    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
-    timestamp += 101;
-    yield* registry.setBoardWriteEnabled(threadId, true);
-    expect(yield* registry.resolve(token)).toBeUndefined();
-    const replacement = yield* registry.issue({
-      threadId,
-      providerInstanceId: ProviderInstanceId.make("codex"),
-      capabilities: new Set(["board", "board-write"]),
-    });
-    const replacementToken = replacement.config.authorizationHeader.replace(/^Bearer\s+/, "");
-    expect(yield* registry.resolve(replacementToken)).toBeDefined();
-    yield* registry.revokeThread(threadId);
-    yield* registry.setBoardWriteEnabled(threadId, true);
-    expect(yield* registry.resolve(replacementToken)).toBeUndefined();
   }),
 );
 
@@ -284,7 +215,6 @@ it.effect("keeps upstream defaults only when explicit capability admission is ab
           ...(browserToolsAvailable ? ["preview"] : []),
         ]),
       );
-      expect(issued.config.boardEndpoint).toBeUndefined();
       expect(issued.config.pullRequestsEndpoint).toBe("http://127.0.0.1:43123/mcp/pull-requests");
       expect(issued.config.browserToolsAvailable).toBe(browserToolsAvailable);
     }

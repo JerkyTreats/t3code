@@ -1,4 +1,3 @@
-import { BoardTurnWritePolicyV2 } from "../../../board/TurnWritePolicyV2.ts";
 import { IdAllocatorV2 } from "@t3tools/provider-core/server/IdAllocator";
 import { McpAttachmentInput } from "../attachment/input.ts";
 import {
@@ -142,7 +141,6 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
   dependencies: [
     ...shared.dependencies,
     ThreadLaunchService.ThreadLaunchService,
-    BoardTurnWritePolicyV2,
     IdAllocatorV2,
     ManagedProjectFolders.ManagedProjectFolders,
     GitVcsDriver.GitVcsDriver,

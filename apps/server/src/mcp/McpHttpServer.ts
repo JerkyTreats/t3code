@@ -37,8 +37,6 @@ import * as ThreadHandlers from "./toolkits/thread/handlers.ts";
 import * as ThreadMetadataMcpService from "./ThreadMetadataMcpService.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
-import * as BoardHandlers from "./toolkits/board/handlers.ts";
-import { BoardToolkit } from "./toolkits/board/tools.ts";
 import * as OrchestratorHandlers from "./toolkits/orchestrator/handlers.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
 import * as PreviewHandlers from "./toolkits/preview/handlers.ts";
@@ -876,10 +874,6 @@ const transport = (name: string, path: McpEndpointAdmission.McpEndpoint) =>
   }).pipe(Layer.provide(layerMcpAuthMiddleware(path)));
 
 export const layerMcpTransport = transport("T3 Code", "/mcp");
-export const layerBoardToolkit = toolkitRegistration(BoardToolkit, BoardHandlers.layer);
-export const layerBoardHttp = Layer.fresh(
-  layerBoardToolkit.pipe(Layer.provideMerge(transport("T3 Code Board", "/mcp/board"))),
-);
 export const layerPreviewHttp = Layer.fresh(
   Layer.mergeAll(layerPreviewToolkit, layerPreviewControlsRegistration).pipe(
     Layer.provideMerge(transport("T3 Code Preview", "/mcp/preview")),
@@ -908,7 +902,6 @@ export const layerOrchestratorHttp = Layer.fresh(
 /** Each endpoint owns its registry and requires its independently admitted capability. */
 export const layer = Layer.mergeAll(
   layerOrchestratorHttp,
-  layerBoardHttp,
   layerPreviewHttp,
   layerDeviceHttp,
   layerPullRequestsHttp,

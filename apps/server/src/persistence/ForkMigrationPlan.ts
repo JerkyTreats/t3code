@@ -44,9 +44,6 @@ import Migration0039 from "./Migrations/039_ProjectionProjectsDefaultThreadEnvMo
 import Migration0040 from "./Migrations/040_ProjectionProjectFaviconPath.ts";
 import Migration0041 from "./Migrations/041_AuthSessionClientConnection.ts";
 import Migration0042 from "./Migrations/042_ReconcileUpstreamAndSettingsAdmin.ts";
-import Migration0043 from "./Migrations/043_ProjectionBoardPosts.ts";
-import Migration0044 from "./Migrations/044_ProjectionBoardPostRevisions.ts";
-import Migration0045 from "./Migrations/045_CollectiveExpeditions.ts";
 import Migration0050 from "./Migrations/050_ThreadAdapterLaunchBindings.ts";
 import Migration0051 from "./Migrations/051_RetireThreadAdapterAuthority.ts";
 import Migration0058 from "./Migrations/058_PairingEnrollmentClass.ts";
@@ -65,7 +62,6 @@ import UpstreamMigration0052 from "./Migrations/052_ProjectionThreadTitleState.t
 import UpstreamMigration0053 from "./Migrations/053_PullRequestFilesViewed.ts";
 import UpstreamMigration0054 from "./Migrations/054_ProjectionThreadsAutoSettleDisabledAt.ts";
 import Migration0067 from "./Migrations/067_ProjectionThreadCreationSurface.ts";
-import Migration0070 from "./Migrations/070_ApplicationBoardEventSequenceIndex.ts";
 import UpstreamMigration0055 from "./Migrations/055_OrchestrationV2.ts";
 import UpstreamMigration0056 from "./Migrations/056_RemoveRedundantProjectionIndexes.ts";
 
@@ -73,6 +69,8 @@ import UpstreamMigration0057 from "./Migrations/057_ScheduledTaskWebhooks.ts";
 import UpstreamMigration0058 from "./Migrations/058_WebhookRelayDeliveries.ts";
 import UpstreamMigration0059 from "./Migrations/059_McpAppModelContext.ts";
 import UpstreamMigration0060 from "./Migrations/060_ThreadSnapshotWindowIndexes.ts";
+
+import Migration0083 from "./Migrations/083_RetireBoardAndCollective.ts";
 
 export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -117,9 +115,6 @@ export const migrationEntries = [
   [40, "ProjectionProjectFaviconPath", Migration0040],
   [41, "AuthSessionClientConnection", Migration0041],
   [42, "ReconcileUpstreamAndSettingsAdmin", Migration0042],
-  [43, "ProjectionBoardPosts", Migration0043],
-  [44, "ProjectionBoardPostRevisions", Migration0044],
-  [45, "CollectiveExpeditions", Migration0045],
   // Keep this exact identity so deployed journals can still apply their historical migration.
   [50, "ThreadAdapterLaunchBindings", Migration0050],
   [51, "RetireThreadAdapterAuthority", Migration0051],
@@ -141,11 +136,11 @@ export const migrationEntries = [
   [67, "ProjectionThreadCreationSurface", Migration0067],
   [68, "OrchestrationV2", UpstreamMigration0055],
   [69, "RemoveRedundantProjectionIndexes", UpstreamMigration0056],
-  [70, "ApplicationBoardEventSequenceIndex", Migration0070],
   [79, "ScheduledTaskWebhooks", UpstreamMigration0057],
   [80, "WebhookRelayDeliveries", UpstreamMigration0058],
   [81, "McpAppModelContext", UpstreamMigration0059],
   [82, "ThreadSnapshotWindowIndexes", UpstreamMigration0060],
+  [83, "RetireBoardAndCollective", Migration0083],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -180,10 +175,14 @@ const historicalNames = new Map<number, string>([
   [39, "ProjectionThreadsSettled"],
   [40, "SettingsAdminClients"],
   [41, "ReconcileUpstreamAndSettingsAdmin"],
+  [43, "ProjectionBoardPosts"],
+  [44, "ProjectionBoardPostRevisions"],
+  [45, "CollectiveExpeditions"],
   [46, "CollectiveResidentRuntime"],
   [47, "CollectiveResidentTurnSettlements"],
   [48, "CollectiveWeeklyQuotaObservations"],
   [49, "CollectiveFanoutRuns"],
+  [70, "ApplicationBoardEventSequenceIndex"],
 ]);
 const currentNames = new Map<number, string>(migrationManifest);
 

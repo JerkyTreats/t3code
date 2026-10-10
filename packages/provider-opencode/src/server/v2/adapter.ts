@@ -76,7 +76,6 @@ import * as OpenCode2Client from "./OpenCode2Client.ts";
 import * as OpenCode2Server from "./OpenCode2Server.ts";
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
-import { T3_CODE_BOARD_TOOL_INSTRUCTIONS } from "@t3tools/provider-core/server/boardInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import { t3OrchestrationSystemPrompt } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
@@ -3329,9 +3328,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       const instructions = [
         buildRuntimeInstructions({ harness: "OpenCode", model: turnInput.modelSelection.model }),
         t3OrchestrationSystemPrompt(state.mcp.some((entry) => entry.toolkit === "t3-code")),
-        state.mcp.some((entry) => entry.toolkit === "t3-code-board")
-          ? T3_CODE_BOARD_TOOL_INSTRUCTIONS
-          : undefined,
       ]
         .filter((part) => part !== undefined && part.length > 0)
         .join("\n\n");

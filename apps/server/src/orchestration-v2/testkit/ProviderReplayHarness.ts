@@ -17,7 +17,6 @@ import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import type { Migration42BackupInvalidError } from "../../persistence/Migration42Backup.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ThreadManagementService from "../ThreadManagementService.ts";
-import * as BoardWritePolicy from "../../board/TurnWritePolicyV2.ts";
 import * as McpSessionRegistryTestkit from "../../mcp/McpSessionRegistry.testkit.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
@@ -240,10 +239,7 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
     readonly replayGate?: ProviderReplayGate;
   } = {},
 ): Layer.Layer<
-  | Orchestrator.OrchestratorV2
-  | EffectWorker.OrchestrationEffectWorkerV2
-  | EventSink.EventSinkV2
-  | BoardWritePolicy.BoardTurnWritePolicyV2,
+  Orchestrator.OrchestratorV2 | EffectWorker.OrchestrationEffectWorkerV2 | EventSink.EventSinkV2,
   Error | MigrationError | Migration42BackupInvalidError | PlatformError.PlatformError | SqlError
 > {
   const layerRegistry = harness.makeProviderAdapterRegistryLayer(
@@ -274,7 +270,6 @@ export function layerWithRegistry<Error>(
   | Orchestrator.OrchestratorV2
   | EffectWorker.OrchestrationEffectWorkerV2
   | EventSink.EventSinkV2
-  | BoardWritePolicy.BoardTurnWritePolicyV2
   | IdAllocator.IdAllocatorV2
   | ProviderSessionManager.ProviderSessionManagerV2,
   Error | Migration42BackupInvalidError | MigrationError | PlatformError.PlatformError | SqlError
@@ -347,9 +342,6 @@ export function layerWithRegistry<Error>(
     IdAllocator.layer,
     layerProviderEventIngestorProvided,
   );
-  const boardPolicyLayer = BoardWritePolicy.layer.pipe(
-    Layer.provide(McpSessionRegistryTestkit.layer),
-  );
   const layerProviderSessionManagerProvided = ProviderSessionManager.layerWithOptions({
     configureMcp: false,
   }).pipe(
@@ -359,7 +351,6 @@ export function layerWithRegistry<Error>(
         layerEventSinkProvided,
         IdAllocator.layer,
         McpSessionRegistryTestkit.layer,
-        boardPolicyLayer,
         layerProviderEventIngestorProvided,
         layerStores,
       ),
@@ -495,7 +486,6 @@ export function layerWithRegistry<Error>(
   );
   const layerReplayRuntime = Layer.mergeAll(
     IdAllocator.layer,
-    boardPolicyLayer,
     layerOrchestratorProvided,
     layerProviderSessionManagerProvided,
     layerEffectWorkerProvided,

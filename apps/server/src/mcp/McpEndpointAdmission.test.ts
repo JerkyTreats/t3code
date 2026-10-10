@@ -5,7 +5,6 @@ import { ALL_MCP_CAPABILITIES, type McpCapability } from "./McpInvocationContext
 
 const cases = [
   { endpoint: "/mcp", capability: "orchestration", oauth: true },
-  { endpoint: "/mcp/board", capability: "board", oauth: false },
   { endpoint: "/mcp/preview", capability: "preview", oauth: false },
   { endpoint: "/mcp/device", capability: "device", oauth: false },
   { endpoint: "/mcp/pull-requests", capability: "pull-requests", oauth: true },
@@ -38,21 +37,3 @@ it.each(
     }
   },
 );
-
-it("retains Board endpoint admission when Plan Mode removes only Board writes", () => {
-  for (const capabilities of [
-    new Set<McpCapability>(["board", "board-write"]),
-    new Set<McpCapability>(["board"]),
-  ]) {
-    expect(
-      McpEndpointAdmission.admit({ endpoint: "/mcp/board", source: "registry", capabilities }),
-    ).toBe("admitted");
-  }
-  expect(
-    McpEndpointAdmission.admit({
-      endpoint: "/mcp/board",
-      source: "registry",
-      capabilities: new Set(["board-write"]),
-    }),
-  ).toBe("capability-denied");
-});

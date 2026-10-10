@@ -1,5 +1,4 @@
 import {
-  BoardAuthorId,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
@@ -44,7 +43,6 @@ const invocation = (
   environmentId: EnvironmentId.make("environment-1"),
   requestNamespace: "provider-session-1",
   thread: {
-    boardAuthorId: BoardAuthorId.make("synthetic-pr-author"),
     threadId: THREAD_ID,
     providerSessionId: "provider-session-1",
     providerInstanceId: ProviderInstanceId.make("codex"),

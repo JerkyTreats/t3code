@@ -3,8 +3,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   EnvironmentId,
-  CheckpointId,
-  ProviderTurnId,
   type ModelSelection,
   type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
@@ -13,11 +11,6 @@ import {
   type OrchestrationV2ProviderThread,
   type Project,
   ProjectId,
-  RunId,
-  RunAttemptId,
-  NodeId,
-  MessageId,
-  type OrchestrationV2Run,
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderSessionId,
@@ -39,7 +32,6 @@ import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import { HttpServer } from "effect/http";
 
-import * as BoardWritePolicy from "../board/TurnWritePolicyV2.ts";
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -331,7 +323,6 @@ function makeProviderAdapter(
     readonly hangSessionScopeClose?: boolean;
     readonly startTurn?: Effect.Effect<void>;
     readonly beforeUnload?: Effect.Effect<void>;
-    readonly beforeStart?: Effect.Effect<void>;
     /** Registers the process's closeCount finalizer before `beforeOpen` runs. */
     readonly spawnBeforeOpen?: boolean;
     /** Completed when a hanging scope close reaches its wedged finalizer. */
@@ -428,7 +419,7 @@ function makeProviderAdapter(
               ...current,
               resumeCount: current.resumeCount + 1,
             })).pipe(Effect.as(threadInput.providerThread)),
-          startTurn: () => options.beforeStart ?? options.startTurn ?? Effect.void,
+          startTurn: () => options.startTurn ?? Effect.void,
           steerTurn: () => Effect.void,
           interruptTurn: () =>
             Ref.update(state, (current) => ({
@@ -470,7 +461,6 @@ function layerTest(input: {
     readonly initialProviderItemIdentityVersion?: 2;
   }) => Effect.Effect<void>;
   readonly failReleaseEventWrites?: boolean;
-  readonly failBoardRunReads?: boolean | Ref.Ref<boolean>;
   readonly flakyReleaseWrites?: FlakyReleaseWrites;
   readonly pauseAttachWrite?: Parameters<typeof layerPausingAttachEventSink>[0];
   /** Once armed, holds the next credential lookup until it is interrupted. */
@@ -483,7 +473,6 @@ function layerTest(input: {
   readonly hangSessionScopeClose?: boolean;
   readonly startTurn?: Effect.Effect<void>;
   readonly beforeUnload?: Effect.Effect<void>;
-  readonly beforeStart?: Effect.Effect<void>;
   readonly spawnBeforeOpen?: boolean;
   readonly scopeCloseReached?: Deferred.Deferred<void>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
@@ -514,7 +503,6 @@ function layerTest(input: {
         : { hangSessionScopeClose: input.hangSessionScopeClose }),
       ...(input.startTurn === undefined ? {} : { startTurn: input.startTurn }),
       ...(input.beforeUnload === undefined ? {} : { beforeUnload: input.beforeUnload }),
-      ...(input.beforeStart === undefined ? {} : { beforeStart: input.beforeStart }),
       ...(input.spawnBeforeOpen === undefined ? {} : { spawnBeforeOpen: input.spawnBeforeOpen }),
       ...(input.scopeCloseReached === undefined
         ? {}
@@ -535,41 +523,11 @@ function layerTest(input: {
       ),
     ),
   );
-  const boardPolicyLayer = BoardWritePolicy.layer.pipe(Layer.provide(layerConfiguredMcpRegistry));
-  const failBoardRunReads = input.failBoardRunReads;
-  const configuredStoresLayer = failBoardRunReads
-    ? Layer.effect(
-        ProjectionStore.ProjectionStoreV2,
-        Effect.gen(function* () {
-          const store = yield* ProjectionStore.ProjectionStoreV2;
-          return ProjectionStore.ProjectionStoreV2.of({
-            ...store,
-            getThreadRecords: (threadId, fields, options) =>
-              (typeof failBoardRunReads === "boolean"
-                ? Effect.succeed(failBoardRunReads)
-                : Ref.get(failBoardRunReads)
-              ).pipe(
-                Effect.flatMap((fail) =>
-                  fail && fields.some((field) => field === "runs")
-                    ? Effect.fail(
-                        new ProjectionStore.ProjectionStoreReadError({
-                          threadId,
-                          cause: "synthetic durable Board run query failure",
-                        }),
-                      )
-                    : store.getThreadRecords(threadId, fields, options),
-                ),
-              ),
-          });
-        }),
-      ).pipe(Layer.provideMerge(layerTestStores))
-    : layerTestStores;
   return Layer.mergeAll(
-    configuredStoresLayer,
+    layerTestStores,
     layerConfiguredEventSink,
     IdAllocator.layer,
     layerConfiguredMcpRegistry,
-    boardPolicyLayer,
     ProviderSessionManager.layerWithOptions({
       idleTimeoutMs: input.idleTimeoutMs,
       ...(input.maxIdlePinMs === undefined ? {} : { maxIdlePinMs: input.maxIdlePinMs }),
@@ -581,8 +539,7 @@ function layerTest(input: {
           IdAllocator.layer,
           layerProviderEventIngestorTest,
           layerConfiguredMcpRegistry,
-          boardPolicyLayer,
-          configuredStoresLayer,
+          layerTestStores,
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
         ),
@@ -1825,14 +1782,7 @@ it.effect(
         assert.equal(resolved?.thread.threadId, threadId);
         assert.deepEqual(
           resolved?.capabilities,
-          new Set([
-            "preview",
-            "orchestration",
-            "worktree",
-            "pull-requests",
-            "board",
-            "board-write",
-          ]),
+          new Set(["preview", "orchestration", "worktree", "pull-requests"]),
         );
 
         yield* manager.close(providerSessionId);
@@ -1889,7 +1839,7 @@ it.effect(
         const resolved = yield* registry.resolve(token!);
         assert.deepEqual(
           resolved?.capabilities,
-          new Set(["orchestration", "worktree", "pull-requests", "board", "board-write"]),
+          new Set(["orchestration", "worktree", "pull-requests"]),
         );
 
         yield* manager.close(providerSessionId);
@@ -4644,240 +4594,4 @@ it.effect(
       });
       assert.isFalse(denied?.capabilities?.has("device"));
     }),
-);
-
-it.effect("a failed durable Board run read cannot mint a writable provider credential", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    yield* Effect.gen(function* () {
-      const sink = yield* EventSink.EventSinkV2;
-      const ids = yield* IdAllocator.IdAllocatorV2;
-      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
-      const now = yield* DateTime.now;
-      const threadId = ThreadId.make("synthetic-board-read-failure");
-      yield* sink.write({
-        events: [yield* makeThreadCreatedEvent({ idAllocator: ids, threadId, now })],
-      });
-      const providerSessionId = yield* ids.allocate.providerSession({
-        providerInstanceId: modelSelection.instanceId,
-        threadId,
-      });
-      const result = yield* manager
-        .open({ threadId, providerSessionId, modelSelection, runtimePolicy })
-        .pipe(Effect.exit);
-      assert.equal(result._tag, "Failure");
-      assert.isUndefined(McpProviderSession.readMcpProviderSession(threadId));
-      assert.equal((yield* Ref.get(state)).openCount, 0);
-    }).pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60_000, failBoardRunReads: true })));
-  }),
-);
-
-it.effect("a replacement retries reconciliation after a failed revocation projection read", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    const failBoardRunReads = yield* Ref.make(false);
-    yield* Effect.gen(function* () {
-      const sink = yield* EventSink.EventSinkV2;
-      const ids = yield* IdAllocator.IdAllocatorV2;
-      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
-      const policy = yield* BoardWritePolicy.BoardTurnWritePolicyV2;
-      const credentials = yield* McpSessionRegistry.McpSessionRegistry;
-      const now = yield* DateTime.now;
-      const threadId = ThreadId.make("synthetic-board-reconcile-retry");
-      yield* sink.write({
-        events: [yield* makeThreadCreatedEvent({ idAllocator: ids, threadId, now })],
-      });
-      const firstSessionId = yield* ids.allocate.providerSession({
-        providerInstanceId: modelSelection.instanceId,
-        threadId,
-      });
-      yield* manager.open({
-        threadId,
-        providerSessionId: firstSessionId,
-        modelSelection,
-        runtimePolicy,
-      });
-      const firstConfig = McpProviderSession.readMcpProviderSession(threadId)!;
-      const proposal = {
-        id: RunId.make("synthetic-absent-retry"),
-        threadId,
-        ordinal: 1,
-        providerInstanceId: modelSelection.instanceId,
-        modelSelection,
-        providerThreadId: null,
-        userMessageId: MessageId.make("synthetic-absent-retry-message"),
-        rootNodeId: null,
-        activeAttemptId: null,
-        status: "queued" as const,
-        requestedAt: now,
-        startedAt: null,
-        completedAt: null,
-        checkpointId: null,
-        contextHandoffId: null,
-        interactionMode: "plan" as const,
-      };
-      yield* policy.observeRun(proposal, "plan");
-      const pending = yield* policy.begin(threadId, modelSelection.instanceId, "plan");
-      yield* policy.failed(pending);
-      yield* Ref.set(failBoardRunReads, true);
-      yield* manager
-        .release({ providerSessionId: firstSessionId, reason: "manual_shutdown" })
-        .pipe(Effect.exit);
-      assert.equal(
-        McpProviderSession.readMcpProviderSession(threadId)?.providerSessionId,
-        firstConfig.providerSessionId,
-      );
-      assert.isUndefined(
-        yield* credentials.resolve(firstConfig.authorizationHeader.replace(/^Bearer\s+/, "")),
-      );
-      yield* Ref.set(failBoardRunReads, false);
-      const replacementSessionId = yield* ids.allocate.providerSession({
-        providerInstanceId: modelSelection.instanceId,
-        threadId,
-      });
-      yield* manager.open({
-        threadId,
-        providerSessionId: replacementSessionId,
-        modelSelection,
-        runtimePolicy,
-      });
-      const replacement = McpProviderSession.readMcpProviderSession(threadId)!;
-      assert.notEqual(replacement.providerSessionId, firstConfig.providerSessionId);
-      assert.isTrue(
-        (yield* credentials.resolve(
-          replacement.authorizationHeader.replace(/^Bearer\s+/, ""),
-        ))!.capabilities.has("board-write"),
-      );
-    }).pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60_000, failBoardRunReads })));
-  }),
-);
-
-it.effect("Board stays read-only for queued Plan work before provider preparation", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    const effect = Effect.gen(function* () {
-      const sink = yield* EventSink.EventSinkV2;
-      const ids = yield* IdAllocator.IdAllocatorV2;
-      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
-      const credentials = yield* McpSessionRegistry.McpSessionRegistry;
-      const policy = yield* BoardWritePolicy.BoardTurnWritePolicyV2;
-      const now = yield* DateTime.now;
-      const threadId = ThreadId.make("synthetic-board-queued");
-      const threadEvent = yield* makeThreadCreatedEvent({ idAllocator: ids, threadId, now });
-      yield* sink.write({ events: [threadEvent] });
-      const queued: OrchestrationV2Run = {
-        id: RunId.make("synthetic-plan-run"),
-        threadId,
-        ordinal: 1,
-        providerInstanceId: modelSelection.instanceId,
-        modelSelection,
-        providerThreadId: null,
-        userMessageId: MessageId.make("synthetic-plan-message"),
-        rootNodeId: null,
-        activeAttemptId: null,
-        status: "queued",
-        queueHeld: true,
-        requestedAt: now,
-        startedAt: null,
-        completedAt: null,
-        checkpointId: null,
-        contextHandoffId: null,
-        interactionMode: "plan",
-      };
-      yield* sink.write({
-        events: [
-          {
-            id: yield* ids.allocate.event({ threadId }),
-            type: "run.created",
-            threadId,
-            occurredAt: now,
-            payload: queued,
-          },
-        ],
-      });
-      const providerSessionId = yield* ids.allocate.providerSession({
-        providerInstanceId: modelSelection.instanceId,
-        threadId,
-      });
-      yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
-      const config = McpProviderSession.readMcpProviderSession(threadId)!;
-      const token = config.authorizationHeader.replace(/^Bearer\s+/, "");
-      assert.isTrue((yield* credentials.resolve(token))!.capabilities.has("board"));
-      assert.isFalse((yield* credentials.resolve(token))!.capabilities.has("board-write"));
-      yield* policy.observeRun({ ...queued, status: "preparing" }, "default");
-      assert.isFalse((yield* credentials.resolve(token))!.capabilities.has("board-write"));
-      yield* policy.observeRun({ ...queued, status: "cancelled" }, "default");
-      assert.isTrue((yield* credentials.resolve(token))!.capabilities.has("board-write"));
-      yield* manager.release({ providerSessionId, reason: "manual_shutdown" });
-    });
-    yield* effect.pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })));
-  }),
-);
-
-it.effect("credential revocation awaits delayed native Plan preparation finalizers", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    const entered = yield* Deferred.make<void>();
-    const finalized = yield* Deferred.make<void>();
-    const beforeStart = Deferred.succeed(entered, undefined).pipe(
-      Effect.andThen(Effect.never),
-      Effect.ensuring(Deferred.succeed(finalized, undefined)),
-    );
-    const effect = Effect.gen(function* () {
-      const sink = yield* EventSink.EventSinkV2;
-      const ids = yield* IdAllocator.IdAllocatorV2;
-      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
-      const credentials = yield* McpSessionRegistry.McpSessionRegistry;
-      const now = yield* DateTime.now;
-      const threadId = ThreadId.make("synthetic-board-delayed");
-      const threadEvent = yield* makeThreadCreatedEvent({ idAllocator: ids, threadId, now });
-      yield* sink.write({ events: [threadEvent] });
-      const providerSessionId = yield* ids.allocate.providerSession({
-        providerInstanceId: modelSelection.instanceId,
-        threadId,
-      });
-      const runtime = yield* manager.open({
-        threadId,
-        providerSessionId,
-        modelSelection,
-        runtimePolicy,
-      });
-      const config = McpProviderSession.readMcpProviderSession(threadId)!;
-      const token = config.authorizationHeader.replace(/^Bearer\s+/, "");
-      const send = yield* runtime
-        .startTurn({
-          appThread: threadEvent.payload,
-          threadId,
-          runId: RunId.make("synthetic-running-plan"),
-          runOrdinal: 1,
-          providerTurnOrdinal: 1,
-          attemptId: RunAttemptId.make("synthetic-plan-attempt"),
-          rootNodeId: NodeId.make("synthetic-plan-root"),
-          providerThread: makeProviderThread({
-            idAllocator: ids,
-            threadId,
-            providerSessionId,
-            now,
-          }),
-          message: {
-            messageId: MessageId.make("synthetic-plan-message"),
-            text: "synthetic",
-            attachments: [],
-            createdBy: "user",
-            creationSource: "web",
-          },
-          modelSelection,
-          runtimePolicy: { ...runtimePolicy, interactionMode: "plan" },
-        })
-        .pipe(Effect.forkChild);
-      yield* Deferred.await(entered);
-      assert.isFalse((yield* credentials.resolve(token))!.capabilities.has("board-write"));
-      yield* manager.detach({ threadId, providerSessionId, revokeMcpCredential: true });
-      assert.isTrue(yield* Deferred.isDone(finalized));
-      assert.isUndefined(yield* credentials.resolve(token));
-      yield* Fiber.await(send);
-      yield* manager.release({ providerSessionId, reason: "manual_shutdown" });
-    });
-    yield* effect.pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60_000, beforeStart })));
-  }),
 );

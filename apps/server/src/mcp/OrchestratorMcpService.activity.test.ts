@@ -1,5 +1,4 @@
 import {
-  BoardAuthorId,
   EnvironmentId,
   NodeId,
   type OrchestrationV2ThreadProjection,
@@ -44,7 +43,6 @@ const makeScope = (): McpInvocationContext.McpInvocationScope => ({
   environmentId,
   requestNamespace: "provider-session-mcp-orchestrator-detail",
   thread: {
-    boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
     threadId: parentThreadId,
     providerSessionId: "provider-session-mcp-orchestrator-detail",
     providerInstanceId: parentInstanceId,

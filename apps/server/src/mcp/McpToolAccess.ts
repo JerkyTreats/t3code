@@ -136,12 +136,6 @@ const requireThreadCaller = McpInvocationContext.McpInvocationContext.pipe(
 export const reads = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => handle(params));
 
-/** Board writes use their own session admission and do not require an active thread run. */
-export const writesBoard = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
-  declare((params: P) =>
-    McpInvocationContext.requireBoardWriteCapability().pipe(Effect.flatMap(() => handle(params))),
-  );
-
 /** Reads what belongs to the calling T3 thread, such as its preview tabs or devices. */
 export const readsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => requireThreadCaller.pipe(Effect.flatMap(() => handle(params))));

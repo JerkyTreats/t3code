@@ -13,7 +13,6 @@ import * as Crypto from "effect/Crypto";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
-import { BoardTurnWritePolicyV2 } from "../../../board/TurnWritePolicyV2.ts";
 import * as ServerSecretStore from "../../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../../config.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -25,7 +24,6 @@ const shared = {
   dependencies: [
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
-    BoardTurnWritePolicyV2,
     ServerConfig.ServerConfig,
     ServerSecretStore.ServerSecretStore,
     FileSystem.FileSystem,

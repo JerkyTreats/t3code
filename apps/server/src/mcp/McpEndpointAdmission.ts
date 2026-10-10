@@ -2,7 +2,6 @@ import type { McpCapability } from "./McpInvocationContext.ts";
 
 const endpoints = {
   "/mcp": { capability: "orchestration", oauth: true },
-  "/mcp/board": { capability: "board", oauth: false },
   "/mcp/preview": { capability: "preview", oauth: false },
   "/mcp/device": { capability: "device", oauth: false },
   "/mcp/pull-requests": { capability: "pull-requests", oauth: true },

@@ -29,6 +29,9 @@ import {
 } from "./Migrations/fixtures/AuthLineageFixtures.ts";
 
 const retiredHistoricalNames = [
+  [43, "ProjectionBoardPosts"],
+  [44, "ProjectionBoardPostRevisions"],
+  [45, "CollectiveExpeditions"],
   [46, "CollectiveResidentRuntime"],
   [47, "CollectiveResidentTurnSettlements"],
   [48, "CollectiveWeeklyQuotaObservations"],
@@ -451,7 +454,7 @@ it.effect.each(forkMigrationStates)("upgrades the released historical %s prefix"
         return { migrationId, name: historicalNames.get(migrationId)! };
       }),
     );
-    assert.deepStrictEqual(latest, [{ migrationId: 82, name: "ThreadSnapshotWindowIndexes" }]);
+    assert.deepStrictEqual(latest, [{ migrationId: 83, name: "RetireBoardAndCollective" }]);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 

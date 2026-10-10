@@ -412,11 +412,11 @@ layer("fork migration continuation", (it) => {
           [67, "ProjectionThreadCreationSurface"],
           [68, "OrchestrationV2"],
           [69, "RemoveRedundantProjectionIndexes"],
-          [70, "ApplicationBoardEventSequenceIndex"],
           [79, "ScheduledTaskWebhooks"],
           [80, "WebhookRelayDeliveries"],
           [81, "McpAppModelContext"],
           [82, "ThreadSnapshotWindowIndexes"],
+          [83, "RetireBoardAndCollective"],
         ],
       );
 

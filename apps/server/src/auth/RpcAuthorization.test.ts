@@ -1,5 +1,4 @@
 import {
-  AuthAccessWriteScope,
   EnvironmentAuthorizationError,
   ORCHESTRATION_V2_WS_METHODS,
   AuthEnvironmentMaintainScope,
@@ -34,16 +33,6 @@ import {
 import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
-  it("separates global Board reading from human correction authority", () => {
-    for (const method of [
-      WS_METHODS.getBoardPage,
-      WS_METHODS.getBoardPostHistory,
-      WS_METHODS.subscribeBoard,
-    ]) {
-      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
-    }
-    expect(requiredScopeForRpcMethod(WS_METHODS.reviseBoardPost)).toBe(AuthAccessWriteScope);
-  });
   it("declares exactly one scope for every RPC in the server group", () => {
     expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));
   });

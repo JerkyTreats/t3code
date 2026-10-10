@@ -2,7 +2,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
-  BoardAuthorId,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ProjectId,
@@ -44,7 +43,6 @@ it.effect.each([
         environmentId: EnvironmentId.make("preview-controls-environment"),
         requestNamespace: "preview-controls-provider-session",
         thread: {
-          boardAuthorId: BoardAuthorId.make("synthetic-mcp-author"),
           threadId,
           providerSessionId: "preview-controls-provider-session",
           providerInstanceId: ProviderInstanceId.make("codex"),

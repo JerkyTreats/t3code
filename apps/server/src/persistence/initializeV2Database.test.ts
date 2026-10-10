@@ -11,7 +11,6 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
-import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "./Sqlite.ts";
@@ -22,13 +21,9 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as LegacyV1ThreadImporter from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
-
 const retainedForkRows = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   return {
-    posts: yield* sql`SELECT * FROM projection_board_posts ORDER BY post_id`,
-    revisions: yield* sql`SELECT * FROM projection_board_post_revisions ORDER BY post_id, revision`,
     clients: yield* sql`SELECT * FROM auth_clients ORDER BY client_id`,
     pairing: yield* sql`SELECT * FROM auth_pairing_links ORDER BY id`,
     receipts: yield* sql`SELECT command_id, aggregate_kind, aggregate_id, accepted_at,
@@ -55,18 +50,6 @@ it.effect(
         yield* sql`INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at)
         VALUES (${`message-${index}`}, ${threadId}, ${index % 2 ? "assistant" : "user"}, ${`Text ${index}`}, 0, ${`2026-01-0${index + 1}T00:00:00.000Z`}, ${`2026-01-0${index + 1}T00:00:00.000Z`})`;
       }
-      yield* sql`INSERT INTO projection_board_posts (
-        post_id, event_sequence, author_json, source_json, targets_json,
-        body, created_at, revision, updated_event_sequence, updated_at, last_editor_json
-      ) VALUES ('synthetic-post', 100, '{"kind":"agent","id":"synthetic-agent"}',
-        ${encodeJson({ projectId: "project", threadId })}, '[]', 'Preserve Board history', '2026-01-01',
-        2, 101, '2026-01-02', '{"kind":"agent","id":"synthetic-agent"}')`;
-      yield* sql`INSERT INTO projection_board_post_revisions (
-        post_id, revision, event_sequence, body, targets_json, editor_json, edited_at
-      ) VALUES ('synthetic-post', 1, 100, 'Original Board body', '[]',
-        '{"kind":"agent","id":"synthetic-agent"}', '2026-01-01'),
-        ('synthetic-post', 2, 101, 'Preserve Board history', '[]',
-        '{"kind":"agent","id":"synthetic-agent"}', '2026-01-02')`;
       yield* sql`INSERT INTO auth_clients (client_id, granted_scopes, management_class,
         created_at, disabled_at, revision) VALUES ('synthetic-client', '[]',
         'portal-managed-device', '2026-01-01', '2026-01-02', 7)`;

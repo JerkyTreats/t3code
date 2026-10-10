@@ -642,12 +642,11 @@ describe("AcpSessionRuntime", () => {
           providerSessionId: "synthetic",
           providerInstanceId: ProviderInstanceId.make("synthetic"),
           endpoint: "http://synthetic/mcp",
-          boardEndpoint: "http://synthetic/board",
           previewEndpoint: "http://synthetic/preview",
           pullRequestsEndpoint: "http://synthetic/pr",
           authorizationHeader: "Bearer synthetic-read-only",
           browserToolsAvailable: true,
-          capabilities: new Set(["orchestration", "board", "preview", "pull-requests"]),
+          capabilities: new Set(["orchestration", "preview", "pull-requests"]),
         });
         yield* Effect.gen(function* () {
           const ids = yield* Ref.make(0);

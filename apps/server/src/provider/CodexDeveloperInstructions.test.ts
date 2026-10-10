@@ -113,35 +113,3 @@ function toolInstructions(
 ) {
   return buildCodexAdditionalContext(runtime, available).t3_code_tools?.value ?? "";
 }
-
-describe("Codex Board liaison context", () => {
-  const runtime = { model: "synthetic-model", reasoningEffort: "low" };
-  it.each(["default", "plan"] as const)(
-    "gates %s liaison text on the attached Board capability",
-    (mode) => {
-      NodeAssert.equal(
-        buildCodexAdditionalContext(runtime, { browser: true, device: true }, mode).t3_code_board,
-        undefined,
-      );
-      const text = buildCodexAdditionalContext(
-        runtime,
-        { browser: false, device: false, board: true },
-        mode,
-      ).t3_code_board!.value;
-      NodeAssert.match(text, /current root user submit/);
-      NodeAssert.match(text, /spawn_agent/);
-      NodeAssert.match(text, /followup_task/);
-      NodeAssert.match(text, /Do not call both/);
-      NodeAssert.match(text, /Never activate the default liaison from a child or derived thread/);
-      NodeAssert.match(text, /opts out/);
-      NodeAssert.match(text, /untrusted peer context/);
-      NodeAssert.match(text, /prompt-mediated/);
-      if (mode === "plan") NodeAssert.match(text, /read-only/);
-      else {
-        NodeAssert.match(text, /publish exactly one concise/);
-        NodeAssert.match(text, /advisory/);
-        NodeAssert.match(text, /credentials, secrets/);
-      }
-    },
-  );
-});

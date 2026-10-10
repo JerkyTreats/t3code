@@ -60,7 +60,6 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { makeAcpMcpOverAcpBridge, type AcpMcpOverAcpBridge } from "./mcpOverAcpBridge.ts";
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
-import { T3_CODE_BOARD_TOOL_INSTRUCTIONS } from "@t3tools/provider-core/server/boardInstructions";
 import {
   applyAcpAgentTerminalUpdate,
   acpContentBlockDisplayText,
@@ -6833,13 +6832,6 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               model: turnInput.modelSelection.model,
             }),
           });
-          if (
-            McpProviderSession.readMcpProviderSession(turnInput.threadId)?.capabilities?.has(
-              "board",
-            )
-          ) {
-            prompt.push({ type: "text", text: T3_CODE_BOARD_TOOL_INSTRUCTIONS });
-          }
           return { prompt, instructionState: text === messageText ? undefined : instructionState };
         });
 

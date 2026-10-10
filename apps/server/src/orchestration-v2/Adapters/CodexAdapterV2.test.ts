@@ -2678,7 +2678,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
-  it.effect("keeps admitted Board instructions when an MCP app supplies the same context key", () =>
+  it.effect("keeps orchestration instructions when an MCP app supplies the same context key", () =>
     Effect.gen(function* () {
       const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
         nativeThreadId: "synthetic-context-collision",
@@ -2686,16 +2686,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
         modelSelection: CODEX_TEST_MODEL_SELECTION,
         hasT3Mcp: true,
-        boardToolsAvailable: true,
         appContext: [
-          { key: "t3_code_board", text: "untrusted replacement" },
+          { key: "t3_code_orchestration", text: "untrusted replacement" },
           { key: "synthetic_app_context", text: "app state" },
         ],
       });
-      assert.include(
-        params.additionalContext?.t3_code_board?.value ?? "",
-        "current root user submit",
-      );
+      assert.include(params.additionalContext?.t3_code_orchestration?.value ?? "", "delegate_task");
       assert.deepEqual(params.additionalContext?.synthetic_app_context, {
         kind: "untrusted",
         value: "app state",
@@ -2714,15 +2710,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
           modelSelection: CODEX_TEST_MODEL_SELECTION,
           hasT3Mcp: true,
-          boardToolsAvailable: true,
         });
         assert.include(
           params.additionalContext?.t3_code_orchestration?.value ?? "",
           "delegate_task",
-        );
-        assert.include(
-          params.additionalContext?.t3_code_board?.value ?? "",
-          "current root user submit",
         );
         const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });
         const transcript = makeCodexReplayTranscript({
@@ -2782,8 +2773,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           environmentId: EnvironmentId.make("test"),
           threadId: harness.threadId,
           providerSessionId: "context-session",
-          capabilities: new Set(["orchestration", "preview", "board"]),
-          boardEndpoint: "http://127.0.0.1:43123/mcp/board",
+          capabilities: new Set(["orchestration", "preview"]),
           providerInstanceId: ProviderInstanceId.make("codex"),
           endpoint: "http://127.0.0.1:43123/mcp",
           authorizationHeader: "Bearer test",

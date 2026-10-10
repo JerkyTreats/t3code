@@ -19,14 +19,6 @@
       "types": "./src/relay.ts",
       "import": "./src/relay.ts"
     },
-    "./coordinationBoard": {
-      "types": "./src/coordinationBoard.ts",
-      "import": "./src/coordinationBoard.ts"
-    },
-    "./coordinationBoardOrchestration": {
-      "types": "./src/coordinationBoardOrchestration.ts",
-      "import": "./src/coordinationBoardOrchestration.ts"
-    },
     "./ipc": {
       "types": "./src/ipc.ts",
       "import": "./src/ipc.ts"

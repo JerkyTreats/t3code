@@ -1,16 +1,4 @@
 import {
-  BoardGetPageInput,
-  BoardPage,
-  BoardGetHistoryInput,
-  BoardHistoryPage,
-  BoardReviseInput,
-  BoardPost,
-  BoardSubscribeInput,
-  BoardStreamItem,
-  BoardGetSnapshotError,
-} from "./coordinationBoard.ts";
-import { OrchestrationBoardRevisionError } from "./coordinationBoardOrchestration.ts";
-import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -366,11 +354,6 @@ import { VcsError } from "./vcs.ts";
 import { Project, ProjectMutation, ProjectMutationError } from "./project.ts";
 
 export const WS_METHODS = {
-  getBoardPage: "orchestration.getBoardPage",
-  getBoardPostHistory: "orchestration.getBoardPostHistory",
-  reviseBoardPost: "orchestration.reviseBoardPost",
-  subscribeBoard: "orchestration.subscribeBoard",
-
   // Project registry methods
   projectsList: "projects.list",
   projectsAdd: "projects.add",
@@ -1677,31 +1660,6 @@ const WsOrchestrationV2SubscribeThreadRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS
   stream: true,
 });
 
-export const WsOrchestrationGetBoardPageRpc = Rpc.make(WS_METHODS.getBoardPage, {
-  payload: BoardGetPageInput,
-  success: BoardPage,
-  error: Schema.Union([BoardGetSnapshotError, EnvironmentAuthorizationError]),
-});
-
-export const WsOrchestrationGetBoardPostHistoryRpc = Rpc.make(WS_METHODS.getBoardPostHistory, {
-  payload: BoardGetHistoryInput,
-  success: BoardHistoryPage,
-  error: Schema.Union([BoardGetSnapshotError, EnvironmentAuthorizationError]),
-});
-
-export const WsOrchestrationReviseBoardPostRpc = Rpc.make(WS_METHODS.reviseBoardPost, {
-  payload: BoardReviseInput,
-  success: BoardPost,
-  error: Schema.Union([OrchestrationBoardRevisionError, EnvironmentAuthorizationError]),
-});
-
-export const WsOrchestrationSubscribeBoardRpc = Rpc.make(WS_METHODS.subscribeBoard, {
-  payload: BoardSubscribeInput,
-  success: BoardStreamItem,
-  error: Schema.Union([BoardGetSnapshotError, EnvironmentAuthorizationError]),
-  stream: true,
-});
-
 export const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents, {
   payload: Schema.Struct({}),
   success: TerminalEvent,
@@ -2026,8 +1984,4 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2SubscribeArchivedShellRpc,
   WsOrchestrationV2SubscribeShellRpc,
   WsOrchestrationV2SubscribeThreadRpc,
-  WsOrchestrationGetBoardPageRpc,
-  WsOrchestrationGetBoardPostHistoryRpc,
-  WsOrchestrationReviseBoardPostRpc,
-  WsOrchestrationSubscribeBoardRpc,
 ).middleware(RpcScopeAuthorization);

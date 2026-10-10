@@ -58,7 +58,7 @@ describe("resolveT3McpToolPresentation", () => {
     }
     expect(resolveT3McpToolPresentation("mcp__t3-code-unknown__preview_open")).toBeNull();
     expect(resolveT3McpToolPresentation("t3-code-unknown.preview_open")).toBeNull();
-    expect(resolveT3McpToolPresentation("mcp__t3-code-board__not_a_real_tool")).toBeNull();
+    expect(resolveT3McpToolPresentation("mcp__unknown-server__not_a_real_tool")).toBeNull();
   });
 
   it("pretty prints Claude and Cursor T3 MCP tool names", () => {

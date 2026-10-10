@@ -8,7 +8,6 @@ export interface McpProviderSessionConfig {
   readonly capabilities?: ReadonlySet<string>;
   readonly browserToolsAvailable: boolean;
   readonly endpoint: string;
-  readonly boardEndpoint?: string;
   readonly previewEndpoint?: string;
   readonly deviceEndpoint?: string;
   readonly pullRequestsEndpoint?: string;
@@ -17,12 +16,7 @@ export interface McpProviderSessionConfig {
 }
 
 export interface McpProviderServerAttachment {
-  readonly name:
-    | "t3-code"
-    | "t3-code-board"
-    | "t3-code-preview"
-    | "t3-code-device"
-    | "t3-code-pull-requests";
+  readonly name: "t3-code" | "t3-code-preview" | "t3-code-device" | "t3-code-pull-requests";
   readonly endpoint: string;
   readonly authorizationHeader: string;
   /**
@@ -32,7 +26,7 @@ export interface McpProviderServerAttachment {
    * call would reject.
    */
   readonly browserToolsAvailable: boolean;
-  /** Explicit server-issued toolkit grants; Board is never inferred from provider defaults. */
+  /** Explicit server-issued toolkit grants. */
   readonly capabilities?: ReadonlySet<string>;
   /**
    * Set when the session may drive devices. Adapters spread this into the
@@ -86,8 +80,6 @@ export function getMcpProviderServerAttachments(
         : {}),
     });
   if (capabilities.has("orchestration")) attach("t3-code", config.endpoint);
-  if (capabilities.has("board") && config.boardEndpoint)
-    attach("t3-code-board", config.boardEndpoint);
   if (capabilities.has("preview"))
     attach("t3-code-preview", config.previewEndpoint ?? siblingEndpoint("preview"));
   if (capabilities.has("device"))

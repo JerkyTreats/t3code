@@ -51,7 +51,6 @@ describe("pi T3 MCP injection", () => {
         previewEndpoint: "http://fixture.invalid/preview",
         deviceEndpoint: "http://fixture.invalid/device",
         pullRequestsEndpoint: "http://fixture.invalid/pull-requests",
-        boardEndpoint: "http://fixture.invalid/board",
         capabilities: new Set(capability === undefined ? [] : [capability]),
       },
       extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",

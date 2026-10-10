@@ -1,4 +1,3 @@
-import { BoardTurnWritePolicyV2 } from "./board/TurnWritePolicyV2.ts";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -21,7 +20,6 @@ import { subscribeChatGptHandoff } from "./provider/CodexChatGptHandoff.ts";
 import { subscribeCodexAuthCallback } from "./provider/CodexAuthCallback.ts";
 import {
   DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
-  BoardGetSnapshotError,
   AcpRegistryOperationError,
   CommandId,
   AuthOrchestrationOperateScope,
@@ -159,9 +157,6 @@ import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
-import * as Board from "./orchestration/Services/Board.ts";
-import * as BoardQuery from "./orchestration/Services/BoardQuery.ts";
-import { makeBoardSubscription } from "./board/BoardSubscription.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
 import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
@@ -210,7 +205,7 @@ import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as DefectReporter from "./observability/DefectReporter.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import { requiredScopeForDeviceList, requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
+import { requiredScopeForDeviceList } from "./auth/RpcAuthorization.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import { RpcInstrumentation, rpcInstrumentationLayer } from "./observability/RpcInstrumentation.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
@@ -247,7 +242,6 @@ import {
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
-const isBoardGetSnapshotError = Schema.is(BoardGetSnapshotError);
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
 const isProviderUploadFeedbackError = Schema.is(ProviderUploadFeedbackError);
@@ -1248,7 +1242,6 @@ const layerWsRpc = (
       const intakeContext = yield* Effect.context<
         | ThreadManagementService.ThreadManagementService
         | ThreadLaunchService.ThreadLaunchService
-        | BoardTurnWritePolicyV2
         | IdAllocator.IdAllocatorV2
         | FileSystem.FileSystem
         | ServerConfig.ServerConfig
@@ -1307,8 +1300,6 @@ const layerWsRpc = (
         yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
       const agentSessionImporter = yield* AgentSessionImporter.AgentSessionImporter;
-      const boardQuery = yield* BoardQuery.BoardQuery;
-      const board = yield* Board.Board;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const keybindings = yield* Keybindings.Keybindings;
       const environmentTheme = yield* EnvironmentTheme.EnvironmentThemeService;
@@ -1389,11 +1380,6 @@ const layerWsRpc = (
         requiredScope: AuthEnvironmentScope,
         effect: Effect.Effect<A, E, R>,
       ) => authorizeClientRpc(sessions, currentSession, requiredScope, effect);
-      const authorizeStream = <A, E, R>(
-        requiredScope: AuthEnvironmentScope,
-        stream: Stream.Stream<A, E, R>,
-      ): Stream.Stream<A, E | EnvironmentAuthorizationError, R> =>
-        Stream.unwrap(authorizeEffect(requiredScope, Effect.succeed(stream)));
       const acpRegistryProject = Effect.fn("ws.acpRegistry.project")(function* (
         projectId: ProjectId,
       ) {
@@ -1701,38 +1687,6 @@ const layerWsRpc = (
         yield* providerRegistry.refreshInstance(input.instanceId);
         return { disabled: true } as const;
       });
-      const authorizeRpcEffect = <A, E, R>(
-        method: string,
-        effect: Effect.Effect<A, E, R>,
-        traceAttributes?: Readonly<Record<string, unknown>>,
-      ) =>
-        Effect.annotateCurrentSpan(traceAttributes ?? {}).pipe(
-          Effect.andThen(authorizeEffect(requiredScopeForRpcMethod(method), effect)),
-        );
-      const authorizeRpcStream = <A, E, R>(
-        method: string,
-        stream: Stream.Stream<A, E, R>,
-        traceAttributes?: Readonly<Record<string, unknown>>,
-      ) =>
-        Stream.unwrap(
-          Effect.annotateCurrentSpan(traceAttributes ?? {}).pipe(
-            Effect.as(authorizeStream(requiredScopeForRpcMethod(method), stream)),
-          ),
-        );
-      const authorizeRpcStreamEffect = <A, StreamError, StreamContext, EffectError, EffectContext>(
-        method: string,
-        effect: Effect.Effect<
-          Stream.Stream<A, StreamError, StreamContext>,
-          EffectError,
-          EffectContext
-        >,
-        traceAttributes?: Readonly<Record<string, unknown>>,
-      ) =>
-        Stream.unwrap(
-          Effect.annotateCurrentSpan(traceAttributes ?? {}).pipe(
-            Effect.andThen(authorizeEffect(requiredScopeForRpcMethod(method), effect)),
-          ),
-        );
       const loadServerConfig = (options: { readonly usageLimitsCommand: boolean }) =>
         Effect.gen(function* () {
           const keybindingsConfig = yield* keybindings.loadConfigState;
@@ -1871,15 +1825,6 @@ const layerWsRpc = (
       });
 
       const handlers = ServerWsRpcGroup.of({
-        [WS_METHODS.subscribeBoard]: (input) =>
-          authorizeRpcStreamEffect(
-            WS_METHODS.subscribeBoard,
-            Effect.gen(function* () {
-              const domainEvents = yield* board.subscribeBoardDomainEvents;
-              return yield* makeBoardSubscription({ domainEvents, query: boardQuery })(input);
-            }),
-            { "rpc.aggregate": "board" },
-          ),
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -1944,52 +1889,6 @@ const layerWsRpc = (
                   cause,
                 }),
             ),
-          ),
-        [WS_METHODS.getBoardPage]: (input) =>
-          authorizeRpcEffect(
-            WS_METHODS.getBoardPage,
-            boardQuery.getPage(input).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new BoardGetSnapshotError({
-                    message: "Failed to load the global Board page.",
-                    cause,
-                  }),
-              ),
-            ),
-            { "rpc.aggregate": "orchestration" },
-          ),
-        [WS_METHODS.getBoardPostHistory]: (input) =>
-          authorizeRpcEffect(
-            WS_METHODS.getBoardPostHistory,
-            boardQuery.getHistory(input).pipe(
-              Effect.flatMap(
-                Option.match({
-                  onNone: () =>
-                    Effect.fail(
-                      new BoardGetSnapshotError({
-                        message: `Board post '${input.postId}' was not found.`,
-                      }),
-                    ),
-                  onSome: Effect.succeed,
-                }),
-              ),
-              Effect.mapError((cause) =>
-                isBoardGetSnapshotError(cause)
-                  ? cause
-                  : new BoardGetSnapshotError({
-                      message: "Failed to load Board revision history.",
-                      cause,
-                    }),
-              ),
-            ),
-            { "rpc.aggregate": "orchestration" },
-          ),
-        [WS_METHODS.reviseBoardPost]: (input) =>
-          authorizeRpcEffect(
-            WS_METHODS.reviseBoardPost,
-            board.reviseAsOwner(currentSession.clientId, input),
-            { "rpc.aggregate": "orchestration" },
           ),
         [ORCHESTRATION_V2_WS_METHODS.getTurnDiff]: (input) =>
           checkpointDiffQuery.getTurnDiff(input).pipe(

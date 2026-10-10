@@ -24,7 +24,6 @@ export const layer = Layer.succeed(
       }),
     resolve: () => Effect.succeed(undefined),
     touch: () => Effect.void,
-    setBoardWriteEnabled: () => Effect.void,
     revokeProviderSession: () => Effect.void,
     revokeThread: () => Effect.void,
     revokeAll: Effect.void,

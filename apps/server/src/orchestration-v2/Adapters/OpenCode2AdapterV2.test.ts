@@ -2726,49 +2726,51 @@ describe("OpenCode2 adapter", () => {
       }).pipe(Effect.scoped),
   );
 
-  it.effect("attaches the admitted Board without preview and removes its thread registration", () =>
-    Effect.gen(function* () {
-      McpProviderSession.setMcpProviderSession({
-        environmentId: EnvironmentId.make("environment:opencode2-board"),
-        threadId,
-        providerSessionId: "mcp:opencode2-board",
-        providerInstanceId: instanceId,
-        capabilities: new Set(["board"]),
-        endpoint: "http://127.0.0.1:3773/mcp",
-        boardEndpoint: "http://127.0.0.1:3773/mcp/board",
-        authorizationHeader: "Bearer board-credential",
-        browserToolsAvailable: false,
-      });
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
-      );
-      const server = "t3-code-thread_opencode2-adapter_board";
-      const { runtime, thread } = yield* resumed([
-        out("mcp.add", {
-          server,
-          "location[directory]": WORK,
-          config: {
-            type: "remote",
-            url: "http://127.0.0.1:3773/mcp/board",
-            headers: { Authorization: "Bearer board-credential" },
-            oauth: false,
-          },
-        }),
-        reply("mcp.add", null),
-        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
-        promptAccepted,
-        event("session.execution.succeeded", { sessionID: SESSION }),
-        out("mcp.remove", { server, "location[directory]": WORK }),
-        reply("mcp.remove", null),
-      ]);
-      const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
-      yield* runtime.startTurn(turnInput(thread));
-      assert.equal((yield* Fiber.join(terminal))?.status, "completed");
-      yield* runtime.unloadThread!({ providerThread: thread });
-    }).pipe(Effect.scoped),
+  it.effect(
+    "attaches the admitted pull request toolkit without preview and removes its thread registration",
+    () =>
+      Effect.gen(function* () {
+        McpProviderSession.setMcpProviderSession({
+          environmentId: EnvironmentId.make("environment:opencode2-pull-requests"),
+          threadId,
+          providerSessionId: "mcp:opencode2-pull-requests",
+          providerInstanceId: instanceId,
+          capabilities: new Set(["pull-requests"]),
+          endpoint: "http://127.0.0.1:3773/mcp",
+          pullRequestsEndpoint: "http://127.0.0.1:3773/mcp/pull-requests",
+          authorizationHeader: "Bearer pull-request-credential",
+          browserToolsAvailable: false,
+        });
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+        );
+        const server = "t3-code-thread_opencode2-adapter_pull-requests";
+        const { runtime, thread } = yield* resumed([
+          out("mcp.add", {
+            server,
+            "location[directory]": WORK,
+            config: {
+              type: "remote",
+              url: "http://127.0.0.1:3773/mcp/pull-requests",
+              headers: { Authorization: "Bearer pull-request-credential" },
+              oauth: false,
+            },
+          }),
+          reply("mcp.add", null),
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          out("mcp.remove", { server, "location[directory]": WORK }),
+          reply("mcp.remove", null),
+        ]);
+        const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn(turnInput(thread));
+        assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+        yield* runtime.unloadThread!({ providerThread: thread });
+      }).pipe(Effect.scoped),
   );
 
-  it.effect.each(["main", "board"] as const)(
+  it.effect.each(["main", "pull-requests"] as const)(
     "keeps the %s MCP registration within OpenCode's name limit",
     (toolkit) =>
       Effect.gen(function* () {
@@ -2780,16 +2782,16 @@ describe("OpenCode2 adapter", () => {
         );
         const namespace =
           toolkit === "main" ? "t3-code-aa73fa1e03099934" : "t3-code-3feb5005ac6d1c36";
-        const server = toolkit === "main" ? namespace : `${namespace}_board`;
+        const server = toolkit === "main" ? namespace : `${namespace}_pull-requests`;
         assert.isAtMost(server.length, 64);
         McpProviderSession.setMcpProviderSession({
           environmentId: EnvironmentId.make("environment:opencode2-adapter"),
           threadId: child,
           providerSessionId: "mcp:opencode2-adapter",
-          capabilities: new Set(toolkit === "main" ? ["orchestration"] : ["board"]),
+          capabilities: new Set(toolkit === "main" ? ["orchestration"] : ["pull-requests"]),
           providerInstanceId: instanceId,
           endpoint: "http://127.0.0.1:3773/mcp",
-          boardEndpoint: "http://127.0.0.1:3773/mcp/board",
+          pullRequestsEndpoint: "http://127.0.0.1:3773/mcp/pull-requests",
           authorizationHeader: "Bearer thread-credential",
           browserToolsAvailable: false,
         });
@@ -2819,7 +2821,7 @@ describe("OpenCode2 adapter", () => {
               url:
                 toolkit === "main"
                   ? "http://127.0.0.1:3773/mcp"
-                  : "http://127.0.0.1:3773/mcp/board",
+                  : "http://127.0.0.1:3773/mcp/pull-requests",
               headers: { Authorization: "Bearer thread-credential" },
               oauth: false,
             },

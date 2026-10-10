@@ -349,7 +349,7 @@ const approval = (turnId: string) => ({
 });
 
 describe("MuseAdapterV2", () => {
-  it.effect.each(["default", "board-pr-read-only", "empty"] as const)(
+  it.effect.each(["default", "pull-requests-only", "empty"] as const)(
     "attaches only %s toolkit grants on native start and resume",
     (grant) =>
       Effect.gen(function* () {
@@ -359,14 +359,13 @@ describe("MuseAdapterV2", () => {
         const capabilities =
           grant === "default"
             ? undefined
-            : new Set(grant === "board-pr-read-only" ? ["board", "pull-requests"] : []);
+            : new Set(grant === "pull-requests-only" ? ["pull-requests"] : []);
         McpProviderSession.setMcpProviderSession({
           environmentId: EnvironmentId.make("test-environment"),
           threadId: THREAD_ID,
           providerSessionId: "test-session",
           providerInstanceId: INSTANCE_ID,
           endpoint: "http://127.0.0.1:43210/mcp",
-          boardEndpoint: "http://127.0.0.1:43210/independent/board",
           pullRequestsEndpoint: "http://127.0.0.1:43210/independent/pull-requests",
           authorizationHeader: "Bearer thread-scoped-test-token",
           browserToolsAvailable: true,
@@ -379,9 +378,8 @@ describe("MuseAdapterV2", () => {
                 "t3-code-preview": "http://127.0.0.1:43210/mcp/preview",
                 "t3-code-pull-requests": "http://127.0.0.1:43210/independent/pull-requests",
               }
-            : grant === "board-pr-read-only"
+            : grant === "pull-requests-only"
               ? {
-                  "t3-code-board": "http://127.0.0.1:43210/independent/board",
                   "t3-code-pull-requests": "http://127.0.0.1:43210/independent/pull-requests",
                 }
               : {};
@@ -408,15 +406,6 @@ describe("MuseAdapterV2", () => {
                   ),
                 },
           );
-          // Synthetic explicit Board grants exercise attachment only. Normal
-          // Muse admission still excludes Board, and attachment adds no write grant.
-          if (grant === "board-pr-read-only") {
-            assert.deepEqual(
-              [...McpProviderSession.readMcpProviderSession(THREAD_ID)!.capabilities!],
-              ["board", "pull-requests"],
-            );
-            assert.isFalse(capabilities!.has("board-write"));
-          }
         }
       }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );

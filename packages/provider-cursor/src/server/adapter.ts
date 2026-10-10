@@ -47,7 +47,6 @@ import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresen
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { CursorTransportFailure } from "./transportFailure.ts";
 import { cursorSdkModelSelection } from "./sdkModel.ts";
-import { T3_CODE_BOARD_TOOL_INSTRUCTIONS } from "@t3tools/provider-core/server/boardInstructions";
 import {
   discoverCursorSkills,
   hasCursorSkillMention,
@@ -2176,11 +2175,6 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           const text = [
             userText,
             buildRuntimeInstructions({ harness: "Cursor", model: turnInput.modelSelection.model }),
-            McpProviderSession.readMcpProviderSession(turnInput.threadId)?.capabilities?.has(
-              "board",
-            )
-              ? T3_CODE_BOARD_TOOL_INSTRUCTIONS
-              : "",
           ]
             .filter(Boolean)
             .join("\n\n");

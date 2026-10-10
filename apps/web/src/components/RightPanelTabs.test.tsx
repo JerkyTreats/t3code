@@ -46,7 +46,6 @@ const secondSurface = {
   kind: "preview" as const,
   resourceId: "tab-2",
 };
-const boardSurface = { id: "board" as const, kind: "board" as const };
 const sessions: Readonly<Record<string, PreviewSessionSnapshot>> = {
   "tab-1": {
     threadId: "thread-1",
@@ -146,67 +145,6 @@ function renderTabs(
     </RightPanelTabs>,
   );
 }
-
-function renderBoardTabs(open: boolean) {
-  return renderToStaticMarkup(
-    <RightPanelTabs
-      mode="inline"
-      keybindings={DEFAULT_RESOLVED_KEYBINDINGS}
-      getShortcutContext={() => ({
-        terminalFocus: false,
-        terminalOpen: false,
-        previewFocus: false,
-        previewOpen: false,
-        isWeb: true,
-        isDesktop: false,
-      })}
-      surfaces={open ? [boardSurface] : []}
-      environmentId={"env-1" as EnvironmentId}
-      activeSurfaceId={open ? boardSurface.id : null}
-      pendingSurfaceIds={new Set()}
-      previewSessions={{}}
-      desktopByTabId={{}}
-      terminalLabelsById={new Map()}
-      onActivate={() => undefined}
-      onCloseSurface={() => undefined}
-      onCloseOtherSurfaces={() => undefined}
-      onCloseSurfacesToRight={() => undefined}
-      onCloseAllSurfaces={() => undefined}
-      onCopyFilePath={() => undefined}
-      onAddBrowser={() => undefined}
-      onAddBrowserInProfile={() => undefined}
-      onAddTerminal={() => undefined}
-      onAddPullRequest={() => undefined}
-      onAddDiff={() => undefined}
-      onAddFiles={() => undefined}
-      onAddBoard={() => undefined}
-      onAddPullRequests={() => undefined}
-      onAddDevice={() => undefined}
-      browserAvailable={false}
-      terminalAvailable={false}
-      diffAvailable={false}
-      filesAvailable={false}
-      pullRequestAvailable={false}
-      boardAvailable
-      pullRequestsAvailable={false}
-      deviceAvailable={false}
-    >
-      <div>Board content</div>
-    </RightPanelTabs>,
-  );
-}
-
-describe("RightPanelTabs Board surface", () => {
-  it("labels an open Board surface in the current tab host", () => {
-    expect(renderBoardTabs(true)).toContain("Board");
-  });
-
-  it("offers Board from the empty surface launcher when an environment is connected", () => {
-    const html = renderBoardTabs(false);
-    expect(html).toContain("Board");
-    expect(html).toContain('data-surface-launcher-keys="O"');
-  });
-});
 
 describe("RightPanelTabs preview favicon", () => {
   it("prefers a live capture and never asks Google about a private hostname", () => {

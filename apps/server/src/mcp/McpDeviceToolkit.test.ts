@@ -2,7 +2,6 @@ import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DeviceHostUnavailableError,
-  BoardAuthorId,
   DeviceId,
   EnvironmentId,
   ProviderInstanceId,
@@ -24,7 +23,6 @@ const invocation = (capabilities: ReadonlyArray<McpInvocationContext.McpCapabili
   environmentId,
   requestNamespace: "provider-session-device-test",
   thread: {
-    boardAuthorId: BoardAuthorId.make("synthetic-device-author"),
     threadId,
     providerSessionId: "provider-session-device-test",
     providerInstanceId: ProviderInstanceId.make("codex"),
