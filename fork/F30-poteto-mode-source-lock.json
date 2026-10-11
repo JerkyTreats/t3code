@@ -1,0 +1,282 @@
+{
+  "repo": "https://github.com/cursor/plugins",
+  "commit": "d73344bee8cf22e53b9d5f4cf5749d38ba38c174",
+  "source_directory": "pstack",
+  "adaptation": "T3-aware locally authored router and playbooks; not an upstream byte-for-byte install",
+  "review_date": "2026-10-10",
+  "review_scope": "Upstream guide and mode instructions, selected playbook mechanics and authority-sensitive passages; full final authored bundle; native T3 tool contracts. Upstream executable helpers and remaining pstack skills/agents/automation packs are not installed or assessed as executable code.",
+  "provenance_limits": "Fetched official HTTPS repository; selected source bytes matched exact Git objects. No independent commit-signature or author-authenticity verification.",
+  "security_findings": [
+    {
+      "id": "PT3-01",
+      "source_risk": "Upstream mode grants broad external actions and unconditional workflow publication.",
+      "adaptation": "Removed. Existing user grants and repository rules govern commits, pushes, PR creation, merging, messaging, dependencies and destructive actions."
+    },
+    {
+      "id": "PT3-02",
+      "source_risk": "Cursor cloud agents, hard-coded model names, loop, watcher and program-store executables are host-specific.",
+      "adaptation": "No scripts, dependencies, downloads, listeners or cloud transport installed. Use live T3 capability catalog, task IDs, parent completion delivery, owned PR watches and explicitly authorized schedules."
+    },
+    {
+      "id": "PT3-03",
+      "source_risk": "Workspace/transcript scans, force cleanup and reset-oriented PR mechanics can expose or delete unrelated work.",
+      "adaptation": "Task-owned bounded timeline reads; preserve dirty work; no live userdata or unrelated transcript scans; exact cleanup scope and separate deletion authorization."
+    },
+    {
+      "id": "PT3-04",
+      "source_risk": "Instruction-only routing is not enforcement and cannot prove behavioral compliance.",
+      "adaptation": "Record static validation honestly; no LLM eval, unattended runtime reliability or app-level persistent-mode claim."
+    },
+    {
+      "id": "PT3-05",
+      "source_risk": "Skills can influence future tool execution even without bundled executable code.",
+      "adaptation": "Self-contained playbooks defer to active permissions and native tool contracts. Actual future operations remain within the invoking task grant."
+    }
+  ],
+  "checks": {
+    "frontmatter": "quick_validate.py: Skill is valid!",
+    "relative_links": "All 28 workflow/reference resources reachable; no missing or escaping links",
+    "inventory": "23 source playbooks plus one bespoke fallback; 31 installed files; Markdown plus MIT LICENSE only",
+    "markdown": "No prohibited prose parentheses; consecutive numbered steps; every playbook under 350 words",
+    "route_review": "14 representative cases manually reviewed; no model invocation",
+    "source_identity": "All inventoried source bytes matched pinned commit"
+  },
+  "files": {
+    "LICENSE": {
+      "sha256": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",
+      "bytes": 1067
+    },
+    "NOTICE.md": {
+      "sha256": "8a05d5c58ebe4b3351206ec44058c2d2d20f6a2d0cce2cd6ddfe7d6146d7dc97",
+      "bytes": 792
+    },
+    "SKILL.md": {
+      "sha256": "d5ddf8b4f4192d9ef18d3f87df75cabee7c639339d1f0287e782845351726545",
+      "bytes": 6194
+    },
+    "playbooks/authoring-a-skill.md": {
+      "sha256": "46de4b8c50c603b7eea427a8eb5a78ac3556b35098de70ee9a84eb7856278ff1",
+      "bytes": 1221
+    },
+    "playbooks/autonomous-run.md": {
+      "sha256": "2ea70c1712ae78ad44c47ceb2b5eb1ef15d6685fcf748e00cdf02007a995224a",
+      "bytes": 1265
+    },
+    "playbooks/autopilot-full.md": {
+      "sha256": "d0c31393c7e2cbf2462ece572b2c851045ac465b938976cdc53b47f680f6fb9f",
+      "bytes": 1462
+    },
+    "playbooks/autopilot-stack.md": {
+      "sha256": "0ff792df2b6b23085ae5cbacb2e084580d05757f573ddafcad423c2b635080ba",
+      "bytes": 1329
+    },
+    "playbooks/babysit.md": {
+      "sha256": "53af35825487ee7c4c2cd7da4e71659a2236a5072daa41220726640364a1436c",
+      "bytes": 1328
+    },
+    "playbooks/bespoke-run.md": {
+      "sha256": "eb1443723e9001f0ceac96cc564dc5c29b9fddc3218fe7df94b09bd9380b578f",
+      "bytes": 1336
+    },
+    "playbooks/bug-fix.md": {
+      "sha256": "ce33d2ca8fdd7e0a3d424934b47f9702e870325f0019ef058c2b41813828f550",
+      "bytes": 1166
+    },
+    "playbooks/eval.md": {
+      "sha256": "019134311aead53a835772a2eca0bd1935199fb2eb4f0ff6e9c66a3ae967644f",
+      "bytes": 1177
+    },
+    "playbooks/feature.md": {
+      "sha256": "d32f557790fe3a761545d32dd90c4678692d73f0cfd1ae48833c596dc1f6af74",
+      "bytes": 1316
+    },
+    "playbooks/hillclimb.md": {
+      "sha256": "1b92205ee992de30c6b753fa88056668d4b8647e4203061e3453c8c68c225dad",
+      "bytes": 1409
+    },
+    "playbooks/investigation.md": {
+      "sha256": "2978c98fc8a893a0941b11ab453a29c29bea46d4123839e9586a0b5fcf9252ad",
+      "bytes": 902
+    },
+    "playbooks/multi-phase-plan.md": {
+      "sha256": "66ca3f340b5a03ed7b2b5864ad5e64bff91cfd15e72dfd0d7b131d0eeab9cd3c",
+      "bytes": 1314
+    },
+    "playbooks/opening-a-pr.md": {
+      "sha256": "d4585782f6abb84d109df1cdfdf32988bbe0bd202d916ab01b1405dab639b5c9",
+      "bytes": 1277
+    },
+    "playbooks/orchestrate.md": {
+      "sha256": "090283597858cdfb5b5917ca027c0e8489390ed8a48b4fe0dff08016a2637fa5",
+      "bytes": 1806
+    },
+    "playbooks/pause-safely.md": {
+      "sha256": "5f65399ef5510c6e69ac7ef94e5e03835414165e9b332be33941c25b7acb6816",
+      "bytes": 977
+    },
+    "playbooks/perf-issue.md": {
+      "sha256": "daae4277e4aad9994d2a53c31d2d78b54de552d0f5b3ee26763c16aeb1aa7270",
+      "bytes": 967
+    },
+    "playbooks/prototype.md": {
+      "sha256": "7fc05580c3f998926d4b9c8af287f5e675bff20c3f6bc70abe5cef5226f0ea3e",
+      "bytes": 1008
+    },
+    "playbooks/refactoring.md": {
+      "sha256": "13db70c8fd9c0579a3a370566256a6145013039310f5e28b632fab0734e5c9de",
+      "bytes": 1109
+    },
+    "playbooks/runtime-forensics.md": {
+      "sha256": "277602951e835827c08c1e64c54fe7d3f66a6bb849ac53ca89a0c40dc6d63692",
+      "bytes": 939
+    },
+    "playbooks/session-pickup.md": {
+      "sha256": "0f6157160be8c79fd5453ef2cac2f4da1ca909fc84a6d00f724e8e1c22419a97",
+      "bytes": 1051
+    },
+    "playbooks/shipping.md": {
+      "sha256": "4354be2d80a4efccd2bcd7b85a7d455ba8387f35120cc4a3283d6605c323a428",
+      "bytes": 1281
+    },
+    "playbooks/trace-forensics.md": {
+      "sha256": "60fdc1953f45f44d61a2e73e7d8fc73f7bf407e22ea447547d85c7b6437b42ba",
+      "bytes": 967
+    },
+    "playbooks/visual-parity.md": {
+      "sha256": "6ce7f19925f13d0ac7d4a25429433983c99ada35dda413b8a9928b5b2c8ffbf2",
+      "bytes": 961
+    },
+    "playbooks/worktree-cleanup.md": {
+      "sha256": "8748a831d5e30c6e828b2dbd358d6fdb78f0bd402b67657e52d6783b2fd8674e",
+      "bytes": 1205
+    },
+    "references/decision-trail.md": {
+      "sha256": "c2ea08b07f06d21e73a96ac61e0bb3b8c98c307f645a7c0d5db32118adb77d89",
+      "bytes": 1544
+    },
+    "references/design-and-review.md": {
+      "sha256": "7cd49a48c6cb2b342c4fe7d9195b4f65d00cb691715684b075fbdad6ee1ce1a1",
+      "bytes": 2798
+    },
+    "references/principles.md": {
+      "sha256": "5ef3e1d0f4f698f574d5a9e75682ab981b78e8d0ec57799c80809d4c846affe4",
+      "bytes": 4577
+    },
+    "references/t3-runtime.md": {
+      "sha256": "1acce62adc318876f0d13607055ed165d41af0c4cc840b5bf445fbadadf211d3",
+      "bytes": 6476
+    }
+  },
+  "source_files": {
+    "pstack/LICENSE": {
+      "sha256": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e"
+    },
+    "pstack/docs/guide/01-setup.md": {
+      "sha256": "86d0330f245d16254a2069955f993c15d96cf29cd1a73690a0164074b7ac1190"
+    },
+    "pstack/docs/guide/02-poteto-mode.md": {
+      "sha256": "979f61ca3d44cb8e68affda40327d32797e93fa9cc53ced7444c15e2600897e1"
+    },
+    "pstack/docs/guide/03-understand.md": {
+      "sha256": "0090afa9b8670adf175466a2a973ff4349e95ed67d2aa8cebdfc55ff4b7382c9"
+    },
+    "pstack/docs/guide/04-design.md": {
+      "sha256": "31f2abe6e9b29feafd1a9eece8f4fe21992f86b8c19ab2e9b5c11a20f36587e7"
+    },
+    "pstack/docs/guide/05-build-and-clean.md": {
+      "sha256": "a93cc7771f7b35c7b54d0120b6f66e8367794ce6791237e889a30e7585c190fa"
+    },
+    "pstack/docs/guide/06-verify-and-ship.md": {
+      "sha256": "3ef0eed5ea084dfbbaf1b1ae9e08d84f2c8a2b536ffb3ef5226710bf105f70e6"
+    },
+    "pstack/docs/guide/07-overnight.md": {
+      "sha256": "d7bd33a3d880768688dff4c1c2b5481ca9f0f194f5d97e44b65c9f96624d3ff0"
+    },
+    "pstack/docs/guide/08-principles.md": {
+      "sha256": "73c3db659d356d4aa6d7674d30d0db46fab2bdd60152fca717c2d1772a042bdc"
+    },
+    "pstack/docs/guide/09-make-it-yours.md": {
+      "sha256": "157e0c20ad3c657857c2fbbea3afd26895b71b8f68475bc56f4c382dcdd0e118"
+    },
+    "pstack/docs/guide/10-recipes-and-pitfalls.md": {
+      "sha256": "c652474764b08da4a6364d85f5d03cf1fc1cf35e9d7c549348fb66e2d09f7b1f"
+    },
+    "pstack/docs/guide/README.md": {
+      "sha256": "49d92cfe91e01c04bd1150e5b000ee4fd4dfda8ce789b66a9dda98f7e5456e00"
+    },
+    "pstack/skills/poteto-mode/SKILL.md": {
+      "sha256": "31cd02290360ce63564ef22b74d69fc6d90e62181d05a644cbed8f6c47cc9412"
+    },
+    "pstack/skills/poteto-mode/playbooks/authoring-a-skill.md": {
+      "sha256": "f6a13a445c360b48d6cd72780ac01955f45b82826476efe0e67c7559329407aa"
+    },
+    "pstack/skills/poteto-mode/playbooks/autonomous-run.md": {
+      "sha256": "15e54ad3ac92565613980772d8708de6e19cc4690bfd4bb3fb8836522407377b"
+    },
+    "pstack/skills/poteto-mode/playbooks/autopilot-full.md": {
+      "sha256": "05ca30a16242c19d0c78ba1e88cca66f858d75252cb154fd740099fe292de802"
+    },
+    "pstack/skills/poteto-mode/playbooks/autopilot-stack.md": {
+      "sha256": "007c0a3b12011954a224f54773ef4ad7b75918be0a311914c1b51ad4e794c1e5"
+    },
+    "pstack/skills/poteto-mode/playbooks/babysit.md": {
+      "sha256": "a0346c37c2313f36a863b80f66ee7b98059c2242adf74fc7b3e48abdb9ec6f5a"
+    },
+    "pstack/skills/poteto-mode/playbooks/bug-fix.md": {
+      "sha256": "018bbc146ae19145caa6c7e70591fee081b64447dda1c1c4b681c9974d928b13"
+    },
+    "pstack/skills/poteto-mode/playbooks/eval.md": {
+      "sha256": "b862bfa2fae2399abf047a8e80d3e3dddb64003af96fb1cebb625216131e36bb"
+    },
+    "pstack/skills/poteto-mode/playbooks/feature.md": {
+      "sha256": "3a62cc4a8cbcf144bb9dd05f05420a15be0d38b784d3b141bb730a5852f50a62"
+    },
+    "pstack/skills/poteto-mode/playbooks/hillclimb.md": {
+      "sha256": "244f289898fe67a458065e90fe8217c916c5acf61cdee8975ade3f9831a12e91"
+    },
+    "pstack/skills/poteto-mode/playbooks/investigation.md": {
+      "sha256": "dc66bcf6af3a074fc7f67aa5e12b93ef571a4fb4d8e17f2f1af5ae5359f42e46"
+    },
+    "pstack/skills/poteto-mode/playbooks/multi-phase-plan.md": {
+      "sha256": "27d310e3fc3937a60b8fcbe1318f9d249a7477a722907bf85b3e4eb3dc436b11"
+    },
+    "pstack/skills/poteto-mode/playbooks/opening-a-pr.md": {
+      "sha256": "ab40de7163c1c6e274f46ee559b2e53ef45673703f601f13f4931c199e6fb90f"
+    },
+    "pstack/skills/poteto-mode/playbooks/orchestrate.md": {
+      "sha256": "d42b4375f1bd4ce23da0b575a198571a2117df7eea10c3c9fc6d92ae1053f7be"
+    },
+    "pstack/skills/poteto-mode/playbooks/pause-safely.md": {
+      "sha256": "77968cfe5f4a71a8cd33e0ae8ffcdbd88dd693a212c240457773e6c40c96c21d"
+    },
+    "pstack/skills/poteto-mode/playbooks/perf-issue.md": {
+      "sha256": "2b88ad0f880e4d4d755ac19fe52414d6631d6baa816d060f53cf0a7429d7e14a"
+    },
+    "pstack/skills/poteto-mode/playbooks/prototype.md": {
+      "sha256": "7aa1f52c691c3d46d5afc527b23f90977fce869ce33573c73c81a4c7f0cde962"
+    },
+    "pstack/skills/poteto-mode/playbooks/refactoring.md": {
+      "sha256": "50f4f7d3d301551f8b8a57c3303c99958c5ca630ae0d0051823b6987c0eb5b96"
+    },
+    "pstack/skills/poteto-mode/playbooks/runtime-forensics.md": {
+      "sha256": "594f02c40c243a346e1f57b688ecf2ed5e882f21b3d24ed2204d1ac6f1c24a8a"
+    },
+    "pstack/skills/poteto-mode/playbooks/session-pickup.md": {
+      "sha256": "1604fb463f7c7410d43fa024ca76c1c1824c166a01fd69d61f073d06fdca2a47"
+    },
+    "pstack/skills/poteto-mode/playbooks/shipping.md": {
+      "sha256": "19f3f6803a7bbe9ff04f624b03e3b55f07ac0a05e991aa00d5fe51239b920b2a"
+    },
+    "pstack/skills/poteto-mode/playbooks/trace-forensics.md": {
+      "sha256": "137ce3984fb96e45971fdff4d3c79fa4ccc647c5b30ae4945783b9fb23f8cec7"
+    },
+    "pstack/skills/poteto-mode/playbooks/visual-parity.md": {
+      "sha256": "950ca51999a6454c98eee6bcbc3d1bbe501a4e3a5d5439b6f6ddc378991b256c"
+    },
+    "pstack/skills/poteto-mode/playbooks/worktree-cleanup.md": {
+      "sha256": "fc464dc4121926df1704f483c5feca83717c0a40b4651d3e11bd3aedd89441b6"
+    }
+  },
+  "owner_path": ".agents/skills/poteto-mode",
+  "adapted_snapshot": "Reviewed uncommitted local spike; exact bytes identified by file hashes"
+}
