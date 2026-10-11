@@ -46,7 +46,7 @@ import { forkParked, forkParkedFiber } from "./serverActivation.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import { isOriginRemoteName } from "./fork/originOnlySourceControlPolicy.ts";
+import { isOriginRemoteName } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 import {
   formatHeadlessServeOutput,
   formatHostForUrl,

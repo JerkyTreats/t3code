@@ -24,6 +24,8 @@ The owner is `.agents/skills/poteto-mode/`. `SKILL.md` owns routing and task con
 
 The web app, Electron desktop and Thread client share this composer. Native mobile has a separate composer and is outside this bounded spike. Codex supports native dollar invocation; Claude, Cursor, Grok, OpenCode and Antigravity remain unavailable in this toggle until their invocation contracts are adapted. Local, hosted, remote and tunnel web clients use the selected environment's catalog; no server address is embedded. Mode state stays on this client and does not synchronize between devices. Multi-model draft fanout requires turning it off.
 
+`potetoMode.ts` also owns submission applicability and the on/off selection transition. The composer supplies current input and catalog values rather than repeating policy for answers, queued edits or commands. `chatComposerPresentation.tsx` chooses compact toolbar and floating placement. Replacement-host tests execute those decisions independently of the composer.
+
 `packages/client-runtime/src/fork/potetoMessage.ts` owns display-only removal of a leading invocation line when message content follows it. The shared user-message presentation and web timeline consume it, including native mobile history. Stored text and provider input remain unchanged; inline mentions and standalone invocations remain visible.
 
 There is no provider wire change or system-prompt injector. The reviewed global skill snapshot provides invocation outside this checkout and is not part of the app bundle. The toggle cannot enable an absent skill and does not install provider plugins. The unchanged community-derived bundle retains its existing security lock.

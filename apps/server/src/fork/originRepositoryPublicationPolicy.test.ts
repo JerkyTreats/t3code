@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { ChildProcessSpawner } from "effect/process";
@@ -11,7 +12,7 @@ import type * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 const endpoint = "https://git.example.test:8443";
 const origin = `${endpoint}/acme/web.git`;
 const target = publicationRepositoryTarget({
-  provider: "github",
+  provider: SourceControlProviderKind.make("github"),
   providerBaseUrl: endpoint,
   repository: "acme/web",
 })!;
@@ -35,7 +36,7 @@ it.effect.each([
   Effect.gen(function* () {
     const input = {
       cwd: "/replacement",
-      provider: "github" as const,
+      provider: SourceControlProviderKind.make("github"),
       remoteName: scenario === "requested-remote" ? "upstream" : "origin",
     };
     const hasOrigin = scenario === "push-urls" || scenario === "fetch-rewrite";
@@ -88,7 +89,7 @@ it.effect("replacement publication host validates both returned clone transports
     assert.deepStrictEqual(
       yield* validateRepositoryCloneUrls({
         operation: "lookupRepository",
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         requestedTarget: target,
         urls,
       }),
@@ -96,7 +97,7 @@ it.effect("replacement publication host validates both returned clone transports
     );
     const error = yield* validateRepositoryCloneUrls({
       operation: "publishRepository",
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       requestedTarget: target,
       urls: { ...urls, sshUrl: "ssh://git@git.example.test:9443/acme/web.git" },
     }).pipe(Effect.flip);

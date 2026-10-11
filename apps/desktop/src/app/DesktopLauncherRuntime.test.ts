@@ -1,4 +1,4 @@
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DesktopLauncherHandoffAck,
@@ -135,7 +135,7 @@ describe("DesktopLauncherRuntime", () => {
             runningUnderArm64Translation: false,
           }).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))));
           const runtimeLayer = DesktopLauncherRuntime.layer.pipe(
-            Layer.provide(Layer.succeed(HostProcessEnvironment, hostEnvironment)),
+            Layer.provide(Layer.succeed(HostProcess.Environment, hostEnvironment)),
             Layer.provideMerge(environmentLayer),
             Layer.provideMerge(NodeServices.layer),
           );
@@ -256,7 +256,7 @@ describe("DesktopLauncherRuntime", () => {
         const runtime = yield* DesktopLauncherRuntime.DesktopLauncherRuntime.pipe(
           Effect.provide(
             DesktopLauncherRuntime.layer.pipe(
-              Layer.provide(Layer.succeed(HostProcessEnvironment, hostEnvironment)),
+              Layer.provide(Layer.succeed(HostProcess.Environment, hostEnvironment)),
               Layer.provideMerge(environmentLayer),
               Layer.provideMerge(NodeServices.layer),
             ),

@@ -1,3 +1,10 @@
+import {
+  selectOriginUpstream,
+  originSameNameUpstream,
+  originStatusTracking,
+  originStatusFallbackRef,
+} from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
+import { requireLiteralOrigin } from "../fork/originGitPolicy.ts";
 import * as Cache from "effect/Cache";
 import * as Data from "effect/Data";
 import * as Crypto from "effect/Crypto";
@@ -29,9 +36,10 @@ import {
   type VcsRef,
 } from "@t3tools/contracts";
 import { dedupeRemoteBranchesWithLocalMatches, normalizeGitRemoteUrl } from "@t3tools/shared/git";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
+import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { resolveProjectFileBackedSetting } from "@t3tools/shared/projectSettings";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
@@ -47,7 +55,10 @@ import {
   requireOriginTracking,
   requireOriginRequestedRemote,
 } from "../fork/originGitPolicy.ts";
-import { isOriginRemoteName, ORIGIN_REMOTE_NAME } from "../fork/originOnlySourceControlPolicy.ts";
+import {
+  isOriginRemoteName,
+  ORIGIN_REMOTE_NAME,
+} from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 import * as ServerConfig from "../config.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -950,7 +961,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const { worktreesDir } = yield* ServerConfig.ServerConfig;
   const crypto = yield* Crypto.Crypto;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
 
   const executeRaw: GitVcsDriver.GitVcsDriver["Service"]["execute"] = Effect.fnUntraced(
     function* (input) {
@@ -983,11 +994,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           ...input.env,
           ...trace2Monitor.env,
         };
+        const spawnEnv = { ...env, ...windowsLongPathConfigEnv(hostPlatform, env) };
+        const resolved = yield* resolveSpawnCommand("git", [], { env: spawnEnv });
+        // A git.cmd wrapper would need cmd.exe, which cuts multi-line commit
+        // messages at the first newline; leave that case to Node's lookup.
+        const executable = resolved.shell ? "git" : resolved.command;
         const child = yield* commandSpawner
           .spawn(
-            ChildProcess.make("git", commandInput.args, {
+            ChildProcess.make(executable, commandInput.args, {
               cwd: commandInput.cwd,
-              env: { ...env, ...windowsLongPathConfigEnv(hostPlatform, env) },
+              env: spawnEnv,
             }),
           )
           .pipe(
@@ -1257,9 +1273,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     cwd: string,
   ) {
     const configuredUpstream = yield* resolveCurrentUpstream(cwd);
-    if (configuredUpstream && isOriginRemoteName(configuredUpstream.remoteName)) {
-      return configuredUpstream;
-    }
+    const admittedUpstream = selectOriginUpstream(configuredUpstream);
+    if (admittedUpstream) return admittedUpstream;
 
     const branchName = yield* runGitStdout(
       "GitVcsDriver.resolveProductOriginUpstream.branch",
@@ -1276,13 +1291,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ["show-ref", "--verify", "--quiet", `refs/remotes/${originRef}`],
       { allowNonZeroExit: true },
     );
-    return originRefResult.exitCode === 0
-      ? {
-          upstreamRef: originRef,
-          remoteName: ORIGIN_REMOTE_NAME,
-          branchName,
-        }
-      : null;
+    return originSameNameUpstream(branchName, originRefResult.exitCode === 0);
   });
 
   const fetchRemoteForStatus = (
@@ -1604,17 +1613,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   });
 
   const resolvePrimaryRemoteName = Effect.fn("resolvePrimaryRemoteName")(function* (cwd: string) {
-    if (yield* originRemoteExists(cwd)) {
-      return "origin";
-    }
-    return yield* new GitCommandError({
-      ...gitCommandContext({
-        operation: "GitVcsDriver.resolvePrimaryRemoteName",
-        cwd,
-        args: ["remote"],
-      }),
-      detail: "Origin-only policy requires a literal origin remote.",
-    });
+    return yield* requireLiteralOrigin(cwd, yield* originRemoteExists(cwd));
   });
 
   const ensureRemote: GitVcsDriver.GitVcsDriver["Service"]["ensureRemote"] = Effect.fn(
@@ -2038,11 +2037,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         upstreamRef,
         remoteNames.toSorted((left, right) => right.length - left.length),
       );
-      if (!parsedUpstream || !isOriginRemoteName(parsedUpstream.remoteName)) {
-        upstreamRef = null;
-        aheadCount = 0;
-        behindCount = 0;
-      }
+      ({ upstreamRef, aheadCount, behindCount } = originStatusTracking({
+        upstreamRef,
+        parsedRemoteName: parsedUpstream?.remoteName ?? null,
+        aheadCount,
+        behindCount,
+      }));
     }
 
     if (!upstreamRef && refName && hasPrimaryRemote) {
@@ -2051,8 +2051,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         remoteName: ORIGIN_REMOTE_NAME,
         refName,
       }).pipe(Effect.orElseSucceed(() => false));
-      if (hasOriginBranch) {
-        upstreamRef = `${ORIGIN_REMOTE_NAME}/${refName}`;
+      const fallbackRef = originStatusFallbackRef(refName, hasPrimaryRemote, hasOriginBranch);
+      if (fallbackRef) {
+        upstreamRef = fallbackRef;
         const divergence = yield* executeGit(
           "GitVcsDriver.statusDetails.originDivergence",
           cwd,
@@ -2596,6 +2597,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       {
         timeoutMs: 30_000,
         fallbackErrorDetail: "git pull failed",
+        appendTruncationMarker: true,
       },
     );
     const afterSha = yield* runGitStdout(
@@ -2739,7 +2741,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       "hash-object",
       "-t",
       "tree",
-      (yield* HostProcessPlatform) === "win32" ? "NUL" : "/dev/null",
+      (yield* HostProcess.Platform) === "win32" ? "NUL" : "/dev/null",
     ]);
     return stdout.trim();
   });
@@ -3486,6 +3488,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         options?.worktreesDirectory ?? "",
         worktreesDir,
         path,
+        yield* HostProcess.HomeDirectory,
       );
       if (parentDir === null) {
         return yield* new GitCommandError({

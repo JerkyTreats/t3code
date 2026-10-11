@@ -1,7 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no incremental digest; stream database backups without buffering the whole file.
 import * as NodeCrypto from "node:crypto";
 
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -50,7 +50,7 @@ const syncFile = Effect.fn("Migration42Backup.syncFile")(function* (filePath: st
 const syncDirectory = Effect.fn("Migration42Backup.syncDirectory")(function* (
   directoryPath: string,
 ) {
-  if ((yield* HostProcessPlatform) === "win32") return;
+  if ((yield* HostProcess.Platform) === "win32") return;
   yield* syncFile(directoryPath);
 });
 

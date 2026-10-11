@@ -26,13 +26,15 @@ export function shouldFloatComposerRuntimeControl(input: {
   isApprovalState: boolean;
   hasPendingInput: boolean;
   noProviderAvailable: boolean;
+  controlsCompact: boolean;
 }): boolean {
   return (
     !input.isMobileViewport &&
     !input.isResting &&
     !input.isApprovalState &&
     !input.hasPendingInput &&
-    !input.noProviderAvailable
+    !input.noProviderAvailable &&
+    !input.controlsCompact
   );
 }
 

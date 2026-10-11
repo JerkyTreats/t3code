@@ -5,65 +5,9 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import type { ServerInstallation } from "@t3tools/contracts";
-import {
-  HostProcessArguments,
-  HostProcessEnvironment,
-  HostProcessExecutablePath,
-  HostProcessIsExecutable,
-  HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isCommandAvailable } from "@t3tools/shared/shell";
-
-export type CliRunner = "npx" | "pnpm dlx" | "bunx";
-
-/**
- * Detect public package-runner cache entries so follow-up guidance can reuse
- * the already-running bytes without asking the runner to resolve T3 again.
- */
-function detectCliRunner(entryPath: string): CliRunner | null {
-  const path = entryPath.replaceAll("\\", "/");
-  if (path.includes("/_npx/")) {
-    return "npx";
-  }
-  if (
-    path.includes("/pnpm/dlx/") ||
-    path.includes("/.pnpm/dlx/") ||
-    path.includes("/pnpm-cache/dlx/")
-  ) {
-    return "pnpm dlx";
-  }
-  if (path.includes("/.bun/install/cache/") || path.includes("/bunx-")) {
-    return "bunx";
-  }
-  return null;
-}
-
-/** Quote one copyable argument for the host's ordinary interactive shell. */
-function quoteShellWord(word: string, platform: NodeJS.Platform): string {
-  const safeWord = platform === "win32" ? /^[\w./:\\@=-]+$/u : /^[\w./:@=-]+$/u;
-  if (safeWord.test(word)) return word;
-  return platform === "win32"
-    ? `'${word.replaceAll("'", "''")}'`
-    : `'${word.replaceAll("'", "'\\''")}'`;
-}
-
-function formatExplicitNodeInvocation(input: {
-  readonly executablePath: string;
-  readonly entryPath: string;
-  readonly subcommand: string;
-  readonly platform: NodeJS.Platform;
-}): string {
-  const executable = quoteShellWord(input.executablePath, input.platform);
-  const executableCommand =
-    input.platform === "win32" && executable !== input.executablePath
-      ? `& ${executable}`
-      : executable;
-  return [
-    executableCommand,
-    quoteShellWord(input.entryPath, input.platform),
-    quoteShellWord(input.subcommand, input.platform),
-  ].join(" ");
-}
+import { detectCliRunner, formatCliCommand } from "./officialRuntimeInvocation.ts";
 
 const InstallManifest = Schema.Struct({
   name: Schema.String,
@@ -77,10 +21,10 @@ const decodeInstallManifest = Schema.decodeUnknownEffect(Schema.fromJsonString(I
 export const resolveServerInstallation = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const args = yield* HostProcessArguments;
-  const executable = yield* HostProcessIsExecutable;
-  const executablePath = yield* HostProcessExecutablePath;
-  const platform = yield* HostProcessPlatform;
+  const args = yield* HostProcess.Arguments;
+  const executable = yield* HostProcess.IsExecutable;
+  const executablePath = yield* HostProcess.ExecutablePath;
+  const platform = yield* HostProcess.Platform;
   const entry = yield* fs.realPath(executable ? executablePath : (args[1] ?? ""));
   const match =
     /^(.*)\/lib\/node_modules\/t3\/(?:dist\/bin\.mjs|bin\/t3\.js|node_modules\/@t3code\/t3-[^/]+\/t3)$/.exec(
@@ -127,33 +71,11 @@ export const resolveServerInstallation = Effect.gen(function* () {
   return { kind: "npm-global", prefix } satisfies ServerInstallation;
 }).pipe(Effect.orElseSucceed(() => null));
 
-/**
- * Render a follow-up command without creating a new public-registry T3
- * resolution. Installed runtimes keep the normal `t3` command. A process that
- * came from a transient package runner instead names its current executable
- * and entry script exactly, with host-shell quoting.
- */
-export function formatCliCommand(input: {
-  readonly subcommand: string;
-  readonly executablePath: string;
-  readonly entryPath: string;
-  readonly platform: NodeJS.Platform;
-}): string {
-  if (
-    detectCliRunner(input.entryPath) === null ||
-    input.executablePath.length === 0 ||
-    input.entryPath.length === 0
-  ) {
-    return `t3 ${quoteShellWord(input.subcommand, input.platform)}`;
-  }
-  return formatExplicitNodeInvocation(input);
-}
-
 /** `formatCliCommand` against this process's real executable and entry path. */
 export const resolveCliCommand = (subcommand: string) =>
   Effect.gen(function* () {
-    const processArguments = yield* HostProcessArguments;
-    const platform = yield* HostProcessPlatform;
+    const processArguments = yield* HostProcess.Arguments;
+    const platform = yield* HostProcess.Platform;
     return formatCliCommand({
       subcommand,
       executablePath: processArguments[0] ?? "",
@@ -173,18 +95,18 @@ const shellWord = (value: string) =>
  */
 const resolveInstallLauncher = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
-  const shim = (yield* HostProcessEnvironment).T3CODE_CLI_PATH?.trim();
+  const shim = (yield* HostProcess.Environment).T3CODE_CLI_PATH?.trim();
   if (shim && (yield* fs.exists(shim).pipe(Effect.orElseSucceed(() => false)))) {
     return Option.some(shim);
   }
-  return (yield* HostProcessIsExecutable)
-    ? Option.some(yield* HostProcessExecutablePath)
+  return (yield* HostProcess.IsExecutable)
+    ? Option.some(yield* HostProcess.ExecutablePath)
     : Option.none<string>();
 });
 
 /**
  * `t3 <subcommand>` for a person to run on this host: `t3` when it is on PATH,
- * the package runner this process came from, or else the absolute path of the
+ * the current executable and entry, or else the absolute path of the
  * launcher for this install, such as the one the desktop app installs.
  */
 const resolveHostCliCommand = (subcommand: string) =>
@@ -216,7 +138,7 @@ export const resolveRootCliCommand = (subcommand: string) =>
   Effect.gen(function* () {
     const { command, launcher } = yield* resolveHostCliCommand(subcommand);
     if (launcher) return `sudo ${command}`;
-    const executablePath = yield* HostProcessExecutablePath;
+    const executablePath = yield* HostProcess.ExecutablePath;
     const systemNode = ROOT_PATH_DIRECTORIES.some((directory) =>
       executablePath.startsWith(`${directory}/`),
     );

@@ -7,6 +7,7 @@ import {
   resolveEarlyManagedLinuxIdentity,
   resolveStandaloneDesktopIdentity,
   resolveStandaloneUserDataPath,
+  standaloneDesktopRegistration,
   type StandaloneDesktopInput,
 } from "./StandaloneDesktopPolicy.ts";
 
@@ -33,6 +34,39 @@ const identity = (overrides: Partial<StandaloneDesktopInput> = {}) =>
   }).pipe(Effect.provide(NodePath.layerPosix));
 
 describe("StandaloneDesktopPolicy", () => {
+  it("preserves installed registration through replacement early and ready hosts", () => {
+    const calls: string[] = [];
+    const replacementHost = (host: "pre-ready" | "ready", managedStandalone: boolean) => {
+      if (standaloneDesktopRegistration({ managedStandalone }) === "register-runtime") {
+        calls.push(`${host}:write-entry`, `${host}:register-protocol`);
+      }
+    };
+    for (const [channel, displayName] of [
+      ["production", "T3 Code"],
+      ["staging", "T3 Code (Staging)"],
+    ]) {
+      const managed = resolveEarlyManagedLinuxIdentity(
+        { T3CODE_DESKTOP_CHANNEL: channel, T3CODE_DESKTOP_DISPLAY_NAME: displayName },
+        false,
+      );
+      expect(managed).not.toBeNull();
+      replacementHost("pre-ready", managed !== null);
+      replacementHost("ready", managed !== null);
+    }
+    expect(calls).toEqual([]);
+    const mismatched = resolveEarlyManagedLinuxIdentity(
+      { T3CODE_DESKTOP_CHANNEL: "staging", T3CODE_DESKTOP_DISPLAY_NAME: "T3 Code" },
+      false,
+    );
+    replacementHost("pre-ready", mismatched !== null);
+    replacementHost("ready", false);
+    expect(calls).toEqual([
+      "pre-ready:write-entry",
+      "pre-ready:register-protocol",
+      "ready:write-entry",
+      "ready:register-protocol",
+    ]);
+  });
   it("selects the matching installed Linux identity before Electron is ready", () => {
     for (const [channel, displayName, desktopName, wmClass] of [
       ["production", "T3 Code", "t3code.desktop", "t3code"],

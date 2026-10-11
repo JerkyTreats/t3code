@@ -133,6 +133,14 @@ describe("ssh tunnel scripts", () => {
     assert.include(script, 'exec node "$T3_NODE_SCRIPT_PATH" "$@"');
   });
 
+  it("embeds the runner in the launch script byte for byte", () => {
+    for (const options of [{}, { nodeScriptPath: "/workspace/project/apps/server/dist/bin.mjs" }]) {
+      const runner = SshTunnel.buildRemoteT3RunnerScript(options);
+      assert.include(SshTunnel.buildRemoteLaunchScript(options), runner);
+      assert.notInclude(runner, "T3_ARCHIVE_VERSION");
+    }
+  });
+
   it("uses the remote t3 runner for launch and pairing scripts", () => {
     const stateKey = "711bc738002d72fd";
 

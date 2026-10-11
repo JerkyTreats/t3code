@@ -1,119 +1,15 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, expect, it } from "@effect/vitest";
-import {
-  HostProcessArguments,
-  HostProcessEnvironment,
-  HostProcessExecutablePath,
-  HostProcessIsExecutable,
-  HostProcessPlatform,
-} from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import {
-  formatCliCommand,
+  resolveCliCommand,
   resolveRootCliCommand,
   resolveServerInstallation,
 } from "./invocation.ts";
-
-it("reuses package-runner bytes through an explicit POSIX invocation", () => {
-  for (const entryPath of [
-    "/workspace/.npm/_npx/abc123/node_modules/t3/dist/bin.mjs",
-    "/workspace/.cache/pnpm/dlx/abc/node_modules/t3/dist/bin.mjs",
-    "/workspace/.local/share/pnpm/.pnpm/dlx/abc/node_modules/t3/dist/bin.mjs",
-    "/workspace/.bun/install/cache/t3@0.0.31/dist/bin.mjs",
-    "/tmp/bunx-1000-t3@latest/node_modules/t3/dist/bin.mjs",
-  ]) {
-    const command = formatCliCommand({
-      subcommand: "serve",
-      executablePath: "/opt/node/bin/node",
-      entryPath,
-      platform: "linux",
-    });
-    assert.equal(command, `/opt/node/bin/node ${entryPath} serve`);
-    assert.notMatch(command, /^(?:npx|bunx|pnpm\s+dlx)\s/u);
-  }
-});
-
-it("quotes an explicit current executable and entry for POSIX shells", () => {
-  assert.equal(
-    formatCliCommand({
-      subcommand: "serve",
-      executablePath: "/opt/Node Runtime/bin/node",
-      entryPath: "/workspace/T3 Cache/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
-      platform: "darwin",
-    }),
-    "'/opt/Node Runtime/bin/node' '/workspace/T3 Cache/.npm/_npx/abc/node_modules/t3/dist/bin.mjs' serve",
-  );
-  assert.equal(
-    formatCliCommand({
-      subcommand: "serve",
-      executablePath: "/opt/Node's Runtime/bin/node",
-      entryPath: "/workspace/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
-      platform: "linux",
-    }),
-    "'/opt/Node'\\''s Runtime/bin/node' /workspace/.npm/_npx/abc/node_modules/t3/dist/bin.mjs serve",
-  );
-});
-
-it("quotes an explicit current executable and entry for PowerShell", () => {
-  for (const entryPath of [
-    String.raw`C:\Users\User Name\npm-cache\_npx\abc\node_modules\t3\dist\bin.mjs`,
-    String.raw`C:\Users\User Name\pnpm-cache\dlx\abc\node_modules\t3\dist\bin.mjs`,
-    String.raw`C:\Users\User Name\Temp\bunx-0-t3@latest\node_modules\t3\dist\bin.mjs`,
-  ]) {
-    assert.equal(
-      formatCliCommand({
-        subcommand: "serve",
-        executablePath: String.raw`C:\Program Files\nodejs\node.exe`,
-        entryPath,
-        platform: "win32",
-      }),
-      `& 'C:\\Program Files\\nodejs\\node.exe' '${entryPath}' serve`,
-    );
-  }
-  assert.equal(
-    formatCliCommand({
-      subcommand: "serve",
-      executablePath: String.raw`C:\Node's Runtime\node.exe`,
-      entryPath: String.raw`C:\Cache\_npx\abc\node_modules\t3\dist\bin.mjs`,
-      platform: "win32",
-    }),
-    String.raw`& 'C:\Node''s Runtime\node.exe' C:\Cache\_npx\abc\node_modules\t3\dist\bin.mjs serve`,
-  );
-});
-
-it("keeps installed and checkout runtimes on the authorized t3 command", () => {
-  for (const entryPath of [
-    "/usr/local/lib/node_modules/t3/dist/bin.mjs",
-    "/workspace/t3code/apps/server/dist/bin.mjs",
-    "/workspace/.t3/runtime/0.0.31/node_modules/t3/dist/bin.mjs",
-    "",
-  ]) {
-    assert.equal(
-      formatCliCommand({
-        subcommand: "serve",
-        executablePath: "/usr/bin/node",
-        entryPath,
-        platform: "linux",
-      }),
-      "t3 serve",
-    );
-  }
-});
-
-it("quotes the bounded subcommand instead of interpreting shell syntax", () => {
-  assert.equal(
-    formatCliCommand({
-      subcommand: "serve; echo unexpected",
-      executablePath: "/usr/bin/node",
-      entryPath: "/workspace/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
-      platform: "linux",
-    }),
-    "/usr/bin/node /workspace/.npm/_npx/abc/node_modules/t3/dist/bin.mjs 'serve; echo unexpected'",
-  );
-});
 
 it.layer(NodeServices.layer)("root CLI commands", (it) => {
   /** `sudo t3 browser setup` as this process would render it, with `t3` on PATH or not. */
@@ -125,11 +21,11 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
     readonly executable?: boolean;
   }) =>
     resolveRootCliCommand("browser setup").pipe(
-      Effect.provideService(HostProcessExecutablePath, input.node),
-      Effect.provideService(HostProcessArguments, [input.node, input.entry]),
-      Effect.provideService(HostProcessIsExecutable, input.executable ?? false),
-      Effect.provideService(HostProcessPlatform, "linux"),
-      Effect.provideService(HostProcessEnvironment, { PATH: input.path ?? "", ...input.env }),
+      Effect.provideService(HostProcess.ExecutablePath, input.node),
+      Effect.provideService(HostProcess.Arguments, [input.node, input.entry]),
+      Effect.provideService(HostProcess.IsExecutable, input.executable ?? false),
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(HostProcess.Environment, { PATH: input.path ?? "", ...input.env }),
     );
 
   /** A directory holding an executable `t3`, to stand in for one on PATH. */
@@ -215,9 +111,9 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
         yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
         yield* fs.writeFileString(entry, "");
         const installation = yield* resolveServerInstallation.pipe(
-          Effect.provideService(HostProcessArguments, ["node", entry]),
-          Effect.provideService(HostProcessExecutablePath, entry),
-          Effect.provideService(HostProcessIsExecutable, entry.endsWith("/t3")),
+          Effect.provideService(HostProcess.Arguments, ["node", entry]),
+          Effect.provideService(HostProcess.ExecutablePath, entry),
+          Effect.provideService(HostProcess.IsExecutable, entry.endsWith("/t3")),
         );
         expect(installation).toEqual({ kind });
       }
@@ -241,9 +137,9 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
         '{"name":"t3","version":"0.0.45","bin":{"t3":"./dist/bin.mjs"}}',
       );
       const resolve = resolveServerInstallation.pipe(
-        Effect.provideService(HostProcessArguments, ["node", entry]),
-        Effect.provideService(HostProcessIsExecutable, false),
-        Effect.provideService(HostProcessPlatform, "linux"),
+        Effect.provideService(HostProcess.Arguments, ["node", entry]),
+        Effect.provideService(HostProcess.IsExecutable, false),
+        Effect.provideService(HostProcess.Platform, "linux"),
       );
       expect(yield* resolve).toBeNull();
       yield* fs.symlink(entry, globalBin);
@@ -251,7 +147,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       yield* fs.remove(globalBin);
       yield* fs.writeFileString(globalBin, "an unrelated t3 command");
       expect(yield* resolve).toBeNull();
-      expect(yield* resolve.pipe(Effect.provideService(HostProcessPlatform, "win32"))).toBeNull();
+      expect(yield* resolve.pipe(Effect.provideService(HostProcess.Platform, "win32"))).toBeNull();
     }),
   );
 
@@ -275,9 +171,9 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
       );
       yield* fs.symlink(launcher, path.join(prefix, "bin/t3"));
       const resolve = resolveServerInstallation.pipe(
-        Effect.provideService(HostProcessExecutablePath, entry),
-        Effect.provideService(HostProcessIsExecutable, true),
-        Effect.provideService(HostProcessPlatform, "linux"),
+        Effect.provideService(HostProcess.ExecutablePath, entry),
+        Effect.provideService(HostProcess.IsExecutable, true),
+        Effect.provideService(HostProcess.Platform, "linux"),
       );
       for (const [version, expected] of [
         ["0.0.44", null],
@@ -310,11 +206,28 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
         }
         expect(
           yield* resolveServerInstallation.pipe(
-            Effect.provideService(HostProcessArguments, ["node", entry]),
-            Effect.provideService(HostProcessIsExecutable, false),
+            Effect.provideService(HostProcess.Arguments, ["node", entry]),
+            Effect.provideService(HostProcess.IsExecutable, false),
           ),
         ).toBeNull();
       }
     }),
   );
 });
+
+it.effect(
+  "uses current HostProcess arguments and platform for registry-free follow-up guidance",
+  () =>
+    Effect.gen(function* () {
+      assert.equal(
+        yield* resolveCliCommand("serve"),
+        "'/opt/Node Runtime/bin/node' '/workspace/T3 Cache/.npm/_npx/abc/node_modules/t3/dist/bin.mjs' serve",
+      );
+    }).pipe(
+      Effect.provideService(HostProcess.Arguments, [
+        "/opt/Node Runtime/bin/node",
+        "/workspace/T3 Cache/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
+      ]),
+      Effect.provideService(HostProcess.Platform, "linux"),
+    ),
+);

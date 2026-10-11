@@ -130,6 +130,13 @@ export function isStandaloneDesktop(environment: {
   return Option.isSome(environment.standaloneServerUrl ?? Option.none());
 }
 
+/** Managed Code keeps the launch entry and scheme default published by its installer. */
+export function standaloneDesktopRegistration(input: {
+  readonly managedStandalone: boolean;
+}): "preserve-installer" | "register-runtime" {
+  return input.managedStandalone ? "preserve-installer" : "register-runtime";
+}
+
 /** Managed Code retains its installer-owned Chromium profile across runtime upgrades. */
 export function resolveStandaloneUserDataPath(input: {
   readonly standaloneServerUrl?: Option.Option<URL>;

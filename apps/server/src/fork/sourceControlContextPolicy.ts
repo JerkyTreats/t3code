@@ -1,24 +1,30 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
+import {
+  PullRequestOperationError,
+  PullRequestUnavailableError,
+  type PullRequestRef,
+} from "@t3tools/contracts";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
 import {
   azureDevOpsRepositoryTargetFromOrigin,
   azureDevOpsRepositoryTargetFromRemoteUrl,
-} from "../sourceControl/AzureDevOpsRepositoryTarget.ts";
-import type { RepositoryIdentity, SourceControlProviderKind } from "@t3tools/contracts";
-import { gitLabRepositoryTargetFromOrigin } from "../sourceControl/GitLabRepositoryTarget.ts";
+} from "@t3tools/source-control-core/server/fork/AzureDevOpsRepositoryTarget";
+import type { RepositoryIdentity } from "@t3tools/contracts";
+import { gitLabRepositoryTargetFromOrigin } from "@t3tools/source-control-core/server/fork/GitLabRepositoryTarget";
 import { SourceControlProviderError, pullRequestHostOf } from "@t3tools/contracts";
 import { normalizeGitRemoteMutationTarget, normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import * as Effect from "effect/Effect";
-import * as SourceControlProvider from "../sourceControl/SourceControlProvider.ts";
+import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import type * as OriginRepositoryMutationAuthority from "./OriginRepositoryMutationAuthority.ts";
-import { isOriginRemoteName } from "./originOnlySourceControlPolicy.ts";
+import { isOriginRemoteName } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 import type { SourceControlProviderInfo } from "@t3tools/contracts";
 import {
   isSshRemoteUrl,
   detectSourceControlProviderFromRemoteUrl,
 } from "@t3tools/shared/sourceControl";
 
-import { selectOriginRemote } from "./originOnlySourceControlPolicy.ts";
+import { selectOriginRemote } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 
 export interface SourceControlRemoteCandidate {
   readonly name: string;
@@ -29,6 +35,85 @@ export interface SourceControlContextCandidate {
   readonly provider: SourceControlProviderInfo;
   readonly remoteName: string;
   readonly remoteUrl: string;
+}
+
+export function requireSelectedOriginProject<
+  A extends { readonly repository: string; readonly host: string },
+>(
+  project: A | undefined,
+  ref: PullRequestRef,
+): Effect.Effect<A, PullRequestOperationError | PullRequestUnavailableError> {
+  if (project === undefined)
+    return Effect.fail(new PullRequestUnavailableError({ reason: "provider-unsupported" }));
+  const host = ref.host?.trim().toLowerCase();
+  return project.repository.toLowerCase() === ref.repository.trim().toLowerCase() &&
+    (host === undefined || host === project.host)
+    ? Effect.succeed(project)
+    : Effect.fail(
+        new PullRequestOperationError({
+          operation: "resolveRepository",
+          detail: "The change request does not belong to the selected project's origin repository.",
+        }),
+      );
+}
+
+export function requireProjectedOriginIdentity(
+  identity: RepositoryIdentity | null | undefined,
+): Effect.Effect<RepositoryIdentity, PullRequestOperationError> {
+  return identity != null && isOriginRemoteName(identity.locator.remoteName)
+    ? Effect.succeed(identity)
+    : Effect.fail(
+        new PullRequestOperationError({
+          operation: "authorizeMutation",
+          detail: "The selected project has no exact origin repository identity.",
+        }),
+      );
+}
+
+export function requireOriginCreationRepository(
+  cwd: string,
+  remotes: ReadonlyArray<SourceControlRemoteCandidate>,
+): Effect.Effect<
+  {
+    readonly origin: SourceControlRemoteCandidate;
+    readonly expectedIdentity: RepositoryIdentity;
+  },
+  SourceControlProviderError
+> {
+  const origin = selectOriginRemote(remotes);
+  return origin
+    ? Effect.succeed({
+        origin,
+        expectedIdentity: {
+          canonicalKey: normalizeGitRemoteUrl(origin.url),
+          locator: { source: "git-remote", remoteName: origin.name, remoteUrl: origin.url },
+        },
+      })
+    : Effect.fail(
+        new SourceControlProviderError({
+          provider: SourceControlProviderKind.make("unknown"),
+          operation: "resolveChangeRequestHandle",
+          cwd,
+          detail: "Origin-only policy requires an origin remote before creating a change request.",
+        }),
+      );
+}
+
+export function requireSupportedOriginContext(
+  cwd: string,
+  context: SourceControlProvider.SourceControlProviderContext | null,
+): Effect.Effect<SourceControlProvider.SourceControlProviderContext, SourceControlProviderError> {
+  return context && context.provider.kind !== "unknown" && isOriginRemoteName(context.remoteName)
+    ? Effect.succeed(context)
+    : Effect.fail(
+        new SourceControlProviderError({
+          provider: SourceControlProviderKind.make("unknown"),
+          operation: "resolveChangeRequestHandle",
+          cwd,
+          detail:
+            "Origin-only policy could not identify a supported source-control provider for origin.",
+        }),
+      );
 }
 
 export function pickOriginSourceControlContext(
@@ -64,7 +149,7 @@ export function originProviderRefinementContext(
     return origin;
   return {
     ...origin,
-    provider: { ...origin.provider, kind: "unknown" },
+    provider: { ...origin.provider, kind: SourceControlProviderKind.make("unknown") },
     ...(requested.requestedHost === undefined ? {} : { requestedHost: requested.requestedHost }),
   };
 }
@@ -85,33 +170,6 @@ export function originContainsHostedLink(
     normalizeGitRemoteMutationTarget(context.remoteUrl) ===
     normalizeGitRemoteMutationTarget(`${url.origin}/${repositorySegments.join("/")}.git`)
   );
-}
-
-export function originForgejoChangeRequestNumber(
-  context: SourceControlProvider.SourceControlProviderContext | undefined,
-  reference: string,
-): string | null {
-  if (!context || !isOriginRemoteName(context.remoteName)) return null;
-  const [host, ...repositoryPath] = normalizeGitRemoteMutationTarget(context.remoteUrl).split("/");
-  if (!host || repositoryPath.length < 2) return null;
-  const selector = /^#?([1-9]\d*)$/u.exec(reference.trim());
-  if (selector?.[1]) return selector[1];
-  try {
-    const url = new URL(reference);
-    const prefix = `/${repositoryPath.join("/")}/pulls/`;
-    const match = url.pathname.startsWith(prefix)
-      ? /^([1-9]\d*)(?:\/(?:files|commits))?\/?$/u.exec(url.pathname.slice(prefix.length))
-      : null;
-    return (url.protocol === "http:" || url.protocol === "https:") &&
-      !url.username &&
-      !url.password &&
-      url.host.toLowerCase() === host.toLowerCase() &&
-      match?.[1]
-      ? match[1]
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 export function bindOriginProviderContext(
@@ -174,6 +232,7 @@ export function bindOriginProviderContext(
   });
 
   return SourceControlProvider.SourceControlProvider.of({
+    ...provider,
     kind: provider.kind,
     ...(provider.resolveLink === undefined ? {} : { resolveLink: provider.resolveLink }),
     listChangeRequests: (input) => provider.listChangeRequests(withContext(input)),

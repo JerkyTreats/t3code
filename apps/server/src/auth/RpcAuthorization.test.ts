@@ -33,8 +33,26 @@ import {
 import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it.each([
+    [WS_METHODS.serverRunStorageCleanup, AuthSettingsWriteScope],
+    [WS_METHODS.serverGetStorageCleanupReport, AuthOrchestrationReadScope],
+    [WS_METHODS.serverCheckOtlpEndpoint, AuthSettingsWriteScope],
+    [WS_METHODS.pullRequestsReviewGuide, AuthOrchestrationReadScope],
+    [WS_METHODS.pullRequestsGenerateReviewGuide, AuthOrchestrationOperateScope],
+    [WS_METHODS.pullRequestsReportState, AuthOrchestrationReadScope],
+    [WS_METHODS.filesystemGetMetadata, AuthFilesystemReadScope],
+  ] as const)("requires the exact scope for new upstream operation %s", (method, scope) => {
+    expect(requiredScopeForRpcMethod(method)).toBe(scope);
+  });
+
   it("declares exactly one scope for every RPC in the server group", () => {
     expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));
+  });
+
+  it("requires operate access to stop a workflow", () => {
+    expect(requiredScopeForRpcMethod(ORCHESTRATION_V2_WS_METHODS.stopWorkflow)).toBe(
+      AuthOrchestrationOperateScope,
+    );
   });
 
   it("authorizes background policy reporting and observation deliberately", () => {
@@ -215,7 +233,8 @@ it("assigns every v2 transport operation an explicit scope", () => {
   for (const method of Object.values(ORCHESTRATION_V2_WS_METHODS)) {
     expect(requiredScopeForRpcMethod(method)).toBe(
       method === ORCHESTRATION_V2_WS_METHODS.dispatchCommand ||
-        method === ORCHESTRATION_V2_WS_METHODS.launchThread
+        method === ORCHESTRATION_V2_WS_METHODS.launchThread ||
+        method === ORCHESTRATION_V2_WS_METHODS.stopWorkflow
         ? AuthOrchestrationOperateScope
         : AuthOrchestrationReadScope,
     );
@@ -455,5 +474,46 @@ it.effect("separates host file URLs from readable attachment URLs", () =>
       });
     }
     expect(handled).toBe(1);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("denies manual cleanup before the handler without settings permission", () =>
+  Effect.gen(function* () {
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (
+          tag,
+        ): tag is Exclude<
+          keyof typeof RPC_REQUIRED_SCOPES,
+          typeof WS_METHODS.serverRunStorageCleanup
+        > => tag !== WS_METHODS.serverRunStorageCleanup,
+      ),
+    );
+    let handled = false;
+    const client = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          group.toLayerHandler(WS_METHODS.serverRunStorageCleanup, () =>
+            Effect.sync(() => {
+              handled = true;
+              return {
+                trigger: "manual" as const,
+                startedAt: "2026-10-09T12:00:00.000Z",
+                finishedAt: "2026-10-09T12:00:00.000Z",
+                entries: [],
+                counts: { removed: 0, kept: 0, failed: 0 },
+                omittedCount: 0,
+                bytesFreed: 0,
+              };
+            }),
+          ),
+          RpcAuthorization.layer([AuthOrchestrationReadScope]),
+        ),
+      ),
+    );
+    expect(yield* client[WS_METHODS.serverRunStorageCleanup]({}).pipe(Effect.flip)).toMatchObject({
+      requiredPermission: AuthSettingsWriteScope,
+    });
+    expect(handled).toBe(false);
   }).pipe(Effect.scoped),
 );

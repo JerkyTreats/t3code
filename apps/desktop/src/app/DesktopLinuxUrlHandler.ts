@@ -10,7 +10,10 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
-import { isStandaloneDesktop } from "../fork/StandaloneDesktopPolicy.ts";
+import {
+  isStandaloneDesktop,
+  standaloneDesktopRegistration,
+} from "../fork/StandaloneDesktopPolicy.ts";
 import { makeComponentLogger } from "./DesktopObservability.ts";
 
 // Linux ships as an AppImage, so the .desktop entry users end up with is
@@ -221,7 +224,11 @@ export const make = Effect.gen(function* () {
   );
 
   const register = Effect.gen(function* () {
-    if (environment.platform !== "linux" || isStandaloneDesktop(environment)) {
+    if (
+      environment.platform !== "linux" ||
+      standaloneDesktopRegistration({ managedStandalone: isStandaloneDesktop(environment) }) ===
+        "preserve-installer"
+    ) {
       return;
     }
     yield* writeDesktopEntry;

@@ -1,7 +1,10 @@
 import { GitCommandError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { normalizeGitRemoteMutationTarget } from "@t3tools/shared/git";
-import { isOriginRemoteName, ORIGIN_REMOTE_NAME } from "./originOnlySourceControlPolicy.ts";
+import {
+  isOriginRemoteName,
+  ORIGIN_REMOTE_NAME,
+} from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 
 export type OriginGitRead = (
   operation: string,
@@ -150,4 +153,21 @@ export function originPushRedirectError(
   if (pushDefaultRemote.trim() && !isOriginRemoteName(pushDefaultRemote.trim()))
     return "Origin-only policy rejected the remote.pushDefault redirect.";
   return null;
+}
+
+export function requireLiteralOrigin(
+  cwd: string,
+  exists: boolean,
+): Effect.Effect<"origin", GitCommandError> {
+  return exists
+    ? Effect.succeed(ORIGIN_REMOTE_NAME)
+    : Effect.fail(
+        new GitCommandError({
+          operation: "GitVcsDriver.resolvePrimaryRemoteName",
+          cwd,
+          command: "git",
+          argumentCount: 1,
+          detail: "Origin-only policy requires a literal origin remote.",
+        }),
+      );
 }

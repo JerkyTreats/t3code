@@ -30,7 +30,9 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -63,6 +65,7 @@ import {
 } from "./auth/http.ts";
 import { layerFromPath } from "./persistence/Sqlite.ts";
 import { deviceAdministratorBoundaryLayer } from "./server.ts";
+import { assetFileResponse } from "./http.ts";
 import {
   authorizeClientRpc,
   withAdmittedWebSocketConnection,
@@ -159,6 +162,11 @@ const buildAuthorityHost = Effect.gen(function* () {
   const connections = Context.get(context, ClientConnectionRegistry.ClientConnectionRegistry);
   const admin = Context.get(context, AdminAccess.AdminAccess);
   const importedLaunches: ThreadLaunchInput[] = [];
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const assetDirectory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-authority-mcp-asset-" });
+  const htmlAsset = path.join(assetDirectory, "app.html");
+  yield* fs.writeFileString(htmlAsset, "<html><body>Synthetic MCP app</body></html>");
   const webSocketRoutes = HttpRouter.add(
     "GET",
     "/ws",
@@ -245,6 +253,11 @@ const buildAuthorityHost = Effect.gen(function* () {
     ),
     HttpRouter.add("POST", "/api/observability/v1/traces", HttpServerResponse.empty()),
     HttpRouter.add("POST", "/api/projects/mutate", HttpServerResponse.empty()),
+    HttpRouter.add(
+      "GET",
+      "/api/assets/synthetic-mcp-app.html",
+      assetFileResponse({ path: htmlAsset, mimeType: "text/html", renderIntent: "mcp-app" }),
+    ),
   ).pipe(
     Layer.provide(deviceAdministratorBoundaryLayer),
     Layer.provide(RpcSerialization.layerJson),
@@ -322,6 +335,11 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
         });
         const ordinary = yield* host.sessions.issue({});
         const cookie = `${host.sessions.cookieName}=${ordinary.token}`;
+        const assetResponse = yield* HttpClient.get("/api/assets/synthetic-mcp-app.html", {
+          headers: { cookie },
+        });
+        assert.equal(assetResponse.status, 200);
+        assert.include(yield* assetResponse.text, "Synthetic MCP app");
         for (const scheme of ["Bearer ", "Bearer   ", "bearer ", "bEaReR\t", "DPoP   ", "dpop\t"]) {
           for (const path of [
             "/",
@@ -329,6 +347,11 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
             "/api/auth/session",
             "/api/connect/link-state",
             "/ws",
+            "/api/assets/synthetic-mcp-app.html",
+            "/mcp",
+            "/mcp/preview",
+            "/mcp/device",
+            "/mcp/pull-requests",
           ]) {
             const response = yield* HttpClient.get(path, {
               headers: { authorization: `${scheme}${portal.token}  `, cookie },
@@ -360,6 +383,13 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
           ...Object.values(ORCHESTRATION_V2_WS_METHODS),
           WS_METHODS.serverGetSettings,
           WS_METHODS.subscribeBackgroundPolicy,
+          WS_METHODS.serverRunStorageCleanup,
+          WS_METHODS.serverGetStorageCleanupReport,
+          WS_METHODS.serverCheckOtlpEndpoint,
+          WS_METHODS.pullRequestsReviewGuide,
+          WS_METHODS.pullRequestsGenerateReviewGuide,
+          WS_METHODS.pullRequestsReportState,
+          WS_METHODS.filesystemGetMetadata,
         ]) {
           const outcome = yield* authorizeClientRpc(
             host.sessions,

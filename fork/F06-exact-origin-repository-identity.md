@@ -14,13 +14,15 @@ Product repository identity, status, ref lists, hosted targets and publication r
 
 ## Owner Boundaries
 
-Server fork owners reside under `apps/server/src/fork/`. The provider target parsers reside under `apps/server/src/sourceControl/`.
+Server orchestration owners reside under `apps/server/src/fork/`. Package-safe hosted target and review-thread owners, including Azure and GitLab target parsers, reside under `packages/source-control-core/src/server/fork/`. Current provider packages consume those owners directly rather than importing server application code.
 
-`packages/shared/src/git.ts` keeps canonical grouping separate from mutation normalization. Canonical grouping intentionally omits ports. Mutation comparison preserves non-default ports and accepts equivalent common Git URL transports.
+`packages/source-control-core/src/client/originRepositoryPolicy.ts` owns client membership admission for registered providers. Admission requires an exact origin locator and preserves host, port and repository identity. An SSH locator may use a related web URL only when its host and repository relationship agree. Provider definitions retain their registry presentation and link mechanics.
+
+`packages/shared/src/git.ts` keeps display grouping separate from mutation normalization. Mutation comparison preserves non-default ports and accepts equivalent common Git URL transports. `canonicalRepositoryKey` in `packages/shared/src/sourceControl.ts` normalizes Azure aliases; it does not remove an explicit port from its input. Protected membership uses exact target normalization rather than treating display grouping as authority.
 
 `packages/contracts/src/pullRequest.ts` retains the shared `pullRequestHostOf` compatibility helper used by server and clients. An exact origin locator supplies the host and explicit port. Legacy or malformed locator data falls back to the canonical host, then provider kind. That display grouping fallback does not authorize a provider mutation or replace the required exact origin selector.
 
-`packages/contracts/src/sourceControl.ts` requires an explicit provider endpoint for lookup and publication and permits it for provider-based clone. Project creation clients and the publication wizard supply the selected authenticated endpoint. Shared project operations own lookup request preparation. The web and mobile components remain adapters around their current flows.
+`packages/contracts/src/sourceControl.ts` requires an explicit provider endpoint for lookup and publication and permits it for provider-based clone. Project creation clients and the publication wizard supply the selected authenticated endpoint. `packages/client-runtime/src/fork/sourceControlEndpoint.ts` owns authenticated endpoint selection and lookup request preparation, including full Azure selectors. Shared project operations forward the selected target. The web and mobile components remain adapters around their current flows.
 
 `originProviderRefinementContext` in `sourceControlContextPolicy.ts` binds caller provider hints to
 the live origin remote, preserving transport and port identity before registry refinement.
@@ -35,6 +37,8 @@ per-repository cursors, cached reads, and individual fallback after a batched re
 origin-derived project selector binds every repository before the batch is formed. Batching does
 not grant mutation authority: `requireMutationProject` separately revalidates current origin
 through `OriginRepositoryMutationAuthority` before permission or provider mutation calls.
+
+New provider hosts, including GitCafe, use the same explicit origin target. Published branch discovery considers literal origin only. Review-guide generation revalidates live origin through `OriginRepositoryMutationAuthority` before fetching its diff or invoking the model; its fetch names literal origin.
 
 ## Non Ownership Boundaries
 

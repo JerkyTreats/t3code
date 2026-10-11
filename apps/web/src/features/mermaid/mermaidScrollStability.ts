@@ -1,4 +1,5 @@
 import { useEffect, type RefObject } from "react";
+import { observeResize } from "~/lib/observeResize";
 
 const RESIZE_EPSILON_PX = 0.5;
 const VIEWPORT_EDGE_EPSILON_PX = 1;
@@ -31,13 +32,13 @@ function findVerticalScrollContainer(element: HTMLElement): HTMLElement | null {
 export function usePreserveScrollOnMermaidResize(elementRef: RefObject<HTMLElement | null>): void {
   useEffect(() => {
     const element = elementRef.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
+    if (!element) return;
 
     const scrollContainer = findVerticalScrollContainer(element);
     if (!scrollContainer) return;
 
     let previousHeight = element.getBoundingClientRect().height;
-    const observer = new ResizeObserver(() => {
+    return observeResize(element, () => {
       const nextRect = element.getBoundingClientRect();
       const heightDelta = nextRect.height - previousHeight;
       const adjustment = resolveMermaidScrollAdjustment({
@@ -53,8 +54,5 @@ export function usePreserveScrollOnMermaidResize(elementRef: RefObject<HTMLEleme
         scrollContainer.scrollTop += adjustment;
       }
     });
-    observer.observe(element);
-
-    return () => observer.disconnect();
   }, [elementRef]);
 }

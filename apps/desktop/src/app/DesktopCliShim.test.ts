@@ -36,7 +36,7 @@ const writeShim = (root: string, target: CliShimTarget) => {
 const run = (shim: string, args: ReadonlyArray<string>, env: NodeJS.ProcessEnv = {}) =>
   NodeChildProcess.spawnSync(shim, args, {
     encoding: "utf8",
-    env: { PATH: process.env.PATH, ...env },
+    env: { PATH: process.env.PATH, TMPDIR: NodeOS.tmpdir(), ...env },
   });
 
 /** An app executable that reports its environment and arguments. */
@@ -61,6 +61,7 @@ const fakeAppImage = (canMount = true) => {
       `if [ "$1" = --appimage-extract ]; then cp -R '${image}' squashfs-root; exit 0; fi`,
       '[ "$1" = --appimage-mount ] || exit 9',
       '[ -n "$APPIMAGE_EXTRACT_AND_RUN" ] && exit 8',
+      `printf '%s' "$TMPDIR" > '${root}/mount-tempdir'`,
       canMount ? `echo '${image}'` : 'echo "Cannot mount AppImage"; exit 1',
       `trap 'touch "${root}/unmounted"; exit 0' TERM`,
       "while :; do sleep 0.05; done",
@@ -76,6 +77,7 @@ describe("renderCliShim", () => {
     const { root, image, shim } = fakeAppImage();
     const result = run(shim, ["browser", "setup", "a b"]);
     expect(result.status).toBe(3);
+    expect(NodeFS.readFileSync(NodePath.join(root, "mount-tempdir"), "utf8")).toBe(NodeOS.tmpdir());
     expect(result.stdout.split("\n")).toEqual([
       `node=1 cli=${shim} home=${root}/home`,
       `${image}/resources/app.asar/apps/server/dist/bin.mjs`,

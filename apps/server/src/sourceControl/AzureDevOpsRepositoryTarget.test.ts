@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { azureDevOpsRepositoryTargetFromRemoteUrl } from "./AzureDevOpsRepositoryTarget.ts";
+import { azureDevOpsRepositoryTargetFromRemoteUrl } from "@t3tools/source-control-core/server/fork/AzureDevOpsRepositoryTarget";
 
 describe("azureDevOpsRepositoryTargetFromRemoteUrl", () => {
   it("parses the supported modern Azure SSH host", () => {

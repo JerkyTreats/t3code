@@ -58,6 +58,7 @@ import {
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 import * as PreviewManager from "../preview/Manager.ts";
+import * as PreviewPasskeys from "../preview/Passkeys.ts";
 
 const environmentInput = {
   dirname: "/repo/apps/desktop/dist-electron",
@@ -342,6 +343,11 @@ function layerTest(input: {
         } satisfies ElectronShell.ElectronShell["Service"]),
         layerElectronTheme,
         layerElectronWindow,
+        Layer.mock(PreviewPasskeys.PreviewPasskeys)({
+          bridgeEnabled: false,
+          installSessionHandlers: () => {},
+          attachGuest: () => () => {},
+        }),
         Layer.mock(PreviewManager.PreviewManager)({
           getBrowserSession: () => Effect.succeed({} as Electron.Session),
           setMainWindow: () => Effect.void,
@@ -457,6 +463,11 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
           } satisfies ElectronShell.ElectronShell["Service"]),
           layerElectronTheme,
           Layer.succeed(ElectronWindow.ElectronWindow, electronWindowShape),
+          Layer.mock(PreviewPasskeys.PreviewPasskeys)({
+            bridgeEnabled: false,
+            installSessionHandlers: () => {},
+            attachGuest: () => () => {},
+          }),
           Layer.mock(PreviewManager.PreviewManager)({
             getBrowserSession: () => Effect.succeed({} as Electron.Session),
             setMainWindow: () => Effect.void,
@@ -481,6 +492,10 @@ describe("DesktopWindow", () => {
       let focusedContents: unknown = host.window.webContents;
       const makeContents = () => {
         const contents = Object.assign(new NodeEvents.EventEmitter(), {
+          mainFrame: {
+            routingId: 7,
+            isDestroyed: vi.fn(() => false),
+          } as unknown as Electron.WebFrameMain,
           isDestroyed: vi.fn(() => false),
           focus: vi.fn(() => {
             focusedContents = contents;
@@ -559,7 +574,7 @@ describe("DesktopWindow", () => {
             { preventDefault },
             {
               ...params,
-              frame: null,
+              frame: contents.mainFrame,
               misspelledWord: "",
               dictionarySuggestions: [],
               mediaType: "image",
@@ -567,7 +582,7 @@ describe("DesktopWindow", () => {
             },
           );
           const imageMenu = (yield* Queue.take(menus)).input;
-          assert.isUndefined(imageMenu.frame);
+          assert.strictEqual(imageMenu.frame, contents.mainFrame);
           const copyImage = imageMenu.template.find((item) => item.label === "Copy Image");
           const copyLink = imageMenu.template.find((item) => item.label === "Copy Link");
           assert.isDefined(copyImage?.click);

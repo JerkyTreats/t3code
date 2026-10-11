@@ -24,6 +24,7 @@ import { useCallback, useRef, useState, type ComponentProps } from "react";
 import { StyleSheet, View } from "react-native";
 import { FormSheet, Stack } from "react-native-screens";
 import { V5StackHeader } from "./V5StackHeader.ios";
+import type { AppNativeStackNavigationOptions } from "./StackHeader";
 import { NativeColumnContent } from "./NativeColumnContent.ios";
 import {
   nativeStackPopAction,
@@ -51,7 +52,9 @@ export function modalEnvelopeOptions(options: NativeStackNavigationOptions) {
 }
 
 /** Keep outgoing screens until UIKit completes its pop, as required by v5. */
-export function V5CardStackView(props: V5StackViewProps) {
+export function V5CardStackView(
+  props: V5StackViewProps & { readonly onRootVisibilityChange?: (visible: boolean) => void },
+) {
   const { preventedRoutes } = usePreventRemoveContext();
   const nativePopSource = useRef<string | null>(null);
   const [screens, setScreens] = useState({
@@ -162,13 +165,14 @@ export function V5CardStackView(props: V5StackViewProps) {
               onNativeDismissPrevented={() => {
                 if (preventedRoutes[route.key]?.preventRemove) descriptor.navigation.goBack();
               }}
-              onWillAppear={() =>
+              onWillAppear={() => {
+                if (index === 0) props.onRootVisibilityChange?.(true);
                 props.navigation.emit({
                   type: "transitionStart",
                   target: route.key,
                   data: { closing: false },
-                })
-              }
+                });
+              }}
               onDidAppear={() => {
                 const source = nativePopSource.current;
                 if (source === route.key) {
@@ -202,6 +206,7 @@ export function V5CardStackView(props: V5StackViewProps) {
                 });
               }}
               onWillDisappear={() => {
+                if (index === 0) props.onRootVisibilityChange?.(false);
                 const state = props.navigation.getState();
                 // JS pushes/pops already changed history. Only native Back leaves
                 // the disappearing card at the router's active index.
@@ -232,7 +237,14 @@ export function V5CardStackView(props: V5StackViewProps) {
                         : index > 0
                     }
                   />
-                  <NativeColumnContent>{descriptor.render()}</NativeColumnContent>
+                  <NativeColumnContent
+                    insetHorizontally={
+                      (descriptor.options as AppNativeStackNavigationOptions)
+                        .nativeContentInsetHorizontally
+                    }
+                  >
+                    {descriptor.render()}
+                  </NativeColumnContent>
                 </NavigationRouteContext>
               </NavigationContext>
             </Stack.Screen>

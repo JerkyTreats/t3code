@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it, vi } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -11,11 +12,13 @@ import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import { GitCommandError } from "@t3tools/contracts";
-import * as BitbucketApi from "./BitbucketApi.ts";
+import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import type * as VcsDriver from "../vcs/VcsDriver.ts";
+import * as ServerSourceControlHost from "./ServerSourceControlHost.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 
 const isBitbucketRepositoryLocatorError = Schema.is(BitbucketApi.BitbucketRepositoryLocatorError);
 
@@ -142,6 +145,8 @@ function makeLayer(input: {
   );
 
   const layer = BitbucketApi.layer.pipe(
+    Layer.provide(ServerSourceControlHost.layer),
+    Layer.provide(Layer.mock(VcsProcess.VcsProcess)({})),
     Layer.provide(
       Layer.succeed(
         HttpClient.HttpClient,
@@ -174,7 +179,7 @@ function makeLayer(input: {
 
 const mismatchedOriginContext = {
   provider: {
-    kind: "bitbucket" as const,
+    kind: SourceControlProviderKind.make("bitbucket"),
     name: "Bitbucket",
     baseUrl: "https://bitbucket.internal.example",
   },
@@ -445,7 +450,7 @@ it.effect.each([false, true])(
               ? {
                   context: {
                     provider: {
-                      kind: "bitbucket" as const,
+                      kind: SourceControlProviderKind.make("bitbucket"),
                       name: "Bitbucket",
                       baseUrl: "https://bitbucket.org",
                     },
@@ -480,7 +485,11 @@ it.effect("prefers an explicit repository and uses context when the repository i
   return Effect.gen(function* () {
     const bitbucket = yield* BitbucketApi.BitbucketApi;
     const context = {
-      provider: { kind: "bitbucket" as const, name: "Bitbucket", baseUrl: "https://bitbucket.org" },
+      provider: {
+        kind: SourceControlProviderKind.make("bitbucket"),
+        name: "Bitbucket",
+        baseUrl: "https://bitbucket.org",
+      },
       remoteName: "origin",
       remoteUrl: "git@bitbucket.org:another/context.git",
     };
@@ -712,16 +721,22 @@ it.effect("prefers credentials saved in settings over the environment, without a
     assert.strictEqual(lastAuthorization(), basic("user@example.com", "token"));
 
     yield* settings.updateSettings({
-      bitbucket: { email: "saved@example.com", apiToken: "saved-api-token" },
+      sourceControlHosts: {
+        bitbucket: { email: "saved@example.com", apiToken: "saved-api-token" },
+      },
     });
     yield* bitbucket.probeAuth;
     assert.strictEqual(lastAuthorization(), basic("saved@example.com", "saved-api-token"));
 
-    yield* settings.updateSettings({ bitbucket: { accessToken: "saved-access-token" } });
+    yield* settings.updateSettings({
+      sourceControlHosts: { bitbucket: { accessToken: "saved-access-token" } },
+    });
     yield* bitbucket.probeAuth;
     assert.strictEqual(lastAuthorization(), "Bearer saved-access-token");
 
-    yield* settings.updateSettings({ bitbucket: { accessToken: "", apiToken: "" } });
+    yield* settings.updateSettings({
+      sourceControlHosts: { bitbucket: { accessToken: "", apiToken: "" } },
+    });
     yield* bitbucket.probeAuth;
     assert.strictEqual(lastAuthorization(), basic("user@example.com", "token"));
   }).pipe(Effect.provide(layer));
@@ -738,7 +753,9 @@ it.effect("never puts a saved token that is unsafe for an HTTP header on the wir
 
     // Fetch would reject this header with an error quoting the token, and that error reaches
     // clients. The unusable token is ignored, so the environment credential is used instead.
-    yield* settings.updateSettings({ bitbucket: { accessToken: "saved\ntoken" } });
+    yield* settings.updateSettings({
+      sourceControlHosts: { bitbucket: { accessToken: "saved\ntoken" } },
+    });
     yield* bitbucket.probeAuth;
     assert.strictEqual(
       execute.mock.calls.at(-1)?.[0].headers.authorization,
@@ -759,7 +776,9 @@ it.effect("reports saved credentials as configured when Bitbucket cannot confirm
 
     assert.strictEqual((yield* bitbucket.probeAuth).status, "unauthenticated");
 
-    yield* settings.updateSettings({ bitbucket: { accessToken: "saved-access-token" } });
+    yield* settings.updateSettings({
+      sourceControlHosts: { bitbucket: { accessToken: "saved-access-token" } },
+    });
     assert.deepStrictEqual(yield* bitbucket.probeAuth, {
       status: "unknown",
       account: Option.none(),
@@ -782,7 +801,9 @@ it.effect("binds saved credentials and auth reports to the configured API host a
   return Effect.gen(function* () {
     const bitbucket = yield* BitbucketApi.BitbucketApi;
     const settings = yield* ServerSettings.ServerSettingsService;
-    yield* settings.updateSettings({ bitbucket: { accessToken: "saved-access-token" } });
+    yield* settings.updateSettings({
+      sourceControlHosts: { bitbucket: { accessToken: "saved-access-token" } },
+    });
 
     assert.deepStrictEqual(yield* bitbucket.probeAuth, {
       status: "authenticated",
@@ -804,7 +825,9 @@ it.effect("binds saved credentials and auth reports to the configured API host a
       detail: Option.some("An access token is configured."),
     });
     yield* settings.updateSettings({
-      bitbucket: { accessToken: "", email: "saved@example.com", apiToken: "saved-api-token" },
+      sourceControlHosts: {
+        bitbucket: { accessToken: "", email: "saved@example.com", apiToken: "saved-api-token" },
+      },
     });
     assert.deepStrictEqual(yield* bitbucket.probeAuth, {
       status: "unknown",
@@ -812,7 +835,7 @@ it.effect("binds saved credentials and auth reports to the configured API host a
       host: Option.some(host),
       detail: Option.some("An API token is configured."),
     });
-    yield* settings.updateSettings({ bitbucket: { apiToken: "" } });
+    yield* settings.updateSettings({ sourceControlHosts: { bitbucket: { apiToken: "" } } });
     assert.deepStrictEqual((yield* bitbucket.probeAuth).host, Option.some(host));
   }).pipe(Effect.provide(layer));
 });
@@ -820,7 +843,11 @@ it.effect("binds saved credentials and auth reports to the configured API host a
 it.effect("authorizes origin before using saved credentials for provider reads and writes", () => {
   const host = "bitbucket.internal.example:8443";
   const context = {
-    provider: { kind: "bitbucket" as const, name: "Bitbucket", baseUrl: `https://${host}` },
+    provider: {
+      kind: SourceControlProviderKind.make("bitbucket"),
+      name: "Bitbucket",
+      baseUrl: `https://${host}`,
+    },
     remoteName: "origin",
     remoteUrl: `ssh://git@${host}/team/repo.git`,
   };
@@ -833,7 +860,9 @@ it.effect("authorizes origin before using saved credentials for provider reads a
   return Effect.gen(function* () {
     const bitbucket = yield* BitbucketApi.BitbucketApi;
     const settings = yield* ServerSettings.ServerSettingsService;
-    yield* settings.updateSettings({ bitbucket: { accessToken: "saved-access-token" } });
+    yield* settings.updateSettings({
+      sourceControlHosts: { bitbucket: { accessToken: "saved-access-token" } },
+    });
     yield* bitbucket.listPullRequests({
       cwd: "/repo",
       context,
@@ -1037,7 +1066,7 @@ it.effect("checks out same-repository pull requests with the existing Bitbucket 
       cwd: "/repo",
       context: {
         provider: {
-          kind: "bitbucket",
+          kind: SourceControlProviderKind.make("bitbucket"),
           name: "Bitbucket",
           baseUrl: "https://bitbucket.org",
         },

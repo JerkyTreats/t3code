@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
@@ -13,14 +14,21 @@ import * as ServerConfig from "../config.ts";
 import type * as VcsDriver from "../vcs/VcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
-import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
-import * as BitbucketApi from "./BitbucketApi.ts";
+import * as AzureDevOpsCli from "@t3tools/source-control-azure-devops/server/AzureDevOpsCli";
+import * as AzureDevOpsPullRequestCli from "@t3tools/source-control-azure-devops/server/AzureDevOpsPullRequestCli";
+import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
+import * as BitbucketPullRequestApi from "@t3tools/source-control-bitbucket/server/BitbucketPullRequestApi";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import * as GitHubApi from "./GitHubApi.ts";
-import * as GitHubCredentials from "./GitHubCredentials.ts";
-import * as GitLabCli from "./GitLabCli.ts";
-import * as ForgejoCli from "./ForgejoCli.ts";
+import * as GitHubApi from "@t3tools/source-control-github/server/GitHubApi";
+import * as GitHubPullRequestApi from "@t3tools/source-control-github/server/GitHubPullRequestApi";
+import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
+import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
+import * as GitLabPullRequestCli from "@t3tools/source-control-gitlab/server/GitLabPullRequestCli";
+import * as ForgejoCli from "@t3tools/source-control-forgejo/server/ForgejoCli";
+import * as GitCafeApi from "@t3tools/source-control-gitcafe/server/GitCafeApi";
+import * as GitCafeCredentials from "@t3tools/source-control-gitcafe/server/GitCafeCredentials";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
+import * as ServerSourceControlHost from "./ServerSourceControlHost.ts";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 
@@ -122,9 +130,22 @@ function makeRegistry(input: {
         NodeServices.layer,
         layerRegistry,
         layerProcess,
+        ServerSourceControlHost.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              layerProcess,
+              layerRegistry,
+              ServerSettings.ServerSettingsService.layerTest(),
+              Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+            ),
+          ),
+        ),
         Layer.mock(AzureDevOpsCli.AzureDevOpsCli)({}),
+        Layer.mock(AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli)({}),
         Layer.mock(BitbucketApi.BitbucketApi)({}),
+        Layer.mock(BitbucketPullRequestApi.BitbucketPullRequestApi)({}),
         ServerSettings.ServerSettingsService.layerTest(),
+        Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({}),
         Layer.mock(GitHubApi.GitHubApi)({
           // No GitHub credential unless a test supplies one, so custom hosts stay unclaimed.
           credential: (host) => Effect.fail(new GitHubCredentials.GitHubNotSignedInError({ host })),
@@ -132,6 +153,9 @@ function makeRegistry(input: {
         }),
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         Layer.mock(GitLabCli.GitLabCli)(input.gitlab ?? {}),
+        Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
+        Layer.mock(GitCafeApi.GitCafeApi)({}),
+        Layer.mock(GitCafeCredentials.GitCafeCredentials)({ cliEnv: () => Effect.succeed({}) }),
         Layer.mock(ForgejoCli.ForgejoCli)({
           listLogins: () => Effect.succeed([]),
           ...input.forgejo,
@@ -238,7 +262,7 @@ it.effect("keeps direct provider lookup from exposing an unscoped change request
     const registry = yield* makeRegistry({
       remotes: [{ name: "origin", url: "git@github.com:fork/project.git" }],
     });
-    const provider = yield* registry.get("github");
+    const provider = yield* registry.get(SourceControlProviderKind.make("github"));
 
     const error = yield* provider
       .createChangeRequest({
@@ -308,7 +332,7 @@ it.effect("routes directly by provider kind for remote-first workflows", () =>
       remotes: [],
     });
 
-    const provider = yield* registry.get("github");
+    const provider = yield* registry.get(SourceControlProviderKind.make("github"));
 
     assert.strictEqual(provider.kind, "github");
   }),
@@ -317,7 +341,7 @@ it.effect("routes directly by provider kind for remote-first workflows", () =>
 it.effect("includes the request cwd when an unregistered provider is used", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry({ remotes: [] });
-    const provider = yield* registry.get("unknown");
+    const provider = yield* registry.get(SourceControlProviderKind.make("unknown"));
 
     const error = yield* provider
       .getChangeRequest({ cwd: "/repo", reference: "#42" })
@@ -411,7 +435,7 @@ it.effect("does not let a caller-selected context override exact origin", () =>
       cwd: "/repo",
       context: {
         provider: {
-          kind: "unknown",
+          kind: SourceControlProviderKind.make("unknown"),
           name: "self-hosted.example.test",
           baseUrl: "https://self-hosted.example.test",
         },
@@ -579,7 +603,7 @@ it.effect(
         remoteName: "origin",
         remoteUrl,
         provider: {
-          kind: "unknown" as const,
+          kind: SourceControlProviderKind.make("unknown"),
           name: "Forgejo",
           baseUrl: "https://forge.example.test",
         },
@@ -638,7 +662,7 @@ it.effect.each([
       },
     });
     const handle = yield* registry.resolveHandle({ cwd: "/repo" });
-    assert.strictEqual(handle.provider.kind, scenario.expected);
+    assert.strictEqual(handle.provider.kind, SourceControlProviderKind.make(scenario.expected));
     assert.strictEqual(handle.context?.provider.baseUrl, "https://code.example.test");
     assert.deepStrictEqual(hosts, ["code.example.test"]);
     // Recognition goes through the credential layer; gh is only one of its sources.
@@ -663,7 +687,7 @@ it.effect("rebinds an empty caller provider hint to live origin", () =>
       },
     });
     const context = {
-      provider: { kind: "unknown" as const, name: "Unknown", baseUrl: "" },
+      provider: { kind: SourceControlProviderKind.make("unknown"), name: "Unknown", baseUrl: "" },
       remoteName: "origin",
       remoteUrl,
     };

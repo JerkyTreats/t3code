@@ -177,5 +177,7 @@ upstream substrate. They do not select portal authority. Legacy access HTTP inve
 and pairing-change streams remain absent. Private operator CLI listing and internal session
 revocation events remain generic auth substrate.
 
+The current MCP composition retains separate ordinary, preview, device and pull-request endpoints. Each endpoint admits its own session capabilities and canonical tool namespace. The endpoint factory carries the current upstream session-termination setting; DELETE cannot bypass endpoint admission or terminate another endpoint's session. Runtime discovery includes ordinary workflow and review-guide tools without restoring embedded access inventory. These are accepted transport and capability mechanics around the shared authority owner, rather than new portal-authority decisions.
+
 These focused tests prove owner behavior and replacement-host admission. The broad server
 integration and full repository gates remain separate required evidence before acceptance.

@@ -15,7 +15,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
-import { HostProcessEnvironment, HostProcessUserId } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeProcess from "node:process";
 
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
@@ -150,7 +150,7 @@ export const layer = Layer.effect(
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const mainProcessId = yield* DesktopLauncherProcessId;
-    const hostEnvironment = yield* HostProcessEnvironment;
+    const hostEnvironment = yield* HostProcess.Environment;
     const rawInput = resolveDesktopLauncherRuntimeInput(hostEnvironment);
     const handoffPaths = resolveDesktopLauncherHandoffPaths(hostEnvironment);
     const runtimeRootInfo = handoffPaths
@@ -159,7 +159,7 @@ export const layer = Layer.effect(
     const physicalRuntimeRoot = handoffPaths
       ? yield* fileSystem.realPath(handoffPaths.runtimeRoot).pipe(Effect.option)
       : Option.none<string>();
-    const currentUid = yield* HostProcessUserId;
+    const currentUid = yield* HostProcess.UserId;
     const hasPrivateRuntimeRoot =
       handoffPaths !== undefined &&
       Option.isSome(runtimeRootInfo) &&

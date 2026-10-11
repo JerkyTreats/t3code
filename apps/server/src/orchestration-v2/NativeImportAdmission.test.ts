@@ -6,7 +6,7 @@ import {
   ProviderInstanceId,
   ThreadId,
 } from "@t3tools/contracts";
-import type { ProviderAdapterV2Shape } from "@t3tools/provider-core/server/ProviderAdapter";
+import type { ProviderAdapterV2 } from "@t3tools/provider-core/server/ProviderAdapter";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -18,7 +18,7 @@ import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 
 const instanceId = ProviderInstanceId.make("codex-personal");
 const driver = ProviderDriverKind.make("codex");
-const adapter: ProviderAdapterV2Shape = {
+const adapter: ProviderAdapterV2["Service"] = {
   instanceId,
   driver,
   getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),

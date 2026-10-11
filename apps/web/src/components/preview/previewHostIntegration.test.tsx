@@ -5,7 +5,7 @@ import {
   type DesktopPreviewBrowserActionEvent,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -43,17 +43,27 @@ vi.mock("~/state/entities", () => ({ useProjects: () => [] }));
 vi.mock("~/state/environments", () => ({ usePrimaryEnvironmentId: () => "host-env" }));
 vi.mock("~/logicalProject", () => ({ selectProjectGroupingSettings: vi.fn() }));
 vi.mock("~/sidebarProjectGrouping", () => ({ buildSidebarProjectSnapshots: () => [] }));
-vi.mock("~/state/session", () => ({
+vi.mock("~/state/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/state/session")>()),
   useEnvironmentScope: () => mocks.canOperate,
   readEnvironmentScope: () => mocks.canOperate,
 }));
-vi.mock("~/state/server", () => ({ primaryServerKeybindingsAtom: {} }));
+vi.mock("~/state/server", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return {
+    primaryServerKeybindingsAtom: Atom.make([]),
+    serverEnvironment: { configValueAtom: Atom.family(() => Atom.make(null)) },
+  };
+});
 vi.mock("~/keybindings", () => ({ resolveShortcutCommand: () => mocks.command }));
 vi.mock("~/lib/chatThreadActions", () => ({ startNewThreadFromContext: vi.fn() }));
 vi.mock("~/lib/terminalFocus", () => ({ isTerminalFocused: () => false }));
 vi.mock("~/components/ui/toast", () => ({
   stackedThreadToast: (value: unknown) => value,
   toastManager: { add: vi.fn() },
+}));
+vi.mock("~/components/DiffWorkerPoolProvider", () => ({
+  DiffWorkerPoolProvider: ({ children }: { children?: ReactNode }) => children,
 }));
 
 import { ChatRouteGlobalShortcuts } from "~/routes/_chat";
