@@ -7,7 +7,7 @@ import * as Schema from "effect/Schema";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { originPushRedirectError } from "./originGitPolicy.ts";
-import { isOriginRemoteName } from "./originOnlySourceControlPolicy.ts";
+import { isOriginRemoteName } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 
 export type OriginRepositoryMutationAuthorityFailureReason =
   | "expected-identity-invalid"

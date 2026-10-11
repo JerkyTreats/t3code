@@ -2,7 +2,7 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 class MembershipError extends Schema.TaggedError<MembershipError>()("MembershipError", {}) {}
-import { requireOriginReviewThread } from "./originReviewThreadPolicy.ts";
+import { requireOriginReviewThread } from "@t3tools/source-control-core/server/fork/originReviewThreadPolicy";
 
 it.effect(
   "replacement review transport cannot mutate before origin thread membership is proven",

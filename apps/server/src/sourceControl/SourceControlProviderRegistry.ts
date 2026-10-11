@@ -1,3 +1,8 @@
+import {
+  requireOriginCreationRepository,
+  requireSupportedOriginContext,
+} from "../fork/sourceControlContextPolicy.ts";
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -8,22 +13,19 @@ import {
   SourceControlProviderError,
   type SourceControlProviderDiscoveryItem,
 } from "@t3tools/contracts";
-import type { SourceControlProviderKind } from "@t3tools/contracts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
-import * as AzureDevOpsSourceControlProvider from "./AzureDevOpsSourceControlProvider.ts";
-import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
-import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
-import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
-import * as ForgejoSourceControlProvider from "./ForgejoSourceControlProvider.ts";
-import * as SourceControlProvider from "./SourceControlProvider.ts";
+import * as BuiltInDrivers from "./builtInDrivers.ts";
+import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import {
   probeSourceControlProvider,
   refineUnknownRemoteProvider,
   type SourceControlProviderDiscoverySpec,
-} from "./SourceControlProviderDiscovery.ts";
-import { isOriginRemoteName } from "../fork/originOnlySourceControlPolicy.ts";
+} from "@t3tools/source-control-core/server/discovery";
+import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+
+import { isOriginRemoteName } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 import * as OriginRepositoryMutationAuthority from "../fork/OriginRepositoryMutationAuthority.ts";
 import {
   pickOriginSourceControlContext,
@@ -33,7 +35,6 @@ import {
 } from "../fork/sourceControlContextPolicy.ts";
 import * as ServerConfig from "../config.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
-import * as VcsProcess from "../vcs/VcsProcess.ts";
 
 const PROVIDER_DETECTION_CACHE_CAPACITY = 2_048;
 const PROVIDER_DETECTION_CACHE_TTL = Duration.seconds(5);
@@ -151,7 +152,7 @@ function selectProviderContext(
 export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWithProviders")(
   function* (registrations: ReadonlyArray<SourceControlProviderRegistration>) {
     const config = yield* ServerConfig.ServerConfig;
-    const process = yield* VcsProcess.VcsProcess;
+    const { process } = yield* SourceControlHost.SourceControlHost;
     const mutationAuthority = yield* OriginRepositoryMutationAuthority.make;
     const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
     const providers = new Map<
@@ -171,7 +172,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
           Effect.mapError(
             (error) =>
               new SourceControlProviderError({
-                provider: "unknown",
+                provider: SourceControlProviderKind.make("unknown"),
                 operation: "detectProvider",
                 cwd,
                 detail: "Failed to detect source control provider.",
@@ -183,7 +184,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
           Effect.mapError(
             (error) =>
               new SourceControlProviderError({
-                provider: "unknown",
+                provider: SourceControlProviderKind.make("unknown"),
                 operation: "detectProvider",
                 cwd,
                 detail: "Failed to detect source control provider.",
@@ -220,7 +221,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
         : detectProviderContext(input.cwd, input.context)
       ).pipe(
         Effect.map((context) => {
-          const kind = context?.provider.kind ?? "unknown";
+          const kind = context?.provider.kind ?? SourceControlProviderKind.make("unknown");
           const provider = providers.get(kind) ?? unsupportedProvider(kind);
           return {
             provider: bindOriginProviderContext(provider, context, mutationAuthority),
@@ -235,7 +236,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
           Effect.mapError(
             (cause) =>
               new SourceControlProviderError({
-                provider: "unknown",
+                provider: SourceControlProviderKind.make("unknown"),
                 operation: "resolveChangeRequestHandle",
                 cwd: input.cwd,
                 detail: "Origin-only policy could not inspect the repository remotes.",
@@ -247,7 +248,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
           Effect.mapError(
             (cause) =>
               new SourceControlProviderError({
-                provider: "unknown",
+                provider: SourceControlProviderKind.make("unknown"),
                 operation: "resolveChangeRequestHandle",
                 cwd: input.cwd,
                 detail: "Origin-only policy could not inspect the repository remotes.",
@@ -255,34 +256,21 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               }),
           ),
         );
-        const origin = remoteResult.remotes.find((remote) => isOriginRemoteName(remote.name));
-        if (!origin) {
-          return yield* new SourceControlProviderError({
-            provider: "unknown",
-            operation: "resolveChangeRequestHandle",
-            cwd: input.cwd,
-            detail:
-              "Origin-only policy requires an origin remote before creating a change request.",
-          });
-        }
+        const { origin, expectedIdentity } = yield* requireOriginCreationRepository(
+          input.cwd,
+          remoteResult.remotes,
+        );
 
         yield* mutationAuthority
           .authorize({
             cwd: input.cwd,
-            expectedIdentity: {
-              canonicalKey: normalizeGitRemoteUrl(origin.url),
-              locator: {
-                source: "git-remote",
-                remoteName: origin.name,
-                remoteUrl: origin.url,
-              },
-            },
+            expectedIdentity,
           })
           .pipe(
             Effect.mapError(
               (cause) =>
                 new SourceControlProviderError({
-                  provider: "unknown",
+                  provider: SourceControlProviderKind.make("unknown"),
                   operation: "resolveChangeRequestHandle",
                   cwd: input.cwd,
                   detail: cause.detail,
@@ -291,21 +279,13 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
             ),
           );
 
-        const context = yield* refineUnknownRemoteProvider({
+        const refinedContext = yield* refineUnknownRemoteProvider({
           specs: discoverySpecs,
           process,
           cwd: input.cwd,
           context: selectProviderContext([{ name: origin.name, url: origin.url }]),
         });
-        if (!context || context.provider.kind === "unknown") {
-          return yield* new SourceControlProviderError({
-            provider: "unknown",
-            operation: "resolveChangeRequestHandle",
-            cwd: input.cwd,
-            detail:
-              "Origin-only policy could not identify a supported source-control provider for origin.",
-          });
-        }
+        const context = yield* requireSupportedOriginContext(input.cwd, refinedContext);
 
         const provider =
           providers.get(context.provider.kind) ?? unsupportedProvider(context.provider.kind);
@@ -329,7 +309,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               ? read
               : Effect.fail(
                   new SourceControlProviderError({
-                    provider: kind ?? "unknown",
+                    provider: kind ?? SourceControlProviderKind.make("unknown"),
                     operation: "resolveLink",
                     cwd: input.cwd,
                     detail: "The linked subject is outside the exact origin repository.",
@@ -357,37 +337,16 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
 );
 
 export const make = Effect.gen(function* () {
-  const github = yield* GitHubSourceControlProvider.make;
-  const githubDiscovery = yield* GitHubSourceControlProvider.makeDiscovery;
-  const gitlab = yield* GitLabSourceControlProvider.make;
-  const forgejo = yield* ForgejoSourceControlProvider.make;
-  const forgejoDiscovery = yield* ForgejoSourceControlProvider.makeDiscovery;
-  const bitbucket = yield* BitbucketSourceControlProvider.make;
-  const bitbucketDiscovery = yield* BitbucketSourceControlProvider.makeDiscovery;
-  const azureDevOps = yield* AzureDevOpsSourceControlProvider.make;
-  return yield* makeWithProviders([
-    {
-      kind: "github",
-      provider: github,
-      discovery: githubDiscovery,
-    },
-    {
-      kind: "gitlab",
-      provider: gitlab,
-      discovery: GitLabSourceControlProvider.discovery,
-    },
-    {
-      kind: "azure-devops",
-      provider: azureDevOps,
-      discovery: AzureDevOpsSourceControlProvider.discovery,
-    },
-    {
-      kind: "bitbucket",
-      provider: bitbucket,
-      discovery: bitbucketDiscovery,
-    },
-    { kind: "forgejo", provider: forgejo, discovery: forgejoDiscovery },
-  ]);
+  const drivers = yield* Effect.forEach(BuiltInDrivers.BUILT_IN_SOURCE_CONTROL_DRIVERS, (driver) =>
+    driver.make.pipe(
+      Effect.map((instance): SourceControlProviderRegistration => ({
+        kind: driver.kind,
+        provider: instance.sourceControl,
+        discovery: instance.discovery,
+      })),
+    ),
+  );
+  return yield* makeWithProviders(drivers);
 });
 
 export const layer = Layer.effect(SourceControlProviderRegistry, make);

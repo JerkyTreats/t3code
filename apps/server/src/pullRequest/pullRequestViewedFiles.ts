@@ -20,7 +20,7 @@ import type {
   ProviderFileRevisions,
   ProviderRepositoryRef,
   PullRequestProviderError,
-} from "./PullRequestProvider.ts";
+} from "@t3tools/source-control-core/server/PullRequestProvider";
 import type { PullRequestError, SupportedProject } from "./PullRequestService.ts";
 
 /**

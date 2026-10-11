@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import {
   CommandId,
   ProjectId,
@@ -40,7 +41,7 @@ const project: OrchestrationProjectShell = {
       remoteName: "origin",
       remoteUrl: "git@github.acme.test:Platform/API.git",
     },
-    provider: "github",
+    provider: SourceControlProviderKind.make("github"),
     displayName: "Platform/API",
     owner: "Platform",
     name: "API",
@@ -122,42 +123,42 @@ describe("createdPullRequestKey", () => {
   it("links exact custom ports and Azure native identities while rejecting foreign targets", () => {
     const cases = [
       {
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         remote: "https://github.example.test:8443/team/repo.git",
         url: "https://github.example.test:8443/team/repo/pull/12",
         host: "github.example.test:8443",
         repository: "team/repo",
       },
       {
-        provider: "gitlab",
+        provider: SourceControlProviderKind.make("gitlab"),
         remote: "https://gitlab.example.test:8443/team/repo.git",
         url: "https://gitlab.example.test:8443/team/repo/-/merge_requests/12",
         host: "gitlab.example.test:8443",
         repository: "team/repo",
       },
       {
-        provider: "forgejo",
+        provider: SourceControlProviderKind.make("forgejo"),
         remote: "https://forge.example.test:8443/team/repo.git",
         url: "https://forge.example.test:8443/team/repo/pulls/12",
         host: "forge.example.test:8443",
         repository: "team/repo",
       },
       {
-        provider: "azure-devops",
+        provider: SourceControlProviderKind.make("azure-devops"),
         remote: "https://dev.azure.com/org/project/_git/repo",
         url: "https://dev.azure.com/org/project/_git/repo/pullrequest/12",
         host: "dev.azure.com",
         repository: "repo",
       },
       {
-        provider: "azure-devops",
+        provider: SourceControlProviderKind.make("azure-devops"),
         remote: "git@ssh.dev.azure.com:v3/org/project/repo",
         url: "https://dev.azure.com/org/project/_git/repo/pullrequest/12",
         host: "ssh.dev.azure.com",
         repository: "repo",
       },
       {
-        provider: "azure-devops",
+        provider: SourceControlProviderKind.make("azure-devops"),
         remote: "https://org.visualstudio.com/project/_git/repo",
         url: "https://dev.azure.com/org/project/_git/repo/pullrequest/12",
         host: "org.visualstudio.com",

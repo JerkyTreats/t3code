@@ -14,7 +14,10 @@ import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
 import * as DesktopAppUpdate from "../desktopUpdate/DesktopAppUpdate.ts";
-import { officialRuntimeUpdateCapability } from "../fork/officialRuntimeUpdatePolicy.ts";
+import {
+  officialRuntimeUpdateAdmission,
+  officialRuntimeUpdateCapability,
+} from "../fork/officialRuntimeUpdatePolicy.ts";
 
 export const resolveServerSelfUpdateCapability = officialRuntimeUpdateCapability;
 
@@ -145,30 +148,28 @@ export const withRunningThreadContinuation = Effect.fn(
 export const make = Effect.fn("cloud.server_self_update.make")(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const desktopAppUpdate = yield* DesktopAppUpdate.DesktopAppUpdate;
-  const capability = officialRuntimeUpdateCapability({
+  const admission = officialRuntimeUpdateAdmission({
     desktopManaged: serverConfig.mode === "desktop",
+    desktopAdapterAvailable: desktopAppUpdate.available,
   });
 
   return ServerSelfUpdate.of({
     update: (_input, reportProgress = () => Effect.void) => {
-      if (capability === "desktop-managed" && desktopAppUpdate.available) {
+      if (admission.kind === "desktop") {
         return desktopAppUpdate.run(reportProgress);
       }
       return Effect.fail(
         new ServerSelfUpdateError({
-          reason:
-            capability === "desktop-managed"
-              ? "Update the T3 Code desktop app on the server machine."
-              : "This server is updated through its operator-managed deployment.",
+          reason: admission.updateReason,
         }),
       );
     },
     commitDesktopUpdate: (requestId, onHandoffAccepted) =>
-      capability === "desktop-managed" && desktopAppUpdate.available
+      admission.kind === "desktop"
         ? desktopAppUpdate.commit(requestId, onHandoffAccepted)
         : Effect.fail(
             new ServerSelfUpdateError({
-              reason: "Desktop updates are unavailable for this server.",
+              reason: admission.commitReason,
             }),
           ),
   });

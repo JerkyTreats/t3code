@@ -91,21 +91,3 @@ export function getMcpProviderServerAttachments(
     );
   return attachments;
 }
-
-const sessionsByThread = new Map<ThreadId, McpProviderSessionConfig>();
-
-export function setMcpProviderSession(config: McpProviderSessionConfig): void {
-  sessionsByThread.set(config.threadId, config);
-}
-
-export function readMcpProviderSession(threadId: ThreadId): McpProviderSessionConfig | undefined {
-  return sessionsByThread.get(threadId);
-}
-
-export function clearMcpProviderSession(threadId: ThreadId): void {
-  sessionsByThread.delete(threadId);
-}
-
-export function clearAllMcpProviderSessions(): void {
-  sessionsByThread.clear();
-}

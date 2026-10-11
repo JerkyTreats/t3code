@@ -1,3 +1,22 @@
+import { ANTIGRAVITY_DEFAULT_MODEL } from "@t3tools/contracts";
+
+export function threadModelIdentifierPresentation(input: {
+  labelMode: "display" | "identifier" | undefined;
+  model: string;
+  selectedModel: { slug: string; isUnavailable?: boolean | undefined } | undefined;
+}) {
+  if (input.labelMode !== "identifier") return null;
+  const title =
+    input.model === ANTIGRAVITY_DEFAULT_MODEL
+      ? input.selectedModel?.slug || "Choose model"
+      : input.model || "Choose model";
+  return {
+    title,
+    label: `${title}${input.selectedModel?.isUnavailable ? " (Unavailable)" : ""}`,
+    ariaLabel: `Model: ${title}`,
+  };
+}
+
 /** Thread keeps model identity readable while ordinary chat retains its compact strip. */
 export function threadComposerPresentation(threadClient: boolean, inStrip: boolean) {
   return {

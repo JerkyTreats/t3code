@@ -145,7 +145,9 @@ it.effect.each([43, 49, 82])(
       yield* prepareInstalledState(throughId);
       const before = yield* readSurvivingData;
       const journal = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
-      assert.deepStrictEqual(yield* runMigrations(), [[83, "RetireBoardAndCollective"]]);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 83 }), [
+        [83, "RetireBoardAndCollective"],
+      ]);
       assert.deepStrictEqual(yield* inspectRetiredSchema, []);
       assert.deepStrictEqual(yield* readSurvivingData, before);
       assert.deepStrictEqual(
@@ -176,7 +178,7 @@ it.effect.each([43, 49, 82])(
         '2026-01-02', 'server', '{}', '{}', 2) RETURNING sequence`,
         [{ sequence: 905 }],
       );
-      assert.deepStrictEqual(yield* runMigrations(), []);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 83 }), []);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
@@ -189,7 +191,7 @@ it.effect("rolls back retirement data and journal together before retrying", () 
     const journal = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
     const schema = yield* sql`SELECT * FROM sqlite_master ORDER BY type, name`;
     const receipts = yield* sql`SELECT * FROM orchestration_command_receipts ORDER BY command_id`;
-    assert.isTrue(Exit.isFailure(yield* Effect.exit(runMigrations())));
+    assert.isTrue(Exit.isFailure(yield* Effect.exit(runMigrations({ toMigrationInclusive: 83 }))));
     assert.deepStrictEqual(
       yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`,
       journal,
@@ -200,7 +202,9 @@ it.effect("rolls back retirement data and journal together before retrying", () 
       receipts,
     );
     yield* sql`DROP TRIGGER fail_retirement`;
-    assert.deepStrictEqual(yield* runMigrations(), [[83, "RetireBoardAndCollective"]]);
+    assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 83 }), [
+      [83, "RetireBoardAndCollective"],
+    ]);
     assert.deepStrictEqual(yield* inspectRetiredSchema, []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );

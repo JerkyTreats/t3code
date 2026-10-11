@@ -1,20 +1,38 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { originPushRedirectError } from "./originGitPolicy.ts";
 import {
   SourceControlRepositoryError,
-  type SourceControlProviderKind,
   type SourceControlRepositoryCloneUrls,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { normalizeGitRemoteMutationTarget } from "@t3tools/shared/git";
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
-import { isOriginRemoteName, ORIGIN_REMOTE_NAME } from "./originOnlySourceControlPolicy.ts";
+import {
+  isOriginRemoteName,
+  ORIGIN_REMOTE_NAME,
+} from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 import {
   azureDevOpsRepositoryTargetFromPublication,
   azureDevOpsRepositoryTargetFromRemoteUrl,
   type AzureDevOpsRepositoryTarget,
-} from "../sourceControl/AzureDevOpsRepositoryTarget.ts";
-import type * as SourceControlProvider from "../sourceControl/SourceControlProvider.ts";
+} from "@t3tools/source-control-core/server/fork/AzureDevOpsRepositoryTarget";
+import type * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import type * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+
+export function requireCloneProviderEndpoint(
+  provider: SourceControlProviderKind,
+  endpoint: string | undefined,
+): Effect.Effect<string, SourceControlRepositoryError> {
+  return endpoint?.trim()
+    ? Effect.succeed(endpoint)
+    : Effect.fail(
+        new SourceControlRepositoryError({
+          operation: "cloneRepository",
+          provider,
+          detail: "Choose the exact provider endpoint before cloning by repository path.",
+        }),
+      );
+}
 
 export function validateProviderEndpoint(input: {
   readonly operation: "lookupRepository" | "publishRepository";

@@ -1,0 +1,89 @@
+{
+  "name": "@t3tools/source-control-core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client/definition": {
+      "types": "./src/client/definition.ts",
+      "import": "./src/client/definition.ts"
+    },
+    "./server/diffFileRevisions": {
+      "types": "./src/server/diffFileRevisions.ts",
+      "import": "./src/server/diffFileRevisions.ts"
+    },
+    "./server/discovery": {
+      "types": "./src/server/discovery.ts",
+      "import": "./src/server/discovery.ts"
+    },
+    "./server/driver": {
+      "types": "./src/server/driver.ts",
+      "import": "./src/server/driver.ts"
+    },
+    "./server/mergeMessage": {
+      "types": "./src/server/mergeMessage.ts",
+      "import": "./src/server/mergeMessage.ts"
+    },
+    "./server/pullRequestChecks": {
+      "types": "./src/server/pullRequestChecks.ts",
+      "import": "./src/server/pullRequestChecks.ts"
+    },
+    "./server/PullRequestProvider": {
+      "types": "./src/server/PullRequestProvider.ts",
+      "import": "./src/server/PullRequestProvider.ts"
+    },
+    "./server/SourceControlHost": {
+      "types": "./src/server/SourceControlHost.ts",
+      "import": "./src/server/SourceControlHost.ts"
+    },
+    "./server/SourceControlProvider": {
+      "types": "./src/server/SourceControlProvider.ts",
+      "import": "./src/server/SourceControlProvider.ts"
+    },
+    "./server/SourceControlRateLimit": {
+      "types": "./src/server/SourceControlRateLimit.ts",
+      "import": "./src/server/SourceControlRateLimit.ts"
+    },
+    "./server/fork/originHostedProviderPolicy": {
+      "types": "./src/server/fork/originHostedProviderPolicy.ts",
+      "import": "./src/server/fork/originHostedProviderPolicy.ts"
+    },
+    "./server/fork/originReviewThreadPolicy": {
+      "types": "./src/server/fork/originReviewThreadPolicy.ts",
+      "import": "./src/server/fork/originReviewThreadPolicy.ts"
+    },
+    "./server/fork/originOnlySourceControlPolicy": {
+      "types": "./src/server/fork/originOnlySourceControlPolicy.ts",
+      "import": "./src/server/fork/originOnlySourceControlPolicy.ts"
+    },
+    "./server/fork/AzureDevOpsRepositoryTarget": {
+      "types": "./src/server/fork/AzureDevOpsRepositoryTarget.ts",
+      "import": "./src/server/fork/AzureDevOpsRepositoryTarget.ts"
+    },
+    "./server/fork/GitLabRepositoryTarget": {
+      "types": "./src/server/fork/GitLabRepositoryTarget.ts",
+      "import": "./src/server/fork/GitLabRepositoryTarget.ts"
+    },
+    "./client/originRepositoryPolicy": {
+      "types": "./src/client/originRepositoryPolicy.ts",
+      "import": "./src/client/originRepositoryPolicy.ts"
+    },
+    "./server/fork/originGitCafePolicy": {
+      "types": "./src/server/fork/originGitCafePolicy.ts",
+      "import": "./src/server/fork/originGitCafePolicy.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir ."
+  },
+  "dependencies": {
+    "@t3tools/contracts": "workspace:*",
+    "@t3tools/shared": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

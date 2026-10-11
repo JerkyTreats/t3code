@@ -1,19 +1,20 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
+import { originForgejoChangeRequestNumber } from "@t3tools/source-control-core/server/fork/originHostedProviderPolicy";
 import { describe, expect, it } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
-import * as SourceControlProvider from "../sourceControl/SourceControlProvider.ts";
+import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import { OriginRepositoryMutationAuthorityError } from "./OriginRepositoryMutationAuthority.ts";
 import {
   pickOriginSourceControlContext,
   bindOriginProviderContext,
-  originForgejoChangeRequestNumber,
 } from "./sourceControlContextPolicy.ts";
 
 describe("sourceControlContextPolicy", () => {
   it("keeps Forgejo pull request selectors within the exact origin", () => {
     const context = {
       provider: {
-        kind: "forgejo" as const,
+        kind: SourceControlProviderKind.make("forgejo"),
         name: "Forgejo",
         baseUrl: "https://forge.example:8443",
       },
@@ -58,7 +59,7 @@ describe("sourceControlContextPolicy", () => {
         { name: "origin", url: "git@github.com:fork/project.git" },
       ]),
     ).toMatchObject({
-      provider: { kind: "github" },
+      provider: { kind: SourceControlProviderKind.make("github") },
       remoteName: "origin",
       remoteUrl: "git@github.com:fork/project.git",
     });
@@ -86,7 +87,7 @@ it.effect(
       let providerCalls = 0;
       let authorized = false;
       const provider = SourceControlProvider.SourceControlProvider.of({
-        kind: "github",
+        kind: SourceControlProviderKind.make("github"),
         createChangeRequest: (input) =>
           Effect.sync(() => {
             providerCalls += 1;

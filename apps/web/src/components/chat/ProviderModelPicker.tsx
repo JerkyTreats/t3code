@@ -1,6 +1,8 @@
+import { threadModelIdentifierPresentation } from "../../fork/threadComposerPresentation";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type ProviderInstanceId,
+  type EnvironmentId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
@@ -27,6 +29,7 @@ import { useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
+  environmentId: EnvironmentId | null;
   /**
    * The instance currently selected in the composer. Drives the trigger
    * icon, label and the default-highlighted combobox row.
@@ -85,22 +88,23 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     (activeEntry?.driverKind === "opencode" || activeEntry?.driverKind === "antigravity"
       ? undefined
       : selectedInstanceOptions[0]);
+  const threadLabel = threadModelIdentifierPresentation({
+    labelMode: props.labelMode,
+    model: props.model,
+    selectedModel,
+  });
   const triggerTitle =
-    props.labelMode === "identifier"
-      ? props.model === ANTIGRAVITY_DEFAULT_MODEL
-        ? selectedModel?.slug || "Choose model"
-        : props.model || "Choose model"
-      : selectedModel
-        ? getTriggerDisplayModelName(selectedModel)
-        : props.model === ANTIGRAVITY_DEFAULT_MODEL
-          ? "Choose model"
-          : props.model || "Choose model";
+    threadLabel?.title ??
+    (selectedModel
+      ? getTriggerDisplayModelName(selectedModel)
+      : props.model === ANTIGRAVITY_DEFAULT_MODEL
+        ? "Choose model"
+        : props.model || "Choose model");
   const triggerLabel =
-    props.labelMode === "identifier"
-      ? `${triggerTitle}${selectedModel?.isUnavailable ? " (Unavailable)" : ""}`
-      : selectedModel
-        ? `${getTriggerDisplayModelLabel(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
-        : triggerTitle;
+    threadLabel?.label ??
+    (selectedModel
+      ? `${getTriggerDisplayModelLabel(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
+      : triggerTitle);
   const showInstanceBadge =
     activeEntry !== null && shouldShowInstanceBadge(activeEntry, props.instanceEntries);
 
@@ -214,10 +218,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       <PopoverTrigger
         render={
           <ComposerControl
-            aria-label={
-              props.triggerAriaLabel ??
-              (props.labelMode === "identifier" ? `Model: ${triggerTitle}` : allModelNames)
-            }
+            aria-label={props.triggerAriaLabel ?? threadLabel?.ariaLabel ?? allModelNames}
             size={size}
             data-chat-provider-model-picker="true"
             className={cn(
@@ -303,6 +304,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         padding="none"
       >
         <ModelPickerContent
+          environmentId={props.environmentId}
           activeInstanceId={activeInstanceId}
           model={props.model}
           {...(props.selectedModels !== undefined ? { selectedModels: props.selectedModels } : {})}

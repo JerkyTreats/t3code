@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -13,9 +14,9 @@ import { GitCommandError, SourceControlProviderError } from "@t3tools/contracts"
 
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import * as BitbucketApi from "./BitbucketApi.ts";
-import * as BitbucketSourceControlProvider from "./BitbucketSourceControlProvider.ts";
-import type * as SourceControlProvider from "./SourceControlProvider.ts";
+import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
+import * as BitbucketSourceControlProvider from "@t3tools/source-control-bitbucket/server/BitbucketSourceControlProvider";
+import type * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./SourceControlRepositoryService.ts";
 
@@ -43,7 +44,7 @@ function makeProvider(
     >;
 
   return {
-    kind: "github",
+    kind: SourceControlProviderKind.make("github"),
     listChangeRequests: () => unsupported("listChangeRequests"),
     getChangeRequest: () => unsupported("getChangeRequest"),
     createChangeRequest: () => unsupported("createChangeRequest"),
@@ -129,13 +130,16 @@ it.effect("looks up repositories through the requested provider and exact endpoi
   return Effect.gen(function* () {
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.lookupRepository({
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       providerBaseUrl: "https://github.example.test",
       repository: "octocat/t3code",
       cwd: "/workspace",
     });
 
-    assert.deepStrictEqual(result, { provider: "github", ...ENTERPRISE_CLONE_URLS });
+    assert.deepStrictEqual(result, {
+      provider: SourceControlProviderKind.make("github"),
+      ...ENTERPRISE_CLONE_URLS,
+    });
     assert.deepStrictEqual(calls, [
       {
         cwd: "/workspace",
@@ -159,7 +163,7 @@ it.effect("rejects an enterprise lookup when one returned clone URL targets anot
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const error = yield* service
       .lookupRepository({
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerBaseUrl: "https://github.example.test",
         repository: "octocat/t3code",
         cwd: "/workspace",
@@ -172,7 +176,7 @@ it.effect("rejects an enterprise lookup when one returned clone URL targets anot
 
 it.effect("preserves provider failures without deriving the repository message from them", () => {
   const providerCause = new SourceControlProviderError({
-    provider: "github",
+    provider: SourceControlProviderKind.make("github"),
     operation: "getRepositoryCloneUrls",
     cwd: "/workspace",
     repository: "octocat/t3code",
@@ -186,7 +190,7 @@ it.effect("preserves provider failures without deriving the repository message f
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const error = yield* Effect.flip(
       service.lookupRepository({
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerBaseUrl: "https://github.example.test",
         repository: "octocat/t3code",
         cwd: "/workspace",
@@ -223,7 +227,7 @@ it.effect(
       yield* Effect.gen(function* () {
         const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
         const input = {
-          provider: "bitbucket" as const,
+          provider: SourceControlProviderKind.make("bitbucket"),
           providerBaseUrl: "https://bitbucket.org",
           repository: "workspace/repository",
           cwd: "/workspace",
@@ -252,11 +256,11 @@ it.effect(
 
 it.effect("keeps a plain Bitbucket locator lookalike out of the repository message", () => {
   const provider = makeProvider({
-    kind: "bitbucket",
+    kind: SourceControlProviderKind.make("bitbucket"),
     getRepositoryCloneUrls: () =>
       Effect.fail(
         new SourceControlProviderError({
-          provider: "bitbucket",
+          provider: SourceControlProviderKind.make("bitbucket"),
           operation: "getRepositoryCloneUrls",
           cwd: "/workspace",
           detail: "credential token abc123 was rejected",
@@ -273,7 +277,7 @@ it.effect("keeps a plain Bitbucket locator lookalike out of the repository messa
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const error = yield* Effect.flip(
       service.lookupRepository({
-        provider: "bitbucket",
+        provider: SourceControlProviderKind.make("bitbucket"),
         providerBaseUrl: "https://bitbucket.org",
         repository: "workspace/repository",
       }),
@@ -302,7 +306,7 @@ it.effect("keeps arbitrary Bitbucket request failures out of the repository mess
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const error = yield* Effect.flip(
         service.lookupRepository({
-          provider: "bitbucket",
+          provider: SourceControlProviderKind.make("bitbucket"),
           providerBaseUrl: "https://bitbucket.org",
           repository: "pingdotgg/t3code",
           cwd: "/workspace",
@@ -329,7 +333,7 @@ it.effect("clones a looked-up repository into the requested destination", () =>
     yield* Effect.gen(function* () {
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const result = yield* service.cloneRepository({
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerBaseUrl: "https://github.com",
         repository: "octocat/t3code",
         destinationPath,
@@ -339,7 +343,7 @@ it.effect("clones a looked-up repository into the requested destination", () =>
       assert.deepStrictEqual(result, {
         cwd: destinationPath,
         remoteUrl: CLONE_URLS.url,
-        repository: { provider: "github", ...CLONE_URLS },
+        repository: { provider: SourceControlProviderKind.make("github"), ...CLONE_URLS },
       });
       assert.deepStrictEqual(cloneCalls, [
         {
@@ -598,7 +602,7 @@ it.effect(
       const error = yield* service
         .publishRepository({
           cwd: "/workspace",
-          provider: "github",
+          provider: SourceControlProviderKind.make("github"),
           providerBaseUrl: "https://github.example.test",
           repository: "octocat/t3code",
           visibility: "private",
@@ -663,7 +667,7 @@ it.effect("publishes by creating the repository, adding a remote, and pushing up
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.publishRepository({
       cwd: "/workspace",
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       providerBaseUrl: "https://github.com",
       repository: "octocat/t3code",
       visibility: "private",
@@ -672,7 +676,7 @@ it.effect("publishes by creating the repository, adding a remote, and pushing up
     });
 
     assert.deepStrictEqual(result, {
-      repository: { provider: "github", ...CLONE_URLS },
+      repository: { provider: SourceControlProviderKind.make("github"), ...CLONE_URLS },
       remoteName: "origin",
       remoteUrl: CLONE_URLS.sshUrl,
       branch: "feature/remote-v1",
@@ -734,7 +738,7 @@ it.effect("rejects an unusable occupied origin before external repository creati
     const error = yield* service
       .publishRepository({
         cwd: "/workspace",
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerBaseUrl: "https://github.com",
         repository: "octocat/t3code",
         visibility: "private",
@@ -792,7 +796,7 @@ it.effect("rejects a mismatched provider endpoint before external repository cre
     const error = yield* service
       .publishRepository({
         cwd: "/workspace",
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerBaseUrl: "https://gitlab.com",
         repository: "octocat/t3code",
         visibility: "private",
@@ -820,7 +824,7 @@ it.effect("rejects a matching non-origin remote before external repository creat
     const error = yield* service
       .publishRepository({
         cwd: "/workspace",
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerBaseUrl: "https://github.com",
         repository: "octocat/t3code",
         visibility: "private",
@@ -873,7 +877,7 @@ it.effect(
       const error = yield* service
         .publishRepository({
           cwd: "/workspace",
-          provider: "github",
+          provider: SourceControlProviderKind.make("github"),
           providerBaseUrl: "https://github.com",
           repository: "octocat/t3code",
           visibility: "private",
@@ -929,7 +933,7 @@ it.effect("does not reject the same repository path on another host during prefl
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.publishRepository({
       cwd: "/workspace",
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       providerBaseUrl: "https://git.enterprise.test",
       repository: "octocat/t3code",
       visibility: "private",
@@ -976,7 +980,7 @@ it.effect("includes a non-default endpoint port in publication preflight matchin
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.publishRepository({
       cwd: "/workspace",
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       providerBaseUrl: "https://git.enterprise.test:8443",
       repository: "octocat/t3code",
       visibility: "private",
@@ -1020,7 +1024,7 @@ it.effect("rejects an exact neutral enterprise target on a non-origin remote", (
     const error = yield* service
       .publishRepository({
         cwd: "/workspace",
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerBaseUrl: "https://git.enterprise.test:8443",
         repository: "octocat/t3code",
         visibility: "private",
@@ -1065,7 +1069,7 @@ it.effect("rejects an exact Azure target on a non-origin remote", () => {
     const error = yield* service
       .publishRepository({
         cwd: "/workspace",
-        provider: "azure-devops",
+        provider: SourceControlProviderKind.make("azure-devops"),
         providerBaseUrl: "https://dev.azure.com/org",
         repository: "project/repository",
         visibility: "private",
@@ -1110,7 +1114,7 @@ it.effect("rejects a conflicting origin before external creation or remote mutat
     const error = yield* service
       .publishRepository({
         cwd: "/workspace",
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerBaseUrl: "https://github.com",
         repository: "octocat/t3code",
         visibility: "private",
@@ -1160,7 +1164,7 @@ it.effect("reuses a matching existing origin without recreating the repository",
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.publishRepository({
       cwd: "/workspace",
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       providerBaseUrl: "https://github.com",
       repository: "octocat/t3code",
       visibility: "private",
@@ -1173,7 +1177,7 @@ it.effect("reuses a matching existing origin without recreating the repository",
     assert.deepStrictEqual(readContexts, [
       {
         provider: {
-          kind: "github",
+          kind: SourceControlProviderKind.make("github"),
           name: "GitHub",
           baseUrl: "https://github.com",
         },
@@ -1215,7 +1219,7 @@ it.effect("rejects existing origin reuse against another selected endpoint", () 
     const error = yield* service
       .publishRepository({
         cwd: "/workspace",
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerBaseUrl: "https://github.enterprise.test",
         repository: "octocat/t3code",
         visibility: "private",
@@ -1261,7 +1265,7 @@ it.effect("reuses an explicitly selected neutral enterprise origin", () => {
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.publishRepository({
       cwd: "/workspace",
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       providerBaseUrl: "https://git.enterprise.test:8443",
       repository: "octocat/t3code",
       visibility: "private",
@@ -1275,7 +1279,7 @@ it.effect("reuses an explicitly selected neutral enterprise origin", () => {
         repository: "octocat/t3code",
         context: {
           provider: {
-            kind: "github",
+            kind: SourceControlProviderKind.make("github"),
             name: "git.enterprise.test:8443",
             baseUrl: "https://git.enterprise.test:8443",
           },
@@ -1319,7 +1323,7 @@ it.effect("reuses the exact Azure origin repository selector", () => {
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.publishRepository({
       cwd: "/workspace",
-      provider: "azure-devops",
+      provider: SourceControlProviderKind.make("azure-devops"),
       providerBaseUrl: "https://dev.azure.com/org",
       repository: "project/repository",
       visibility: "private",
@@ -1333,7 +1337,7 @@ it.effect("reuses the exact Azure origin repository selector", () => {
         repository: "repository",
         context: {
           provider: {
-            kind: "azure-devops",
+            kind: SourceControlProviderKind.make("azure-devops"),
             name: "Azure DevOps",
             baseUrl: "https://dev.azure.com",
           },
@@ -1362,7 +1366,7 @@ it.effect("rejects any divergent origin push URL before remote mutation", () => 
     const error = yield* service
       .publishRepository({
         cwd: "/workspace",
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerBaseUrl: "https://github.com",
         repository: "octocat/t3code",
         visibility: "private",
@@ -1411,7 +1415,7 @@ it.effect("rejects an origin push URL on a different non-default port", () => {
     const error = yield* service
       .publishRepository({
         cwd: "/workspace",
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         providerBaseUrl: "https://github.com",
         repository: "octocat/t3code",
         visibility: "private",
@@ -1457,7 +1461,7 @@ it.effect("publish succeeds with status remote_added when the local repo has no 
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.publishRepository({
       cwd: "/workspace",
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       providerBaseUrl: "https://github.com",
       repository: "octocat/t3code",
       visibility: "private",
@@ -1466,7 +1470,7 @@ it.effect("publish succeeds with status remote_added when the local repo has no 
     });
 
     assert.deepStrictEqual(result, {
-      repository: { provider: "github", ...CLONE_URLS },
+      repository: { provider: SourceControlProviderKind.make("github"), ...CLONE_URLS },
       remoteName: "origin",
       remoteUrl: CLONE_URLS.sshUrl,
       branch: "main",

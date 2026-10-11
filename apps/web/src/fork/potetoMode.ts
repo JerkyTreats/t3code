@@ -56,6 +56,43 @@ export function isPotetoModeCommand(text: string): boolean {
   return /^\s*\//.test(text);
 }
 
+export function potetoModeSubmissionError(input: {
+  selection: PotetoModeSelection | null;
+  unavailableReason: string | null;
+  text: string;
+  answeringPendingInput: boolean;
+  editingQueuedMessage: boolean;
+}): string | null {
+  return input.selection &&
+    !input.answeringPendingInput &&
+    !input.editingQueuedMessage &&
+    !isPotetoModeCommand(input.text)
+    ? input.unavailableReason
+    : null;
+}
+
+export function togglePotetoModeSelection(input: {
+  selection: PotetoModeSelection | null;
+  instanceId: string;
+  driver: string;
+  skills: readonly ServerProviderSkill[];
+  multipleModels: boolean;
+}): PotetoModeSelection | null {
+  if (input.selection) return null;
+  if (
+    potetoModeUnavailableReason(
+      null,
+      input.instanceId,
+      input.driver,
+      input.skills,
+      input.multipleModels,
+    )
+  )
+    return null;
+  const skill = resolvePotetoModeSkill(input.driver, input.skills);
+  return skill ? { instanceId: input.instanceId, path: skill.path } : null;
+}
+
 /** Invoke the installed workflow before context and effort formatting. */
 export function applyPotetoMode(text: string, selection: PotetoModeSelection | null): string {
   if (!selection || isPotetoModeCommand(text)) return text;

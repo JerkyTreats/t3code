@@ -25,12 +25,12 @@ Build and verify a standalone non-root server image, then permit publication onl
 
 ## Protected Decisions
 
-| Decision | Required behavior                                                                                                                                                                     | Owner and evidence                                                         |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| F20.D1   | Publish only the locally verified candidate to the exact-origin image namespace from exact-origin main                                                                                | Image workflow and workflow safety proofs                                  |
-| F20.D2   | Run the pinned server and provider image as a non-root user with explicit writable data and workspace boundaries                                                                      | Dockerfile contract and image smoke orchestration proofs                   |
-| F20.D3   | Report `desktop-managed` update capability only when the desktop shell owns the server; every headless and operator-managed runtime reports no in-app update capability               | `officialRuntimeUpdatePolicy.ts` and direct headless update rejection      |
-| F20.D4   | Replace headless runtimes through an authorized source deployment or exact-origin image replacement; never download, install, launch, or re-resolve T3 from a public package registry | `invocation.ts`, runtime update adapters, and non-registry guidance proofs |
+| Decision | Required behavior                                                                                                                                                                     | Owner and evidence                                                                        |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| F20.D1   | Publish only the locally verified candidate to the exact-origin image namespace from exact-origin main                                                                                | Image workflow and workflow safety proofs                                                 |
+| F20.D2   | Run the pinned server and provider image as a non-root user with explicit writable data and workspace boundaries                                                                      | Dockerfile contract and image smoke orchestration proofs                                  |
+| F20.D3   | Report `desktop-managed` update capability only when the desktop shell owns the server; every headless and operator-managed runtime reports no in-app update capability               | `officialRuntimeUpdatePolicy.ts` and direct headless update rejection                     |
+| F20.D4   | Replace headless runtimes through an authorized source deployment or exact-origin image replacement; never download, install, launch, or re-resolve T3 from a public package registry | `officialRuntimeInvocation.ts`, runtime update adapters, and non-registry guidance proofs |
 
 ## Current Owners
 
@@ -42,6 +42,9 @@ Build and verify a standalone non-root server image, then permit publication onl
 - `scripts/lib/release-workflow-safety.ts`
 - `apps/server/src/fork/officialRuntimeUpdatePolicy.ts`
 - `apps/server/src/cli/invocation.ts`
+- `apps/server/src/cli/officialRuntimeInvocation.ts`
+
+`officialRuntimeUpdatePolicy.ts` owns both advertised capability and update admission, including refusal guidance before any injected adapter runs. `cloud/selfUpdate.ts` translates that decision into the existing desktop preparation and commit effects. `officialRuntimeInvocation.ts` owns package-runner cache recognition and shell-safe follow-up formatting; `cli/invocation.ts` supplies current HostProcess and installation inputs.
 
 The web `runtimeUpdateGuidance.ts` owner permits only desktop-controlled update capability. `versionSkew.ts` and `ServerUpdateAction.tsx` adapt it to current version comparison and presentation. Headless and legacy service descriptors show deployment-manager guidance. Onboarding commands use the already-installed runtime and never invoke a public package runner. The server workspace build CLI has no package publication subcommand.
 

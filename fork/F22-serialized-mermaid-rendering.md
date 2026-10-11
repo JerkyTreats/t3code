@@ -35,6 +35,7 @@ Render Mermaid fences safely and predictably across concurrent Markdown surfaces
 - `apps/web/src/components/chat/MessagesTimeline.tsx`
 - `apps/web/src/components/chat/ProposedPlanCard.tsx`
 - `apps/web/src/components/pullRequest/PullRequestMarkdown.tsx` and its description, comment, review-thread, timeline and editor hosts
+- `apps/web/src/components/pullRequest/guide/GuideProse.tsx` supplies stable repository, stop and note identities to the same Markdown fence owner
 - `apps/web/src/components/files/FileMarkdownPreview.tsx`
 - `apps/web/src/components/files/AttachmentFilePreview.tsx`
 - `apps/web/src/features/mermaid/mermaid.css` and its import in `apps/web/src/index.css`

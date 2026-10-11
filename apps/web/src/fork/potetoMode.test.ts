@@ -5,6 +5,8 @@ import {
   potetoModeScope,
   potetoModeUnavailableReason,
   resolvePotetoModeSkill,
+  potetoModeSubmissionError,
+  togglePotetoModeSelection,
 } from "./potetoMode";
 import { createPotetoModeStore } from "./potetoModeStore";
 
@@ -16,6 +18,32 @@ const skill: ServerProviderSkill = {
 const selection = { instanceId: "codex-main", path: skill.path };
 
 describe("F30 composer Poteto Mode owner", () => {
+  it("replaces the composer host while owning toggle transitions and literal/edit bypass", () => {
+    const input = {
+      selection: null,
+      instanceId: "codex-main",
+      driver: "codex",
+      skills: [skill],
+      multipleModels: false,
+    };
+    const enabled = togglePotetoModeSelection(input);
+    expect(enabled).toEqual(selection);
+    expect(togglePotetoModeSelection({ ...input, selection: enabled, skills: [] })).toBeNull();
+    expect(togglePotetoModeSelection({ ...input, skills: [] })).toBeNull();
+    expect(togglePotetoModeSelection({ ...input, multipleModels: true })).toBeNull();
+    const submission = {
+      selection: enabled,
+      unavailableReason: "Unavailable",
+      text: "continue",
+      answeringPendingInput: false,
+      editingQueuedMessage: false,
+    };
+    expect(potetoModeSubmissionError(submission)).toBe("Unavailable");
+    expect(potetoModeSubmissionError({ ...submission, answeringPendingInput: true })).toBeNull();
+    expect(potetoModeSubmissionError({ ...submission, editingQueuedMessage: true })).toBeNull();
+    expect(potetoModeSubmissionError({ ...submission, text: " /compact" })).toBeNull();
+    expect(potetoModeSubmissionError({ ...submission, selection: null })).toBeNull();
+  });
   it("repeats invocation across sends without consuming the selection or changing authored bytes", () => {
     expect(applyPotetoMode("Reproduce this\n\n  preserve spacing", selection)).toBe(
       "$poteto-mode\nReproduce this\n\n  preserve spacing",

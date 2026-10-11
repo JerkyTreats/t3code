@@ -11,7 +11,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 
 import * as ProcessRunner from "../processRunner.ts";
-import { selectOriginRemote } from "../fork/originOnlySourceControlPolicy.ts";
+import { selectOriginRemote } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 
 const DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY = 512;
 // Background sweeps resolve every project each minute. A long TTL keeps them

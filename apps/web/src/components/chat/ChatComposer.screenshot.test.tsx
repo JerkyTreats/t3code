@@ -157,6 +157,7 @@ function attachment(id: string): ComposerImageAttachment {
 function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerProps {
   return {
     canOperateThread: true,
+    activeProjectId: null,
     resumeCompactionTokens: null,
     keepFullHistory: false,
     onToggleKeepFullHistory: vi.fn(),
