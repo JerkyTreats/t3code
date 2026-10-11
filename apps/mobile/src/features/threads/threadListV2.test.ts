@@ -55,6 +55,84 @@ function makeThread(
 
 const NOW = "2026-06-02T00:00:00.000Z";
 
+describe("conversation order across list sections", () => {
+  it("carries the delivered response timestamp through client presentation", () => {
+    const deliveredAt = DateTime.makeUnsafe("2026-06-01T13:00:00.000Z");
+    const thread = presentThreadShell(
+      environmentId,
+      makeRawThreadShell({ latestAssistantResponseAt: deliveredAt }),
+    );
+    expect(thread.latestAssistantResponseAt).toBe("2026-06-01T13:00:00.000Z");
+  });
+
+  it.each(["active", "pinned", "working", "snoozed", "settled"] as const)(
+    "orders %s by prompts and responses without run or lifecycle timestamps",
+    (section) => {
+      const lifecycle = {
+        pinnedAt: section === "pinned" ? NOW : null,
+        settledOverride: section === "settled" ? ("settled" as const) : null,
+        settledAt: section === "settled" ? NOW : null,
+        snoozedUntil: section === "snoozed" ? "2026-06-03T00:00:00.000Z" : null,
+        snoozedAt: section === "snoozed" ? NOW : null,
+        runtime:
+          section === "working"
+            ? {
+                status: "running" as const,
+                activeRunId: null,
+                providerInstanceId: ProviderInstanceId.make("codex"),
+                providerName: "Codex",
+                lastError: null,
+                updatedAt: NOW,
+              }
+            : null,
+      };
+      const older = makeThread({
+        id: ThreadId.make("older"),
+        title: "older",
+        ...lifecycle,
+        createdAt: "2026-06-01T00:00:00.000Z",
+        latestUserAuthoredMessageAt: "2026-06-01T01:00:00.000Z",
+        latestUserMessageAt: NOW,
+        updatedAt: NOW,
+        unsettledAt: NOW,
+        latestRun: {
+          runId: RunId.make("wake"),
+          status: "completed",
+          requestedAt: NOW,
+          startedAt: NOW,
+          completedAt: NOW,
+          assistantMessageId: null,
+        },
+      });
+      const response = makeThread({
+        id: ThreadId.make("response"),
+        title: "response",
+        ...lifecycle,
+        createdAt: "2026-06-01T00:00:00.000Z",
+        latestAssistantResponseAt: "2026-06-01T02:00:00.000Z",
+      });
+      const input = {
+        threads: [older, response],
+        environmentId: null,
+        searchQuery: "",
+        now: NOW,
+        workingShelfEnabled: true,
+        workingShelfExpanded: true,
+        snoozedShelfExpanded: true,
+      };
+      expect(buildThreadListV2Items(input).items.map((item) => item.thread.id)).toEqual([
+        "response",
+        "older",
+      ]);
+      expect(
+        buildThreadListV2Items({ ...input, threads: [response, older] }).items.map(
+          (item) => item.thread.id,
+        ),
+      ).toEqual(["response", "older"]);
+    },
+  );
+});
+
 const linkedPullRequest = {
   projectId: ProjectId.make("project-1"),
   repository: "pingdotgg/t3code",
@@ -649,8 +727,8 @@ describe("buildThreadListV2Items", () => {
 
     expect(layout.items.map((item) => item.thread.id)).toEqual([
       "active",
-      "sooner",
       "later",
+      "sooner",
       "settled",
     ]);
     expect(layout.items.map((item) => item.snoozed)).toEqual([false, true, true, false]);
@@ -830,7 +908,7 @@ describe("buildThreadListV2Items", () => {
     expect(items.map((item) => item.thread.id)).toEqual(["newer-created", "older-created"]);
   });
 
-  it("sorts settled threads by their persisted settlement timestamp", () => {
+  it("sorts settled threads by conversation recency rather than settlement time", () => {
     const { items } = buildThreadListV2Items({
       threads: [
         makeThread({
@@ -853,7 +931,7 @@ describe("buildThreadListV2Items", () => {
       now: NOW,
     });
 
-    expect(items.map((item) => item.thread.id)).toEqual(["settled-newer", "settled-older"]);
+    expect(items.map((item) => item.thread.id)).toEqual(["settled-older", "settled-newer"]);
   });
 
   it("keeps settled threads in the tail and filters by search query", () => {
@@ -1004,6 +1082,7 @@ describe("buildThreadListV2Items settled sort reuse", () => {
       title: id,
       settledOverride: "settled",
       settledAt,
+      latestAssistantResponseAt: settledAt,
       ...overrides,
     });
   }
@@ -1071,8 +1150,7 @@ describe("buildThreadListV2Items settled sort reuse", () => {
   });
 
   it("re-sorts when the same settled rows arrive in a different order", () => {
-    // Same id and timestamp on two environments: only the stable input order
-    // breaks the tie, so a reordered input must not reuse the previous output.
+    // Equal conversations converge across environments regardless of input order.
     const first = makeSettled("twin", "2026-06-01T01:00:00.000Z");
     const second = makeSettled("twin", "2026-06-01T01:00:00.000Z", {
       environmentId: otherEnvironmentId,
@@ -1082,8 +1160,8 @@ describe("buildThreadListV2Items settled sort reuse", () => {
       `${otherEnvironmentId}:twin`,
     ]);
     expect(settledOrder([second, first])).toEqual([
-      `${otherEnvironmentId}:twin`,
       `${environmentId}:twin`,
+      `${otherEnvironmentId}:twin`,
     ]);
   });
 
@@ -1325,12 +1403,12 @@ describe("pending mobile thread moves", () => {
   }
 
   it.each(["active", "pinned"] as const)(
-    "holds %s order through every intermediate key upsert",
+    "keeps conversation order through every intermediate %s key upsert",
     (section) => {
       const { rows, assignments, pending, update } = fixture(section);
       let current = rows;
       let hold: PendingThreadOrder | null = pending;
-      const desired = pending.orderedIds.map((id) => id.split(":")[1]);
+      const desired = rows.map((row) => row.id);
       expect(layout(current, hold)).toEqual(desired);
       for (const assignment of assignments) {
         current = update(current, assignment);
@@ -1355,14 +1433,14 @@ describe("pending mobile thread moves", () => {
       current = update(current, assignment);
       hold = reconcilePendingThreadOrder(hold!, current);
       expect(hold === null).toBe(index === assignments.length - 1);
-      expect(layout(current, hold)).toEqual(["a", "c", "b"]);
+      expect(layout(current, hold)).toEqual(["a", "b", "c"]);
     }
   });
 
-  it("keeps search results in the full pending section order", () => {
+  it("keeps search results in conversation order despite pending manual keys", () => {
     const { rows, assignments, pending, update } = fixture();
     const current = update(update(rows, assignments[0]!), assignments[1]!);
-    expect(layout(current, pending, "match")).toEqual(["c", "b"]);
+    expect(layout(current, pending, "match")).toEqual(["b", "c"]);
   });
 
   it("releases for real section membership and foreign key changes", () => {
@@ -2308,6 +2386,7 @@ describe("Working section beta", () => {
       id: ThreadId.make(id),
       title: id,
       createdAt: "2026-06-01T00:00:00.000Z",
+      latestAssistantResponseAt: completedAt,
       latestRun: {
         runId: RunId.make(`run-${id}`),
         status: "completed",
@@ -2371,12 +2450,12 @@ describe("Working section beta", () => {
     expect(ids(build({ selectedThreadKey: `${environmentId}:working` })).at(-1)).toBe("working");
   });
 
-  it("orders the inbox by the latest return this device observed", () => {
+  it("ignores device-observed return timestamps when ordering the inbox", () => {
     const layout = build({
       inboxReturnAt: (thread) =>
         thread.id === "finished-early" ? Date.parse("2026-06-01T04:00:00.000Z") : undefined,
     });
-    expect(ids(layout).slice(1)).toEqual(["finished-early", "finished-late", "asks-approval"]);
+    expect(ids(layout).slice(1)).toEqual(["finished-late", "asks-approval", "finished-early"]);
   });
 
   it("places the shelf after queued tasks and before snoozed and settled threads", () => {

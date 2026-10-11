@@ -2301,6 +2301,32 @@ describe("Working shelf (beta)", () => {
       expect(above.kind === "move-active" && above.assignments[0]!.orderKey < "m").toBe(true);
     });
 
+    it("pins into conversation order without writing placement keys", () => {
+      const base = {
+        pinnedOrder: ["p1"],
+        pinnedKeysById: new Map([["p1", "m"]]),
+        activeOrder: ["a1"],
+        activeKeysById: new Map([["a1", "f"]]),
+        pinnedTimeOrdered: true,
+      };
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "a1",
+          activeSection: "active",
+          target: { section: "pinned", pinnedOrder: ["a1", "p1"], activeOrder: [] },
+        }),
+      ).toEqual({ kind: "pin", order: null, orderKey: undefined, extraAssignments: [] });
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "p1",
+          activeSection: "pinned",
+          target: { section: "pinned", pinnedOrder: ["p1"], activeOrder: ["a1"] },
+        }),
+      ).toEqual({ kind: "none" });
+    });
+
     it("only changes lifecycle when the inbox is time-ordered", () => {
       const base = {
         pinnedOrder: ["p1"],

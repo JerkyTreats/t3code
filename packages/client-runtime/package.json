@@ -251,6 +251,10 @@
       "types": "./src/state/threadSort.ts",
       "default": "./src/state/threadSort.ts"
     },
+    "./state/thread-conversation-order": {
+      "types": "./src/state/fork/threadConversationOrder.ts",
+      "default": "./src/state/fork/threadConversationOrder.ts"
+    },
     "./state/thread-inbox": {
       "types": "./src/state/threadInbox.ts",
       "default": "./src/state/threadInbox.ts"

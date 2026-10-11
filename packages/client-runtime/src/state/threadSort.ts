@@ -3,11 +3,14 @@ import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/c
 import type { EnvironmentThreadShell } from "./models.ts";
 import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
+import { threadConversationTimestamp } from "./fork/threadConversationOrder.ts";
 
 export interface ThreadSortInput {
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly latestUserMessageAt?: string | null;
+  readonly latestUserAuthoredMessageAt?: string | null;
+  readonly latestAssistantResponseAt?: string | null;
   readonly messages?: ReadonlyArray<{
     readonly createdAt: string;
     readonly role: string;
@@ -79,7 +82,13 @@ function getFirstSortableTimestamp(...values: Array<string | null | undefined>):
   return null;
 }
 
-function getLatestUserMessageTimestamp(thread: ThreadSortInput): number {
+function getRecentThreadTimestamp(thread: ThreadSortInput): number {
+  if (
+    thread.latestUserAuthoredMessageAt !== undefined ||
+    thread.latestAssistantResponseAt !== undefined
+  ) {
+    return Date.parse(threadConversationTimestamp(thread)) || 0;
+  }
   if (thread.latestUserMessageAt) {
     const latestUserMessageTimestamp = toSortableTimestamp(thread.latestUserMessageAt);
     if (latestUserMessageTimestamp !== null) {
@@ -115,7 +124,7 @@ export function getThreadSortTimestamp(
       getFirstSortableTimestamp(thread.createdAt, thread.updatedAt) ?? Number.NEGATIVE_INFINITY
     );
   }
-  return getLatestUserMessageTimestamp(thread);
+  return getRecentThreadTimestamp(thread);
 }
 
 /**

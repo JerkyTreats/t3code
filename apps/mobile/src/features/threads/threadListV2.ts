@@ -1,4 +1,5 @@
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
+import { sortThreadsByConversation } from "@t3tools/client-runtime/state/thread-conversation-order";
 import {
   canSnooze,
   effectiveSnoozed,
@@ -14,14 +15,11 @@ import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-searc
 import {
   createInboxReturnTracker,
   isThreadWorking,
-  sortInboxThreadsByReturn,
-  sortWorkingThreadsBySend,
 } from "@t3tools/client-runtime/state/thread-inbox";
 import {
   sortActiveThreadsByOrderKey,
   resolveSettledThreadTimestamp,
   sortPinnedThreadsByOrderKey,
-  sortSettledThreads,
 } from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
@@ -631,7 +629,7 @@ function sortSettledThreadsReusingLast(
     if (same) return lastSettledOutput;
   }
   lastSettledInput = settled;
-  lastSettledOutput = sortSettledThreads(settled);
+  lastSettledOutput = sortThreadsByConversation(settled);
   return lastSettledOutput;
 }
 
@@ -682,17 +680,6 @@ export function buildThreadListV2Items(input: {
   readonly queuedThreadKeys?: ReadonlySet<string>;
 }): ThreadListV2Layout {
   const now = input.now;
-  const pending =
-    input.pendingOrder == null
-      ? null
-      : reconcilePendingThreadOrder(
-          input.pendingOrder,
-          getThreadListV2OrderedSection({
-            ...input,
-            section: input.pendingOrder.section,
-            pendingOrder: null,
-          }),
-        );
   const query = input.searchQuery.trim().toLocaleLowerCase();
   const projectKeys = input.projectRefs
     ? new Set(input.projectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`))
@@ -756,17 +743,9 @@ export function buildThreadListV2Items(input: {
     }
   }
 
-  // The beta inbox is time-ordered, so the saved arrangement (and any move in
-  // flight) is kept but not applied until the beta is off again.
-  const orderedActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
-    : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
-  // Newest send first; finishing and waking again do not move a row.
-  const orderedWorking = sortWorkingThreadsBySend(working);
-  const orderedSnoozed = [...snoozed].sort(
-    (left, right) =>
-      parseTimestampMs(left.snoozedUntil ?? "") - parseTimestampMs(right.snoozedUntil ?? ""),
-  );
+  const orderedActive = sortThreadsByConversation(active);
+  const orderedWorking = sortThreadsByConversation(working);
+  const orderedSnoozed = sortThreadsByConversation(snoozed);
   const selectedThreadKey = input.selectedThreadKey ?? null;
   const visibleWorking =
     input.workingShelfExpanded === true
@@ -800,11 +779,7 @@ export function buildThreadListV2Items(input: {
         );
 
   const items: ThreadListV2Item[] = [];
-  for (const thread of applyPendingThreadOrder(
-    sortPinnedThreadsByOrderKey(pinned),
-    "pinned",
-    pending,
-  )) {
+  for (const thread of sortThreadsByConversation(pinned)) {
     items.push({
       thread,
       variant: "card",
