@@ -102,8 +102,9 @@ export function createSidebarSortingStrategy(input: {
   /** Suspend the reorder preview while the thread is dragged out as context. */
   enabled?: boolean;
   settledOrder: readonly string[];
-  /** Time-ordered inbox (Working beta): where the lifted row would land. */
+  /** Conversation order at the destination of a lifecycle drop. */
   activeOrder?: readonly string[];
+  pinnedOrder?: readonly string[];
   settledExpanded: boolean;
   settledVisibleCount?: number;
   routeThreadKey?: string | null;
@@ -158,7 +159,7 @@ export function createSidebarSortingStrategy(input: {
     const group = groups[target.section];
     const order =
       target.section === "pinned"
-        ? target.pinnedOrder
+        ? (input.pinnedOrder ?? target.pinnedOrder)
         : target.section === "settled"
           ? input.settledOrder
           : (input.activeOrder ?? target.activeOrder);

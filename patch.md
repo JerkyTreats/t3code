@@ -38,6 +38,12 @@ The current image pins Codex 0.159.0 alongside the accepted upstream protocol bi
 
 ## Retained Presentation And Client Adapters
 
+[Thread conversation order](fork/thread-conversation-order.md) orders every visible thread section
+by the latest user-authored prompt or completed assistant message. Its shared client-runtime owner
+ignores run, tool, wake and lifecycle timestamps. Web and mobile consume the same owner, and
+dragging changes lifecycle without manual placement. Optional shell response stamps retain
+mixed-version connections, with reduced ordering information from older servers.
+
 [F02 Omarchy system theme](fork/F02-omarchy-system-theme.md) keeps coherent local observation and an exact-seed restrained transient palette through current semantic roles. Explicit appearance, preview and onboarding retain upstream precedence. Code and independent Thread shells share the bounded local source and the hosted client projection through fixed read-only bridge methods. No Omarchy preference or general theme generator is added.
 
 [F03 desktop screenshot capture](fork/F03-desktop-screenshot-capture.md) exposes optional top-level desktop capture independently of upstream preview capture. The composer uses a scoped reservation shared with ordinary attachment admission, then transfers one validated PNG through the current image path.
