@@ -83,6 +83,8 @@ export default defineConfig({
   },
   fmt: {
     ignorePatterns: [
+      // F30's reviewed skill snapshot is byte-locked by its source manifest.
+      ".agents/skills/poteto-mode/**",
       ".repos/**",
       // Macroscope's glob-per-line ignore grammar, not Markdown: formatting
       // it rewrites `*` as `_` and joins lines.

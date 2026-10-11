@@ -1,3 +1,4 @@
+import { presentPotetoMessage } from "./fork/potetoMessage.ts";
 import { type OrchestrationV2Actor, ScheduledTaskId } from "@t3tools/contracts";
 
 const LEGACY_AUTOMATION_PREFIX = /^\[Triggered by schedule task: [^\r\n]+\]\r?\n\r?\n/;
@@ -15,7 +16,11 @@ export function resolveUserMessagePresentation(message: {
     return { text: message.text, isAutomation: false, scheduledTaskId: undefined };
   }
   if (message.scheduledTaskId !== undefined) {
-    return { text: message.text, isAutomation: true, scheduledTaskId: message.scheduledTaskId };
+    return {
+      text: presentPotetoMessage(message.text),
+      isAutomation: true,
+      scheduledTaskId: message.scheduledTaskId,
+    };
   }
   const legacyPrefix = LEGACY_AUTOMATION_PREFIX.exec(message.text);
   const legacyTaskId = legacyPrefix
@@ -24,7 +29,9 @@ export function resolveUserMessagePresentation(message: {
   const isAutomation =
     legacyPrefix !== null && (legacyTaskId !== undefined || message.createdBy === "agent");
   return {
-    text: isAutomation ? message.text.slice(legacyPrefix[0].length) : message.text,
+    text: presentPotetoMessage(
+      isAutomation ? message.text.slice(legacyPrefix[0].length) : message.text,
+    ),
     isAutomation,
     scheduledTaskId: legacyTaskId === undefined ? undefined : ScheduledTaskId.make(legacyTaskId),
   };
