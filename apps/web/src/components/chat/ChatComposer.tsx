@@ -5609,6 +5609,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       unavailableReason={potetoUnavailableReason}
       size={composerControlsCollapsed ? "xs" : "sm"}
       hidden={composerControlsHidden}
+      floating={floatRuntimeControl}
       onToggle={() => {
         if (potetoMode) {
           usePotetoModeStore.getState().setSelection(potetoModeKey, null);
@@ -5625,7 +5626,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const composerControls = showProviderUnavailable ? (
     <>
-      {potetoControl}
+      {!floatRuntimeControl ? potetoControl : null}
 
       <ComposerControl
         type="button"
@@ -5743,7 +5744,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         onOpenProviderSetup={onOpenProviderSetup}
       />
 
-      {potetoControl}
+      {!floatRuntimeControl ? potetoControl : null}
       <>
         {restingBlockDefs.map((def, index) => {
           const hidden = index >= restingBlockDefs.length - restingHiddenBlockCount;
@@ -7114,6 +7115,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               onToggleInteractionMode={toggleInteractionMode}
               onRuntimeModeChange={handleRuntimeModeChange}
             />
+            {potetoControl}
           </FloatingComposerRuntimeControl>
         ) : null}
         <ComposerSurface.Main

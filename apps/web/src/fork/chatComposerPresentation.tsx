@@ -38,7 +38,10 @@ export function shouldFloatComposerRuntimeControl(input: {
 
 export function FloatingComposerRuntimeControl({ children }: { children: ReactNode }) {
   return (
-    <div data-chat-composer-floating-runtime="true" className="absolute -top-4 right-4 z-30">
+    <div
+      data-chat-composer-floating-runtime="true"
+      className="absolute -top-4 right-4 z-30 flex items-center gap-1"
+    >
       {children}
     </div>
   );

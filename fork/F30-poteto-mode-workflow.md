@@ -1,7 +1,7 @@
 # F30 Poteto Mode Workflow
 
 Date: 2026-10-10
-Status: local workflow and composer spike
+Status: active
 
 ## Intent and protected decisions
 
@@ -12,9 +12,9 @@ Concern F30-C1 is an arbitrary user goal routed through pstack-style rigor in T3
 - F30-D3: T3's live capability catalog, delegated task IDs, terminal delivery, parent-owned PR watches and explicitly authorized schedules replace Cursor-specific machinery.
 - F30-D4: Real-artifact evidence supports completion. Independent review has an exact patch identity. Long runs retain a bounded decision trail outside the repository.
 - F30-D5: Community-derived instructions preserve existing user grants, fork rules and workspace isolation. They do not grant publication, deletion, dependency installation or recurring provider work.
-- F30-D6: A compact P toggle in the shared chat composer persists the selected Poteto skill identity per environment and preallocated thread ID on this client. Sending, clearing draft content, draft promotion and reload preserve the choice. Turning off removes it. Other threads and environments start off.
+- F30-D6: A compact P toggle sits to the right of the floating permission lock in the expanded shared chat composer and stays in the toolbar in compact layouts. It persists the selected Poteto skill identity per environment and preallocated thread ID on this client. Sending, clearing draft content, draft promotion and reload preserve the choice. Turning off removes it. Other threads and environments start off.
 - F30-D7: Normal provider turns invoke `$poteto-mode` once before existing context and effort formatting. Explicit invocations and leading slash commands remain unchanged. Literal question answers, approvals and queued-message edits bypass this injection. Plan follow-ups use the mode; a new plan implementation thread inherits it.
-- F30-D8: The toggle uses native button semantics, a stable accessible name, pressed state, a check mark, existing composer tokens and focus rings, keyboard activation, and existing coarse pointer targets. Missing or replaced skills and provider changes fail closed for normal sends; off remains reachable. This spike supports Codex and one model at a time.
+- F30-D8: The toggle uses native button semantics, a stable accessible name, pressed state, a lighter active P with a highlighted background, existing composer tokens and focus rings, keyboard activation, and existing coarse pointer targets. Missing or replaced skills and provider changes fail closed for normal sends; off remains reachable. The toggle supports Codex and one model at a time.
 
 ## Durable owner and integration boundary
 
@@ -23,6 +23,8 @@ The owner is `.agents/skills/poteto-mode/`. `SKILL.md` owns routing and task con
 `apps/web/src/fork/potetoMode.ts` owns skill eligibility, provider and identity failures, scope keys and idempotent invocation. `potetoModeStore.ts` owns client-local persisted on/off state and validates restored storage. `PotetoModeControl.tsx` owns the P presentation and toggle interaction. `ChatComposer.tsx` mechanically maps the selected catalog, draft scope, validation and toolbar into those owners; `ChatView.tsx` routes the captured selection through existing send formatting and copies it when creating a plan implementation thread. Existing composer controls, native skill discovery and browser storage are substrate.
 
 The web app, Electron desktop and Thread client share this composer. Native mobile has a separate composer and is outside this bounded spike. Codex supports native dollar invocation; Claude, Cursor, Grok, OpenCode and Antigravity remain unavailable in this toggle until their invocation contracts are adapted. Local, hosted, remote and tunnel web clients use the selected environment's catalog; no server address is embedded. Mode state stays on this client and does not synchronize between devices. Multi-model draft fanout requires turning it off.
+
+`packages/client-runtime/src/fork/potetoMessage.ts` owns display-only removal of a leading invocation line when message content follows it. The shared user-message presentation and web timeline consume it, including native mobile history. Stored text and provider input remain unchanged; inline mentions and standalone invocations remain visible.
 
 There is no provider wire change or system-prompt injector. The reviewed global skill snapshot provides invocation outside this checkout and is not part of the app bundle. The toggle cannot enable an absent skill and does not install provider plugins. The unchanged community-derived bundle retains its existing security lock.
 
