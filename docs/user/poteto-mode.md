@@ -1,10 +1,10 @@
 # Poteto Mode
 
-Click the P beside the model picker to turn Poteto Mode on or off. A check mark shows when it is on. While on, each ordinary message invokes the Poteto workflow without needing to type the skill name.
+Click the P to the right of the permission lock at the top right of the expanded composer to turn Poteto Mode on or off. In compact layouts, the P stays in the composer toolbar. The P appears lighter with a highlighted background when it is on. While on, each ordinary message invokes the Poteto workflow without needing to type the skill name. The leading invocation line is hidden in chat history while still being sent to the agent.
 
 The choice stays on for this thread across sends, draft clearing, navigation and reload on this client. Other threads start off. A new thread created to implement a plan inherits the choice. Turning it off stops adding the invocation; it does not cancel work already running or end a workflow already active in the conversation.
 
-This spike supports Codex with the Poteto Mode skill installed and one model selected. If the skill disappears or you switch providers, turn the mode off or restore the original selection before sending an ordinary task. Slash commands and answers to pending questions keep their usual behavior. Mode choices do not synchronize between devices, and the native mobile composer does not yet have the toggle.
+Poteto Mode supports Codex with the Poteto Mode skill installed and one model selected. If the skill disappears or you switch providers, turn the mode off or restore the original selection before sending an ordinary task. Slash commands and answers to pending questions keep their usual behavior. Mode choices do not synchronize between devices, and the native mobile composer does not yet have the toggle.
 
 You can also invoke the workflow directly:
 

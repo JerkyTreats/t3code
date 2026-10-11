@@ -68,3 +68,18 @@ describe("resolveUserMessagePresentation", () => {
     }
   });
 });
+
+describe("Poteto invocation presentation", () => {
+  it.each([
+    ["$poteto-mode\nFix the button", "Fix the button"],
+    ["$poteto-mode\r\nFix the button", "Fix the button"],
+    ["$poteto-mode\n  Keep spacing\n", "  Keep spacing\n"],
+    ["Explain $poteto-mode", "Explain $poteto-mode"],
+    ["$poteto-mode", "$poteto-mode"],
+    ["$poteto-mode\n", "$poteto-mode\n"],
+    ["$poteto-mode-extra\nHello", "$poteto-mode-extra\nHello"],
+  ])("presents %j without changing authored content", (text, expected) => {
+    expect(resolveUserMessagePresentation({ role: "user", text }).text).toBe(expected);
+    expect(resolveUserMessagePresentation({ role: "assistant", text }).text).toBe(text);
+  });
+});

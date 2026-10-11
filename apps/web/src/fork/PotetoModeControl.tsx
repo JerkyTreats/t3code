@@ -1,5 +1,4 @@
 import { useId } from "react";
-import { CheckIcon } from "lucide-react";
 import { ComposerControl, type ComposerControlSize } from "../components/chat/ComposerControl";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 
@@ -9,12 +8,14 @@ export function PotetoModeControl({
   onToggle,
   size,
   hidden,
+  floating = false,
 }: {
   on: boolean;
   unavailableReason: string | null;
   onToggle: () => void;
   size: ComposerControlSize;
   hidden: boolean;
+  floating?: boolean;
 }) {
   const descriptionId = useId();
   const description =
@@ -36,7 +37,13 @@ export function PotetoModeControl({
             aria-hidden={hidden || undefined}
             inert={hidden || undefined}
             data-poteto-mode={on ? "on" : "off"}
-            className={unavailable ? "opacity-64" : undefined}
+            className={[
+              "aria-pressed:text-foreground",
+              floating
+                ? "h-8 min-w-8 rounded-full border border-border/60 bg-background px-2 shadow-sm justify-center"
+                : "",
+              unavailable ? "opacity-64" : "",
+            ].join(" ")}
             onClick={() => {
               if (!unavailable) onToggle();
             }}
@@ -48,7 +55,7 @@ export function PotetoModeControl({
           fill="currentColor"
           aria-hidden="true"
           data-composer-control-icon
-          className="size-4"
+          className="size-4 text-inherit"
         >
           <path
             fillRule="evenodd"
@@ -56,7 +63,6 @@ export function PotetoModeControl({
             clipRule="evenodd"
           />
         </svg>
-        {on ? <CheckIcon aria-hidden="true" className="size-2.5!" strokeWidth={3} /> : null}
         <span id={descriptionId} className="sr-only">
           {description}
         </span>
