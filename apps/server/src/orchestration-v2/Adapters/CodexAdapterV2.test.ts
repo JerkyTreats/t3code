@@ -4097,6 +4097,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           assistantMessages(harness.events).map((event) => event.message.text),
           ["Working on it.", ""],
         );
+        assert.deepEqual(
+          assistantMessages(harness.events).map((event) => event.message.responsePhase),
+          ["commentary", "final_answer"],
+        );
       }).pipe(
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),

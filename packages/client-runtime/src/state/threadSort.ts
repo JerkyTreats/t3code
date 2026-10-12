@@ -5,6 +5,8 @@ import * as Arr from "effect/Array";
 import * as Order from "effect/Order";
 import { threadConversationTimestamp } from "./fork/threadConversationOrder.ts";
 
+export { getProjectThreadSortTimestamp } from "./projectActivity.ts";
+
 export interface ThreadSortInput {
   readonly createdAt: string;
   readonly updatedAt: string;

@@ -72,6 +72,7 @@ import UpstreamMigration0060 from "./Migrations/060_ThreadSnapshotWindowIndexes.
 import UpstreamMigration0061 from "./Migrations/061_PullRequestReviewGuides.ts";
 
 import Migration0083 from "./Migrations/083_RetireBoardAndCollective.ts";
+import Migration0085 from "./Migrations/085_PublishedResponseActivityIndex.ts";
 
 export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -143,6 +144,7 @@ export const migrationEntries = [
   [82, "ThreadSnapshotWindowIndexes", UpstreamMigration0060],
   [83, "RetireBoardAndCollective", Migration0083],
   [84, "PullRequestReviewGuides", UpstreamMigration0061],
+  [85, "PublishedResponseActivityIndex", Migration0085],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

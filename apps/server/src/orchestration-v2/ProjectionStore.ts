@@ -992,6 +992,7 @@ type ShellThreadRow = {
   readonly latest_user_message_at: string | null;
   readonly latest_user_authored_message_at: string | null;
   readonly latest_assistant_response_at: string | null;
+  readonly latest_published_response_at: string | null;
   readonly has_actionable_proposed_plan: number;
   readonly item_count: number;
   readonly runless_item_count: number;
@@ -1451,6 +1452,9 @@ export function threadShellFromProjection(
         DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt),
     );
   const latestUserMessage = userMessages[0] ?? null;
+  const completedRunIds = new Set(
+    projection.runs.filter((run) => run.status === "completed").map((run) => run.id),
+  );
   const pendingBackgroundTasks = derivePendingBackgroundWork({
     latestRun,
     providerThreads: projection.providerThreads,
@@ -1514,6 +1518,25 @@ export function threadShellFromProjection(
     // Thread detail owns message bodies. Keeping them out of shell rows makes
     // initial hydration and streaming updates independent of transcript size.
     latestVisibleMessage: null,
+    latestPublishedResponseAt: projection.messages.reduce<DateTime.Utc | null>(
+      (latest, message) => {
+        if (
+          message.role !== "assistant" ||
+          message.streaming ||
+          message.text.length === 0 ||
+          message.responsePhase === "commentary" ||
+          (message.responsePhase === undefined &&
+            (message.runId === null || !completedRunIds.has(message.runId)))
+        ) {
+          return latest;
+        }
+        return latest === null ||
+          DateTime.toEpochMillis(message.updatedAt) > DateTime.toEpochMillis(latest)
+          ? message.updatedAt
+          : latest;
+      },
+      null,
+    ),
     latestUserMessageAt: latestUserMessage?.updatedAt ?? null,
     latestUserAuthoredMessageAt:
       userMessages.find((message) => message.createdBy === "user")?.updatedAt ?? null,
@@ -1622,6 +1645,7 @@ type ShellThreadState = {
   readonly latestUserMessageAt: DateTime.Utc | null;
   readonly latestUserAuthoredMessageAt: DateTime.Utc | null;
   readonly latestAssistantResponseAt: DateTime.Utc | null;
+  readonly latestPublishedResponseAt: DateTime.Utc | null;
   readonly hasActionableProposedPlan: boolean;
   readonly pendingBackgroundTasks: OrchestrationV2ThreadShell["pendingBackgroundTasks"];
   readonly providerInstanceHistory: OrchestrationV2ThreadShell["providerInstanceHistory"];
@@ -1792,6 +1816,7 @@ function shellFromState(input: {
     latestUserMessageAt: input.state.latestUserMessageAt,
     latestUserAuthoredMessageAt: input.state.latestUserAuthoredMessageAt,
     latestAssistantResponseAt: input.state.latestAssistantResponseAt,
+    latestPublishedResponseAt: input.state.latestPublishedResponseAt,
     hasActionableProposedPlan: input.state.hasActionableProposedPlan,
     pendingBackgroundTasks: input.state.pendingBackgroundTasks,
     providerInstanceHistory: input.state.providerInstanceHistory,
@@ -5302,6 +5327,26 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_assistant_response_at,
+              (
+                SELECT message.updated_at
+                FROM orchestration_v2_projection_messages message
+                WHERE message.thread_id = t.thread_id
+                  AND message.role = 'assistant'
+                  AND message.streaming = 0
+                  AND length(json_extract(message.payload_json, '$.text')) > 0
+                  AND (
+                    json_extract(message.payload_json, '$.responsePhase') = 'final_answer'
+                    OR (
+                      json_extract(message.payload_json, '$.responsePhase') IS NULL
+                      AND EXISTS (
+                        SELECT 1 FROM orchestration_v2_projection_runs r
+                        WHERE r.run_id = message.run_id AND r.status = 'completed'
+                      )
+                    )
+                  )
+                ORDER BY message.updated_at DESC, message.message_id DESC
+                LIMIT 1
+              ) AS latest_published_response_at,
               EXISTS (
                 SELECT 1
                 FROM orchestration_v2_projection_plans plan
@@ -5763,6 +5808,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             row.latest_assistant_response_at === null
               ? null
               : DateTime.makeUnsafe(row.latest_assistant_response_at),
+          latestPublishedResponseAt:
+            row.latest_published_response_at === null
+              ? null
+              : DateTime.makeUnsafe(row.latest_published_response_at),
           hasActionableProposedPlan: row.has_actionable_proposed_plan === 1,
           pendingBackgroundTasks,
           providerInstanceHistory: providerInstanceHistoryForShell({

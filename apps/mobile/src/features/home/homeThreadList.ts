@@ -4,7 +4,7 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import {
-  getThreadSortTimestamp,
+  getProjectThreadSortTimestamp,
   toSortableTimestamp,
 } from "@t3tools/client-runtime/state/thread-sort";
 import type {
@@ -113,7 +113,7 @@ export function sortHomeProjectScopes(input: {
     if (thread.archivedAt !== null) continue;
     recordActivity(
       scopeKeyByProjectRef.get(scopedProjectKey(thread.environmentId, thread.projectId)),
-      getThreadSortTimestamp(thread, input.projectSortOrder),
+      getProjectThreadSortTimestamp(thread, input.projectSortOrder),
     );
   }
   for (const pendingTask of input.pendingTasks) {

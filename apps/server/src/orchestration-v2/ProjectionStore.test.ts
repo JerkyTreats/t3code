@@ -549,6 +549,152 @@ it.effect("memory shell snapshots scope to one project", () =>
 );
 
 it.layer(layerTest)("ProjectionStoreV2", (it) => {
+  it.effect("keeps published response activity stable during commentary and later runs", () =>
+    Effect.gen(function* () {
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const now = DateTime.makeUnsafe("2026-03-09T10:00:00.000Z");
+      const threadId = ThreadId.make("thread:published-response");
+      const runId = RunId.make("run:published-response");
+      yield* store.apply({
+        id: EventId.make("event:published-response:thread"),
+        type: "thread.created",
+        threadId,
+        occurredAt: now,
+        payload: {
+          createdBy: "user",
+          creationSource: "web",
+          id: threadId,
+          projectId: ProjectId.make("project:published-response"),
+          title: "Published response",
+          providerInstanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          activeProviderThreadId: null,
+          lineage: { rootThreadId: threadId, parentThreadId: null, relationshipToParent: null },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          settledOverride: null,
+          settledAt: null,
+          lastVisitedAt: null,
+          deletedAt: null,
+        },
+      });
+      const run = {
+        id: runId,
+        threadId,
+        ordinal: 1,
+        providerInstanceId,
+        modelSelection,
+        providerThreadId: null,
+        userMessageId: MessageId.make("message:published-response:user"),
+        rootNodeId: null,
+        activeAttemptId: null,
+        status: "running" as const,
+        requestedAt: now,
+        startedAt: now,
+        completedAt: null,
+        checkpointId: null,
+        contextHandoffId: null,
+      };
+      yield* store.apply({
+        id: EventId.make("event:published-response:run"),
+        type: "run.created",
+        threadId,
+        runId,
+        occurredAt: now,
+        payload: run,
+      });
+      const states = [
+        { responsePhase: "commentary", streaming: false, text: "Working", expected: null },
+        { responsePhase: "final_answer", streaming: true, text: "Answer", expected: null },
+        { responsePhase: "final_answer", streaming: false, text: "Answer", expected: 2 },
+        { responsePhase: "commentary", streaming: false, text: "More work", expected: 2 },
+        { responsePhase: "final_answer", streaming: false, text: "", expected: 2 },
+        { responsePhase: undefined, streaming: false, text: "Legacy answer", expected: 2 },
+      ] as const;
+      for (const [index, state] of states.entries()) {
+        const time = DateTime.add(now, { minutes: index });
+        yield* store.apply({
+          id: EventId.make(`event:published-response:message:${index}`),
+          type: "message.updated",
+          threadId,
+          runId,
+          occurredAt: time,
+          payload: {
+            createdBy: "agent",
+            creationSource: "provider",
+            id: MessageId.make(`message:published-response:${index}`),
+            threadId,
+            runId,
+            nodeId: null,
+            role: "assistant",
+            ...(state.responsePhase === undefined ? {} : { responsePhase: state.responsePhase }),
+            text: state.text,
+            attachments: [],
+            streaming: state.streaming,
+            createdAt: time,
+            updatedAt: time,
+          },
+        });
+        const projection = yield* store.getThreadProjection(threadId);
+        const shells = [
+          (yield* store.getShellSnapshot()).threads.find((thread) => thread.id === threadId)!,
+          (yield* store.getThreadShell(threadId))!,
+          ProjectionStore.threadShellFromProjection(projection),
+        ];
+        for (const shell of shells) {
+          assert.equal(
+            shell.latestPublishedResponseAt == null
+              ? null
+              : DateTime.toEpochMillis(shell.latestPublishedResponseAt),
+            state.expected === null
+              ? null
+              : DateTime.toEpochMillis(DateTime.add(now, { minutes: state.expected })),
+          );
+        }
+      }
+      const completedAt = DateTime.add(now, { minutes: 6 });
+      yield* store.apply({
+        id: EventId.make("event:published-response:completed"),
+        type: "run.updated",
+        threadId,
+        runId,
+        occurredAt: completedAt,
+        payload: { ...run, status: "completed", completedAt },
+      });
+      const publishedAt = DateTime.add(now, { minutes: 5 });
+      const { statements, tracer } = traceSqlStatements();
+      yield* store.getThreadShell(threadId).pipe(Effect.withTracer(tracer));
+      const shellStatement = statements.find((statement) =>
+        statement.includes("AS latest_published_response_at"),
+      );
+      assert.isDefined(shellStatement);
+      const sql = yield* SqlClient.SqlClient;
+      const plan = yield* sql.unsafe<{ readonly detail: string }>(
+        `EXPLAIN QUERY PLAN ${shellStatement}`,
+      );
+      assert.match(
+        plan.map((row) => row.detail).join("\n"),
+        /SEARCH message USING INDEX orchestration_v2_projection_messages_latest_assistant_idx/,
+      );
+      const projection = yield* store.getThreadProjection(threadId);
+      for (const shell of [
+        (yield* store.getThreadShell(threadId))!,
+        ProjectionStore.threadShellFromProjection(projection),
+      ]) {
+        assert.equal(
+          DateTime.toEpochMillis(shell.latestPublishedResponseAt!),
+          DateTime.toEpochMillis(publishedAt),
+        );
+      }
+    }),
+  );
+
   it.effect(
     "SQL recovery selects unfinished runless native subagents",
     () => runlessNativeSubagentNeedsRecovery,

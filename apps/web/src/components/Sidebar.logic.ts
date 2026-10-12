@@ -11,7 +11,10 @@ import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-searc
 import type { ContextMenuItem, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
-import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
+import {
+  getProjectThreadSortTimestamp,
+  planPinnedReorder,
+} from "@t3tools/client-runtime/state/thread-sort";
 import {
   effectiveSnoozed,
   type ThreadSnoozeShell,
@@ -1313,7 +1316,7 @@ export function getProjectSortTimestamp(
 ): number {
   if (projectThreads.length > 0) {
     return projectThreads.reduce(
-      (latest, thread) => Math.max(latest, getThreadSortTimestamp(thread, sortOrder)),
+      (latest, thread) => Math.max(latest, getProjectThreadSortTimestamp(thread, sortOrder)),
       Number.NEGATIVE_INFINITY,
     );
   }

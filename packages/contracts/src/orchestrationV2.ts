@@ -1218,6 +1218,8 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
   runId: Schema.NullOr(RunId),
   nodeId: Schema.NullOr(NodeId),
   role: Schema.Literals(["user", "assistant", "system"]),
+  /** Providers that distinguish interim commentary from a final answer retain it here. */
+  responsePhase: Schema.optional(Schema.Literals(["commentary", "final_answer"])),
   text: Schema.String,
   context: Schema.optional(OrchestrationMessageContext),
   attachments: Schema.Array(ChatAttachment),
@@ -1978,6 +1980,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   latestUserAuthoredMessageAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   /** Last delivered assistant message, excluding unfinished streaming text. */
   latestAssistantResponseAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /** Last published final assistant response, retained across subsequent runs. */
+  latestPublishedResponseAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   hasActionableProposedPlan: Schema.Boolean,
   // Normalized post-settlement background work for sidebar Waiting pills.
   // Empty when the latest root run is still active or no pending work remains.
@@ -2519,6 +2523,7 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
   latestUserMessageAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   latestUserAuthoredMessageAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   latestAssistantResponseAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  latestPublishedResponseAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   createdAt: Schema.DateTimeUtcFromString,
   updatedAt: Schema.DateTimeUtcFromString,
   archivedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
