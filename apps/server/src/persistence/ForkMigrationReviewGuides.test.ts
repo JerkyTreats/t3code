@@ -100,7 +100,9 @@ it.effect("upgrades fork 83, retains data and review guides through production r
     const upgraded = yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const repository = yield* ReviewGuides.PullRequestReviewGuideRepository;
-      assert.deepStrictEqual(yield* runMigrations(), [[84, "PullRequestReviewGuides"]]);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 84 }), [
+        [84, "PullRequestReviewGuides"],
+      ]);
       assert.deepStrictEqual(yield* readRetainedData(), before);
       assert.deepStrictEqual(
         yield* sql`SELECT migration_id, name FROM effect_sql_migrations WHERE migration_id IN (61, 84) ORDER BY migration_id`,
@@ -118,12 +120,12 @@ it.effect("upgrades fork 83, retains data and review guides through production r
       yield* repository.put(foreignKey, guide);
       assert.deepStrictEqual(yield* repository.get(key), Option.some(updatedGuide));
       assert.deepStrictEqual(yield* repository.get(foreignKey), Option.some(guide));
-      assert.deepStrictEqual(yield* runMigrations(), []);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 84 }), []);
       return updatedGuide;
     }).pipe(Effect.provide(Layer.provideMerge(ReviewGuides.layer, rawLayer)));
     yield* Effect.gen(function* () {
       const repository = yield* ReviewGuides.PullRequestReviewGuideRepository;
-      assert.deepStrictEqual(yield* runMigrations(), []);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 84 }), []);
       assert.deepStrictEqual(yield* readRetainedData(), before);
       assert.deepStrictEqual(yield* repository.get(key), Option.some(upgraded));
       assert.deepStrictEqual(
@@ -140,7 +142,7 @@ it.effect("carries stable review-guide identity through a replacement migration 
     const independentRunner = Migrator.make({});
     yield* independentRunner({ loader: makeMigrationLoader(83) });
     const journal = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
-    assert.deepStrictEqual(yield* independentRunner({ loader: makeMigrationLoader() }), [
+    assert.deepStrictEqual(yield* independentRunner({ loader: makeMigrationLoader(84) }), [
       [84, "PullRequestReviewGuides"],
     ]);
     assert.deepStrictEqual(
@@ -150,7 +152,7 @@ it.effect("carries stable review-guide identity through a replacement migration 
     const repository = yield* ReviewGuides.PullRequestReviewGuideRepository;
     yield* repository.put(key, guide);
     assert.deepStrictEqual(yield* repository.get(key), Option.some(guide));
-    assert.deepStrictEqual(yield* independentRunner({ loader: makeMigrationLoader() }), []);
+    assert.deepStrictEqual(yield* independentRunner({ loader: makeMigrationLoader(84) }), []);
   }).pipe(
     Effect.provide(
       Layer.provideMerge(ReviewGuides.layer, NodeSqliteClient.layer({ filename: ":memory:" })),
@@ -178,7 +180,7 @@ it.effect("rolls back the review-guide table and journal together before retryin
       );
       return yield* Effect.die(new Error("Synthetic post-DDL migration failure"));
     });
-    const failedLoader = makeMigrationLoader().pipe(
+    const failedLoader = makeMigrationLoader(84).pipe(
       Effect.map((entries) =>
         entries.map((entry) =>
           entry[0] === 84
@@ -194,12 +196,14 @@ it.effect("rolls back the review-guide table and journal together before retryin
       yield* sql`SELECT migration_id FROM effect_sql_migrations WHERE migration_id = 84`,
       [],
     );
-    assert.deepStrictEqual(yield* runMigrations(), [[84, "PullRequestReviewGuides"]]);
+    assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 84 }), [
+      [84, "PullRequestReviewGuides"],
+    ]);
     const repository = yield* ReviewGuides.PullRequestReviewGuideRepository;
     yield* repository.put(key, guide);
     assert.deepStrictEqual(yield* repository.get(key), Option.some(guide));
     assert.deepStrictEqual(yield* readRetainedData(), before);
-    assert.deepStrictEqual(yield* runMigrations(), []);
+    assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 84 }), []);
   }).pipe(
     Effect.provide(
       Layer.provideMerge(ReviewGuides.layer, NodeSqliteClient.layer({ filename: ":memory:" })),
