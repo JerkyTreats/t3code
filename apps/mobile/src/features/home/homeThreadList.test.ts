@@ -242,6 +242,9 @@ describe("home project scopes", () => {
             projectId: olderProject.id,
             title: "Most recently active",
             updatedAt: "2026-06-03T00:00:00.000Z",
+            latestPublishedResponseAt: "2026-06-03T00:00:00.000Z",
+            latestUserAuthoredMessageAt: "2026-06-01T00:00:00.000Z",
+            latestUserMessageAt: "2026-06-04T00:00:00.000Z",
           }),
           makeThread({
             environmentId,
@@ -249,6 +252,8 @@ describe("home project scopes", () => {
             projectId: newerProject.id,
             title: "Less recently active",
             updatedAt: "2026-06-02T00:00:00.000Z",
+            latestUserAuthoredMessageAt: "2026-06-02T00:00:00.000Z",
+            latestUserMessageAt: "2026-06-05T00:00:00.000Z",
           }),
         ],
         pendingTasks: [],

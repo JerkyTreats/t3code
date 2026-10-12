@@ -2,6 +2,10 @@
 
 Status: implemented persistence contract
 
+Migration 85 appends `PublishedResponseActivityIndex` after the supported
+continuation and retirement identities. It adds an ordered assistant-message
+index for bounded project-activity shell reads without rewriting stored rows.
+
 This contract owns the stored history shared by retained Admin and Thread outcomes. It does not claim those runtime features have completed intake.
 
 ## Protected decisions

@@ -8,6 +8,10 @@ T3 Threads shows conversations created in the T3 Thread app after the view was
 introduced. Earlier conversations remain under Projects because their creating
 app was not recorded. Project filters and search apply to the selected view.
 
+When projects are sorted by recent activity, sending a prompt or receiving a
+published final reply moves the project up. Progress messages, streaming replies,
+tool activity, and automatic background prompts keep the project in place.
+
 ## Start a thread
 
 On web and desktop, a new thread keeps the current project and carries your model

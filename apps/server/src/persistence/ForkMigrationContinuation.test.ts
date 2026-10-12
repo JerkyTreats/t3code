@@ -418,6 +418,7 @@ layer("fork migration continuation", (it) => {
           [82, "ThreadSnapshotWindowIndexes"],
           [83, "RetireBoardAndCollective"],
           [84, "PullRequestReviewGuides"],
+          [85, "PublishedResponseActivityIndex"],
         ],
       );
 

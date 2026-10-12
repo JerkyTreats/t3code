@@ -3396,7 +3396,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 yield* emitProviderEvent({
                   type: "message.updated",
                   driver: CODEX_PROVIDER,
-                  message: artifacts.message,
+                  message: {
+                    ...artifacts.message,
+                    responsePhase: finalAnswerItem ? "final_answer" : "commentary",
+                  },
                 });
               }
               yield* emitProviderEvent({
