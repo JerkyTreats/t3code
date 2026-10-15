@@ -5,7 +5,7 @@ import type { PullRequestThreadComment } from "@t3tools/contracts";
 import { useRef, useState } from "react";
 import { ActivityIndicator, Platform, ScrollView, View } from "react-native";
 import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
-import { ScrollViewMarker } from "react-native-screens";
+import { NativeScrollViewMarker as ScrollViewMarker } from "../../native/NativeScrollViewMarker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { AndroidScreenHeader } from "../../components/AndroidScreenHeader";
@@ -118,6 +118,7 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
   const resolveLabel = thread?.isResolved ? "Unresolve" : "Resolve";
   return (
     <PullRequestMarkdownRepository
+      params={params}
       value={detail.data?.provider === "github" ? detail.data.url : null}
     >
       <KeyboardAvoidingView automaticOffset behavior="height" className="flex-1 bg-screen">
@@ -152,7 +153,7 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
             />
           </NativeHeaderToolbar>
         ) : null}
-        <ScrollViewMarker style={{ flex: 1 }} scrollEdgeEffects={{ top: "soft", bottom: "soft" }}>
+        <ScrollViewMarker style={{ flex: 1 }}>
           <ScrollView
             className="flex-1"
             contentInsetAdjustmentBehavior="automatic"

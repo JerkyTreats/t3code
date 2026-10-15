@@ -180,7 +180,7 @@ export const backupDatabaseBeforeMigration42 = Effect.fn(
   }
 
   const parentDirectory = path.dirname(destination);
-  const stagingDirectory = `${destination}.staging-${process.pid}-${yield* crypto.randomUUIDv4}`;
+  const stagingDirectory = `${destination}.staging-${process.pid}-${yield* crypto.randomUUIDv4()}`;
   yield* fileSystem.makeDirectory(stagingDirectory, { recursive: false, mode: 0o700 });
   const backupPath = databaseBackupFile(stagingDirectory);
 
@@ -244,7 +244,7 @@ export const restoreMigration42Backup = Effect.fn("Migration42Backup.restoreMigr
     }
     yield* validateBackupDirectory(databasePath, sourceDirectory);
 
-    const restorePath = `${databasePath}.restore-${process.pid}-${yield* crypto.randomUUIDv4}`;
+    const restorePath = `${databasePath}.restore-${process.pid}-${yield* crypto.randomUUIDv4()}`;
     yield* Effect.gen(function* () {
       yield* fileSystem.copyFile(databaseBackupFile(sourceDirectory), restorePath);
       yield* fileSystem.chmod(restorePath, 0o600);

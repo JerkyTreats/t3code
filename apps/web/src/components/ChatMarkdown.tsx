@@ -71,6 +71,7 @@ import {
   markdownImageSourceFragment,
 } from "@t3tools/client-runtime/markdown-images";
 import { mediaFileReference, mediaUrlReference } from "@t3tools/client-runtime/media-reference";
+import { MISSING_FILE_ACCESS_MESSAGE } from "@t3tools/client-runtime/state/assets";
 import { mediaKindFromPath, mediaMimeTypeFromExtension } from "@t3tools/shared/filePreview";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
@@ -110,7 +111,7 @@ import { MarkdownThreadLink } from "./chat/MarkdownThreadLink";
 import { isWindowsAbsolutePath } from "@t3tools/shared/path";
 import {
   artifactTemplateFromHastProperties,
-  renderCodexFileCitationsAsMarkdown,
+  renderCodexInlineDirectivesAsMarkdown,
 } from "@t3tools/shared/codexMarkdownDirectives";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
 import {
@@ -173,6 +174,7 @@ import {
   type MarkdownFileLinkMeta,
 } from "../markdown-links";
 import { isMarkdownFileLinkLabel } from "@t3tools/shared/markdownLinks";
+import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
 import { useAssetUrlRefresh, useAssetUrlState } from "../assets/assetUrls";
 import { cn } from "../lib/utils";
@@ -852,7 +854,7 @@ function MarkdownCodeBlock({
   theme,
   onRunShellCommand,
   isStreaming,
-  leadingActions,
+  viewToggle,
   canWrap = true,
   diagram = false,
   children,
@@ -863,9 +865,10 @@ function MarkdownCodeBlock({
   theme: "light" | "dark";
   onRunShellCommand?: ((command: string) => void) | undefined;
   isStreaming: boolean;
-  leadingActions?: ReactNode;
+  /** Switches between source and rendered content; sits left of copy in both views. */
+  viewToggle?: ReactNode;
   canWrap?: boolean;
-  /** Renders content instead of code, with actions below it like tables. */
+  /** Renders content frameless, with the code header's actions above it. */
   diagram?: boolean;
   children: ReactNode;
 }) {
@@ -945,12 +948,14 @@ function MarkdownCodeBlock({
 
   if (diagram) {
     return (
-      <div className="my-[0.65rem]" data-language={language}>
-        {children}
-        <div className="mt-0.5 flex items-center justify-between select-none">
-          {leadingActions}
+      // The transparent border and header padding match the code frame, so the
+      // actions stay in place when switching views.
+      <div className="my-[0.65rem] border border-transparent" data-language={language}>
+        <div className="flex items-center justify-end gap-0.5 pt-1.5 pr-1.5 select-none">
+          {viewToggle}
           {copyButton}
         </div>
+        {children}
       </div>
     );
   }
@@ -965,7 +970,6 @@ function MarkdownCodeBlock({
       headerProps={THREAD_FIND_IGNORE_PROPS}
       actions={
         <span className="flex items-center gap-0.5" role="toolbar" aria-label="Code block actions">
-          {leadingActions}
           {canWrap ? (
             <Tooltip>
               <TooltipTrigger
@@ -1003,6 +1007,7 @@ function MarkdownCodeBlock({
               <TooltipPopup side="top">Run in terminal</TooltipPopup>
             </Tooltip>
           ) : null}
+          {viewToggle}
           {copyButton}
         </span>
       }
@@ -1066,7 +1071,7 @@ function MarkdownMermaidFence({
       isStreaming={isStreaming}
       canWrap={!showDiagram}
       diagram={showDiagram}
-      leadingActions={
+      viewToggle={
         isStreaming ? null : (
           <Tooltip>
             <TooltipTrigger
@@ -1373,13 +1378,15 @@ function expandableMarkdownImageProps(
 function ChatMarkdownMediaUnavailableLabel(props: {
   readonly alt: string;
   readonly kind?: "image" | "video" | undefined;
+  /** Why the media is unavailable, when the cause is known. */
+  readonly detail?: string | undefined;
 }) {
   const label = props.kind === "video" ? "Video unavailable" : "Image unavailable";
   return (
     // Find indexes no image text, so this fallback must not highlight either.
     <span data-thread-find-ignore className="inline-flex items-center gap-1.5">
       <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0" />
-      {props.alt.length > 0 ? `${label} · ${props.alt}` : label}
+      {[label, props.alt, props.detail].filter(Boolean).join(" · ")}
     </span>
   );
 }
@@ -1390,6 +1397,7 @@ function ChatMarkdownImageFallback(props: {
   readonly copyMarkdown?: string | undefined;
   readonly kind?: "image" | "video";
   readonly actionsSource?: MediaActionSource | undefined;
+  readonly detail?: string | undefined;
 }) {
   const content = (
     <span
@@ -1399,7 +1407,7 @@ function ChatMarkdownImageFallback(props: {
         "rounded-md border border-border/40 bg-muted/40 px-2 py-1 text-xs text-muted-foreground",
       )}
     >
-      <ChatMarkdownMediaUnavailableLabel alt={props.alt} kind={props.kind} />
+      <ChatMarkdownMediaUnavailableLabel alt={props.alt} kind={props.kind} detail={props.detail} />
     </span>
   );
   return props.actionsSource ? (
@@ -1432,6 +1440,8 @@ function ChatMarkdownImage(props: {
   /** Null while the URL is being resolved; the last decoded image stays up. */
   readonly src: string | null;
   readonly sourceFailed?: boolean | undefined;
+  /** Why the source failed, when the cause is known. */
+  readonly unavailableDetail?: string | undefined;
   readonly alt: string;
   readonly copyMarkdown: string | undefined;
   readonly standalone: boolean;
@@ -1505,6 +1515,7 @@ function ChatMarkdownImage(props: {
         alt={props.alt}
         copyMarkdown={props.copyMarkdown}
         actionsSource={props.actionsSource}
+        detail={props.unavailableDetail}
       />
     ) : (
       <span
@@ -1533,7 +1544,7 @@ function ChatMarkdownImage(props: {
       >
         {failed ? (
           <span className="flex size-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
-            <ChatMarkdownMediaUnavailableLabel alt={props.alt} />
+            <ChatMarkdownMediaUnavailableLabel alt={props.alt} detail={props.unavailableDetail} />
           </span>
         ) : src !== null ? (
           <img
@@ -1700,6 +1711,13 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
       key={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
       src={src}
       sourceFailed={assetUrl._tag === "Failure" && fallbackSrc === undefined}
+      unavailableDetail={
+        assetUrl._tag === "Failure" &&
+        assetUrl.reason === "missing-file-access" &&
+        fallbackSrc === undefined
+          ? MISSING_FILE_ACCESS_MESSAGE
+          : undefined
+      }
       alt={props.alt}
       copyMarkdown={props.copyMarkdown}
       standalone={props.standalone ?? true}
@@ -2466,7 +2484,7 @@ function useChatMarkdownState({
       string,
       NonNullable<ReturnType<typeof resolveMarkdownFileLinkMeta>>
     >();
-    for (const href of extractMarkdownLinkHrefs(renderCodexFileCitationsAsMarkdown(text))) {
+    for (const href of extractMarkdownLinkHrefs(renderCodexInlineDirectivesAsMarkdown(text))) {
       if (parseComposerContextHref(href)) continue;
       const normalizedHref = normalizeMarkdownLinkHrefKey(href);
       if (metaByHref.has(normalizedHref)) continue;
@@ -3065,8 +3083,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
             // keeps the `_blank` the shell already handles; the in-app browser needs
             // the click intercepted here. A modifier click is the way out of the
             // in-app default, so it is left to the shell too.
+            if (event.defaultPrevented) return;
             if (
-              event.defaultPrevented ||
               resolveLinkTarget({
                 url: href,
                 event,
@@ -3074,6 +3092,21 @@ const CHAT_MARKDOWN_COMPONENTS = {
                 canOpenInApp: canOpenInPreview,
               }) !== "app"
             ) {
+              // Chromium turns an Option/Alt-click into a download that never reaches the
+              // shell. On desktop, open the link here while the key is still down, so link
+              // routers such as Finicky can still read it.
+              if (isElectron && event.altKey) {
+                event.preventDefault();
+                event.stopPropagation();
+                void readLocalApi()
+                  ?.shell.openExternal(href)
+                  .catch((cause) =>
+                    reportMarkdownActionFailure(
+                      { operation: "open-link-external", target: href },
+                      cause,
+                    ),
+                  );
+              }
               return;
             }
             event.preventDefault();

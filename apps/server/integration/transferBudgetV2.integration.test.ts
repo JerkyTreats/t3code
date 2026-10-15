@@ -11,6 +11,7 @@ import {
   AuthClientId,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
+  EnvironmentId,
   EnvironmentAuthenticatedAuth,
   EnvironmentAuthenticatedPrincipal,
   ORCHESTRATION_V2_WS_METHODS,
@@ -36,6 +37,7 @@ import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { HttpRouter, HttpServer } from "effect/http";
 import { Rpc, RpcGroup, RpcServer, RpcSerialization } from "effect/rpc";
+import * as ServerEnvironment from "../src/environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../src/persistence/Sqlite.ts";
 import * as OrchestrationEventStore from "../src/persistence/OrchestrationEventStore.ts";
 import * as EventStore from "../src/orchestration-v2/EventStore.ts";
@@ -112,6 +114,11 @@ const layerEnrichment = Layer.unwrap(
 );
 // The transfer history has no project events, so shell streams never read a project shell.
 const layerServices = layerManagement.pipe(
+  Layer.provideMerge(
+    Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
+      getEnvironmentId: Effect.succeed(EnvironmentId.make("transfer-test")),
+    }),
+  ),
   Layer.provideMerge(ProjectStore.layer),
   Layer.provideMerge(Layer.mock(ProjectService.ProjectService)({})),
   Layer.provideMerge(layerEnrichment),
@@ -240,6 +247,7 @@ it.live(
                 Layer.provide(Layer.succeedContext(context)),
                 Layer.provideMerge(
                   NodeHttpServer.layer(NodeHttp.createServer, {
+                    host: "127.0.0.1",
                     port: 0,
                     websocket: { perMessageDeflate: true },
                   }),

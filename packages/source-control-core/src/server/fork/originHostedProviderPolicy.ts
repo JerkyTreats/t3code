@@ -373,3 +373,24 @@ export function originForgejoChangeRequestNumber(
     return null;
   }
 }
+
+/**
+ * Hosted branch deletion writes only to the origin repository. A pull request
+ * opened from another repository keeps its source branch, even when the viewer
+ * can write there, because that repository is not product authority.
+ */
+export function isOriginHeadRepository(input: {
+  readonly originRepositoryId: string;
+  readonly headRepositoryId: string;
+}): boolean {
+  return input.originRepositoryId === input.headRepositoryId;
+}
+
+/**
+ * Whether to offer source-branch deletion for a pull request. Only a head branch
+ * GitHub reports as living in the origin repository qualifies; an unreported
+ * relationship is not offered.
+ */
+export function offersOriginSourceBranchDeletion(isCrossRepository: boolean | undefined): boolean {
+  return isCrossRepository === false;
+}

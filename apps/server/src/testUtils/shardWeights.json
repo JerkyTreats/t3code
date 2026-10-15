@@ -51,7 +51,6 @@
   "src/pullRequest/PullRequestService.test.ts": 5.1,
   "src/rpcInitialItems.memory.test.ts": 5.3,
   "src/serverSettings.test.ts": 1,
-  "src/serviceLauncher.test.ts": 6.2,
   "src/sourceControl/PrTemplateDetection.test.ts": 0.5,
   "src/terminal/Manager.test.ts": 1.8,
   "src/textGeneration/CodexTextGeneration.test.ts": 0.5,

@@ -40,6 +40,8 @@ const DEFAULT_API_BASE_URL = "https://api.bitbucket.org/2.0";
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 /** Bitbucket redirects a diff once; this leaves room without following a chain forever. */
 const MAX_REDIRECTS = 3;
+/** A single API operation must bound both header delivery and body consumption. */
+const BITBUCKET_API_REQUEST_TIMEOUT = "30 seconds";
 
 const BitbucketApiEnvConfig = Config.all({
   baseUrl: Config.String("T3CODE_BITBUCKET_API_BASE_URL").pipe(
@@ -775,6 +777,10 @@ export const make = Effect.gen(function* () {
           }),
       ),
       Effect.flatMap((response) => decodeResponse(operation, schema, response)),
+      Effect.timeout(BITBUCKET_API_REQUEST_TIMEOUT),
+      Effect.catchTags({
+        TimeoutError: (cause) => Effect.fail(new BitbucketRequestError({ operation, cause })),
+      }),
     );
 
   const resolveBoundOriginUrl = Effect.fn("BitbucketApi.resolveBoundOriginUrl")(function* (input: {
@@ -1018,6 +1024,12 @@ export const make = Effect.gen(function* () {
           orElse: (failed) => responseError("request", failed),
         })(response),
       ),
+      // This also caps redirect hops: no request can finish headers then stall its body forever.
+      Effect.timeout(BITBUCKET_API_REQUEST_TIMEOUT),
+      Effect.catchTags({
+        TimeoutError: (cause) =>
+          Effect.fail(new BitbucketRequestError({ operation: "request", cause })),
+      }),
     );
 
   return BitbucketApi.of({

@@ -7,6 +7,10 @@
       "types": "./src/composerThreadItems.ts",
       "default": "./src/composerThreadItems.ts"
     },
+    "./image-attachment-size": {
+      "types": "./src/imageAttachmentSize.ts",
+      "default": "./src/imageAttachmentSize.ts"
+    },
     "./handoff": {
       "types": "./src/handoff.ts",
       "default": "./src/handoff.ts"
@@ -38,6 +42,10 @@
     "./user-message": {
       "types": "./src/userMessage.ts",
       "default": "./src/userMessage.ts"
+    },
+    "./prompt-links": {
+      "types": "./src/promptLinks.ts",
+      "default": "./src/promptLinks.ts"
     },
     "./secret-request": {
       "types": "./src/secretRequest.ts",
@@ -422,10 +430,18 @@
     "./review-guide-tour": {
       "types": "./src/reviewGuideTour.ts",
       "default": "./src/reviewGuideTour.ts"
+    },
+    "./state/query-persistence": {
+      "types": "./src/state/queryPersistence.ts",
+      "default": "./src/state/queryPersistence.ts"
+    },
+    "./pull-request-markdown": {
+      "types": "./src/pullRequestMarkdown.ts",
+      "default": "./src/pullRequestMarkdown.ts"
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc-rs --noEmit",
     "test": "vp test run"
   },
   "dependencies": {

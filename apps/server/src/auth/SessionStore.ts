@@ -645,14 +645,14 @@ export const make = Effect.gen(function* () {
       );
       const { authorityClass } = issuance;
       const sessionId = AuthSessionId.make(
-        yield* crypto.randomUUIDv4.pipe(
-          Effect.mapError((cause) => new SessionCredentialIssueError({ cause })),
-        ),
+        yield* crypto
+          .randomUUIDv4()
+          .pipe(Effect.mapError((cause) => new SessionCredentialIssueError({ cause }))),
       );
       const clientId = AuthClientId.make(
-        yield* crypto.randomUUIDv4.pipe(
-          Effect.mapError((cause) => new SessionCredentialIssueError({ cause })),
-        ),
+        yield* crypto
+          .randomUUIDv4()
+          .pipe(Effect.mapError((cause) => new SessionCredentialIssueError({ cause }))),
       );
       const issuedAt = yield* DateTime.now;
       const expiresAt = DateTime.add(issuedAt, {
@@ -876,9 +876,9 @@ export const make = Effect.gen(function* () {
       Option.getOrUndefined(row),
       now,
     );
-    const nonce = yield* crypto.randomUUIDv4.pipe(
-      Effect.mapError((cause) => new WebSocketTokenIssueError({ sessionId, cause })),
-    );
+    const nonce = yield* crypto
+      .randomUUIDv4()
+      .pipe(Effect.mapError((cause) => new WebSocketTokenIssueError({ sessionId, cause })));
     const issuedAt = yield* DateTime.now;
     const expiresAt = DateTime.add(issuedAt, {
       milliseconds: Duration.toMillis(input?.ttl ?? DEFAULT_WEBSOCKET_TOKEN_TTL),

@@ -6,7 +6,7 @@ crashes, auth failures, broken setups, slow launches, or anything else. Your job
 find out what went wrong, unblock the user if you can, and turn what you learned into
 a well written GitHub issue when one is warranted.
 
-A triage context file with machine facts such as version, OS, paths, and server liveness was
+A triage context file with machine facts such as versions, OS, paths, and server liveness was
 provided alongside this playbook. Everything machine-specific lives there, not here.
 
 ## 1. Ask what went wrong
@@ -18,9 +18,15 @@ valuable thing you can extract from this conversation.
 
 ## 2. Read the machine facts
 
-Read the triage context file before investigating. It tells you the installed
-version, the OS, whether the server process is currently running, and the exact
-paths for state, logs, and the database.
+Read the triage context file before investigating. It tells you the OS, whether
+the server process is currently running, and the exact paths for state, logs, and
+the database.
+
+Its triage CLI version (called "Installed version" in older context files) is only
+the version of the `t3` that ran `t3 triage`. It is often not the build the bug
+happened on: the user may run the desktop app, the background service, a remote
+server, or a nightly. The server process line gives the local server's version
+when the server recorded one.
 
 ## 3. Check for a newer playbook
 
@@ -30,10 +36,17 @@ instead of this one. The user may be on an old release with an old copy.
 
 ## 4. Get the source
 
+Before cloning, ask the user which version, device, and surface the bug happened
+on. The bug may have happened on another machine, a remote server, the mobile app,
+or an older build they have since updated. Check their answer against local facts
+where they apply: the server version in the context file, or `serverVersion` from
+`<origin>/.well-known/t3/environment` when a local server is running. If neither
+the user nor the machine can tell you the version, say it is unknown. Do not guess.
+
 Source access is optional. Before any clone, show the user the exact source URL
 and exact destination path, then get explicit permission for both. Only after
-that approval, clone the exact origin at the tag matching the installed version
-into one subdirectory per commit hash:
+that approval, clone the exact origin at the release tag for that version,
+which is `v` followed by the version, into one subdirectory per commit hash:
 
     git clone --depth 1 --filter=blob:none --branch <release-tag> \
       https://github.com/JerkyTreats/t3code.git <source-cache-dir>/<hash>
@@ -86,8 +99,9 @@ comes from the exact origin `main` branch.
 
 Search existing issues in JerkyTreats/t3code using `gh` or the public GitHub
 search API if `gh` is missing or not logged in. Then check whether the problem
-is already fixed in a newer exact-origin release by comparing versions, release
-notes, and recent commits touching the relevant code.
+is already fixed in an exact-origin release newer than the version the bug happened
+on by comparing versions, release notes, and recent commits touching the relevant
+code.
 
 If the user is behind and the fix likely shipped, say so plainly and give them the
 supported exact-origin update path for their deployment. Never suggest a package
@@ -111,6 +125,8 @@ Never repurpose the tag-pinned diagnosis clone.
 - Match the structure of the `via-triage` issue template
   at `.github/ISSUE_TEMPLATE/via-triage.yml`: what happened, diagnosis,
   repro steps, environment, evidence, related issues.
+- Under Version, give the version the bug happened on from step 4, or say it is
+  unknown. Name the triage CLI version only as the CLI's.
 - Label it `via-triage`. Use a plain, specific title with no prefix.
 - Show the user the complete final issue text and get an explicit yes before
   posting. Never post without it.

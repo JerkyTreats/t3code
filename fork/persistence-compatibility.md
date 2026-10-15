@@ -6,6 +6,11 @@ Migration 85 appends `PublishedResponseActivityIndex` after the supported
 continuation and retirement identities. It adds an ordered assistant-message
 index for bounded project-activity shell reads without rewriting stored rows.
 
+Migration 86 appends upstream migration 62, `ThreadFailureLookupIndex`, under
+PERSIST.D3. The fork loader keeps sole lineage authority. Upstream's V2-id
+skip guard assumes upstream numbering, so the fork does not adopt it; unknown
+journal identities are already rejected before continuation writes.
+
 This contract owns the stored history shared by retained Admin and Thread outcomes. It does not claim those runtime features have completed intake.
 
 ## Protected decisions

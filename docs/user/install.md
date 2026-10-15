@@ -106,9 +106,8 @@ of a store or beta build against this fork. Nightly clients also show beta links
 codes in **Settings → General → Mobile app**.
 
 - **iPhone and iPad:** join the [TestFlight beta](https://testflight.apple.com/join/XgaxaRtd).
-- **Android:** join the [beta group](https://groups.google.com/g/t3-code-v2-beta). With the same
-  Google account, open the [Google Play testing page](https://play.google.com/apps/testing/com.t3tools.t3code)
-  and become a tester.
+- **Android:** download and install the APK from the
+  [Android beta release](https://github.com/pingdotgg/t3code/releases/tag/android-nightly).
 
 If the mobile app crashes during launch, open **Settings → Diagnostics** on the next
 successful launch. It lists startup crashes from the last seven days, including the
