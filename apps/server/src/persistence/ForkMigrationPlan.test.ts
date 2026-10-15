@@ -132,6 +132,7 @@ it.effect("rolls back the V2 schema and baseline events together before retry", 
       [83, "RetireBoardAndCollective"],
       [84, "PullRequestReviewGuides"],
       [85, "PublishedResponseActivityIndex"],
+      [86, "ThreadFailureLookupIndex"],
     ]);
     assert.deepStrictEqual(yield* runMigrations(), []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -168,6 +169,7 @@ it.effect("continues the current journal with stable upstream identities", () =>
       [83, "RetireBoardAndCollective"],
       [84, "PullRequestReviewGuides"],
       [85, "PublishedResponseActivityIndex"],
+      [86, "ThreadFailureLookupIndex"],
     ]);
     assert.deepStrictEqual(
       yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 70 ORDER BY migration_id`,

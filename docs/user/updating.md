@@ -6,19 +6,55 @@ Official server, Code, and Thread versions include the source revision after
 the base version, such as `0.0.42-abcdef0123`. Matching suffixes mean those
 artifacts were built from the same source commit.
 
+## Update everything at once
+
+The update button at the bottom of the sidebar updates every connected machine
+in one step. It updates outdated providers, then servers hosted by a desktop
+app, then the desktop app you are using. A remote desktop app installs the
+latest exact-origin release, and its server updates with it. Hover the button
+to see what it will update.
+
+While it runs, the button widens to show progress. It names a machine that is
+taking longer than usual, and offers **Retry** for a server that failed. Click
+it to see every machine. The desktop app restarts once each server has started
+its own restart, after a short countdown. Choose **Later** to keep working and
+restart from the update button when you are ready. A server still restarting
+finishes on its own, and the button keeps showing it after the desktop app
+restarts.
+
+The confirmation lists each machine it skips and why, such as a machine that is
+offline or needs a manual update. Command-line and server image installations
+always need a manual update; see
+[Update an installed command-line runtime](#update-an-installed-command-line-runtime).
+Use the notice or **Settings → Connections** for the other skipped machines.
+
+If a desktop app restarts on its old version, T3 Code tells you the update did
+not apply. It does not install that version again on its own, even when another
+device asks. Use the update button on that machine to retry.
+
+The confirmation counts the running threads that the restarts will interrupt,
+and how many can resume afterwards. See **Continue threads after restarts**
+below.
+
 ## Before you update
 
 Restarting a server can interrupt active agents and terminal commands. Saved
 threads, settings, and project files remain.
 
-**Settings → General → Continue threads after restarts** is off by default.
-Enable it to resume supported active threads after an update, crash, or machine
-restart. Changes are saved to connected environments that support this setting.
-Use **Apply to all** after an offline environment reconnects if its value differs.
-
-T3 Code must start again on the host. This setting does not configure automatic
-startup. Terminal commands may still be interrupted, and threads without saved
-provider resume state need a new message.
+**Settings → General → Continue threads after restarts** is on by default.
+It resumes supported active threads after an update, crash, or machine
+restart. Changes are saved to connected environments that support this setting;
+update older servers first. If a supported environment was offline or has a
+different value, use **Apply to all** in Settings after it connects.
+T3 Code must start again on that machine;
+the setting does not enable automatic startup. Terminal commands may still be
+interrupted, and threads without saved provider resume state need a new message.
+A thread that finished its turn to wait on a monitor, subagent, or background task
+is woken and told that this work stopped. A background shell, such as a dev server,
+does not wake it; the thread learns about it with your next message.
+A thread is not resumed while it waits for your approval, answer, or secret, or
+while it is archived, snoozed, or settled. After three automatic resumes in a row,
+the thread waits for your next message.
 
 Updates from the previous orchestration system preserve conversation transcripts but cannot carry
 every kind of runtime history forward. Read [Threads from older T3 Code versions](./thread-migration.md)
@@ -77,6 +113,10 @@ package registry command for the installed runtime.
 
 The application does not provide an npm service rollback command.
 
+Only one server can use a T3 home directory at a time. If startup reports that
+another server owns it, stop that server before retrying, or use a separate home
+directory and pair with the running server.
+
 ## Update providers
 
 **Settings → Providers** shows provider updates for the selected environment.
@@ -96,7 +136,9 @@ The same page lets you refresh provider status and update supported providers.
 These controls require a connected environment and permission to operate it.
 Provider update checks and restart continuation preferences are in
 **Settings → Maintenance**. If provider update checks are disabled, enable them
-there before refreshing to find newer versions.
+there before refreshing to find newer versions. The same setting controls whether
+T3 Code downloads model catalog updates, so with it off new models may not appear
+until you enable it and refresh provider status.
 
 Install App Store or Google Play releases as usual. The mobile app can also
 download updates in the background and apply them when you next leave the app.

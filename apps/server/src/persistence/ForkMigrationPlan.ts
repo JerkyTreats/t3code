@@ -70,6 +70,7 @@ import UpstreamMigration0058 from "./Migrations/058_WebhookRelayDeliveries.ts";
 import UpstreamMigration0059 from "./Migrations/059_McpAppModelContext.ts";
 import UpstreamMigration0060 from "./Migrations/060_ThreadSnapshotWindowIndexes.ts";
 import UpstreamMigration0061 from "./Migrations/061_PullRequestReviewGuides.ts";
+import UpstreamMigration0062 from "./Migrations/062_ThreadFailureLookupIndex.ts";
 
 import Migration0083 from "./Migrations/083_RetireBoardAndCollective.ts";
 import Migration0085 from "./Migrations/085_PublishedResponseActivityIndex.ts";
@@ -145,6 +146,7 @@ export const migrationEntries = [
   [83, "RetireBoardAndCollective", Migration0083],
   [84, "PullRequestReviewGuides", UpstreamMigration0061],
   [85, "PublishedResponseActivityIndex", Migration0085],
+  [86, "ThreadFailureLookupIndex", UpstreamMigration0062],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

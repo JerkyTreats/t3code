@@ -339,10 +339,10 @@ it.effect("continues a released reconciled v0.0.28 journal", () =>
       executed.map(([migrationId]) => migrationId),
       [
         52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 79, 80, 81, 82, 83,
-        84, 85,
+        84, 85, 86,
       ],
     );
-    assert.deepStrictEqual(latest, [{ migrationId: 85, name: "PublishedResponseActivityIndex" }]);
+    assert.deepStrictEqual(latest, [{ migrationId: 86, name: "ThreadFailureLookupIndex" }]);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
@@ -482,8 +482,8 @@ it.effect.each([58, 59] as const)(
         name: "InteractionCommandFingerprints",
       });
       assert.deepStrictEqual(upgraded.journal.at(-1), {
-        migrationId: 85,
-        name: "PublishedResponseActivityIndex",
+        migrationId: 86,
+        name: "ThreadFailureLookupIndex",
       });
       assert.deepStrictEqual(upgraded.receipts, [
         { payloadFingerprint: lineageId === 59 ? "synthetic-fingerprint" : null },

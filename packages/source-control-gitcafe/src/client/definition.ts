@@ -1,11 +1,15 @@
-import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/client/originRepositoryPolicy";
-import { SourceControlProviderKind } from "@t3tools/contracts";
 /**
  * GitCafe's client definition. Browser- and React Native-safe.
  *
  * @module source-control-gitcafe/client/definition
  */
-import { makeProviderSettingsSchema, TrimmedString } from "@t3tools/contracts";
+import {
+  makeProviderSettingsSchema,
+  secretSetting,
+  SourceControlProviderKind,
+  TrimmedString,
+} from "@t3tools/contracts";
+import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/client/originRepositoryPolicy";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
@@ -21,12 +25,13 @@ const KIND = SourceControlProviderKind.make("gitcafe");
 /** A git.cafe token, used before `CAFE_TOKEN` and the `cafe` login. */
 export const settings = makeProviderSettingsSchema({
   token: TrimmedString.pipe(
+    secretSetting,
     Schema.withDecodingDefault(Effect.succeed("")),
     Schema.annotateKey({
       title: "Token",
       description:
         "A git.cafe token, used before CAFE_TOKEN and the cafe login, so GitCafe works without the CLI signed in.",
-      providerSettingsForm: { control: "password", secret: true },
+      providerSettingsForm: { control: "password" },
     }),
   ),
 });

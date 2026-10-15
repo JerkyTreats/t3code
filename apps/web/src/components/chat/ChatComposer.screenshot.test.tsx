@@ -158,6 +158,7 @@ function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerProps {
   return {
     canOperateThread: true,
     activeProjectId: null,
+    threadPullRequests: undefined,
     resumeCompactionTokens: null,
     keepFullHistory: false,
     onToggleKeepFullHistory: vi.fn(),

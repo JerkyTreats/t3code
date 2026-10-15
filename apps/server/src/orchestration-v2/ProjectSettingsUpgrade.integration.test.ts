@@ -198,6 +198,7 @@ it.live("keeps project settings through the V2 migrations and the first V2 boot"
           [83, "RetireBoardAndCollective"],
           [84, "PullRequestReviewGuides"],
           [85, "PublishedResponseActivityIndex"],
+          [86, "ThreadFailureLookupIndex"],
         ]);
         assert.deepEqual(yield* readSettings, expectedSettings);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));

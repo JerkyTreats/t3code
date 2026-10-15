@@ -8,6 +8,7 @@ import { SourceControlProviderKind } from "@t3tools/contracts";
 import {
   GitHubHost,
   makeProviderSettingsSchema,
+  secretSetting,
   pullRequestHostOf,
   TrimmedNonEmptyString,
   TrimmedString,
@@ -44,7 +45,8 @@ export const settings = makeProviderSettingsSchema({
   ),
   tokens: Schema.Record(GitHubHost, TrimmedString).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
-    Schema.annotateKey({ providerSettingsForm: { hidden: true, secret: true } }),
+    secretSetting,
+    Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
   ),
 });
 export type GitHubSettings = typeof settings.Type;
@@ -69,6 +71,7 @@ export const definition = defineSourceControlClient({
     "draft",
     "close",
     "reopen",
+    "delete-branch",
     "update-branch",
     "enable-auto-merge",
     "disable-auto-merge",
