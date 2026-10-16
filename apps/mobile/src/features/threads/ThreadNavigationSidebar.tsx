@@ -30,7 +30,11 @@ import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useProjects, useNavigationThreadShells } from "../../state/entities";
 import { useThreadSearch } from "../../state/queries";
-import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-preferences";
+import {
+  useClearNestedExpansionOnSelection,
+  useThreadListV2NestedExpansion,
+  useThreadListV2ShelfPreferences,
+} from "./use-thread-list-v2-shelf-preferences";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { threadListEnvironmentsAtom } from "../../state/server";
 import { usePendingNewTasks } from "../../state/use-pending-new-tasks";
@@ -157,6 +161,7 @@ function ThreadNavigationSidebarPane(
     moveThread,
     renameThread,
     regenerateThreadTitle,
+    moveThreadToTopLevel,
   } = useThreadListActions();
   const pendingTasks = usePendingNewTasks();
   const queuedThreadKeys = useQueuedThreadKeys();
@@ -300,6 +305,18 @@ function ThreadNavigationSidebarPane(
     toggleSnoozedShelf,
     toggleWorkingShelf,
   } = useThreadListV2ShelfPreferences();
+  const { nestedExpansion, setNestedExpansion } = useThreadListV2NestedExpansion(threads);
+  useClearNestedExpansionOnSelection(
+    props.selectedThreadKey,
+    threads,
+    nestedExpansion,
+    setNestedExpansion,
+  );
+  const handleToggleNested = useCallback(
+    (thread: EnvironmentThreadShell, expanded: boolean) =>
+      setNestedExpansion(scopedThreadKey(thread.environmentId, thread.id), expanded),
+    [setNestedExpansion],
+  );
   // The queued-start and snooze helpers need a clock while the pane stays open.
   const [nowMinute, setNowMinute] = useState(() => new Date().toISOString().slice(0, 16));
   // Snooze wake times are second-precise; a counter bumped exactly at the
@@ -349,8 +366,10 @@ function ThreadNavigationSidebarPane(
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey: props.selectedThreadKey ?? null,
+      nestedExpansion,
     });
   }, [
+    nestedExpansion,
     workingShelfEnabled,
     workingShelfExpanded,
     pendingOrder,
@@ -641,7 +660,8 @@ function ThreadNavigationSidebarPane(
             />
           );
         }
-        case "v2-thread": {
+        case "v2-thread":
+        case "v2-nested-thread": {
           const thread = item.item.thread;
           const scopeKey = scopedProjectKey(thread.environmentId, thread.projectId);
           // Intentional difference from Home: the sidebar never passes
@@ -654,6 +674,10 @@ function ThreadNavigationSidebarPane(
           // which re-renders identically.
           return (
             <ThreadListV2Row
+              nested={item.type === "v2-thread" ? item.nested : null}
+              nestedChild={item.type === "v2-nested-thread"}
+              onToggleNested={handleToggleNested}
+              onMoveThreadToTopLevel={moveThreadToTopLevel}
               onNewThreadOnBranch={props.onNewThreadOnBranch}
               thread={thread}
               variant={item.item.variant}
@@ -755,6 +779,8 @@ function ThreadNavigationSidebarPane(
     [
       archiveThread,
       activeReorderEnvironmentIds,
+      handleToggleNested,
+      moveThreadToTopLevel,
       confirmDeletePendingTask,
       confirmDeleteThread,
       handleSelectThread,

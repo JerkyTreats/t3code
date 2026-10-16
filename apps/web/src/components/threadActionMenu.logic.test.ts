@@ -91,6 +91,25 @@ describe("buildThreadActionMenuItems", () => {
     expect(allowed.every((item) => !item.disabled)).toBe(true);
   });
 
+  it("offers Move to top level only for a nested thread, and gates it on permission", () => {
+    expect(ids(baseState)).not.toContain("move-to-top-level");
+    const nested = ids({ ...baseState, canMoveToTopLevel: true });
+    expect(nested.indexOf("move-to-top-level")).toBe(nested.indexOf("rename") - 1);
+    const denied = buildThreadActionMenuItems({
+      ...baseState,
+      canOperate: false,
+      canMoveToTopLevel: true,
+    });
+    expect(denied.find((item) => item.id === "move-to-top-level")?.disabled).toBe(true);
+  });
+
+  it("does not offer Pin on a nested thread but keeps Unpin", () => {
+    const pinnable = { ...baseState, supports: { ...baseState.supports, pinning: true } };
+    expect(ids({ ...pinnable, canPin: false })).not.toContain("pin");
+    expect(ids({ ...pinnable, canPin: false, isPinned: true })).toContain("unpin");
+    expect(ids(pinnable)).toContain("pin");
+  });
+
   it("hides lifecycle items when the environment lacks the capabilities", () => {
     expect(
       ids({

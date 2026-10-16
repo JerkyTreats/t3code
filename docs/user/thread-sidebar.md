@@ -126,6 +126,20 @@ device keeps its own choice.
 
 Turning this off puts working threads back into the active list with the same conversation order.
 
+## Nested threads
+
+An agent that manages other agents can start threads nested under its own thread.
+The parent row shows up to three provider icons for the threads it manages, and a
+count when there are more. Select the parent to open it. Select it again, or use
+its arrow, to show or hide the threads under it. A parent opens its list on its own
+while you work in one of its threads.
+
+Nested threads work like any other thread: you can message, settle, snooze, or archive
+them. When a nested thread needs an approval or an answer, its parent moves back to
+your active threads. Choose **Move to top level** from a nested thread's menu to list
+it on its own again. To pin a nested thread, move it to top level first. Apps and
+servers that do not support nesting list these threads at top level.
+
 ## Settle finished work
 
 Choose **Settle thread** from its menu to move finished work out of the active list

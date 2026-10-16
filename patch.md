@@ -42,6 +42,8 @@ The current image pins Codex 0.159.0 alongside the accepted upstream protocol bi
 
 [Project activity ordering](fork/sidebar-project-activity.md) keeps project activity anchored to user-authored prompts and published final responses across web, desktop and mobile. Progress, streaming output, tools and automatic wake prompts do not reorder projects. The shared activity owner consumes bounded shell timestamps; Codex preserves native response phases and other providers publish through completed runs.
 
+[F31 nested threads](fork/F31-nested-threads.md) lets a thread be created nested under an ordinary parent in the same project through an optional `nestedUnderThreadId` that is separate from lineage. Server validation, clearing through metadata update and non-inheritance are owned by `threadNesting.ts`. Web and mobile grouping, the provider badge, expansion, attention, traversal and palette labels are owned by the client-runtime nesting module. Older peers ignore the field and list nested threads at top level.
+
 [Thread conversation order](fork/thread-conversation-order.md) orders every visible thread section
 by the latest user-authored prompt or completed assistant message. Its shared client-runtime owner
 ignores run, tool, wake and lifecycle timestamps. Web and mobile consume the same owner, and

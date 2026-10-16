@@ -133,6 +133,8 @@ import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
+import { indexThreadsByNestingKey } from "@t3tools/client-runtime/state/thread-nesting";
+import { nestedThreadPaletteTitle } from "../fork/sidebarThreadNesting";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
   appendBrowsePathSegment,
@@ -700,6 +702,7 @@ function OpenCommandPaletteDialog(props: {
   }, [activeThreadReferenceCopyTarget]);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
+  const threadsByNestingKey = useMemo(() => indexThreadsByNestingKey(threads), [threads]);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const {
     theme,
@@ -1376,6 +1379,7 @@ function OpenCommandPaletteDialog(props: {
             />
           );
         },
+        resolveTitle: (thread) => nestedThreadPaletteTitle(thread, threadsByNestingKey),
         getContentMatch: (thread) => {
           const match = threadContentMatchByKey.get(
             threadSearchMatchKey({
@@ -1411,6 +1415,7 @@ function OpenCommandPaletteDialog(props: {
       threadSearch.query,
       threadSearchQuery,
       threads,
+      threadsByNestingKey,
     ],
   );
   const recentThreadItems = allThreadItems.slice(0, RECENT_THREAD_LIMIT);

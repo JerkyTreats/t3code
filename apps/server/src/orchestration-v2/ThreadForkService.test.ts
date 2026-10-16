@@ -83,9 +83,12 @@ function makeSourceRun(status: OrchestrationV2Run["status"]): OrchestrationV2Run
   };
 }
 
-function makeSourceProjection(sourceRun: OrchestrationV2Run): OrchestrationV2ThreadProjection {
+function makeSourceProjection(
+  sourceRun: OrchestrationV2Run,
+  thread = makeSourceThread(),
+): OrchestrationV2ThreadProjection {
   return {
-    thread: makeSourceThread(),
+    thread,
     runs: [sourceRun],
     attempts: [],
     nodes: [],
@@ -106,11 +109,11 @@ function makeSourceProjection(sourceRun: OrchestrationV2Run): OrchestrationV2Thr
   };
 }
 
-const planFork = (sourceRun: OrchestrationV2Run) =>
+const planFork = (sourceRun: OrchestrationV2Run, sourceThread = makeSourceThread()) =>
   Effect.gen(function* () {
     const service = yield* ThreadForkService.ThreadForkServiceV2;
     return yield* service.plan({
-      sourceProjection: makeSourceProjection(sourceRun),
+      sourceProjection: makeSourceProjection(sourceRun, sourceThread),
       sourceRun,
       sourceProviderThread: undefined,
       canonicalSourcePoint: {
@@ -189,5 +192,16 @@ it.effect("rejects in-progress and rolled-back fork sources", () =>
       assert.equal(error.targetThreadId, targetThreadId);
       assert.equal(error.cause, ThreadForkService.forkableSourceRunStatusError(sourceRun));
     }
+  }),
+);
+
+it.effect("starts a fork of a nested thread at top level", () =>
+  Effect.gen(function* () {
+    const result = yield* planFork(makeSourceRun("completed"), {
+      ...makeSourceThread(),
+      nestedUnderThreadId: ThreadId.make("thread:fork-nesting-parent"),
+    });
+    assert.notProperty(result.targetThread, "nestedUnderThreadId");
+    assert.equal(result.targetThread.lineage.relationshipToParent, "fork");
   }),
 );

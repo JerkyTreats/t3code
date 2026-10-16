@@ -1,5 +1,6 @@
 import { useNavigation } from "@react-navigation/native";
 import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
+import { indexThreadsByNestingKey } from "@t3tools/client-runtime/state/thread-nesting";
 import { THREAD_JUMP_KEYBINDING_COMMANDS } from "@t3tools/contracts";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -32,6 +33,7 @@ import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { ThreadSearchMatchExcerpt } from "../threads/thread-search-match";
 import {
+  commandPaletteThreadTitle,
   filterCommandPaletteItems,
   nextPaletteIndex,
   type CommandPaletteItem,
@@ -316,6 +318,7 @@ export function CommandPalette(props: {
           },
         }),
     }));
+    const threadsByKey = indexThreadsByNestingKey(threads);
     const threadItems: CommandPaletteItem[] = threads
       .filter((thread) => thread.archivedAt === null)
       .sort((left, right) =>
@@ -330,7 +333,7 @@ export function CommandPalette(props: {
         return {
           key: scopedThreadKey(thread.environmentId, thread.id),
           kind: "thread",
-          title: thread.title || "Untitled thread",
+          title: commandPaletteThreadTitle(thread, threadsByKey),
           detail: [project?.title, environment].filter(Boolean).join(" · "),
           searchTerms: [
             project?.title ?? "",

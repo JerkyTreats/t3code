@@ -22,7 +22,8 @@ export function threadJumpTarget(
   let index = threadJumpIndex(command);
   if (index < 0) return null;
   for (const item of items) {
-    const thread = item.type === "v2-thread" ? item.item.thread : null;
+    const thread =
+      item.type === "v2-thread" || item.type === "v2-nested-thread" ? item.item.thread : null;
     if (thread !== null && index-- === 0) return thread;
   }
   return null;

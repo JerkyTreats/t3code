@@ -29,6 +29,7 @@ import type { SidebarThreadSummary, Thread } from "../types";
 import { cn, normalizeSearchText } from "../lib/utils";
 import { isLatestRunSettled } from "../session-logic";
 import { resolveServerBackedAppStageLabel } from "../branding.logic";
+import { SIDEBAR_NESTED_TOGGLE_SELECTOR } from "../fork/sidebarThreadNesting";
 
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
@@ -810,10 +811,10 @@ function nodeClosest(node: object | null, selector: string): unknown {
   return node.closest(selector);
 }
 
-/** Clicks on a nested link keep the link's meaning. The row must not treat them as multi-select. */
+/** Clicks on a nested link or the nested-thread chevron keep their own meaning. The row must not treat them as multi-select. */
 export function isSidebarNestedLinkClick(target: EventTarget | null): boolean {
   if (target == null || typeof target !== "object") return false;
-  if (nodeClosest(target, "a[href]") !== null) return true;
+  if (nodeClosest(target, `a[href], ${SIDEBAR_NESTED_TOGGLE_SELECTOR}`) !== null) return true;
   const parent =
     "parentElement" in target &&
     target.parentElement !== null &&

@@ -261,6 +261,21 @@ describe("mobile connection storage", () => {
     });
   });
 
+  it("keeps boolean nested thread expansion entries and drops the rest", async () => {
+    mocks.setPreferencesJson(
+      JSON.stringify({
+        threadListNestedExpansion: { "env:parent": true, "env:other": false, "env:bad": "yes" },
+      }),
+      10,
+    );
+    await expect(loadPreferences()).resolves.toEqual({
+      threadListNestedExpansion: { "env:parent": true, "env:other": false },
+    });
+
+    mocks.setPreferencesJson(JSON.stringify({ threadListNestedExpansion: ["env:parent"] }), 11);
+    await expect(loadPreferences()).resolves.toEqual({});
+  });
+
   it("drops legacy and invalid thread list shelf expansion preferences", async () => {
     mocks.setPreferencesJson(
       JSON.stringify({

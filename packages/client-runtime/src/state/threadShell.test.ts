@@ -217,6 +217,71 @@ describe("v2 thread shell lists", () => {
     registry.dispose();
   });
 
+  it("surfaces a nested child's question on its parent and the parent's banner", () => {
+    const { registry, threads, snapshotAtom } = makeHarness();
+    const root = v2ThreadShell;
+    const question = {
+      id: RuntimeRequestId.make("nested-question"),
+      kind: "user_input" as const,
+      createdAt: v2Now,
+    };
+    const nested = {
+      ...root,
+      id: ThreadId.make("nested"),
+      lineage: {
+        rootThreadId: ThreadId.make("nested"),
+        parentThreadId: null,
+        relationshipToParent: null,
+      },
+      nestedUnderThreadId: root.id,
+      pendingRuntimeRequest: question,
+    };
+    const parent = threads.threadShellAtom({ environmentId, threadId: root.id });
+    const inputs = threads.childThreadInputsAtom({ environmentId, threadId: root.id });
+    const disposeParent = registry.mount(parent);
+    const disposeInputs = registry.mount(inputs);
+    registry.set(snapshotAtom(environmentId), { ...v2ShellSnapshot, threads: [root, nested] });
+    expect(registry.get(parent)?.pendingSubagentRequest).toBe("user_input");
+    expect(registry.get(inputs).map((thread) => thread.id)).toEqual([nested.id]);
+    expect(childThreadInputsTitle(registry.get(inputs))).toBe("Thread needs input");
+    // The child's own row still shows its question, not a bubbled one.
+    expect(
+      registry.get(threads.threadShellAtom({ environmentId, threadId: nested.id }))
+        ?.pendingSubagentRequest,
+    ).toBeNull();
+
+    // A subagent of the nested child bubbles through it to the parent.
+    const helper = {
+      ...root,
+      id: ThreadId.make("nested-helper"),
+      creationSource: "mcp" as const,
+      status: "running" as const,
+      activityRunStatus: "running" as const,
+      lineage: {
+        rootThreadId: nested.id,
+        parentThreadId: nested.id,
+        relationshipToParent: "subagent" as const,
+      },
+      pendingRuntimeRequest: { ...question, kind: "command" as const },
+    };
+    registry.set(snapshotAtom(environmentId), {
+      ...v2ShellSnapshot,
+      threads: [root, { ...nested, pendingRuntimeRequest: null }, helper],
+    });
+    expect(registry.get(parent)?.pendingSubagentRequest).toBe("approval");
+
+    // An archived parent no longer hosts the child, so nothing bubbles.
+    registry.set(snapshotAtom(environmentId), {
+      ...v2ShellSnapshot,
+      threads: [{ ...root, archivedAt: v2Now }, nested],
+    });
+    expect(registry.get(parent)?.pendingSubagentRequest).toBeNull();
+    expect(registry.get(inputs)).toEqual([]);
+    disposeInputs();
+    disposeParent();
+    registry.dispose();
+  });
+
   it("leaves switched-off environments out of navigation", () => {
     const { registry, threads, catalogValueAtom } = makeHarness([
       environmentId,
