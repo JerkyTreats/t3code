@@ -6,7 +6,9 @@ import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 import {
+  readEnvironmentHasDesktopBrowser,
   readEnvironmentSupportsServerBrowser,
+  useEnvironmentHasDesktopBrowser,
   useEnvironmentSupportsServerBrowser,
 } from "~/state/entities";
 
@@ -57,17 +59,21 @@ export function usePreviewAvailable(environmentId: EnvironmentId | null): boolea
  * Whether this client draws a server tab with its own `<webview>`. The desktop
  * app renders tabs of the server it launched, which drives them over the
  * desktop browser channel; every other client and environment streams them.
+ * A primary without the channel (a WSL-only backend) streams too: its server
+ * never sees navigation in a local `<webview>`.
  */
 export function rendersServerTabNatively(
   environmentId: EnvironmentId,
   primaryEnvironmentId: EnvironmentId | null,
+  primaryHasDesktopBrowser: boolean,
   snapshot: Pick<PreviewSessionSnapshot, "runtime"> | null | undefined,
 ): boolean {
   return (
     isElectron &&
     snapshot?.runtime === "server" &&
     primaryEnvironmentId !== null &&
-    environmentId === primaryEnvironmentId
+    environmentId === primaryEnvironmentId &&
+    primaryHasDesktopBrowser
   );
 }
 
@@ -75,7 +81,14 @@ export function useRendersServerTabNatively(
   environmentId: EnvironmentId,
   snapshot: Pick<PreviewSessionSnapshot, "runtime"> | null | undefined,
 ): boolean {
-  return rendersServerTabNatively(environmentId, useAtomValue(primaryEnvironmentIdAtom), snapshot);
+  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
+  const primaryHasDesktopBrowser = useEnvironmentHasDesktopBrowser(primaryEnvironmentId);
+  return rendersServerTabNatively(
+    environmentId,
+    primaryEnvironmentId,
+    primaryHasDesktopBrowser,
+    snapshot,
+  );
 }
 
 /** Whether the current client owns an Electron guest for this preview session. */
@@ -86,6 +99,7 @@ export function rendersPreviewTabNatively(
   return (
     isPreviewSupportedInRuntime() &&
     (snapshot?.runtime !== "server" ||
-      environmentId === appAtomRegistry.get(primaryEnvironmentIdAtom))
+      (environmentId === appAtomRegistry.get(primaryEnvironmentIdAtom) &&
+        readEnvironmentHasDesktopBrowser(environmentId)))
   );
 }
