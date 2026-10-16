@@ -254,6 +254,10 @@ export const make = Effect.gen(function* () {
       ...(desktopAppUpdate ? { serverSelfUpdateProgress: true } : {}),
       ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
       serverBrowser: true,
+      ...(serverConfig.desktopBrowserFd !== undefined &&
+      serverConfig.desktopBrowserControlFd !== undefined
+        ? { desktopBrowser: true }
+        : {}),
     },
   };
 
