@@ -263,6 +263,10 @@
       "types": "./src/state/fork/threadConversationOrder.ts",
       "default": "./src/state/fork/threadConversationOrder.ts"
     },
+    "./state/thread-nesting": {
+      "types": "./src/state/fork/threadNesting.ts",
+      "default": "./src/state/fork/threadNesting.ts"
+    },
     "./state/thread-inbox": {
       "types": "./src/state/threadInbox.ts",
       "default": "./src/state/threadInbox.ts"

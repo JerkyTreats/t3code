@@ -16,6 +16,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { withoutThreadNesting } from "./threadNesting.ts";
+
 export interface ThreadForkPlanV2 {
   readonly targetThread: OrchestrationV2AppThread;
   readonly transfer: OrchestrationV2ContextTransfer;
@@ -86,7 +88,7 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
           });
         }
         const targetThread: OrchestrationV2AppThread = {
-          ...input.sourceProjection.thread,
+          ...withoutThreadNesting(input.sourceProjection.thread),
           createdBy: input.createdBy,
           creationSource: input.creationSource,
           id: input.targetThreadId,

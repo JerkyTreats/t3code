@@ -57,8 +57,10 @@ export function makeSubagentChildThread(input: {
   readonly creationSource: OrchestrationV2CreationSource;
   readonly creationSurface?: ClientSurface;
 }): OrchestrationV2AppThread {
+  // A subagent belongs to its parent through lineage, never through sidebar nesting.
+  const { nestedUnderThreadId: _nesting, ...parentThread } = input.parentThread;
   return {
-    ...input.parentThread,
+    ...parentThread,
     ...threadCreationMetadata(input),
     id: input.childThreadId,
     title: input.title,

@@ -19,6 +19,11 @@ import type {
 import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
 import { AuthOrchestrationOperateScope, type EnvironmentMachineKind } from "@t3tools/contracts";
 import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/thread-settled";
+import {
+  canMoveNestedThreadToTopLevel,
+  canPinThread,
+  resolveNestedRowClick,
+} from "@t3tools/client-runtime/state/thread-nesting";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { Alert, Pressable, useWindowDimensions, View } from "react-native";
@@ -48,6 +53,7 @@ import {
   resolveThreadListV2Status,
   resolveThreadListV2ProviderDrivers,
   resolveThreadListV2SwipeActions,
+  type ThreadListV2NestedSummary,
   type ThreadListV2Status,
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
@@ -141,6 +147,76 @@ const LEGACY_MENU_ACTIONS: MenuAction[] = [
 
 /** Rounded-row radius shared with the v1 sidebar rows. */
 const SIDEBAR_V2_ROW_RADIUS = 12;
+
+/** Leading inset that sets a nested child row under its parent. */
+const NESTED_CHILD_INDENT = 16;
+
+const MOVE_TO_TOP_LEVEL_ACTION: MenuAction = {
+  id: "move-to-top-level",
+  title: "Move to top level",
+  image: "arrow.turn.left.up",
+};
+
+/** Expands or collapses a parent's nested threads without opening the parent. */
+function NestedThreadChevron(props: {
+  readonly summary: ThreadListV2NestedSummary;
+  readonly title: string;
+  readonly tintColorClassName: string;
+  readonly onToggle: () => void;
+}) {
+  const { expanded } = props.summary;
+  return (
+    <Pressable
+      accessibilityHint={`${expanded ? "Hides" : "Shows"} the threads nested under ${props.title}.`}
+      accessibilityLabel={expanded ? "Hide nested threads" : "Show nested threads"}
+      accessibilityRole="button"
+      accessibilityState={{ expanded }}
+      hitSlop={10}
+      onPress={props.onToggle}
+      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+    >
+      <SymbolView
+        name="chevron.right"
+        size={11}
+        tintColorClassName={props.tintColorClassName}
+        type="monochrome"
+        weight="semibold"
+        style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
+      />
+    </Pressable>
+  );
+}
+
+/** One provider icon per shown child, most recently active first, plus `+n`. */
+function NestedThreadBadge(props: {
+  readonly summary: ThreadListV2NestedSummary;
+  readonly providers: ReadonlyArray<ThreadListProvider> | undefined;
+  readonly textClassName: string;
+}) {
+  const { providerInstanceIds, overflow } = props.summary.badge;
+  return (
+    <View
+      accessible
+      accessibilityLabel={`${props.summary.count} nested ${props.summary.count === 1 ? "thread" : "threads"}`}
+      className="flex-row items-center gap-0.5 rounded-full border border-border-subtle px-1.5 py-0.5"
+    >
+      {providerInstanceIds.map((instanceId, index) => {
+        const provider = props.providers?.find((candidate) => candidate.instanceId === instanceId);
+        return (
+          <ProviderIcon
+            key={`${instanceId}:${index}`}
+            iconUrl={provider?.iconUrl}
+            provider={provider?.driver ?? instanceId}
+            size={11}
+          />
+        );
+      })}
+      {overflow > 0 ? (
+        <Text className={cn("text-[10px] tabular-nums", props.textClassName)}>+{overflow}</Text>
+      ) : null}
+    </View>
+  );
+}
 
 function ThreadListV2Section(props: {
   readonly label: string;
@@ -554,6 +630,14 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly onPinThread: (thread: EnvironmentThreadShell) => void;
   readonly onUnpinThread: (thread: EnvironmentThreadShell) => void;
   readonly onSetThreadAutoSettle: (thread: EnvironmentThreadShell, enabled: boolean) => void;
+  /** Set on a parent row: its chevron and badge. */
+  readonly nested?: ThreadListV2NestedSummary | null;
+  /** Renders the row indented under its parent. */
+  readonly nestedChild?: boolean;
+  /** Stores a parent row's next expansion. */
+  readonly onToggleNested?: (thread: EnvironmentThreadShell, expanded: boolean) => void;
+  /** Clears the thread's nesting; offered while it carries one. */
+  readonly onMoveThreadToTopLevel?: (thread: EnvironmentThreadShell) => void;
   /** False on environments whose server predates thread.settle/unsettle:
       swipe + menu fall back to Archive instead of failing on use. */
   readonly settlementSupported: boolean;
@@ -601,7 +685,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     onUnpinThread,
     onSetThreadAutoSettle,
     onMoveThread,
+    onToggleNested,
+    onMoveThreadToTopLevel,
   } = props;
+  const nested = props.nested ?? null;
   const snoozedRow = props.snoozed === true;
   const pinnedRow = props.pinned === true;
   const dormant = useSwipeRowDormant(props.activationKey);
@@ -679,6 +766,28 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleMoveUp = useCallback(() => onMoveThread?.(thread, "up"), [onMoveThread, thread]);
   const handleMoveDown = useCallback(() => onMoveThread?.(thread, "down"), [onMoveThread, thread]);
   const handleArchive = useCallback(() => onArchiveThread(thread), [onArchiveThread, thread]);
+  const nestedExpanded = nested?.expanded === true;
+  const handleToggleNested = useCallback(
+    () => onToggleNested?.(thread, !nestedExpanded),
+    [nestedExpanded, onToggleNested, thread],
+  );
+  // A parent with children toggles when it is already open; any other tap opens the row.
+  const handlePressRow = useCallback(
+    (close: () => void) => {
+      close();
+      if (
+        onToggleNested !== undefined &&
+        resolveNestedRowClick({ isActive: selected, hasChildren: nested !== null }) === "toggle"
+      ) {
+        onToggleNested(thread, !nestedExpanded);
+        return;
+      }
+      onSelectThread(thread);
+    },
+    [nested, nestedExpanded, onSelectThread, onToggleNested, selected, thread],
+  );
+  const showMoveToTopLevel =
+    onMoveThreadToTopLevel !== undefined && canMoveNestedThreadToTopLevel(thread);
 
   // Swipe: the v2 primary action is the lifecycle transition. Un-settling a
   // settled row keeps it active until new activity clears the user override.
@@ -737,19 +846,18 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             } satisfies MenuAction,
           ]
         : []),
-      ...(props.pinningSupported
-        ? [
-            thread.pinnedAt != null
-              ? { id: "unpin", title: "Unpin", image: "pin.slash" }
-              : { id: "pin", title: "Pin", image: "pin" },
-          ]
-        : []),
+      ...(props.pinningSupported && thread.pinnedAt != null
+        ? [{ id: "unpin", title: "Unpin", image: "pin.slash" }]
+        : props.pinningSupported && canPinThread(thread)
+          ? [{ id: "pin", title: "Pin", image: "pin" }]
+          : []),
     ],
     [
       props.canMoveDown,
       props.canMoveUp,
       props.reorderSupported,
       props.pinningSupported,
+      thread.nestedUnderThreadId,
       thread.pinnedAt,
       variant,
     ],
@@ -791,6 +899,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     ],
     [props.titleRegenerationSupported, thread.titleRegeneration],
   );
+  // Follows the lifecycle actions, as on web.
+  const nestingMenuItems = useMemo<MenuAction[]>(
+    () => (showMoveToTopLevel ? [MOVE_TO_TOP_LEVEL_ACTION] : []),
+    [showMoveToTopLevel],
+  );
   const snoozableCardMenuActions = useMemo<MenuAction[]>(
     () => [
       { id: "settle", title: "Settle", image: "checkmark" },
@@ -800,28 +913,37 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         image: "clock",
         subactions: snoozePresetActions,
       },
+      ...nestingMenuItems,
       ...arrangementMenuItems,
       ...titleMenuItems,
       ...autoSettleMenuItems,
       { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
     ],
-    [arrangementMenuItems, autoSettleMenuItems, snoozePresetActions, titleMenuItems],
+    [
+      arrangementMenuItems,
+      autoSettleMenuItems,
+      nestingMenuItems,
+      snoozePresetActions,
+      titleMenuItems,
+    ],
   );
   const cardMenuActions = useMemo<MenuAction[]>(
     () => [
       CARD_MENU_ACTIONS[0]!,
+      ...nestingMenuItems,
       ...arrangementMenuItems,
       ...titleMenuItems,
       ...autoSettleMenuItems,
       ...CARD_MENU_ACTIONS.slice(1),
     ],
-    [arrangementMenuItems, autoSettleMenuItems, titleMenuItems],
+    [arrangementMenuItems, autoSettleMenuItems, nestingMenuItems, titleMenuItems],
   );
   // Settled and snoozed rows keep the setting too, matching web where every
   // row shares one menu builder.
   const slimMenuActions = useMemo<MenuAction[]>(
     () => [
       SLIM_MENU_ACTIONS[0]!,
+      ...nestingMenuItems,
       ...arrangementMenuItems.filter(
         (action) => action.id !== "move-up" && action.id !== "move-down",
       ),
@@ -829,25 +951,27 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ...autoSettleMenuItems,
       SLIM_MENU_ACTIONS[1]!,
     ],
-    [arrangementMenuItems, autoSettleMenuItems, titleMenuItems],
+    [arrangementMenuItems, autoSettleMenuItems, nestingMenuItems, titleMenuItems],
   );
   const snoozedMenuActions = useMemo<MenuAction[]>(
     () => [
       SNOOZED_MENU_ACTIONS[0]!,
+      ...nestingMenuItems,
       ...titleMenuItems,
       ...autoSettleMenuItems,
       SNOOZED_MENU_ACTIONS[1]!,
     ],
-    [autoSettleMenuItems, titleMenuItems],
+    [autoSettleMenuItems, nestingMenuItems, titleMenuItems],
   );
   const legacyMenuActions = useMemo<MenuAction[]>(
     () => [
       LEGACY_MENU_ACTIONS[0]!,
+      ...nestingMenuItems,
       ...arrangementMenuItems,
       ...titleMenuItems,
       LEGACY_MENU_ACTIONS[1]!,
     ],
-    [arrangementMenuItems, titleMenuItems],
+    [arrangementMenuItems, nestingMenuItems, titleMenuItems],
   );
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
@@ -863,6 +987,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "move-up") handleMoveUp();
       if (nativeEvent.event === "move-down") handleMoveDown();
       if (nativeEvent.event === "archive") handleArchive();
+      if (nativeEvent.event === "move-to-top-level") onMoveThreadToTopLevel?.(thread);
       if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "copy-thread-id") {
@@ -886,6 +1011,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     },
     [
       onNewThreadOnBranch,
+      onMoveThreadToTopLevel,
       thread,
       handleArchive,
       handleDelete,
@@ -969,9 +1095,36 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
   // Sidebar rows use navigation foregrounds on their active and idle surfaces.
+  const nestedChevron =
+    nested !== null && onToggleNested !== undefined ? (
+      <NestedThreadChevron
+        summary={nested}
+        title={thread.title}
+        tintColorClassName={
+          selected
+            ? selectedThreadRowColors.mutedIconTintClassName
+            : rowAppearance.mutedIconTintClassName
+        }
+        onToggle={handleToggleNested}
+      />
+    ) : null;
+  const nestedBadge =
+    nested !== null ? (
+      <NestedThreadBadge
+        summary={nested}
+        providers={props.providers}
+        textClassName={
+          selected
+            ? selectedThreadRowColors.mutedForegroundClassName
+            : rowAppearance.mutedForegroundClassName
+        }
+      />
+    ) : null;
+
   const cardContent = (
     <>
       <View className="flex-row items-center gap-1.5">
+        {nestedChevron}
         {props.project ? (
           <ProjectFavicon
             environmentId={thread.environmentId}
@@ -1132,6 +1285,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ) : (
           <View className="flex-1" />
         )}
+        {nestedBadge}
         {pr ? (
           <View className="flex-row items-center gap-1" accessibilityLabel={pr.accessibilityLabel}>
             <SymbolView
@@ -1202,10 +1356,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         }
         accessibilityRole="button"
         accessibilityState={{ selected }}
-        onPress={() => {
-          close();
-          onSelectThread(thread);
-        }}
+        onPress={() => handlePressRow(close)}
         style={rowAppearance.cardStyle}
       >
         {sidebarPane ? (
@@ -1235,10 +1386,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         accessibilityRole="button"
         accessibilityState={{ selected }}
         className={rowAppearance.className}
-        onPress={() => {
-          close();
-          onSelectThread(thread);
-        }}
+        onPress={() => handlePressRow(close)}
         style={rowAppearance.style}
       >
         {/* Settled history recedes: dimmed favicon + muted title. */}
@@ -1248,6 +1396,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             sidebarPane ? "px-3" : "px-5",
           )}
         >
+          {nestedChevron}
           {props.project ? (
             <View className="opacity-40">
               <ProjectFavicon
@@ -1281,6 +1430,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               />
             ) : null}
           </View>
+          {nestedBadge}
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
           <Text
             className={cn(
@@ -1301,10 +1451,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       </RowPressable>
     );
 
-  if (!canOperateThread) return rowContent(() => {});
+  const indentStyle = props.nestedChild === true ? { paddingLeft: NESTED_CHILD_INDENT } : undefined;
+  if (!canOperateThread) return <View style={indentStyle}>{rowContent(() => {})}</View>;
 
   return (
-    <View collapsable={false}>
+    <View collapsable={false} style={indentStyle}>
       {customSnoozeOpen && (
         <CustomSnoozeSheet onClose={() => setCustomSnoozeOpen(false)} onSnooze={handleSnooze} />
       )}

@@ -721,6 +721,28 @@ describe("V2 environment commands", () => {
       }).pipe(Effect.provide(layerTestCrypto)),
   );
 
+  it.effect("moves a nested thread back to top level through metadata update", () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationV2Command[] = [];
+      const supervisor = yield* makeSupervisor({ commands, projects: [] });
+
+      yield* updateThreadMetadata({
+        commandId: CommandId.make("move-to-top-level"),
+        threadId: v2ThreadId,
+        nestedUnderThreadId: null,
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(commands).toEqual([
+        {
+          type: "thread.metadata.update",
+          commandId: "move-to-top-level",
+          threadId: v2ThreadId,
+          nestedUnderThreadId: null,
+        },
+      ]);
+    }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
   it.effect("delegates model selection to the server without fetching the full projection", () =>
     Effect.gen(function* () {
       const commands: OrchestrationV2Command[] = [];

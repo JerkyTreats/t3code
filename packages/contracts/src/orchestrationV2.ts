@@ -383,6 +383,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
   lineage: OrchestrationV2AppThreadLineage,
+  /** Ordinary parent thread this thread is grouped under; older peers ignore it and list the thread at top level. */
+  nestedUnderThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   forkedFrom: Schema.NullOr(
     Schema.Union([
       Schema.Struct({ type: Schema.Literal("run"), threadId: ThreadId, runId: RunId }),
@@ -1963,6 +1965,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   /** Pull request discovered from the thread's current branch. */
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   lineage: OrchestrationV2AppThreadLineage,
+  /** Ordinary parent thread this thread is grouped under; older peers ignore it and list the thread at top level. */
+  nestedUnderThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
@@ -2747,6 +2751,8 @@ export const OrchestrationV2Command = Schema.Union([
     interactionMode: ProviderInteractionMode,
     branch: Schema.NullOr(TrimmedNonEmptyString),
     worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+    /** Group the new thread under this ordinary top-level thread in the same project. */
+    nestedUnderThreadId: Schema.optional(ThreadId),
     importedNativeThread: Schema.optional(
       Schema.Struct({
         ref: Schema.Struct({
@@ -2877,6 +2883,8 @@ export const OrchestrationV2Command = Schema.Union([
     limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecoveryUpdate)),
     /** Link (object) or unlink (null) a pull request (#8160); absent leaves it unchanged. */
     linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+    /** Null moves a nested thread back to top level; nesting is chosen only at creation. */
+    nestedUnderThreadId: Schema.optional(Schema.Null),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),

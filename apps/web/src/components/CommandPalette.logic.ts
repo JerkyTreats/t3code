@@ -326,6 +326,8 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   /** Optional rich description (e.g. favicon + workspace icons). Falls back to text. */
   renderDescription?: (thread: TThread, meta: { projectTitle: string | undefined }) => ReactNode;
   getContentMatch?: (thread: TThread) => CommandPaletteThreadContentMatch | undefined;
+  /** Display title, such as `parent › child` for a nested thread. Defaults to the thread title. */
+  resolveTitle?: (thread: TThread) => string;
   runThread: (thread: Pick<SidebarThreadSummary, "environmentId" | "id">) => Promise<void>;
   limit?: number;
 }): CommandPaletteActionItem[] {
@@ -370,7 +372,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
           // Last so pasted IDs never outrank title matches for shared substrings.
           thread.id,
         ],
-        title: thread.title,
+        title: input.resolveTitle?.(thread) ?? thread.title,
         description,
         timestamp: formatRelativeTimeLabel(
           thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,

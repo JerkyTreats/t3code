@@ -134,6 +134,7 @@ import {
   ThreadForkServiceV2,
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
+import { nestingParentRejection, withoutThreadNesting } from "./threadNesting.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 
@@ -2239,6 +2240,34 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       { concurrency: 1, discard: true },
     );
 
+  /** Fails `thread.create` when `nestingParentRejection` refuses its nesting target. */
+  const requireNestingParent = Effect.fn("orchestrationV2.dispatch.requireNestingParent")(
+    function* (
+      command: Extract<OrchestrationV2Command, { readonly type: "thread.create" }>,
+      parentThreadId: ThreadId,
+    ) {
+      const parent = yield* projectionStore
+        .getThread(parentThreadId)
+        .pipe(
+          Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
+          mapDispatchError(command),
+        );
+      const reason = nestingParentRejection({
+        threadId: command.threadId,
+        projectId: command.projectId,
+        parentThreadId,
+        parent,
+      });
+      if (reason !== null) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Thread ${command.threadId} cannot nest under ${parentThreadId}: ${reason}.`,
+        });
+      }
+    },
+  );
+
   const dispatchThreadCreate = Effect.fn("orchestrationV2.dispatch.threadCreate")(function* (
     command: Extract<OrchestrationV2Command, { readonly type: "thread.create" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -2249,6 +2278,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       "orchestration_v2.thread_id": command.threadId,
       "orchestration_v2.driver": command.modelSelection.instanceId,
     });
+    if (command.nestedUnderThreadId !== undefined) {
+      yield* requireNestingParent(command, command.nestedUnderThreadId);
+    }
 
     const now = yield* DateTime.now;
     const emitEvent = emit(events, command);
@@ -2273,6 +2305,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         relationshipToParent: null,
         rootThreadId: command.threadId,
       },
+      ...(command.nestedUnderThreadId === undefined
+        ? {}
+        : { nestedUnderThreadId: command.nestedUnderThreadId }),
       forkedFrom: null,
       createdAt: now,
       updatedAt: now,
@@ -2989,6 +3024,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         case "thread.mark-unread":
           return { ...thread, lastVisitedAt: markUnreadVisitedAt };
         case "thread.metadata.update": {
+          // Clearing drops the key, so a thread that was never nested and one moved
+          // back to top level store the same payload.
+          const baseThread =
+            command.nestedUnderThreadId === null ? withoutThreadNesting(thread) : thread;
           const previousRecovery =
             thread.limitRecovery?.runId === command.limitRecovery?.runId &&
             thread.limitRecovery?.resetAt === command.limitRecovery?.resetAt
@@ -3007,7 +3046,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     requestId: command.commandId,
                   };
           return {
-            ...thread,
+            ...baseThread,
             ...(command.title === undefined ? {} : { title: command.title }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
             ...(command.limitRecovery !== undefined &&

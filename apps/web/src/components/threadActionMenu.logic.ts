@@ -20,6 +20,7 @@ export type ThreadActionMenuId =
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
+  | "move-to-top-level"
   | "rename"
   | "regenerate-title"
   | "mark-unread"
@@ -90,6 +91,10 @@ export interface ThreadActionMenuState {
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
+  /** The thread is nested under another and can list on its own again. */
+  readonly canMoveToTopLevel?: boolean;
+  /** False for nested threads, which pin only after moving to top level. */
+  readonly canPin?: boolean;
   readonly supports: {
     readonly settlement: boolean;
     /** Server understands thread.auto-settle.set. */
@@ -132,13 +137,11 @@ export function buildThreadActionMenuItems(
           },
         ]
       : []),
-    ...(state.supports.pinning
-      ? [
-          state.isPinned
-            ? { id: "unpin" as const, label: "Unpin thread", icon: "pin-off" }
-            : { id: "pin" as const, label: "Pin thread", icon: "pin" },
-        ]
-      : []),
+    ...(state.supports.pinning && state.isPinned
+      ? [{ id: "unpin" as const, label: "Unpin thread", icon: "pin-off" }]
+      : state.supports.pinning && state.canPin !== false
+        ? [{ id: "pin" as const, label: "Pin thread", icon: "pin" }]
+        : []),
     // Both lifecycle actions stay available on pinned threads: settling
     // clears the pin ("done" beats "keep on top"), and snoozing hides the
     // card until wake with the pin intact.
@@ -166,6 +169,15 @@ export function buildThreadActionMenuItems(
                   { id: "snooze:custom" as const, label: "Custom…", separatorBefore: true },
                 ],
               },
+        ]
+      : []),
+    ...(state.canMoveToTopLevel === true
+      ? [
+          {
+            id: "move-to-top-level" as const,
+            label: "Move to top level",
+            icon: "corner-left-up",
+          },
         ]
       : []),
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },

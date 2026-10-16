@@ -92,6 +92,9 @@ export interface Preferences {
   readonly threadListSettledShelfExpanded?: boolean;
   readonly threadListSnoozedShelfExpanded?: boolean;
   readonly threadListWorkingShelfExpanded?: boolean;
+  /** Explicit nested-thread parent expansion by `environmentId:threadId`.
+      Absent keys follow the selected thread. */
+  readonly threadListNestedExpansion?: Readonly<Record<string, boolean>>;
   /** Home list filters, restored on the next launch. */
   readonly threadListFilters?: ThreadListFilters;
   readonly pullRequestListFilters?: PullRequestListPreferences;
@@ -161,6 +164,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListSettledShelfExpanded?: boolean;
     threadListSnoozedShelfExpanded?: boolean;
     threadListWorkingShelfExpanded?: boolean;
+    threadListNestedExpansion?: Readonly<Record<string, boolean>>;
     threadListFilters?: ThreadListFilters;
     pullRequestListFilters?: PullRequestListPreferences;
   } = {};
@@ -276,6 +280,18 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.threadListWorkingShelfExpanded === "boolean") {
     preferences.threadListWorkingShelfExpanded = parsed.threadListWorkingShelfExpanded;
+  }
+  const nestedExpansion: unknown = parsed.threadListNestedExpansion;
+  if (
+    typeof nestedExpansion === "object" &&
+    nestedExpansion !== null &&
+    !Array.isArray(nestedExpansion)
+  ) {
+    preferences.threadListNestedExpansion = Object.fromEntries(
+      Object.entries(nestedExpansion).filter(
+        (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+      ),
+    );
   }
   if (isThreadListFilters(parsed.threadListFilters)) {
     preferences.threadListFilters = parsed.threadListFilters;

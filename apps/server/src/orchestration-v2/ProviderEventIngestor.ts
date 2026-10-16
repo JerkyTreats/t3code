@@ -37,6 +37,7 @@ import { makeProviderFailureTurnItem } from "@t3tools/provider-core/server/failu
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
+import { withoutThreadNesting } from "./threadNesting.ts";
 
 export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
   "ProviderEventNormalizeError",
@@ -537,7 +538,8 @@ export const layer: Layer.Layer<
       Effect.gen(function* () {
         switch (input.event.type) {
           case "app_thread.created": {
-            const offered = input.event.appThread;
+            // Provider-created threads copy their parent thread but never its nesting.
+            const offered = withoutThreadNesting(input.event.appThread);
             const existing = yield* projections.getThread(offered.id).pipe(
               Effect.catchTags({
                 ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),

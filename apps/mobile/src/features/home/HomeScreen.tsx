@@ -67,7 +67,11 @@ import {
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   type ThreadListV2ListItem,
 } from "../threads/threadListV2";
-import { useThreadListV2ShelfPreferences } from "../threads/use-thread-list-v2-shelf-preferences";
+import {
+  useClearNestedExpansionOnSelection,
+  useThreadListV2NestedExpansion,
+  useThreadListV2ShelfPreferences,
+} from "../threads/use-thread-list-v2-shelf-preferences";
 import type { HomeListFilterMenuEnvironment } from "./home-list-filter-menu";
 import {
   buildHomeProjectScopes,
@@ -123,6 +127,7 @@ interface HomeScreenProps {
     thread: EnvironmentThreadShell,
     direction: ThreadMoveDestination,
   ) => Promise<boolean>;
+  readonly onMoveThreadToTopLevel: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly onRenameThread: (thread: EnvironmentThreadShell) => void;
   readonly onRegenerateThreadTitle: (thread: EnvironmentThreadShell) => Promise<boolean>;
   readonly onSelectPendingTask: (pendingTask: PendingNewTask) => void;
@@ -497,6 +502,24 @@ export function HomeScreen(props: HomeScreenProps) {
     },
     [props.onRegenerateThreadTitle],
   );
+  const handleMoveThreadToTopLevel = useCallback(
+    (thread: EnvironmentThreadShell) => {
+      void props.onMoveThreadToTopLevel(thread);
+    },
+    [props.onMoveThreadToTopLevel],
+  );
+  const { nestedExpansion, setNestedExpansion } = useThreadListV2NestedExpansion(props.threads);
+  useClearNestedExpansionOnSelection(
+    selectedThreadKey,
+    props.threads,
+    nestedExpansion,
+    setNestedExpansion,
+  );
+  const handleToggleNested = useCallback(
+    (thread: EnvironmentThreadShell, expanded: boolean) =>
+      setNestedExpansion(scopedThreadKey(thread.environmentId, thread.id), expanded),
+    [setNestedExpansion],
+  );
   const handleRenameThread = useCallback(
     (thread: EnvironmentThreadShell) => props.onRenameThread(thread),
     [props.onRenameThread],
@@ -581,8 +604,10 @@ export function HomeScreen(props: HomeScreenProps) {
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey,
+      nestedExpansion,
     });
   }, [
+    nestedExpansion,
     workingShelfEnabled,
     workingShelfExpanded,
     pendingOrder,
@@ -733,6 +758,10 @@ export function HomeScreen(props: HomeScreenProps) {
       const thread = item.item.thread;
       return (
         <ThreadListV2Row
+          nested={item.type === "v2-thread" ? item.nested : null}
+          nestedChild={item.type === "v2-nested-thread"}
+          onToggleNested={handleToggleNested}
+          onMoveThreadToTopLevel={handleMoveThreadToTopLevel}
           pane={primaryColumn ? "sidebar" : "screen"}
           selected={scopedThreadKey(thread.environmentId, thread.id) === selectedThreadKey}
           fullSwipeWidth={fullSwipeWidth}
@@ -797,6 +826,8 @@ export function HomeScreen(props: HomeScreenProps) {
     },
     [
       handleDeleteThread,
+      handleMoveThreadToTopLevel,
+      handleToggleNested,
       activeReorderEnvironmentIds,
       handleMoveThread,
       handlePinThread,
