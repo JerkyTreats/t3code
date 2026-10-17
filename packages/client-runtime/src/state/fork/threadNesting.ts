@@ -148,10 +148,14 @@ export function groupNestedThreads<T extends ScopedNestableThread & ThreadConver
   };
 }
 
-export const NESTED_THREAD_BADGE_LIMIT = 3;
+/** Child icons shown after the parent's own provider icon. */
+export const NESTED_THREAD_BADGE_LIMIT = 2;
 
 export interface NestedThreadBadge<P> {
-  /** One provider instance per shown child, most recent conversation first. */
+  /**
+   * One provider instance per shown child, most recent conversation first.
+   * Clients draw the parent's own provider ahead of these.
+   */
   readonly providerInstanceIds: ReadonlyArray<P>;
   /** Children not shown, rendered as `+n` when above zero. */
   readonly overflow: number;

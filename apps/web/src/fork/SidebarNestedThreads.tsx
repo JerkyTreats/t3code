@@ -18,16 +18,18 @@ function badgeIconKeys(instanceIds: ReadonlyArray<ProviderInstanceId>) {
 }
 
 /**
- * A parent row's nested threads: one provider icon per child, most recently
- * active first, then `+n`. The outlined pill sets it apart from the row's own
- * provider history.
+ * A parent row's provider and its nested threads: the parent's own provider
+ * icon, then one icon per shown child, most recently active first, then `+n`.
+ * On card rows it stands in for the row's provider history.
  */
 export const SidebarNestedThreadBadge = memo(function SidebarNestedThreadBadge(props: {
   badge: NestedThreadBadge<ProviderInstanceId>;
+  parentProviderInstanceId: ProviderInstanceId;
   providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
 }) {
   const { badge } = props;
   const count = badge.providerInstanceIds.length + badge.overflow;
+  const parentEntry = props.providerEntryByInstanceId.get(props.parentProviderInstanceId);
   return (
     <span
       role="img"
@@ -35,6 +37,16 @@ export const SidebarNestedThreadBadge = memo(function SidebarNestedThreadBadge(p
       data-testid="sidebar-nested-thread-badge"
       className="inline-flex h-4.5 shrink-0 items-center gap-0.5 rounded-full border border-sidebar-border px-1 text-2xs leading-none text-sidebar-muted-foreground"
     >
+      {parentEntry === undefined ? null : (
+        <ProviderInstanceIcon
+          driverKind={parentEntry.driverKind}
+          displayName={parentEntry.displayName}
+          accentColor={parentEntry.accentColor}
+          acpRegistryAgentId={parentEntry.acpRegistryAgentId}
+          acpRegistryIconUrl={parentEntry.acpRegistryIconUrl}
+          iconClassName="size-3"
+        />
+      )}
       {badgeIconKeys(badge.providerInstanceIds).map(({ instanceId, key }) => {
         const entry = props.providerEntryByInstanceId.get(instanceId);
         return entry === undefined ? null : (

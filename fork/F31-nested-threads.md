@@ -17,7 +17,7 @@ Let an orchestrating thread own ordinary child threads so a manager running many
 - Older clients and servers ignore the field and list nested threads at top level. Rolling the server back loses no data.
 - Web and mobile group visible children under their parent row. Children do not take part in status sections or drag. A child that needs approval or input surfaces its parent in the active section.
 - The expansion control appears only when visible children exist. Selecting a non-active row opens it. Selecting the active row toggles expansion. The control toggles without navigating: a chevron on web, the provider badge on mobile, which is filled while expanded. A parent expands automatically while one of its children is active.
-- The parent row shows up to three provider icons, one per child with the most recently active first, and `+n` for the rest. Compact list mode and the rail show the badge only.
+- The parent row's badge shows the parent's own provider icon, then up to two child provider icons with the most recently active first, and `+n` for the rest. On card rows the badge replaces the parent's provider history and follows the machine icon. Compact list mode and the rail show the badge only.
 - Keyboard traversal and jump hints follow the visible nested order. The command palette labels nested threads `parent › child`.
 - **Move to top level** is available on nested threads on web and mobile.
 - Nested threads cannot be pinned; **Move to top level** first.

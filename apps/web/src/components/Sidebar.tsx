@@ -1559,6 +1559,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const nestedBadge = props.nestedBadge ? (
     <SidebarNestedThreadBadge
       badge={props.nestedBadge}
+      parentProviderInstanceId={resolveThreadProviderStack(thread).at(-1)!}
       providerEntryByInstanceId={props.providerEntryByInstanceId}
     />
   ) : null;
@@ -2255,13 +2256,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     />
                   </span>
                 ) : null}
-                {nestedBadge}
-                <span aria-hidden className="inline-flex shrink-0 items-center">
-                  <SidebarProviderStack
-                    thread={thread}
-                    providerEntryByInstanceId={props.providerEntryByInstanceId}
-                  />
-                </span>
+                {nestedBadge ?? (
+                  <span aria-hidden className="inline-flex shrink-0 items-center">
+                    <SidebarProviderStack
+                      thread={thread}
+                      providerEntryByInstanceId={props.providerEntryByInstanceId}
+                    />
+                  </span>
+                )}
               </span>
             </div>
           </div>

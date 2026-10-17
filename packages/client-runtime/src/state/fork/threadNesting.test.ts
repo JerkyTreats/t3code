@@ -173,7 +173,7 @@ describe("resolveNestedRowClick", () => {
 describe("nestedThreadBadge", () => {
   const provider = (name: string) => ProviderInstanceId.make(name);
 
-  it("shows up to three children, most recently active first, then overflow", () => {
+  it("shows up to two children, most recently active first, then overflow", () => {
     const children = ["a", "b", "c", "d", "e"].map((name, index) =>
       shell(name, {
         ...under("parent"),
@@ -183,8 +183,8 @@ describe("nestedThreadBadge", () => {
     );
     const badge = nestedThreadBadge(children);
     expect(badge).toEqual({
-      providerInstanceIds: ["provider-e", "provider-d", "provider-c"],
-      overflow: 2,
+      providerInstanceIds: ["provider-e", "provider-d"],
+      overflow: 3,
     });
     expect(nestedThreadBadge(children)).toBe(badge);
   });
