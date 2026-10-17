@@ -16,7 +16,7 @@ Let an orchestrating thread own ordinary child threads so a manager running many
 - Archiving or deleting a parent leaves its children unchanged; clients show those children at top level.
 - Older clients and servers ignore the field and list nested threads at top level. Rolling the server back loses no data.
 - Web and mobile group visible children under their parent row. Children do not take part in status sections or drag. A child that needs approval or input surfaces its parent in the active section.
-- The chevron appears only when visible children exist. Selecting a non-active row opens it. Selecting the active row toggles expansion. The chevron toggles without navigating. A parent expands automatically while one of its children is active.
+- The expansion control appears only when visible children exist. Selecting a non-active row opens it. Selecting the active row toggles expansion. The control toggles without navigating: a chevron on web, the provider badge on mobile, which is filled while expanded. A parent expands automatically while one of its children is active.
 - The parent row shows up to three provider icons, one per child with the most recently active first, and `+n` for the rest. Compact list mode and the rail show the badge only.
 - Keyboard traversal and jump hints follow the visible nested order. The command palette labels nested threads `parent › child`.
 - **Move to top level** is available on nested threads on web and mobile.
@@ -72,4 +72,4 @@ Let an orchestrating thread own ordinary child threads so a manager running many
 - Projection tests prove the in-memory and SQL shells agree, and that a shell carrying the field decodes under the schema without it.
 - Fork tests prove a fork of a nested thread is top-level.
 - Client-runtime owner tests cover grouping, orphans, badge, expansion, attention, traversal, palette label, move eligibility and stable identity.
-- Web and mobile adapter tests cover rows, chevron, drag exclusion, traversal, palette and move availability.
+- Web and mobile adapter tests cover rows, expansion control, drag exclusion, traversal, palette and move availability.

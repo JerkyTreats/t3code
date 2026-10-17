@@ -157,49 +157,23 @@ const MOVE_TO_TOP_LEVEL_ACTION: MenuAction = {
   image: "arrow.turn.left.up",
 };
 
-/** Expands or collapses a parent's nested threads without opening the parent. */
-function NestedThreadChevron(props: {
-  readonly summary: ThreadListV2NestedSummary;
-  readonly title: string;
-  readonly tintColorClassName: string;
-  readonly onToggle: () => void;
-}) {
-  const { expanded } = props.summary;
-  return (
-    <Pressable
-      accessibilityHint={`${expanded ? "Hides" : "Shows"} the threads nested under ${props.title}.`}
-      accessibilityLabel={expanded ? "Hide nested threads" : "Show nested threads"}
-      accessibilityRole="button"
-      accessibilityState={{ expanded }}
-      hitSlop={10}
-      onPress={props.onToggle}
-      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-    >
-      <SymbolView
-        name="chevron.right"
-        size={11}
-        tintColorClassName={props.tintColorClassName}
-        type="monochrome"
-        weight="semibold"
-        style={{ transform: [{ rotate: expanded ? "90deg" : "0deg" }] }}
-      />
-    </Pressable>
-  );
-}
-
-/** One provider icon per shown child, most recently active first, plus `+n`. */
+/**
+ * One provider icon per shown child, most recently active first, plus `+n`.
+ * With `onToggle`, pressing it expands or collapses the nested threads without
+ * opening the parent.
+ */
 function NestedThreadBadge(props: {
   readonly summary: ThreadListV2NestedSummary;
+  readonly title: string;
   readonly providers: ReadonlyArray<ThreadListProvider> | undefined;
   readonly textClassName: string;
+  readonly onToggle?: () => void;
 }) {
   const { providerInstanceIds, overflow } = props.summary.badge;
-  return (
-    <View
-      accessible
-      accessibilityLabel={`${props.summary.count} nested ${props.summary.count === 1 ? "thread" : "threads"}`}
-      className="flex-row items-center gap-0.5 rounded-full border border-border-subtle px-1.5 py-0.5"
-    >
+  const { count, expanded } = props.summary;
+  const countLabel = `${count} nested ${count === 1 ? "thread" : "threads"}`;
+  const content = (
+    <>
       {providerInstanceIds.map((instanceId, index) => {
         const provider = props.providers?.find((candidate) => candidate.instanceId === instanceId);
         return (
@@ -207,14 +181,38 @@ function NestedThreadBadge(props: {
             key={`${instanceId}:${index}`}
             iconUrl={provider?.iconUrl}
             provider={provider?.driver ?? instanceId}
-            size={11}
+            size={12}
           />
         );
       })}
       {overflow > 0 ? (
-        <Text className={cn("text-[10px] tabular-nums", props.textClassName)}>+{overflow}</Text>
+        <Text className={cn("text-[11px] tabular-nums", props.textClassName)}>+{overflow}</Text>
       ) : null}
-    </View>
+    </>
+  );
+  const className = cn(
+    "flex-row items-center gap-0.5 rounded-full border border-border-subtle px-1.5 py-1",
+    expanded && props.onToggle !== undefined && "bg-border-subtle",
+  );
+  if (props.onToggle === undefined) {
+    return (
+      <View accessible accessibilityLabel={countLabel} className={className}>
+        {content}
+      </View>
+    );
+  }
+  return (
+    <Pressable
+      accessibilityHint={`${expanded ? "Hides" : "Shows"} the threads nested under ${props.title}.`}
+      accessibilityLabel={`${expanded ? "Hide" : "Show"} ${countLabel}`}
+      accessibilityRole="button"
+      accessibilityState={{ expanded }}
+      hitSlop={8}
+      onPress={props.onToggle}
+      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+    >
+      <View className={className}>{content}</View>
+    </Pressable>
   );
 }
 
@@ -1095,36 +1093,24 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
   // Sidebar rows use navigation foregrounds on their active and idle surfaces.
-  const nestedChevron =
-    nested !== null && onToggleNested !== undefined ? (
-      <NestedThreadChevron
-        summary={nested}
-        title={thread.title}
-        tintColorClassName={
-          selected
-            ? selectedThreadRowColors.mutedIconTintClassName
-            : rowAppearance.mutedIconTintClassName
-        }
-        onToggle={handleToggleNested}
-      />
-    ) : null;
   const nestedBadge =
     nested !== null ? (
       <NestedThreadBadge
         summary={nested}
+        title={thread.title}
         providers={props.providers}
         textClassName={
           selected
             ? selectedThreadRowColors.mutedForegroundClassName
             : rowAppearance.mutedForegroundClassName
         }
+        {...(onToggleNested === undefined ? {} : { onToggle: handleToggleNested })}
       />
     ) : null;
 
   const cardContent = (
     <>
       <View className="flex-row items-center gap-1.5">
-        {nestedChevron}
         {props.project ? (
           <ProjectFavicon
             environmentId={thread.environmentId}
@@ -1396,7 +1382,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             sidebarPane ? "px-3" : "px-5",
           )}
         >
-          {nestedChevron}
           {props.project ? (
             <View className="opacity-40">
               <ProjectFavicon
