@@ -44,7 +44,8 @@ export const SidebarNestedThreadBadge = memo(function SidebarNestedThreadBadge(p
           accentColor={parentEntry.accentColor}
           acpRegistryAgentId={parentEntry.acpRegistryAgentId}
           acpRegistryIconUrl={parentEntry.acpRegistryIconUrl}
-          iconClassName="size-3"
+          // One step larger than the children's icons marks it as the parent.
+          iconClassName="size-3.5"
         />
       )}
       {badgeIconKeys(badge.providerInstanceIds).map(({ instanceId, key }) => {
