@@ -131,8 +131,9 @@ Turning this off puts working threads back into the active list with the same co
 An agent that manages other agents can start threads nested under its own thread.
 The parent row shows up to three provider icons for the threads it manages, and a
 count when there are more. Select the parent to open it. Select it again, or use
-its arrow, to show or hide the threads under it. A parent opens its list on its own
-while you work in one of its threads.
+its arrow, to show or hide the threads under it. On mobile, tap the provider icons
+instead of an arrow. A parent opens its list on its own while you work in one of
+its threads.
 
 Nested threads work like any other thread: you can message, settle, snooze, or archive
 them. When a nested thread needs an approval or an answer, its parent moves back to
