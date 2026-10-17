@@ -201,7 +201,7 @@ describe("nested threads in the mobile list", () => {
     ]);
   });
 
-  it("badges up to three children by recency with an overflow count", () => {
+  it("badges up to two children by recency with an overflow count", () => {
     const children = ["a", "b", "c", "d"].map((id, index) =>
       makeThread({
         id: ThreadId.make(id),
@@ -213,8 +213,8 @@ describe("nested threads in the mobile list", () => {
     );
     const parentItem = listItems(build([parent, ...children]))[0];
     expect(parentItem?.type === "v2-thread" ? parentItem.nested?.badge : null).toEqual({
-      providerInstanceIds: ["provider-d", "provider-c", "provider-b"],
-      overflow: 1,
+      providerInstanceIds: ["provider-d", "provider-c"],
+      overflow: 2,
     });
   });
 

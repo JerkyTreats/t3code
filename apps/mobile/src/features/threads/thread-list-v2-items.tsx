@@ -25,7 +25,15 @@ import {
   resolveNestedRowClick,
 } from "@t3tools/client-runtime/state/thread-nesting";
 import type { MenuAction } from "@react-native-menu/menu";
-import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 import { Alert, Pressable, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
@@ -158,13 +166,15 @@ const MOVE_TO_TOP_LEVEL_ACTION: MenuAction = {
 };
 
 /**
- * One provider icon per shown child, most recently active first, plus `+n`.
+ * The parent's own provider icon, then one icon per shown child, most recently
+ * active first, plus `+n`. On card rows it stands in for the row's provider.
  * With `onToggle`, pressing it expands or collapses the nested threads without
  * opening the parent.
  */
 function NestedThreadBadge(props: {
   readonly summary: ThreadListV2NestedSummary;
   readonly title: string;
+  readonly parentIcon: ReactNode;
   readonly providers: ReadonlyArray<ThreadListProvider> | undefined;
   readonly textClassName: string;
   readonly onToggle?: () => void;
@@ -174,6 +184,7 @@ function NestedThreadBadge(props: {
   const countLabel = `${count} nested ${count === 1 ? "thread" : "threads"}`;
   const content = (
     <>
+      {props.parentIcon}
       {providerInstanceIds.map((instanceId, index) => {
         const provider = props.providers?.find((candidate) => candidate.instanceId === instanceId);
         return (
@@ -1098,6 +1109,19 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       <NestedThreadBadge
         summary={nested}
         title={thread.title}
+        parentIcon={
+          providerInstance ? (
+            <ProviderInstanceIcon
+              iconUrl={providerIconUrl}
+              provider={providerInstance.driverKind}
+              size={12}
+              displayName={providerInstance.displayName}
+              accentColor={providerInstance.accentColor}
+              showBadge={false}
+              surfaceColor={rowAppearance.providerIconSurfaceColor}
+            />
+          ) : null
+        }
         providers={props.providers}
         textClassName={
           selected
@@ -1271,7 +1295,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ) : (
           <View className="flex-1" />
         )}
-        {nestedBadge}
         {pr ? (
           <View className="flex-row items-center gap-1" accessibilityLabel={pr.accessibilityLabel}>
             <SymbolView
@@ -1296,27 +1319,28 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </Text>
           </View>
         ) : null}
-        {providerInstance ? (
-          // Earlier owners peek out behind the current provider so a
-          // handed-off thread shows where it has been. The current owner
-          // keeps its account badge so same-driver instances stay distinct.
-          <View className="flex-row items-center">
-            {providerDrivers.slice(0, -1).map((driver, index) => (
-              <View key={`${driver}:${index}`} className="-mr-1 opacity-30">
-                <ProviderIcon provider={driver} size={12} />
-              </View>
-            ))}
-            <ProviderInstanceIcon
-              iconUrl={providerIconUrl}
-              provider={providerInstance.driverKind}
-              size={14}
-              displayName={providerInstance.displayName}
-              accentColor={providerInstance.accentColor}
-              showBadge={providerInstance.showBadge}
-              surfaceColor={rowAppearance.providerIconSurfaceColor}
-            />
-          </View>
-        ) : null}
+        {nestedBadge ??
+          (providerInstance ? (
+            // Earlier owners peek out behind the current provider so a
+            // handed-off thread shows where it has been. The current owner
+            // keeps its account badge so same-driver instances stay distinct.
+            <View className="flex-row items-center">
+              {providerDrivers.slice(0, -1).map((driver, index) => (
+                <View key={`${driver}:${index}`} className="-mr-1 opacity-30">
+                  <ProviderIcon provider={driver} size={12} />
+                </View>
+              ))}
+              <ProviderInstanceIcon
+                iconUrl={providerIconUrl}
+                provider={providerInstance.driverKind}
+                size={14}
+                displayName={providerInstance.displayName}
+                accentColor={providerInstance.accentColor}
+                showBadge={providerInstance.showBadge}
+                surfaceColor={rowAppearance.providerIconSurfaceColor}
+              />
+            </View>
+          ) : null)}
       </View>
     </>
   );
