@@ -2199,7 +2199,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             <div className="mt-1 flex min-w-0 items-center gap-1">
               {nestedToggle}
               {title}
-              {nestedBadge}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title
@@ -2243,12 +2242,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   </span>
                 </span>
               ) : null}
-              <span
-                aria-hidden
-                className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
-              >
+              <span className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1">
                 {isRemote && !showsScratchMachine ? (
-                  <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
+                  <span
+                    aria-hidden
+                    className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70"
+                  >
                     <EnvironmentMachineIcon
                       aria-hidden
                       kind={props.environmentMachine}
@@ -2256,10 +2255,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     />
                   </span>
                 ) : null}
-                <SidebarProviderStack
-                  thread={thread}
-                  providerEntryByInstanceId={props.providerEntryByInstanceId}
-                />
+                {nestedBadge}
+                <span aria-hidden className="inline-flex shrink-0 items-center">
+                  <SidebarProviderStack
+                    thread={thread}
+                    providerEntryByInstanceId={props.providerEntryByInstanceId}
+                  />
+                </span>
               </span>
             </div>
           </div>
