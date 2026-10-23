@@ -188,8 +188,9 @@ every committed revocation, so persisted admission through `getById` still obser
 writer-committed state. Fork digest and client-row reads stay on the writer. The independent-runtime revocation proof passes after this
 routing. The upstream startup gate rejects every request with 503 before routes exist, and the
 global Admin boundary wraps every route, including new upstream routes, before dispatch. WebSocket
-`client.connected` analytics carry only surface, version, platform and hashed owner fields; session
-connection metadata is still recorded inside the exact guards after admission.
+`client.connected` analytics carry only surface, version, platform and hashed owner fields. They,
+the client owner record, and session connection metadata are recorded once, inside the exact guards
+after admission, so a refused upgrade records nothing.
 
 `@t3tools/shared/nodeSqliteClient`, upstream environment identity, OAuth and DPoP machinery remain
 upstream substrate. They do not select portal authority. Legacy access HTTP inventory, RPC streams,

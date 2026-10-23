@@ -1261,6 +1261,38 @@ export const withAdmittedWebSocketConnection = <A, E, R>(
     ),
   );
 
+/**
+ * Serves an admitted WebSocket connection until its session is invalidated.
+ * Connection analytics are recorded only after admission, once per connection,
+ * so refused upgrades never count. Analytics props carry no session, subject,
+ * or credential fields.
+ */
+export const serveAdmittedWebSocketConnection = <E, R>(
+  input: Parameters<typeof withAdmittedWebSocketConnection>[0] & {
+    readonly analytics: AnalyticsService.AnalyticsService["Service"];
+    readonly clientAnalyticsProps: Readonly<Record<string, unknown>>;
+    readonly clientOwners: ReadonlyArray<TelemetryOwner>;
+  },
+  serve: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
+) =>
+  withAdmittedWebSocketConnection(
+    input,
+    Effect.gen(function* () {
+      yield* input.analytics.record("client.connected", input.clientAnalyticsProps);
+      yield* input.analytics.recordOwners(input.clientOwners, "client");
+      return yield* Effect.raceFirst(
+        serve,
+        input.sessions.awaitInvalidation(input.session.sessionId).pipe(
+          Effect.as(HttpServerResponse.empty()),
+          Effect.catchTags({
+            SessionCredentialVerificationError: (error) =>
+              failEnvironmentInternal("internal_error", error),
+          }),
+        ),
+      );
+    }),
+  );
+
 export const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
@@ -3227,10 +3259,6 @@ export const layer = Layer.unwrap(
         );
         const clientOrigin = readClientConnectionOrigin(request);
         const clientAnalyticsProps = readClientAnalyticsProps(request);
-        // Session connection metadata is recorded inside the admitted guards below.
-        // Analytics props carry no session, subject, or credential fields.
-        yield* analytics.record("client.connected", clientAnalyticsProps);
-        yield* analytics.recordOwners(readClientOwners(request), "client");
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
           yield* RpcServer.make(ServerWsRpcGroup, WS_RPC_SERVER_OPTIONS).pipe(
@@ -3314,22 +3342,17 @@ export const layer = Layer.unwrap(
             ),
           ),
         );
-        return yield* withAdmittedWebSocketConnection(
-          { connections, sessions, session, clientOrigin },
-          analytics.record("client.connected", clientAnalyticsProps).pipe(
-            Effect.andThen(
-              Effect.raceFirst(
-                rpcWebSocketHttpEffect,
-                sessions.awaitInvalidation(session.sessionId).pipe(
-                  Effect.as(HttpServerResponse.empty()),
-                  Effect.catchTags({
-                    SessionCredentialVerificationError: (error) =>
-                      failEnvironmentInternal("internal_error", error),
-                  }),
-                ),
-              ),
-            ),
-          ),
+        return yield* serveAdmittedWebSocketConnection(
+          {
+            connections,
+            sessions,
+            session,
+            clientOrigin,
+            analytics,
+            clientAnalyticsProps,
+            clientOwners: readClientOwners(request),
+          },
+          rpcWebSocketHttpEffect,
         );
       }).pipe(
         Effect.catchTags({
