@@ -40,10 +40,7 @@ The page names the agent and where its access goes:
 - For a hosted agent, approval goes to that service, such as `chatgpt.com`.
   Anyone who runs that service gets the access.
 
-Only approve a sign-in you just started. To approve, enter a pairing code from
-**Settings → Connections** or from `t3 auth pairing create` on the host. A
-browser already signed in to the environment with permission to manage access
-can approve without a code.
+Only approve a sign-in you just started. An authorized host operator can issue a pairing code with `t3 auth pairing create`. A browser session with the required access-management authority can approve without a code. Ordinary paired clients cannot issue or manage credentials. The external Admin portal remains responsible for enrolled browser and Electron devices.
 
 Then choose what the agent may do:
 
@@ -116,6 +113,4 @@ result that always includes the thread id.
 
 ## Remove an agent
 
-Approved agents appear under **Settings → Connections** like other clients.
-Revoke one there to cut off its access immediately. A sign-in lasts 30 days;
-after that the agent asks you to approve it again.
+Ask the authorized host operator to revoke the agent session through the operator auth controls. The embedded access inventory is not available in this fork. A sign-in lasts 30 days; after that the agent asks you to approve it again.

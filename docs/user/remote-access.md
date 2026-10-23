@@ -1,24 +1,23 @@
 # Remote access
 
-Connect a phone, browser, or another desktop app to T3 Code running on a different
-machine. That machine must stay running and reachable while you work.
+Connect a phone, browser, or another desktop app to T3 Code running on a
+different machine. That machine must stay running and reachable while you work.
 
 ## T3 Connect
 
-T3 Connect makes an environment available to your other devices without setting
-up router forwarding. In the desktop app on the host, open **Settings →
+T3 Connect makes an environment available to your other devices without
+requiring router forwarding. In the desktop app on the host, open **Settings →
 Connections**, sign in, and enable **T3 Connect** for that environment.
 
-For a command-line host, run:
+For a command-line host, use the authorized installed runtime:
 
 ```bash
 t3 connect
+t3 serve
 ```
 
-Follow the sign-in instructions. Setup offers a
-[background service](./background-service.md); if you decline it, start the
-server with `t3 serve`. Saving your sign-in alone does not make the machine
-reachable.
+Follow the sign-in instructions, then keep the server running. Saving your
+sign-in alone does not make the machine reachable.
 
 On your other device, sign in to the same T3 Connect account and choose the
 environment. On the app.t3.codes home page with no computer added yet, signing
@@ -27,18 +26,19 @@ browser link and a short code. Open the link on any device, confirm the code
 matches, and approve. The CLI continues on its own, so you do not need to forward
 an OAuth callback port.
 
-T3 Connect renews access credentials when needed without disconnecting a healthy
-connection. Pull request diffs and provider settings keep working after the
-previous credential expires. A failed renewal affects that request; it does not
-disconnect an otherwise healthy conversation.
+T3 Connect renews access credentials when needed without disconnecting a
+healthy connection. Pull request diffs and provider settings keep working after
+the previous credential expires. A failed renewal affects that request. It does
+not disconnect an otherwise healthy conversation.
 
 ## Pair over a LAN or private network
 
 Use direct pairing when the other device can reach the host's network address.
 
-On a desktop host, open **Settings → Connections**, enable **Network access**,
-then create a pairing link using an address the other device can reach. Changing
-network access restarts the desktop app. You can turn it off in the same place.
+On a desktop host, open **Settings → Connections** and enable **Network access**.
+Changing network access restarts the desktop app. You can turn it off in the
+same place. Generate a pairing link with the installed command-line runtime on
+the host, as described below.
 
 For a command-line host, replace `<private-ip>` with the host's LAN or tailnet
 address:
@@ -47,11 +47,15 @@ address:
 t3 serve --host <private-ip>
 ```
 
-If a server is already running, generate a fresh link without restarting it:
+For an already-running desktop or command-line server, use the installed
+command-line runtime on that host to generate a fresh link without restarting it:
 
 ```bash
 t3 pair
 ```
+
+Use the same server data location as the running host. If it uses a custom
+location, select it with `--base-dir`; see `t3 pair --help`.
 
 Scan the QR code on your phone or paste the pairing URL into **Add environment**
 in the receiving app. Connection settings are under **Settings → Connections**
@@ -59,10 +63,8 @@ on web and desktop and **Settings → Environments** on mobile. A loopback addre
 such as `127.0.0.1` reaches only the device opening the link.
 
 Pairing authorizes that device for future connections. Use a fresh one-time link
-for each new device; you do not need the original token to reconnect. Links
-created in Settings can only be copied from the client that created them while
-its Connections page stays open. If you leave or reload that page, create
-another link to share.
+for each new device. You do not need the original token to reconnect. If a link
+expires or has already been used, run `t3 pair` again to create another.
 
 ### Reach one machine several ways
 
@@ -138,9 +140,10 @@ For an already-running server:
 t3 pair --tailscale
 ```
 
-The pairing link uses an address such as `https://machine.tailnet.ts.net/`.
-The mapping created by `pair --tailscale` persists across restarts. Remove its
-default-port mapping with:
+The pairing link uses an address such as
+`https://machine.example-tailnet.ts.net/`. The mapping created by
+`pair --tailscale` persists across restarts. Remove its default-port mapping
+with:
 
 ```bash
 tailscale serve --https=443 off
@@ -151,35 +154,39 @@ If that port is already in use, choose another with
 
 ### Hosted web app
 
-[app.t3.codes](https://app.t3.codes) needs an HTTPS endpoint. It connects directly
-to your server; a hosted pairing link does not make an unreachable backend
-reachable or convert HTTP to HTTPS.
+[app.t3.codes](https://app.t3.codes) needs an HTTPS endpoint. It connects
+directly to your server. A hosted pairing link does not make an unreachable
+backend reachable or convert HTTP to HTTPS.
 
 For a plain HTTP LAN endpoint, use the direct pairing URL in a browser that can
-open it, or pair from the desktop app. On mobile, an IP address entered without a
-scheme uses HTTP, so include `https://` when your server uses HTTPS.
+open it, or pair from the desktop app. On mobile, an IP address entered without
+a scheme uses HTTP, so include `https://` when your server uses HTTPS.
 
 ## Desktop-managed SSH
 
 In the desktop app, open **Settings → Connections → Add environment**, choose
-**SSH**, and enter a host or SSH alias such as `user@example.com`. T3 Code starts
-or reuses a server there and opens the port forward for you. Projects, provider
-credentials, and agent work stay on the remote machine.
+**SSH**, and enter a host or SSH alias such as `user@example.test`. T3 Code
+starts or reuses a server there and opens the port forward for you. Projects,
+provider credentials, and agent work stay on the remote machine.
 
-The remote host must be Linux or an Apple Silicon Mac with `curl` or `wget`,
-`tar`, `sha256sum` or `shasum`, and [provider setup](./install.md#providers).
-The first launch downloads T3 Code's server to `~/.t3/runtime` on the host, so
-it takes longer than later ones.
-Provider CLIs must be on the `PATH` of a non-interactive login shell there;
-check with:
+The remote host needs a compatible [Node.js installation](./install.md#requirements)
+and [provider setup](./install.md#providers). It also needs a compatible
+preinstalled exact-origin `t3` runtime. The desktop app does not download T3
+Code from a public package registry. If launch cannot find Node or reports an
+incompatible version, check it through a non-interactive SSH session:
 
 ```bash
-ssh user@example.com 'sh -lc "command -v claude codex"'
+ssh user@example.test 'sh -lc "command -v node && node --version"'
 ```
 
-If SSH reconnecting fails after an app update, retry the launch once. Removing
-the connection stops a server that T3 Code launched; a server that was already
-running is left alone.
+Configure your version manager for non-interactive shells if this differs from
+your normal terminal. With nvm, setting a compatible default, such as
+`nvm alias default 24`, can resolve the problem.
+
+If SSH reconnecting fails after an app update, update the preinstalled runtime
+on the remote host through its exact-origin installation method, then retry the
+launch. Removing the connection stops a server that T3 Code launched. A server
+that was already running is left alone.
 
 Each desktop app keeps one session on the host for its SSH connection and reuses
 it when it reconnects. Revoke sessions you no longer use in **Settings →
@@ -192,83 +199,99 @@ For Antigravity's Google callback on a remote host, see
 
 ## Browser on a remote environment
 
-Browser tabs belong to the environment, so you and your agents see the same
-tabs from any device. The desktop app shows its own environment's tabs
-directly. Every other device, and the desktop app for other environments,
-streams them from the host. Agents keep using them while no device is
-connected, and `localhost` addresses reach servers on the host.
+Browser tabs belong to the environment, so you and your agents see the same tabs
+from any device. The desktop app shows its own environment's tabs directly. Other
+devices, and the desktop app for other environments, stream them from the host.
+Agents keep using them while no device is connected, and `localhost` addresses
+reach servers on that host.
 
-The first tab downloads a headless Chrome, about 120 MB, into the T3 home. It
-is the same browser [HTML renders](html-renders.md) use, so a host downloads it
-only once. Some Linux hosts need [setup](#browser-host-setup) before it can
-start.
+The first tab downloads headless Chrome, about 120 MB, into the T3 home. It is the
+same browser used for [HTML renders](./html-renders.md), so a host downloads it once.
+Some Linux hosts need [setup](#browser-host-setup) before it can start.
 
 Agent tabs have separate storage and share a Chromium process. Take control before
-typing into an agent's tab, then release control when you want the agent to
-continue. Read-only connections can watch without changing the page.
+typing into an agent's tab, then release control when the agent should continue.
+Read-only connections can watch without changing the page.
 
-While you have control, the tab works with your device: text the page copies or
-cuts goes to your clipboard, a file picker on the page opens your device's
-picker, and a finished download is offered for you to save. Popups such as
-sign-in windows open as their own tabs. Downloads stay on the host until the
-tab closes. Audio does not play on your device.
+While you control the tab, copied or cut text goes to your clipboard, file pickers
+open on your device, and finished downloads are offered for you to save. Sign-in
+popups open as separate tabs. Downloads remain on the host until the tab closes.
+Audio does not play on your device.
 
-On a phone, tap the floating preview's corner dot to show its controls, then
-**Pop into separate window** to keep watching in picture-in-picture over other
-apps.
+On a phone, tap the floating preview's corner dot to show its controls, then choose
+**Pop into separate window** to watch in picture-in-picture over other apps.
 
 ### Browser host setup
 
-macOS, Windows, and Linux desktops run the browser as is. Some Linux hosts need
-one-time setup: Ubuntu 23.10 and later block the sandbox the browser runs in,
-and minimal images and containers lack libraries it loads. When that happens,
-the server says so at startup, and browser tabs and HTML previews show the
-command to run on the host:
+macOS, Windows and Linux desktops run the browser as is. Some Linux hosts need
+one-time setup: Ubuntu 23.10 and later can block the browser sandbox, while minimal
+images and containers can lack required libraries. The server reports these cases
+at startup, and browser tabs and HTML previews show the command to run on the host.
+With an authorized installed runtime on your path, the command is:
 
 ```sh
 sudo t3 browser setup
 ```
 
-The server shows the exact line for how you started it, such as
-`sudo npx t3 browser setup`, and keeps your `PATH` when Node is installed only
-for your user. Where `t3` is not on your `PATH`, such as with only the
-desktop app installed, it names the full path of the app's own `t3` instead. It allows Chrome's sandbox with an AppArmor profile and installs
-any missing libraries and system fonts with apt; pages that load without text
-can mean the host has no fonts. It is safe to run again. Without `sudo`, it only
-reports what it would change.
+Use the exact command the server displays for the installed runtime. Where Node is
+available only in your user environment, it preserves the required `PATH`. Where
+`t3` is not on your path, it uses the installed application's executable or the quoted
+current executable and entry. It does not acquire T3 Code from a public package registry.
+Setup installs an AppArmor profile that permits Chrome's sandbox and uses apt to
+install missing libraries. It can be run again; without `sudo`, it reports the
+changes it would make.
 
-The browser always runs in Chrome's sandbox. Where you cannot change the host,
-set `T3CODE_SERVER_BROWSER_SANDBOX=0` for the environment to run without it.
+The browser uses Chrome's sandbox by default. Where you cannot change the host,
+setting `T3CODE_SERVER_BROWSER_SANDBOX=0` for the environment disables that sandbox.
 
 ## Connect an outside agent
 
 Claude Code, Codex, ChatGPT and other agents T3 Code did not start can drive
-threads on an environment through its MCP server. See
-[outside agents](./outside-agents.md) for setup.
+threads through the environment's MCP server. See [outside agents](./outside-agents.md)
+for setup and approval. This does not give an outside agent external Admin authority
+or access to the locally managed agents' preview or device endpoints.
 
-## Manage or revoke access
+## Manage pairing and device access
 
-On the host, **Settings → Connections** lets authorized administrators create
-pairing links and revoke client sessions. Revoking an unused link prevents new
-pairings; revoke a device's session to remove its existing access. Command-line
-management is available through `t3 auth --help`.
+**Settings → Connections** configures environments, network reachability,
+Tailscale, SSH, and T3 Connect. It is not an embedded Admin product and does not
+own managed-device lifecycle.
 
-A session with an open connection stays listed after its access credential
-expires.
+Use `t3 pair` for an ordinary one-time pairing link. A headless operator can
+inspect or revoke pending ordinary pairing credentials without revealing their
+secret values:
+
+```bash
+t3 auth pairing list
+t3 auth pairing revoke <pairing-id>
+```
+
+The separately deployed Admin portal is the authority for managed browser and
+Electron devices. It can create one-time standard-device enrollment links and
+enable, disable, or delete eligible devices. Headless operators and devices not
+enrolled through a portal-created grant stay outside that inventory.
+
+The portal receives its short-lived high-value authority from an explicit host
+operator command. Choose a bounded lifetime no longer than seven days:
+
+```bash
+t3 auth session issue --device-administrator --ttl 1h --token-only
+```
+
+Keep that credential in the portal's server-side secret storage. Never place it
+in browser state, a pairing URL, a screenshot, or a bug report.
 
 To choose a token's permissions, pass `--scope` once for each scope you want:
 
 ```sh
-npx t3 pair --scope orchestration:read --scope relay:read
+t3 pair --scope orchestration:read --scope relay:read
 ```
 
 The selected scopes replace the default permissions. The same option works with
-`npx t3 auth pairing create` and `npx t3 auth session issue`; each command's
-`--help` lists the available scopes. Without `--scope`, pairing tokens and issued
-bearer sessions get every permission, including managing access and T3 Connect.
-A terminal or a full-access agent on the host can reach those as well, so a
-client that should not manage access also needs to go without `terminal:operate`
-and `orchestration:operate`.
+`t3 auth pairing create` and `t3 auth session issue`; each command's
+`--help` lists the available scopes. Without `--scope`, pairing tokens retain
+standard client permissions and issued bearer sessions retain administrative
+permissions.
 
 To change an existing client's permissions, create a fresh pairing link with the
 scopes it needs. In a browser opened directly on the environment, open that link
@@ -323,8 +346,8 @@ asking you to update. Start T3 Code on that computer and update it to the latest
 version; it reconnects at the same address without pairing again.
 
 On a command-line host, `t3 connect unlink` disables exposure while retaining
-your login; `t3 connect logout` also clears that login. Background-service
-[removal](./background-service.md#manage-the-service) is separate.
+your login. `t3 connect logout` also clears that login. Stopping the host process
+is separate.
 
 Treat pairing URLs and authorization codes as passwords. Do not include them in
 screenshots, logs, or bug reports.
@@ -342,6 +365,26 @@ desktop app, open **Settings → Connections** and switch off **Local
 environment**. T3 Code restarts without a local server: no local agents or terminals run, WSL
 backends stay off, and other devices can no longer connect to this computer. Your projects,
 history, and saved connections are kept, and you keep working through pairing, T3 Connect, or SSH.
+Run `t3 connect status` on the host to inspect saved authorization and link
+configuration. It is not a live reachability check. If the environment appears
+offline, inspect the desktop host or your operator-managed process. If it
+disappears when SSH closes, see
+[host process troubleshooting](./background-service.md#troubleshooting).
 
-Switch **Local environment** back on in the same place to restart with your previous local
-settings.
+| Error                                                     | Recovery                                                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `environment_link_limit_exceeded` or managed tunnel limit | Deregister an unused environment, then restart T3 Code on the host.                                                                         |
+| `auth_invalid` or `invalid_bearer`                        | Run `t3 connect login`. If credentials were revoked, run `t3 connect logout`, then `t3 connect` again. Restart the server after signing in. |
+| Expired or invalid link proof                             | Check the host's date and time, update T3 Code, then restart it.                                                                            |
+| HTTP 403 without a recognized error                       | Check relay access, proxies, and firewall rules. Keep any Cloudflare Ray ID for a bug report.                                               |
+| HTTP 408, 429, or 5xx                                     | Check network and relay availability. Startup retries temporary failures for up to ten minutes.                                             |
+
+After fixing a permanent rejection, restart the host server. Restart the
+managed Linux desktop unit with `systemctl --user restart
+t3code-desktop.service`. For an operator-managed foreground server, stop it and
+run `t3 serve` again with your usual options. Include the diagnostic message and
+trace ID when reporting a persistent failure.
+
+For a connection that still fails after linking, check the date and time on
+both devices. For server version warnings, follow
+[Updating T3 Code](./updating.md).

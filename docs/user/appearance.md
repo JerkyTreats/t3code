@@ -21,6 +21,13 @@ Android uses **Material You Layout** by default unless you have turned it off in
 It changes shapes, spacing, and controls independently
 of the selected theme.
 
+T3 Thread follows the same local Omarchy system palette as Code when appearance
+selects the system theme. Live desktop theme changes update each open client.
+An explicitly selected light or dark theme, appearance preview, or onboarding
+choice keeps its normal precedence. Missing local theme data uses the ordinary
+client appearance. Tray styling and plugin configuration do not replace the
+Thread interior palette.
+
 ## Composer context
 
 Git-backed projects show branch and worktree controls below the composer while you create a thread.

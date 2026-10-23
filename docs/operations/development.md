@@ -15,52 +15,13 @@ a new browser.
 
 Prefer a container? See [Dev container](../internals/devcontainer.md) for VS Code and Codespaces setup.
 
-## GitCafe mirror (optional)
-
-GitHub is the source of truth. [git.cafe/pingdotgg/t3code](https://git.cafe/pingdotgg/t3code) is a
-two-way synced mirror with much higher API rate limits, which helps when many agents read PRs and
-issues at once. You never need it to contribute.
-
-Comments, reviews, labels, and issue edits made on GitCafe sync back to GitHub. The exception is
-code: push branches and open PRs on GitHub, where CI runs. GitCafe mirrors a new PR within about a
-minute, and from then on you can work with it through either forge.
-
-```sh
-git remote set-url origin https://git.cafe/pingdotgg/t3code.git
-git remote add github https://github.com/pingdotgg/t3code.git
-# The GitHub remote you push to: `github`, or your fork's remote.
-git config remote.pushDefault github
-gh repo set-default pingdotgg/t3code
-bun install -g @gitcafe/cli   # `cafe` needs Bun 1.2 or newer
-cafe auth login && cafe auth http setup
-cafe skills install --global  # optional: cafe-* skills for coding agents
-```
-
-With `origin` on git.cafe:
-
-- Use `cafe` for existing PRs, issues, comments, reviews, and labels, both reading and writing. Check status
-  comes from `cafe pr status <n> --json`.
-- Create PRs on GitHub: `git push` (to the `pushDefault` remote), then `gh pr create` or `gh stack`.
-  A PR opened with `cafe pr create` or `cafe stack submit` can get a different number on each forge,
-  a sync marker appended to its body, and rewritten references, and it cannot come from a fork.
-- Write or edit text with closing keywords using `gh`. Any text GitCafe writes to GitHub has its
-  `#<n>` references turned into GitCafe links, so a `Fixes #<n>` edited through `cafe` silently stops
-  closing the issue.
-- Merge with `gh pr merge <branch> --match-head-commit <sha>`. `cafe pr merge` only pins the head
-  GitCafe last saw, not the commit you reviewed.
-- Use `gh` where the mirror falls short: CI logs and reruns, a fork PR's head repository, and
-  anything `cafe` returns empty or 403/404 for.
-- PR and issue numbers can differ between the forges. Name PRs by branch
-  (`cafe pr list --head <branch>`, `gh pr view <branch>`), and write `Fixes #<GitHub number>`.
-- `cafe` flags differ from `gh`: `--repo` not `-R`, `cafe issue comments <n>` not `--comments`,
-  `cafe pr status` not `pr checks`. This repository's CI is GitHub Actions on GitHub, so `cafe ci`
-  has no runs for it; read logs with `gh run view`. `cafe api` paths omit `/api` (`cafe api /repos/...`).
-
 ## Choosing a dev process
 
 Use `vp run dev` for server and web, or `vp run dev:desktop` for the Electron client.
 `dev:server` and `dev:web` start those processes separately.
 See the [mobile README](../../apps/mobile/README.md) for native builds and Metro.
+For a self-contained Android APK and its canonical local artifact location,
+see [local Android builds](./android-builds.md).
 
 Flags go directly after the task name, for example `vp run dev --home-dir /tmp/t3code-dev`.
 Add `--browser` to open a browser automatically.
@@ -201,6 +162,12 @@ Runtime-discovered entrypoints and dependency exceptions belong in [knip.jsonc](
 
 ## Desktop artifacts
 
+`pnpm build` compiles the web, server, and Electron code. It does not package or
+install the desktop application used by a `.desktop` launcher. A build and
+deployment that includes desktop clients must also package an artifact, verify
+it, install it through the managed launcher, and check the installed client's
+readiness. Keep server and desktop deployment results separate.
+
 Local artifact builds are unsigned by default and write to `release/`:
 
 ```sh
@@ -212,6 +179,44 @@ vp run dist:desktop:win
 DMGs default to the host architecture. Use `--arch` to choose another target and `--keep-stage`
 to retain packaging files for inspection. Run `vp run dist:desktop:artifact --help` for other
 options.
+
+### Deploy the Linux desktop client
+
+Build in a separate detached worktree at the same clean, committed revision
+selected for the server. Packaging rebuilds web and server outputs, so never
+run it inside an active server deployment. Package
+the AppImage and verify its adjacent descriptor before installing those exact
+bytes:
+
+```sh
+pnpm dist:desktop:linux
+pnpm test:desktop-artifact-smoke -- \
+  release/T3-Code.AppImage \
+  release/T3-Code.AppImage.release.json
+node scripts/install-linux-desktop.mjs \
+  --artifact release/T3-Code.AppImage \
+  --descriptor release/T3-Code.AppImage.release.json \
+  --production-server-url https://server.example.test \
+  --staging-server-url https://staging.example.test
+```
+
+Use the actual generated filenames. Supply the staging URL when maintaining
+both managed desktop channels. The installer updates their `.desktop` entries,
+URL handler, user services, and content-addressed artifact pointer. Retain the
+prior artifact for rollback. Existing Electron processes keep running their
+previous package until they exit.
+
+After installation, stop each affected desktop user service and launch each
+channel through its installed `.desktop` entry or managed launcher. Require
+readiness to match the new commit and artifact hash, and verify process ownership
+against the channel's user service. Check that each client selects its intended
+server and retains its separate profile. A healthy server does not prove that
+the installed Electron package was updated.
+
+An environment with a dedicated staging artifact manager should use that
+manager's rebuild and verification commands instead. Inspect the installed
+effective service, including systemd drop-ins, and launcher first so verification checks the artifact actually used
+by the `.desktop` entry.
 
 ### Linux AppImage prerequisites
 

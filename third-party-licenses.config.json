@@ -704,6 +704,11 @@
       }
     },
     {
+      "name": "khroma",
+      "version": "2.1.0",
+      "license": "MIT"
+    },
+    {
       "license": "MIT",
       "name": "fastdom",
       "sourceUrl": "https://github.com/wilsonpage/fastdom",

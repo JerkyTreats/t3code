@@ -20,9 +20,9 @@
 - [Product usage data](./user/telemetry.md)
 - [Remote access](./user/remote-access.md)
 - [T3 Connect troubleshooting](./user/t3-connect-troubleshooting.md)
-- [Outside agents (MCP)](./user/outside-agents.md)
-- [Running in the background](./user/background-service.md)
-- [Updating T3 Code](./user/updating.md)
+- [Outside agents through MCP](./user/outside-agents.md)
+- [Keeping a host available](./user/background-service.md)
+- [Updating exact-origin installations](./user/updating.md)
 - Provider guides: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Pi](./user/providers-pi.md) · [Muse Code](./user/providers-muse.md)
 
 ---
@@ -33,8 +33,8 @@ Start with the [development runbook](./operations/development.md) and
 [contribution policy](../CONTRIBUTING.md).
 
 Internal notes preserve architectural decisions, constraints, and implementation traps that the
-source alone does not explain. Most code changes do not need an internal documentation update. Follow the
-[documentation rules](../AGENTS.md#documentation) before adding one.
+source alone does not explain. Most code changes do not need an internal documentation update.
+Follow the [documentation rules](../governance/docs_style_policy.md) before adding one.
 
 - [Architecture overview](./internals/overview.md)
 - [Glossary](./internals/glossary.md)
@@ -60,7 +60,7 @@ source alone does not explain. Most code changes do not need an internal documen
 
 - [Development and local builds](./operations/development.md)
 - [T3 Connect setup](./operations/connect-setup.md)
-- [Release](./operations/release.md)
+- [Release validation and exact-origin artifacts](./operations/release.md)
 - [Observability](./operations/observability.md)
 - [Relay observability](./operations/relay-observability.md)
 - [Mobile app store screenshots](./operations/mobile-app-store-screenshots.md)

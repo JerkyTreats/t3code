@@ -17,10 +17,7 @@ every scope being delegated. The
 [auth handlers](../../apps/server/src/auth/http.ts) enforce this at issuance;
 client labels and device metadata have no authorization role.
 
-The access read model contains pairing metadata, never recoverable pairing
-secrets. Only the creation response returns the raw credential. Otherwise read
-access to the connections list would become a way to acquire another client's
-authority.
+The external Admin portal manages explicitly enrolled browser and Electron devices through its six-route server-to-server API. Its signed and persisted authority class remains separate from generic scopes. Portal inventory and operator pairing metadata never return recoverable pairing secrets. Only issuance returns a raw credential. The embedded access inventory and its mutation UI remain absent.
 
 Browser cookies, bearer tokens, and DPoP tokens adapt the same scoped session
 model. DPoP binds a token to a client's proof key; an invalid proof must fail
@@ -30,9 +27,9 @@ vocabulary gives these grants a familiar meaning.
 ### MCP clients are a separate audience
 
 Agents T3 Code did not launch sign in to `/mcp` through a narrow OAuth
-authorization-code server ([McpOAuth](../../apps/server/src/auth/McpOAuth.ts)).
+authorization-code server, [McpOAuth](../../apps/server/src/auth/McpOAuth.ts).
 It accepts loopback redirect URIs for agents on the user's machine and any
-HTTPS redirect for hosted agents (ChatGPT, bots). An HTTPS redirect means a
+HTTPS redirect for hosted agents such as ChatGPT and bots. An HTTPS redirect means a
 link someone else sends the owner can deliver access to that someone, so the
 approval page names the host access goes to and approving stays the owner's
 call. Every client is public and proves itself with PKCE; a client that asks
@@ -47,9 +44,7 @@ The result is an ordinary session with subject `mcp-client`. A read-only
 grant holds `orchestration:read` alone. On `/mcp` it passes only tools
 declared as reads in [McpToolAccess](../../apps/server/src/mcp/McpToolAccess.ts),
 where every tool must declare who may call it to compile. Any other grant adds
-`orchestration:operate` and a signed ceiling. Only `/mcp` accepts these sessions. Every other HTTP and WebSocket
-path rejects that subject, because the RPC surface would let the agent act
-above its ceiling. Inside MCP the credential sets the limits and tool
+`orchestration:operate` and a signed ceiling. Ordinary orchestration uses `/mcp`. Explicitly granted pull-request tools use only `/mcp/pull-requests`. Preview and device endpoints require registry-issued provider credentials. Other application HTTP and WebSocket paths reject external MCP sessions, because the RPC surface would let the agent act above its ceiling. Inside MCP the credential sets the limits and tool
 parameters only pick targets; see
 [threadAccess](../../apps/server/src/mcp/threadAccess.ts).
 
@@ -68,7 +63,7 @@ group's `RpcScopeAuthorization` middleware checks it before any handler runs.
 Scope changes must not prevent older clients from connecting. Token exchange
 intersects recognized requests with the pairing grant; retired and unknown names
 are dropped. A request with no granted scopes fails before consuming the link.
-Stored credentials are never expanded when scopes split.
+Stored credentials are never expanded when scopes split. After cutover, clients that need the new standard permissions re-enroll with fresh portal-issued one-time grants. Signed and persisted scope bytes remain unchanged.
 
 Auth responses keep `scopes` within the original wire vocabulary and include
 `permissions` for the exact grant. New clients use `permissions` when present,

@@ -1,19 +1,18 @@
 # Updating T3 Code
 
 The app you use and the server running your agents can be on different machines.
-When a server is behind your web or desktop app, an update notice appears in the
-conversation and **Settings → Connections**. Update the machine named in that
-notice.
+When versions differ, update the machine named in the notice.
+Official server, Code, and Thread versions include the source revision after
+the base version, such as `0.0.42-abcdef0123`. Matching suffixes mean those
+artifacts were built from the same source commit.
 
 ## Update everything at once
 
 The update button at the bottom of the sidebar updates every connected machine
-in one step. It updates outdated providers, then servers that are behind, then
-the desktop app you are using. Servers move to the
-version your desktop app is installing, or to your web app's version. A
-background service stays on its current release channel. A remote desktop app
-installs the latest release from its own channel. Hover the button to see what
-it will update.
+in one step. It updates outdated providers, then servers hosted by a desktop
+app, then the desktop app you are using. A remote desktop app installs the
+latest exact-origin release, and its server updates with it. Hover the button
+to see what it will update.
 
 While it runs, the button widens to show progress. It names a machine that is
 taking longer than usual, and offers **Retry** for a server that failed. Click
@@ -23,10 +22,11 @@ restart from the update button when you are ready. A server still restarting
 finishes on its own, and the button keeps showing it after the desktop app
 restarts.
 
-Server updates appear only after that version is published to npm. Remote
-desktop apps do not wait for npm. The confirmation lists each machine it skips
-and why, such as a machine that is offline or needs a manual update. Use the
-notice or **Settings → Connections** for those.
+The confirmation lists each machine it skips and why, such as a machine that is
+offline or needs a manual update. Command-line and server image installations
+always need a manual update; see
+[Update an installed command-line runtime](#update-an-installed-command-line-runtime).
+Use the notice or **Settings → Connections** for the other skipped machines.
 
 If a desktop app restarts on its old version, T3 Code tells you the update did
 not apply. It does not install that version again on its own, even when another
@@ -38,8 +38,8 @@ below.
 
 ## Before you update
 
-Server updates restart the connection and can interrupt active agents and
-terminal commands. Saved threads, settings, and project files remain.
+Restarting a server can interrupt active agents and terminal commands. Saved
+threads, settings, and project files remain.
 
 **Settings → General → Continue threads after restarts** is on by default.
 It resumes supported active threads after an update, crash, or machine
@@ -58,7 +58,13 @@ the thread waits for your next message.
 
 Updates from the previous orchestration system preserve conversation transcripts but cannot carry
 every kind of runtime history forward. Read [Threads from older T3 Code versions](./thread-migration.md)
-before continuing an important older thread.
+before continuing an important older thread. Stop the old server before the first launch of the
+new runtime on the same data directory. Keep one writable server active, and review access grants
+and revocations before a downgrade because authentication is copied only at the first cutover.
+
+## Reconnect after permission changes
+
+After an update that splits permissions, an older connection can lack access to new actions. Re-enroll the affected browser or Electron client using a fresh one-time pairing credential from the external Admin portal. Existing credentials are not silently granted broader access. The portal remains the place to manage enrolled devices.
 
 ## When versions don't match
 
@@ -71,41 +77,41 @@ refused rather than running half-upgraded:
 
 Update the side the notice names, then reconnect.
 
-## Update a connected server
+## Update a desktop installation
 
-The offered action depends on how the server runs:
+The desktop update button downloads metadata and artifacts from the
+[exact-origin release history](https://github.com/JerkyTreats/t3code/releases).
+Select the update button once to download. After the download completes, select
+it again to restart and install.
 
-| Action                     | What to do                                                                                                                                                                                      |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Update server**          | Keep the client open while it installs and reconnects. Supported background services update remotely. For a desktop-hosted server, this also closes and relaunches the desktop app on the host. |
-| **Update the desktop app** | Update the desktop app on the machine running the server, then reopen it if needed.                                                                                                             |
-| **Copy update command**    | Run the command on the named host to update the detected global npm install, then restart the server with your usual options.                                                                   |
-| **Copy relaunch command**  | Stop the command-line server on its host and relaunch with the copied command, keeping your usual subcommand and options. This does not update an installed `t3` command.                       |
+A desktop-hosted server uses the runtime packaged with that desktop app. Update
+the desktop app on the host when a connected client reports that server as out
+of date. A supported desktop-managed action can close and relaunch the app on
+the host after confirmation.
 
-On the host, run:
+## Update an installed command-line runtime
 
-```sh
-t3 update <client-version>
-```
+The standalone `t3` runtime does not update itself. Replace it using the same
+exact-origin artifact or authorized source procedure used to install it, then
+restart `t3 serve` with the same host, home, and network options.
 
-Replace `<client-version>` with the version shown in the notice. The command
-asks before restarting the background service; if you decline, run
-`t3 service restart` when you are ready. For a server you started by hand,
-stop it and start it again afterwards with your usual options such as `--host`
-or `--tailscale-serve`.
+For the managed Linux desktop installation, download the new AppImage and its
+matching descriptor from the same exact-origin build, then run the installer
+procedure in [Install T3 Code](./install.md#desktop-app).
 
-If you run the server with `npx` rather than an installed `t3`, there is
-nothing to update on the host: stop the server and relaunch it as
-`npx t3@<client-version>` with the same subcommand and options.
+For a source checkout, update it through your authorized exact-origin source
+control process, rebuild the runtime, and restart it. Do not substitute a public
+package registry command for the installed runtime.
 
 ## If an update fails
 
-Keep the client open until it reconnects or reports a failure. A failed service
-update can roll back to the previous version. If the update still fails:
+1. Keep the current runtime stopped while checking the replacement artifact.
+2. Confirm that the artifact and descriptor came from the exact-origin release.
+3. Confirm that you updated the server host rather than only the client device.
+4. Restore the previously installed artifact through the same operator-managed
+   installation process if the replacement cannot start.
 
-1. Retry the offered action once.
-2. Check that you updated the server's machine, not only the device you are using.
-3. For a command-line server, stop it and relaunch the exact version shown in the notice.
+The application does not provide an npm service rollback command.
 
 Only one server can use a T3 home directory at a time. If startup reports that
 another server owns it, stop that server before retrying, or use a separate home
@@ -146,5 +152,5 @@ until you enable it and refresh provider status.
 Install App Store or Google Play releases as usual. The mobile app can also
 download updates in the background and apply them when you next leave the app.
 It saves drafts and queued messages before restarting. If you keep the app open
-for a long time, it may ask to install immediately; choosing **Later** leaves the
-update queued for the next suitable moment.
+for a long time, it may ask to install immediately. Choosing **Later** leaves
+the update queued for the next suitable moment.

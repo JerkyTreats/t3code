@@ -1,69 +1,46 @@
 # Server updates
 
-A [stable launcher](../../apps/server/src/serviceLauncher.ts) owns the runtime
-selected by systemd or launchd. It is the only runtime writer of durable service
-state. Server children request updates over inherited IPC; they never rewrite
-their service definition or select their own replacement. Local service commands
-may replace the launcher and state while the service is stopped. Foreground CLI
-processes do not self-update.
+Official runtimes have two update owners. The packaged desktop app owns its
+application update through the Electron updater. A standalone or headless server
+is part of an operator-managed deployment and does not replace itself.
 
-Exact-version installs keep restarts independent of npm cache eviction or a moving
-release tag. Installation and preflight happen in staging before publishing an
-immutable runtime. Preflight checks the launcher protocol because a target that
-needs new rollback guarantees cannot safely run under an older launcher. Upgrading
-that launcher requires a local service update.
+The server reports this boundary through the
+[official runtime update policy](../../apps/server/src/fork/officialRuntimeUpdatePolicy.ts).
+There is no server launcher protocol or server-side installation service.
 
-## Commit boundary
+## Desktop prepare and commit
 
-The launcher durably records the pending update before acknowledging it, then
-stops the old child and starts the target as a trial. Service-state writes use
-same-directory replacement with file and directory fsync. Invalid state stops
-startup rather than guessing which runtime to boot.
+The [desktop update bridge](../../apps/server/src/desktopUpdate/DesktopAppUpdate.ts)
+asks the desktop process to check for and download an update. Preparation returns
+a request token and target version while the current server connection is still
+alive. Receiving that response does not install the update.
 
-The trial must finish migrations, acquire dependencies, bind HTTP, and park every
-long-running root at the activation gate before reporting `prepared`. The launcher
-then commits the target version durably and replies `committed`. Only then may the
-child release its gates, accept commands, and publish ready. Keep fallible startup
-acquisitions before this boundary. A listener alone does not prove the runtime is
-ready to commit.
+The client commits the token only after it has received the preparation result.
+The [desktop update owner](../../apps/desktop/src/updates/DesktopRemoteUpdates.ts)
+accepts the commit only while the same downloaded version remains prepared. The
+prepared reservation expires after five minutes and cancellation clears an
+uncommitted reservation.
 
-A failed or timed-out trial returns to the old version. After commit, the target
-is authoritative and the service manager's ordinary restart policy applies.
+An accepted commit stops every bundled backend before the desktop updater installs
+and relaunches the app. The old server does not report success. Transport loss
+followed by a reconnect on the prepared target version is the success proof. If
+the install request fails before relaunch, the desktop app attempts to restart the
+stopped backends and reports the failure for the same request token.
 
-The prepared deadline is long because migrations can scale with the database
-and block the trial's main thread, so it cannot report progress. A missed
-deadline restores the snapshot, and the retry pays the same cost again. A
-crashed trial is caught when it exits; the deadline bounds only a stuck one.
-Client update waits must outlast the deadline, or a slow update shows as failed.
+## Startup readiness
 
-## Database rollback
+The replacement bundled server follows the normal startup sequence. Persistence
+and migrations initialize as runtime dependencies. The HTTP listener starts, the
+long-running roots park at their activation boundary, and the server then opens
+command handling and publishes its ready event. A listening socket alone does not
+prove command readiness.
 
-Before stopping the old child, the launcher refuses an update whose snapshot will
-not fit on disk, so a full disk does not cause an outage. After the old child
-exits, the launcher snapshots SQLite's main file, WAL, and shared-memory file. This makes trial migrations reversible without down
-migrations. The snapshot is made once per update and survives launcher restarts;
-replacing it during a retry could capture changes from the failed trial.
+This readiness sequence is owned by
+[server runtime startup](../../apps/server/src/serverRuntimeStartup.ts) and
+[server activation](../../apps/server/src/serverActivation.ts). It is independent
+of the desktop preparation token and does not provide an application rollback.
 
-Rollback stops the trial before restoring. A durable restore marker makes an
-interrupted restore finish before either version boots. Keep the snapshot until
-commit, or until both restoration and the terminal rollback state are durable.
-Attachments and other files outside SQLite are outside this rollback boundary.
-
-## Client acknowledgement
-
-An accepted update is still pending. Clients correlate the launcher's update ID
-with the ready event after reconnecting, then check the outcome and target version.
-A reconnect alone cannot distinguish successful replacement from rollback. Older
-servers without an update ID retain version-only correlation.
-
-Desktop updates have a separate two-phase handoff because installing the app stops
-its bundled backend. Preparation returns a token while the connection is alive;
-the client commits that token only after receiving it. Otherwise backend shutdown
-could lose the only successful RPC result. The client must then observe the
-prepared version after reconnecting. If installation fails, desktop restarts the
-stopped backends and replays the failure for the same token.
-
-## Recovering interrupted threads
+## Restart recovery and delegated work
 
 Restart continuation is an environment-owned preference, on by default. A
 `settings.json` that fails to decode turns it off, since the file may hold an
@@ -71,8 +48,8 @@ opt-out. The
 [v2 recovery service](../../apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts)
 requires matching durable run, provider thread, session, and native resume identity.
 Queued runs never started, so recovery holds them and continues the run they wait
-behind. A settled run qualifies only when the restart cancels work the agent waits on
-(a monitor, subagent, or background task) and its session was live, so stale records
+behind. A settled run qualifies only when the restart cancels work the agent waits on,
+such as a monitor, subagent, or background task, and its session was live, so stale records
 from an older crash never wake it. Its continuation prompt is the note of what will not
 report back. A shell alone does not wake a settled run: most are dev servers nobody
 waits on, so that note waits for the next user message.
@@ -80,9 +57,9 @@ waits on, so that note waits for the next user message.
 Recovery retires effects tied to the lost process and records continuation intent
 in the durable outbox. That intent survives another restart before provider startup.
 Continuation effects wait for activation; a slow provider must not delay the server's
-readiness or the launcher's commit boundary. Graceful shutdown captures intent before
-closing providers, then reconciles after ingestion has stopped so a late completion
-cannot be overwritten by a stale cancellation.
+readiness. Graceful shutdown captures intent before closing providers, then reconciles
+after ingestion has stopped so a late completion cannot be overwritten by a stale
+cancellation.
 
 The [continuation handler](../../apps/server/src/orchestration-v2/RestartContinuation.ts)
 rechecks the preference, provider selection, newer user work, a stop the user requested,
@@ -96,10 +73,55 @@ command and message IDs prevent duplicate submissions after an outbox retry. Cod
 resumes without adding provider prompt text unless the turn lost background work;
 other adapters receive the continuation message through their normal turn path.
 
-Delegated tasks (`delegate_task` child threads) are reconciled as their own threads,
-never as the parent's background work. The orchestrator settles child results and
-completion deliveries in a startup pass after reconciliation, because the terminal-run
-listener ignores reconciliation's cancellations. A cancelled child whose restart
-continuation is still pending in the outbox is not a result yet; the continuation's run
-settles it, or the handler settles it when it declines to continue. Schedulers wait for
-activation so they cannot start runs that reconciliation would then cancel.
+Delegated `delegate_task` child threads reconcile independently, rather than as the
+parent's background work. The [orchestrator](../../apps/server/src/orchestration-v2/Orchestrator.ts)
+settles child results and completion deliveries in a startup pass after reconciliation,
+because its terminal-run listener skips reconciliation cancellations. A cancelled child
+with a pending restart continuation is not a completed result yet. Its continuation run
+settles it, or the handler settles it when continuation is declined. Schedulers wait for
+activation so they cannot start runs that startup reconciliation would then cancel.
+
+These recovery mechanics also apply after an operator-managed restart. They neither
+replace the deployment supervisor nor grant a headless runtime self-update authority.
+
+## Orchestration v2 cutover
+
+The v2 runtime uses `statev2.sqlite`, seeded once from a validated snapshot of `state.sqlite`.
+Stop the old runtime before this cutover and keep one writable runtime active. The copied auth
+and access tables are an authority snapshot, not a shared grant registry. Before rollback, stop
+v2 and reconcile grants and revocations in the database selected by the prior runtime. Retain
+both databases and compatible artifacts for recovery. See
+[legacy orchestration migration](./legacy-orchestration-migration.md) for stable fork migration
+identities, imported transcript coverage, and the fail-closed journal boundary.
+
+## Migration 42 backup
+
+The persistence layer creates a validated, durable SQLite backup exactly once
+when migration 42 is pending. Later starts inspect the migration journal and do
+not replace that retained pre-migration image with post-migration data. Operators
+may remove the retained directory after accepting migration 42.
+
+This narrow safeguard is implemented by
+[Migration42Backup](../../apps/server/src/persistence/Migration42Backup.ts). It is
+not a snapshot for every update and the desktop updater does not restore it after
+an application failure. Its restore primitive requires the server and every
+SQLite client to be closed.
+
+## Operator-managed servers
+
+For a standalone or headless server, the operator selects an exact-origin runtime,
+stops it through the deployment supervisor, replaces the runtime, and starts it
+again. The normal startup readiness sequence is the acceptance boundary. Operators
+should verify the running version and application health after reconnecting.
+
+Backup retention and rollback belong to that deployment. An operator who needs a
+general rollback must preserve compatible application and database backups before
+the update, stop all database users before restoring data, and redeploy the prior
+runtime through the same supervisor. The retained pre-migration 42 image is a
+separate migration safeguard and does not replace that policy.
+
+## Supported history and client enrollment
+
+The current fork assumes Fleet was never installed. Upstream migrations 57 through 60 retain fork execution identities 79 through 82. The [persistence contract](../../fork/persistence-compatibility.md) owns the supported history and rejection boundary. A former Fleet database is unsupported until the operator has separately aligned it offline and verified preservation of surviving user data and retirement of native conversation sources. Startup does not rewrite that history or provide a Fleet compatibility mode.
+
+Current upstream permissions split several historical broad grants. Stored and signed scopes are preserved exactly. Re-enroll affected clients through fresh portal-issued one-time grants after cutover, then verify their current permissions. Enrollment does not restore a retired embedded access-management surface. Preserve the pre-cutover database and runtime together and keep one writable runtime active.
