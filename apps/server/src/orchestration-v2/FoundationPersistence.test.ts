@@ -653,124 +653,128 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
     }),
   );
 
-  it.effect("compacts superseded state events, imported v1 events, and legacy receipts", () =>
-    Effect.gen(function* () {
-      const eventSink = yield* EventSink.EventSinkV2;
-      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
-      const sql = yield* SqlClient.SqlClient;
-      const projections = yield* ProjectionStore.ProjectionStoreV2;
-      const now = yield* DateTime.now;
-      const nowIso = DateTime.formatIso(now);
-      const threadId = ThreadId.make("thread:foundation-compact");
-      const thread = makeThread(threadId, now);
-      const messageId = MessageId.make("message:foundation-compact");
-      const threadStateEvent = (
-        suffix: string,
-        type: "thread.visited" | "thread.metadata-updated",
-      ): OrchestrationV2DomainEvent => ({
-        id: EventId.make(`event:foundation-compact:${suffix}`),
-        type,
-        threadId,
-        providerInstanceId,
-        occurredAt: now,
-        payload: { ...thread, lastVisitedAt: now },
-      });
-      const messageEvent = (suffix: string, text: string): OrchestrationV2DomainEvent => ({
-        id: EventId.make(`event:foundation-compact:${suffix}`),
-        type: "message.updated",
-        threadId,
-        occurredAt: now,
-        payload: {
-          createdBy: "user",
-          creationSource: "web",
-          id: messageId,
+  it.effect(
+    "compacts superseded V2 events while preserving legacy history and command fingerprints",
+    () =>
+      Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+        const sql = yield* SqlClient.SqlClient;
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const now = yield* DateTime.now;
+        const nowIso = DateTime.formatIso(now);
+        const threadId = ThreadId.make("thread:foundation-compact");
+        const thread = makeThread(threadId, now);
+        const messageId = MessageId.make("message:foundation-compact");
+        const threadStateEvent = (
+          suffix: string,
+          type: "thread.visited" | "thread.metadata-updated",
+        ): OrchestrationV2DomainEvent => ({
+          id: EventId.make(`event:foundation-compact:${suffix}`),
+          type,
           threadId,
-          runId: null,
-          nodeId: null,
-          role: "user",
-          text,
-          attachments: [],
-          streaming: false,
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
-      const nodeId = NodeId.make("node:foundation-compact");
-      const nodeEvent = (
-        suffix: string,
-        status: "running" | "completed",
-      ): OrchestrationV2DomainEvent => ({
-        id: EventId.make(`event:foundation-compact:${suffix}`),
-        type: "node.updated",
-        threadId,
-        occurredAt: now,
-        payload: {
-          id: nodeId,
+          providerInstanceId,
+          occurredAt: now,
+          payload: { ...thread, lastVisitedAt: now },
+        });
+        const messageEvent = (suffix: string, text: string): OrchestrationV2DomainEvent => ({
+          id: EventId.make(`event:foundation-compact:${suffix}`),
+          type: "message.updated",
           threadId,
-          runId: null,
-          parentNodeId: null,
-          rootNodeId: nodeId,
-          kind: "assistant_message",
-          status,
-          countsForRun: false,
-          providerThreadId: null,
-          providerTurnId: null,
-          nativeItemRef: null,
-          runtimeRequestId: null,
-          checkpointScopeId: null,
-          startedAt: now,
-          completedAt: status === "completed" ? now : null,
-        },
-      });
-      const itemEvent = (suffix: string, text: string): OrchestrationV2DomainEvent => ({
-        id: EventId.make(`event:foundation-compact:${suffix}`),
-        type: "turn-item.updated",
-        threadId,
-        occurredAt: now,
-        payload: {
-          id: TurnItemId.make("turn-item:foundation-compact"),
+          occurredAt: now,
+          payload: {
+            createdBy: "user",
+            creationSource: "web",
+            id: messageId,
+            threadId,
+            runId: null,
+            nodeId: null,
+            role: "user",
+            text,
+            attachments: [],
+            streaming: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+        const nodeId = NodeId.make("node:foundation-compact");
+        const nodeEvent = (
+          suffix: string,
+          status: "running" | "completed",
+        ): OrchestrationV2DomainEvent => ({
+          id: EventId.make(`event:foundation-compact:${suffix}`),
+          type: "node.updated",
           threadId,
-          runId: null,
-          nodeId: null,
-          providerThreadId: null,
-          providerTurnId: null,
-          nativeItemRef: null,
-          parentItemId: null,
-          ordinal: 1,
-          status: "completed",
-          title: null,
-          startedAt: now,
-          completedAt: now,
-          updatedAt: now,
-          type: "assistant_message",
-          messageId,
-          text,
-          streaming: false,
-        },
-      });
+          occurredAt: now,
+          payload: {
+            id: nodeId,
+            threadId,
+            runId: null,
+            parentNodeId: null,
+            rootNodeId: nodeId,
+            kind: "assistant_message",
+            status,
+            countsForRun: false,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            runtimeRequestId: null,
+            checkpointScopeId: null,
+            startedAt: now,
+            completedAt: status === "completed" ? now : null,
+          },
+        });
+        const itemEvent = (suffix: string, text: string): OrchestrationV2DomainEvent => ({
+          id: EventId.make(`event:foundation-compact:${suffix}`),
+          type: "turn-item.updated",
+          threadId,
+          occurredAt: now,
+          payload: {
+            id: TurnItemId.make("turn-item:foundation-compact"),
+            threadId,
+            runId: null,
+            nodeId: null,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: 1,
+            status: "completed",
+            title: null,
+            startedAt: now,
+            completedAt: now,
+            updatedAt: now,
+            type: "assistant_message",
+            messageId,
+            text,
+            streaming: false,
+          },
+        });
 
-      yield* eventSink.write({
-        events: [
-          threadCreatedEvent({ id: "event:foundation-compact:create", thread, now }),
-          threadStateEvent("meta", "thread.metadata-updated"),
-          threadStateEvent("visit-1", "thread.visited"),
-          messageEvent("message-1", "streaming"),
-          nodeEvent("node-1", "running"),
-          itemEvent("item-1", "streaming"),
-          ...Array.from({ length: 501 }, (_, index) =>
-            threadStateEvent(`history-${index}`, "thread.visited"),
-          ),
-          threadStateEvent("visit-2", "thread.visited"),
-          messageEvent("message-2", "final"),
-          nodeEvent("node-2", "completed"),
-          itemEvent("item-2", "final"),
-        ],
-      });
-      const beforeCompaction = yield* projections.getThreadProjection(threadId);
+        yield* eventSink.write({
+          events: [
+            threadCreatedEvent({ id: "event:foundation-compact:create", thread, now }),
+            threadStateEvent("meta", "thread.metadata-updated"),
+            threadStateEvent("visit-1", "thread.visited"),
+            messageEvent("message-1", "streaming"),
+            nodeEvent("node-1", "running"),
+            itemEvent("item-1", "streaming"),
+            ...Array.from({ length: 501 }, (_, index) =>
+              threadStateEvent(`history-${index}`, "thread.visited"),
+            ),
+            threadStateEvent("visit-2", "thread.visited"),
+            messageEvent("message-2", "final"),
+            nodeEvent("node-2", "completed"),
+            itemEvent("item-2", "final"),
+          ],
+        });
+        const beforeCompaction = yield* projections.getThreadProjection(threadId);
 
-      const importedV1ThreadId = "thread:foundation-compact-v1-imported";
-      const pendingV1ThreadId = "thread:foundation-compact-v1-pending";
-      const insertV1Event = (threadIdValue: string, version: number) => sql`
+        // A fully imported legacy thread: its v1 events and pre-migration
+        // receipts remain recovery evidence even when transcript import finishes.
+        const importedV1ThreadId = "thread:foundation-compact-v1-imported";
+        const pendingV1ThreadId = "thread:foundation-compact-v1-pending";
+        const insertV1Event = (threadIdValue: string, version: number) => sql`
         INSERT INTO orchestration_events (
           event_id, aggregate_kind, stream_id, stream_version, event_type,
           occurred_at, actor_kind, payload_json, metadata_json, application_event_version
@@ -780,10 +784,10 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
           'thread.message-appended', ${nowIso}, 'user', '{}', '{}', 1
         )
       `;
-      yield* insertV1Event(importedV1ThreadId, 1);
-      yield* insertV1Event(importedV1ThreadId, 2);
-      yield* insertV1Event(pendingV1ThreadId, 1);
-      yield* sql`
+        yield* insertV1Event(importedV1ThreadId, 1);
+        yield* insertV1Event(importedV1ThreadId, 2);
+        yield* insertV1Event(pendingV1ThreadId, 1);
+        yield* sql`
         INSERT INTO orchestration_v2_legacy_imports (
           thread_id, source_updated_at, shell_imported_at, transcript_imported_at,
           imported_message_count, last_error
@@ -793,70 +797,76 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
           (${pendingV1ThreadId}, ${nowIso}, ${nowIso}, NULL, 0, NULL)
         ON CONFLICT(thread_id) DO NOTHING
       `;
-      yield* sql`
+        yield* sql`
         INSERT INTO orchestration_command_receipts (
-          command_id, aggregate_kind, aggregate_id, accepted_at, result_sequence, status, command_type
+          command_id, aggregate_kind, aggregate_id, accepted_at, result_sequence, status, command_type, payload_fingerprint
         )
         VALUES
-          ('command:foundation-compact:legacy', 'thread', ${importedV1ThreadId}, ${nowIso}, 1, 'accepted', 'legacy'),
-          ('command:foundation-compact:pending', 'thread', ${pendingV1ThreadId}, ${nowIso}, 1, 'accepted', 'legacy')
+          ('command:foundation-compact:legacy', 'thread', ${importedV1ThreadId}, ${nowIso}, 1, 'accepted', 'legacy', 'synthetic-retained-fingerprint'),
+          ('command:foundation-compact:pending', 'thread', ${pendingV1ThreadId}, ${nowIso}, 1, 'accepted', 'legacy', NULL)
         ON CONFLICT(command_id) DO NOTHING
       `;
 
-      const summary = yield* maintenance.compactEventStore;
-      // Superseded state spans several discovery pages. Both turn-item updates
-      // stay, and so do the first message and node events (replay order). The
-      // rename stays too: visits are read state and only supersede each other.
-      assert.isAtLeast(summary.deletedEventCount, 504);
-      assert.isAtLeast(summary.deletedReceiptCount, 1);
+        const summary = yield* maintenance.compactEventStore;
+        // Superseded state spans several discovery pages. Both turn-item updates
+        // stay, and so do the first message and node events (replay order). The
+        // rename stays too: visits are read state and only supersede each other.
+        assert.isAtLeast(summary.deletedEventCount, 502);
+        assert.equal(summary.deletedReceiptCount, 0);
 
-      const remaining = yield* sql<{ readonly event_id: string }>`
+        const remaining = yield* sql<{ readonly event_id: string }>`
         SELECT event_id
         FROM orchestration_events
         WHERE aggregate_kind = 'thread'
           AND stream_id = ${threadId}
         ORDER BY sequence ASC
       `;
-      assert.deepEqual(
-        remaining.map((row) => row.event_id),
-        [
-          "event:foundation-compact:create",
-          "event:foundation-compact:meta",
-          "event:foundation-compact:message-1",
-          "event:foundation-compact:node-1",
-          "event:foundation-compact:item-1",
-          "event:foundation-compact:visit-2",
-          "event:foundation-compact:message-2",
-          "event:foundation-compact:node-2",
-          "event:foundation-compact:item-2",
-        ],
-      );
+        assert.deepEqual(
+          remaining.map((row) => row.event_id),
+          [
+            "event:foundation-compact:create",
+            "event:foundation-compact:meta",
+            "event:foundation-compact:message-1",
+            "event:foundation-compact:node-1",
+            "event:foundation-compact:item-1",
+            "event:foundation-compact:visit-2",
+            "event:foundation-compact:message-2",
+            "event:foundation-compact:node-2",
+            "event:foundation-compact:item-2",
+          ],
+        );
 
-      const remainingV1 = yield* sql<{ readonly stream_id: string }>`
+        const remainingV1 = yield* sql<{ readonly stream_id: string }>`
         SELECT stream_id
         FROM orchestration_events
         WHERE application_event_version = 1
           AND stream_id IN (${importedV1ThreadId}, ${pendingV1ThreadId})
       `;
-      assert.deepEqual(
-        remainingV1.map((row) => row.stream_id),
-        [pendingV1ThreadId],
-      );
+        assert.deepEqual(
+          remainingV1.map((row) => row.stream_id),
+          [importedV1ThreadId, importedV1ThreadId, pendingV1ThreadId],
+        );
 
-      const remainingReceipts = yield* sql<{ readonly command_id: string }>`
+        assert.equal(
+          (yield* sql`SELECT payload_fingerprint FROM orchestration_command_receipts
+        WHERE command_id = 'command:foundation-compact:legacy'`)[0]?.payload_fingerprint,
+          "synthetic-retained-fingerprint",
+        );
+
+        const remainingReceipts = yield* sql<{ readonly command_id: string }>`
         SELECT command_id
         FROM orchestration_command_receipts
         WHERE command_id IN ('command:foundation-compact:legacy', 'command:foundation-compact:pending')
       `;
-      assert.deepEqual(
-        remainingReceipts.map((row) => row.command_id),
-        ["command:foundation-compact:pending"],
-      );
+        assert.deepEqual(
+          remainingReceipts.map((row) => row.command_id),
+          ["command:foundation-compact:legacy", "command:foundation-compact:pending"],
+        );
 
-      assert.isTrue((yield* maintenance.verify).valid);
-      assert.isTrue((yield* maintenance.rebuild).valid);
-      assert.deepEqual(yield* projections.getThreadProjection(threadId), beforeCompaction);
-    }),
+        assert.isTrue((yield* maintenance.verify).valid);
+        assert.isTrue((yield* maintenance.rebuild).valid);
+        assert.deepEqual(yield* projections.getThreadProjection(threadId), beforeCompaction);
+      }),
   );
 
   it.effect("verifies and rebuilds projections with cross-thread subagent relations", () =>
@@ -3131,7 +3141,8 @@ it.effect("publishes live events in commit order across concurrent writers", () 
   }).pipe(Effect.provide(layerDatabase)),
 );
 
-it.effect.each(["events", "receipts"] as const)(
+// Legacy history and receipts are retained, so only event discovery runs and nothing is deleted.
+it.effect.each(["events"] as const)(
   "allows writes while compaction waits for the reader to discover obsolete %s",
   (kind) =>
     Effect.gen(function* () {
@@ -3208,13 +3219,11 @@ it.effect.each(["events", "receipts"] as const)(
         yield* Fiber.join(reader);
         const result = yield* Fiber.join(compaction);
         assert.equal(discoverySpan.attributes.get("db.connection"), "reader");
-        assert.equal(result.deletedEventCount, kind === "events" ? 1 : 0);
-        assert.equal(result.deletedReceiptCount, kind === "receipts" ? 1 : 0);
+        assert.equal(result.deletedEventCount, 0);
+        assert.equal(result.deletedReceiptCount, 0);
         const retained =
-          kind === "events"
-            ? yield* sql`SELECT stream_id AS id FROM orchestration_events`
-            : yield* sql`SELECT aggregate_id AS id FROM orchestration_command_receipts`;
-        assert.deepEqual(retained, [{ id: "pending" }]);
+          yield* sql`SELECT stream_id AS id FROM orchestration_events ORDER BY sequence`;
+        assert.deepEqual(retained, [{ id: "imported" }, { id: "pending" }]);
       }).pipe(Effect.provide(maintenanceLayer));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

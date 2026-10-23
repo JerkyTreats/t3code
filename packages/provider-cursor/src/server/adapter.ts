@@ -213,15 +213,16 @@ export function cursorMcpServers(
   if (session === undefined) {
     return undefined;
   }
-  return {
-    "t3-code": {
-      type: "http",
-      url: session.endpoint,
-      headers: {
-        Authorization: session.authorizationHeader,
+  return Object.fromEntries(
+    McpProviderSession.getMcpProviderServerAttachments(session).map((server) => [
+      server.name,
+      {
+        type: "http" as const,
+        url: server.endpoint,
+        headers: { Authorization: server.authorizationHeader },
       },
-    },
-  };
+    ]),
+  );
 }
 
 function providerSession(input: {
@@ -2207,7 +2208,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               resolveAttachmentPath: host.resolveAttachmentPath,
             }),
             runOrdinal: turnInput.runOrdinal,
-            hasT3Mcp: mcpServers !== undefined,
+            hasT3Mcp: mcpServers?.["t3-code"] !== undefined,
           });
           const images = yield* Effect.forEach(
             turnInput.message.attachments.filter(isProviderNativeImageAttachment),
@@ -2244,7 +2245,12 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               detail: "Cursor turn requires non-empty text or attachments.",
             });
           }
-          const text = `${userText}\n\n${buildRuntimeInstructions({ harness: "Cursor", model: turnInput.modelSelection.model })}`;
+          const text = [
+            userText,
+            buildRuntimeInstructions({ harness: "Cursor", model: turnInput.modelSelection.model }),
+          ]
+            .filter(Boolean)
+            .join("\n\n");
           return images.length === 0
             ? text
             : ({

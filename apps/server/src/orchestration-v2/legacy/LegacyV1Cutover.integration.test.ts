@@ -80,13 +80,7 @@ const codexModelSelection = {
   model: "gpt-5.4",
 };
 
-/**
- * Slot 41 carries a site-local `ThreadSummaryTimeline` migration, matching
- * production databases where local builds recorded extra names under the shared
- * id sequence. The V2 runner only applies migrations past the recorded maximum
- * id, so the cutover in this test applies 050, 051 and 052 on top of the
- * untouched copy — the same path the real upgrade takes.
- */
+/** Synthetic accepted fork schema 67 before V2 first opens its independent copy. */
 const seedV1Database = (fixturePath: string, workspace: string) =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -94,35 +88,7 @@ const seedV1Database = (fixturePath: string, workspace: string) =>
       yield* sql`PRAGMA busy_timeout = 5000;`;
       yield* sql`PRAGMA foreign_keys = ON;`;
       yield* sql`PRAGMA journal_mode = WAL;`;
-      yield* runMigrations({ toMigrationInclusive: 40 });
-      yield* sql`
-        INSERT INTO effect_sql_migrations (migration_id, name)
-        VALUES (41, 'ThreadSummaryTimeline')
-      `;
-      yield* sql`
-        CREATE TABLE thread_summary_timeline_entries (
-          entry_id TEXT PRIMARY KEY,
-          thread_id TEXT NOT NULL,
-          payload_json TEXT NOT NULL
-        )
-      `;
-      const tailMigrations = [
-        [42, "ProjectionThreadLinkedPullRequest", Migration0042],
-        [43, "ProjectionThreadsUnsettledAt", Migration0043],
-        [44, "ClearAutomaticProjectModelDefaults", Migration0044],
-        [45, "ProjectionProjectsAutoPull", Migration0045],
-        [46, "RepairAutomaticSettlementTimestamps", Migration0046],
-        [47, "ProjectionProjectIcon", Migration0047],
-        [48, "ProjectionThreadBranchPullRequest", Migration0048],
-        [49, "ProjectionThreadsActiveOrderKey", Migration0049],
-      ] as const;
-      for (const [id, name, migration] of tailMigrations) {
-        yield* migration;
-        yield* sql`
-          INSERT INTO effect_sql_migrations (migration_id, name)
-          VALUES (${id}, ${name})
-        `;
-      }
+      yield* runMigrations({ toMigrationInclusive: 67 });
 
       yield* sql`
         INSERT INTO projection_projects (
@@ -658,6 +624,76 @@ const messageOrdinals = (projection: OrchestrationV2ThreadProjection) =>
     .map((item) => [String(item.messageId), item.ordinal, item.status] as const);
 
 describe("orchestration v2 legacy v1 cutover", () => {
+  it.effect(
+    "rejects the uncharacterized upstream fixture without changing its journal or original file",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const directory = yield* fs.makeTempDirectoryScoped({
+            prefix: "t3-v1-cutover-rejection-",
+          });
+          const sourcePath = path.join(directory, "state.sqlite");
+          const copyPath = path.join(directory, "statev2.sqlite");
+          const history = yield* Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            yield* runMigrations({ toMigrationInclusive: 40 });
+            yield* sql`INSERT INTO effect_sql_migrations (migration_id, name)
+          VALUES (41, 'ThreadSummaryTimeline')`;
+            yield* sql`CREATE TABLE thread_summary_timeline_entries (
+          entry_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, payload_json TEXT NOT NULL)`;
+            yield* sql`INSERT INTO thread_summary_timeline_entries
+          VALUES ('synthetic-entry', 'synthetic-thread', '{}')`;
+            // Reproduce the upstream source fixture's actual schema and journal.
+            // These identities are intentionally outside the accepted fork lineage.
+            const tail = [
+              [42, "ProjectionThreadLinkedPullRequest", Migration0042],
+              [43, "ProjectionThreadsUnsettledAt", Migration0043],
+              [44, "ClearAutomaticProjectModelDefaults", Migration0044],
+              [45, "ProjectionProjectsAutoPull", Migration0045],
+              [46, "RepairAutomaticSettlementTimestamps", Migration0046],
+              [47, "ProjectionProjectIcon", Migration0047],
+              [48, "ProjectionThreadBranchPullRequest", Migration0048],
+              [49, "ProjectionThreadsActiveOrderKey", Migration0049],
+            ] as const;
+            for (const [id, name, migration] of tail) {
+              yield* migration;
+              yield* sql`INSERT INTO effect_sql_migrations (migration_id, name) VALUES (${id}, ${name})`;
+            }
+            return yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
+          }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: sourcePath })));
+          const original = yield* fs.readFile(sourcePath);
+          yield* fs.copyFile(sourcePath, copyPath);
+          const error = yield* Effect.flip(
+            Effect.scoped(
+              SqlClient.SqlClient.pipe(
+                Effect.asVoid,
+                Effect.provide(SqlitePersistence.layerFromPath(copyPath)),
+              ),
+            ),
+          );
+          assert.match(error.message, /Unsupported fork migration identity at 41/);
+          yield* Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            assert.deepStrictEqual(
+              yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`,
+              history,
+            );
+            assert.deepStrictEqual(
+              yield* sql`SELECT name FROM sqlite_master
+          WHERE name = 'orchestration_v2_legacy_imports'`,
+              [],
+            );
+            assert.deepStrictEqual(yield* sql`SELECT * FROM thread_summary_timeline_entries`, [
+              { entry_id: "synthetic-entry", thread_id: "synthetic-thread", payload_json: "{}" },
+            ]);
+          }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: copyPath })));
+          assert.deepStrictEqual(yield* fs.readFile(sourcePath), original);
+        }),
+      ).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.live(
     "migrates an untouched v1 database copy through shell import, lazy transcripts, continuation and restart",
     () =>
@@ -668,7 +704,7 @@ describe("orchestration v2 legacy v1 cutover", () => {
           const workspace = yield* checkpointWorkspace("legacy-v1-cutover");
           const stateDir = yield* fs.makeTempDirectory({ prefix: "t3-v1-cutover-state-" });
           const fixturePath = path.join(stateDir, "v1-source.sqlite");
-          const copyPath = path.join(stateDir, "userdata", "state.sqlite");
+          const copyPath = path.join(stateDir, "userdata", "statev2.sqlite");
           yield* fs.makeDirectory(path.join(stateDir, "userdata"), { recursive: true });
 
           yield* seedV1Database(fixturePath, workspace);
@@ -921,16 +957,13 @@ describe("orchestration v2 legacy v1 cutover", () => {
             ),
           );
 
-          const divergenceLog = boot1Logs.find((log) =>
-            String(log.message).includes("migration history diverges"),
+          // The accepted fork journal remains intact while V2 continues at new ids.
+          assert.isFalse(
+            boot1Logs.some((log) => String(log.message).includes("migration history diverges")),
           );
-          assert.deepStrictEqual(divergenceLog?.annotations.divergent, [
-            "41:ThreadSummaryTimeline (this build: AuthSessionClientConnection)",
-          ]);
-          assert.equal(firstBoot.migration41Name, "ThreadSummaryTimeline");
-
-          assert.notInclude(firstBoot.authSessionColumnNames, "client_surface");
-          assert.notInclude(firstBoot.authSessionColumnNames, "client_app_version");
+          assert.equal(firstBoot.migration41Name, "AuthSessionClientConnection");
+          assert.include(firstBoot.authSessionColumnNames, "client_surface");
+          assert.include(firstBoot.authSessionColumnNames, "client_app_version");
 
           assert.equal(firstBoot.importRows.length, ALL_THREADS.length);
           const unhydratedRows = firstBoot.importRows.filter(
@@ -1022,7 +1055,8 @@ describe("orchestration v2 legacy v1 cutover", () => {
             ),
           );
 
-          assert.isTrue(
+          // Reopening the accepted journal repeats neither migrations nor divergence warnings.
+          assert.isFalse(
             boot2Logs.some((log) => String(log.message).includes("migration history diverges")),
           );
         }).pipe(Effect.provide(NodeServices.layer)),

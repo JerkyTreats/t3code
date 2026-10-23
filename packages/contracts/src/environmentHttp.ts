@@ -10,10 +10,17 @@ import * as HttpServerRespondable from "effect/http/HttpServerRespondable";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import {
+  AdminAccessSnapshot,
+  AdminClientMutationInput,
+  AdminCreatePairingCodeInput,
+  AdminMutationResult,
+  AdminPairingCodeIssued,
+  AdminPairingCodeMutationInput,
+} from "./adminAccess.ts";
+import {
   AuthAccessTokenResult,
   AuthBrowserSessionRequest,
   AuthBrowserSessionResult,
-  AuthClientSession,
   AuthCreatePairingCredentialInput,
   AuthMcpApprovalDecisionRequest,
   AuthMcpApprovalDetails,
@@ -28,13 +35,11 @@ import {
   AuthMcpTokenError,
   AuthMcpTokenRequest,
   AuthMcpTokenResult,
-  AuthPairingCredentialResult,
-  AuthPairingLink,
-  AuthRevokeClientSessionInput,
-  AuthRevokePairingLinkInput,
   AuthEnvironmentScope,
-  AuthTokenExchangeRequest,
+  AuthPairingCredentialResult,
+  AuthSessionAuthorityClass,
   AuthSessionState,
+  AuthTokenExchangeRequest,
   AuthWebSocketTicketResult,
   ServerAuthSessionMethod,
 } from "./auth.ts";
@@ -44,8 +49,9 @@ import {
   ORCHESTRATION_PROTOCOL_VERSION_TEXT,
 } from "./environment.ts";
 import {
-  DpopFailureReason,
+  AuthClientId,
   AuthSessionId,
+  DpopFailureReason,
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
@@ -104,7 +110,8 @@ export const EnvironmentAuthInvalidReason = Schema.Literals([
 export type EnvironmentAuthInvalidReason = typeof EnvironmentAuthInvalidReason.Type;
 
 export const EnvironmentOperationForbiddenReason = Schema.Literals([
-  "current_session_revoke_not_allowed",
+  "current_client_change_not_allowed",
+  "authority_not_allowed",
 ]);
 export type EnvironmentOperationForbiddenReason = typeof EnvironmentOperationForbiddenReason.Type;
 
@@ -115,10 +122,9 @@ export const EnvironmentInternalErrorReason = Schema.Literals([
   "access_token_issuance_failed",
   "websocket_ticket_issuance_failed",
   "pairing_credential_issuance_failed",
-  "pairing_links_load_failed",
-  "pairing_link_revoke_failed",
-  "client_sessions_load_failed",
-  "client_session_revoke_failed",
+  "admin_access_load_failed",
+  "admin_pairing_code_mutation_failed",
+  "admin_client_mutation_failed",
   "project_snapshot_failed",
   "project_mutation_failed",
   "orchestration_snapshot_failed",
@@ -221,7 +227,11 @@ export class EnvironmentInternalError extends Schema.TaggedError<EnvironmentInte
   }
 }
 
-export const EnvironmentResourceNotFoundReason = Schema.Literals(["thread_not_found"]);
+export const EnvironmentResourceNotFoundReason = Schema.Literals([
+  "thread_not_found",
+  "client_not_found",
+  "pairing_code_not_found",
+]);
 export type EnvironmentResourceNotFoundReason = typeof EnvironmentResourceNotFoundReason.Type;
 
 export class EnvironmentResourceNotFoundError extends Schema.TaggedError<EnvironmentResourceNotFoundError>()(
@@ -317,6 +327,20 @@ export class EnvironmentHttpConflictError extends Schema.TaggedError<Environment
   }
 }
 
+export class EnvironmentRateLimitError extends Schema.TaggedError<EnvironmentRateLimitError>()(
+  "EnvironmentRateLimitError",
+  {
+    code: Schema.Literal("rate_limited"),
+    retryAfterSeconds: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+    traceId: TrimmedNonEmptyString,
+  },
+  { httpApiStatus: 429 },
+) {
+  [HttpServerRespondable.symbol]() {
+    return HttpServerResponse.schemaJson(EnvironmentRateLimitError)(this, { status: 429 });
+  }
+}
+
 export class EnvironmentCloudEndpointUnavailableError extends Schema.TaggedError<EnvironmentCloudEndpointUnavailableError>()(
   "EnvironmentCloudEndpointUnavailableError",
   {
@@ -346,11 +370,15 @@ const EnvironmentScopedOperationErrors = [
 ] as const;
 const EnvironmentPairingCredentialErrors = [
   EnvironmentRequestInvalidError,
+  EnvironmentOperationForbiddenError,
   ...EnvironmentScopedOperationErrors,
 ] as const;
-const EnvironmentSessionRevokeErrors = [
+const EnvironmentAdminMutationErrors = [
   EnvironmentScopeRequiredError,
   EnvironmentOperationForbiddenError,
+  EnvironmentRateLimitError,
+  EnvironmentResourceNotFoundError,
+  EnvironmentHttpConflictError,
   EnvironmentInternalError,
 ] as const;
 const EnvironmentProjectSnapshotErrors = [
@@ -373,8 +401,10 @@ const EnvironmentProjectMutationErrors = [
 ] as const;
 
 export interface EnvironmentSessionPrincipalShape {
+  readonly clientId: AuthClientId;
   readonly sessionId: AuthSessionId;
   readonly subject: string;
+  readonly authorityClass: AuthSessionAuthorityClass;
   readonly method: ServerAuthSessionMethod;
   readonly scopes: ReadonlySet<AuthEnvironmentScope>;
   readonly proofKeyThumbprint?: string;
@@ -511,22 +541,7 @@ export const EnvironmentCloudPreferencesRequest = Schema.Struct({
 });
 export type EnvironmentCloudPreferencesRequest = typeof EnvironmentCloudPreferencesRequest.Type;
 
-export const AuthPairingLinkRevokeResult = Schema.Struct({
-  revoked: Schema.Boolean,
-});
-export type AuthPairingLinkRevokeResult = typeof AuthPairingLinkRevokeResult.Type;
-
-export const AuthClientSessionRevokeResult = Schema.Struct({
-  revoked: Schema.Boolean,
-});
-export type AuthClientSessionRevokeResult = typeof AuthClientSessionRevokeResult.Type;
-
-export const AuthOtherClientSessionsRevokeResult = Schema.Struct({
-  revokedCount: Schema.Number,
-});
-export type AuthOtherClientSessionsRevokeResult = typeof AuthOtherClientSessionsRevokeResult.Type;
-
-class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").add(
+export class EnvironmentMetadataHttpApi extends HttpApiGroup.make("metadata").add(
   HttpApiEndpoint.get("descriptor", "/.well-known/t3/environment", {
     success: ExecutionEnvironmentDescriptor,
   }),
@@ -559,7 +574,7 @@ class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
     HttpApiEndpoint.post("webSocketTicket", "/api/auth/websocket-ticket", {
       headers: OptionalBearerHeaders,
       success: AuthWebSocketTicketResult,
-      error: [EnvironmentInternalError],
+      error: [EnvironmentOperationForbiddenError, EnvironmentInternalError],
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
@@ -569,42 +584,54 @@ class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
       success: AuthPairingCredentialResult,
       error: EnvironmentPairingCredentialErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
-  )
+  ) {}
+
+export class EnvironmentAdminHttpApi extends HttpApiGroup.make("admin")
   .add(
-    HttpApiEndpoint.get("pairingLinks", "/api/auth/pairing-links", {
+    HttpApiEndpoint.get("listClientPresence", "/api/auth/admin/clients", {
       headers: OptionalBearerHeaders,
-      success: Schema.Array(AuthPairingLink),
-      error: EnvironmentScopedOperationErrors,
+      success: AdminAccessSnapshot,
+      error: EnvironmentAdminMutationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
-    HttpApiEndpoint.post("revokePairingLink", "/api/auth/pairing-links/revoke", {
+    HttpApiEndpoint.post("createClientPairingCode", "/api/auth/admin/client-pairing-codes", {
       headers: OptionalBearerHeaders,
-      payload: AuthRevokePairingLinkInput,
-      success: AuthPairingLinkRevokeResult,
-      error: EnvironmentScopedOperationErrors,
+      payload: AdminCreatePairingCodeInput,
+      success: AdminPairingCodeIssued,
+      error: EnvironmentAdminMutationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
-    HttpApiEndpoint.get("clients", "/api/auth/clients", {
+    HttpApiEndpoint.post("revokePairingCode", "/api/auth/admin/pairing-codes/revoke", {
       headers: OptionalBearerHeaders,
-      success: Schema.Array(AuthClientSession),
-      error: EnvironmentScopedOperationErrors,
+      payload: AdminPairingCodeMutationInput,
+      success: AdminMutationResult,
+      error: EnvironmentAdminMutationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
-    HttpApiEndpoint.post("revokeClient", "/api/auth/clients/revoke", {
+    HttpApiEndpoint.post("enableClient", "/api/auth/admin/clients/enable", {
       headers: OptionalBearerHeaders,
-      payload: AuthRevokeClientSessionInput,
-      success: AuthClientSessionRevokeResult,
-      error: EnvironmentSessionRevokeErrors,
+      payload: AdminClientMutationInput,
+      success: AdminMutationResult,
+      error: EnvironmentAdminMutationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
   )
   .add(
-    HttpApiEndpoint.post("revokeOtherClients", "/api/auth/clients/revoke-others", {
+    HttpApiEndpoint.post("disableClient", "/api/auth/admin/clients/disable", {
       headers: OptionalBearerHeaders,
-      success: AuthOtherClientSessionsRevokeResult,
-      error: EnvironmentScopedOperationErrors,
+      payload: AdminClientMutationInput,
+      success: AdminMutationResult,
+      error: EnvironmentAdminMutationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("deleteClient", "/api/auth/admin/clients/delete", {
+      headers: OptionalBearerHeaders,
+      payload: AdminClientMutationInput,
+      success: AdminMutationResult,
+      error: EnvironmentAdminMutationErrors,
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
@@ -845,6 +872,7 @@ class EnvironmentWebhooksHttpApi extends HttpApiGroup.make("webhooks")
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
+  .add(EnvironmentAdminHttpApi)
   .add(EnvironmentMcpOAuthHttpApi)
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)

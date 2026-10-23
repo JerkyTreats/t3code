@@ -7,14 +7,12 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Base64 from "effect/encoding/Base64";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
-import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
@@ -24,13 +22,9 @@ import { subscribeCodexAuthCallback } from "./provider/CodexAuthCallback.ts";
 import {
   AcpRegistryOperationError,
   CommandId,
-  authScopeResponse,
-  AuthAccessStreamError,
-  type AuthAccessStreamEvent,
   AuthOrchestrationOperateScope,
   type AuthEnvironmentScope,
   type ScheduledTaskListResult,
-  AuthSessionId,
   ClientConnectionMethod,
   ClientDeviceType,
   ClientOs,
@@ -209,7 +203,6 @@ import * as ProjectService from "./project/ProjectService.ts";
 import { threadWorkspaceRoot } from "./project/threadWorkspaceRoot.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
 import { projectMutationOperation } from "./project/ProjectMutation.ts";
-import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
@@ -220,7 +213,7 @@ import * as DefectReporter from "./observability/DefectReporter.ts";
 import * as EventLoopMonitor from "./observability/EventLoopMonitor.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import { requiredScopeForDeviceList, rpcAuthorizationError } from "./auth/RpcAuthorization.ts";
+import { requiredScopeForDeviceList } from "./auth/RpcAuthorization.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import { RpcInstrumentation, rpcInstrumentationLayer } from "./observability/RpcInstrumentation.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
@@ -246,8 +239,8 @@ import * as SourceControlProviderRegistry from "./sourceControl/SourceControlPro
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
-import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
+import * as ClientConnectionRegistry from "./auth/ClientConnectionRegistry.ts";
 import { failEnvironmentAuthInvalid, failEnvironmentInternal } from "./auth/http.ts";
 import { isNetworkPath } from "@t3tools/shared/path";
 import * as RelayClient from "@t3tools/shared/relayClient";
@@ -574,47 +567,6 @@ const SHELL_RESUME_MAX_GAP = 1_000;
 // payload bytes of the range in SQL and reset with a snapshot past this budget.
 const ORCHESTRATION_REPLAY_PAYLOAD_BUDGET_BYTES = 8 * 1024 * 1024;
 
-function toAuthAccessStreamEvent(
-  change: PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange,
-  revision: number,
-  currentSessionId: AuthSessionId,
-): AuthAccessStreamEvent {
-  switch (change.type) {
-    case "pairingLinkUpserted":
-      return {
-        version: 1,
-        revision,
-        type: "pairingLinkUpserted",
-        payload: { ...change.pairingLink, ...authScopeResponse(change.pairingLink.scopes) },
-      };
-    case "pairingLinkRemoved":
-      return {
-        version: 1,
-        revision,
-        type: "pairingLinkRemoved",
-        payload: { id: change.id },
-      };
-    case "clientUpserted":
-      return {
-        version: 1,
-        revision,
-        type: "clientUpserted",
-        payload: {
-          ...change.clientSession,
-          ...authScopeResponse(change.clientSession.scopes),
-          current: change.clientSession.sessionId === currentSessionId,
-        },
-      };
-    case "clientRemoved":
-      return {
-        version: 1,
-        revision,
-        type: "clientRemoved",
-        payload: { sessionId: change.sessionId },
-      };
-  }
-}
-
 const isClientSurface = Schema.is(ClientSurface);
 const isClientConnectionMethod = Schema.is(ClientConnectionMethod);
 const isClientDeviceType = Schema.is(ClientDeviceType);
@@ -637,7 +589,10 @@ function shouldUseBoundedThreadSnapshot(input: {
   return input.acceptBoundedSnapshot === true;
 }
 
-function readClientConnectionOrigin(
+// Optional client identity announced on the /ws upgrade URL next to wsTicket.
+// Lenient by design: absent or malformed values degrade to {} so a connection
+// never fails over attribution metadata.
+export function readClientConnectionOrigin(
   request: HttpServerRequest.HttpServerRequest,
 ): OrchestrationClientOrigin {
   const url = HttpServerRequest.toURL(request);
@@ -1215,6 +1170,97 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
+/** Builds ACP import provenance from the admitted connection, including legacy origins. */
+export const makeImportedAcpThreadLaunchInput = (options: {
+  readonly input: AcpRegistryImportSessionInput;
+  readonly commandId: CommandId;
+  readonly threadId: ThreadId;
+  readonly driver: ProviderDriverKind;
+  readonly model: string;
+  readonly clientOrigin: OrchestrationClientOrigin;
+}) => {
+  const { input, commandId, threadId, driver, model, clientOrigin } = options;
+  return {
+    commandId,
+    threadId,
+    projectId: input.projectId,
+    title: input.title ?? "Imported ACP session",
+    modelSelection: { instanceId: input.instanceId, model },
+    runtimeMode: "approval-required",
+    interactionMode: "default",
+    workspaceStrategy: { type: "root" },
+    importedNativeThread: {
+      ref: { driver, nativeId: input.sessionId, strength: "strong" },
+      metadata: {
+        itemIdentityVersion: 2,
+        ...(input.title === undefined ? {} : { title: input.title }),
+        ...(input.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }),
+      },
+    },
+    createdBy: "user",
+    creationSource: "web",
+    ...(clientOrigin.surface === undefined ? {} : { creationSurface: clientOrigin.surface }),
+  } satisfies ThreadLaunchService.ThreadLaunchInput;
+};
+
+/** Rechecks durable session admission before each RPC or subscription starts. */
+export const authorizeClientRpc = Effect.fn("ws.authorizeClientRpc")(function* <A, E, R>(
+  sessions: SessionStore.SessionStore["Service"],
+  session: EnvironmentAuth.AuthenticatedSession,
+  requiredScope: AuthEnvironmentScope,
+  effect: Effect.Effect<A, E, R>,
+) {
+  yield* sessions.assertClientAdmission(session.sessionId).pipe(
+    Effect.mapError(
+      () =>
+        new EnvironmentAuthorizationError({
+          message: "The session is no longer authorized.",
+          requiredScope,
+        }),
+    ),
+  );
+  if (!session.scopes.includes(requiredScope)) {
+    return yield* new EnvironmentAuthorizationError({
+      message: `The authenticated token is missing required scope: ${requiredScope}.`,
+      requiredScope,
+    });
+  }
+  return yield* effect;
+});
+
+/** Registers exact transport guards before checking admission and opening work. */
+export const withAdmittedWebSocketConnection = <A, E, R>(
+  input: {
+    readonly connections: ClientConnectionRegistry.ClientConnectionRegistry["Service"];
+    readonly sessions: SessionStore.SessionStore["Service"];
+    readonly session: EnvironmentAuth.AuthenticatedSession;
+    readonly clientOrigin: OrchestrationClientOrigin;
+  },
+  effect: Effect.Effect<A, E, R>,
+) =>
+  input.connections.guard(
+    input.session.clientId,
+    input.connections.guardSession(
+      input.session.sessionId,
+      Effect.gen(function* () {
+        yield* input.sessions.assertClientAdmission(input.session.sessionId).pipe(
+          Effect.catchIf(SessionStore.isSessionCredentialInvalidError, () =>
+            failEnvironmentAuthInvalid("invalid_credential"),
+          ),
+          Effect.catchIf(SessionStore.isSessionCredentialInternalError, (error) =>
+            failEnvironmentInternal("internal_error", error),
+          ),
+        );
+        yield* input.sessions.recordClientConnection(input.session.sessionId, input.clientOrigin);
+        return yield* Effect.acquireUseRelease(
+          input.sessions.markConnected(input.session.sessionId),
+          () => effect,
+          () => input.sessions.markDisconnected(input.session.sessionId),
+        );
+      }),
+    ),
+  );
+
 export const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
@@ -1230,6 +1276,7 @@ export const layerWsRpc = (
       const intakeContext = yield* Effect.context<
         | ThreadManagementService.ThreadManagementService
         | ThreadLaunchService.ThreadLaunchService
+        | IdAllocator.IdAllocatorV2
         | FileSystem.FileSystem
         | ServerConfig.ServerConfig
         | ServerSettings.ServerSettingsService
@@ -1282,7 +1329,6 @@ export const layerWsRpc = (
             );
       const usage = yield* UsageService.UsageService;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
-      const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
       const repositoryIdentityResolver =
@@ -1340,13 +1386,12 @@ export const layerWsRpc = (
         ),
       );
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
       const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
       const otlpEndpointCheck = yield* OtlpEndpointCheck.OtlpEndpointCheck;
       const sourceControlRepositories =
         yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const withPullRequestViewer = pullRequests.withRoutingCredential;
-      const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
-      const sessions = yield* SessionStore.SessionStore;
       const processDiagnostics = yield* ProcessDiagnostics.ProcessDiagnostics;
       const hostResources = yield* HostResources.HostResources;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
@@ -1363,11 +1408,7 @@ export const layerWsRpc = (
       const authorizeEffect = <A, E, R>(
         requiredScope: AuthEnvironmentScope,
         effect: Effect.Effect<A, E, R>,
-      ): Effect.Effect<A, E | EnvironmentAuthorizationError, R> =>
-        currentSession.scopes.includes(requiredScope)
-          ? effect
-          : Effect.fail(rpcAuthorizationError(requiredScope));
-
+      ) => authorizeClientRpc(sessions, currentSession, requiredScope, effect);
       const acpRegistryProject = Effect.fn("ws.acpRegistry.project")(function* (
         projectId: ProjectId,
       ) {
@@ -1504,30 +1545,16 @@ export const layerWsRpc = (
             const commandId = CommandId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie));
             const launched = yield* Effect.result(
               startup.enqueueCommand(
-                threadLaunch.launch({
-                  commandId,
-                  threadId,
-                  projectId: input.projectId,
-                  title: input.title ?? "Imported ACP session",
-                  modelSelection: { instanceId: input.instanceId, model },
-                  runtimeMode: "approval-required",
-                  interactionMode: "default",
-                  workspaceStrategy: { type: "root" },
-                  importedNativeThread: {
-                    ref: {
-                      driver: instance.driverKind,
-                      nativeId: input.sessionId,
-                      strength: "strong",
-                    },
-                    metadata: {
-                      itemIdentityVersion: 2,
-                      ...(input.title === undefined ? {} : { title: input.title }),
-                      ...(input.updatedAt === undefined ? {} : { updatedAt: input.updatedAt }),
-                    },
-                  },
-                  createdBy: "user",
-                  creationSource: "web",
-                }),
+                threadLaunch.launch(
+                  makeImportedAcpThreadLaunchInput({
+                    input,
+                    commandId,
+                    threadId,
+                    driver: instance.driverKind,
+                    model,
+                    clientOrigin,
+                  }),
+                ),
               ),
             );
             if (Result.isFailure(launched)) {
@@ -1689,19 +1716,6 @@ export const layerWsRpc = (
         yield* providerRegistry.refreshInstance(input.instanceId);
         return { disabled: true } as const;
       });
-      const loadAuthAccessSnapshot = () =>
-        Effect.all({
-          pairingLinks: serverAuth.listPairingLinks(),
-          clientSessions: serverAuth.listClientSessions(currentSessionId),
-        }).pipe(
-          Effect.mapError(
-            (error) =>
-              new AuthAccessStreamError({
-                message: error.message,
-              }),
-          ),
-        );
-
       const loadServerConfig = Effect.fn("ws.loadServerConfig")(function* (options: {
         readonly usageLimitsCommand: boolean;
       }) {
@@ -1883,6 +1897,9 @@ export const layerWsRpc = (
                           createdBy: "user",
                           creationSource:
                             "creationSource" in command ? command.creationSource : "web",
+                          ...(clientOrigin.surface === undefined
+                            ? {}
+                            : { creationSurface: clientOrigin.surface }),
                         }),
                       )
                   ).pipe(Effect.provide(intakeContext)),
@@ -2025,6 +2042,9 @@ export const layerWsRpc = (
                         }),
                     createdBy: "user",
                     creationSource: input.creationSource ?? "web",
+                    ...(clientOrigin.surface === undefined
+                      ? {}
+                      : { creationSurface: clientOrigin.surface }),
                   }).pipe(Effect.provide(intakeContext)),
                 )
                 .pipe(
@@ -2050,6 +2070,13 @@ export const layerWsRpc = (
                         commandId: input.commandId,
                         projectId: input.projectId,
                         message: cause.message,
+                        cause,
+                      }),
+                    IdAllocatorV2AllocationError: (cause) =>
+                      new OrchestrationV2ThreadLaunchError({
+                        commandId: input.commandId,
+                        projectId: input.projectId,
+                        message: "Failed to allocate the thread identity.",
                         cause,
                       }),
                     ThreadLaunchError: (cause) =>
@@ -3129,38 +3156,6 @@ export const layerWsRpc = (
               return Stream.concat(rpcInitialItems(snapshotEvents), liveEvents);
             }),
           ),
-        [WS_METHODS.subscribeAuthAccess]: (_input) =>
-          Stream.unwrap(
-            Effect.gen(function* () {
-              const initialSnapshot = yield* loadAuthAccessSnapshot();
-              const revisionRef = yield* Ref.make(1);
-              const accessChanges: Stream.Stream<
-                PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange
-              > = Stream.merge(bootstrapCredentials.streamChanges, sessions.streamChanges);
-
-              const liveEvents: Stream.Stream<AuthAccessStreamEvent> = accessChanges.pipe(
-                Stream.mapEffect((change) =>
-                  Ref.updateAndGet(revisionRef, (revision) => revision + 1).pipe(
-                    Effect.map((revision) =>
-                      toAuthAccessStreamEvent(change, revision, currentSessionId),
-                    ),
-                  ),
-                ),
-              );
-
-              return Stream.concat(
-                rpcInitialItems([
-                  {
-                    version: 1 as const,
-                    revision: 1,
-                    type: "snapshot" as const,
-                    payload: initialSnapshot,
-                  },
-                ]),
-                liveEvents,
-              );
-            }),
-          ),
         [WS_METHODS.subscribeBackgroundPolicy]: (_input) =>
           Stream.unwrap(
             Effect.map(backgroundPolicy.subscribe, ({ latest, changes }) =>
@@ -3193,6 +3188,7 @@ export const WS_RPC_SERVER_OPTIONS = {
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
+    const connections = yield* ClientConnectionRegistry.ClientConnectionRegistry;
     const previewAutomationBroker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
@@ -3231,7 +3227,8 @@ export const layer = Layer.unwrap(
         );
         const clientOrigin = readClientConnectionOrigin(request);
         const clientAnalyticsProps = readClientAnalyticsProps(request);
-        yield* sessions.recordClientConnection(session.sessionId, clientOrigin);
+        // Session connection metadata is recorded inside the admitted guards below.
+        // Analytics props carry no session, subject, or credential fields.
         yield* analytics.record("client.connected", clientAnalyticsProps);
         yield* analytics.recordOwners(readClientOwners(request), "client");
         const rpcWebSocketHttpEffect = yield* Effect.gen(function* () {
@@ -3240,21 +3237,33 @@ export const layer = Layer.unwrap(
             Effect.provideService(RpcServer.Protocol, withTerminalOutputWindow(protocol)),
             Effect.provide(
               Layer.merge(
-                RpcAuthorization.layer(session.scopes, (method, payload) => {
-                  // Anonymous product signal: the feature and its enum variant,
-                  // credited to the connecting client's surface only.
-                  const usage = featureUsage(method, payload);
-                  return usage === undefined
-                    ? Effect.void
-                    : analytics
-                        .record("feature.used", {
-                          ...usage,
-                          ...(clientAnalyticsProps.surface === undefined
-                            ? {}
-                            : { surface: clientAnalyticsProps.surface }),
-                        })
-                        .pipe(Effect.ignore);
-                }),
+                RpcAuthorization.layer(
+                  session.scopes,
+                  sessions.assertClientAdmission(session.sessionId).pipe(
+                    Effect.mapError(
+                      () =>
+                        new EnvironmentAuthorizationError({
+                          message: "The session is no longer authorized.",
+                          requiredScope: AuthOrchestrationOperateScope,
+                        }),
+                    ),
+                  ),
+                  (method, payload) => {
+                    // Anonymous product signal: the feature and its enum variant,
+                    // credited to the connecting client's surface only.
+                    const usage = featureUsage(method, payload);
+                    return usage === undefined
+                      ? Effect.void
+                      : analytics
+                          .record("feature.used", {
+                            ...usage,
+                            ...(clientAnalyticsProps.surface === undefined
+                              ? {}
+                              : { surface: clientAnalyticsProps.surface }),
+                          })
+                          .pipe(Effect.ignore);
+                  },
+                ),
                 rpcInstrumentationLayer,
               ),
             ),
@@ -3305,20 +3314,22 @@ export const layer = Layer.unwrap(
             ),
           ),
         );
-        return yield* Effect.acquireUseRelease(
-          sessions.markConnected(session.sessionId),
-          () =>
-            Effect.raceFirst(
-              rpcWebSocketHttpEffect,
-              sessions.awaitInvalidation(session.sessionId).pipe(
-                Effect.as(HttpServerResponse.empty()),
-                Effect.catchTags({
-                  SessionCredentialVerificationError: (error) =>
-                    failEnvironmentInternal("internal_error", error),
-                }),
+        return yield* withAdmittedWebSocketConnection(
+          { connections, sessions, session, clientOrigin },
+          analytics.record("client.connected", clientAnalyticsProps).pipe(
+            Effect.andThen(
+              Effect.raceFirst(
+                rpcWebSocketHttpEffect,
+                sessions.awaitInvalidation(session.sessionId).pipe(
+                  Effect.as(HttpServerResponse.empty()),
+                  Effect.catchTags({
+                    SessionCredentialVerificationError: (error) =>
+                      failEnvironmentInternal("internal_error", error),
+                  }),
+                ),
               ),
             ),
-          () => sessions.markDisconnected(session.sessionId),
+          ),
         );
       }).pipe(
         Effect.catchTags({

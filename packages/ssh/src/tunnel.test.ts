@@ -79,28 +79,71 @@ function commandArgs(command: ChildProcess.Command): ReadonlyArray<string> {
   return command._tag === "StandardCommand" ? command.args : [];
 }
 
-const ARCHIVE = { archiveVersion: "1.2.3-preview.20260911.4" } as const;
+const TEST_NODE_ENGINE_RANGE = "^22.16 || ^23.11 || >=24.10";
 
 describe("ssh tunnel scripts", () => {
-  it("rejects archive versions that are not a single exact version segment", () => {
-    for (const archiveVersion of [
-      "../other",
-      "1.2.3/evil",
-      "1.2.3\\evil",
-      "1.2.3-preview.1 x",
-      "1.2.3-preview.1\nrm -rf /",
-      "v1.2.3",
-    ]) {
-      assert.throws(
-        () => SshTunnel.buildRemoteT3RunnerScript({ archiveVersion }),
-        SshTunnel.SshInvalidArchiveVersionError,
-        undefined,
-        archiveVersion,
-      );
+  it("builds the remote t3 runner for a preinstalled CLI", () => {
+    const script = SshTunnel.buildRemoteT3RunnerScript({ nodeEngineRange: TEST_NODE_ENGINE_RANGE });
+
+    assert.include(script, "T3_NODE_SCRIPT_PATH=''");
+    assert.include(script, 'exec t3 "$@"');
+    assert.include(script, "Install this fork on the remote host");
+    assert.notInclude(script, "npx");
+    assert.notInclude(script, "npm exec");
+    assert.include(script, 'prepend_path_if_dir "$HOME/.local/bin"');
+    assert.include(script, `T3_NODE_ENGINE_RANGE='${TEST_NODE_ENGINE_RANGE}'`);
+    assert.include(script, "remote_node_satisfies_engine()");
+    assert.include(script, "function satisfiesSemverRange");
+    assert.include(script, "satisfiesSemverRange(rawVersion, range)");
+    assert.include(script, 'prepend_path_if_dir "$VOLTA_HOME/bin"');
+    assert.include(script, 'prepend_path_if_dir "$HOME/.asdf/shims"');
+    assert.include(script, 'prepend_path_if_dir "$HOME/.local/share/mise/shims"');
+    assert.include(script, 'eval "$(fnm env --shell bash)"');
+    assert.include(script, "fnm use --silent-if-unchanged");
+    assert.include(script, "fnm use default");
+    assert.include(script, 'prepend_path_if_dir "$HOME/.nodenv/shims"');
+    assert.include(script, 'NVM_DIR="$HOME/.nvm"');
+    assert.include(script, "nvm use --silent default");
+    assert.include(script, 'for T3_NODE_BIN in "$NVM_DIR"/versions/node/*/bin');
+    assert.notInclude(script, "ensure $NVM_DIR/nvm.sh is available");
+  });
+
+  it("does not hard-code a remote node engine range", () => {
+    const script = SshTunnel.buildRemoteT3RunnerScript();
+
+    assert.include(script, "T3_NODE_ENGINE_RANGE=''");
+    assert.notInclude(script, TEST_NODE_ENGINE_RANGE);
+  });
+
+  it("builds the remote t3 runner with a node script override", () => {
+    const script = SshTunnel.buildRemoteT3RunnerScript({
+      nodeScriptPath: "/workspace/project/apps/server/dist/bin.mjs",
+    });
+
+    assert.include(script, "T3_NODE_SCRIPT_PATH='/workspace/project/apps/server/dist/bin.mjs'");
+    assert.include(script, 'exec node "$T3_NODE_SCRIPT_PATH" "$@"');
+  });
+
+  it("embeds the runner in the launch script byte for byte", () => {
+    for (const options of [{}, { nodeScriptPath: "/workspace/project/apps/server/dist/bin.mjs" }]) {
+      const runner = SshTunnel.buildRemoteT3RunnerScript(options);
+      assert.include(SshTunnel.buildRemoteLaunchScript(options), runner);
+      assert.notInclude(runner, "T3_ARCHIVE_VERSION");
     }
+  });
+
+  it("launches through the CLI helper only for a preinstalled runner", () => {
+    const launch = SshTunnel.buildRemoteLaunchScript();
+    assert.include(launch, "T3_CLI_HELPER_MODE=1");
+    assert.include(launch, '"$RUNNER_FILE" __ssh-helper pick-port');
+    assert.notInclude(launch, "releases/download");
+    assert.notInclude(launch, "curl ");
+    assert.notInclude(launch, "wget ");
     assert.include(
-      SshTunnel.buildRemoteT3RunnerScript(ARCHIVE),
-      "T3_ARCHIVE_VERSION='1.2.3-preview.20260911.4'",
+      SshTunnel.buildRemoteLaunchScript({
+        nodeScriptPath: "/workspace/project/apps/server/dist/bin.mjs",
+      }),
+      "T3_CLI_HELPER_MODE=0",
     );
   });
 
@@ -108,7 +151,7 @@ describe("ssh tunnel scripts", () => {
     const target = {
       alias: "devbox",
       hostname: "devbox.example.com",
-      username: "julius",
+      username: "user",
       port: 2222,
     } as const;
     const spawnedCommands: Array<ReadonlyArray<string>> = [];
@@ -122,7 +165,7 @@ describe("ssh tunnel scripts", () => {
     const layerProcess = Layer.merge(NodeServices.layer, layerSpawner);
 
     return Effect.gen(function* () {
-      const result = yield* SshTunnel.launchOrReuseRemoteServer(target, undefined, ARCHIVE);
+      const result = yield* SshTunnel.launchOrReuseRemoteServer(target, undefined, {});
       assert.equal(result.remotePort, 3774);
       assert.deepEqual(spawnedCommands[0]?.slice(-5, -1), ["sh", "-l", "-s", "--"]);
     }).pipe(Effect.provide(layerProcess));
@@ -132,7 +175,7 @@ describe("ssh tunnel scripts", () => {
     const target = {
       alias: "devbox",
       hostname: "devbox.example.com",
-      username: "julius",
+      username: "user",
       port: 2222,
     } as const;
     const spawner = ChildProcessSpawner.make(() =>
@@ -151,7 +194,7 @@ describe("ssh tunnel scripts", () => {
     const layerSpawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner);
     const layerProcess = Layer.merge(NodeServices.layer, layerSpawner);
     return Effect.gen(function* () {
-      const result = yield* SshTunnel.issueRemotePairingToken(target, undefined, ARCHIVE);
+      const result = yield* SshTunnel.issueRemotePairingToken(target, undefined, {});
       assert.equal(result.credential, "LCL4R2TPHDKQ");
     }).pipe(Effect.provide(layerProcess));
   });
@@ -179,7 +222,7 @@ describe("ssh tunnel scripts", () => {
         Layer.succeed(HttpClient.HttpClient, hangingHttpClient),
         Layer.succeed(NetService.NetService, testNetService),
         SshAuth.SshPasswordPrompt.disabledLayer,
-        SshTunnel.SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed(ARCHIVE) }),
+        SshTunnel.SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed({}) }),
       );
       yield* Effect.gen(function* () {
         const manager = yield* SshTunnel.SshEnvironmentManager;
@@ -236,7 +279,7 @@ describe("ssh tunnel scripts", () => {
         Layer.succeed(HttpClient.HttpClient, hangingHttpClient),
         Layer.succeed(NetService.NetService, testNetService),
         SshAuth.SshPasswordPrompt.disabledLayer,
-        SshTunnel.SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed(ARCHIVE) }),
+        SshTunnel.SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed({}) }),
       );
       yield* Effect.gen(function* () {
         const manager = yield* SshTunnel.SshEnvironmentManager;
@@ -326,7 +369,7 @@ describe("ssh tunnel scripts", () => {
           Layer.succeed(HttpClient.HttpClient, testHttpClient),
           Layer.succeed(NetService.NetService, testNetService),
           SshAuth.SshPasswordPrompt.disabledLayer,
-          SshTunnel.SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed(ARCHIVE) }),
+          SshTunnel.SshEnvironmentManager.layer({ resolveCliRunner: Effect.succeed({}) }),
         );
         yield* Effect.gen(function* () {
           const manager = yield* SshTunnel.SshEnvironmentManager;

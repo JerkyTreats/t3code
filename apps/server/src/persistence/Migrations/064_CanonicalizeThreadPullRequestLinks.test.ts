@@ -1,3 +1,4 @@
+// Fork execution identities: upstream 63 through 68 run as fork 87 through 92.
 import { assert, it } from "@effect/vitest";
 import { OrchestrationV2AppThreadJson, ThreadId } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -66,7 +67,7 @@ layer("064_CanonicalizeThreadPullRequestLinks", (it) => {
   it.effect("migrates single links once, preserves arrays, and keeps links after a rebuild", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 63 });
+      yield* runMigrations({ toMigrationInclusive: 87 });
       const fixtures = [
         { ...thread("github"), linkedPullRequest: linked },
         {
@@ -123,10 +124,10 @@ layer("064_CanonicalizeThreadPullRequestLinks", (it) => {
           'user', ${v1Payload}, '{}', 1)
       `;
 
-      assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 64 }), [
-        [64, "CanonicalizeThreadPullRequestLinks"],
+      assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 88 }), [
+        [88, "CanonicalizeThreadPullRequestLinks"],
       ]);
-      assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 64 }), []);
+      assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 88 }), []);
       const rows = yield* sql<{ readonly thread_id: string; readonly payload_json: string }>`
         SELECT thread_id, payload_json FROM orchestration_v2_projection_threads
       `;

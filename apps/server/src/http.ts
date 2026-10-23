@@ -291,7 +291,7 @@ function resolveDevRedirectUrl(devUrl: URL, requestUrl: URL): string {
   return redirectUrl.toString();
 }
 
-const authenticateRawRouteWithScope =
+export const authenticateRawRouteWithScope =
   /* Request instrumentation already owns the span; keep this helper in that context. */
   Effect.fnUntraced(function* (
     scope: typeof AuthOrchestrationReadScope | typeof AuthOrchestrationOperateScope,
@@ -391,15 +391,19 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
 
 const UNTRACED_REQUEST_PATHS: ReadonlySet<string> = new Set([OTLP_TRACES_PROXY_PATH]);
 
-// TracerDisabledWhen is one predicate for the whole server, and
-// HttpRouter.serve builds its routes privately, so it is provided to the served
-// layer, never merged into the routes.
-const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
+// Skips the HTTP server span for UNTRACED_REQUEST_PATHS. That span starts
+// before routing, so a route handler cannot skip it. TracerDisabledWhen is one
+// predicate for the whole server, and HttpRouter.serve builds its routes
+// privately, so it is provided to the served layer, never merged into the
+// routes. Add paths here instead of providing it again. The query string is
+// ignored, as in routing.
+export const isUntracedRequest = (request: { readonly url: string }): boolean => {
   const queryIndex = request.url.indexOf("?");
   const path = queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
   // Webhook URLs carry their secret token in the path, so they never reach a trace.
   return UNTRACED_REQUEST_PATHS.has(path) || path.startsWith(`${WEBHOOK_ROUTE_PREFIX}/`);
-});
+};
+const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)(isUntracedRequest);
 
 export const withUntracedRequests = Layer.provide(layerUntracedRequests);
 

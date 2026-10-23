@@ -2,12 +2,16 @@ import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 
-import type { McpProviderSessionConfig } from "@t3tools/provider-core/server/mcpSession";
+import {
+  getMcpProviderServerAttachments,
+  type McpProviderSessionConfig,
+} from "@t3tools/provider-core/server/mcpSession";
 import {
   PI_T3_MCP_EXTENSION_FILENAME,
   PI_T3_MCP_EXTENSION_SOURCE,
   T3_MCP_BEARER_ENV,
   T3_MCP_URL_ENV,
+  T3_MCP_SERVERS_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
 } from "./mcpExtensionSource.ts";
@@ -162,10 +166,6 @@ export function resolvePiLaunchArgs(launchArgs: string): PiLaunchArgsResolution 
   return { ok: true, args };
 }
 
-function bearerTokenFromAuthorizationHeader(header: string): string {
-  return header.startsWith("Bearer ") ? header.slice("Bearer ".length) : header;
-}
-
 function normalizedPiPath(value: string): string {
   return value.replace(/\\/g, "/").replace(/\/+$/, "");
 }
@@ -256,7 +256,11 @@ export function buildPiRpcLaunch(input: {
   readonly hasT3Mcp: boolean;
 } {
   const hasT3Extension = input.disableExtensions !== true && input.extensionPath !== undefined;
-  const hasT3Mcp = hasT3Extension && input.mcpSession !== undefined;
+  const attachments =
+    hasT3Extension && input.mcpSession !== undefined
+      ? getMcpProviderServerAttachments(input.mcpSession)
+      : [];
+  const hasT3Mcp = attachments.length > 0;
   const extensionSafeArgs =
     input.disableExtensions === true
       ? withoutExplicitExtensions(input.launchArgs)
@@ -289,6 +293,7 @@ export function buildPiRpcLaunch(input: {
   // credentials inherited from the server or a parent provider process.
   delete environment[T3_MCP_URL_ENV];
   delete environment[T3_MCP_BEARER_ENV];
+  delete environment[T3_MCP_SERVERS_ENV];
   delete environment[T3_PI_MCP_EXTENSION_PATH_ENV];
 
   return {
@@ -304,11 +309,14 @@ export function buildPiRpcLaunch(input: {
               input.runtimeMode === "auto" ? "approval-required" : input.runtimeMode,
           }
         : {}),
-      ...(hasT3Mcp && input.mcpSession !== undefined
+      ...(hasT3Mcp
         ? {
-            [T3_MCP_URL_ENV]: input.mcpSession.endpoint,
-            [T3_MCP_BEARER_ENV]: bearerTokenFromAuthorizationHeader(
-              input.mcpSession.authorizationHeader,
+            [T3_MCP_SERVERS_ENV]: JSON.stringify(
+              attachments.map(({ name, endpoint, authorizationHeader }) => ({
+                name,
+                endpoint,
+                authorizationHeader,
+              })),
             ),
           }
         : {}),

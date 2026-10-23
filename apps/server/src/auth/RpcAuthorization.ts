@@ -4,7 +4,6 @@ import {
   clientRpcRequiredScopes,
   authScopeRequiredResponse,
   AssetCreateUrlInput,
-  AuthAccessReadScope,
   ServerSettingsPatch,
   ProviderInstanceMutation,
   requiredScopesForServerSettingsPatch,
@@ -206,7 +205,6 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.subscribeDeviceState]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeServerConfig]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeServerLifecycle]: AuthOrchestrationReadScope,
-  [WS_METHODS.subscribeAuthAccess]: AuthAccessReadScope,
   [WS_METHODS.subscribeBackgroundPolicy]: AuthOrchestrationReadScope,
 } as const satisfies Readonly<Record<WsRpcMethod, AuthEnvironmentScope>>;
 
@@ -232,8 +230,11 @@ const SettingsUpdate = Schema.Struct({
   providerInstanceMutation: Schema.optionalKey(ProviderInstanceMutation),
 });
 
+const decodeSettingsUpdate = Schema.decodeUnknownSync(SettingsUpdate);
+const decodeAssetCreateUrlInput = Schema.decodeUnknownSync(AssetCreateUrlInput);
+
 const requiredScopesForSettingsUpdate = (payload: unknown) => {
-  const input = Schema.decodeUnknownSync(SettingsUpdate)(payload);
+  const input = decodeSettingsUpdate(payload);
   const scopes = requiredScopesForServerSettingsPatch(input.patch);
   if (input.providerInstanceMutation === undefined) return scopes;
   // An atomic provider mutation carries an empty patch unless it also changes settings.
@@ -252,7 +253,7 @@ const requiredScopesForRpcCall = (
     return [AuthEnvironmentMaintainScope, AuthDiagnosticsReadScope];
   }
   if (method === WS_METHODS.assetsCreateUrl) {
-    const { resource } = Schema.decodeUnknownSync(AssetCreateUrlInput)(payload);
+    const { resource } = decodeAssetCreateUrlInput(payload);
     return [
       resource._tag === "workspace-file" ||
       resource._tag === "media-file" ||
@@ -271,22 +272,27 @@ const requiredScopesForRpcCall = (
 };
 
 /**
+ * Authorizes every RPC on one connection against that connection's session scopes.
+ * `admission` rechecks the persisted session before each call (F17-D05).
  * `onAuthorized` runs once after an authorized request succeeds; for a stream
  * RPC, that is when the stream completes. Every RPC passes through here, so it
  * is the one place to observe requests without wrapping each handler.
  */
 export const layer = (
   scopes: ReadonlyArray<AuthEnvironmentScope>,
+  admission: Effect.Effect<void, EnvironmentAuthorizationError> = Effect.void,
   onAuthorized?: (method: string, payload: unknown) => Effect.Effect<void>,
 ) =>
-  Layer.succeed(RpcScopeAuthorization)((effect, { rpc, payload }) => {
-    const requiredScopes = requiredScopesForRpcCall(rpc._tag, payload);
-    const requiredScope = requiredScopes.find((scope) => !scopes.includes(scope));
-    if (requiredScope !== undefined) return Effect.fail(rpcAuthorizationError(requiredScope));
-    return onAuthorized === undefined
-      ? effect
-      : Effect.tap(effect, () => onAuthorized(rpc._tag, payload));
-  });
+  Layer.succeed(RpcScopeAuthorization)((effect, { rpc, payload }) =>
+    Effect.andThen(admission, () => {
+      const requiredScopes = requiredScopesForRpcCall(rpc._tag, payload);
+      const requiredScope = requiredScopes.find((scope) => !scopes.includes(scope));
+      if (requiredScope !== undefined) return Effect.fail(rpcAuthorizationError(requiredScope));
+      return onAuthorized === undefined
+        ? effect
+        : Effect.tap(effect, () => onAuthorized(rpc._tag, payload));
+    }),
+  );
 
 /** Retrying can install or restart tools even though ordinary listing is readable. */
 export const requiredScopeForDeviceList = (input: DeviceListInput): AuthEnvironmentScope =>

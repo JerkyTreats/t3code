@@ -1205,6 +1205,7 @@ describe("CursorAdapterV2", () => {
   it("injects thread-scoped MCP credentials without logging them", () => {
     const threadId = ThreadId.make("thread-cursor-mcp");
     const mcpSession = {
+      capabilities: new Set(["orchestration"]),
       environmentId: EnvironmentId.make("environment-cursor-mcp"),
       threadId,
       providerSessionId: "mcp-session-cursor",

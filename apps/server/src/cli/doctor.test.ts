@@ -3,12 +3,11 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import * as BootService from "../cloud/bootService.ts";
 import { runDoctor } from "./doctor.ts";
 import { DatabaseMaintenance } from "../persistence/DatabaseMaintenance.ts";
 
 it.effect(
-  "--fix reclaims space with the service paused and keeps the V1 database, and --dry-run changes nothing",
+  "--fix reclaims space and keeps the legacy rollback database, and --dry-run changes nothing",
   () =>
     Effect.gen(function* () {
       const calls: string[] = [];
@@ -17,16 +16,9 @@ it.effect(
           Effect.provide(
             Layer.mergeAll(
               NodeServices.layer,
-              Layer.mock(BootService.BootService)({
-                withStopped: (operation) =>
-                  Effect.sync(() => calls.push("pause")).pipe(
-                    Effect.andThen(operation),
-                    Effect.ensuring(Effect.sync(() => calls.push("resume"))),
-                  ),
-              }),
               Layer.succeed(DatabaseMaintenance, {
                 // An unconverted database: reclaiming space is recommended.
-                // A database from before 0.1.0 sits beside it; --fix must keep it.
+                // The legacy database sits beside it and is never a repair.
                 inspect: () =>
                   Effect.succeed({
                     databaseBytes: 2000,
@@ -44,7 +36,6 @@ it.effect(
                       deletedReceiptCount: 0,
                     };
                   }),
-                removeLegacyDatabase: () => Effect.sync(() => calls.push("remove legacy")),
               }),
             ),
           ),
@@ -52,6 +43,39 @@ it.effect(
       yield* doctor(true);
       assert.deepEqual(calls, []);
       yield* doctor(false);
-      assert.deepEqual(calls, ["pause", "compact", "resume"]);
+      assert.deepEqual(calls, ["compact"]);
     }),
+);
+
+it.effect("offers no repair when only the legacy rollback database is present", () =>
+  Effect.gen(function* () {
+    const calls: string[] = [];
+    yield* runDoctor("/test/statev2.sqlite", { fix: true, dryRun: false, interactive: false }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          Layer.succeed(DatabaseMaintenance, {
+            inspect: () =>
+              Effect.succeed({
+                databaseBytes: 2000,
+                reclaimableBytes: 0,
+                incrementalVacuumEnabled: true,
+                legacyDatabaseBytes: 4000,
+              }),
+            compact: () =>
+              Effect.sync(() => {
+                calls.push("compact");
+                return {
+                  beforeBytes: 0,
+                  afterBytes: 0,
+                  deletedEventCount: 0,
+                  deletedReceiptCount: 0,
+                };
+              }),
+          }),
+        ),
+      ),
+    );
+    assert.deepEqual(calls, []);
+  }),
 );

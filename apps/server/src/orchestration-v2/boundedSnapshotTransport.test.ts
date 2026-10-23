@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   AuthOrchestrationReadScope,
   AuthSessionId,
+  AuthClientId,
   EnvironmentAuthenticatedAuth,
   EnvironmentAuthenticatedPrincipal,
   EnvironmentHttpApi,
@@ -87,6 +88,8 @@ const auth = Layer.succeed(EnvironmentAuthenticatedAuth, (effect) =>
     Effect.provideService(EnvironmentAuthenticatedPrincipal, {
       sessionId: AuthSessionId.make("compact-transport"),
       subject: "compact-transport",
+      clientId: AuthClientId.make("compact-transport-client"),
+      authorityClass: "client",
       method: "browser-session-cookie",
       scopes: new Set([AuthOrchestrationReadScope]),
     }),

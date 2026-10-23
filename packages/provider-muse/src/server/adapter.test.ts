@@ -384,32 +384,84 @@ const approval = (turnId: string) => ({
 });
 
 describe("MuseAdapterV2", () => {
-  it.effect("connects the thread's MCP credential on native start and resume", () =>
+  it.effect.each(["default", "pull-requests-only", "empty"] as const)(
+    "attaches only %s toolkit grants on native start and resume",
+    (grant) =>
+      Effect.gen(function* () {
+        yield* Effect.addFinalizer(() =>
+          McpProviderSessions.McpProviderSessions.use((sessions) => sessions.clear(THREAD_ID)),
+        );
+        const capabilities =
+          grant === "default"
+            ? undefined
+            : new Set(grant === "pull-requests-only" ? ["pull-requests"] : []);
+        yield* (yield* McpProviderSessions.McpProviderSessions).set({
+          environmentId: EnvironmentId.make("test-environment"),
+          threadId: THREAD_ID,
+          providerSessionId: "test-session",
+          providerInstanceId: INSTANCE_ID,
+          endpoint: "http://127.0.0.1:43210/mcp",
+          pullRequestsEndpoint: "http://127.0.0.1:43210/independent/pull-requests",
+          authorizationHeader: "Bearer thread-scoped-test-token",
+          browserToolsAvailable: true,
+          ...(capabilities === undefined ? {} : { capabilities }),
+        });
+        const expectedEndpoints =
+          grant === "default"
+            ? {
+                "t3-code": "http://127.0.0.1:43210/mcp",
+                "t3-code-preview": "http://127.0.0.1:43210/mcp/preview",
+                "t3-code-pull-requests": "http://127.0.0.1:43210/independent/pull-requests",
+              }
+            : grant === "pull-requests-only"
+              ? {
+                  "t3-code-pull-requests": "http://127.0.0.1:43210/independent/pull-requests",
+                }
+              : {};
+        for (const nativeId of [undefined, "saved-native-session"]) {
+          const fake = yield* makeFakeMuse();
+          if (grant !== "empty") fake.host.initializeResult.grantedCapabilities.push("sessionMcp");
+          yield* makeHarness(fake, INSTANCE_ID, nativeId);
+          const call = yield* fake.takeCall(nativeId ? "session/resume" : "session/start");
+          assert.deepStrictEqual(
+            call.params.config,
+            grant === "empty"
+              ? undefined
+              : {
+                  mcpServers: Object.fromEntries(
+                    Object.entries(expectedEndpoints).map(([name, url]) => [
+                      name,
+                      {
+                        transport: "streamableHttp",
+                        mode: "optional",
+                        url,
+                        headers: { Authorization: "Bearer thread-scoped-test-token" },
+                      },
+                    ]),
+                  ),
+                },
+          );
+        }
+      }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
+  it.effect("rejects dedicated Plan mode before any native session start or resume", () =>
     Effect.gen(function* () {
-      yield* (yield* McpProviderSessions.McpProviderSessions).set({
-        environmentId: EnvironmentId.make("test-environment"),
-        threadId: THREAD_ID,
-        providerSessionId: "test-session",
-        providerInstanceId: INSTANCE_ID,
-        endpoint: "http://127.0.0.1:43210/mcp",
-        authorizationHeader: "Bearer thread-scoped-test-token",
-        browserToolsAvailable: true,
-      });
       for (const nativeId of [undefined, "saved-native-session"]) {
         const fake = yield* makeFakeMuse();
-        fake.host.initializeResult.grantedCapabilities.push("sessionMcp");
-        yield* makeHarness(fake, INSTANCE_ID, nativeId);
-        const call = yield* fake.takeCall(nativeId ? "session/resume" : "session/start");
-        assert.deepStrictEqual(call.params.config, {
-          mcpServers: {
-            "t3-code": {
-              transport: "streamableHttp",
-              mode: "optional",
-              url: "http://127.0.0.1:43210/mcp",
-              headers: { Authorization: "Bearer thread-scoped-test-token" },
-            },
-          },
-        });
+        const rejected = yield* makeHarness(fake, INSTANCE_ID, nativeId, undefined, undefined, {
+          ...runtimePolicy,
+          interactionMode: "plan",
+        }).pipe(Effect.flip);
+        assert.equal(rejected._tag, "ProviderAdapterProtocolError");
+        if (rejected._tag === "ProviderAdapterProtocolError") {
+          assert.equal(rejected.detail, "Muse Code does not support dedicated Plan mode");
+        }
+        assert.isFalse(
+          fake.calls.some(
+            (call) => call.method === "session/start" || call.method === "session/resume",
+          ),
+        );
       }
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   );

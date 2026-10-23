@@ -748,6 +748,7 @@ describe("AcpAdapterV2", () => {
       const instanceId = ProviderInstanceId.make("acp-test-instruction-transitions");
       const threadId = ThreadId.make("thread-acp-instruction-transitions");
       yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        capabilities: new Set(["orchestration"]),
         environmentId: EnvironmentId.make("environment-acp-instruction-transitions"),
         threadId,
         providerSessionId: "mcp-session-acp-instruction-transitions",
@@ -2403,6 +2404,7 @@ describe("AcpAdapterV2", () => {
       const sourceThreadId = ThreadId.make("thread-acp-native-fork-source");
       const targetThreadId = ThreadId.make("thread-acp-native-fork-target");
       yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        capabilities: new Set(["orchestration"]),
         environmentId: EnvironmentId.make("environment-acp-native-fork-source"),
         threadId: sourceThreadId,
         providerSessionId: "mcp-session-acp-native-fork-source",
@@ -2412,6 +2414,7 @@ describe("AcpAdapterV2", () => {
         browserToolsAvailable: true,
       });
       yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        capabilities: new Set(["orchestration"]),
         environmentId: EnvironmentId.make("environment-acp-native-fork"),
         threadId: targetThreadId,
         providerSessionId: "mcp-session-acp-native-fork",
@@ -2783,6 +2786,7 @@ describe("AcpAdapterV2", () => {
       const instanceId = ProviderInstanceId.make("acp-test-rollback-session");
       const rollbackThreadId = ThreadId.make("thread-acp-rollback-session-target");
       yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        capabilities: new Set(["orchestration"]),
         environmentId: EnvironmentId.make("environment-acp-rollback-session-target"),
         threadId: rollbackThreadId,
         providerSessionId: "mcp-session-acp-rollback-session-target",

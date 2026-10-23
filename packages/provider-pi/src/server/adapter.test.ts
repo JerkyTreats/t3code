@@ -1463,7 +1463,7 @@ describe("PiAdapterV2", () => {
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
-  it.effect("injects the T3 MCP extension and bearer when a session exists", () =>
+  it.effect("injects each admitted T3 MCP endpoint and credential when a session exists", () =>
     Effect.gen(function* () {
       yield* (yield* McpProviderSessions.McpProviderSessions).set({
         environmentId: EnvironmentId.make("environment-pi-mcp"),
@@ -1473,6 +1473,7 @@ describe("PiAdapterV2", () => {
         endpoint: "http://127.0.0.1:43123/mcp",
         authorizationHeader: "Bearer secret-pi-token",
         browserToolsAvailable: true,
+        capabilities: new Set(["orchestration", "preview", "device", "pull-requests"]),
       });
       const fake = yield* makeFakePi;
       yield* openRuntime(fake);
@@ -1483,8 +1484,30 @@ describe("PiAdapterV2", () => {
       );
       assert.isFalse(spawn.args.includes("--no-extensions"));
       assert.isTrue(extensions.some((path) => path?.endsWith("pi-t3-mcp-extension.ts")));
-      assert.equal(spawn.env.T3_MCP_URL, "http://127.0.0.1:43123/mcp");
-      assert.equal(spawn.env.T3_MCP_BEARER_TOKEN, "secret-pi-token");
+      assert.isUndefined(spawn.env.T3_MCP_URL);
+      assert.isUndefined(spawn.env.T3_MCP_BEARER_TOKEN);
+      assert.deepEqual(JSON.parse(spawn.env.T3_MCP_SERVERS!), [
+        {
+          name: "t3-code",
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer secret-pi-token",
+        },
+        {
+          name: "t3-code-preview",
+          endpoint: "http://127.0.0.1:43123/mcp/preview",
+          authorizationHeader: "Bearer secret-pi-token",
+        },
+        {
+          name: "t3-code-device",
+          endpoint: "http://127.0.0.1:43123/mcp/device",
+          authorizationHeader: "Bearer secret-pi-token",
+        },
+        {
+          name: "t3-code-pull-requests",
+          endpoint: "http://127.0.0.1:43123/mcp/pull-requests",
+          authorizationHeader: "Bearer secret-pi-token",
+        },
+      ]);
       assert.equal(spawn.env.T3_PI_RUNTIME_MODE, "full-access");
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );

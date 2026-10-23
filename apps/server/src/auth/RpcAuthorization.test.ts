@@ -1,4 +1,6 @@
 import {
+  EnvironmentAuthorizationError,
+  ORCHESTRATION_V2_WS_METHODS,
   AuthEnvironmentMaintainScope,
   AuthDiagnosticsReadScope,
   AuthFilesystemReadScope,
@@ -29,6 +31,18 @@ import {
 import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it.each([
+    [WS_METHODS.serverRunStorageCleanup, AuthSettingsWriteScope],
+    [WS_METHODS.serverGetStorageCleanupReport, AuthOrchestrationReadScope],
+    [WS_METHODS.serverCheckOtlpEndpoint, AuthSettingsWriteScope],
+    [WS_METHODS.pullRequestsReviewGuide, AuthOrchestrationReadScope],
+    [WS_METHODS.pullRequestsGenerateReviewGuide, AuthOrchestrationOperateScope],
+    [WS_METHODS.pullRequestsReportState, AuthOrchestrationReadScope],
+    [WS_METHODS.filesystemGetMetadata, AuthFilesystemReadScope],
+  ] as const)("requires the exact scope for new upstream operation %s", (method, scope) => {
+    expect(requiredScopeForRpcMethod(method)).toBe(scope);
+  });
+
   it("declares exactly one scope for every RPC in the server group", () => {
     expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));
   });
@@ -87,6 +101,18 @@ it("requires operate permission for tool updates even alongside a read-only chec
   expect(requiredScopeForDeviceList({ updateTool: "hub" })).toBe(AuthOrchestrationOperateScope);
 });
 
+it("assigns every v2 transport operation an explicit scope", () => {
+  for (const method of Object.values(ORCHESTRATION_V2_WS_METHODS)) {
+    expect(requiredScopeForRpcMethod(method)).toBe(
+      method === ORCHESTRATION_V2_WS_METHODS.dispatchCommand ||
+        method === ORCHESTRATION_V2_WS_METHODS.launchThread ||
+        method === ORCHESTRATION_V2_WS_METHODS.stopWorkflow
+        ? AuthOrchestrationOperateScope
+        : AuthOrchestrationReadScope,
+    );
+  }
+});
+
 describe("RPC scope middleware", () => {
   const tested = [WS_METHODS.serverProbe, WS_METHODS.serverRetryResourceTelemetry] as const;
   const group = WsRpcGroup.omit(
@@ -94,6 +120,47 @@ describe("RPC scope middleware", () => {
       (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof tested)[number]> =>
         !(tested as ReadonlyArray<string>).includes(tag),
     ),
+  );
+
+  it.effect("rechecks admission on every RPC before scope checks and handlers", () =>
+    Effect.gen(function* () {
+      let admitted = true;
+      let admissionChecks = 0;
+      let handled = 0;
+      const denied = new EnvironmentAuthorizationError({
+        message: "Session admission revoked.",
+        requiredScope: AuthOrchestrationReadScope,
+      });
+      const client = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            group.toLayerHandler(WS_METHODS.serverProbe, () =>
+              Effect.sync(() => {
+                handled++;
+                return {};
+              }),
+            ),
+            group.toLayerHandler(WS_METHODS.serverRetryResourceTelemetry, () => Effect.never),
+            RpcAuthorization.layer(
+              [AuthOrchestrationReadScope],
+              Effect.suspend(() => {
+                admissionChecks++;
+                return admitted ? Effect.void : Effect.fail(denied);
+              }),
+            ),
+          ),
+        ),
+      );
+      yield* client[WS_METHODS.serverProbe]({});
+      admitted = false;
+      for (const method of tested) {
+        expect(yield* client[method]({}).pipe(Effect.flip)).toMatchObject({
+          message: denied.message,
+        });
+      }
+      expect(handled).toBe(1);
+      expect(admissionChecks).toBe(3);
+    }).pipe(Effect.scoped),
   );
 
   it.effect.each([

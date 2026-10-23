@@ -7,7 +7,10 @@ import {
   ChatAttachmentId,
   CommandId,
   EventId,
+  ProjectId,
+  ProviderInstanceId,
   RuntimeRequestId,
+  type OrchestrationV2AppThread,
   ThreadId,
   TurnItemId,
   type OrchestrationV2Command,
@@ -18,6 +21,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { emptyProjection } from "./ProjectionStore.ts";
 import { createPendingAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -26,7 +30,9 @@ import {
   OrchestratorDispatchError,
 } from "./Orchestrator.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
-import { dispatchCommand } from "./ThreadMessageIntake.ts";
+import { dispatchCommand, launchThread } from "./ThreadMessageIntake.ts";
+import * as ThreadLaunch from "./ThreadLaunchService.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 
 const layerIntakeTest = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-question-intake-",
@@ -34,6 +40,16 @@ const layerIntakeTest = ServerConfig.layerTest(process.cwd(), {
 
 const layerFailingDispatch = (captured: OrchestrationV2ServerCommand[]) =>
   Layer.mock(ThreadManagementService.ThreadManagementService)({
+    getThreadRecords: (threadId) =>
+      Effect.succeed(
+        emptyProjection({
+          id: EventId.make("synthetic-created"),
+          type: "thread.created",
+          threadId,
+          occurredAt: NOW,
+          payload: intakeThread(threadId),
+        }),
+      ),
     dispatch: (command) => {
       captured.push(command);
       return Effect.fail(
@@ -47,6 +63,29 @@ const layerFailingDispatch = (captured: OrchestrationV2ServerCommand[]) =>
   });
 
 const NOW = DateTime.makeUnsafe("2026-09-13T00:00:00.000Z");
+const intakeThread = (threadId: ThreadId): OrchestrationV2AppThread => ({
+  id: threadId,
+  projectId: ProjectId.make("synthetic-intake-project"),
+  createdBy: "user",
+  creationSource: "web",
+  title: "Synthetic intake",
+  providerInstanceId: ProviderInstanceId.make("codex"),
+  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "synthetic-model" },
+  runtimeMode: "full-access",
+  interactionMode: "default",
+  branch: null,
+  worktreePath: null,
+  activeProviderThreadId: null,
+  lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+  forkedFrom: null,
+  createdAt: NOW,
+  updatedAt: NOW,
+  archivedAt: null,
+  settledOverride: null,
+  settledAt: null,
+  lastVisitedAt: null,
+  deletedAt: null,
+});
 
 const answeredRespondEvents = (input: {
   readonly threadId: ThreadId;
@@ -192,6 +231,16 @@ it.effect("releases claimed copies when the command was already rejected", () =>
     }).pipe(
       Effect.provide(
         Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadRecords: (threadId) =>
+            Effect.succeed(
+              emptyProjection({
+                id: EventId.make("synthetic-created"),
+                type: "thread.created",
+                threadId,
+                occurredAt: NOW,
+                payload: intakeThread(threadId),
+              }),
+            ),
           dispatch: (command) =>
             Effect.fail(
               new OrchestratorCommandPreviouslyRejectedError({
@@ -259,6 +308,16 @@ it.effect("releases claimed copies when dispatch replays an earlier accepted res
     }).pipe(
       Effect.provide(
         Layer.mock(ThreadManagementService.ThreadManagementService)({
+          getThreadRecords: (threadId) =>
+            Effect.succeed(
+              emptyProjection({
+                id: EventId.make("synthetic-created"),
+                type: "thread.created",
+                threadId,
+                occurredAt: NOW,
+                payload: intakeThread(threadId),
+              }),
+            ),
           dispatch: () => Effect.succeed({ sequence: 1, storedEvents }),
         }),
       ),
@@ -357,5 +416,58 @@ it.effect("a retried response re-claims the preserved pending uploads", () =>
         entry.startsWith("thread-retry-"),
       ),
     ).toHaveLength(2);
+  }).pipe(Effect.provide(layerIntakeTest)),
+);
+
+it.effect("allocates a thread identity before claiming initial uploaded attachments", () =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig.ServerConfig;
+    const pendingId = ChatAttachmentId.make(createPendingAttachmentId()!);
+    NodeFS.writeFileSync(
+      NodePath.join(config.attachmentsDir, `${pendingId}.png`),
+      new Uint8Array([1, 2, 3]),
+    );
+    const captured: ThreadLaunch.ThreadLaunchInput[] = [];
+    yield* launchThread({
+      commandId: CommandId.make("synthetic-upload-launch"),
+      projectId: ProjectId.make("synthetic-launch-project"),
+      title: "Synthetic upload launch",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "synthetic-model" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      workspaceStrategy: { type: "root" },
+      createdBy: "user",
+      creationSource: "web",
+      initialMessage: {
+        text: "Inspect this image",
+        attachments: [
+          {
+            type: "image",
+            id: pendingId,
+            name: "synthetic.png",
+            mimeType: "image/png",
+            sizeBytes: 3,
+          },
+        ],
+      },
+    }).pipe(
+      Effect.provide([
+        Layer.mock(ThreadLaunch.ThreadLaunchService)({
+          launch: (input) => {
+            captured.push(input);
+            return Effect.die("Stop after launch intake");
+          },
+        }),
+        IdAllocator.layer,
+      ]),
+      Effect.exit,
+    );
+    expect(captured).toHaveLength(1);
+    const input = captured[0]!;
+    expect(input.threadId).toBeDefined();
+    const attachment = input.initialMessage!.attachments[0]!;
+    expect(attachment.id).not.toBe(pendingId);
+    const path = resolveAttachmentPath({ attachmentsDir: config.attachmentsDir, attachment });
+    expect(NodeFS.readFileSync(path!)).toEqual(Buffer.from([1, 2, 3]));
   }).pipe(Effect.provide(layerIntakeTest)),
 );

@@ -469,6 +469,26 @@ const readPageMetrics = async (cdp: CDPSession) => {
   );
 };
 
+// A fresh visible document can be loaded before its first composited frame.
+// Give it a paint opportunity before raw CDP capture. Hidden guests may suspend
+// animation callbacks, so they use their existing surface without waiting.
+const CAPTURE_READY_SCRIPT = `(() => {
+  if (document.visibilityState !== "visible") return true;
+  return new Promise(resolve => {
+    let frame;
+    const finish = () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("visibilitychange", visibilityChanged);
+      resolve(true);
+    };
+    const visibilityChanged = () => {
+      if (document.visibilityState !== "visible") finish();
+    };
+    document.addEventListener("visibilitychange", visibilityChanged);
+    frame = requestAnimationFrame(() => { frame = requestAnimationFrame(finish); });
+  });
+})()`;
+
 // Scaled captures repaint live screencasts, so callers pause them. Clips use document offsets.
 export const captureViewport = async (
   page: Page,
@@ -481,6 +501,10 @@ export const captureViewport = async (
     readonly offset?: { readonly x: number; readonly y: number } | undefined;
   },
 ) => {
+  const ready = await page.waitForFunction(CAPTURE_READY_SCRIPT, undefined, {
+    timeout: DEFAULT_TIMEOUT_MS,
+  });
+  await ready.dispose();
   let clip;
   if (options.scale < 1) {
     const viewport = options.viewport ?? page.viewportSize() ?? { width: 1280, height: 800 };

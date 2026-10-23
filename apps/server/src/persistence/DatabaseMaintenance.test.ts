@@ -31,7 +31,7 @@ it.layer(DatabaseMaintenance.layer.pipe(Layer.provideMerge(NodeServices.layer)))
       }).pipe(Effect.scoped),
     );
 
-    it.effect("reports and deletes only the database from before 0.1.0", () =>
+    it.effect("reports the legacy rollback database and offers no way to delete it", () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
@@ -53,20 +53,9 @@ it.layer(DatabaseMaintenance.layer.pipe(Layer.provideMerge(NodeServices.layer)))
         }).pipe(Effect.provide(openLegacy));
         assert.isAbove((yield* maintenance.inspect(dbPath)).legacyDatabaseBytes ?? 0, 0);
 
-        // A version before 0.1.0 still running against it keeps it.
-        const refused = yield* Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          yield* sql`SELECT value FROM v1_data`;
-          return yield* Effect.flip(maintenance.removeLegacyDatabase(dbPath));
-        }).pipe(Effect.provide(openLegacy));
-        assert.equal(refused._tag, "DatabaseInUseError");
+        // The fork keeps state.sqlite as the v2 rollback source (PERSIST.D7).
+        assert.notProperty(maintenance, "removeLegacyDatabase");
         assert.isTrue(yield* fs.exists(legacy));
-
-        yield* maintenance.removeLegacyDatabase(dbPath);
-        assert.isFalse(yield* fs.exists(legacy));
-        assert.isFalse(yield* fs.exists(`${legacy}-wal`));
-        assert.isTrue(yield* fs.exists(dbPath));
-        assert.isNull((yield* maintenance.inspect(dbPath)).legacyDatabaseBytes);
       }).pipe(Effect.scoped),
     );
 

@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
+  AuthClientId,
   AuthSessionId,
   EnvironmentId,
   ProjectId,
@@ -15,6 +16,7 @@ import {
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
@@ -317,6 +319,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(Orchestrator.OrchestratorV2)({}),
   Layer.mock(OtlpEndpointCheck.OtlpEndpointCheck)({}),
   Layer.mock(PairingGrantStore.PairingGrantStore)({}),
+  IdAllocator.layer,
   Layer.mock(PortScanner.PortDiscovery)({}),
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({}),
@@ -460,7 +463,9 @@ it.effect(
           layerWsRpc(
             {
               sessionId: AuthSessionId.make("config-test"),
+              clientId: AuthClientId.make("config-test"),
               subject: "config-test",
+              authorityClass: "client",
               method: "browser-session-cookie",
               scopes: [],
             },

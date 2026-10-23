@@ -241,23 +241,17 @@ export const layer: Layer.Layer<
      * turn-item.updated stays intact because replay assigns positions on first write.
      */
     const compactEventStore = Effect.gen(function* () {
-      const bounds = yield* sql<{
-        readonly event_sequence: number;
-        readonly receipt_row_id: number;
-      }>`
-        SELECT
-          COALESCE((SELECT MAX(sequence) FROM orchestration_events), 0) AS event_sequence,
-          COALESCE((SELECT MAX(rowid) FROM orchestration_command_receipts), 0) AS receipt_row_id
+      const bounds = yield* sql<{ readonly event_sequence: number }>`
+        SELECT COALESCE(MAX(sequence), 0) AS event_sequence FROM orchestration_events
       `;
       let throughSequence = bounds[0]?.event_sequence ?? 0;
-      let throughReceiptRowId = bounds[0]?.receipt_row_id ?? 0;
       const retainedThreadIds = new Set<string>();
       const retainedReadStateThreadIds = new Set<string>();
       // Per key: the lowest sequence seen so far after the newest. It is
       // deleted once an even older event turns up and kept otherwise.
       const oldestCandidateByEntityKey = new Map<string, number | null>();
       let deletedEventCount = 0;
-      let deletedReceiptCount = 0;
+      const deletedReceiptCount = 0;
 
       while (throughSequence > 0) {
         const rows = yield* sql<{
@@ -267,7 +261,6 @@ export const layer: Layer.Layer<
           readonly stream_id: string;
           readonly event_type: string;
           readonly entity_id: string | null;
-          readonly imported_legacy_thread: number;
         }>`
           SELECT
             event.sequence,
@@ -285,16 +278,7 @@ export const layer: Layer.Layer<
                 json_extract(event.payload_json, '$.repository'),
                 json_extract(event.payload_json, '$.number'))
               ELSE NULL
-            END AS entity_id,
-            CASE
-              WHEN event.application_event_version = 1 AND event.aggregate_kind = 'thread'
-              THEN EXISTS (
-                SELECT 1 FROM orchestration_v2_legacy_imports AS legacy_import
-                WHERE legacy_import.thread_id = event.stream_id
-                  AND legacy_import.transcript_imported_at IS NOT NULL
-              )
-              ELSE 0
-            END AS imported_legacy_thread
+            END AS entity_id
           FROM orchestration_events AS event
           WHERE event.sequence <= ${throughSequence}
           ORDER BY event.sequence DESC
@@ -302,9 +286,9 @@ export const layer: Layer.Layer<
         `.pipe(NodeSqliteClient.readOnly);
         const obsolete: number[] = [];
         for (const row of rows) {
-          if (row.imported_legacy_thread === 1) {
-            obsolete.push(row.sequence);
-          } else if (row.application_event_version === 2) {
+          // Imported transcripts do not cover legacy checkpoints, approvals,
+          // plans or fork history. Keep the original events as recovery evidence.
+          if (row.application_event_version === 2) {
             if (
               row.aggregate_kind === "thread" &&
               supersedableThreadEventTypes.has(row.event_type)
@@ -353,41 +337,8 @@ export const layer: Layer.Layer<
         if (rows.length < COMPACTION_PAGE_SIZE) break;
       }
 
-      while (throughReceiptRowId > 0) {
-        const rows = yield* sql<{
-          readonly row_id: number;
-          readonly command_id: string;
-          readonly imported_legacy_thread: number;
-        }>`
-          SELECT
-            receipt.rowid AS row_id,
-            receipt.command_id,
-            CASE
-              WHEN receipt.command_type = 'legacy' AND receipt.aggregate_kind = 'thread'
-              THEN EXISTS (
-                SELECT 1 FROM orchestration_v2_legacy_imports AS legacy_import
-                WHERE legacy_import.thread_id = receipt.aggregate_id
-                  AND legacy_import.transcript_imported_at IS NOT NULL
-              )
-              ELSE 0
-            END AS imported_legacy_thread
-          FROM orchestration_command_receipts AS receipt
-          WHERE receipt.rowid <= ${throughReceiptRowId}
-          ORDER BY receipt.rowid DESC
-          LIMIT ${COMPACTION_PAGE_SIZE}
-        `.pipe(NodeSqliteClient.readOnly);
-        const obsolete = rows
-          .filter((row) => row.imported_legacy_thread === 1)
-          .map((row) => row.command_id);
-        yield* Effect.yieldNow;
-        if (obsolete.length > 0) {
-          yield* sql`DELETE FROM orchestration_command_receipts WHERE command_id IN ${sql.in(obsolete)}`;
-          deletedReceiptCount += obsolete.length;
-          yield* Effect.yieldNow;
-        }
-        throughReceiptRowId = (rows.at(-1)?.row_id ?? 1) - 1;
-        if (rows.length < COMPACTION_PAGE_SIZE) break;
-      }
+      // Legacy receipts include fork command fingerprints and durable outcomes.
+      // Transcript import is not evidence that those receipts can be removed.
 
       const freelistRows = yield* sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`;
       const pageSizeRows = yield* sql<{ readonly page_size: number }>`PRAGMA page_size`;

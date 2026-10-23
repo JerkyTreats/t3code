@@ -80,6 +80,7 @@ it.effect.each(["expired", "resolved"] as const)(
         assert.deepEqual(respondToRuntimeRequest.mock.calls, [
           [
             {
+              threadId,
               requestId,
               decision: "decline",
               feedback: "Use an explicit path.",

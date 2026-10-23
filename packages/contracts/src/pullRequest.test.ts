@@ -59,17 +59,23 @@ describe("PullRequestListResult", () => {
   it("separates Forgejo HTTP ports while preserving other provider host identities", () => {
     const identity = {
       canonicalKey: "forge.example/team/repo",
-      locator: { remoteUrl: "http://forge.example:3000/team/repo.git" },
+      locator: { remoteName: "origin", remoteUrl: "http://forge.example:3000/team/repo.git" },
     };
     expect(pullRequestHostOf(identity, SourceControlProviderKind.make("forgejo"))).toBe(
       "forge.example:3000",
     );
     expect(pullRequestHostOf(identity, SourceControlProviderKind.make("gitlab"))).toBe(
-      "forge.example",
+      "forge.example:3000",
     );
     expect(
       pullRequestHostOf(
-        { ...identity, locator: { remoteUrl: "ssh://git@forge.example:2222/team/repo.git" } },
+        {
+          ...identity,
+          locator: {
+            remoteName: "origin",
+            remoteUrl: "ssh://git@forge.example:2222/team/repo.git",
+          },
+        },
         SourceControlProviderKind.make("forgejo"),
       ),
     ).toBe("forge.example");
@@ -85,6 +91,53 @@ describe("PullRequestListResult", () => {
     const decoded = Schema.decodeSync(codec)(Schema.encodeUnknownSync(codec)(LIST_RESULT));
 
     expect(decoded).toStrictEqual(LIST_RESULT);
+  });
+});
+
+describe("pullRequestHostOf", () => {
+  it("preserves the exact origin port for self-hosted GitHub", () => {
+    expect(
+      pullRequestHostOf(
+        {
+          canonicalKey: "github.example.test/acme/web",
+          locator: {
+            remoteName: "origin",
+            remoteUrl: "https://github.example.test:8443/acme/web.git",
+          },
+        },
+        SourceControlProviderKind.make("github"),
+      ),
+    ).toBe("github.example.test:8443");
+  });
+
+  it("preserves the exact origin port for self-hosted GitLab", () => {
+    expect(
+      pullRequestHostOf(
+        {
+          canonicalKey: "gitlab.example.test/acme/web",
+          locator: {
+            remoteName: "origin",
+            remoteUrl: "https://gitlab.example.test:9443/acme/web.git",
+          },
+        },
+        SourceControlProviderKind.make("gitlab"),
+      ),
+    ).toBe("gitlab.example.test:9443");
+  });
+
+  it("does not let a non-origin locator override the canonical host", () => {
+    expect(
+      pullRequestHostOf(
+        {
+          canonicalKey: "github.com/acme/web",
+          locator: {
+            remoteName: "upstream",
+            remoteUrl: "https://github.example.test:8443/acme/web.git",
+          },
+        },
+        SourceControlProviderKind.make("github"),
+      ),
+    ).toBe("github.com");
   });
 });
 

@@ -3,12 +3,14 @@ import {
   ComposerContextId,
   EventId,
   type OrchestrationMessageContext,
+  OrchestrationV2ThreadShellJson,
   ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Statement from "effect/sql/Statement";
 
@@ -19,6 +21,9 @@ import * as EventStore from "../EventStore.ts";
 import * as LegacyV1ThreadImporter from "./LegacyV1ThreadImporter.ts";
 import * as ProjectionMaintenance from "../ProjectionMaintenance.ts";
 import * as ProjectionStore from "../ProjectionStore.ts";
+import { projectThreadProjectionForWire } from "../WireProjection.ts";
+
+const encodeThreadShellJson = Schema.encodeSync(OrchestrationV2ThreadShellJson);
 
 const layerDatabase = SqlitePersistence.layerMemory;
 const layerEventStoreProvided = EventStore.layer.pipe(Layer.provideMerge(layerDatabase));
@@ -562,7 +567,7 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
         INSERT INTO projection_threads (
           thread_id, project_id, title, model_selection_json, runtime_mode,
           interaction_mode, created_at, updated_at, pinned_at, pin_order_key,
-          linked_pull_request_json, branch_pull_request_json, active_order_key
+          linked_pull_request_json, branch_pull_request_json, active_order_key, creation_surface
         ) VALUES (
           ${threadId},
           'project:legacy-metadata-upgrade',
@@ -576,7 +581,8 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
           'm',
           '{"projectId":"project:legacy-metadata-upgrade","repository":"pingdotgg/t3code","number":9000,"url":"https://github.com/pingdotgg/t3code/pull/9000"}',
           '{"projectId":"project:legacy-metadata-upgrade","repository":"pingdotgg/t3code","number":9001,"url":"https://github.com/pingdotgg/t3code/pull/9001"}',
-          'az'
+          'az',
+          'thread'
         )
       `;
       yield* importer.reconcileShells;
@@ -596,6 +602,7 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
       };
       delete previousRepairThread.branchPullRequest;
       delete previousRepairThread.activeOrderKey;
+      delete previousRepairThread.creationSurface;
       yield* eventSink.write({
         events: [
           {
@@ -621,6 +628,7 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
       assert.deepStrictEqual(repaired.thread.pullRequests, []);
       assert.equal(repaired.thread.branchPullRequest?.number, 9001);
       assert.equal(repaired.thread.activeOrderKey, "az");
+      assert.equal(repaired.thread.creationSurface, "thread");
 
       const eventsBeforeRetry = yield* sql<{ readonly event_id: string }>`
         SELECT event_id
@@ -652,6 +660,102 @@ it.layer(layerTest)("LegacyV1ThreadImporter", (it) => {
         ORDER BY sequence
       `;
       assert.deepStrictEqual(eventsAfterRestart, eventsBeforeRetry);
+    }),
+  );
+  it.effect("preserves authored creation surfaces through import, reopen, wire and rebuild", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const importer = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
+      const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at
+        ) VALUES (
+          'project:creation-surfaces', 'Creation surface fixtures', '/tmp/synthetic-project',
+          '[]', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+        )
+      `;
+      for (const surface of [null, "web", "desktop", "mobile", "cli", "thread"] as const) {
+        const threadId = ThreadId.make(`thread:creation-surface:${surface ?? "historical"}`);
+        yield* sql`
+          INSERT INTO projection_threads (
+            thread_id, project_id, title, model_selection_json, runtime_mode,
+            interaction_mode, created_at, updated_at, creation_surface
+          ) VALUES (
+            ${threadId}, 'project:creation-surfaces', 'Creation surface fixture',
+            '{"instanceId":"codex","model":"gpt-5.4"}', 'full-access', 'default',
+            '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', ${surface}
+          )
+        `;
+      }
+      assert.equal((yield* importer.reconcileShells).importedThreadCount, 6);
+      const eventSink = yield* EventSink.EventSinkV2;
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      for (const surface of [null, "web", "desktop", "mobile", "cli", "thread"] as const) {
+        const importedId = ThreadId.make(`thread:creation-surface:${surface ?? "historical"}`);
+        const imported = yield* projectionStore.getThreadProjection(importedId);
+        const nativeId = ThreadId.make(`thread:native-surface:${surface ?? "historical"}`);
+        yield* eventSink.write({
+          events: [
+            {
+              id: EventId.make(`event:native-surface:${surface ?? "historical"}`),
+              type: "thread.created",
+              threadId: nativeId,
+              occurredAt: imported.thread.createdAt,
+              payload: {
+                ...imported.thread,
+                id: nativeId,
+                createdBy: "user",
+                creationSource: "web",
+                historyOrigin: "native",
+                lineage: {
+                  parentThreadId: null,
+                  relationshipToParent: null,
+                  rootThreadId: nativeId,
+                },
+              },
+            },
+          ],
+        });
+      }
+      const checkSurfaces = Effect.gen(function* () {
+        const store = yield* ProjectionStore.ProjectionStoreV2;
+        const shells = yield* store.getShellSnapshot();
+        for (const surface of [null, "web", "desktop", "mobile", "cli", "thread"] as const) {
+          const threadId = ThreadId.make(`thread:creation-surface:${surface ?? "historical"}`);
+          const projection = yield* store.getThreadProjection(threadId);
+          assert.equal(projection.thread.creationSurface, surface ?? undefined);
+          assert.equal(
+            projectThreadProjectionForWire(projection).thread.creationSurface,
+            surface ?? undefined,
+          );
+          const shell = shells.threads.find((thread) => thread.id === threadId)!;
+          assert.equal(shell.creationSurface, surface ?? undefined);
+          const wireShell = encodeThreadShellJson(shell);
+          assert.equal(wireShell.creationSurface, surface ?? undefined);
+          assert.equal(
+            ProjectionStore.threadShellFromProjection(projection).creationSurface,
+            surface ?? undefined,
+          );
+          const nativeId = ThreadId.make(`thread:native-surface:${surface ?? "historical"}`);
+          const native = yield* store.getThreadProjection(nativeId);
+          assert.equal(native.thread.creationSurface, surface ?? undefined);
+          assert.equal(
+            shells.threads.find((thread) => thread.id === nativeId)?.creationSurface,
+            surface ?? undefined,
+          );
+          assert.equal(
+            projectThreadProjectionForWire(native).thread.creationSurface,
+            surface ?? undefined,
+          );
+        }
+      });
+      yield* checkSurfaces;
+      // A fresh store instance reads classification from persisted JSON, not an in-memory cache.
+      yield* checkSurfaces.pipe(Effect.provide(ProjectionStore.layer));
+      assert.isTrue((yield* maintenance.rebuild).valid);
+      yield* checkSurfaces;
+      assert.equal((yield* importer.reconcileShells).importedThreadCount, 0);
     }),
   );
 });

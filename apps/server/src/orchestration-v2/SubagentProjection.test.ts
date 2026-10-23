@@ -49,6 +49,7 @@ function makeParentThread(): OrchestrationV2AppThread {
   return {
     createdBy: "user",
     creationSource: "web",
+    creationSurface: "thread",
     id: parentThreadId,
     projectId: ProjectId.make("project:subagent-snooze"),
     title: "Snoozed parent",
@@ -106,6 +107,7 @@ it("keeps a subagent child awake when its parent thread is snoozed", () => {
   assert.deepEqual(childThread.modelSelection, childModelSelection);
   assert.equal(childThread.activeProviderThreadId, childProviderThreadId);
   assert.isUndefined(childThread.historyOrigin);
+  assert.isUndefined(childThread.creationSurface);
   assert.deepEqual(childThread.lineage, {
     parentThreadId,
     relationshipToParent: "subagent",
@@ -115,6 +117,23 @@ it("keeps a subagent child awake when its parent thread is snoozed", () => {
     type: "node",
     nodeId: parentNodeId,
   });
+});
+
+it("uses only explicitly admitted creation surface for app-owned subagents", () => {
+  const childThread = makeSubagentChildThread({
+    parentThread: makeParentThread(),
+    childThreadId,
+    parentNodeId: NodeId.make("node:subagent-parent"),
+    activeProviderThreadId: null,
+    providerInstanceId: childProviderInstanceId,
+    modelSelection: childModelSelection,
+    title: "Desktop child",
+    now: childCreatedAt,
+    createdBy: "user",
+    creationSource: "web",
+    creationSurface: "desktop",
+  });
+  assert.equal(childThread.creationSurface, "desktop");
 });
 
 function taskFixture() {

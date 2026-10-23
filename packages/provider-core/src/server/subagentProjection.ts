@@ -1,4 +1,5 @@
 import type {
+  ClientSurface,
   EventId,
   MessageId,
   ModelSelection,
@@ -19,6 +20,7 @@ import type {
   TurnItemId,
 } from "@t3tools/contracts";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
+import { threadCreationMetadata } from "./threadCreationMetadata.ts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import { isOrchestrationV2WorkActive } from "@t3tools/contracts";
@@ -53,11 +55,13 @@ export function makeSubagentChildThread(input: {
   readonly now: DateTime.Utc;
   readonly createdBy: OrchestrationV2Actor;
   readonly creationSource: OrchestrationV2CreationSource;
+  readonly creationSurface?: ClientSurface;
 }): OrchestrationV2AppThread {
+  // A subagent belongs to its parent through lineage, never through sidebar nesting.
+  const { nestedUnderThreadId: _nesting, ...parentThread } = input.parentThread;
   return {
-    ...input.parentThread,
-    createdBy: input.createdBy,
-    creationSource: input.creationSource,
+    ...parentThread,
+    ...threadCreationMetadata(input),
     id: input.childThreadId,
     title: input.title,
     linkedPullRequest: null,

@@ -20,7 +20,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 
-import packageJson from "../../package.json" with { type: "json" };
+import { serverVersion } from "../serverVersion.ts";
 import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as HtmlRender from "../htmlRender/HtmlRender.ts";
@@ -36,6 +36,7 @@ import {
   toolOutcome,
 } from "../telemetry/ProviderDimensions.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
+import * as McpEndpointAdmission from "./McpEndpointAdmission.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
@@ -153,9 +154,13 @@ const normalizeMcpHttpResponse = (
 // Session tokens are `<payload>.<signature>`; registry tokens are a bare base64url secret.
 const looksLikeProviderToken = (token: string) => token.length > 0 && !token.includes(".");
 
-const makeMcpAuthMiddleware = Effect.gen(function* () {
+const makeMcpAuthMiddleware = Effect.fn("McpHttpServer.makeAuthMiddleware")(function* (
+  endpoint: McpEndpointAdmission.McpEndpoint,
+) {
   const registry = yield* McpSessionRegistry.McpSessionRegistry;
-  const clients = yield* Effect.serviceOption(McpClientAuthenticator);
+  const clients = McpEndpointAdmission.acceptsCallerSource(endpoint, "oauth")
+    ? yield* Effect.serviceOption(McpClientAuthenticator)
+    : Option.none<McpClientAuthenticator["Service"]>();
   return Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const authorization = request.headers.authorization;
@@ -163,12 +168,17 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
       authorization?.startsWith("Bearer ") === true
         ? authorization.slice("Bearer ".length).trim()
         : "";
+    const registryInvocation = yield* registry.resolve(token);
+    const source = registryInvocation === undefined ? "oauth" : "registry";
     const invocation =
-      (yield* registry.resolve(token)) ??
+      registryInvocation ??
       (Option.isSome(clients) && token.length > 0
         ? yield* clients.value.authenticate(request)
         : undefined);
     if (!invocation) {
+      // Without this the only symptom of a dead credential is the agent
+      // quietly losing the whole `t3-code` toolkit for the rest of its
+      // session, with nothing on the server to explain why.
       yield* Effect.logWarning("rejected MCP request with an unusable credential", {
         reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
       });
@@ -178,16 +188,32 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
         offerOAuth: Option.isSome(clients) && !looksLikeProviderToken(token),
       });
     }
+    const admission = McpEndpointAdmission.admit({
+      endpoint,
+      source,
+      capabilities: invocation.capabilities,
+    });
+    if (admission === "caller-source-denied")
+      return unauthorized({ request, presentedToken: token.length > 0, offerOAuth: false });
+    if (admission === "capability-denied")
+      return HttpServerResponse.jsonUnsafe(
+        {
+          error: "mcp_capability_denied",
+          message: "This MCP credential does not grant this endpoint.",
+        },
+        { status: 403, headers: { "cache-control": "no-store" } },
+      );
     return yield* httpEffect.pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
       Effect.map(normalizeMcpHttpResponse),
     );
   }) satisfies McpAuthMiddleware;
-}).pipe(Effect.withSpan("McpHttpServer.makeAuthMiddleware"));
+});
 
-const layerMcpAuthMiddleware = HttpRouter.middleware<{
-  provides: McpInvocationContext.McpInvocationContext;
-}>()(makeMcpAuthMiddleware).layer;
+const layerMcpAuthMiddleware = (endpoint: McpEndpointAdmission.McpEndpoint) =>
+  HttpRouter.middleware<{
+    provides: McpInvocationContext.McpInvocationContext;
+  }>()(makeMcpAuthMiddleware(endpoint)).layer;
 
 /**
  * Claude Code moves an MCP result above its output limit to a file and hands
@@ -1057,24 +1083,45 @@ export const layerDeviceToolkit = Layer.mergeAll(
   layerDeviceScreenshotRegistration,
 );
 
-export const layerMcpTransport = McpServer.layerHttp({
-  name: "T3 Code",
-  version: packageJson.version,
-  path: "/mcp",
-  protocols: [McpProtocol.v2025_06_18],
-  allowSessionTermination: true,
-}).pipe(Layer.provide(layerMcpAuthMiddleware));
+const transport = (name: string, path: McpEndpointAdmission.McpEndpoint) =>
+  McpServer.layerHttp({
+    name,
+    version: serverVersion,
+    path,
+    protocols: [McpProtocol.v2025_06_18],
+    allowSessionTermination: true,
+  }).pipe(Layer.provide(layerMcpAuthMiddleware(path)));
 
+export const layerMcpTransport = transport("T3 Code", "/mcp");
+export const layerPreviewHttp = Layer.fresh(
+  Layer.mergeAll(layerPreviewToolkit, layerPreviewControlsRegistration).pipe(
+    Layer.provideMerge(transport("T3 Code Preview", "/mcp/preview")),
+  ),
+);
+export const layerDeviceHttp = Layer.fresh(
+  layerDeviceToolkit.pipe(Layer.provideMerge(transport("T3 Code Device", "/mcp/device"))),
+);
+export const layerPullRequestsHttp = Layer.fresh(
+  layerPullRequestsToolkit.pipe(
+    Layer.provideMerge(transport("T3 Code Pull Requests", "/mcp/pull-requests")),
+  ),
+);
+export const layerOrchestratorHttp = Layer.fresh(
+  Layer.mergeAll(
+    layerOrchestratorToolkit,
+    layerThreadToolkit,
+    layerAttachmentToolkit,
+    layerProjectRegistration,
+    layerEnvironmentToolkit,
+    layerWorktreeToolkitRegistration,
+    layerHtmlToolkit,
+  ).pipe(Layer.provideMerge(layerMcpTransport)),
+);
+
+/** Each endpoint owns its registry and requires its independently admitted capability. */
 export const layer = Layer.mergeAll(
-  layerPreviewToolkit,
-  layerOrchestratorToolkit,
-  layerThreadToolkit,
-  layerAttachmentToolkit,
-  layerProjectRegistration,
-  layerEnvironmentToolkit,
-  layerPreviewControlsRegistration,
-  layerWorktreeToolkitRegistration,
-  layerPullRequestsToolkit,
-  layerDeviceToolkit,
-  layerHtmlToolkit,
-).pipe(Layer.provideMerge(layerMcpTransport));
+  layerOrchestratorHttp,
+  layerPreviewHttp,
+  layerDeviceHttp,
+  layerPullRequestsHttp,
+);

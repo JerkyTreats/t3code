@@ -13,6 +13,12 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Scope from "effect/Scope";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
+import * as Ref from "effect/Ref";
+import * as Queue from "effect/Queue";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { getMcpProviderServerAttachments } from "@t3tools/provider-core/server/mcpSession";
+import { makeAcpMcpOverAcpBridge } from "@t3tools/provider-acp/server/mcpOverAcpBridge";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
 import { describe, expect } from "vite-plus/test";
@@ -25,6 +31,16 @@ const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const mockAgentPath = NodePath.join(__dirname, "../../../scripts/acp-mock-agent.ts");
 const mockAgentCommand = "node";
 const mockAgentArgs = [mockAgentPath];
+const McpTestResult = Schema.Struct({
+  ok: Schema.Boolean,
+  result: Schema.optional(Schema.Unknown),
+  error: Schema.optional(Schema.String),
+});
+const decodeMcpTestResult = Schema.decodeUnknownEffect(McpTestResult);
+const decodeMcpTestConnection = Schema.decodeUnknownEffect(
+  Schema.Struct({ connectionId: Schema.String }),
+);
+
 const mockRuntimeOptions = {
   spawn: { command: mockAgentCommand, args: mockAgentArgs },
   cwd: process.cwd(),
@@ -494,6 +510,134 @@ describe("AcpSessionRuntime", () => {
       Effect.provide(NodeServices.layer),
     );
   });
+
+  it.effect(
+    "routes independently admitted MCP servers over negotiated ACP and closes their HTTP sessions",
+    () =>
+      Effect.gen(function* () {
+        const requests: Array<{ url: string; method: string; headers: Headers }> = [];
+        const requestEvents: Array<AcpSessionRuntime.AcpSessionRequestLogEvent> = [];
+        const attachments = getMcpProviderServerAttachments({
+          environmentId: EnvironmentId.make("test"),
+          threadId: ThreadId.make("test"),
+          providerSessionId: "synthetic",
+          providerInstanceId: ProviderInstanceId.make("synthetic"),
+          endpoint: "http://synthetic/mcp",
+          previewEndpoint: "http://synthetic/preview",
+          pullRequestsEndpoint: "http://synthetic/pr",
+          authorizationHeader: "Bearer synthetic-read-only",
+          browserToolsAvailable: true,
+          capabilities: new Set(["orchestration", "preview", "pull-requests"]),
+        });
+        yield* Effect.gen(function* () {
+          const ids = yield* Ref.make(0);
+          const bridge = yield* makeAcpMcpOverAcpBridge({
+            servers: attachments,
+            allocateConnectionId: Ref.updateAndGet(ids, (id) => id + 1).pipe(Effect.map(String)),
+            fetchImplementation: async (url, init) => {
+              const method = init?.method ?? "POST";
+              requests.push({ url, method, headers: new Headers(init?.headers) });
+              if (method === "DELETE") return new Response(null, { status: 204 });
+              const request: { id: number } = JSON.parse(String(init?.body));
+              return new Response(
+                JSON.stringify({
+                  jsonrpc: "2.0",
+                  id: request.id,
+                  result: { protocolVersion: "2025-06-18", endpoint: url },
+                }),
+                {
+                  headers: {
+                    "content-type": "application/json",
+                    "mcp-session-id": `session:${url}`,
+                  },
+                },
+              );
+            },
+          });
+          yield* Effect.addFinalizer(() => bridge.dispose);
+          const runtime = yield* AcpSessionRuntime.make({
+            ...mockRuntimeOptions,
+            spawn: { ...mockRuntimeOptions.spawn, env: { T3_ACP_MCP_ACP: "1" } },
+            mcpServers: [{ name: "stdio-fallback", command: "unused", args: [], env: [] }],
+            acpMcpServers: attachments.map((server) => ({
+              type: "acp",
+              name: server.name,
+              serverId: server.name,
+            })),
+            requestLogger: (event) =>
+              Effect.sync(() => {
+                requestEvents.push(event);
+              }),
+          });
+          const mapError = Effect.mapError((error: Error) =>
+            EffectAcpErrors.AcpRequestError.internalError(error.message),
+          );
+          yield* runtime.handleMcpConnect((request) => bridge.connect(request).pipe(mapError));
+          yield* runtime.handleMcpMessage((request) => bridge.message(request).pipe(mapError));
+          yield* runtime.handleMcpDisconnect((request) =>
+            bridge.disconnect(request).pipe(mapError),
+          );
+          const replies = yield* Queue.unbounded<typeof McpTestResult.Type>();
+          yield* runtime.handleUnknownExtNotification((method, params) =>
+            method === "_test/mcp-result"
+              ? decodeMcpTestResult(params).pipe(
+                  Effect.flatMap((reply) => Queue.offer(replies, reply)),
+                  Effect.asVoid,
+                  Effect.mapError((cause) =>
+                    EffectAcpErrors.AcpRequestError.internalError(String(cause)),
+                  ),
+                )
+              : Effect.void,
+          );
+          const callMcp = Effect.fnUntraced(function* (
+            operation: string,
+            params: Record<string, string>,
+          ) {
+            yield* runtime.request(`_test/mcp-${operation}`, params);
+            return yield* Queue.take(replies);
+          });
+          yield* runtime.start();
+          expect(
+            requestEvents.find(
+              (event) => event.method === "session/new" && event.status === "started",
+            )?.payload,
+          ).toMatchObject({
+            mcpServers: attachments.map((server) => ({
+              type: "acp",
+              name: server.name,
+              serverId: server.name,
+            })),
+          });
+          for (const server of attachments) {
+            const admitted = yield* callMcp("connect", { serverId: server.name });
+            expect(admitted.ok).toBe(true);
+            const connected = yield* decodeMcpTestConnection(admitted.result);
+            expect(yield* callMcp("message", { ...connected, method: "initialize" })).toMatchObject(
+              { ok: true, result: { endpoint: server.endpoint } },
+            );
+            if (server.name === "t3-code")
+              expect((yield* callMcp("disconnect", connected)).ok).toBe(true);
+          }
+          expect(yield* callMcp("connect", { serverId: "t3-code-device" })).toMatchObject({
+            ok: false,
+          });
+          expect(yield* Ref.get(ids)).toBe(attachments.length);
+        }).pipe(Effect.scoped);
+        expect(
+          requests.filter((request) => request.method === "POST").map((request) => request.url),
+        ).toEqual(attachments.map((server) => server.endpoint));
+        expect(
+          requests
+            .filter((request) => request.method === "DELETE")
+            .map((request) => [request.url, request.headers.get("mcp-session-id")]),
+        ).toEqual(attachments.map((server) => [server.endpoint, `session:${server.endpoint}`]));
+        expect(
+          requests.every(
+            (request) => request.headers.get("authorization") === "Bearer synthetic-read-only",
+          ),
+        ).toBe(true);
+      }).pipe(Effect.provide(NodeServices.layer)),
+  );
 
   it.effect("supports v2 session deletion and secret-safe provider management", () => {
     const requestEvents: Array<AcpSessionRuntime.AcpSessionRequestLogEvent> = [];

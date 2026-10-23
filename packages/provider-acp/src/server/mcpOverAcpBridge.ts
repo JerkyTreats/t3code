@@ -4,6 +4,8 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import type * as AcpSchema from "effect-acp/compat";
 
+import type { McpProviderServerAttachment } from "@t3tools/provider-core/server/mcpSession";
+
 import { responsePayloads } from "@t3tools/shared/mcpResponsePayloads";
 
 const MAX_CONNECTIONS = 16;
@@ -17,6 +19,10 @@ interface JsonRpcEnvelope {
 }
 
 interface Connection {
+  readonly serverId: string;
+  readonly endpoint: string;
+  readonly authorization: string;
+  closed: boolean;
   readonly mutex: Semaphore.Semaphore;
   sessionId: string | null;
   protocolVersion: string | null;
@@ -56,8 +62,9 @@ function errorMessage(error: unknown): string {
 }
 
 export interface AcpMcpOverAcpBridgeOptions {
-  readonly endpoint: string;
-  readonly authorization: string;
+  readonly servers: ReadonlyArray<
+    Pick<McpProviderServerAttachment, "name" | "endpoint" | "authorizationHeader">
+  >;
   readonly allocateConnectionId: Effect.Effect<string>;
   readonly fetchImplementation?: (url: string, init?: RequestInit) => Promise<Response>;
 }
@@ -75,14 +82,25 @@ export interface AcpMcpOverAcpBridge {
   readonly disconnect: (
     request: AcpSchema.DisconnectMcpRequest,
   ) => Effect.Effect<AcpSchema.DisconnectMcpResponse, AcpMcpOverAcpError>;
+  readonly replaceServers: (servers: AcpMcpOverAcpBridgeOptions["servers"]) => Effect.Effect<void>;
   readonly dispose: Effect.Effect<void>;
 }
 
+/** Bridges the unstable ACP transport to T3's authenticated streamable-HTTP MCP endpoints. */
 export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(function* (
   options: AcpMcpOverAcpBridgeOptions,
 ): Effect.fn.Return<AcpMcpOverAcpBridge> {
   const fetchImplementation = options.fetchImplementation ?? fetch;
   const connections = new Map<string, Connection>();
+  const serverMap = (attachments: AcpMcpOverAcpBridgeOptions["servers"]) =>
+    new Map(
+      attachments.map((server) => [
+        server.name as string,
+        { endpoint: server.endpoint, authorization: server.authorizationHeader },
+      ]),
+    );
+  let servers = serverMap(options.servers);
+  let disposed = false;
 
   const connectionFor = (connectionId: string): Effect.Effect<Connection, AcpMcpOverAcpError> =>
     Effect.suspend(() => {
@@ -98,19 +116,22 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
   ): Effect.Effect<ReadonlyArray<unknown>, AcpMcpOverAcpError> =>
     connection.mutex.withPermits(1)(
       Effect.gen(function* () {
+        if (connection.closed) {
+          return yield* Effect.fail(new AcpMcpOverAcpError("MCP-over-ACP connection is closed."));
+        }
         const body = JSON.stringify(message);
         if (Buffer.byteLength(body) > MAX_MESSAGE_BYTES) {
           return yield* Effect.fail(new AcpMcpOverAcpError("MCP-over-ACP message exceeds 8 MiB."));
         }
         const response = yield* Effect.tryPromise({
           try: (signal) =>
-            fetchImplementation(options.endpoint, {
+            fetchImplementation(connection.endpoint, {
               method: "POST",
               signal,
               headers: {
                 "content-type": "application/json",
                 accept: "application/json, text/event-stream",
-                authorization: options.authorization,
+                authorization: connection.authorization,
                 ...(connection.sessionId === null
                   ? {}
                   : { "mcp-session-id": connection.sessionId }),
@@ -144,40 +165,46 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
   ): Effect.fn.Return<AcpSchema.DisconnectMcpResponse, AcpMcpOverAcpError> {
     const connection = yield* connectionFor(request.connectionId);
     connections.delete(request.connectionId);
-    const sessionId = connection.sessionId;
-    if (sessionId !== null) {
-      const response = yield* Effect.tryPromise({
-        try: (signal) =>
-          fetchImplementation(options.endpoint, {
-            method: "DELETE",
-            signal,
-            headers: {
-              authorization: options.authorization,
-              "mcp-session-id": sessionId,
-              ...(connection.protocolVersion === null
-                ? {}
-                : { "mcp-protocol-version": connection.protocolVersion }),
-            },
-          }),
-        catch: bridgeError,
-      });
-      if (!response.ok && response.status !== 404) {
-        return yield* Effect.fail(
-          new AcpMcpOverAcpError(
-            `T3 Code MCP endpoint rejected disconnect with HTTP ${response.status}.`,
-          ),
-        );
-      }
-      yield* Effect.promise(
-        () => response.body?.cancel().catch(() => undefined) ?? Promise.resolve(),
-      );
-    }
-    return {};
+    connection.closed = true;
+    return yield* connection.mutex.withPermits(1)(
+      Effect.gen(function* () {
+        const sessionId = connection.sessionId;
+        if (sessionId !== null) {
+          const response = yield* Effect.tryPromise({
+            try: (signal) =>
+              fetchImplementation(connection.endpoint, {
+                method: "DELETE",
+                signal,
+                headers: {
+                  authorization: connection.authorization,
+                  "mcp-session-id": sessionId,
+                  ...(connection.protocolVersion === null
+                    ? {}
+                    : { "mcp-protocol-version": connection.protocolVersion }),
+                },
+              }),
+            catch: bridgeError,
+          });
+          if (!response.ok && response.status !== 404) {
+            return yield* Effect.fail(
+              new AcpMcpOverAcpError(
+                `T3 Code MCP endpoint rejected disconnect with HTTP ${response.status}.`,
+              ),
+            );
+          }
+          yield* Effect.promise(
+            () => response.body?.cancel().catch(() => undefined) ?? Promise.resolve(),
+          );
+        }
+        return {};
+      }),
+    );
   });
 
   return {
     connect: Effect.fn("mcpOverAcpBridge.connect")(function* (request) {
-      if (request.serverId !== "t3-code") {
+      const server = servers.get(request.serverId);
+      if (disposed || server === undefined) {
         return yield* Effect.fail(
           new AcpMcpOverAcpError(`Unknown ACP MCP server "${request.serverId}".`),
         );
@@ -186,8 +213,24 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
         return yield* Effect.fail(new AcpMcpOverAcpError("Too many MCP-over-ACP connections."));
       }
       const connectionId = yield* options.allocateConnectionId;
+      const mutex = yield* Semaphore.make(1);
+      const current = servers.get(request.serverId);
+      // Allocation can yield while another session replaces the admitted map.
+      if (
+        disposed ||
+        current?.endpoint !== server.endpoint ||
+        current.authorization !== server.authorization
+      ) {
+        return yield* Effect.fail(
+          new AcpMcpOverAcpError("MCP server admission changed while connecting."),
+        );
+      }
       connections.set(connectionId, {
-        mutex: yield* Semaphore.make(1),
+        serverId: request.serverId,
+        endpoint: server.endpoint,
+        authorization: server.authorization,
+        closed: false,
+        mutex,
         sessionId: null,
         protocolVersion: null,
         nextRequestId: 0,
@@ -224,12 +267,32 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
       });
     }),
     disconnect,
-    dispose: Effect.suspend(() =>
-      Effect.forEach(
+    replaceServers: Effect.fn("mcpOverAcpBridge.replaceServers")(function* (attachments) {
+      if (disposed) return;
+      servers = serverMap(attachments);
+      // A thread or credential switch invalidates old connections before the
+      // agent sees the new activation's descriptors. Retained bindings stay live.
+      const stale = [...connections].filter(([, connection]) => {
+        const server = servers.get(connection.serverId);
+        return (
+          server?.endpoint !== connection.endpoint ||
+          server.authorization !== connection.authorization
+        );
+      });
+      yield* Effect.forEach(
+        stale,
+        ([connectionId]) => disconnect({ connectionId }).pipe(Effect.ignore),
+        { discard: true },
+      );
+    }),
+    dispose: Effect.suspend(() => {
+      disposed = true;
+      servers = new Map();
+      return Effect.forEach(
         [...connections.keys()],
         (connectionId) => disconnect({ connectionId }).pipe(Effect.ignore),
         { discard: true },
-      ),
-    ),
+      );
+    }),
   };
 });

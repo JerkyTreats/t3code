@@ -55,6 +55,9 @@ export const WorktreeSubmodules = Schema.Literals(["recursive", "top-level", "no
 export type WorktreeSubmodules = typeof WorktreeSubmodules.Type;
 export type ExecutionEnvironmentPlatform = typeof ExecutionEnvironmentPlatform.Type;
 
+/** Update outcomes represented on the wire. This fork returns "desktop-app"
+    when its supervising desktop app prepares the replacement. Other values
+    remain decodable when observing older or upstream peers. */
 export const ServerSelfUpdateMethod = Schema.Literals(["boot-service", "respawn", "desktop-app"]);
 export type ServerSelfUpdateMethod = typeof ServerSelfUpdateMethod.Type;
 
@@ -64,6 +67,10 @@ export const ServerInstallation = Schema.Union([
 ]);
 export type ServerInstallation = typeof ServerInstallation.Type;
 
+/** Advertised update capability. This fork emits "desktop-managed" when the
+    supervising desktop owns the server version, or no capability for an
+    operator-managed runtime. Other wire values describe older or upstream
+    peers; decoding a value does not establish current fork support. */
 export const ServerSelfUpdateCapability = Schema.Literals([
   "boot-service",
   "respawn",
@@ -152,6 +159,11 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       "server"`) and streams them over `/api/preview-stream`. Clients
       without a local browser runtime open server tabs here. */
   serverBrowser: Schema.optionalKey(Schema.Boolean),
+  /** The desktop app that launched this server holds its browser channel, so
+      it can draw this server's tabs in its own `<webview>`. Absent on WSL
+      backends, whose bootstrap cannot carry the channel fds, and on servers
+      no desktop app launched; the desktop app streams their tabs instead. */
+  desktopBrowser: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

@@ -1477,7 +1477,7 @@ export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__t3-code__t3_project_list",
   "mcp__t3-code__t3_project_read",
   "mcp__t3-code__t3_thread_search",
-  "mcp__t3-code__t3_preview_list",
+  "mcp__t3-code-preview__t3_preview_list",
   "mcp__t3-code__t3_environment_read",
   "mcp__t3-code__t3_queue_list",
   "mcp__t3-code__t3_queue_read",
@@ -1510,21 +1510,25 @@ export function claudeMcpQueryOverrides(input: {
   if (session === undefined) {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
+  const servers = McpProviderSession.getMcpProviderServerAttachments(session);
   const mcpAllowedTools = input.readOnlySandbox
-    ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
-    : [CLAUDE_T3_MCP_TOOL_WILDCARD];
+    ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS.filter((tool) =>
+        servers.some((server) => tool.startsWith(`mcp__${server.name}__`)),
+      )
+    : servers.map((server) => `mcp__${server.name}__*`);
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
-    mcpServers: {
-      "t3-code": {
-        type: "http",
-        url: session.endpoint,
-        headers: {
-          Authorization: session.authorizationHeader,
+    mcpServers: Object.fromEntries(
+      servers.map((server) => [
+        server.name,
+        {
+          type: "http" as const,
+          url: server.endpoint,
+          headers: { Authorization: server.authorizationHeader },
+          timeout: CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
         },
-        timeout: CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
-      },
-    },
+      ]),
+    ),
   };
 }
 

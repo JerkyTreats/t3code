@@ -4,8 +4,7 @@ import { expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Stream from "effect/Stream";
-import * as Queue from "effect/Queue";
+import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
 import {
   DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS,
@@ -13,6 +12,9 @@ import {
 } from "@t3tools/shared/desktopBootstrapToken";
 
 import * as ServerConfig from "../config.ts";
+import * as AuthPairingLinks from "../persistence/AuthPairingLinks.ts";
+import { PersistenceSqlError } from "../persistence/Errors.ts";
+import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 
@@ -44,7 +46,38 @@ const layerPairingGrantStore = (
     Layer.provide(layerServerConfig(overrides)),
   );
 
+const layerPairingGrantStoreTest = (
+  overrides: Partial<AuthPairingLinks.AuthPairingLinkRepository["Service"]>,
+) =>
+  Layer.effect(PairingGrantStore.PairingGrantStore, PairingGrantStore.make).pipe(
+    Layer.provide(
+      Layer.succeed(
+        AuthPairingLinks.AuthPairingLinkRepository,
+        AuthPairingLinks.AuthPairingLinkRepository.of({
+          create: () => Effect.void,
+          consumeAvailable: () => Effect.succeedNone,
+          listActive: () => Effect.succeed([]),
+          revoke: () => Effect.succeed(false),
+          revokeAtRevision: () => Effect.succeed({ _tag: "not-found" }),
+          getByCredentialDigest: () => Effect.succeed(Option.none()),
+          ...overrides,
+        }),
+      ),
+    ),
+    Layer.provide(ServerSecretStore.layer),
+    Layer.provide(layerServerConfig()),
+  );
+
 it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
+  it.effect("issues pairing tokens in a short manual-entry format", () =>
+    Effect.gen(function* () {
+      const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
+      const issued = yield* bootstrapCredentials.issueOneTimeToken();
+
+      expect(issued.credential).toMatch(/^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{12}$/);
+    }).pipe(Effect.provide(layerPairingGrantStore())),
+  );
+
   it.effect("issues one-time bootstrap tokens that can only be consumed once", () =>
     Effect.gen(function* () {
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
@@ -124,10 +157,33 @@ it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
     }).pipe(Effect.provide(layerPairingGrantStore())),
   );
 
+  it.effect("seeds the desktop bootstrap credential as a reusable grant", () =>
+    Effect.gen(function* () {
+      const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
+      const first = yield* bootstrapCredentials.consume("desktop-bootstrap-token");
+      const second = yield* bootstrapCredentials.consume("desktop-bootstrap-token");
+      const third = yield* bootstrapCredentials.consume("desktop-bootstrap-token");
+
+      expect(first.method).toBe("desktop-bootstrap");
+      expect(first.scopes).toEqual(AuthStandardClientScopes);
+      expect(first.subject).toBe("desktop-bootstrap");
+      expect(second.method).toBe("desktop-bootstrap");
+      expect(third.method).toBe("desktop-bootstrap");
+    }).pipe(
+      Effect.provide(
+        layerPairingGrantStore({
+          desktopBootstrapToken: "desktop-bootstrap-token",
+        }),
+      ),
+    ),
+  );
+
   it.effect("reports seeded desktop bootstrap credentials as expired after their ttl", () =>
     Effect.gen(function* () {
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
 
+      // The desktop-bootstrap grant lives for 24h. Within that window
+      // it stays reusable.
       yield* TestClock.adjust(Duration.hours(12));
       const stillValid = yield* bootstrapCredentials.consume("desktop-bootstrap-token");
       expect(stillValid.method).toBe("desktop-bootstrap");
@@ -154,6 +210,7 @@ it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
       const window = DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS;
 
+      // A desktop open for days hands the renderer a fresh token each window.
       yield* TestClock.adjust(Duration.days(5));
       const now = 5 * 24 * 60 * 60 * 1000;
       const current = yield* bootstrapCredentials.consume(
@@ -168,6 +225,7 @@ it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
       );
       expect(stale._tag).toBe("UnknownBootstrapCredentialError");
 
+      // The launch token is not accepted on its own once a secret is present.
       const launch = yield* Effect.flip(bootstrapCredentials.consume("desktop-bootstrap-token"));
       expect(launch._tag).toBe("UnknownBootstrapCredentialError");
     }).pipe(
@@ -183,28 +241,70 @@ it.layer(NodeServices.layer)("PairingGrantStore.layer", (it) => {
     ),
   );
 
-  it.effect("keeps credentials out of pairing lists and change events", () =>
+  it.effect("keeps credentials and digests out of pairing lists", () =>
     Effect.gen(function* () {
       const grants = yield* PairingGrantStore.PairingGrantStore;
-      const changes = yield* Queue.unbounded<PairingGrantStore.BootstrapCredentialChange>();
-      yield* grants.streamChanges.pipe(
-        Stream.runForEach((change) => Queue.offer(changes, change)),
-        Effect.forkScoped({ startImmediately: true }),
-      );
       for (const input of [{}, { label: "Synthetic phone" }]) {
         const issued = yield* grants.issueOneTimeToken(input);
-        const change = yield* Queue.take(changes);
-        expect(change?.type).toBe("pairingLinkUpserted");
-        if (change?.type !== "pairingLinkUpserted")
-          throw new Error("Expected a pairing link update");
-        expect(change.pairingLink.id).toBe(issued.id);
-        expect(change.pairingLink).not.toHaveProperty("credential");
         const listed = (yield* grants.listActive()).find((link) => link.id === issued.id);
-        expect(listed).toEqual(change.pairingLink);
+        expect(listed?.id).toBe(issued.id);
+        expect(listed).not.toHaveProperty("credential");
+        expect(listed).not.toHaveProperty("credentialDigest");
         const consumed = yield* grants.consume(issued.credential);
-        expect(consumed.scopes).toEqual(change.pairingLink.scopes);
-        expect(yield* Queue.take(changes)).toEqual({ type: "pairingLinkRemoved", id: issued.id });
+        expect(consumed.scopes).toEqual(listed?.scopes);
+        expect((yield* grants.listActive()).some((link) => link.id === issued.id)).toBe(false);
       }
     }).pipe(Effect.scoped, Effect.provide(layerPairingGrantStore())),
   );
+
+  it.effect("lists and revokes active pairing links", () =>
+    Effect.gen(function* () {
+      const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
+      const first = yield* bootstrapCredentials.issueOneTimeToken();
+      const second = yield* bootstrapCredentials.issueOneTimeToken({
+        scopes: ["orchestration:read", "access:write"],
+      });
+
+      const activeBeforeRevoke = yield* bootstrapCredentials.listActive();
+      expect(activeBeforeRevoke.map((entry) => entry.id)).toContain(first.id);
+      expect(activeBeforeRevoke.map((entry) => entry.id)).toContain(second.id);
+      for (const entry of activeBeforeRevoke) {
+        expect(entry).not.toHaveProperty("credential");
+      }
+
+      const revoked = yield* bootstrapCredentials.revoke(first.id);
+      const activeAfterRevoke = yield* bootstrapCredentials.listActive();
+      const revokedConsume = yield* Effect.flip(bootstrapCredentials.consume(first.credential));
+
+      expect(revoked).toBe(true);
+      expect(activeAfterRevoke.map((entry) => entry.id)).not.toContain(first.id);
+      expect(activeAfterRevoke.map((entry) => entry.id)).toContain(second.id);
+      expect(revokedConsume.message).toContain("no longer available");
+      expect(revokedConsume._tag).toBe("UnavailableBootstrapCredentialError");
+    }).pipe(Effect.provide(layerPairingGrantStore())),
+  );
+
+  it.effect("identifies consume-available failures and preserves their cause", () => {
+    const repositoryFailure = new PersistenceSqlError({
+      operation: "consume-pairing-link",
+      detail: "Database unavailable",
+      cause: new Error("database unavailable"),
+    });
+
+    return Effect.gen(function* () {
+      const pairingGrants = yield* PairingGrantStore.PairingGrantStore;
+      const error = yield* Effect.flip(pairingGrants.consume("credential"));
+
+      if (error._tag !== "BootstrapCredentialConsumeAvailableError") {
+        return yield* Effect.die(error);
+      }
+      expect(error.cause).toBe(repositoryFailure);
+    }).pipe(
+      Effect.provide(
+        layerPairingGrantStoreTest({
+          consumeAvailable: () => Effect.fail(repositoryFailure),
+        }),
+      ),
+    );
+  });
 });

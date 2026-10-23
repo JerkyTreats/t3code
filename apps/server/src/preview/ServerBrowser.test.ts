@@ -171,6 +171,7 @@ function makeContext(onClose?: (context: BrowserContext) => void) {
     reload: vi.fn(async () => {}),
     emulateMedia: vi.fn(async () => {}),
     waitForLoadState: vi.fn(async () => {}),
+    waitForFunction: vi.fn(async () => ({ dispose: async () => {} })),
     evaluate: vi.fn(async () => ({
       url,
       title: "test page",
