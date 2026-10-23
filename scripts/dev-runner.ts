@@ -336,11 +336,7 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
     delete output.T3CODE_HOME;
   }
 
-  // A dev-runner server is never launcher-managed. When the shell that runs
-  // this script was itself spawned by the machine's managed t3 service (an
-  // agent working inside T3 Code), these leak through and the child server
-  // fails startup with "The service launcher started a different t3 version"
-  // (serviceLauncherClient.ts resolveStartup).
+  // Development children do not inherit a parent runtime's service identity.
   delete output.T3_SERVICE_LAUNCHER_CONTEXT;
   delete output.T3_BOOT_SERVICE_UNIT;
 
