@@ -6,14 +6,28 @@ describe("upgradeLegacyContextMessage", () => {
   const review =
     '<review_comment sectionId="s" filePath="f.ts" startIndex="1" endIndex="1">note</review_comment>';
 
-  it("removes only the helper separator before a trailing context block", () => {
-    const source =
-      "  Keep authored whitespace\n\t \n\n\n<terminal_context>\n- Build line 1:\n  output\n</terminal_context>";
-    const upgraded = upgradeLegacyContextMessage(source);
-    expect(upgraded.text).toBe(
-      "  Keep authored whitespace\n\t \n\n\n[Build line 1](t3-context://v1/terminal/legacy_terminal_1)",
-    );
-  });
+  it.each([
+    {
+      block: "<terminal_context>\n- Build line 1:\n  output\n</terminal_context>",
+      reference: "[Build line 1](t3-context://v1/terminal/legacy_terminal_1)",
+    },
+    {
+      block: "<element_context>\n- <div>:\n  url: http://x.invalid/\n</element_context>",
+      reference: "[<div>](t3-context://v1/element/legacy_element_1)",
+    },
+    {
+      block: "<preview_annotation>\nId: p1\nPage: Example\n</preview_annotation>",
+      reference: "[Example](t3-context://v1/preview-annotation/legacy_preview-annotation_1)",
+    },
+  ])(
+    "removes only the helper separator before a trailing block: $reference",
+    ({ block, reference }) => {
+      const prompt = "  Keep authored whitespace\n\t \n";
+      expect(upgradeLegacyContextMessage(`${prompt}\n\n\n${block}`).text).toBe(
+        `${prompt}\n\n\n${reference}`,
+      );
+    },
+  );
 
   it.each([
     {
@@ -501,4 +515,35 @@ describe("upgradeLegacyContextMessage", () => {
       "legacy_review-comment_1",
     ]);
   });
+
+  describe.each([
+    {
+      tag: "terminal_context",
+      fake: "- Fake line 9:\n  9 | fake",
+      real: "- Build line 1:\n  1 | real",
+      reference: "[Build line 1](t3-context://v1/terminal/legacy_terminal_1)",
+      payload: { kind: "terminal", text: "real" },
+    },
+    {
+      tag: "element_context",
+      fake: "- <span>:\n  url: http://fake.invalid/",
+      real: "- <div>:\n  url: http://real.invalid/",
+      reference: "[<div>](t3-context://v1/element/legacy_element_1)",
+      payload: { kind: "element", pageUrl: "http://real.invalid/" },
+    },
+  ])(
+    "marker-like authored text before a generated $tag block",
+    ({ tag, fake, real, reference, payload }) => {
+      it.each([
+        { name: "a complete inline marker", prompt: `Explain <${tag}>\n${fake}\n</${tag}> later` },
+        { name: "an incomplete marker", prompt: `  <${tag}>\nunfinished draft\n` },
+        { name: "a marker after a stray closer", prompt: `</${tag}>\n<${tag}>\n${fake}\nmore` },
+      ])("keeps $name and selects the final helper block", ({ prompt }) => {
+        const upgraded = upgradeLegacyContextMessage(`${prompt}\n\n<${tag}>\n${real}\n</${tag}>`);
+        expect(upgraded.text).toBe(`${prompt}\n\n${reference}`);
+        expect(upgraded.records).toHaveLength(1);
+        expect(upgraded.records[0]).toMatchObject(payload);
+      });
+    },
+  );
 });

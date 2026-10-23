@@ -20,10 +20,12 @@ export interface UpgradedLegacyContext {
 }
 
 const PLACEHOLDER = "￼";
+// A generated block opens on its own line and its body never crosses another line-start opener,
+// so authored marker-like text before the final block stays text.
 const TRAILING_TERMINAL =
-  /\n*<terminal_context>\n((?:(?!\n<\/terminal_context>)[\s\S])*)\n<\/terminal_context>\s*$/;
+  /(?:^|\n)\n*<terminal_context>\n((?:(?!\n<\/terminal_context>|\n<terminal_context>\n)[\s\S])*)\n<\/terminal_context>\s*$/;
 const TRAILING_ELEMENT =
-  /\n*<element_context>\n((?:(?!\n<\/element_context>)[\s\S])*)\n<\/element_context>\s*$/;
+  /(?:^|\n)\n*<element_context>\n((?:(?!\n<\/element_context>|\n<element_context>\n)[\s\S])*)\n<\/element_context>\s*$/;
 const TRAILING_PREVIEW =
   /\n*<preview_annotation>\n((?:(?!\n<\/preview_annotation>)[\s\S])*)\n<\/preview_annotation>\s*$/;
 const REVIEW_OR_CONTEXT_BLOCK =

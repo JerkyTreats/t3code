@@ -28,7 +28,7 @@ Preserve exact user-authored prompt whitespace when helper-owned rich context bl
 
 - `apps/web/src/components/ChatView.logic.ts` hosts upstream's single send formatter `formatOutgoingPrompt` and send snapshot; both call the focused owner when terminal or preview context is retained.
 - V2 queued messages are server-owned runs. `useComposerSend.ts`, `chatViewSend.ts`, `useProposedPlanSend.ts` and `useQueuedRunEdit.ts` pass structured context and authored text through the same focused owner for dispatch, multiple-model sends, queued edits, and plan follow-ups; no client queue sender is restored.
-- `packages/shared/src/composerContextLegacySend.ts` and `composerContextLegacy.ts` preserve the authored prefix around generated legacy context for older servers. The reader removes at most the two generated separator newlines; historical text without separator provenance cannot recover already discarded bytes.
+- `packages/shared/src/composerContextLegacySend.ts` and `composerContextLegacy.ts` preserve the authored prefix around generated legacy context for older servers. The reader removes at most the two generated separator newlines; historical text without separator provenance cannot recover already discarded bytes. Terminal and selected element blocks are read only when they open on their own line and their body crosses no later same-tag opener, so the final helper block is selected and earlier marker-like text stays authored.
 - `apps/web/src/lib/composerContextRecords.ts` resolves structured context and upgrades retained legacy blocks for display. `TimelineUserMessageRow.tsx` renders the authored body and `UserMessageContextChips.tsx` the context chips alongside upstream review from the current v2 item projection.
 
 ## Upstream Substrate
@@ -47,13 +47,12 @@ Preserve exact user-authored prompt whitespace when helper-owned rich context bl
 
 ## Verification
 
-- Focused helper tests prove empty, whitespace-only, leading, trailing, and mixed whitespace behavior.
-- Terminal and selected element tests prove complete and incomplete same-tag marker collisions preserve the exact user prompt.
-- Preview annotation tests prove extraction removes only helper-owned separation.
-- Mixed source-review tests prove exact prompt bytes remain ahead of unchanged upstream review serialization.
+- `chatPromptContext.test.ts` covers empty, whitespace-only, leading, trailing, and mixed whitespace composition, context-free and review-only trimming, exact retained bytes, Claude effort prefixes, structured context detection, and contextual plan follow-ups.
 - `chatSendSeam.test.ts` covers the upstream formatter and send snapshot with and without retained context.
-- `chatPromptContext.test.ts` covers context-free and review-only trimming, exact retained bytes, Claude effort prefixes, structured context detection, and contextual plan follow-ups. Legacy reader tests retain marker and generated-separator coverage.
-- `composerContextRecords.test.ts` covers structured and upgraded legacy context resolution. The earlier mounted `MessagesTimeline.test.tsx` and `MermaidHostIntegration.test.tsx` hosts were removed with upstream's renderer tooling and the retired Mermaid owner; mounted mixed context display evidence must be re-established through the browser test harness.
+- `packages/shared/src/composerContextLegacySend.test.ts` proves the legacy composer keeps whitespace-only and padded prompts ahead of the generated separator and context blocks.
+- `packages/shared/src/composerContextLegacy.test.ts` proves terminal, selected element and preview annotation extraction removes only the generated separator, and that complete inline, incomplete and stray-closer marker-like text before a terminal or selected element block stays authored text while the final helper block becomes the chip. Repeated identical legacy blocks still all peel, matching upstream.
+- `composerContextRecords.test.ts` covers structured and upgraded legacy context resolution.
+- `fork/timelineMessagePresentation.browser.test.tsx` mounts the timeline with mixed terminal, selected element, preview annotation and upstream review context, and feeds a v2 `user_message` item through `deriveTimelineEntriesFromVisibleTurnItems` to prove the rendered body keeps authored whitespace and no generated block leaks.
 
 ## Reconciliation Rule
 
