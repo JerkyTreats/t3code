@@ -56,7 +56,7 @@ jobs:
           node-version-file: package.json
 
       - name: Install scanner dependencies without lifecycle scripts
-        run: corepack pnpm install --frozen-lockfile --ignore-scripts --filter @t3tools/scripts
+        run: npx --yes pnpm@12.14.0 install --frozen-lockfile --ignore-scripts --filter @t3tools/scripts
 
       - name: Verify global release authority
         run: node scripts/lib/release-workflow-safety.ts

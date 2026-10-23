@@ -123,7 +123,7 @@ it("requires immutable revisions for every action in the package-write job", () 
 it("requires the exact lifecycle-free scanner dependency bootstrap", () => {
   assertWorkflowMutationRejected(
     `run: ${SCANNER_DEPENDENCY_BOOTSTRAP}`,
-    "run: corepack pnpm install --frozen-lockfile --filter @t3tools/scripts",
+    "run: npx --yes pnpm@12.14.0 install --frozen-lockfile --filter @t3tools/scripts",
   );
   assertWorkflowMutationRejected("node-version-file: package.json", "node-version: latest");
 });
@@ -187,8 +187,8 @@ it("parses Dockerfile instructions so comments cannot satisfy the contract", () 
     replaceFixtureSource(
       fixtureRoot,
       SERVER_IMAGE_DOCKERFILE_PATH,
-      "FROM node:24-bookworm-slim@sha256:",
-      "# FROM node:24-bookworm-slim@sha256:",
+      "FROM node:26.12.1-bookworm-slim@sha256:",
+      "# FROM node:26.12.1-bookworm-slim@sha256:",
     );
     assert.throws(
       () => assertServerImagePublicationSafety(fixtureRoot),
@@ -202,8 +202,8 @@ it("rejects mutable base images and unpinned package inputs", () => {
     replaceFixtureSource(
       fixtureRoot,
       SERVER_IMAGE_DOCKERFILE_PATH,
-      "node:24-bookworm-slim@sha256:65932751ed4073ed02f5c04e494e4b2572a891b7dbea0568a863dc80341bf848",
-      "node:24-bookworm-slim",
+      "node:26.12.1-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe",
+      "node:26.12.1-bookworm-slim",
     );
     assert.throws(() => assertServerImagePublicationSafety(fixtureRoot));
   });

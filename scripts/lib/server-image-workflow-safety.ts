@@ -15,10 +15,10 @@ export const SETUP_BUILDX_ACTION =
   "docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c";
 export const LOGIN_ACTION = "docker/login-action@dbcb813823bdd20940b903addbd779551569679f";
 export const SCANNER_DEPENDENCY_BOOTSTRAP =
-  "corepack pnpm install --frozen-lockfile --ignore-scripts --filter @t3tools/scripts";
+  "npx --yes pnpm@12.14.0 install --frozen-lockfile --ignore-scripts --filter @t3tools/scripts";
 
 const NODE_BASE =
-  "node:24-bookworm-slim@sha256:65932751ed4073ed02f5c04e494e4b2572a891b7dbea0568a863dc80341bf848";
+  "node:26.12.1-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe";
 const EXPECTED_JOB_GUARD = [
   "github.repository == 'JerkyTreats/t3code'",
   "github.ref == 'refs/heads/main'",
@@ -168,7 +168,8 @@ const EXPECTED_DOCKERFILE_INSTRUCTIONS = [
   "ENV PNPM_HOME=/pnpm",
   'ENV PATH="${PNPM_HOME}:${PATH}"',
   "WORKDIR /app",
-  "RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates=20250419~deb12u1 g++=4:12.2.0-3 git=1:2.39.5-0+deb12u3 make=4.3-4.1 python3=3.11.2-1+b1 && rm -rf /var/lib/apt/lists/* && corepack enable",
+  "ADD --checksum=sha256:1de98ed2e9621113b0887b06322b461efb9df73d913fc1d151039b10b7117a41 https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.14.0.tgz /tmp/pnpm.tgz",
+  'RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates=20250419~deb12u1 g++=4:12.2.0-3 git=1:2.39.5-0+deb12u3 make=4.3-4.1 python3=3.11.2-1+b1 && rm -rf /var/lib/apt/lists/* && tar -xzf /tmp/pnpm.tgz --strip-components=1 -C /usr/local/bin package/pnpm && rm /tmp/pnpm.tgz && test "$(pnpm --version)" = "12.14.0"',
   "COPY . .",
   "RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile",
   'RUN test -n "$T3CODE_BUILD_COMMIT" && pnpm exec vp run --filter t3 build',
