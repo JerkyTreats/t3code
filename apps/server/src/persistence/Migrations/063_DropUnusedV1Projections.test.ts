@@ -1,3 +1,4 @@
+// Fork execution identities: upstream 63 through 68 run as fork 87 through 92.
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
@@ -11,14 +12,14 @@ layer("063_DropUnusedV1Projections", (it) => {
   it.effect("drops V1 projections nothing reads and keeps the transcript import sources", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 62 });
+      yield* runMigrations({ toMigrationInclusive: 86 });
       yield* sql`
         INSERT INTO projection_thread_messages
           (message_id, thread_id, role, text, is_streaming, created_at, updated_at)
         VALUES ('message-1', 'thread-1', 'user', 'hello', 0, '2026-01-01', '2026-01-01')
       `;
 
-      yield* runMigrations({ toMigrationInclusive: 63 });
+      yield* runMigrations({ toMigrationInclusive: 87 });
 
       const rows = yield* sql<{ readonly name: string }>`
         SELECT name FROM sqlite_master WHERE type = 'table'

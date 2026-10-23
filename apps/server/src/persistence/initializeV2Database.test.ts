@@ -21,6 +21,17 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as LegacyV1ThreadImporter from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 
+const retainedForkRows = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  return {
+    clients: yield* sql`SELECT * FROM auth_clients ORDER BY client_id`,
+    pairing: yield* sql`SELECT * FROM auth_pairing_links ORDER BY id`,
+    receipts: yield* sql`SELECT command_id, aggregate_kind, aggregate_id, accepted_at,
+      result_sequence, status, error, payload_fingerprint FROM orchestration_command_receipts
+      ORDER BY command_id`,
+  };
+});
+
 it.effect(
   "snapshots V1, imports transcripts lazily, and preserves both databases across switches",
   () => {
@@ -30,7 +41,7 @@ it.effect(
     const threadId = ThreadId.make("legacy-thread");
     const seed = Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      yield* runMigrations({ toMigrationInclusive: 52 });
+      yield* runMigrations({ toMigrationInclusive: 67 });
       yield* sql`INSERT INTO projection_projects (project_id, title, workspace_root, scripts_json, created_at, updated_at)
       VALUES ('project', 'Project', '/tmp/project', '[]', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`;
       yield* sql`INSERT INTO projection_threads (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode, created_at, updated_at)
@@ -39,10 +50,22 @@ it.effect(
         yield* sql`INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at)
         VALUES (${`message-${index}`}, ${threadId}, ${index % 2 ? "assistant" : "user"}, ${`Text ${index}`}, 0, ${`2026-01-0${index + 1}T00:00:00.000Z`}, ${`2026-01-0${index + 1}T00:00:00.000Z`})`;
       }
+      yield* sql`INSERT INTO auth_clients (client_id, granted_scopes, management_class,
+        created_at, disabled_at, revision) VALUES ('synthetic-client', '[]',
+        'portal-managed-device', '2026-01-01', '2026-01-02', 7)`;
+      yield* sql`INSERT INTO auth_pairing_links (id, credential_digest, method, scopes,
+        subject, client_management_class, created_at, expires_at, revision)
+        VALUES ('synthetic-grant', 'synthetic-keyed-digest', 'one-time-token', '[]',
+        'synthetic-subject', 'portal-managed-device', '2026-01-01', '2027-01-01', 3)`;
+      yield* sql`INSERT INTO orchestration_command_receipts (command_id, aggregate_kind,
+        aggregate_id, accepted_at, result_sequence, status, payload_fingerprint)
+        VALUES ('synthetic-command', 'thread', ${threadId}, '2026-01-01', 1,
+        'accepted', 'synthetic-fingerprint')`;
+      return yield* retainedForkRows;
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: sourcePath })));
 
     return Effect.gen(function* () {
-      yield* seed;
+      const retained = yield* seed;
       const original = NodeFS.readFileSync(sourcePath);
       const config = yield* ServerConfig.ServerConfig;
       const layerDatabase = SqlitePersistence.layerConfig.pipe(
@@ -57,6 +80,7 @@ it.effect(
       );
       yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
+        assert.deepStrictEqual(yield* retainedForkRows, retained);
         const legacy = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
         yield* legacy.reconcileShells;
         const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -87,7 +111,7 @@ it.effect(
       try {
         assert.equal(
           v1.prepare("SELECT MAX(migration_id) AS id FROM effect_sql_migrations").get()?.id,
-          52,
+          67,
         );
         assert.equal(
           v1
@@ -103,6 +127,8 @@ it.effect(
       }
       yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
+        assert.deepStrictEqual(yield* retainedForkRows, retained);
+        assert.deepStrictEqual(yield* runMigrations(), []);
         assert.equal((yield* sql`SELECT text FROM v2_work`)[0]?.text, "Keep V2 work");
         assert.equal((yield* sql`SELECT title FROM projection_threads`)[0]?.title, "V1 thread");
       }).pipe(Effect.provide(layerDatabase));
@@ -126,6 +152,9 @@ it.effect("includes committed WAL data and does not publish a failed snapshot", 
     assert.isTrue((yield* Effect.result(initializeV2Database(destinationPath)))._tag === "Failure");
     assert.isFalse(NodeFS.existsSync(destinationPath));
     NodeFS.unlinkSync(sourcePath);
+    yield* runMigrations({ toMigrationInclusive: 67 }).pipe(
+      Effect.provide(NodeSqliteClient.layer({ filename: sourcePath })),
+    );
     const source = new NodeSqlite.DatabaseSync(sourcePath);
     try {
       source.exec(
@@ -182,3 +211,34 @@ it.effect("starts fresh without V1 and never imports over existing V2 state", ()
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true }))),
   );
 });
+
+it.effect.each([false, true])(
+  "rejects uncharacterized source history before publication, missing journal %s",
+  (missingJournal) => {
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-v2-lineage-"));
+    const sourcePath = NodePath.join(directory, "state.sqlite");
+    const destinationPath = NodePath.join(directory, "statev2.sqlite");
+    return Effect.gen(function* () {
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* runMigrations({ toMigrationInclusive: 67 });
+        if (missingJournal) yield* sql`DROP TABLE effect_sql_migrations`;
+        else
+          yield* sql`UPDATE effect_sql_migrations SET name = 'UnknownFork' WHERE migration_id = 67`;
+        yield* sql`CREATE TABLE synthetic_work (text TEXT)`;
+        yield* sql`INSERT INTO synthetic_work VALUES ('retained')`;
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: sourcePath })));
+      const original = NodeFS.readFileSync(sourcePath);
+      const error = yield* Effect.flip(initializeV2Database(destinationPath));
+      assert.equal(error._tag, "V2DatabaseImportError");
+      assert.isFalse(NodeFS.existsSync(destinationPath));
+      assert.deepStrictEqual(NodeFS.readFileSync(sourcePath), original);
+      assert.deepStrictEqual(NodeFS.readdirSync(directory), ["state.sqlite"]);
+    }).pipe(
+      Effect.provide(NodeServices.layer),
+      Effect.ensuring(
+        Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
+      ),
+    );
+  },
+);

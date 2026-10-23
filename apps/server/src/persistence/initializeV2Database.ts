@@ -1,4 +1,7 @@
 import * as NodeSqlite from "node:sqlite";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+
+import { makeMigrationLoader } from "./ForkMigrationPlan.ts";
 
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -38,6 +41,12 @@ export const initializeV2Database = Effect.fn("initializeV2Database")(function* 
         database.close();
       }
     });
+    // Validate the copied journal through the same owner used by startup. Unknown
+    // histories must not become the permanent V2 seed, even when SQLite can read them.
+    yield* makeMigrationLoader().pipe(
+      Effect.asVoid,
+      Effect.provide(NodeSqliteClient.layer({ filename: snapshotPath, readonly: true })),
+    );
     // Publish only a complete snapshot, without replacing an existing V2 database.
     yield* fs
       .link(snapshotPath, destinationPath)

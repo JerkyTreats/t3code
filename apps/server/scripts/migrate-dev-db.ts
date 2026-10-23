@@ -1,5 +1,32 @@
 #!/usr/bin/env node
 
+/**
+ * Rebuild an isolated dev database from a pruned snapshot of the real
+ * ~/.t3 database, then run this checkout's migrations against it.
+ *
+ * `vp run migrate-dev-db` from a worktree:
+ *   1. Nukes `<worktree>/.t3/userdata/statev2.sqlite`.
+ *   2. Copies a slice of the real db (`~/.t3/userdata/statev2.sqlite`,
+ *      attached read-only): the schema, and every row except those of
+ *      deleted, archived, and settled threads, which are nearly all of a
+ *      long-lived database. It then prunes that to the most recently updated
+ *      projects and, per project, the most recent threads that have fully
+ *      stopped, with
+ *      their forks and subagents. Working, settled, and archived threads, and
+ *      threads with pending recovery, are skipped, and scheduled tasks and
+ *      queued effects are dropped, so the dev server never adopts live work.
+ *      Auth clients, sessions, pairing links, command receipts, and provider
+ *      runtime rows are dropped — pair a fresh browser against dev.
+ *   3. Runs migrations on the result. Because the clone carries the real
+ *      `effect_sql_migrations` table, this proves a new migration applies
+ *      on top of the real applied set. The migration owner validates the
+ *      retained fork lineage before the destination is replaced.
+ *
+ * The event log (`orchestration_events`) is pruned per stream while
+ * `sqlite_sequence` and the projection cursors carry over untouched, so new events keep appending
+ * after the old high-water mark and projection cursors never rewind.
+ */
+
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
@@ -16,7 +43,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { Command, Flag } from "effect/cli";
 
 import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
-import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
+import { runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 export class MigrateDevDbNotInWorktreeError extends Schema.TaggedError<MigrateDevDbNotInWorktreeError>()(
@@ -104,7 +131,7 @@ export class MigrateDevDbSlotCollisionError extends Schema.TaggedError<MigrateDe
 export class MigrateDevDbPhaseError extends Schema.TaggedError<MigrateDevDbPhaseError>()(
   "MigrateDevDbPhaseError",
   {
-    phase: Schema.Literals(["snapshot", "prune", "compact", "migrate", "verify"]),
+    phase: Schema.Literals(["snapshot", "prune", "compact", "migrate"]),
     databasePath: Schema.String,
     cause: Schema.Defect(),
   },
@@ -213,6 +240,7 @@ const CLEARED_TABLES: ReadonlyArray<string> = [
   "provider_session_runtime",
   "auth_sessions",
   "auth_pairing_links",
+  "auth_clients",
 ];
 
 const PROVIDER_SESSIONS_TABLE = "orchestration_v2_projection_provider_sessions";
@@ -397,19 +425,6 @@ const pruneSnapshot = Effect.fn("pruneDevDbSnapshot")(function* (input: RunMigra
   };
 });
 
-const verifyMigrationSlots = Effect.fn("verifyMigrationSlots")(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  const applied = yield* sql<{ migration_id: number; name: string }>`
-    SELECT migration_id, name FROM effect_sql_migrations`;
-  const appliedById = new Map(applied.map((row) => [Number(row.migration_id), row.name]));
-  for (const [slot, codeName] of migrationManifest) {
-    const appliedName = appliedById.get(slot);
-    if (appliedName !== undefined && appliedName !== codeName) {
-      return yield* new MigrateDevDbSlotCollisionError({ slot, codeName, appliedName });
-    }
-  }
-});
-
 export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   input: RunMigrateDevDbInput,
   options: RunMigrateDevDbOptions = {},
@@ -494,19 +509,6 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
     }).pipe(
       Effect.provide(NodeSqliteClient.layer({ filename: snapshotPath })),
       wrapPhase("migrate", snapshotPath),
-    );
-
-    // Verify while the snapshot is still the only thing touched: a slot
-    // collision must abort before the old worktree db gets replaced with a
-    // schema whose colliding migration was silently skipped.
-    yield* verifyMigrationSlots().pipe(
-      Effect.provide(NodeSqliteClient.layer({ filename: snapshotPath })),
-      Effect.catchTags({
-        SqlError: (cause) =>
-          Effect.fail(
-            new MigrateDevDbPhaseError({ phase: "verify", databasePath: snapshotPath, cause }),
-          ),
-      }),
     );
 
     yield* Console.log(

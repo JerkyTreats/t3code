@@ -420,6 +420,12 @@ layer("fork migration continuation", (it) => {
           [84, "PullRequestReviewGuides"],
           [85, "PublishedResponseActivityIndex"],
           [86, "ThreadFailureLookupIndex"],
+          [87, "DropUnusedV1Projections"],
+          [88, "CanonicalizeThreadPullRequestLinks"],
+          [89, "CodexUsageNativeTurnIndex"],
+          [90, "RepairClientSettlementTimestamps"],
+          [91, "WebhookDedupe"],
+          [92, "ShellStopRequestIndex"],
         ],
       );
 
