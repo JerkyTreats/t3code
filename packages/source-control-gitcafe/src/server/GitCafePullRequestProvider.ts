@@ -1,3 +1,4 @@
+import { gitCafeOriginTarget } from "@t3tools/source-control-core/server/fork/originGitCafePolicy";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -190,7 +191,8 @@ export const make = Effect.gen(function* () {
     operation: string,
     input: ProviderRepositoryRef,
   ): Effect.Effect<string, PullRequestProviderError> =>
-    GitCafeHosts.isGitCafeHost(input.host) &&
+    // Fork F06: every repository-scoped read and mutation binds to the exact GitCafe origin.
+    gitCafeOriginTarget(input.origin, input.repository)?.host === input.host &&
     GitCafeHosts.gitCafeRepositoryPath(input.repository) === input.repository
       ? Effect.succeed(`/repos/${input.repository}`)
       : Effect.fail(

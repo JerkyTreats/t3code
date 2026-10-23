@@ -374,6 +374,8 @@ query ViewerPermissions($owner: String!, $name: String!, $number: Int!) {
     pullRequest(number: $number) {
       viewerCanUpdate
       viewerDidAuthor
+      # Fork F06: source-branch deletion is offered only for a head branch inside origin.
+      isCrossRepository
       headRepository {
         viewerPermission
       }
@@ -531,6 +533,8 @@ query PullRequestActionState($owner: String!, $name: String!, $number: Int!, $he
 # commit it should still point at, and the repository it lives in.
 query PullRequestBranchToDelete($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
+    # Fork F06: a source branch is deleted only inside the origin repository.
+    id
     pullRequest(number: $number) {
       state
       headRefName

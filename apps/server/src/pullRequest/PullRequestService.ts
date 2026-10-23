@@ -1,8 +1,9 @@
+import { canonicalRepositoryKey, isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 import {
-  canonicalRepositoryKey,
-  isSshRemoteUrl,
-  sourceControlRepositorySelector,
-} from "@t3tools/shared/sourceControl";
+  originPullRequestRepository,
+  requireProjectedOriginIdentity,
+  requireSelectedOriginProject,
+} from "../fork/sourceControlContextPolicy.ts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { parseDiffFilePaths } from "@t3tools/source-control-core/server/diffFileRevisions";
 import * as Cache from "effect/Cache";
@@ -80,6 +81,7 @@ import {
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
+import * as OriginRepositoryMutationAuthority from "../fork/OriginRepositoryMutationAuthority.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as PullRequestFilesViewed from "../persistence/PullRequestFilesViewed.ts";
@@ -317,6 +319,24 @@ export interface SupportedProject {
    */
   readonly remote: string;
   readonly repositoryKey: string | null;
+}
+
+/** Fork F06: every provider call carries the project's exact origin locator. */
+function providerRepositoryRefOf(project: SupportedProject) {
+  const locator = project.project.repositoryIdentity?.locator;
+  return {
+    cwd: project.project.workspaceRoot,
+    repository: project.repository,
+    host: project.host,
+    ...(locator === undefined
+      ? {}
+      : { origin: { remoteName: locator.remoteName, remoteUrl: locator.remoteUrl } }),
+  };
+}
+
+/** Fork F06: the provider-native repository selector derives from the exact origin only. */
+export function repositoryIdentityOf(project: OrchestrationProjectShell): string | null {
+  return originPullRequestRepository(project.repositoryIdentity);
 }
 
 interface WorkspaceProjects {
@@ -594,6 +614,8 @@ export const make = Effect.gen(function* () {
   const repositoryIdentities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const rateLimits = yield* SourceControlRateLimit.SourceControlRateLimit;
+  const mutationAuthority =
+    yield* OriginRepositoryMutationAuthority.OriginRepositoryMutationAuthority;
   const filesViewedStore = yield* PullRequestFilesViewed.PullRequestFilesViewedRepository;
   const readCache = yield* PullRequestReadCache.PullRequestReadCache;
 
@@ -614,7 +636,7 @@ export const make = Effect.gen(function* () {
       if (
         (identity?.provider !== "unknown" &&
           !(identity?.provider === "forgejo" && isSshRemoteUrl(identity.locator.remoteUrl))) ||
-        sourceControlRepositorySelector(project.repositoryIdentity) === null
+        repositoryIdentityOf(project) === null
       )
         continue;
       const host = pullRequestHostOf(identity, SourceControlProviderKind.make("unknown"));
@@ -722,7 +744,7 @@ export const make = Effect.gen(function* () {
           if (filter.projectIds !== undefined && !filter.projectIds.includes(project.id)) continue;
           const identity = project.repositoryIdentity;
           let kind = identity?.provider as SourceControlProviderKind | undefined;
-          const repository = sourceControlRepositorySelector(project.repositoryIdentity);
+          const repository = repositoryIdentityOf(project);
           if (!identity || kind === undefined || repository === null) continue;
           let refinedProvider: SourceControlProviderInfo | null | undefined;
           if (
@@ -772,95 +794,36 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  /**
-   * Azure derives its organization from the checkout, so it requires a matching
-   * repository.
-   */
-  const requireProject = (ref: PullRequestRef): Effect.Effect<SupportedProject, PullRequestError> =>
-    listWorkspaceProjects({ projectId: ref.projectId }).pipe(
-      Effect.flatMap(({ supported }): Effect.Effect<SupportedProject, PullRequestError> => {
-        const own = supported[0];
-        const repository = ref.repository.trim();
-        const host = ref.host?.trim().toLowerCase();
-        if (own !== undefined && own.repository.toLowerCase() === repository.toLowerCase()) {
-          if (host === undefined || host === own.host) return Effect.succeed(own);
-        }
-        if (host === undefined) {
-          if (own === undefined) {
-            return Effect.fail(new PullRequestUnavailableError({ reason: "provider-unsupported" }));
-          }
-          return Effect.fail(
-            new PullRequestOperationError({
-              operation: "resolveRepository",
-              detail: "The change request does not belong to the selected project.",
-            }),
-          );
-        }
-        const repositoryKey = canonicalRepositoryKey(`${host}/${repository}`.toLowerCase());
-        // Azure SSH and legacy clone hosts differ from the browser URL's host. Compare
-        // the complete repository identity before narrowing those checkouts by host.
-        return listWorkspaceProjects(
-          repositoryKey.startsWith("dev.azure.com/") ? {} : { host },
-        ).pipe(
-          Effect.flatMap(({ supported }) => {
-            const onHost = supported.filter((candidate) => candidate.host === host);
-            const route =
-              supported.find(
-                (candidate) =>
-                  candidate.repositoryKey !== null && candidate.repositoryKey === repositoryKey,
-              ) ??
-              onHost.find(
-                (candidate) =>
-                  candidate.repositoryKey === null &&
-                  candidate.repository.toLowerCase() === repository.toLowerCase(),
-              ) ??
-              onHost.find((candidate) => candidate.repositoryKey === null);
-            if (route === undefined) {
-              return Effect.gen(function* () {
-                const provider = ["github.com", "bitbucket.org", "codeberg.org"].includes(host)
-                  ? detectSourceControlProviderFromRemoteUrl(`https://${host}/${repository}.git`)
-                  : null;
-                const api = provider === null ? null : registry.get(provider.kind);
-                if (api !== null) {
-                  const selected = yield* projects.getShell(ref.projectId).pipe(
-                    Effect.mapError(
-                      (cause) =>
-                        new PullRequestOperationError({
-                          operation: "resolveRepository",
-                          detail: "The selected project could not be read.",
-                          cause,
-                        }),
-                    ),
-                  );
-                  if (Option.isSome(selected)) {
-                    return {
-                      cursorKey: listCursorKey(host, repository),
-                      project: selected.value,
-                      api: withRateLimitBackoff(api, host, rateLimits),
-                      repository,
-                      host,
-                      remote: normalizeGitRemoteUrl(`https://${host}/${repository}`),
-                      repositoryKey: null,
-                    };
-                  }
-                }
-                return yield* new PullRequestUnavailableError({ reason: "provider-unsupported" });
-              });
-            }
-            return Effect.succeed(
-              route.repositoryKey !== null ||
-                route.repository.toLowerCase() === repository.toLowerCase()
-                ? route
-                : {
-                    ...route,
-                    repository,
-                    remote: normalizeGitRemoteUrl(`https://${host}/${repository}`),
-                  },
-            );
-          }),
-        );
-      }),
+  /** Fork F06: a change request is read or changed only through its selected project's origin. */
+  const requireProject = Effect.fn("PullRequestService.requireProject")(function* (
+    ref: PullRequestRef,
+  ): Effect.fn.Return<SupportedProject, PullRequestError> {
+    const { supported } = yield* listWorkspaceProjects({ projectId: ref.projectId });
+    return yield* requireSelectedOriginProject(supported[0], ref);
+  });
+
+  /** Fork F06: hosted mutations revalidate live origin before permission or provider calls. */
+  const requireMutationProject = Effect.fn("PullRequestService.requireMutationProject")(function* (
+    ref: PullRequestRef,
+  ): Effect.fn.Return<SupportedProject, PullRequestError> {
+    const project = yield* requireProject(ref);
+    const expectedIdentity = yield* requireProjectedOriginIdentity(
+      project.project.repositoryIdentity,
     );
+    yield* mutationAuthority
+      .authorize({ cwd: project.project.workspaceRoot, expectedIdentity })
+      .pipe(
+        Effect.mapError(
+          (error) =>
+            new PullRequestOperationError({
+              operation: "authorizeMutation",
+              detail: error.detail,
+              cause: error,
+            }),
+        ),
+      );
+    return project;
+  });
 
   const canonicalRef = Effect.fn("PullRequestService.canonicalRef")(function* <
     I extends PullRequestRef,
@@ -888,9 +851,7 @@ export const make = Effect.gen(function* () {
   ) =>
     project.api
       .getViewerPermissions({
-        cwd: project.project.workspaceRoot,
-        repository: project.repository,
-        host: project.host,
+        ...providerRepositoryRefOf(project),
         number: ref.number,
         includeUpdateBranch,
       })
@@ -1172,9 +1133,7 @@ export const make = Effect.gen(function* () {
         const cursor = cursorOf(project);
         return project.api
           .listChangeRequests({
-            cwd: project.project.workspaceRoot,
-            repository: project.repository,
-            host: project.host,
+            ...providerRepositoryRefOf(project),
             state: input.state,
             involvement,
             viewer,
@@ -1464,9 +1423,7 @@ export const make = Effect.gen(function* () {
     requireProject(input).pipe(
       Effect.flatMap((project) => {
         const providerInput = {
-          cwd: project.project.workspaceRoot,
-          repository: project.repository,
-          host: project.host,
+          ...providerRepositoryRefOf(project),
           number: input.number,
         };
         const read =
@@ -1522,9 +1479,7 @@ export const make = Effect.gen(function* () {
         const read = project.api.getChangeRequestStack;
         if (read === undefined) return Effect.succeed(null);
         return read({
-          cwd: project.project.workspaceRoot,
-          repository: project.repository,
-          host: project.host,
+          ...providerRepositoryRefOf(project),
           number: input.number,
           includeDetails: options?.includeDetails !== false,
         }).pipe(
@@ -1556,9 +1511,7 @@ export const make = Effect.gen(function* () {
           [
             project.api
               .getChangeRequest({
-                cwd: project.project.workspaceRoot,
-                repository: project.repository,
-                host: project.host,
+                ...providerRepositoryRefOf(project),
                 number: input.number,
               })
               .pipe(Effect.mapError(toPullRequestError("detail")), observeRead),
@@ -1634,9 +1587,7 @@ export const make = Effect.gen(function* () {
     requireProject(input).pipe(
       Effect.flatMap((project) =>
         (project.api.getChangeRequestPreview ?? project.api.getChangeRequest)({
-          cwd: project.project.workspaceRoot,
-          repository: project.repository,
-          host: project.host,
+          ...providerRepositoryRefOf(project),
           number: input.number,
         }).pipe(
           Effect.mapError(toPullRequestError("preview")),
@@ -1656,9 +1607,7 @@ export const make = Effect.gen(function* () {
       Effect.flatMap((project) =>
         project.api
           .getChangeRequestActivity({
-            cwd: project.project.workspaceRoot,
-            repository: project.repository,
-            host: project.host,
+            ...providerRepositoryRefOf(project),
             number: input.number,
           })
           .pipe(
@@ -1694,9 +1643,7 @@ export const make = Effect.gen(function* () {
             );
           }
           return read({
-            cwd: project.project.workspaceRoot,
-            repository: project.repository,
-            host: project.host,
+            ...providerRepositoryRefOf(project),
             number: input.number,
             threadId: input.threadId,
             cursor: input.cursor,
@@ -1711,9 +1658,7 @@ export const make = Effect.gen(function* () {
         project.api.capabilities.diff
           ? project.api
               .getDiff({
-                cwd: project.project.workspaceRoot,
-                repository: project.repository,
-                host: project.host,
+                ...providerRepositoryRefOf(project),
                 number: input.number,
                 ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
                 ...(input.commit === undefined ? {} : { commit: input.commit }),
@@ -1734,9 +1679,7 @@ export const make = Effect.gen(function* () {
         const read = project.api.getDiffFileContents;
         return project.api.capabilities.diff && read
           ? read({
-              cwd: project.project.workspaceRoot,
-              repository: project.repository,
-              host: project.host,
+              ...providerRepositoryRefOf(project),
               number: input.number,
               ...(input.commit === undefined ? {} : { commit: input.commit }),
               changeType: input.changeType,
@@ -1787,7 +1730,7 @@ export const make = Effect.gen(function* () {
     );
 
   const runAction = (input: PullRequestActionInput): Effect.Effect<string, PullRequestError> =>
-    requireProject(input).pipe(
+    requireMutationProject(input).pipe(
       Effect.flatMap((project): Effect.Effect<string, PullRequestError> => {
         if (input.action === "delete-branch" && project.api.capabilities.deleteBranch !== true) {
           return Effect.fail(
@@ -1897,9 +1840,7 @@ export const make = Effect.gen(function* () {
               Effect.flatMap((removeAgentCreditsOnMerge) =>
                 project.api
                   .runAction({
-                    cwd: project.project.workspaceRoot,
-                    repository: project.repository,
-                    host: project.host,
+                    ...providerRepositoryRefOf(project),
                     number: input.number,
                     action: input.action,
                     ...(removeAgentCreditsOnMerge ? { removeAgentCreditsOnMerge: true } : {}),
@@ -1949,7 +1890,7 @@ export const make = Effect.gen(function* () {
             detail: "A comment cannot be empty.",
           }),
         )
-      : requireProject(input)
+      : requireMutationProject(input)
     ).pipe(
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         if (!project.api.capabilities.comment) {
@@ -1973,9 +1914,7 @@ export const make = Effect.gen(function* () {
             }
             return project.api
               .comment({
-                cwd: project.project.workspaceRoot,
-                repository: project.repository,
-                host: project.host,
+                ...providerRepositoryRefOf(project),
                 number: input.number,
                 body: input.body,
               })
@@ -1992,7 +1931,7 @@ export const make = Effect.gen(function* () {
    * the one person certain to be allowed.
    */
   const update: PullRequestService["Service"]["update"] = (input) =>
-    requireProject(input).pipe(
+    requireMutationProject(input).pipe(
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         const rewrite = project.api.updateChangeRequest;
         if (project.api.capabilities.edit?.changeRequest !== true || rewrite === undefined) {
@@ -2012,9 +1951,7 @@ export const make = Effect.gen(function* () {
           );
         }
         return rewrite({
-          cwd: project.project.workspaceRoot,
-          repository: project.repository,
-          host: project.host,
+          ...providerRepositoryRefOf(project),
           number: input.number,
           ...(input.title === undefined ? {} : { title: input.title }),
           ...(input.body === undefined ? {} : { body: input.body }),
@@ -2030,7 +1967,7 @@ export const make = Effect.gen(function* () {
             detail: "A comment cannot be empty.",
           }),
         )
-      : requireProject(input)
+      : requireMutationProject(input)
     ).pipe(
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         const rewrite = project.api.updateComment;
@@ -2043,9 +1980,7 @@ export const make = Effect.gen(function* () {
           );
         }
         return rewrite({
-          cwd: project.project.workspaceRoot,
-          repository: project.repository,
-          host: project.host,
+          ...providerRepositoryRefOf(project),
           number: input.number,
           commentId: input.commentId,
           kind: input.kind,
@@ -2055,7 +1990,7 @@ export const make = Effect.gen(function* () {
     );
 
   const submitReview: PullRequestService["Service"]["submitReview"] = (input) =>
-    requireProject(input).pipe(
+    requireMutationProject(input).pipe(
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         const review = project.api.capabilities.review;
         const refuse = (detail: string) =>
@@ -2089,9 +2024,7 @@ export const make = Effect.gen(function* () {
             }
             return project.api
               .submitReview({
-                cwd: project.project.workspaceRoot,
-                repository: project.repository,
-                host: project.host,
+                ...providerRepositoryRefOf(project),
                 number: input.number,
                 verdict: input.verdict,
                 body: input.body,
@@ -2111,7 +2044,7 @@ export const make = Effect.gen(function* () {
             detail: "A reply cannot be empty.",
           }),
         )
-      : requireProject(input)
+      : requireMutationProject(input)
     ).pipe(
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         if (!project.api.capabilities.review.reply) {
@@ -2135,9 +2068,7 @@ export const make = Effect.gen(function* () {
             }
             return project.api
               .replyToThread({
-                cwd: project.project.workspaceRoot,
-                repository: project.repository,
-                host: project.host,
+                ...providerRepositoryRefOf(project),
                 number: input.number,
                 threadId: input.threadId,
                 body: input.body,
@@ -2149,7 +2080,7 @@ export const make = Effect.gen(function* () {
     );
 
   const setThreadResolution: PullRequestService["Service"]["setThreadResolution"] = (input) =>
-    requireProject(input).pipe(
+    requireMutationProject(input).pipe(
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         if (!project.api.capabilities.review.resolve) {
           return Effect.fail(
@@ -2172,9 +2103,7 @@ export const make = Effect.gen(function* () {
             }
             return project.api
               .setThreadResolution({
-                cwd: project.project.workspaceRoot,
-                repository: project.repository,
-                host: project.host,
+                ...providerRepositoryRefOf(project),
                 number: input.number,
                 threadId: input.threadId,
                 resolved: input.resolved,
@@ -2190,7 +2119,7 @@ export const make = Effect.gen(function* () {
    * is no access left to check that reading it has not already settled.
    */
   const setReaction: PullRequestService["Service"]["setReaction"] = (input) =>
-    requireProject(input).pipe(
+    requireMutationProject(input).pipe(
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         if (project.api.capabilities.reactions !== true) {
           return Effect.fail(
@@ -2202,9 +2131,7 @@ export const make = Effect.gen(function* () {
         }
         return project.api
           .setReaction({
-            cwd: project.project.workspaceRoot,
-            repository: project.repository,
-            host: project.host,
+            ...providerRepositoryRefOf(project),
             number: input.number,
             ...(input.subjectId === undefined ? {} : { subjectId: input.subjectId }),
             content: input.content,
@@ -2232,9 +2159,7 @@ export const make = Effect.gen(function* () {
                 viewer.requestReviewers
                   ? project.api
                       .listReviewerCandidates({
-                        cwd: project.project.workspaceRoot,
-                        repository: project.repository,
-                        host: project.host,
+                        ...providerRepositoryRefOf(project),
                         number: input.number,
                       })
                       .pipe(Effect.mapError(toPullRequestError("reviewerCandidates")))
@@ -2251,7 +2176,7 @@ export const make = Effect.gen(function* () {
     );
 
   const requestReviewers: PullRequestService["Service"]["requestReviewers"] = (input) =>
-    requireProject(input).pipe(
+    requireMutationProject(input).pipe(
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         if (!project.api.capabilities.reviewers.request) {
           return Effect.fail(
@@ -2273,9 +2198,7 @@ export const make = Effect.gen(function* () {
             }
             return project.api
               .setReviewerRequest({
-                cwd: project.project.workspaceRoot,
-                repository: project.repository,
-                host: project.host,
+                ...providerRepositoryRefOf(project),
                 number: input.number,
                 reviewers: input.reviewers,
                 requested: input.requested,
@@ -2309,9 +2232,7 @@ export const make = Effect.gen(function* () {
                     }),
                   )
                 : list({
-                    cwd: project.project.workspaceRoot,
-                    repository: project.repository,
-                    host: project.host,
+                    ...providerRepositoryRefOf(project),
                     number: input.number,
                   }).pipe(Effect.mapError(toPullRequestError("labelCandidates"))),
           ),
@@ -2320,7 +2241,7 @@ export const make = Effect.gen(function* () {
     );
 
   const setLabels: PullRequestService["Service"]["setLabels"] = (input) =>
-    requireProject(input).pipe(
+    requireMutationProject(input).pipe(
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         const change = project.api.setLabels;
         if (project.api.capabilities.labels !== true || change === undefined) {
@@ -2341,9 +2262,7 @@ export const make = Effect.gen(function* () {
                   }),
                 )
               : change({
-                  cwd: project.project.workspaceRoot,
-                  repository: project.repository,
-                  host: project.host,
+                  ...providerRepositoryRefOf(project),
                   number: input.number,
                   labels: input.labels,
                   applied: input.applied,
@@ -2611,6 +2530,8 @@ export const make = Effect.gen(function* () {
   const viewedFiles = ViewedFiles.make({
     filesViewedStore,
     requireProject,
+    requireMutationProject,
+    providerRepositoryRefOf,
     requiredViewerOf,
     toPullRequestError,
     runFork,
@@ -2785,9 +2706,7 @@ export const make = Effect.gen(function* () {
             ? Effect.succeed(null)
             : project.api
                 .getChangeRequestChecks({
-                  cwd: project.project.workspaceRoot,
-                  repository: project.repository,
-                  host: project.host,
+                  ...providerRepositoryRefOf(project),
                   number: input.number,
                 })
                 .pipe(
@@ -2813,9 +2732,7 @@ export const make = Effect.gen(function* () {
             ? Effect.succeed(null)
             : project.api
                 .getChangeRequestWatchFingerprint({
-                  cwd: project.project.workspaceRoot,
-                  repository: project.repository,
-                  host: project.host,
+                  ...providerRepositoryRefOf(project),
                   number: input.number,
                 })
                 .pipe(Effect.mapError(toPullRequestError("watchFingerprint"))),
@@ -2995,9 +2912,7 @@ export const make = Effect.gen(function* () {
           const read = project.api.getFileStats;
           if (read === undefined) return Effect.succeed(null);
           return read({
-            cwd: project.project.workspaceRoot,
-            repository: project.repository,
-            host: project.host,
+            ...providerRepositoryRefOf(project),
             number: ref.number,
           }).pipe(
             Effect.map(toChangeBreakdown),
@@ -3440,4 +3355,6 @@ export const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(PullRequestService, make);
+export const layer = Layer.effect(PullRequestService, make).pipe(
+  Layer.provide(OriginRepositoryMutationAuthority.layer),
+);

@@ -483,14 +483,23 @@ export const make = Effect.gen(function* () {
     input: ForgejoRepositoryInput,
     hostOnly = false,
   ) {
-    const referenceRemote = input.reference ? parseForgejoRemote(input.reference) : null;
-    let remoteUrl = [input.reference, input.repository, input.context?.remoteUrl].find(
+    // Fork F06: a bound context must be literal origin, and it outranks reference and repository hints.
+    if (input.context && input.context.remoteName !== "origin") {
+      return yield* new ForgejoCliError({
+        command: "tea",
+        cwd: input.cwd,
+        detail: "Origin-only policy requires an exact origin repository context.",
+      });
+    }
+    const referenceRemote =
+      input.context || !input.reference ? null : parseForgejoRemote(input.reference);
+    let remoteUrl = [input.context?.remoteUrl, input.reference, input.repository].find(
       (value) => value && parseForgejoRemote(value),
     );
     let remote =
+      (input.context ? parseForgejoRemote(input.context.remoteUrl) : null) ??
       referenceRemote ??
-      (input.repository ? parseForgejoRemote(input.repository) : null) ??
-      (input.context ? parseForgejoRemote(input.context.remoteUrl) : null);
+      (input.repository ? parseForgejoRemote(input.repository) : null);
     if (!remote && (!input.repository || input.host)) {
       const result = yield* process
         .run({
@@ -538,6 +547,7 @@ export const make = Effect.gen(function* () {
       remote = remoteUrl ? parseForgejoRemote(remoteUrl) : null;
     }
     if (
+      !input.context &&
       input.host &&
       !remote?.ssh &&
       remote?.host !== input.host.toLowerCase() &&
@@ -606,7 +616,7 @@ export const make = Effect.gen(function* () {
     if (hostOnly)
       return { command, login: login.name, repository: "", baseUrl: login.url.replace(/\/+$/, "") };
     const path =
-      referenceRemote?.path ??
+      (input.context ? remote?.path : referenceRemote?.path) ??
       (input.repository && !parseForgejoRemote(input.repository)
         ? input.repository
         : remote?.path) ??

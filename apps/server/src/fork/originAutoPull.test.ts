@@ -110,8 +110,14 @@ describe.each(["startup", "broadcaster"] as const)(
             yield* run(["rev-parse", "HEAD"]),
             trackingRemote === "origin" ? remoteHead : initial,
           );
-          assert.equal(yield* run(["rev-parse", "refs/heads/main"], origin), remoteHead);
-          assert.equal(yield* run(["rev-parse", "refs/heads/main"], upstream), remoteHead);
+          assert.equal(
+            yield* run(["--git-dir=.", "rev-parse", "refs/heads/main"], origin),
+            remoteHead,
+          );
+          assert.equal(
+            yield* run(["--git-dir=.", "rev-parse", "refs/heads/main"], upstream),
+            remoteHead,
+          );
         }).pipe(Effect.provide(driverLayer)),
     );
   },

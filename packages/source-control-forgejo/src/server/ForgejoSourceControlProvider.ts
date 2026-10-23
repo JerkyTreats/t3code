@@ -15,6 +15,7 @@ import {
   type SourceControlManagedCliDiscoverySpec,
 } from "@t3tools/source-control-core/server/discovery";
 import { ForgejoPullRequestSchema, toForgejoChangeRequest } from "./forgejoPullRequests.ts";
+import { originForgejoChangeRequestNumber } from "@t3tools/source-control-core/server/fork/originHostedProviderPolicy";
 
 const isForgejoCliError = Schema.is(ForgejoCli.ForgejoCliError);
 
@@ -289,16 +290,23 @@ export const make = Effect.gen(function* () {
       SourceControlProvider.SourceControlProvider["Service"]["getChangeRequest"]
     >[0],
   ) {
-    const repo = yield* cli.resolveRepository(input);
-    const number = /(?:^#?|\/pulls\/)(\d+)(?:\/[^?#]*)?(?:[?#].*)?$/.exec(input.reference)?.[1];
-    if (!number)
+    // Fork F06: only a number or a pull URL inside the bound origin repository selects a pull.
+    const number = originForgejoChangeRequestNumber(input.context, input.reference);
+    if (!number || !input.context)
       return yield* new ForgejoCli.ForgejoCliError({
         command: "tea",
         cwd: input.cwd,
-        detail: "Specify a pull request number or Forgejo pull request URL.",
+        detail:
+          "Origin-only policy requires a pull request number or URL in the exact origin repository.",
       });
+    const repo = yield* cli.resolveRepository({ cwd: input.cwd, context: input.context });
     return yield* request(
-      { ...input, path: `${repositoryPath(repo.repository)}/pulls/${number}` },
+      {
+        cwd: input.cwd,
+        context: input.context,
+        repository: repo.repository,
+        path: `${repositoryPath(repo.repository)}/pulls/${number}`,
+      },
       ForgejoPullRequestSchema,
     );
   });
@@ -345,12 +353,19 @@ export const make = Effect.gen(function* () {
     createChangeRequest: Effect.fn("ForgejoSourceControlProvider.createChangeRequest")(
       function* (input) {
         const repo = yield* cli.resolveRepository(input);
+        if (input.target?.repository && input.target.repository !== repo.repository) {
+          return yield* new ForgejoCli.ForgejoCliError({
+            command: "tea",
+            cwd: input.cwd,
+            detail: "Origin-only policy requires the target repository to match origin.",
+          });
+        }
         const source = SourceControlProvider.sourceControlRefFromInput(input);
         const owner = source?.owner ?? source?.repository?.split("/")[0];
         const head = SourceControlProvider.sourceBranch(input);
         yield* cli.api({
           ...input,
-          path: `${repositoryPath(input.target?.repository ?? repo.repository)}/pulls`,
+          path: `${repositoryPath(repo.repository)}/pulls`,
           method: "POST",
           body: {
             base: input.target?.refName ?? input.baseRefName,
@@ -408,8 +423,11 @@ export const make = Effect.gen(function* () {
     ),
     checkoutChangeRequest: Effect.fn("ForgejoSourceControlProvider.checkoutChangeRequest")(
       function* (input) {
-        const repo = yield* cli.resolveRepository(input);
         const pull = yield* getPull(input);
+        const repo = yield* cli.resolveRepository({
+          cwd: input.cwd,
+          ...(input.context ? { context: input.context } : {}),
+        });
         if (repo.command === "fj") {
           // fj checkout cannot target a repository outside the local remotes.
           const urls = yield* request(

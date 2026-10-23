@@ -1,3 +1,7 @@
+import {
+  bitbucketOriginHostFailure,
+  selectBitbucketOrigin,
+} from "@t3tools/source-control-core/server/fork/originHostedProviderPolicy";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -17,10 +21,7 @@ import {
 } from "@t3tools/contracts";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { sanitizeBranchFragment } from "@t3tools/shared/git";
-import {
-  detectSourceControlProviderFromRemoteUrl,
-  isSshRemoteUrl,
-} from "@t3tools/shared/sourceControl";
+import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 
 import {
   BitbucketPullRequestListSchema,
@@ -254,8 +255,29 @@ export class BitbucketUntrustedUrlError extends Schema.TaggedError<BitbucketUntr
   }
 }
 
+/** Fork F06: the configured API refuses work for any host other than the exact origin's. */
+export class BitbucketOriginHostError extends Schema.TaggedError<BitbucketOriginHostError>()(
+  "BitbucketOriginHostError",
+  {
+    reason: Schema.Literals(["origin-context-required", "origin-host-mismatch"]),
+    originHost: Schema.optional(Schema.String),
+    apiHost: Schema.String,
+  },
+) {
+  get detail(): string {
+    return this.reason === "origin-context-required"
+      ? "An exact origin Bitbucket host is required before using the configured API."
+      : "The exact origin host does not match the configured Bitbucket API host.";
+  }
+
+  override get message(): string {
+    return `Bitbucket API refused the request: ${this.detail}`;
+  }
+}
+
 export const BitbucketApiError = Schema.Union([
   BitbucketUntrustedUrlError,
+  BitbucketOriginHostError,
   BitbucketRepositoryLocatorError,
   BitbucketRequestError,
   BitbucketResponseError,
@@ -329,6 +351,14 @@ export class BitbucketApi extends Context.Service<
   BitbucketApi,
   {
     readonly probeAuth: Effect.Effect<SourceControlProviderAuth, never>;
+    /** Fork F06: refuse a host other than the configured API's before any request. */
+    readonly authorizeOriginHost: (input: {
+      readonly originHost?: string;
+    }) => Effect.Effect<void, BitbucketOriginHostError>;
+    /** Fork F06: refuse a pull request target whose exact origin locator names another host. */
+    readonly authorizeOrigin: (
+      origin: { readonly remoteName: string; readonly remoteUrl: string } | undefined,
+    ) => Effect.Effect<void, BitbucketOriginHostError>;
 
     readonly request: (input: {
       readonly method: "GET" | "POST" | "PUT" | "DELETE";
@@ -356,6 +386,7 @@ export class BitbucketApi extends Context.Service<
     }) => Effect.Effect<SourceControlRepositoryCloneUrls, BitbucketApiError>;
     readonly createRepository: (input: {
       readonly cwd: string;
+      readonly providerBaseUrl: string;
       readonly repository: string;
       readonly visibility: SourceControlRepositoryVisibility;
     }) => Effect.Effect<SourceControlRepositoryCloneUrls, BitbucketApiError>;
@@ -570,12 +601,15 @@ function resolveCredential(
   );
 }
 
-function authFromCredential(credential: BitbucketCredential | null): SourceControlProviderAuth {
+function authFromCredential(
+  credential: BitbucketCredential | null,
+  configuredHost: string,
+): SourceControlProviderAuth {
   if (credential?.kind === "access-token") {
     return {
       status: "unknown",
       account: Option.none(),
-      host: Option.some("bitbucket.org"),
+      host: Option.some(configuredHost),
       detail: Option.some("An access token is configured."),
     };
   }
@@ -584,7 +618,7 @@ function authFromCredential(credential: BitbucketCredential | null): SourceContr
     return {
       status: "unknown",
       account: Option.some(credential.email),
-      host: Option.some("bitbucket.org"),
+      host: Option.some(configuredHost),
       detail: Option.some("An API token is configured."),
     };
   }
@@ -592,7 +626,7 @@ function authFromCredential(credential: BitbucketCredential | null): SourceContr
   return {
     status: "unauthenticated",
     account: Option.none(),
-    host: Option.some("bitbucket.org"),
+    host: Option.some(configuredHost),
     detail: Option.some(
       "Add a Bitbucket token in Settings → Source Control, or set the T3CODE_BITBUCKET_* environment variables on the server.",
     ),
@@ -651,6 +685,36 @@ export const make = Effect.gen(function* () {
   };
 
   const apiUrl = (path: string) => `${config.baseUrl.replace(/\/+$/u, "")}${path}`;
+  const apiOrigin = originOf(config.baseUrl);
+  const apiHost = (() => {
+    try {
+      return new URL(config.baseUrl).host.toLowerCase();
+    } catch {
+      return "an unreadable host";
+    }
+  })();
+
+  const authorizeOriginHost: BitbucketApi["Service"]["authorizeOriginHost"] = (input) => {
+    const failure = bitbucketOriginHostFailure(input.originHost, apiHost);
+    return failure === null
+      ? Effect.void
+      : Effect.fail(new BitbucketOriginHostError({ ...failure, apiHost }));
+  };
+
+  const authorizeOrigin: BitbucketApi["Service"]["authorizeOrigin"] = (origin) => {
+    const selection = selectBitbucketOrigin({
+      remotes: origin === undefined ? [] : [{ name: origin.remoteName, url: origin.remoteUrl }],
+      apiHost,
+    });
+    if (selection.kind === "target") return Effect.void;
+    return Effect.fail(
+      new BitbucketOriginHostError(
+        selection.kind === "host-refused"
+          ? { ...selection.failure, apiHost }
+          : { reason: "origin-context-required", apiHost },
+      ),
+    );
+  };
 
   const currentCredential = host.settings.get.pipe(
     Effect.map((settings) =>
@@ -756,45 +820,54 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  /** Fork F06: a bound Bitbucket origin, or the literal local origin, on the configured host. */
+  const resolveBoundOriginUrl = Effect.fn("BitbucketApi.resolveBoundOriginUrl")(function* (input: {
+    readonly cwd: string;
+    readonly context?: SourceControlProvider.SourceControlProviderContext;
+  }) {
+    let selection = selectBitbucketOrigin({ ...input, apiHost });
+    if (selection.kind === "inspect-remotes") {
+      const listRemotes = yield* git.remotes(input.cwd).pipe(
+        Effect.mapError(
+          (cause) =>
+            new BitbucketRepositoryVcsResolveError({
+              cwd: input.cwd,
+              cause,
+            }),
+        ),
+      );
+      const remotes = yield* listRemotes.pipe(
+        Effect.mapError(
+          (cause) =>
+            new BitbucketRepositoryRemotesListError({
+              cwd: input.cwd,
+              cause,
+            }),
+        ),
+      );
+      selection = selectBitbucketOrigin({ ...input, apiHost, remotes: remotes.remotes });
+    }
+    if (selection.kind === "target") return selection.url;
+    if (selection.kind === "host-refused") {
+      return yield* new BitbucketOriginHostError({ ...selection.failure, apiHost });
+    }
+    return yield* new BitbucketRepositoryRemoteNotFoundError({
+      cwd: input.cwd,
+    });
+  });
+
   const resolveRepository = Effect.fn("BitbucketApi.resolveRepository")(function* (input: {
     readonly cwd: string;
     readonly context?: SourceControlProvider.SourceControlProviderContext;
     readonly repository?: string;
   }) {
-    if (input.repository !== undefined) {
-      return yield* requireRepositoryLocator(input.repository);
-    }
+    const fromRepository =
+      input.repository === undefined ? null : yield* requireRepositoryLocator(input.repository);
+    const originUrl = yield* resolveBoundOriginUrl(input);
+    if (fromRepository) return fromRepository;
 
-    const fromContext =
-      input.context?.provider.kind === "bitbucket"
-        ? parseBitbucketRemoteUrl(input.context.remoteUrl)
-        : null;
-    if (fromContext) return fromContext;
-
-    const listRemotes = yield* git.remotes(input.cwd).pipe(
-      Effect.mapError(
-        (cause) =>
-          new BitbucketRepositoryVcsResolveError({
-            cwd: input.cwd,
-            cause,
-          }),
-      ),
-    );
-    const remotes = yield* listRemotes.pipe(
-      Effect.mapError(
-        (cause) =>
-          new BitbucketRepositoryRemotesListError({
-            cwd: input.cwd,
-            cause,
-          }),
-      ),
-    );
-
-    for (const remote of remotes.remotes) {
-      if (detectSourceControlProviderFromRemoteUrl(remote.url)?.kind !== "bitbucket") continue;
-      const parsed = parseBitbucketRemoteUrl(remote.url);
-      if (parsed) return parsed;
-    }
+    const fromOrigin = parseBitbucketRemoteUrl(originUrl);
+    if (fromOrigin) return fromOrigin;
 
     return yield* new BitbucketRepositoryRemoteNotFoundError({
       cwd: input.cwd,
@@ -891,8 +964,6 @@ export const make = Effect.gen(function* () {
       url: selectCloneUrl({ cloneUrls, originRemoteUrl }),
     });
   });
-
-  const apiOrigin = originOf(config.baseUrl);
 
   const trustedUrl = (value: string): string | null => {
     if (!/^https?:\/\//u.test(value)) return apiUrl(value);
@@ -993,6 +1064,8 @@ export const make = Effect.gen(function* () {
     );
 
   return BitbucketApi.of({
+    authorizeOriginHost,
+    authorizeOrigin,
     request,
     probeAuth: executeJson(
       "probeAuth",
@@ -1002,10 +1075,12 @@ export const make = Effect.gen(function* () {
       Effect.map((user) => ({
         status: "authenticated" as const,
         account: nonEmpty(user.username ?? user.display_name ?? user.account_id),
-        host: Option.some("bitbucket.org"),
+        host: Option.some(apiHost),
         detail: Option.none<string>(),
       })),
-      Effect.catch(() => currentCredential.pipe(Effect.map(authFromCredential))),
+      Effect.catch(() =>
+        currentCredential.pipe(Effect.map((credential) => authFromCredential(credential, apiHost))),
+      ),
     ),
     listPullRequests: (input) =>
       resolveRepository(input).pipe(
@@ -1038,8 +1113,11 @@ export const make = Effect.gen(function* () {
       getRawPullRequest(input).pipe(Effect.map(normalizeBitbucketPullRequestRecord)),
     getRepositoryCloneUrls: (input) =>
       getRepository(input).pipe(Effect.map(normalizeRepositoryCloneUrls)),
-    createRepository: (input) =>
-      requireRepositoryLocator(input.repository).pipe(
+    createRepository: (input) => {
+      // Fork F06: publication names its endpoint, which must be the configured API host.
+      const endpointHost = SourceControlProvider.providerHostFromBaseUrl(input.providerBaseUrl);
+      return authorizeOriginHost(endpointHost === null ? {} : { originHost: endpointHost }).pipe(
+        Effect.andThen(requireRepositoryLocator(input.repository)),
         Effect.flatMap((repository) =>
           executeJson(
             "createRepository",
@@ -1057,7 +1135,8 @@ export const make = Effect.gen(function* () {
           ),
         ),
         Effect.map(normalizeRepositoryCloneUrls),
-      ),
+      );
+    },
     createPullRequest: Effect.fn("BitbucketApi.createPullRequest")(function* (input) {
       const repository = yield* resolveRepository(input);
       const description = yield* fileSystem.readFileString(input.bodyFile).pipe(

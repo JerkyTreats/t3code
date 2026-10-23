@@ -9,6 +9,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import {
+  isOriginReviewThread,
+  requireOriginReviewThread,
+} from "@t3tools/source-control-core/server/fork/originReviewThreadPolicy";
+import { isOriginHeadRepository } from "@t3tools/source-control-core/server/fork/originHostedProviderPolicy";
 import { GraphQLClient, GraphQLClientError, GraphQLGroup, GraphQLResolver } from "effect/graphql";
 import { HttpClient } from "effect/http";
 import * as RequestResolver from "effect/RequestResolver";
@@ -47,6 +52,7 @@ import * as GitHubRest from "./GitHubRest.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 import * as GitHubGraphQlClient from "./gitHubGraphQlClient.ts";
 import { PullRequestBatchesGraphQLGroup } from "./pullRequestBatches.graphql.ts";
+import { OriginReviewThreadGraphQLGroup } from "./originReviewThread.graphql.ts";
 import { PullRequestMutationsGraphQLGroup } from "./pullRequestMutations.graphql.ts";
 import { PullRequestReadsGraphQLGroup } from "./pullRequestReads.graphql.ts";
 import { PullRequestReviewsGraphQLGroup } from "./pullRequestReviews.graphql.ts";
@@ -279,6 +285,7 @@ export class GitHubBranchDeletionRefusedError extends Schema.TaggedError<GitHubB
       "source-unavailable",
       "unsafe-branch",
       "head-changed",
+      "foreign-repository",
     ]),
   },
 ) {
@@ -294,6 +301,8 @@ export class GitHubBranchDeletionRefusedError extends Schema.TaggedError<GitHubB
         return "The source branch is a default or base branch and cannot be deleted here.";
       case "head-changed":
         return "The source branch has new commits and was not deleted.";
+      case "foreign-repository":
+        return "The source branch belongs to another repository and was not deleted.";
     }
   }
 }
@@ -689,6 +698,7 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly cwd: string;
       readonly repository: string;
       readonly host: string;
+      readonly number: number;
       readonly threadId: string;
       readonly body: string;
     }) => Effect.Effect<void, GitHubPullRequestApiError>;
@@ -697,6 +707,7 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly cwd: string;
       readonly repository: string;
       readonly host: string;
+      readonly number: number;
       readonly threadId: string;
       readonly resolved: boolean;
     }) => Effect.Effect<void, GitHubPullRequestApiError>;
@@ -903,6 +914,7 @@ const PullRequestGraphQLGroup = GraphQLGroup.merge(
   PullRequestReadsGraphQLGroup,
   PullRequestReviewsGraphQLGroup,
   PullRequestMutationsGraphQLGroup,
+  OriginReviewThreadGraphQLGroup,
 ).middleware(GitHubGraphQlClient.GitHubGraphQlAuth);
 
 interface RestReadInput<A> {
@@ -1173,6 +1185,29 @@ export const make = Effect.gen(function* () {
     return client
       .PullRequestSubject({ owner, name, number: input.number, subjectId: input.subjectId })
       .pipe(graphql({ ...input, allowReserve: true }), Effect.map(isSubjectOfPullRequest));
+  };
+
+  /** Fork F06: whether a review thread hangs on the origin pull request the caller named. */
+  const requireThreadOfPullRequest = (input: {
+    readonly cwd: string;
+    readonly repository: string;
+    readonly host: string;
+    readonly number: number;
+    readonly threadId: string;
+    readonly operation: string;
+  }) => {
+    const { owner, name } = parseRepositorySelector(input.repository);
+    return requireOriginReviewThread(
+      client
+        .OriginReviewThreadPullRequest({
+          owner,
+          name,
+          number: input.number,
+          threadId: input.threadId,
+        })
+        .pipe(graphql({ ...input, allowReserve: true }), Effect.map(isOriginReviewThread)),
+      new GitHubSubjectScopeError({ cwd: input.cwd, operation: input.operation }),
+    );
   };
 
   /** Decodes an answer, reporting a failure against the read that made it. */
@@ -2372,13 +2407,14 @@ export const make = Effect.gen(function* () {
           }
           const { owner, name } = parseRepositorySelector(input.repository);
           const target = { ...input, operation: "deletePullRequestBranch" };
-          const branch = yield* client
+          const origin = yield* client
             .PullRequestBranchToDelete({ owner, name, number: input.number })
             .pipe(
               graphql({ ...target, allowReserve: true }),
-              Effect.map((result) => result.repository?.pullRequest ?? null),
+              Effect.map((result) => result.repository),
               Effect.flatMap(found(target)),
             );
+          const branch = yield* found(target)(origin.pullRequest);
           if (branch.state === "OPEN") {
             return yield* new GitHubBranchDeletionRefusedError({
               number: input.number,
@@ -2390,6 +2426,17 @@ export const make = Effect.gen(function* () {
             return yield* new GitHubBranchDeletionRefusedError({
               number: input.number,
               reason: "source-unavailable",
+            });
+          }
+          if (
+            !isOriginHeadRepository({
+              originRepositoryId: origin.id,
+              headRepositoryId: repositoryId,
+            })
+          ) {
+            return yield* new GitHubBranchDeletionRefusedError({
+              number: input.number,
+              reason: "foreign-repository",
             });
           }
           if (branch.headRefName === branch.baseRefName) {
@@ -2648,9 +2695,13 @@ export const make = Effect.gen(function* () {
     },
 
     replyToReviewThread: (input) =>
-      client
-        .AddReviewThreadReply({ threadId: input.threadId, body: input.body })
-        .pipe(graphql({ ...input, operation: "replyToReviewThread" }), Effect.asVoid),
+      requireThreadOfPullRequest({ ...input, operation: "replyToReviewThread" }).pipe(
+        Effect.andThen(
+          client
+            .AddReviewThreadReply({ threadId: input.threadId, body: input.body })
+            .pipe(graphql({ ...input, operation: "replyToReviewThread" }), Effect.asVoid),
+        ),
+      ),
 
     getPullRequestFilesViewed: (input) => {
       const { owner, name } = parseRepositorySelector(input.repository);
@@ -2730,10 +2781,14 @@ export const make = Effect.gen(function* () {
     },
 
     setReviewThreadResolution: (input) =>
-      (input.resolved
-        ? client.ResolveReviewThread({ threadId: input.threadId }).pipe(Effect.asVoid)
-        : client.UnresolveReviewThread({ threadId: input.threadId }).pipe(Effect.asVoid)
-      ).pipe(graphql({ ...input, operation: "setReviewThreadResolution" })),
+      requireThreadOfPullRequest({ ...input, operation: "setReviewThreadResolution" }).pipe(
+        Effect.andThen(
+          (input.resolved
+            ? client.ResolveReviewThread({ threadId: input.threadId }).pipe(Effect.asVoid)
+            : client.UnresolveReviewThread({ threadId: input.threadId }).pipe(Effect.asVoid)
+          ).pipe(graphql({ ...input, operation: "setReviewThreadResolution" })),
+        ),
+      ),
 
     setReaction: (input) => {
       const givenSubjectId = input.subjectId;

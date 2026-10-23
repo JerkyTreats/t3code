@@ -1009,7 +1009,12 @@ describe("viewer permission decoding", () => {
         decodeViewerPermissionsJson(
           viewerJson({
             viewerPermission: "READ",
-            pullRequest: { viewerCanUpdate: false, viewerDidAuthor: false, headRepository: null },
+            pullRequest: {
+              viewerCanUpdate: false,
+              viewerDidAuthor: false,
+              isCrossRepository: false,
+              headRepository: null,
+            },
           }),
         ),
       ),
@@ -1023,6 +1028,30 @@ describe("viewer permission decoding", () => {
       canDeleteBranch: false,
     });
   });
+
+  // Fork F06: source-branch deletion is offered only for a head branch inside origin.
+  it.each([
+    { isCrossRepository: false, canDeleteBranch: true },
+    { isCrossRepository: true, canDeleteBranch: false },
+  ])(
+    "offers source-branch deletion only inside origin (cross-repository $isCrossRepository)",
+    ({ isCrossRepository, canDeleteBranch }) => {
+      const decoded = expectSuccess(
+        decodeViewerPermissionsJson(
+          viewerJson({
+            viewerPermission: "READ",
+            pullRequest: {
+              viewerCanUpdate: false,
+              viewerDidAuthor: false,
+              isCrossRepository,
+              headRepository: { viewerPermission: "WRITE" },
+            },
+          }),
+        ),
+      );
+      expect(decoded?.canDeleteBranch).toBe(canDeleteBranch);
+    },
+  );
 
   it("reads silence as permission, but not as authorship", () => {
     // A node the viewer cannot see comes back null. Updating is a permission, so an unknown

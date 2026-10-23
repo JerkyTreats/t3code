@@ -2,9 +2,9 @@ import { SourceControlProviderKind } from "@t3tools/contracts";
 import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
 import {
   defineSourceControlClient,
-  isChangeRequestAuthorityOfProject,
   isChangeRequestPath,
 } from "@t3tools/source-control-core/client/definition";
+import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/client/originRepositoryPolicy";
 
 const CHECKOUT_COMMAND = /^az\s+repos\s+pr\s+checkout\s+(.+)$/i;
 const CHANGE_REQUEST_REFERENCE =
@@ -25,7 +25,7 @@ export const definition = defineSourceControlClient({
   pickerLabel: "Azure DevOps",
   icon: "azure-devops",
   changeRequest: { shortLabel: "PR", singular: "pull request" },
-  repositoryPathHint: "project/repository",
+  repositoryPathHint: "organization/project/repository",
   // `az repos` reads need the checkout's organization and project, so a bare hostname names no
   // repository this client can act on.
   publicHost: null,
@@ -55,10 +55,8 @@ export const definition = defineSourceControlClient({
   isChangeRequestReference: (url) => CHANGE_REQUEST_REFERENCE.test(url),
   changeRequestUrlHost: (url) => url.hostname,
   checkoutChangeRequestHost: () => null,
-  isChangeRequestInRepository: (identity, link) =>
-    isChangeRequestAuthorityOfProject(identity, link) &&
-    canonicalRepositoryKey(identity.canonicalKey.toLowerCase()) ===
-      canonicalRepositoryKey(`${link.host}/${link.repository}`.toLowerCase()),
-  canReadChangeRequestOnHost: () => false,
+  // Fork F06: membership admission requires the exact origin locator.
+  isChangeRequestInRepository: exactOriginContainsChangeRequest,
+  canReadChangeRequestOnHost: exactOriginContainsChangeRequest,
   isChangeRequestUrl: (url) => isChangeRequestPath(url, "/pullrequest/"),
 });

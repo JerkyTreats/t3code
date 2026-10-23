@@ -1,4 +1,6 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
+import { requireGitLabPullRequestTarget } from "@t3tools/source-control-core/server/fork/originHostedProviderPolicy";
+import type { GitLabRepositoryTarget } from "@t3tools/source-control-core/server/fork/GitLabRepositoryTarget";
 import * as Effect from "effect/Effect";
 import type {
   PullRequestCapabilities,
@@ -13,6 +15,7 @@ import {
   type ProviderChangeRequestActivity,
   type ProviderChangeRequestDetail,
   type PullRequestProviderApi,
+  type ProviderRepositoryRef,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
 import { definition } from "../client/definition.ts";
 
@@ -112,206 +115,255 @@ export const make = Effect.gen(function* () {
       }),
     );
 
+  // Fork F06: every hosted call is bound to the exact origin host and repository derived from
+  // the repository reference's origin locator, never to the caller's repository string.
+  const onOrigin = <A, E>(
+    operation: string,
+    input: ProviderRepositoryRef,
+    use: (target: GitLabRepositoryTarget) => Effect.Effect<A, E>,
+  ) =>
+    requireGitLabPullRequestTarget({ operation, origin: input.origin }).pipe(Effect.flatMap(use));
+
   const provider: PullRequestProviderApi = {
     kind: SourceControlProviderKind.make("gitlab"),
     capabilities: CAPABILITIES,
 
     getViewer: (input) =>
-      cli.getViewerUsername({ cwd: input.cwd }).pipe(Effect.mapError(fail("getViewer"))),
+      cli
+        .getViewerUsername({ cwd: input.cwd, host: input.host })
+        .pipe(Effect.mapError(fail("getViewer"))),
 
     listChangeRequests: (input) =>
-      cli
-        .listMergeRequests({
-          cwd: input.cwd,
-          repository: input.repository,
-          state: input.state,
-          involvement: input.involvement,
-          viewer: input.viewer,
-          limit: input.limit,
-          query: input.query,
-          cursor: input.cursor,
-        })
-        .pipe(
-          Effect.mapError(fail("listChangeRequests")),
-          Effect.map((batch) => ({ ...batch, continues: true })),
-        ),
+      onOrigin("listChangeRequests", input, (target) =>
+        cli
+          .listMergeRequests({
+            cwd: input.cwd,
+            ...target,
+            state: input.state,
+            involvement: input.involvement,
+            viewer: input.viewer,
+            limit: input.limit,
+            query: input.query,
+            cursor: input.cursor,
+          })
+          .pipe(
+            Effect.mapError(fail("listChangeRequests")),
+            Effect.map((batch) => ({ ...batch, continues: true })),
+          ),
+      ),
 
     getChangeRequestChecks: (input) =>
-      cli.getMergeRequestDetail(input).pipe(
-        Effect.map(({ state, checks }) => ({ state, checks })),
-        Effect.mapError(fail("getChangeRequestChecks")),
+      onOrigin("getChangeRequestChecks", input, (target) =>
+        cli.getMergeRequestDetail({ ...input, ...target }).pipe(
+          Effect.map(({ state, checks }) => ({ state, checks })),
+          Effect.mapError(fail("getChangeRequestChecks")),
+        ),
       ),
 
     getChangeRequest: (input) =>
-      Effect.all(
-        [
-          cli.getMergeRequestDetail(input),
-          cli.getProjectMergeCapabilities({ cwd: input.cwd, repository: input.repository }),
-        ],
-        { concurrency: 2 },
-      ).pipe(
-        Effect.mapError(fail("getChangeRequest")),
-        Effect.map(([mergeRequest, mergeCapabilities]): ProviderChangeRequestDetail => ({
-          ...mergeRequest,
-          mergeCapabilities,
-          viewerPermissions: gitLabViewerPermissions(mergeRequest),
-          // A GitLab too old to count the divergence says nothing here rather than "up to
-          // date": the banner is worth missing, and a wrong all-clear is not worth showing.
-          baseComparison:
-            mergeRequest.divergedCommits === undefined
-              ? "unknown"
-              : mergeRequest.divergedCommits > 0
-                ? "behind"
-                : "up-to-date",
-          ...(mergeRequest.divergedCommits === undefined
-            ? {}
-            : { behindBy: mergeRequest.divergedCommits }),
-        })),
+      onOrigin("getChangeRequest", input, (target) =>
+        Effect.all(
+          [
+            cli.getMergeRequestDetail({ ...input, ...target }),
+            cli.getProjectMergeCapabilities({ cwd: input.cwd, ...target }),
+          ],
+          { concurrency: 2 },
+        ).pipe(
+          Effect.mapError(fail("getChangeRequest")),
+          Effect.map(([mergeRequest, mergeCapabilities]): ProviderChangeRequestDetail => ({
+            ...mergeRequest,
+            mergeCapabilities,
+            viewerPermissions: gitLabViewerPermissions(mergeRequest),
+            // A GitLab too old to count the divergence says nothing here rather than "up to
+            // date": the banner is worth missing, and a wrong all-clear is not worth showing.
+            baseComparison:
+              mergeRequest.divergedCommits === undefined
+                ? "unknown"
+                : mergeRequest.divergedCommits > 0
+                  ? "behind"
+                  : "up-to-date",
+            ...(mergeRequest.divergedCommits === undefined
+              ? {}
+              : { behindBy: mergeRequest.divergedCommits }),
+          })),
+        ),
       ),
 
     getChangeRequestActivity: (input) =>
-      Effect.all(
-        [
-          recoverRead(cli.listNotes(input), { comments: [], truncated: true }),
-          recoverRead(cli.listCommits(input), []),
-          recoverRead(cli.listDiscussions(input), { threads: [], truncated: true }),
-          recoverRead(cli.listReactions(input), {
-            reactions: [] as ReadonlyArray<PullRequestReaction>,
-            reactionsByNoteId: new Map<string, ReadonlyArray<PullRequestReaction>>(),
-          }),
-        ],
-        { concurrency: 4 },
-      ).pipe(
-        Effect.mapError(fail("getChangeRequestActivity")),
-        Effect.map(([notes, commits, discussions, awards]): ProviderChangeRequestActivity => ({
-          reactions: awards.reactions,
-          comments: notes.comments.map((comment) => ({
-            ...comment,
-            reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
-          })),
-          commentCount: notes.comments.length,
-          commentsTruncated: notes.truncated || discussions.truncated,
-          reviewThreads: discussions.threads.map((thread) => ({
-            ...thread,
-            comments: thread.comments.map((comment) => ({
+      onOrigin("getChangeRequestActivity", input, (target) => {
+        const exactInput = { cwd: input.cwd, ...target, number: input.number };
+        return Effect.all(
+          [
+            recoverRead(cli.listNotes(exactInput), { comments: [], truncated: true }),
+            recoverRead(cli.listCommits(exactInput), []),
+            recoverRead(cli.listDiscussions(exactInput), { threads: [], truncated: true }),
+            recoverRead(cli.listReactions(exactInput), {
+              reactions: [] as ReadonlyArray<PullRequestReaction>,
+              reactionsByNoteId: new Map<string, ReadonlyArray<PullRequestReaction>>(),
+            }),
+          ],
+          { concurrency: 4 },
+        ).pipe(
+          Effect.mapError(fail("getChangeRequestActivity")),
+          Effect.map(([notes, commits, discussions, awards]): ProviderChangeRequestActivity => ({
+            reactions: awards.reactions,
+            comments: notes.comments.map((comment) => ({
               ...comment,
               reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
             })),
+            commentCount: notes.comments.length,
+            commentsTruncated: notes.truncated || discussions.truncated,
+            reviewThreads: discussions.threads.map((thread) => ({
+              ...thread,
+              comments: thread.comments.map((comment) => ({
+                ...comment,
+                reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
+              })),
+            })),
+            commits,
           })),
-          commits,
-        })),
-      ),
+        );
+      }),
 
     getViewerPermissions: (input) =>
-      cli
-        .getMergeRequestDetail(input)
-        .pipe(Effect.mapError(fail("getViewerPermissions")), Effect.map(gitLabViewerPermissions)),
+      onOrigin("getViewerPermissions", input, (target) =>
+        cli
+          .getMergeRequestDetail({ ...input, ...target })
+          .pipe(Effect.mapError(fail("getViewerPermissions")), Effect.map(gitLabViewerPermissions)),
+      ),
 
-    getDiff: (input) => cli.getMergeRequestDiff(input).pipe(Effect.mapError(fail("getDiff"))),
+    getDiff: (input) =>
+      onOrigin("getDiff", input, (target) =>
+        cli.getMergeRequestDiff({ ...input, ...target }).pipe(Effect.mapError(fail("getDiff"))),
+      ),
 
     getDiffFileContents: (input) =>
-      cli.getMergeRequestDiffFileContents(input).pipe(Effect.mapError(fail("getDiffFileContents"))),
+      onOrigin("getDiffFileContents", input, (target) =>
+        cli
+          .getMergeRequestDiffFileContents({ ...input, ...target })
+          .pipe(Effect.mapError(fail("getDiffFileContents"))),
+      ),
 
     // GitLab's own local-storage marks are keyed on the blob id too, so this stales at the same
     // moment its web UI would.
     getFileRevisions: (input) =>
-      cli.getFileRevisions(input).pipe(
-        Effect.mapError(fail("getFileRevisions")),
-        Effect.map((revisions) => ({ revisions })),
+      onOrigin("getFileRevisions", input, (target) =>
+        cli.getFileRevisions({ ...input, ...target }).pipe(
+          Effect.mapError(fail("getFileRevisions")),
+          Effect.map((revisions) => ({ revisions })),
+        ),
       ),
 
     // Users only: GitLab requests a review of a person, and the groups that can stand in for one
     // appear in approval rules rather than in a merge request's reviewers.
     listReviewerCandidates: (input) =>
-      cli
-        .listReviewerCandidates({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-        })
-        .pipe(Effect.mapError(fail("listReviewerCandidates"))),
+      onOrigin("listReviewerCandidates", input, (target) =>
+        cli
+          .listReviewerCandidates({ cwd: input.cwd, ...target, number: input.number })
+          .pipe(Effect.mapError(fail("listReviewerCandidates"))),
+      ),
 
     setReviewerRequest: (input) =>
-      cli
-        .setReviewerRequest({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          reviewers: input.reviewers,
-          requested: input.requested,
-        })
-        .pipe(Effect.mapError(fail("setReviewerRequest"))),
+      onOrigin("setReviewerRequest", input, (target) =>
+        cli
+          .setReviewerRequest({
+            cwd: input.cwd,
+            ...target,
+            number: input.number,
+            reviewers: input.reviewers,
+            requested: input.requested,
+          })
+          .pipe(Effect.mapError(fail("setReviewerRequest"))),
+      ),
 
     runAction: (input) =>
-      cli
-        .runMergeRequestAction({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          action: input.action,
-          ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
-        })
-        .pipe(Effect.mapError(fail("runAction"))),
+      onOrigin("runAction", input, (target) =>
+        cli
+          .runMergeRequestAction({
+            cwd: input.cwd,
+            ...target,
+            number: input.number,
+            action: input.action,
+            ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
+          })
+          .pipe(Effect.mapError(fail("runAction"))),
+      ),
 
     updateChangeRequest: (input) =>
-      cli
-        .updateMergeRequest({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          ...(input.title === undefined ? {} : { title: input.title }),
-          ...(input.body === undefined ? {} : { description: input.body }),
-        })
-        .pipe(Effect.mapError(fail("updateChangeRequest"))),
+      onOrigin("updateChangeRequest", input, (target) =>
+        cli
+          .updateMergeRequest({
+            cwd: input.cwd,
+            ...target,
+            number: input.number,
+            ...(input.title === undefined ? {} : { title: input.title }),
+            ...(input.body === undefined ? {} : { description: input.body }),
+          })
+          .pipe(Effect.mapError(fail("updateChangeRequest"))),
+      ),
 
-    comment: (input) => cli.commentOnMergeRequest(input).pipe(Effect.mapError(fail("comment"))),
+    comment: (input) =>
+      onOrigin("comment", input, (target) =>
+        cli.commentOnMergeRequest({ ...input, ...target }).pipe(Effect.mapError(fail("comment"))),
+      ),
 
     updateComment: (input) =>
-      cli
-        .updateNote({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          noteId: input.commentId,
-          body: input.body,
-        })
-        .pipe(Effect.mapError(fail("updateComment"))),
+      onOrigin("updateComment", input, (target) =>
+        cli
+          .updateNote({
+            cwd: input.cwd,
+            ...target,
+            number: input.number,
+            noteId: input.commentId,
+            body: input.body,
+          })
+          .pipe(Effect.mapError(fail("updateComment"))),
+      ),
 
-    submitReview: (input) => cli.submitReview(input).pipe(Effect.mapError(fail("submitReview"))),
+    submitReview: (input) =>
+      onOrigin("submitReview", input, (target) =>
+        cli.submitReview({ ...input, ...target }).pipe(Effect.mapError(fail("submitReview"))),
+      ),
 
     replyToThread: (input) =>
-      cli
-        .replyToDiscussion({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          discussionId: input.threadId,
-          body: input.body,
-        })
-        .pipe(Effect.mapError(fail("replyToThread"))),
+      onOrigin("replyToThread", input, (target) =>
+        cli
+          .replyToDiscussion({
+            cwd: input.cwd,
+            ...target,
+            number: input.number,
+            discussionId: input.threadId,
+            body: input.body,
+          })
+          .pipe(Effect.mapError(fail("replyToThread"))),
+      ),
 
     setReaction: (input) =>
-      cli
-        .setReaction({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          ...(input.subjectId === undefined ? {} : { noteId: input.subjectId }),
-          content: input.content,
-          reacted: input.reacted,
-        })
-        .pipe(Effect.mapError(fail("setReaction"))),
+      onOrigin("setReaction", input, (target) =>
+        cli
+          .setReaction({
+            cwd: input.cwd,
+            ...target,
+            number: input.number,
+            ...(input.subjectId === undefined ? {} : { noteId: input.subjectId }),
+            content: input.content,
+            reacted: input.reacted,
+          })
+          .pipe(Effect.mapError(fail("setReaction"))),
+      ),
 
     setThreadResolution: (input) =>
-      cli
-        .setDiscussionResolution({
-          cwd: input.cwd,
-          repository: input.repository,
-          number: input.number,
-          discussionId: input.threadId,
-          resolved: input.resolved,
-        })
-        .pipe(Effect.mapError(fail("setThreadResolution"))),
+      onOrigin("setThreadResolution", input, (target) =>
+        cli
+          .setDiscussionResolution({
+            cwd: input.cwd,
+            ...target,
+            number: input.number,
+            discussionId: input.threadId,
+            resolved: input.resolved,
+          })
+          .pipe(Effect.mapError(fail("setThreadResolution"))),
+      ),
   };
 
   return provider;

@@ -145,6 +145,8 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
 
     readonly listPullRequests: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
       readonly repository: string;
       readonly state: PullRequestListState;
       readonly involvement: PullRequestInvolvement;
@@ -166,12 +168,16 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
 
     readonly getPullRequest: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
+      readonly repository: string;
       readonly number: number;
     }) => Effect.Effect<AzureDevOpsPullRequest, AzureDevOpsPullRequestCliError>;
 
     /** Threads are not reachable through `az repos pr`, so they come from the REST API. */
     readonly listThreads: (input: {
       readonly cwd: string;
+      readonly organization: string;
       readonly location: AzureDevOpsRepositoryLocation;
       readonly number: number;
     }) => Effect.Effect<ReadonlyArray<PullRequestComment>, AzureDevOpsPullRequestCliError>;
@@ -182,6 +188,7 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
      */
     readonly listIterations: (input: {
       readonly cwd: string;
+      readonly organization: string;
       readonly location: AzureDevOpsRepositoryLocation;
       readonly number: number;
     }) => Effect.Effect<ReadonlyArray<AzureDevOpsIteration>, AzureDevOpsPullRequestCliError>;
@@ -192,6 +199,7 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
      */
     readonly listIterationChanges: (input: {
       readonly cwd: string;
+      readonly organization: string;
       readonly location: AzureDevOpsRepositoryLocation;
       readonly number: number;
       readonly iterationId: number;
@@ -203,6 +211,7 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
      */
     readonly readItemContent: (input: {
       readonly cwd: string;
+      readonly organization: string;
       readonly location: AzureDevOpsRepositoryLocation;
       readonly path: string;
       readonly commit: string;
@@ -210,6 +219,9 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
 
     readonly runPullRequestAction: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
+      readonly repository: string;
       readonly number: number;
       readonly action: PullRequestAction;
       readonly mergeMethod?: PullRequestMergeMethod;
@@ -217,6 +229,9 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
 
     readonly updatePullRequest: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
+      readonly repository: string;
       readonly number: number;
       readonly title?: string | undefined;
       readonly body?: string | undefined;
@@ -228,6 +243,9 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
      */
     readonly setPullRequestReviewers: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
+      readonly repository: string;
       readonly number: number;
       readonly reviewers: ReadonlyArray<string>;
       readonly requested: boolean;
@@ -309,9 +327,6 @@ function isReviewerName(value: string): boolean {
 export const make = Effect.gen(function* () {
   const azure = yield* AzureDevOpsCli.AzureDevOpsCli;
 
-  // The remote takes three shapes and only `az` knows how to read all of them.
-  const detectArgs = ["--detect", "true"] as const;
-
   const executeJson = (input: {
     readonly cwd: string;
     readonly args: ReadonlyArray<string>;
@@ -331,6 +346,7 @@ export const make = Effect.gen(function* () {
    */
   const invoke = <A>(input: {
     readonly cwd: string;
+    readonly organization: string;
     readonly operation: string;
     readonly resource: string;
     readonly routeParameters: ReadonlyArray<string>;
@@ -344,7 +360,8 @@ export const make = Effect.gen(function* () {
       args: [
         "devops",
         "invoke",
-        ...detectArgs,
+        "--organization",
+        input.organization,
         "--area",
         "git",
         "--resource",
@@ -399,6 +416,8 @@ export const make = Effect.gen(function* () {
    */
   const listPullRequestPage = (input: {
     readonly cwd: string;
+    readonly organization: string;
+    readonly project: string;
     readonly repository: string;
     readonly state: PullRequestListState;
     readonly involvement: PullRequestInvolvement;
@@ -424,7 +443,10 @@ export const make = Effect.gen(function* () {
         "repos",
         "pr",
         "list",
-        ...detectArgs,
+        "--organization",
+        input.organization,
+        "--project",
+        input.project,
         "--repository",
         input.repository,
         ...statusArgs(input.state),
@@ -515,7 +537,8 @@ export const make = Effect.gen(function* () {
                 "repos",
                 "pr",
                 "list",
-                ...detectArgs,
+                "--detect",
+                "true",
                 "--creator",
                 "me",
                 "--status",
@@ -542,6 +565,8 @@ export const make = Effect.gen(function* () {
     listPullRequests: (input) =>
       listPullRequestPage({
         cwd: input.cwd,
+        organization: input.organization,
+        project: input.project,
         repository: input.repository,
         state: input.state,
         involvement: input.involvement,
@@ -555,7 +580,15 @@ export const make = Effect.gen(function* () {
     getPullRequest: (input) =>
       executeJson({
         cwd: input.cwd,
-        args: ["repos", "pr", "show", ...detectArgs, "--id", String(input.number)],
+        args: [
+          "repos",
+          "pr",
+          "show",
+          "--organization",
+          input.organization,
+          "--id",
+          String(input.number),
+        ],
       }).pipe(
         Effect.flatMap(
           (result): Effect.Effect<AzureDevOpsPullRequest, AzureDevOpsPullRequestCliError> => {
@@ -586,6 +619,7 @@ export const make = Effect.gen(function* () {
     listThreads: (input) =>
       invoke({
         cwd: input.cwd,
+        organization: input.organization,
         operation: "listThreads",
         resource: "pullRequestThreads",
         routeParameters: pullRequestRoute(input),
@@ -596,6 +630,7 @@ export const make = Effect.gen(function* () {
     listIterations: (input) =>
       invoke({
         cwd: input.cwd,
+        organization: input.organization,
         operation: "listIterations",
         resource: "pullRequestIterations",
         routeParameters: pullRequestRoute(input),
@@ -607,6 +642,7 @@ export const make = Effect.gen(function* () {
       const page = (skip: number) =>
         invoke({
           cwd: input.cwd,
+          organization: input.organization,
           operation: "listIterationChanges",
           resource: "pullRequestIterationChanges",
           routeParameters: [...pullRequestRoute(input), `iterationId=${input.iterationId}`],
@@ -633,6 +669,7 @@ export const make = Effect.gen(function* () {
     readItemContent: (input) =>
       invoke({
         cwd: input.cwd,
+        organization: input.organization,
         operation: "readItemContent",
         resource: "items",
         routeParameters: repositoryRoute(input.location),
@@ -664,7 +701,8 @@ export const make = Effect.gen(function* () {
                 "pr",
                 "reviewer",
                 input.requested ? "add" : "remove",
-                ...detectArgs,
+                "--organization",
+                input.organization,
                 "--id",
                 String(input.number),
                 // One `--reviewers` takes them all, because az reads the flag as a list and a
@@ -686,7 +724,8 @@ export const make = Effect.gen(function* () {
             "repos",
             "pr",
             "update",
-            ...detectArgs,
+            "--organization",
+            input.organization,
             "--id",
             String(input.number),
             ...actionArgs(input.action, input.mergeMethod),
@@ -705,7 +744,8 @@ export const make = Effect.gen(function* () {
             "repos",
             "pr",
             "update",
-            ...detectArgs,
+            "--organization",
+            input.organization,
             "--id",
             String(input.number),
             // One argument rather than a flag and a value beside it: a description usually opens

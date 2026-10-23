@@ -1882,7 +1882,8 @@ layer("GitHubPullRequestApi.layer", (it) => {
         number: 7,
       });
       expect(detail.headRepositoryNameWithOwner).toBe("contributor/web-fork");
-      expect(detail.viewerPermissions.actions).toContain("delete-branch");
+      // Fork F06: a head branch outside the origin repository is never offered for deletion.
+      expect(detail.viewerPermissions.actions).not.toContain("delete-branch");
       expect(queryAt(0)).toContain("headRepository{nameWithOwner viewerPermission}");
     }),
   );
@@ -1890,12 +1891,13 @@ layer("GitHubPullRequestApi.layer", (it) => {
   const branchToDelete = (pullRequest: Readonly<Record<string, unknown>> = {}) => ({
     data: {
       repository: {
+        id: "ORIGIN_REPO",
         pullRequest: {
           state: "MERGED",
           headRefName: "feat/delete",
           baseRefName: "main",
           headRefOid: "abc123",
-          headRepository: { id: "FORK_REPO" },
+          headRepository: { id: "ORIGIN_REPO" },
           ...pullRequest,
         },
       },
@@ -1912,48 +1914,56 @@ layer("GitHubPullRequestApi.layer", (it) => {
     },
   });
 
-  it.effect.each(["MERGED", "CLOSED"])("deletes the exact remote fork branch of a %s PR", (state) =>
-    Effect.gen(function* () {
-      route(
-        ["PullRequestBranchToDelete", branchToDelete({ state })],
-        ["PullRequestSourceBranch", sourceBranch()],
-      );
-      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
-      yield* cli.runPullRequestAction({
-        cwd: "/w",
-        repository: "acme/web",
-        host: "github.enterprise.test",
-        number: 7,
-        action: "delete-branch",
-      });
-      expect(variablesOf("PullRequestBranchToDelete")).toEqual([
-        { owner: "acme", name: "web", number: 7 },
-      ]);
-      expect(variablesOf("PullRequestSourceBranch")).toEqual([
-        { repositoryId: "FORK_REPO", ref: "refs/heads/feat/delete" },
-      ]);
-      expect(variablesOf("updateRefs(")).toEqual([
-        {
-          input: {
-            repositoryId: "FORK_REPO",
-            refUpdates: [
-              {
-                name: "refs/heads/feat/delete",
-                beforeOid: "abc123",
-                afterOid: "0000000000000000000000000000000000000000",
-              },
-            ],
+  it.effect.each(["MERGED", "CLOSED"])(
+    "deletes the exact origin source branch of a %s PR",
+    (state) =>
+      Effect.gen(function* () {
+        route(
+          ["PullRequestBranchToDelete", branchToDelete({ state })],
+          ["PullRequestSourceBranch", sourceBranch()],
+        );
+        const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+        yield* cli.runPullRequestAction({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.enterprise.test",
+          number: 7,
+          action: "delete-branch",
+        });
+        expect(variablesOf("PullRequestBranchToDelete")).toEqual([
+          { owner: "acme", name: "web", number: 7 },
+        ]);
+        expect(variablesOf("PullRequestSourceBranch")).toEqual([
+          { repositoryId: "ORIGIN_REPO", ref: "refs/heads/feat/delete" },
+        ]);
+        expect(variablesOf("updateRefs(")).toEqual([
+          {
+            input: {
+              repositoryId: "ORIGIN_REPO",
+              refUpdates: [
+                {
+                  name: "refs/heads/feat/delete",
+                  beforeOid: "abc123",
+                  afterOid: "0000000000000000000000000000000000000000",
+                },
+              ],
+            },
           },
-        },
-      ]);
-      expect(mockedExecute.mock.calls.at(-1)?.[0].host).toBe("github.enterprise.test");
-      expect(variablesOf("mergePullRequest(")).toEqual([]);
-      expect(variablesOf("closePullRequest(")).toEqual([]);
-    }),
+        ]);
+        expect(mockedExecute.mock.calls.at(-1)?.[0].host).toBe("github.enterprise.test");
+        expect(variablesOf("mergePullRequest(")).toEqual([]);
+        expect(variablesOf("closePullRequest(")).toEqual([]);
+      }),
   );
 
   it.effect.each([
     { description: "an open PR", head: { state: "OPEN" }, source: {} },
+    // Fork F06: a branch in another repository is refused before any mutation.
+    {
+      description: "a source branch in another repository",
+      head: { headRepository: { id: "FORK_REPO" } },
+      source: {},
+    },
     { description: "the base branch", head: { headRefName: "main" }, source: {} },
     {
       description: "the default branch",
@@ -3009,6 +3019,80 @@ layer("GitHubPullRequestApi.layer", (it) => {
     }),
   );
 
+  // Fork F06: a review thread is written only after it is proven to hang on the origin pull request.
+  const threadScope = (actualPullRequestId: string) => ({
+    data: {
+      repository: { pullRequest: { id: "PR_expected" } },
+      node: {
+        __typename: "PullRequestReviewThread",
+        id: "PRRT_1",
+        pullRequest: { id: actualPullRequestId },
+      },
+    },
+  });
+  const threadTarget = { cwd: "/w", repository: "acme/web", host: "github.acme.dev", number: 7 };
+
+  it.effect("replies to an origin review thread only after proving its pull request", () =>
+    Effect.gen(function* () {
+      route(["OriginReviewThreadPullRequest", threadScope("PR_expected")]);
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      yield* cli.replyToReviewThread({ ...threadTarget, threadId: "PRRT_1", body: "Fixed." });
+      expect(variablesOf("OriginReviewThreadPullRequest")).toEqual([
+        { owner: "acme", name: "web", number: 7, threadId: "PRRT_1" },
+      ]);
+      expect(variablesOf("addPullRequestReviewThreadReply(")).toEqual([
+        { threadId: "PRRT_1", body: "Fixed." },
+      ]);
+      expect(queryAt(1)).not.toContain("Fixed.");
+    }),
+  );
+
+  it.effect.each([
+    { description: "a thread on another pull request", answer: threadScope("PR_elsewhere") },
+    {
+      description: "a subject that is not a review thread",
+      answer: {
+        data: {
+          repository: { pullRequest: { id: "PR_expected" } },
+          node: { __typename: "IssueComment", id: "PRRT_1" },
+        },
+      },
+    },
+  ])("refuses review thread writes for $description", ({ answer }) =>
+    Effect.gen(function* () {
+      route(["OriginReviewThreadPullRequest", answer]);
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      const reply = yield* Effect.flip(
+        cli.replyToReviewThread({ ...threadTarget, threadId: "PRRT_1", body: "Elsewhere" }),
+      );
+      const resolve = yield* Effect.flip(
+        cli.setReviewThreadResolution({ ...threadTarget, threadId: "PRRT_1", resolved: true }),
+      );
+      assert.strictEqual(reply._tag, "GitHubSubjectScopeError");
+      assert.strictEqual(resolve._tag, "GitHubSubjectScopeError");
+      expect(variablesOf("addPullRequestReviewThreadReply(")).toEqual([]);
+      expect(variablesOf("resolveReviewThread(")).toEqual([]);
+      expect(mockedExecute.mock.calls).toHaveLength(2);
+    }),
+  );
+
+  it.effect("resolves and unresolves an origin review thread on its own host", () =>
+    Effect.gen(function* () {
+      route(["OriginReviewThreadPullRequest", threadScope("PR_expected")]);
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      yield* cli.setReviewThreadResolution({ ...threadTarget, threadId: "PRRT_1", resolved: true });
+      yield* cli.setReviewThreadResolution({
+        ...threadTarget,
+        threadId: "PRRT_1",
+        resolved: false,
+      });
+      expect(queryAt(1)).toContain("resolveReviewThread(");
+      expect(queryAt(1)).not.toContain("unresolveReviewThread(");
+      expect(queryAt(3)).toContain("unresolveReviewThread(");
+      expect([callAt(1).host, callAt(3).host]).toEqual(["github.acme.dev", "github.acme.dev"]);
+    }),
+  );
+
   // regression: #19564 only a refused reviewer path is retried; other failures surface as-is
   it.effect.each([
     {
@@ -3524,6 +3608,7 @@ layer("GitHubPullRequestApi.layer", (it) => {
                   pullRequest: {
                     viewerCanUpdate: true,
                     viewerDidAuthor: true,
+                    isCrossRepository: false,
                     headRepository: null,
                   },
                 },

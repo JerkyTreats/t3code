@@ -8,6 +8,7 @@ import {
   buildTemporaryWorktreeBranchName,
   flattenTemporaryWorktreeBranchName,
   isTemporaryWorktreeBranch,
+  normalizeGitRemoteMutationTarget,
   normalizeGitRemoteUrl,
   parseOriginUrlFromGitConfig,
   resolveAutoFeatureBranchName,
@@ -134,14 +135,37 @@ describe("parseOriginUrlFromGitConfig", () => {
     ).toBe("https://github.com/acme/repo.git");
   });
 
-  it("falls back to the first remote when there is no origin", () => {
+  it("returns null when there is no exact origin remote", () => {
     const config = [
       '[remote "upstream"]',
       "\turl = https://github.com/acme/repo.git",
       '[remote "fork"]',
       "\turl = https://github.com/me/repo.git",
     ].join("\n");
-    expect(parseOriginUrlFromGitConfig(config)).toBe("https://github.com/acme/repo.git");
+    expect(parseOriginUrlFromGitConfig(config)).toBeNull();
+  });
+});
+
+describe("normalizeGitRemoteMutationTarget", () => {
+  it("canonicalizes equivalent default-port protocol variants", () => {
+    expect(normalizeGitRemoteMutationTarget("git@github.com:T3Tools/T3Code.git")).toBe(
+      "github.com/t3tools/t3code",
+    );
+    expect(normalizeGitRemoteMutationTarget("ssh://git@github.com:22/T3Tools/T3Code.git")).toBe(
+      "github.com/t3tools/t3code",
+    );
+    expect(normalizeGitRemoteMutationTarget("https://github.com:443/T3Tools/T3Code.git")).toBe(
+      "github.com/t3tools/t3code",
+    );
+  });
+
+  it("preserves non-default ports as distinct mutation targets", () => {
+    expect(
+      normalizeGitRemoteMutationTarget("https://github.example.test:8443/team/project.git"),
+    ).toBe("github.example.test:8443/team/project");
+    expect(
+      normalizeGitRemoteMutationTarget("https://github.example.test:9443/team/project.git"),
+    ).toBe("github.example.test:9443/team/project");
   });
 });
 

@@ -24,6 +24,10 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
+import {
+  ORIGIN_THREAD_PULL_REQUEST_REFUSAL,
+  originAdmitsThreadPullRequest,
+} from "../../../fork/sourceControlContextPolicy.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
@@ -265,6 +269,11 @@ const make = Effect.gen(function* () {
     const thread = yield* requireThread(PullRequestWatchFailedError, input.threadId);
     const project = yield* projectOf(thread, PullRequestWatchFailedError);
     const target = yield* resolveTarget(input, project);
+    if (watching && !originAdmitsThreadPullRequest(project?.repositoryIdentity, target)) {
+      return yield* new PullRequestWatchFailedError({
+        cause: new Error(ORIGIN_THREAD_PULL_REQUEST_REFUSAL),
+      });
+    }
     const watchedLink = (shell: OrchestrationV2ThreadShell) =>
       threadPullRequestsOf(shell).find(
         (link) => link.source !== "stack-dismissed" && threadPullRequestKeysEqual(link, target),
@@ -352,6 +361,11 @@ const make = Effect.gen(function* () {
         const thread = yield* requireThread(PullRequestLinkFailedError, input.threadId);
         const project = yield* projectOf(thread, PullRequestLinkFailedError);
         const target = yield* resolveTarget(input, project);
+        if (!originAdmitsThreadPullRequest(project?.repositoryIdentity, target)) {
+          return yield* new PullRequestLinkFailedError({
+            cause: new Error(ORIGIN_THREAD_PULL_REQUEST_REFUSAL),
+          });
+        }
         const existing = threadPullRequestsOf(thread).find((link) =>
           threadPullRequestKeysEqual(link, target),
         );

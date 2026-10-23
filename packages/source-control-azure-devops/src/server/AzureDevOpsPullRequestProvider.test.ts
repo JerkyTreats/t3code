@@ -17,12 +17,19 @@ import {
 } from "./azureDevOpsDiff.ts";
 import type { AzureDevOpsChangeEntry } from "./azureDevOpsPullRequestJson.ts";
 
+const exactOrigin = {
+  origin: {
+    remoteName: "origin",
+    remoteUrl: "https://dev.azure.com/acme/platform/_git/web",
+  },
+} as const;
+
 const ITERATION = { id: 3, headCommit: "head", mergeBaseCommit: "base" };
 
 const PULL_REQUEST = {
   number: 7,
   title: "Pull request 7",
-  url: "https://dev.azure.com/acme/web/_git/web/pullrequest/7",
+  url: "https://dev.azure.com/acme/platform/_git/web/pullrequest/7",
   author: null,
   headBranch: "feat/page",
   baseBranch: "main",
@@ -35,7 +42,7 @@ const PULL_REQUEST = {
   body: "",
   reviewRequestLogins: [],
   reviewers: [],
-  location: { project: "acme", repository: "web" },
+  location: { project: "platform", repository: "web" },
   autoMergeEnabled: false,
 };
 
@@ -108,6 +115,7 @@ const readSlice = (input: {
     );
 
     const slice = yield* provider.getDiff({
+      ...exactOrigin,
       cwd: "/w",
       repository: "acme/web",
       host: "dev.azure.com",
@@ -146,6 +154,7 @@ describe("getChangeRequest", () => {
       );
 
       const detail = yield* provider.getChangeRequest({
+        ...exactOrigin,
         cwd: "/w",
         repository: "acme/web",
         host: "dev.azure.com",
@@ -179,6 +188,7 @@ describe("getChangeRequest", () => {
           ),
         );
         const detail = yield* provider.getChangeRequest({
+          ...exactOrigin,
           cwd: "/w",
           repository: "acme/web",
           host: "dev.azure.com",
@@ -220,7 +230,13 @@ describe("getDiff reads", () => {
       );
 
       const readDiff = (number: number) =>
-        provider.getDiff({ cwd: "/w", repository: "acme/web", host: "dev.azure.com", number });
+        provider.getDiff({
+          ...exactOrigin,
+          cwd: "/w",
+          repository: "acme/web",
+          host: "dev.azure.com",
+          number,
+        });
 
       yield* Effect.all([readDiff(7), readDiff(8)], { concurrency: 2 });
 
@@ -326,7 +342,11 @@ describe("what one diff slice spends", () => {
             getPullRequest: (input) =>
               Effect.sync(() => {
                 readsOf.set(input.number, (readsOf.get(input.number) ?? 0) + 1);
-                return { ...PULL_REQUEST, number: input.number };
+                return {
+                  ...PULL_REQUEST,
+                  number: input.number,
+                  url: `https://dev.azure.com/acme/platform/_git/web/pullrequest/${input.number}`,
+                };
               }),
             listIterations: () => Effect.succeed([ITERATION]),
             listIterationChanges: () =>
@@ -337,7 +357,13 @@ describe("what one diff slice spends", () => {
       );
 
       const readDiff = (number: number) =>
-        provider.getDiff({ cwd: "/w", repository: "acme/web", host: "dev.azure.com", number });
+        provider.getDiff({
+          ...exactOrigin,
+          cwd: "/w",
+          repository: "acme/web",
+          host: "dev.azure.com",
+          number,
+        });
 
       yield* readDiff(HOT);
       for (let filled = 0; filled < LOCATION_CACHE_CAPACITY; filled += 1) {

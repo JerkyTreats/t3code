@@ -111,22 +111,43 @@ export const make = Effect.gen(function* () {
           ),
         );
     },
-    getRepositoryCloneUrls: (input) =>
-      bitbucket.getRepositoryCloneUrls(input).pipe(
-        Effect.mapError(
-          (error) =>
-            new SourceControlProviderError({
-              provider: SourceControlProviderKind.make("bitbucket"),
-              operation: "getRepositoryCloneUrls",
-              cwd: input.cwd,
-              repository: SourceControlProvider.transportSafeSourceControlErrorValue(
-                input.repository,
-              ),
-              detail: "Failed to get repository clone URLs.",
-              cause: error,
-            }),
-        ),
-      ),
+    getRepositoryCloneUrls: (input) => {
+      // Fork F06: an explicit lookup endpoint binds the API host like an origin context does.
+      const context =
+        input.context ??
+        (input.providerBaseUrl
+          ? {
+              provider: {
+                kind: SourceControlProviderKind.make("bitbucket"),
+                name: "Bitbucket",
+                baseUrl: input.providerBaseUrl,
+              },
+              remoteName: "origin",
+              remoteUrl: input.providerBaseUrl,
+            }
+          : undefined);
+      return bitbucket
+        .getRepositoryCloneUrls({
+          cwd: input.cwd,
+          repository: input.repository,
+          ...(context ? { context } : {}),
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: SourceControlProviderKind.make("bitbucket"),
+                operation: "getRepositoryCloneUrls",
+                cwd: input.cwd,
+                repository: SourceControlProvider.transportSafeSourceControlErrorValue(
+                  input.repository,
+                ),
+                detail: "Failed to get repository clone URLs.",
+                cause: error,
+              }),
+          ),
+        );
+    },
     createRepository: (input) =>
       bitbucket.createRepository(input).pipe(
         Effect.mapError(

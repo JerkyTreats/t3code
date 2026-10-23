@@ -266,7 +266,7 @@ const githubContext = (host: string) => ({
 });
 
 describe("GitHubSourceControlProvider repository resolution", () => {
-  it.effect("reads the repository gh would pick from the remotes", () => {
+  it.effect("reads exact origin instead of upstream or gh defaults", () => {
     const paths: string[] = [];
     const { layer } = harness({
       remotes: remotesOutput(
@@ -288,8 +288,18 @@ describe("GitHubSourceControlProvider repository resolution", () => {
     });
     return Effect.gen(function* () {
       const gh = yield* GitHubSourceControlProvider.make;
-      assert.strictEqual(yield* gh.getDefaultBranch({ cwd: "/repo" }), "trunk");
-      assert.deepStrictEqual(paths, ["github.com repos/acme/web"]);
+      assert.strictEqual(
+        yield* gh.getDefaultBranch({
+          context: { ...githubContext("github.com"), remoteUrl: "git@github.com:me/web.git" },
+          cwd: "/repo",
+        }),
+        "trunk",
+      );
+      assert.deepStrictEqual(paths, ["github.com repos/me/web"]);
+      // Fork F06: without a bound origin context nothing selects a repository.
+      const error = yield* gh.getDefaultBranch({ cwd: "/repo" }).pipe(Effect.flip);
+      assert.include(error.detail, "Origin-only policy");
+      assert.deepStrictEqual(paths, ["github.com repos/me/web"]);
     }).pipe(Effect.provide(layer));
   });
 });
@@ -312,7 +322,13 @@ describe("GitHubSourceControlProvider change request lookups by head", () => {
     return Effect.gen(function* () {
       const gh = yield* GitHubSourceControlProvider.make;
       const open = yield* gh
-        .listChangeRequests({ cwd: "/repo", headSelector: "me:main", state: "open", limit: 1 })
+        .listChangeRequests({
+          context: githubContext("github.com"),
+          cwd: "/repo",
+          headSelector: "me:main",
+          state: "open",
+          limit: 1,
+        })
         .pipe(Effect.forkChild);
       yield* TestClock.adjust("50 millis");
       assert.deepStrictEqual(
@@ -345,7 +361,13 @@ describe("GitHubSourceControlProvider change request lookups by head", () => {
       const gh = yield* GitHubSourceControlProvider.make;
       const read = (headSelector: string) =>
         gh
-          .listChangeRequests({ cwd: "/repo", headSelector, state: "open", limit: 1 })
+          .listChangeRequests({
+            context: githubContext("github.com"),
+            cwd: "/repo",
+            headSelector,
+            state: "open",
+            limit: 1,
+          })
           .pipe(Effect.flip, Effect.forkChild);
       const missing = yield* read("missing");
       yield* TestClock.adjust("500 millis");
@@ -369,18 +391,23 @@ describe("GitHubSourceControlProvider.getChangeRequest", () => {
     return Effect.gen(function* () {
       const gh = yield* GitHubSourceControlProvider.make;
       assert.strictEqual(
-        (yield* gh.getChangeRequest({ cwd: "/repo", reference: "#42" })).number,
+        (yield* gh.getChangeRequest({
+          context: githubContext("github.com"),
+          cwd: "/repo",
+          reference: "#42",
+        })).number,
         42,
       );
       yield* gh.getChangeRequest({
+        context: githubContext("github.com"),
         cwd: "/repo",
-        reference: "https://github.com/other/thing/pull/42",
+        reference: "https://github.com/acme/web/pull/42",
       });
       assert.deepStrictEqual(
         graphqlCalls.flatMap((call) => call.lookups),
         [
           { owner: "acme", name: "web", number: 42 },
-          { owner: "other", name: "thing", number: 42 },
+          { owner: "acme", name: "web", number: 42 },
         ],
       );
     }).pipe(Effect.provide(layer));
@@ -409,6 +436,7 @@ describe("GitHubSourceControlProvider writes", () => {
       yield* fs.writeFileString(bodyFile, "Body");
       const gh = yield* GitHubSourceControlProvider.make;
       yield* gh.createChangeRequest({
+        context: githubContext("github.com"),
         cwd: "/repo",
         baseRefName: "main",
         headSelector: "me:feature",
@@ -449,6 +477,7 @@ describe("GitHubSourceControlProvider writes", () => {
     return Effect.gen(function* () {
       const gh = yield* GitHubSourceControlProvider.make;
       const urls = yield* gh.createRepository({
+        providerBaseUrl: "https://github.com",
         cwd: "/repo",
         repository: "acme/new",
         visibility: "private",
@@ -462,7 +491,7 @@ describe("GitHubSourceControlProvider writes", () => {
     }).pipe(Effect.provide(layer));
   });
 
-  it.effect("looks up a bare repository name under the signed-in account on that host", () => {
+  it.effect("requires an explicit owner and endpoint for repository lookup", () => {
     const requests: Array<string> = [];
     return Effect.gen(function* () {
       const gh = yield* makeProvider({
@@ -481,8 +510,8 @@ describe("GitHubSourceControlProvider writes", () => {
 
       const urls = yield* gh.getRepositoryCloneUrls({
         cwd: "/repo",
-        context: githubContext("code.example.test"),
-        repository: " notes.git ",
+        providerBaseUrl: "https://code.example.test",
+        repository: "me/notes",
       });
 
       assert.deepStrictEqual(urls, {
@@ -490,15 +519,23 @@ describe("GitHubSourceControlProvider writes", () => {
         url: "https://code.example.test/me/notes",
         sshUrl: "git@code.example.test:me/notes.git",
       });
-      assert.deepStrictEqual(requests, [
-        "code.example.test GET user",
-        "code.example.test GET repos/me/notes",
-      ]);
-      for (const repository of ["me/", "/notes", "a/b/c/d", "", "two words"]) {
-        const error = yield* Effect.flip(gh.getRepositoryCloneUrls({ cwd: "/repo", repository }));
-        assert.include(error.message, "Repositories are named owner/name.");
+      assert.deepStrictEqual(requests, ["code.example.test GET repos/me/notes"]);
+      // Fork F06: a bare name, a malformed name or a missing endpoint is refused before any request.
+      for (const repository of ["notes", "me/", "/notes", "a/b/c/d", "", "two words"]) {
+        const error = yield* Effect.flip(
+          gh.getRepositoryCloneUrls({
+            cwd: "/repo",
+            providerBaseUrl: "https://code.example.test",
+            repository,
+          }),
+        );
+        assert.include(error.message, "explicit GitHub provider endpoint");
       }
-      assert.strictEqual(requests.length, 2);
+      const missing = yield* Effect.flip(
+        gh.getRepositoryCloneUrls({ cwd: "/repo", repository: "me/notes" }),
+      );
+      assert.include(missing.message, "explicit GitHub provider endpoint");
+      assert.strictEqual(requests.length, 1);
     });
   });
 });
@@ -522,7 +559,14 @@ describe("GitHubSourceControlProvider.checkoutChangeRequest", () => {
     });
     return Effect.gen(function* () {
       const gh = yield* GitHubSourceControlProvider.make;
-      yield* Effect.flip(gh.checkoutChangeRequest({ cwd: "/repo", reference: "6", force: true }));
+      yield* Effect.flip(
+        gh.checkoutChangeRequest({
+          context: githubContext("github.com"),
+          cwd: "/repo",
+          reference: "6",
+          force: true,
+        }),
+      );
       assert.deepStrictEqual(git, []);
     }).pipe(Effect.provide(layer));
   });
@@ -536,7 +580,11 @@ describe("GitHubSourceControlProvider.checkoutChangeRequest", () => {
     return Effect.gen(function* () {
       const gh = yield* GitHubSourceControlProvider.make;
       const error = yield* gh
-        .checkoutChangeRequest({ cwd: "/repo", reference: "5" })
+        .checkoutChangeRequest({
+          context: githubContext("github.com"),
+          cwd: "/repo",
+          reference: "5",
+        })
         .pipe(Effect.flip);
       assert.strictEqual(error.detail, "The pull request could not be checked out with git.");
       assert.notInclude(error.message, "secret-path");
@@ -900,10 +948,7 @@ it.live.each([
       }),
   };
   const { layer, git, graphqlCalls } = harness({
-    remotes: remotesOutput(
-      ["origin", "git@github.com:team/project.git"],
-      ["enterprise", remoteUrl],
-    ),
+    remotes: remotesOutput(["upstream", "git@github.com:team/project.git"], ["origin", remoteUrl]),
     api,
     graphql: (_, call) =>
       call.operationName === "PullRequestByNumber"
@@ -923,7 +968,7 @@ it.live.each([
           name: "GitHub Self-Hosted",
           baseUrl: "https://code.example.test",
         },
-        remoteName: "enterprise",
+        remoteName: "origin",
         remoteUrl,
       },
     };
@@ -947,7 +992,10 @@ it.live.each([
     assert.strictEqual(yield* provider.getDefaultBranch(input), "main");
     yield* provider.checkoutChangeRequest({ ...input, reference: "42" });
     yield* provider.getRepositoryCloneUrls({ ...input, repository: "team/other" });
-    yield* provider.getRepositoryCloneUrls({ ...input, repository: "github.com/team/explicit" });
+    // Fork F06: a repository on another host than the bound endpoint is refused.
+    yield* provider
+      .getRepositoryCloneUrls({ ...input, repository: "github.com/team/explicit" })
+      .pipe(Effect.flip);
     const lookups = graphqlCalls.flatMap((call) =>
       call.lookups.map(({ owner, name }) => [call.host, owner, name]),
     );
@@ -961,19 +1009,18 @@ it.live.each([
         ["code.example.test", "repos/team/project/pulls"],
         ["code.example.test", "repos/team/project"],
         ["code.example.test", "repos/team/other"],
-        ["github.com", "repos/team/explicit"],
       ],
     );
     assert.deepStrictEqual(git.find(([name]) => name === "fetchRemoteTrackingBranch")?.[1], {
       cwd: "/repo",
-      remoteName: "enterprise",
+      remoteName: "origin",
       remoteBranch: "feature",
     });
   }).pipe(Effect.provide(layer), Effect.provideService(HostProcess.Environment, {}), Effect.scoped);
 });
 
 it.effect.each([
-  { host: "github.com", resolved: "", envRepository: "", expected: "acme/web" },
+  { host: "github.com", resolved: "", envRepository: "", expected: "me/web" },
   {
     host: "code.example.test",
     resolved: "remote.origin.gh-resolved base",
@@ -984,16 +1031,16 @@ it.effect.each([
     host: "github.com",
     resolved: "remote.upstream.gh-resolved acme/other",
     envRepository: "",
-    expected: "acme/other",
+    expected: "me/web",
   },
   {
     host: "code.example.test",
     resolved: "",
     envRepository: "chosen/repo",
-    expected: "chosen/repo",
+    expected: "me/web",
   },
 ])(
-  "preserves repository precedence on $host: $resolved $envRepository",
+  "preserves origin despite repository overrides on $host: $resolved $envRepository",
   ({ host, resolved, envRepository, expected }) => {
     const targets: string[] = [];
     const { layer } = harness({
@@ -1049,5 +1096,133 @@ it.effect.each([
       Effect.provideService(HostProcess.Environment, { GH_REPO: envRepository }),
       Effect.scoped,
     );
+  },
+);
+
+// Fork F06: GitHub repository authority is the bound exact origin only.
+it.effect("refuses absent origin and foreign pull request URLs before any API or Git call", () => {
+  const requests: unknown[] = [];
+  const { layer, git, graphqlCalls } = harness({
+    remotes: remotesOutput(["upstream", "https://github.com/acme/web.git"]),
+    resolved: "remote.upstream.gh-resolved acme/web",
+    graphql: (lookup) => {
+      requests.push(lookup);
+      return null;
+    },
+    api: {
+      rest: (request) =>
+        Effect.sync(() => {
+          requests.push(request);
+          return restResponse({});
+        }),
+    },
+  });
+  return Effect.gen(function* () {
+    const provider = yield* GitHubSourceControlProvider.make;
+    for (const context of [undefined, { ...githubContext("github.com"), remoteName: "upstream" }]) {
+      const input = { cwd: "/repo", ...(context === undefined ? {} : { context }) };
+      yield* provider.getDefaultBranch(input).pipe(Effect.flip);
+      yield* provider
+        .listChangeRequests({ ...input, headSelector: "main", state: "open", limit: 1 })
+        .pipe(Effect.flip);
+      yield* provider
+        .createChangeRequest({
+          ...input,
+          headSelector: "main",
+          baseRefName: "main",
+          title: "Title",
+          bodyFile: "/unused",
+        })
+        .pipe(Effect.flip);
+    }
+    const context = {
+      provider: {
+        kind: SourceControlProviderKind.make("github"),
+        name: "GitHub",
+        baseUrl: "https://code.example.test:8443",
+      },
+      remoteName: "origin",
+      remoteUrl: "https://code.example.test:8443/acme/web.git",
+    };
+    for (const reference of [
+      "https://code.example.test/acme/web/pull/7",
+      "https://code.example.test:8443/foreign/web/pull/7",
+      "https://github.com/acme/web/pull/7",
+      "https://user:secret@code.example.test:8443/acme/web/pull/7",
+    ]) {
+      yield* provider.getChangeRequest({ cwd: "/repo", context, reference }).pipe(Effect.flip);
+      yield* provider.checkoutChangeRequest({ cwd: "/repo", context, reference }).pipe(Effect.flip);
+    }
+    assert.deepStrictEqual(requests, []);
+    assert.deepStrictEqual(graphqlCalls, []);
+    assert.deepStrictEqual(git, []);
+  }).pipe(
+    Effect.provide(layer),
+    Effect.provideService(HostProcess.Environment, { GH_REPO: "acme/web" }),
+  );
+});
+
+it.effect(
+  "binds a matching pull request URL and publication endpoint to the exact custom port",
+  () => {
+    const publications: GitHubRest.GitHubRestInput[] = [];
+    const { layer, graphqlCalls } = harness({
+      remotes: "",
+      graphql: () => ({ pullRequest: node(7, "main") }),
+      api: {
+        rest: (request) =>
+          Effect.sync(() => {
+            publications.push(request);
+            return request.path === "user"
+              ? restResponse({ login: "acme" })
+              : restResponse({
+                  full_name: "acme/web",
+                  html_url: "https://code.example.test:8443/acme/web",
+                  ssh_url: "ssh://git@code.example.test:8443/acme/web.git",
+                });
+          }),
+      },
+    });
+    return Effect.gen(function* () {
+      const provider = yield* GitHubSourceControlProvider.make;
+      const context = {
+        provider: {
+          kind: SourceControlProviderKind.make("github"),
+          name: "GitHub",
+          baseUrl: "https://code.example.test:8443",
+        },
+        remoteName: "origin",
+        remoteUrl: "https://code.example.test:8443/acme/web.git",
+      };
+      yield* provider.getChangeRequest({
+        cwd: "/repo",
+        context,
+        reference: "https://code.example.test:8443/acme/web/pull/7",
+      });
+      assert.deepStrictEqual(
+        graphqlCalls.flatMap((call) => call.lookups),
+        [{ owner: "acme", name: "web", number: 7 }],
+      );
+      yield* provider.createRepository({
+        cwd: "/repo",
+        providerBaseUrl: context.provider.baseUrl,
+        repository: "acme/web",
+        visibility: "private",
+      });
+      assert.deepStrictEqual(
+        publications.map((request) => request.host),
+        ["code.example.test:8443", "code.example.test:8443"],
+      );
+      const count = publications.length;
+      yield* provider
+        .createRepository({
+          cwd: "/repo",
+          providerBaseUrl: context.provider.baseUrl,
+          repository: "github.com/acme/web",
+          visibility: "private",
+        })
+        .pipe(Effect.flip);
+      assert.strictEqual(publications.length, count);
+    }).pipe(Effect.provide(layer));
   },
 );

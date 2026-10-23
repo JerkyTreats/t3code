@@ -298,3 +298,19 @@ export function originCreatedPullRequestKey(
     url,
   };
 }
+
+/** Why an agent-supplied link or watch target was refused. */
+export const ORIGIN_THREAD_PULL_REQUEST_REFUSAL =
+  "Only pull requests in this project's exact origin repository can be linked or watched.";
+
+/**
+ * Agent tools may link or watch a pull request only when its URL names the selected project's
+ * exact origin repository and number. Unlinking and unwatching stay available for any existing
+ * link, so a stale link always has a way out.
+ */
+export function originAdmitsThreadPullRequest(
+  identity: RepositoryIdentity | null | undefined,
+  target: { readonly url: string; readonly number: number },
+): boolean {
+  return originCreatedPullRequestKey(identity, target.url, target.number) !== null;
+}

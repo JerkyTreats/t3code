@@ -1,3 +1,9 @@
+import {
+  gitCafeCloneLookupTarget,
+  gitCafeOriginPullNumber,
+  gitCafeOriginTarget,
+  gitCafePublicationTarget,
+} from "@t3tools/source-control-core/server/fork/originGitCafePolicy";
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -166,8 +172,6 @@ const cloneUrls = (target: Target) => ({
 const isSshRemote = (remoteUrl: string | undefined) =>
   remoteUrl !== undefined && (/^ssh:\/\//iu.test(remoteUrl) || /^[^/:]+@[^/:]+:/u.test(remoteUrl));
 
-const pullUrlPattern = /^https:\/\/([^/]+)\/([^/]+\/[^/]+)\/pulls\/(\d+)\/?(?:[?#].*)?$/u;
-
 export const make = Effect.gen(function* () {
   const api = yield* GitCafeApi.GitCafeApi;
   const host = yield* SourceControlHost.SourceControlHost;
@@ -205,35 +209,15 @@ export const make = Effect.gen(function* () {
       readonly repository?: string;
     },
   ) {
-    const named =
-      input.repository === undefined ? null : GitCafeHosts.parseGitCafeRemote(input.repository);
-    if (named) return named;
-    const readRemote = host.git
-      .resolvePrimaryRemoteName(input.cwd)
-      .pipe(
-        Effect.flatMap((remote) => host.git.readConfigValue(input.cwd, `remote.${remote}.url`)),
-      );
-    const remoteUrl =
-      input.context?.remoteUrl ??
-      (input.repository === undefined
-        ? yield* readRemote.pipe(
-            Effect.mapError((cause) =>
-              error(operation, input.cwd, "Could not read the GitCafe remote.", cause),
-            ),
-          )
-        : yield* readRemote.pipe(Effect.orElseSucceed(() => null)));
-    const remote = remoteUrl ? GitCafeHosts.parseGitCafeRemote(remoteUrl) : null;
-    if (input.repository === undefined) {
-      if (remote) return remote;
-      return yield* error(operation, input.cwd, "No GitCafe repository remote was found.");
-    }
-    const repository = GitCafeHosts.gitCafeRepositoryPath(input.repository);
-    if (repository !== null)
-      return { host: remote?.host ?? AUTH_HOST, repository } satisfies Target;
-    return yield* error(
-      operation,
-      input.cwd,
-      "A GitCafe repository is named owner/name or by its git.cafe URL.",
+    // Fork F06: every repository-scoped call binds to the exact GitCafe origin.
+    const target = gitCafeOriginTarget(input.context, input.repository);
+    return (
+      target ??
+      (yield* error(
+        operation,
+        input.cwd,
+        "Origin-only policy requires an exact GitCafe origin repository context.",
+      ))
     );
   });
 
@@ -242,22 +226,13 @@ export const make = Effect.gen(function* () {
     readonly context?: SourceControlProvider.SourceControlProviderContext;
     readonly reference: string;
   }) {
-    const match = pullUrlPattern.exec(input.reference.trim());
-    const urlHost = match?.[1] ? GitCafeHosts.gitCafeHost(match[1]) : null;
-    const target: Target =
-      urlHost && match?.[2]
-        ? { host: urlHost, repository: match[2] }
-        : yield* resolveTarget("getChangeRequest", input);
-    const number = match
-      ? urlHost
-        ? match[3]
-        : undefined
-      : /^#?([1-9]\d*)$/u.exec(input.reference.trim())?.[1];
-    if (number === undefined)
+    const target = yield* resolveTarget("getChangeRequest", input);
+    const number = gitCafeOriginPullNumber(target, input.reference);
+    if (number === null)
       return yield* error(
         "getChangeRequest",
         input.cwd,
-        "A GitCafe pull request is a number or a git.cafe pull request URL.",
+        "The pull request selector is outside the exact origin repository.",
       );
     const pull = yield* read(
       "getChangeRequest",
@@ -318,6 +293,7 @@ export const make = Effect.gen(function* () {
             // List rows omit fork identity, so only the branch's own rows are read in full.
             const detail = yield* getPull({
               cwd: input.cwd,
+              ...(input.context === undefined ? {} : { context: input.context }),
               reference: `https://${target.host}/${target.repository}/pulls/${pull.number}`,
             });
             if (
@@ -384,7 +360,13 @@ export const make = Effect.gen(function* () {
     ),
     getRepositoryCloneUrls: Effect.fn("GitCafeSourceControlProvider.getRepositoryCloneUrls")(
       function* (input) {
-        const target = yield* resolveTarget("getRepositoryCloneUrls", input);
+        const target = gitCafeCloneLookupTarget(input);
+        if (!target)
+          return yield* error(
+            "getRepositoryCloneUrls",
+            input.cwd,
+            "An explicit GitCafe endpoint and repository are required.",
+          );
         yield* read(
           "getRepositoryCloneUrls",
           input.cwd,
@@ -395,7 +377,13 @@ export const make = Effect.gen(function* () {
       },
     ),
     createRepository: Effect.fn("GitCafeSourceControlProvider.createRepository")(function* (input) {
-      const target = yield* resolveTarget("createRepository", input);
+      const target = gitCafePublicationTarget(input.providerBaseUrl, input.repository);
+      if (!target)
+        return yield* error(
+          "createRepository",
+          input.cwd,
+          "An explicit GitCafe endpoint and repository are required.",
+        );
       const [owner = "", name = ""] = target.repository.split("/");
       const pending = yield* read(
         "createRepository",

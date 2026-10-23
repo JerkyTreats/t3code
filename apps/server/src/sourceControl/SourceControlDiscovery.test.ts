@@ -357,9 +357,19 @@ it.effect(
           }),
         ),
       );
+      // Fork F06: checkout selectors are bound to the origin context.
       yield* provider.checkoutChangeRequest({
         cwd,
         reference: "https://forgejo.test/reviewer/project/pulls/42",
+        context: {
+          provider: {
+            kind: SourceControlProviderKind.make("forgejo"),
+            name: "Forgejo",
+            baseUrl: "https://forgejo.test",
+          },
+          remoteName: "origin",
+          remoteUrl: "git@forgejo.test:reviewer/project.git",
+        },
       });
       assert.strictEqual(
         (yield* git.run({
@@ -389,7 +399,19 @@ it.effect(
       ])
         yield* git.run({ operation: "test.setup", command: "git", cwd, args });
       yield* fs.writeFileString(path.join(cwd, "base.txt"), "uncommitted work\n");
-      yield* provider.checkoutChangeRequest({ cwd, reference: "42" });
+      yield* provider.checkoutChangeRequest({
+        cwd,
+        reference: "42",
+        context: {
+          provider: {
+            kind: SourceControlProviderKind.make("forgejo"),
+            name: "Forgejo",
+            baseUrl: "https://forgejo.test",
+          },
+          remoteName: "origin",
+          remoteUrl: "git@forgejo.test:reviewer/project.git",
+        },
+      });
       assert.strictEqual(
         (yield* git.run({
           operation: "test.verify",
@@ -411,7 +433,7 @@ it.effect(
             baseUrl: "https://forgejo.test",
           },
           remoteName: "origin",
-          remoteUrl: "git@forgejo.test:maria/project.git",
+          remoteUrl: "git@forgejo.test:reviewer/project.git",
         },
       });
       assert.strictEqual(
@@ -431,7 +453,7 @@ it.effect(
         yield* fs.readFileString(path.join(cwd, "feature.txt")),
         "pull request change\n",
       );
-      assert.deepStrictEqual(fetched, [source, source, "git@forgejo.test:reviewer/project.git"]);
+      assert.deepStrictEqual(fetched, Array(3).fill("git@forgejo.test:reviewer/project.git"));
     }).pipe(
       Effect.scoped,
       Effect.provide(

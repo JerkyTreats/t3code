@@ -60,6 +60,102 @@ const layerFor = (
   );
 
 describe("GitCafeSourceControlProvider", () => {
+  it.effect("keeps origin context while expanding a nonempty pull list", () => {
+    const paths: string[] = [];
+    const pull = {
+      number: 7,
+      title: "Synthetic change",
+      state: "open",
+      draft: false,
+      sourceBranch: "feature",
+      targetBranch: "main",
+      headOid: null,
+      updatedAt: null,
+      sourceRepo: null,
+      closedAt: null,
+      mergedAt: null,
+    };
+    return Effect.gen(function* () {
+      const provider = yield* GitCafeSourceControlProvider.make;
+      const rows = yield* provider.listChangeRequests({
+        cwd: "/repo",
+        headSelector: "feature",
+        state: "open",
+        context: {
+          provider: {
+            kind: SourceControlProviderKind.make("gitcafe"),
+            name: "GitCafe",
+            baseUrl: "https://staging.git.cafe",
+          },
+          remoteName: "origin",
+          remoteUrl: "https://staging.git.cafe/team/project.git",
+        },
+      });
+      assert.strictEqual(rows[0]?.number, 7);
+      assert.strictEqual(rows[0]?.url, "https://staging.git.cafe/team/project/pulls/7");
+      assert.strictEqual(paths.length, 2);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          TestSourceControlHost.layer(),
+          NoFiles,
+          Layer.mock(GitCafeApi.GitCafeApi)({
+            request: (input) => {
+              assert.strictEqual(input.host, "staging.git.cafe");
+              paths.push(input.path);
+              return Effect.succeed(
+                encodeJson(input.path.includes("?") ? { items: [pull], next: null } : pull),
+              );
+            },
+          }),
+        ),
+      ),
+    );
+  });
+
+  // Fork F06: lookup and publication follow the explicit endpoint, never checkout defaults.
+  it.effect("creates a repository only on an explicit GitCafe endpoint", () => {
+    const sent: Array<string> = [];
+    return Effect.gen(function* () {
+      const provider = yield* GitCafeSourceControlProvider.make;
+      for (const providerBaseUrl of ["", "https://example.com", "https://git.cafe:8443"]) {
+        const refused = yield* provider
+          .createRepository({
+            cwd: "/repo",
+            providerBaseUrl,
+            repository: "team/project",
+            visibility: "private",
+          })
+          .pipe(Effect.result);
+        assert.strictEqual(refused._tag, "Failure", providerBaseUrl);
+      }
+      assert.deepStrictEqual(sent, []);
+      const created = yield* provider.createRepository({
+        cwd: "/repo",
+        providerBaseUrl: "https://staging.git.cafe",
+        repository: "team/project",
+        visibility: "private",
+      });
+      assert.strictEqual(created.url, "https://staging.git.cafe/team/project");
+      assert.deepStrictEqual(sent, ["POST staging.git.cafe /orgs/team/repos"]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          TestSourceControlHost.layer(),
+          NoFiles,
+          Layer.mock(GitCafeApi.GitCafeApi)({
+            request: (input) => {
+              sent.push(`${input.method ?? "GET"} ${input.host} ${input.path}`);
+              return Effect.succeed(
+                encodeJson({ repoId: "repo_1", state: "complete", owner: "team", name: "project" }),
+              );
+            },
+          }),
+        ),
+      ),
+    );
+  });
+
   it("reads a signed-in account and keeps transient failures apart from sign-out", () => {
     const { parseAuth } = GitCafeSourceControlProvider;
     const signedIn = parseAuth(
@@ -111,7 +207,11 @@ describe("GitCafeSourceControlProvider", () => {
       assert.strictEqual(provider.kind, "gitcafe");
       assert.strictEqual(yield* provider.getDefaultBranch({ cwd: "/repo", context }), "trunk");
       assert.deepStrictEqual(
-        yield* provider.getRepositoryCloneUrls({ cwd: "/repo", context, repository: remoteUrl }),
+        yield* provider.getRepositoryCloneUrls({
+          cwd: "/repo",
+          context,
+          repository: "team/project",
+        }),
         {
           nameWithOwner: "team/project",
           url: `https://${host}/team/project`,
@@ -153,7 +253,11 @@ describe("GitCafeSourceControlProvider", () => {
       return Effect.gen(function* () {
         const provider = yield* GitCafeSourceControlProvider.make;
         assert.deepStrictEqual(
-          yield* provider.getRepositoryCloneUrls({ cwd: "/repo", repository: "team/project" }),
+          yield* provider.getRepositoryCloneUrls({
+            cwd: "/repo",
+            providerBaseUrl: "https://git.cafe",
+            repository: "team/project",
+          }),
           {
             nameWithOwner: "team/project",
             url: "https://git.cafe/team/project",
@@ -197,7 +301,6 @@ describe("GitCafeSourceControlProvider", () => {
   );
 
   it.effect.each([
-    ["no context", undefined, "https://git.cafe/fork/project.git"],
     ["an ssh:// remote", "ssh://ssh@git.cafe/team/project.git", "ssh@git.cafe:fork/project.git"],
     [
       "an HTTPS remote with a user",
@@ -299,6 +402,15 @@ describe("GitCafeSourceControlProvider", () => {
       const provider = yield* GitCafeSourceControlProvider.make;
       yield* provider.createChangeRequest({
         cwd: "/repo",
+        context: {
+          provider: {
+            kind: SourceControlProviderKind.make("gitcafe"),
+            name: "GitCafe",
+            baseUrl: "https://git.cafe",
+          },
+          remoteName: "origin",
+          remoteUrl: "https://git.cafe/team/project.git",
+        },
         target: { repository: "team/project", refName: "main" },
         baseRefName: "main",
         headSelector: "fork:feature",

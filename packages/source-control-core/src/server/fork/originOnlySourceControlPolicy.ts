@@ -111,3 +111,15 @@ export function originSameNameUpstream(
       }
     : null;
 }
+
+/**
+ * Automatic comparison bases (configured diff bases, tracked bases and PR bases) may name a
+ * local branch or an origin remote-tracking ref. Another remote's ref is not product authority.
+ * `remoteName` is the remote parsed from a `refs/remotes/` ref against the configured remotes.
+ */
+export function isOriginComparisonRef(comparisonRef: string, remoteName: string | null): boolean {
+  return (
+    comparisonRef.startsWith("refs/heads/") ||
+    (comparisonRef.startsWith("refs/remotes/") && isOriginRemoteName(remoteName))
+  );
+}

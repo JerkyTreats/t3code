@@ -35,6 +35,11 @@ import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { PATCH_RENDER_PREFIX_ARGS } from "../vcs/GitVcsDriverCore.ts";
 import * as PullRequestService from "./PullRequestService.ts";
+import * as OriginRepositoryMutationAuthority from "../fork/OriginRepositoryMutationAuthority.ts";
+import {
+  isOriginRemoteName,
+  ORIGIN_REMOTE_NAME,
+} from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 import { pullRequestSyncKey } from "./pullRequestSyncKey.ts";
 import { reviewGuideInputFromPullRequest } from "./pullRequestReviewGuideInput.ts";
 import { normalizeReviewGuide, parseReviewGuideChange } from "./pullRequestReviewGuideNormalize.ts";
@@ -71,6 +76,8 @@ const make = Effect.gen(function* () {
   const textGeneration = yield* TextGeneration.TextGeneration;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const fileSystem = yield* FileSystem.FileSystem;
+  const mutationAuthority =
+    yield* OriginRepositoryMutationAuthority.OriginRepositoryMutationAuthority;
   const config = yield* ServerConfig.ServerConfig;
   const serviceScope = yield* Effect.scope;
   const runs = yield* Ref.make<ReadonlyMap<string, PullRequestReviewGuideRun>>(new Map());
@@ -110,6 +117,7 @@ const make = Effect.gen(function* () {
             );
       if (
         identity == null ||
+        !isOriginRemoteName(identity.locator.remoteName) ||
         own === null ||
         own.host !== key.host ||
         own.repository !== key.repository
@@ -168,8 +176,10 @@ const make = Effect.gen(function* () {
         args: ["remote"],
       })
       .pipe(Effect.map((result) => result.stdout.split("\n").filter((name) => name.length > 0)));
+    // Fork F06: the diff is fetched only from literal origin, never another remote whose URL
+    // happens to match the recorded identity.
     const remote = yield* Effect.findFirst(
-      [locator.remoteName, ...names.filter((name) => name !== locator.remoteName)],
+      names.filter((name) => name === ORIGIN_REMOTE_NAME && isOriginRemoteName(locator.remoteName)),
       (name) =>
         git
           .execute({
@@ -449,6 +459,19 @@ const make = Effect.gen(function* () {
     }
     const { key, workspaceRoot, identity } = yield* keyFor(input);
     const locator = yield* requireOwnRepository(key, identity);
+    // Fork F06: revalidate live origin before fetching the diff or invoking the model.
+    if (identity != null) {
+      yield* mutationAuthority.authorize({ cwd: workspaceRoot, expectedIdentity: identity }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new PullRequestOperationError({
+              operation: "generateReviewGuide",
+              detail: cause.detail,
+              cause,
+            }),
+        ),
+      );
+    }
     const runKey = keyString(key);
     yield* pullRequests.invalidate({ reference: input });
     const [detail, stored] = yield* Effect.all([pullRequests.detail(input), readStored(key)], {
@@ -529,4 +552,10 @@ const make = Effect.gen(function* () {
   return PullRequestReviewGuideService.of({ get, generate });
 });
 
-export const layer = Layer.effect(PullRequestReviewGuideService, make);
+/** The service before its origin authority is supplied; tests provide a replacement authority. */
+export const layerWithoutOriginAuthority = Layer.effect(PullRequestReviewGuideService, make);
+
+// Fork F06: the origin authority is provided here so hosts need no extra wiring.
+export const layer = layerWithoutOriginAuthority.pipe(
+  Layer.provide(OriginRepositoryMutationAuthority.layer),
+);
