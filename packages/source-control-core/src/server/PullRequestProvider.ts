@@ -255,6 +255,13 @@ export interface ProviderRepositoryRef {
   readonly cwd: string;
   readonly repository: string;
   readonly host: string;
+  /** Fork F06: exact Git origin locator used to derive any provider-specific target selectors. */
+  readonly origin?:
+    | {
+        readonly remoteName: string;
+        readonly remoteUrl: string;
+      }
+    | undefined;
 }
 
 export interface PullRequestProviderApi {
@@ -287,7 +294,7 @@ export interface PullRequestProviderApi {
 
   readonly getViewer: (input: {
     readonly cwd: string;
-    readonly host?: string;
+    readonly host: string;
   }) => Effect.Effect<string, PullRequestProviderError>;
 
   readonly listChangeRequests: (

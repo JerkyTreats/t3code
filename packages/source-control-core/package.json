@@ -42,6 +42,34 @@
     "./server/SourceControlRateLimit": {
       "types": "./src/server/SourceControlRateLimit.ts",
       "import": "./src/server/SourceControlRateLimit.ts"
+    },
+    "./server/fork/originHostedProviderPolicy": {
+      "types": "./src/server/fork/originHostedProviderPolicy.ts",
+      "import": "./src/server/fork/originHostedProviderPolicy.ts"
+    },
+    "./server/fork/originReviewThreadPolicy": {
+      "types": "./src/server/fork/originReviewThreadPolicy.ts",
+      "import": "./src/server/fork/originReviewThreadPolicy.ts"
+    },
+    "./server/fork/originOnlySourceControlPolicy": {
+      "types": "./src/server/fork/originOnlySourceControlPolicy.ts",
+      "import": "./src/server/fork/originOnlySourceControlPolicy.ts"
+    },
+    "./server/fork/AzureDevOpsRepositoryTarget": {
+      "types": "./src/server/fork/AzureDevOpsRepositoryTarget.ts",
+      "import": "./src/server/fork/AzureDevOpsRepositoryTarget.ts"
+    },
+    "./server/fork/GitLabRepositoryTarget": {
+      "types": "./src/server/fork/GitLabRepositoryTarget.ts",
+      "import": "./src/server/fork/GitLabRepositoryTarget.ts"
+    },
+    "./client/originRepositoryPolicy": {
+      "types": "./src/client/originRepositoryPolicy.ts",
+      "import": "./src/client/originRepositoryPolicy.ts"
+    },
+    "./server/fork/originGitCafePolicy": {
+      "types": "./src/server/fork/originGitCafePolicy.ts",
+      "import": "./src/server/fork/originGitCafePolicy.ts"
     }
   },
   "scripts": {

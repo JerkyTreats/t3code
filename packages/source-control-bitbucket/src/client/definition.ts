@@ -7,10 +7,9 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
   defineSourceControlClient,
-  isChangeRequestInProjectRepository,
-  isChangeRequestOnProjectHost,
   isChangeRequestPath,
 } from "@t3tools/source-control-core/client/definition";
+import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/client/originRepositoryPolicy";
 
 const safeShellArgument = /^[A-Za-z0-9._/@+=,-]+$/;
 const repositoryName = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
@@ -81,10 +80,9 @@ export const definition = defineSourceControlClient({
   isChangeRequestReference: () => false,
   changeRequestUrlHost: (url) => url.hostname,
   checkoutChangeRequestHost: () => null,
-  isChangeRequestInRepository: (identity, link) =>
-    isChangeRequestInProjectRepository(KIND, identity, link),
-  canReadChangeRequestOnHost: (identity, link) =>
-    isChangeRequestOnProjectHost(KIND, identity, link),
+  // Fork F06: membership admission requires the exact origin locator.
+  isChangeRequestInRepository: exactOriginContainsChangeRequest,
+  canReadChangeRequestOnHost: exactOriginContainsChangeRequest,
   isChangeRequestUrl: (url) => isChangeRequestPath(url, "/pull-requests/"),
   settings,
 });

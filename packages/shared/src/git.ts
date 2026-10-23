@@ -196,6 +196,56 @@ function parseGitConfigValue(raw: string): string {
   return out.trim();
 }
 
+/**
+ * Normalize a Git remote for mutation authorization.
+ *
+ * Unlike the broader repository-grouping key above, this preserves non-default
+ * ports because two services on the same host and path are distinct mutation
+ * targets.
+ */
+export function normalizeGitRemoteMutationTarget(value: string): string {
+  const normalized = value
+    .trim()
+    .replace(/\/+$/g, "")
+    .replace(/\.git$/i, "")
+    .toLowerCase();
+
+  if (/^(?:ssh|https?|git):\/\//i.test(normalized)) {
+    try {
+      const url = new URL(normalized);
+      const repositoryPath = url.pathname
+        .split("/")
+        .filter((segment) => segment.length > 0)
+        .join("/");
+      if (url.hostname && repositoryPath.includes("/")) {
+        const defaultPort =
+          url.protocol === "ssh:"
+            ? "22"
+            : url.protocol === "https:"
+              ? "443"
+              : url.protocol === "http:"
+                ? "80"
+                : url.protocol === "git:"
+                  ? "9418"
+                  : "";
+        const port = url.port.length > 0 && url.port !== defaultPort ? `:${url.port}` : "";
+        return `${url.hostname}${port}/${repositoryPath}`;
+      }
+    } catch {
+      return normalized;
+    }
+  }
+
+  const scpStyleHostAndPath = /^[a-zA-Z0-9._-]+@([^:/\s]+):([^/\s]+(?:\/[^/\s]+)+)$/i.exec(
+    normalized,
+  );
+  if (scpStyleHostAndPath?.[1] && scpStyleHostAndPath[2]) {
+    return `${scpStyleHostAndPath[1]}/${scpStyleHostAndPath[2]}`;
+  }
+
+  return normalized;
+}
+
 export function isBareGitConfig(configText: string): boolean {
   let inCore = false;
   let bare = false;
@@ -219,7 +269,6 @@ export function isBareGitConfig(configText: string): boolean {
 export function parseOriginUrlFromGitConfig(configText: string): string | null {
   let section: string | null = null;
   let originUrl: string | null = null;
-  let firstRemoteUrl: string | null = null;
   // A trailing backslash continues the value on the next line.
   const joined = configText.replace(/\\\r?\n[ \t]*/g, "");
   for (const rawLine of joined.split(/\r?\n/)) {
@@ -244,11 +293,9 @@ export function parseOriginUrlFromGitConfig(configText: string): string | null {
     if (url.length === 0) continue;
     if (section === "origin") {
       originUrl ??= url;
-    } else {
-      firstRemoteUrl ??= url;
     }
   }
-  return originUrl ?? firstRemoteUrl;
+  return originUrl;
 }
 
 export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {

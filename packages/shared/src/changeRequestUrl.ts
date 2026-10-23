@@ -3,8 +3,8 @@ import { canonicalRepositoryKey } from "./sourceControl.ts";
 
 /**
  * The two strings are what `pullRequestHostOf` and the project's `repositoryIdentity` produce
- * from a git remote — lower case, no port, the full path below the host — because links are
- * matched against those. Anything else matches nothing.
+ * from a git remote: lower case and the full path below the host. The optional authority
+ * retains a non-default HTTP port for exact target comparisons.
  */
 export interface ChangeRequestLink {
   readonly host: string;
@@ -35,7 +35,7 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
   } else {
     if (isHostOf(host, "github.com", "github")) {
       const match = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/|$)/u.exec(url.pathname);
-      if (match) return claim(host, match);
+      if (match) return withPortAuthority(claim(host, match), url);
     }
     const forgejo = /^\/([^/]+(?:\/[^/]+)+)\/pulls\/(\d+)(?:\/|$)/u.exec(url.pathname);
     if (forgejo) {
@@ -43,15 +43,19 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
       return link === null ? null : { ...link, authority: url.host.toLowerCase() };
     }
     const gitlab = /^\/([^/]+(?:\/[^/]+)+)\/-\/merge_requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
-    if (gitlab) return claim(host, gitlab);
+    if (gitlab) return withPortAuthority(claim(host, gitlab), url);
     if (isHostOf(host, "bitbucket.org", "bitbucket")) {
       const match = /^\/([^/]+\/[^/]+)\/pull-requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
-      if (match) return claim(host, match);
+      if (match) return withPortAuthority(claim(host, match), url);
     }
   }
   // Azure DevOps Server can use any hostname; its `_git` pull request route identifies it.
   const azure = /^\/((?:[^/]+\/)*_git\/[^/]+)\/pullrequest\/(\d+)(?:\/|$)/u.exec(url.pathname);
-  const link = claim(host, azure);
+  return withPortAuthority(claim(host, azure), url);
+}
+
+/** Fork F06: a non-default port stays part of the exact link target. */
+function withPortAuthority(link: ChangeRequestLink | null, url: URL): ChangeRequestLink | null {
   return link === null || url.port === "" ? link : { ...link, authority: url.host.toLowerCase() };
 }
 

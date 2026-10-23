@@ -195,3 +195,17 @@ describe("changeRequestUrlFor", () => {
     });
   });
 });
+
+it("retains non-default authority for GitHub and GitLab links without changing grouping hosts", () => {
+  for (const [url, host] of [
+    ["https://github.example.test:8443/team/repo/pull/12", "github.example.test"],
+    ["https://gitlab.example.test:8443/team/repo/-/merge_requests/12", "gitlab.example.test"],
+  ]) {
+    expect(parseChangeRequestUrl(url!)).toEqual({
+      host,
+      authority: `${host}:8443`,
+      repository: "team/repo",
+      number: 12,
+    });
+  }
+});
