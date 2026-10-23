@@ -170,12 +170,23 @@ describe("fork timeline message presentation", () => {
   });
 
   it("spaces the conversation top independently of the titlebar fade depth", async () => {
-    await using screen = await renderTimeline([userEntry("Hello")], { topFadeEnabled: true });
-
-    expect(
-      screen.container.querySelector(
-        `.${chatTimelinePresentation.fadeHeaderClassName.split(" ")[0]}`,
-      ),
-    ).not.toBeNull();
+    const byClass = (root: HTMLElement, className: string) =>
+      [...root.querySelectorAll("div")].filter((node) => node.className === className);
+    {
+      await using screen = await renderTimeline([userEntry("Hello")], { topFadeEnabled: true });
+      expect(byClass(screen.container, chatTimelinePresentation.fadeHeaderClassName)).toHaveLength(
+        1,
+      );
+      // Only the bottom spacer keeps the compact height.
+      expect(byClass(screen.container, "h-3 sm:h-4")).toHaveLength(1);
+    }
+    {
+      await using screen = await renderTimeline([userEntry("Hello")]);
+      expect(byClass(screen.container, chatTimelinePresentation.fadeHeaderClassName)).toHaveLength(
+        0,
+      );
+      // Without the fade the leading header and bottom spacer both use the compact height.
+      expect(byClass(screen.container, "h-3 sm:h-4")).toHaveLength(2);
+    }
   });
 });
