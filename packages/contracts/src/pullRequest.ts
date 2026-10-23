@@ -918,23 +918,50 @@ const PROVIDER_REQUIREMENT = new Map<
   ],
 ]);
 
+/**
+ * The host a project's repository is addressed below. An exact origin locator wins because a
+ * non-default port is part of the provider target even though the broader canonical grouping key
+ * omits it. The canonical key remains the legacy fallback, and the provider kind stands in when
+ * neither identity can name a host.
+ *
+ * Shared between the server and the page so both bucket a workspace the same way — the page
+ * knows its hosts before the listing answers, and the two must agree on what they are called.
+ */
 export function pullRequestHostOf(
   identity:
     | {
         readonly canonicalKey?: string | undefined;
-        readonly locator?: { readonly remoteUrl: string } | undefined;
+        readonly locator?:
+          | {
+              readonly remoteName?: string | undefined;
+              readonly remoteUrl?: string | undefined;
+            }
+          | undefined;
       }
     | null
     | undefined,
   kind: SourceControlProviderKind,
 ): string {
-  if (kind === "forgejo") {
+  const remoteUrl =
+    identity?.canonicalKey !== undefined && identity.locator?.remoteName === "origin"
+      ? identity.locator.remoteUrl
+      : null;
+  if (remoteUrl) {
+    const scpHost = /^[^@\s]+@([^:/\s]+):/u.exec(remoteUrl.trim())?.[1];
+    if (scpHost) return scpHost.toLowerCase();
+
     try {
-      const remote = new URL(identity?.locator?.remoteUrl ?? "");
-      if (remote.protocol === "http:" || remote.protocol === "https:")
-        return remote.host.toLowerCase();
-    } catch {}
+      const remote = new URL(remoteUrl.trim());
+      const host =
+        remote.protocol === "http:" || remote.protocol === "https:"
+          ? remote.host.trim()
+          : remote.hostname.trim();
+      if (host.length > 0) return host.toLowerCase();
+    } catch {
+      // A legacy or malformed locator falls back to its canonical identity below.
+    }
   }
+
   const host = identity?.canonicalKey?.split("/")[0]?.trim();
   return host === undefined || host.length === 0 ? kind : host.toLowerCase();
 }

@@ -1,7 +1,11 @@
+import type {
+  DesktopLauncherActivation,
+  DesktopLauncherActivationCompletion,
+} from "./desktopLauncher.ts";
 import * as Schema from "effect/Schema";
 import type { PreviewCaptureFailureEncoded } from "./previewCapture.ts";
 
-import { SnapShotSource } from "./chatAttachment.ts";
+import { SnapShotSource, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "./chatAttachment.ts";
 import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 import type {
@@ -78,7 +82,7 @@ export type DesktopUpdateStatus =
 export type DesktopRuntimeArch = "arm64" | "x64" | "other";
 export type DesktopTheme = "light" | "dark" | "system";
 export type DesktopUpdateChannel = "latest" | "nightly";
-export type DesktopAppStageLabel = "Alpha" | "Beta" | "Dev" | "Nightly";
+export type DesktopAppStageLabel = "Alpha" | "Beta" | "Dev" | "Nightly" | "Staging";
 
 export const DesktopUpdateStatusSchema = Schema.Literals([
   "disabled",
@@ -93,7 +97,13 @@ export const DesktopUpdateStatusSchema = Schema.Literals([
 export const DesktopRuntimeArchSchema = Schema.Literals(["arm64", "x64", "other"]);
 export const DesktopThemeSchema = Schema.Literals(["light", "dark", "system"]);
 export const DesktopUpdateChannelSchema = Schema.Literals(["latest", "nightly"]);
-export const DesktopAppStageLabelSchema = Schema.Literals(["Alpha", "Beta", "Dev", "Nightly"]);
+export const DesktopAppStageLabelSchema = Schema.Literals([
+  "Alpha",
+  "Beta",
+  "Dev",
+  "Nightly",
+  "Staging",
+]);
 
 export interface DesktopAppBranding {
   baseName: string;
@@ -107,6 +117,72 @@ export const DesktopAppBrandingSchema = Schema.Struct({
   displayName: Schema.String,
 });
 
+export const DESKTOP_SYSTEM_THEME_NAME_MAX_CHARS = 128;
+export const DESKTOP_SYSTEM_THEME_MAX_COLORS = 64;
+export const DESKTOP_SYSTEM_THEME_COLOR_KEY_MAX_CHARS = 64;
+export const DESKTOP_SYSTEM_THEME_COLOR_VALUE_MAX_CHARS = 256;
+
+const DesktopSystemThemeColorKey = Schema.String.check(
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(DESKTOP_SYSTEM_THEME_COLOR_KEY_MAX_CHARS),
+  Schema.isPattern(/^[a-z][a-z0-9_-]*$/u),
+);
+const DesktopSystemThemeColorValue = Schema.String.check(
+  Schema.isNonEmpty(),
+  Schema.isMaxLength(DESKTOP_SYSTEM_THEME_COLOR_VALUE_MAX_CHARS),
+);
+const isDesktopSystemThemeColorKey = Schema.is(DesktopSystemThemeColorKey);
+const DesktopSystemThemeColorsSchema = Schema.StructWithRest(
+  Schema.Struct({
+    background: DesktopSystemThemeColorValue,
+    foreground: DesktopSystemThemeColorValue,
+    accent: DesktopSystemThemeColorValue,
+  }),
+  [Schema.Record(Schema.String, DesktopSystemThemeColorValue)],
+).check(
+  Schema.makeFilter(
+    (colors) =>
+      Object.keys(colors).length <= DESKTOP_SYSTEM_THEME_MAX_COLORS ||
+      `Desktop system theme must not contain more than ${DESKTOP_SYSTEM_THEME_MAX_COLORS} colors.`,
+  ),
+  Schema.makeFilter(
+    (colors) =>
+      Object.keys(colors).every(isDesktopSystemThemeColorKey) ||
+      "Desktop system theme contains an invalid color key.",
+  ),
+);
+
+export const DesktopSystemThemeSchema = Schema.Struct({
+  source: Schema.Literal("omarchy"),
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(DESKTOP_SYSTEM_THEME_NAME_MAX_CHARS)),
+  mode: Schema.Literals(["light", "dark"]),
+  colors: DesktopSystemThemeColorsSchema,
+});
+export type DesktopSystemTheme = typeof DesktopSystemThemeSchema.Type;
+
+const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+
+export const DESKTOP_SCREENSHOT_CAPTURE_MAX_BYTES = PROVIDER_SEND_TURN_MAX_IMAGE_BYTES;
+const DesktopScreenshotCaptureData = Schema.Uint8Array.check(
+  Schema.makeFilter((data) => data.byteLength > 0 || "Screenshot capture must not be empty."),
+  Schema.makeFilter(
+    (data) =>
+      PNG_SIGNATURE.every((byte, index) => data[index] === byte) ||
+      "Screenshot capture must have a valid PNG signature.",
+  ),
+  Schema.makeFilter(
+    (data) =>
+      data.byteLength <= DESKTOP_SCREENSHOT_CAPTURE_MAX_BYTES ||
+      `Screenshot capture must not exceed ${DESKTOP_SCREENSHOT_CAPTURE_MAX_BYTES} bytes.`,
+  ),
+);
+
+export const DesktopScreenshotCaptureSchema = Schema.Struct({
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  mimeType: Schema.Literal("image/png"),
+  data: DesktopScreenshotCaptureData,
+});
+export type DesktopScreenshotCapture = typeof DesktopScreenshotCaptureSchema.Type;
 export const DesktopSnapShotMode = Schema.Literals(["direct", "portal", "unavailable"]);
 export type DesktopSnapShotMode = typeof DesktopSnapShotMode.Type;
 
@@ -610,6 +686,20 @@ export const DesktopPreviewTabIdSchema = Schema.String.check(Schema.isTrimmed())
   Schema.isNonEmpty(),
 );
 
+export const DesktopPreviewBrowserActionSchema = Schema.Literals([
+  "preview.new",
+  "preview.close",
+  "preview.reopenClosed",
+  "preview.focusUrl",
+]);
+export type DesktopPreviewBrowserAction = typeof DesktopPreviewBrowserActionSchema.Type;
+
+export const DesktopPreviewBrowserActionEventSchema = Schema.Struct({
+  action: DesktopPreviewBrowserActionSchema,
+  tabId: DesktopPreviewTabIdSchema,
+});
+export type DesktopPreviewBrowserActionEvent = typeof DesktopPreviewBrowserActionEventSchema.Type;
+
 export interface DesktopPreviewPointerEvent {
   tabId: string;
   phase: "move" | "click";
@@ -989,14 +1079,14 @@ export const DesktopPreviewClearDataInputSchema = Schema.Struct({
   profileId: Schema.optional(BrowserProfileId),
 });
 
+export const DesktopPreviewSetZoomFactorInputSchema = Schema.Struct({
+  tabId: DesktopPreviewTabIdSchema,
+  zoomFactor: Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0)),
+});
+
 export const DesktopPreviewSetColorSchemeInputSchema = Schema.Struct({
   tabId: DesktopPreviewTabIdSchema,
   colorScheme: DesktopPreviewColorSchemeSchema,
-});
-
-export const DesktopPreviewSetZoomFactorInputSchema = Schema.Struct({
-  tabId: DesktopPreviewTabIdSchema,
-  zoomFactor: Schema.Number.check(Schema.isGreaterThan(0)),
 });
 
 export const DesktopPreviewSetAudioMutedInputSchema = Schema.Struct({
@@ -1050,6 +1140,10 @@ export interface DesktopBridge {
   getLocalEnvironmentEnabled?: () => boolean;
   setLocalEnvironmentEnabled?: (enabled: boolean) => Promise<void>;
   getLocalEnvironmentBearerToken: () => Promise<string>;
+  takeLauncherActivation?: () => Promise<DesktopLauncherActivation | null>;
+  completeLauncherActivation?: (
+    completion: DesktopLauncherActivationCompletion,
+  ) => Promise<boolean>;
   getClientSettings: () => Promise<ClientSettings | null>;
   setClientSettings: (settings: ClientSettings) => Promise<void>;
   getConnectionCatalog?: () => Promise<string | null>;
@@ -1108,6 +1202,10 @@ export interface DesktopBridge {
   pickProjectFavicon?: (initialPath?: string) => Promise<string | null>;
   pickThemeFiles?: () => Promise<readonly PickedThemeFile[] | null>;
   setTheme: (theme: DesktopTheme) => Promise<void>;
+  /** Local desktop capabilities; absent in ordinary browsers and older shells. */
+  getSystemTheme?: () => Promise<DesktopSystemTheme | null>;
+  onSystemTheme?: (listener: (theme: DesktopSystemTheme | null) => void) => () => void;
+  captureDesktopScreenshot?: () => Promise<DesktopScreenshotCapture | null>;
   showContextMenu: <T extends string>(
     items: readonly ContextMenuItem<T>[],
     position?: { x: number; y: number },
@@ -1123,6 +1221,9 @@ export interface DesktopBridge {
   probeRemoteEditors?: () => Promise<readonly EditorId[]>;
   pasteAsText?: () => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
+  onPreviewBrowserAction?: (
+    listener: (event: DesktopPreviewBrowserActionEvent) => void,
+  ) => () => void;
   onSnapShotEvent?: (listener: (event: DesktopSnapShotEvent) => void) => () => void;
   onQuitShortcut?: (listener: (event: QuitShortcutHintEvent) => void) => () => void;
   getWindowFullscreenState: () => boolean;

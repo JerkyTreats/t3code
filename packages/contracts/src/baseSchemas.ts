@@ -281,10 +281,18 @@ export const NodeId = makeEntityId("NodeId");
 export type NodeId = typeof NodeId.Type;
 export const AuthSessionId = makeEntityId("AuthSessionId");
 export type AuthSessionId = typeof AuthSessionId.Type;
+export const AuthClientId = makeEntityId("AuthClientId");
+export type AuthClientId = typeof AuthClientId.Type;
 export const RpcClientId = NonNegativeInt.pipe(Schema.brand("RpcClientId"));
 export type RpcClientId = typeof RpcClientId.Type;
 
-export const ClientSurface = Schema.Literals(["web", "desktop", "mobile", "cli"]);
+/**
+ * Which client surface a connection or command comes from. Unlike
+ * `AuthClientMetadataDeviceType` (a UA-style device class where web and
+ * desktop are both "desktop"), this names the actual product surface.
+ * Optional everywhere it appears: old clients never send it.
+ */
+export const ClientSurface = Schema.Literals(["web", "desktop", "mobile", "cli", "thread"]);
 export type ClientSurface = typeof ClientSurface.Type;
 
 export const ClientOs = Schema.Literals([
@@ -335,6 +343,18 @@ export const ApprovalRequestId = makeEntityId("ApprovalRequestId");
 export type ApprovalRequestId = typeof ApprovalRequestId.Type;
 export const CheckpointRef = makeEntityId("CheckpointRef");
 export type CheckpointRef = typeof CheckpointRef.Type;
+
+// Keep strict IPC boundaries independent of caller decoder options.
+export const strictStruct = <Fields extends Schema.Struct.Fields>(schema: Schema.Struct<Fields>) =>
+  Schema.Unknown.check(
+    Schema.makeFilter(
+      (value) =>
+        (typeof value === "object" &&
+          value !== null &&
+          Reflect.ownKeys(value).every((key) => Object.hasOwn(schema.fields, key))) ||
+        "Object contains an unexpected field.",
+    ),
+  ).pipe(Schema.decodeTo(schema));
 export const CheckpointId = makeEntityId("CheckpointId");
 export type CheckpointId = typeof CheckpointId.Type;
 export const CheckpointScopeId = makeEntityId("CheckpointScopeId");

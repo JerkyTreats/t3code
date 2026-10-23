@@ -74,7 +74,7 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
 });
 
 it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
-  it.effect("publishes proven install ownership only for manually updated servers", () =>
+  it.effect("keeps package installation hints private and desktop update ownership explicit", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const baseDir = yield* fs.makeTempDirectoryScoped();
@@ -106,9 +106,7 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
           Effect.provideService(HostProcess.Platform, "linux"),
           Effect.provideService(HostProcess.Environment, {}),
         );
-        expect(descriptor.capabilities.serverInstallation).toEqual(
-          mode === "web" ? { kind: "npm-global", prefix } : undefined,
-        );
+        expect(descriptor.capabilities.serverInstallation).toBeUndefined();
         expect(descriptor.capabilities.serverSelfUpdate).toBe(
           mode === "web" ? undefined : "desktop-managed",
         );
@@ -264,6 +262,43 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive", (it) => {
         const disabled = yield* serverEnvironment.getDescriptor;
         expect(disabled.capabilities.agentActivityPublishing).toBe(false);
       }).pipe(Effect.provide(layerTest));
+    }),
+  );
+
+  it.effect("advertises desktopBrowser only with both desktop browser channel fds", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-server-environment-desktop-browser-test-",
+      });
+      const serverConfig = yield* makeServerConfig(baseDir);
+      yield* fileSystem.makeDirectory(serverConfig.stateDir, { recursive: true });
+
+      const describeWith = (overrides: Partial<ServerConfig.ServerConfig["Service"]>) =>
+        Effect.gen(function* () {
+          const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
+          return yield* serverEnvironment.getDescriptor;
+        }).pipe(
+          Effect.provide(
+            ServerEnvironment.layer.pipe(
+              Layer.provide(ServerSecretStore.layer),
+              Layer.provide(ServerConfig.layer({ ...serverConfig, ...overrides })),
+            ),
+          ),
+        );
+
+      const withChannel = yield* describeWith({
+        mode: "desktop",
+        desktopBrowserFd: 6,
+        desktopBrowserControlFd: 7,
+      });
+      expect(withChannel.capabilities.serverBrowser).toBe(true);
+      expect(withChannel.capabilities.desktopBrowser).toBe(true);
+
+      // A WSL primary is bootstrapped over stdin, which carries no browser fds.
+      const wslPrimary = yield* describeWith({ mode: "desktop" });
+      expect(wslPrimary.capabilities.serverBrowser).toBe(true);
+      expect(wslPrimary.capabilities.desktopBrowser).toBeUndefined();
     }),
   );
 });

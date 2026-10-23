@@ -1,9 +1,12 @@
+// @effect-diagnostics nodeBuiltinImport:off -- Build configuration must synchronously resolve the source revision before defining bundle constants.
 import "vite-plus/test/config";
+import * as NodeChildProcess from "node:child_process";
 import { defineConfig, mergeConfig } from "vite-plus";
 
 import baseConfig from "../../vite.config.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 import rootPackageJson from "../../package.json" with { type: "json" };
+import { forkReleaseVersion } from "../../scripts/lib/fork-release-version.mjs";
 import packageJson from "./package.json" with { type: "json" };
 import { WeightedShardSequencer } from "./src/testUtils/weightedShardSequencer.ts";
 
@@ -16,6 +19,13 @@ import {
 export { shouldBundleCliDependency };
 
 const repoEnv = loadRepoEnv();
+const releaseCommit =
+  process.env.T3CODE_BUILD_COMMIT?.trim() ??
+  NodeChildProcess.execFileSync("git", ["rev-parse", "--verify", "HEAD^{commit}"], {
+    cwd: new URL("../..", import.meta.url),
+    encoding: "utf8",
+  }).trim();
+const cliBuildVersion = forkReleaseVersion(packageJson.version, releaseCommit);
 const cliBuildChannel = /^[^-+]+-(?:nightly|preview)\./.test(packageJson.version)
   ? "nightly"
   : "latest";
@@ -112,6 +122,7 @@ export default mergeConfig(
         js: "#!/usr/bin/env node\n",
       },
       define: {
+        __T3CODE_BUILD_VERSION__: JSON.stringify(cliBuildVersion),
         __T3CODE_BUILD_CHANNEL__: JSON.stringify(cliBuildChannel),
         __T3CODE_TELEMETRY_CHANNEL__: JSON.stringify(telemetryChannel),
         __T3CODE_BUILD_RELAY_URL__: JSON.stringify(repoEnv.T3CODE_RELAY_URL?.trim() ?? ""),

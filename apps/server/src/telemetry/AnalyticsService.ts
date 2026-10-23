@@ -22,7 +22,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
-import packageJson from "../../package.json" with { type: "json" };
+import { serverVersion } from "../serverVersion.ts";
 import * as ServerConfig from "../config.ts";
 import { getTelemetryIdentity, type TelemetryOwner } from "./Identify.ts";
 
@@ -208,13 +208,13 @@ export const make = Effect.gen(function* () {
           platform: hostPlatform,
           wsl: Option.getOrUndefined(telemetryConfig.wslDistroName),
           arch: hostArchitecture,
-          t3CodeVersion: packageJson.version,
+          t3CodeVersion: serverVersion,
           telemetryChannel,
           clientType,
           serverOs: serverOsFromNodePlatform(hostPlatform),
           serverArch: hostArchitecture,
           serverWslDistro: Option.getOrUndefined(telemetryConfig.wslDistroName),
-          serverAppVersion: packageJson.version,
+          serverAppVersion: serverVersion,
           serverMode: serverConfig.mode,
         },
         timestamp: event.capturedAt,

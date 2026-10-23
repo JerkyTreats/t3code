@@ -27,7 +27,6 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as ServerConfig from "./config.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as EffectWorker from "./orchestration-v2/EffectWorker.ts";
@@ -204,10 +203,6 @@ it.effect.each([
                 );
           },
         }),
-        Layer.mock(ServiceLauncherClient.ServiceLauncherClient)({
-          managed: false,
-          prepareTrial: Effect.succeed(undefined),
-        }),
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         Layer.mock(AnalyticsService.AnalyticsService)({}),
         // No provider logins or Connect link, so startup records no owners.
@@ -312,12 +307,18 @@ it.effect("automatic pull only updates enabled, behind, clean default-branch che
       statusDetails: (cwd: string) =>
         Effect.succeed({
           isRepo: true,
+          branch: "main",
           isDefaultBranch: cwd !== "/feature",
           hasUpstream: true,
           hasWorkingTreeChanges: cwd === "/dirty",
           aheadCount: cwd === "/ahead" ? 1 : 0,
           behindCount: cwd === "/current" ? 0 : 1,
         } as never),
+      execute: (input: GitVcsDriver.ExecuteGitInput) =>
+        Effect.sync(() => {
+          assert.deepStrictEqual(input.args, ["config", "--get", "branch.main.remote"]);
+          return { stdout: input.cwd === "/upstream" ? "upstream\n" : "origin\n" } as never;
+        }),
       pullCurrentBranch: (cwd: string) =>
         Effect.sync(() => {
           pulled.push(cwd);
@@ -347,6 +348,7 @@ it.effect("automatic pull only updates enabled, behind, clean default-branch che
         project("/dirty"),
         project("/ahead"),
         project("/feature"),
+        project("/upstream"),
         project("/disabled"),
       ],
       overrides({
@@ -355,6 +357,7 @@ it.effect("automatic pull only updates enabled, behind, clean default-branch che
         "/dirty": true,
         "/ahead": true,
         "/feature": true,
+        "/upstream": true,
         "/disabled": false,
       }),
     ).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, git));
