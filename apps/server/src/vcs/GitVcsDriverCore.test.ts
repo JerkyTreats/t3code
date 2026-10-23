@@ -454,6 +454,48 @@ describe("pullCurrentBranch", () => {
       }).pipe(Effect.scoped, Effect.provide(layerServerConfig.pipe(Layer.provideMerge(layerTest)))),
   );
 
+  // Fork F06: the narrowed ref-lock retry pulls only from origin, even if tracking moved away.
+  it.effect("does not retry a locked pull once the branch tracks a non-origin remote", () =>
+    Effect.gen(function* () {
+      const fixtureDriver = yield* GitVcsDriver.GitVcsDriver;
+      const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const { cwd, remote, updater, initialBranch } = yield* cloneBehindRemote;
+      yield* git(updater, ["push", "origin", "HEAD:refs/heads/other"]);
+      yield* git(cwd, ["remote", "add", "upstream", remote]);
+      yield* writeTextFile(cwd, ".git/refs/remotes/origin/other.lock", "");
+      const pulls: Array<ReadonlyArray<string>> = [];
+      const spawner = ChildProcessSpawner.make((command) =>
+        Effect.gen(function* () {
+          const handle = yield* delegate.spawn(command);
+          if (!ChildProcess.isStandardCommand(command) || !command.args.includes("pull")) {
+            return handle;
+          }
+          pulls.push(command.args);
+          return ChildProcessSpawner.makeHandle({
+            ...handle,
+            exitCode: handle.exitCode.pipe(
+              Effect.tap(() =>
+                git(cwd, ["config", `branch.${initialBranch}.remote`, "upstream"]).pipe(
+                  Effect.provideService(GitVcsDriver.GitVcsDriver, fixtureDriver),
+                  Effect.orDie,
+                ),
+              ),
+            ),
+          });
+        }),
+      );
+      const driver = yield* makeGitVcsDriverCore().pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+
+      const error = yield* Effect.flip(driver.pullCurrentBranch(cwd));
+
+      assert.include(error.detail, "could not update a local reference");
+      assert.equal(pulls.length, 1);
+      assert.notInclude(pulls.flat(), "upstream");
+    }).pipe(Effect.scoped, Effect.provide(layerServerConfig.pipe(Layer.provideMerge(layerTest)))),
+  );
+
   it.effect.each(["stdout", "stderr"] as const)(
     "reports a fast-forward whose %s passes the cap as pulled",
     (stream) =>
