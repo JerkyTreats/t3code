@@ -48,7 +48,9 @@ Give a focused Electron preview pane normal browser tab controls without allowin
 - `apps/desktop/src/ipc/channels.ts`
 - `apps/desktop/src/ipc/methods/preview.ts`
 - `apps/web/src/routes/_chat.tsx`
-- `apps/web/src/components/ChatView.tsx`
+- `apps/web/src/components/chat/useRightPanelActions.ts` hosts focused new, close and reopen through `usePreviewHostActions`
+- `apps/web/src/hooks/useRightPanelSurfaceClose.ts` routes confirmed preview closes through the closed-history owner
+- `apps/web/src/components/ReopenClosedViewShortcut.tsx`
 - `apps/web/src/browser/ElectronBrowserHost.tsx`
 - `apps/web/src/browser/HostedBrowserWebview.tsx`
 - `apps/web/src/browser/desktopTabLifetime.ts`
@@ -82,6 +84,7 @@ Give a focused Electron preview pane normal browser tab controls without allowin
 - Store tests prove per thread isolation, user initiation order, pending failure rollback, and ten successful retained entries.
 - Reopen tests prove URL, idle state, viewport, zoom, color, failure rollback, and resize failure visibility.
 - Desktop presentation tests prove lease readiness, late restoration, bounded retry, and no fallback reset of ordinary tabs.
+- Upstream moved component tests to the real-browser harness. `HostedBrowserWebview.restoration.browser.test.tsx`, `previewHostIntegration.browser.test.tsx` and the native-focus case in `ReopenClosedViewShortcut.browser.test.tsx` carry the host proof; `previewRuntime.native.test.ts`, `previewStateStore.test.ts`, `closePreviewSession.test.ts` and `desktopTabLifetime.test.ts` carry the owner proof.
 - Joined format, lint, typecheck and tests pass on the integrated candidate. Installed desktop acceptance remains a separate intake ledger obligation.
 
 ## Reconciliation Rule
@@ -92,6 +95,6 @@ Retain upstream preview sessions, focus mechanics, panel surfaces, and browser p
 
 New guest leases capture presentation before asynchronous settings reads. If an opened event creates a guest before the open mutation result, the current `preview.setZoomFactor` method restores through the existing normalized Manager zoom operation after lease and registration readiness. Identity is rechecked before subsequent writes and consumption. The current upstream bridge requires that setter and shares it with server-driven presentation. No keyboard synthesis, alternate zoom ladder or page-state persistence is introduced.
 
-Current browser hosts retain upstream authorization scopes and server-tab identity while adapting fork restoration. The right-panel store retains upstream close revisions. Focused preview reopen consumes the F23 thread-local history; the upstream global reopen shortcut skips preview focus and retains nonbrowser reopening. No persisted global browser history replaces the bounded F23 history.
+Current browser hosts retain upstream authorization scopes and server-tab identity while adapting fork restoration. Chat hosts admit preview actions against the live route through `isPreviewHostRouteCurrent`, read at action time, so `ChatView` carries no F23 state. The surface-close hook resolves whether every requested surface closed, and no longer subscribes to the thread's preview state. Upstream's unchanged-list fast path in `reconcilePreviewServerSessions` stays, except when a pending restoration names a tab missing from the list. Native rendering of the primary's server tabs requires the optional `desktopBrowser` environment capability. The right-panel store retains upstream close revisions. Focused preview reopen consumes the F23 thread-local history; the upstream global reopen shortcut skips preview focus and retains nonbrowser reopening. No persisted global browser history replaces the bounded F23 history.
 
 Focused protected browser chords take precedence over generic configured host shortcut forwarding. Unfocused guest input cannot reload the preview or emit preview actions. Current Manager tests exercise shortcut collisions and focus rejection.

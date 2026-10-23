@@ -1,19 +1,7 @@
-import * as DateTime from "effect/DateTime";
-
-import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
-import { getPairingTokenFromUrl, setPairingTokenOnUrl } from "../../pairingUrl";
+import { getPairingTokenFromUrl } from "../../pairingUrl";
 import { readHostedPairingRequest } from "../../hostedPairing";
 import {
-  type ServerClientSessionRecord,
-  type ServerPairingLinkRecord,
-} from "~/environments/primary";
-import {
   type AdvertisedEndpoint,
-  type AuthClientSession,
-  type AuthGrantScope,
-  type AuthPairingLink,
-  AuthTerminalOperateScope,
-  AuthTerminalReadScope,
   type DesktopBridge,
   type DesktopServerExposureState,
   type DesktopSshEnvironmentTarget,
@@ -25,45 +13,10 @@ import {
   resolveDesktopUpdateButtonAction,
 } from "../desktopUpdate.logic";
 
-/**
- * Operating terminals without being able to list them leaves a client
- * allocating a fresh shell for every script run it cannot see, so the pairing
- * form keeps `terminal:read` alongside `terminal:operate`.
- */
-export function togglePairingScopeSelection(
-  current: ReadonlyArray<AuthGrantScope>,
-  scope: AuthGrantScope,
-  checked: boolean,
-): ReadonlyArray<AuthGrantScope> {
-  const without = (scopes: ReadonlyArray<AuthGrantScope>) =>
-    scopes.filter((currentScope) => currentScope !== scope);
-  if (!checked) {
-    return scope === AuthTerminalReadScope
-      ? without(current).filter((currentScope) => currentScope !== AuthTerminalOperateScope)
-      : without(current);
-  }
-  const next = [...without(current), scope];
-  return scope === AuthTerminalOperateScope && !next.includes(AuthTerminalReadScope)
-    ? [...next, AuthTerminalReadScope]
-    : next;
-}
-
-export function canRevokeOtherClients(
-  clientSessions: ReadonlyArray<{ readonly current: boolean }> | null,
-): boolean {
-  return clientSessions === null || clientSessions.some((session) => !session.current);
-}
+// Fork F17: pairing-link creation, QR sharing and authorized-client inventory helpers are absent;
+// the external Admin portal owns device admission and lifecycle.
 
 type WslEnableBridge = Pick<DesktopBridge, "setWslBackendEnabled" | "setWslDistro" | "setWslOnly">;
-
-/**
- * A QR code encoding a loopback URL makes the scanning device dial itself, so
- * loopback endpoints stay copyable from the endpoint menu but are never
- * offered as QR targets.
- */
-export function isQrShareableEndpoint(endpoint: AdvertisedEndpoint): boolean {
-  return endpoint.status !== "unavailable" && endpoint.reachability !== "loopback";
-}
 
 /**
  * Copy for the Tailscale HTTPS row when no Tailscale endpoint is advertised.
@@ -119,32 +72,6 @@ export function resolveLocalVersionStatusLabel(state: DesktopUpdateState | null)
   return "Up to date";
 }
 
-export type QrEndpointOption = {
-  readonly id: string;
-  /**
-   * Stable per endpoint *type* (endpointDefaultPreferenceKey). Multiple
-   * endpoints can share one, so it is only used to match the saved default.
-   */
-  readonly preferenceKey: string;
-  readonly qrShareable: boolean;
-};
-
-export function selectQrEndpointOption<T extends QrEndpointOption>(
-  options: ReadonlyArray<T>,
-  selectedId: string | null,
-  defaultPreferenceKey: string | null,
-): T | null {
-  return (
-    (selectedId !== null ? options.find((option) => option.id === selectedId) : undefined) ??
-    (defaultPreferenceKey !== null
-      ? options.find((option) => option.preferenceKey === defaultPreferenceKey)
-      : undefined) ??
-    options.find((option) => option.qrShareable) ??
-    options[0] ??
-    null
-  );
-}
-
 export async function applyWslEnableSelection(input: {
   readonly bridge: WslEnableBridge;
   readonly mode: "both" | "wsl-only";
@@ -161,19 +88,6 @@ export async function applyWslEnableSelection(input: {
     await bridge.setWslDistro(nextDistro);
   }
   return await bridge.setWslBackendEnabled(true);
-}
-
-const accessTimestampFormatter = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
-export function formatAccessTimestamp(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return accessTimestampFormatter.format(parsed);
 }
 
 export function parseManualDesktopSshTarget(input: {
@@ -297,61 +211,6 @@ export function formatDesktopSshConnectionError(error: unknown): string {
   return withoutTaggedErrorPrefix.trim() || fallback;
 }
 
-export function sortDesktopPairingLinks(links: ReadonlyArray<ServerPairingLinkRecord>) {
-  return [...links].toSorted(
-    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-  );
-}
-
-export function summarizeAuthorizedClients(
-  sessions: ReadonlyArray<ServerClientSessionRecord>,
-  links: ReadonlyArray<ServerPairingLinkRecord>,
-): string {
-  const parts = [
-    `${sessions.length} ${sessions.length === 1 ? "client" : "clients"}`,
-    links.length > 0
-      ? `${links.length} ${links.length === 1 ? "pairing link" : "pairing links"}`
-      : null,
-  ];
-  return parts.filter((part): part is string => part !== null).join(" · ");
-}
-
-export function sortDesktopClientSessions(sessions: ReadonlyArray<ServerClientSessionRecord>) {
-  return [...sessions].toSorted((left, right) => {
-    if (left.current !== right.current) {
-      return left.current ? -1 : 1;
-    }
-    if (left.connected !== right.connected) {
-      return left.connected ? -1 : 1;
-    }
-    return new Date(right.issuedAt).getTime() - new Date(left.issuedAt).getTime();
-  });
-}
-
-export function toDesktopPairingLinkRecord(pairingLink: AuthPairingLink): ServerPairingLinkRecord {
-  return {
-    ...pairingLink,
-    scopes: pairingLink.permissions ?? pairingLink.scopes,
-    createdAt: DateTime.formatIso(pairingLink.createdAt),
-    expiresAt: DateTime.formatIso(pairingLink.expiresAt),
-  };
-}
-
-export function toDesktopClientSessionRecord(
-  clientSession: AuthClientSession,
-): ServerClientSessionRecord {
-  return {
-    ...clientSession,
-    scopes: clientSession.permissions ?? clientSession.scopes,
-    issuedAt: DateTime.formatIso(clientSession.issuedAt),
-    expiresAt: DateTime.formatIso(clientSession.expiresAt),
-    lastConnectedAt:
-      clientSession.lastConnectedAt === null
-        ? null
-        : DateTime.formatIso(clientSession.lastConnectedAt),
-  };
-}
-
 export function selectPairingEndpoint(
   endpoints: ReadonlyArray<AdvertisedEndpoint>,
   defaultEndpointKey?: string | null,
@@ -397,47 +256,4 @@ export function endpointDefaultPreferenceKey(endpoint: AdvertisedEndpoint): stri
   } catch {}
 
   return `${endpoint.provider.id}:${endpoint.reachability}:${scheme}:${endpoint.label}`;
-}
-
-export function resolveAdvertisedEndpointPairingUrl(
-  endpoint: AdvertisedEndpoint,
-  credential: string,
-): string {
-  if (endpoint.compatibility.hostedHttpsApp === "compatible") {
-    return (
-      resolveHostedPairingUrl(endpoint.httpBaseUrl, credential) ??
-      resolveDesktopPairingUrl(endpoint.httpBaseUrl, credential)
-    );
-  }
-  return resolveDesktopPairingUrl(endpoint.httpBaseUrl, credential);
-}
-
-export function resolveCurrentOriginPairingUrl(credential: string): string {
-  const url = new URL("/pair", window.location.href);
-  return setPairingTokenOnUrl(url, credential).toString();
-}
-
-export function isHostedAppPairingUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.pathname === "/pair" && url.searchParams.has("host");
-  } catch {
-    return false;
-  }
-}
-
-export function endpointShareHint(endpoint: AdvertisedEndpoint, url: string): string {
-  if (isHostedAppPairingUrl(url)) {
-    return "Opens the hosted app, no install needed";
-  }
-  switch (endpoint.reachability) {
-    case "lan":
-      return "Devices on the same network";
-    case "private-network":
-      return "Devices on your private network";
-    case "public":
-      return "Reachable from anywhere";
-    case "loopback":
-      return "Clients on this machine";
-  }
 }

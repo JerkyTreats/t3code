@@ -22,6 +22,8 @@ import {
 } from "~/previewStateStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 
+const decodePreviewZoomFactor = Schema.decodeUnknownSync(PreviewZoomFactor);
+
 export async function reopenClosedPreviewSession<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly openPreview: OpenPreviewMutation<E>;
@@ -88,7 +90,7 @@ export async function reopenClosedPreviewSession<E>(input: {
       input: {
         threadId: input.threadRef.threadId,
         tabId: snapshot.tabId,
-        zoomFactor: Schema.decodeUnknownSync(PreviewZoomFactor)(closedTab.zoomFactor),
+        zoomFactor: decodePreviewZoomFactor(closedTab.zoomFactor),
         colorScheme: closedTab.colorScheme,
       },
     });

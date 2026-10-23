@@ -1,3 +1,4 @@
+import { resolveThreadClientHostPolicy } from "../threadClientSurface";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
@@ -29,7 +30,7 @@ function ChatIndexRouteView() {
     if (environments.length === 0) return <HostedEmptyState />;
   }
 
-  return <IndexDraftLanding />;
+  return resolveThreadClientHostPolicy().ownsLaunchNavigation ? null : <IndexDraftLanding />;
 }
 
 function IndexDraftLanding() {

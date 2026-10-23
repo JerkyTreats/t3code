@@ -1,3 +1,4 @@
+import { isDesktopUpdateReconnect } from "../../fork/runtimeUpdateGuidance";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { type EnvironmentId } from "@t3tools/contracts";
 import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
@@ -207,9 +208,42 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
       unavailableConnection !== null &&
       (unavailableConnection.phase === "connecting" ||
         unavailableConnection.phase === "reconnecting");
+    // Only desktop update capability permits inferring progress after lost update state.
+    const reconnectingThroughVersionSkew = isDesktopUpdateReconnect({
+      capability: versionMismatchSelfUpdate,
+      updateStatus: serverUpdateState.status,
+      reconnecting: environmentReconnecting,
+      versionMismatch: versionMismatch !== null,
+    });
     const suppressUnavailableBanner =
-      environmentReconnecting && (updateRunning || !reconnectWarningGraceElapsed);
-    if (activeEnvironmentUnavailableState && unavailableConnection && !suppressUnavailableBanner) {
+      environmentReconnecting &&
+      (updateRunning || (!reconnectingThroughVersionSkew && !reconnectWarningGraceElapsed));
+    if (
+      activeEnvironmentUnavailableState &&
+      unavailableConnection &&
+      !suppressUnavailableBanner &&
+      reconnectingThroughVersionSkew
+    ) {
+      items.push({
+        id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
+        variant: "default",
+        // Prioritize live connection progress among the notices.
+        priority: "urgent",
+        icon: (
+          <span
+            className="size-1.5 animate-status-pulse rounded-full bg-foreground"
+            aria-hidden="true"
+          />
+        ),
+        title: `${unavailableConnection.phase === "connecting" ? "Connecting" : "Reconnecting"} to ${activeEnvironmentUnavailableState.label}`,
+        description: "Finishing an update",
+        actions: disconnectAction,
+      });
+    } else if (
+      activeEnvironmentUnavailableState &&
+      unavailableConnection &&
+      !suppressUnavailableBanner
+    ) {
       items.push({
         id: `environment-unavailable:${activeEnvironmentUnavailableState.environmentId}`,
         variant: unavailableConnection.phase === "error" ? "error" : "warning",
@@ -241,6 +275,7 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
     if (
       !automaticEnvironment &&
       serverUpdateEnvironmentId &&
+      !reconnectingThroughVersionSkew &&
       (serverUpdateState.status === "idle"
         ? showVersionMismatchBanner
         : !serverUpdateFailureDismissed)

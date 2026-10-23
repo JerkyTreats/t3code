@@ -8,8 +8,12 @@ import {
   matchesLinkedPullRequestUrl,
   parseChangeRequestUrl,
   pullRequestCandidateUrlFromReferenceAutolink,
+  shouldOpenPullRequestExternally,
+  resolvePullRequestPreviewTarget,
 } from "./openPullRequestLink";
-import { ProjectId, type RepositoryIdentity } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, type RepositoryIdentity } from "@t3tools/contracts";
+import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 
 function repositoryIdentity(
   provider: string,
@@ -114,6 +118,14 @@ describe("gitHubPullRequestBrowserUrl", () => {
 });
 
 describe("changeRequestRepositoryUrl", () => {
+  it("preserves repository path casing", () => {
+    expect(
+      changeRequestRepositoryUrl(
+        "https://gitlab.example.test/Team/Platform/Repo/-/merge_requests/42/diffs#note_1",
+      ),
+    ).toBe("https://gitlab.example.test/Team/Platform/Repo");
+  });
+
   it("keeps pull-like segments inside nested GitLab repository paths", () => {
     expect(
       changeRequestRepositoryUrl(
@@ -176,6 +188,21 @@ describe("matchesLinkedPullRequestUrl", () => {
     ).toBe(expected);
   });
 
+  it("keeps GitHub links on different web ports separate", () => {
+    expect(
+      matchesLinkedPullRequestUrl(
+        linkedPullRequest,
+        "https://github.com:8443/pingdotgg/t3code/pull/42",
+      ),
+    ).toBe(false);
+    expect(
+      matchesLinkedPullRequestUrl(
+        { ...linkedPullRequest, url: "https://github.com:8443/pingdotgg/t3code/pull/42" },
+        "https://github.com:8443/PingDotGG/T3Code/pull/42/files",
+      ),
+    ).toBe(true);
+  });
+
   it("keeps Forgejo and GitHub path shapes distinct on a GitHub-named host", () => {
     expect(
       matchesLinkedPullRequestUrl(
@@ -184,171 +211,294 @@ describe("matchesLinkedPullRequestUrl", () => {
       ),
     ).toBe(false);
   });
+
+  it("rejects a different pull request or host", () => {
+    expect(
+      matchesLinkedPullRequestUrl(linkedPullRequest, "https://github.com/pingdotgg/t3code/pull/43"),
+    ).toBe(false);
+    expect(
+      matchesLinkedPullRequestUrl(
+        linkedPullRequest,
+        "https://github.example.com/pingdotgg/t3code/pull/42",
+      ),
+    ).toBe(false);
+  });
 });
 
-describe("findProjectOnChangeRequestHost", () => {
-  const project = (id: string, identity: Record<string, unknown>) =>
-    ({ id, repositoryIdentity: identity }) as never;
-  const frontend = project("frontend", {
-    canonicalKey: "github.com/acme/frontend",
-    provider: "github",
-    owner: "acme",
-    name: "frontend",
-  });
-  const backend = project("backend", {
-    canonicalKey: "github.com/acme/backend",
-    provider: "github",
-    owner: "acme",
-    name: "backend",
+describe("shouldOpenPullRequestExternally", () => {
+  it("uses the browser for command-click and control-click", () => {
+    expect(shouldOpenPullRequestExternally({ metaKey: true, ctrlKey: false })).toBe(true);
+    expect(shouldOpenPullRequestExternally({ metaKey: false, ctrlKey: true })).toBe(true);
   });
 
+  it("uses the browser for middle-click", () => {
+    expect(shouldOpenPullRequestExternally({ metaKey: false, ctrlKey: false, button: 1 })).toBe(
+      true,
+    );
+  });
+
+  it("keeps an unmodified click in the pull request view", () => {
+    expect(shouldOpenPullRequestExternally({ metaKey: false, ctrlKey: false })).toBe(false);
+  });
+});
+
+function project(id: string, identity: RepositoryIdentity | null): EnvironmentProject {
+  return {
+    environmentId: EnvironmentId.make("environment-test"),
+    id: ProjectId.make(id),
+    title: id,
+    workspaceRoot: `/synthetic/${id}`,
+    repositoryIdentity: identity,
+    defaultModelSelection: null,
+    scripts: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+const membershipResolvers = [findProjectForChangeRequest, findProjectOnChangeRequestHost];
+
+function expectMembership(
+  projects: ReadonlyArray<EnvironmentProject>,
+  reference: NonNullable<ReturnType<typeof parseChangeRequestUrl>>,
+  expected: EnvironmentProject | undefined,
+) {
+  for (const resolve of membershipResolvers) expect(resolve(projects, reference)).toBe(expected);
+}
+
+describe("exact origin project admission", () => {
   it.each([
-    ["ssh.dev.azure.com/v3/org-a/project/web", "git@ssh.dev.azure.com:v3/org-a/project/web"],
-    [
-      "vs-ssh.visualstudio.com/v3/org-a/project/web",
-      "git@vs-ssh.visualstudio.com:v3/org-a/project/web",
-    ],
-    [
-      "org-a.visualstudio.com/defaultcollection/project/_git/web",
-      "https://org-a.visualstudio.com/DefaultCollection/Project/_git/Web",
-    ],
-    ["dev.azure.com/org-a/project/_git/web", "https://org-a@dev.azure.com/org-a/Project/_git/Web"],
-  ])("matches Azure browser references against %s", (canonicalKey, remoteUrl) => {
-    const checkout = project("azure", {
-      ...repositoryIdentity("azure-devops", canonicalKey, remoteUrl),
-      displayName: canonicalKey.split("/").slice(1).join("/"),
-    });
+    { provider: "github", host: "github.example.test", path: "pull" },
+    { provider: "gitlab", host: "code.example.test", path: "-/merge_requests" },
+  ])(
+    "binds $provider links to the exact origin repository and HTTP port",
+    ({ provider, host, path }) => {
+      const checkout = project("project-test", {
+        ...repositoryIdentity(provider, `${host}/team/repo`, `https://${host}:8443/team/repo.git`),
+        displayName: "team/repo",
+      });
+      const url = `https://${host}:8443/team/repo/${path}/42`;
+      const reference = parseChangeRequestUrl(url)!;
+      expectMembership([checkout], reference, checkout);
+      expectMembership([checkout], { ...reference, repository: "team/other" }, undefined);
+      expect(
+        resolvePullRequestPreviewTarget({
+          environmentId: checkout.environmentId,
+          projects: [checkout],
+          pullRequestsEnabled: true,
+          url,
+        }),
+      ).toEqual({
+        environmentId: checkout.environmentId,
+        input: {
+          projectId: checkout.id,
+          host: `${host}:8443`,
+          repository: "team/repo",
+          number: 42,
+        },
+      });
+      for (const authority of [host, `${host}:9443`, `foreign.${host}:8443`]) {
+        const foreignUrl = `https://${authority}/team/repo/${path}/42`;
+        expectMembership([checkout], parseChangeRequestUrl(foreignUrl)!, undefined);
+        expect(
+          resolvePullRequestPreviewTarget({
+            environmentId: checkout.environmentId,
+            projects: [checkout],
+            pullRequestsEnabled: true,
+            url: foreignUrl,
+          }),
+        ).toBeNull();
+      }
+    },
+  );
+
+  it.each([
+    "git@ssh.dev.azure.com:v3/org-a/project/web",
+    "git@vs-ssh.visualstudio.com:v3/org-a/project/web",
+    "https://org-a.visualstudio.com/defaultcollection/project/_git/web",
+    "https://dev.azure.com/org-a/project/_git/web",
+  ])("matches the full Azure target recorded by origin %s", (remoteUrl) => {
+    const checkout = project(
+      "azure",
+      repositoryIdentity("azure-devops", "display.example/grouping-only", remoteUrl),
+    );
     const reference = parseChangeRequestUrl(
       "https://dev.azure.com/org-a/project/_git/web/pullrequest/42",
     )!;
-    expect(findProjectForChangeRequest([checkout], reference)).toBe(checkout);
-    expect(findProjectOnChangeRequestHost([checkout], reference)).toBe(checkout);
-    expect(
-      findProjectOnChangeRequestHost([checkout], {
-        ...reference,
-        repository: "org-b/project/_git/web",
-      }),
-    ).toBeUndefined();
-    expect(
-      findProjectOnChangeRequestHost([checkout], {
-        ...reference,
-        repository: "org-a/other-project/_git/web",
-      }),
-    ).toBeUndefined();
+    expectMembership([checkout], reference, checkout);
+    for (const repository of [
+      "org-b/project/_git/web",
+      "org-a/other-project/_git/web",
+      "org-a/project/_git/other",
+    ])
+      expectMembership([checkout], { ...reference, repository }, undefined);
+    expectMembership([checkout], { ...reference, authority: "dev.azure.com:8443" }, undefined);
   });
 
-  it("prefers the project checked out from the link's own repository", () => {
-    expect(
-      findProjectOnChangeRequestHost([frontend, backend], {
-        host: "github.com",
-        repository: "acme/backend",
-        number: 7,
-      }),
-    ).toBe(backend);
+  it("retains an Azure HTTP port across browser aliases", () => {
+    const checkout = project(
+      "azure-port",
+      repositoryIdentity(
+        "azure-devops",
+        "dev.azure.com/org-a/project/_git/web",
+        "https://org-a.visualstudio.com:8443/project/_git/web",
+      ),
+    );
+    const own = parseChangeRequestUrl(
+      "https://org-a.visualstudio.com:8443/project/_git/web/pullrequest/42",
+    )!;
+    expectMembership([checkout], own, checkout);
+    expectMembership([checkout], { ...own, authority: "org-a.visualstudio.com" }, undefined);
+    expectMembership([checkout], { ...own, authority: "org-a.visualstudio.com:9443" }, undefined);
+    const publicAlias = parseChangeRequestUrl(
+      "https://dev.azure.com/org-a/project/_git/web/pullrequest/42",
+    )!;
+    expectMembership([checkout], publicAlias, undefined);
   });
 
-  it("selects the Forgejo HTTP port for repository and host-level matches", () => {
+  const frontend = project(
+    "frontend",
+    repositoryIdentity(
+      "github",
+      "github.com/acme/frontend",
+      "https://github.com/acme/frontend.git",
+    ),
+  );
+  const backend = project(
+    "backend",
+    repositoryIdentity("github", "github.com/acme/backend", "https://github.com/acme/backend.git"),
+  );
+  const backendReference = { host: "github.com", repository: "acme/backend", number: 7 };
+
+  it("selects the origin checkout for the link without borrowing from another repository", () => {
+    expectMembership([frontend, backend], backendReference, backend);
+    expectMembership([backend, frontend], backendReference, backend);
+    expectMembership([frontend], backendReference, undefined);
+  });
+
+  it("selects Forgejo by exact origin HTTP authority and mount path", () => {
     const projects = [3000, 4000].map((port) =>
       project(`forgejo-${port}`, {
-        canonicalKey: "forge.example/git/team/repo",
-        provider: "forgejo",
+        ...repositoryIdentity(
+          "forgejo",
+          "forge.example/git/team/repo",
+          `http://forge.example:${port}/git/team/repo.git`,
+        ),
         displayName: "git/team/repo",
-        locator: { remoteUrl: `http://forge.example:${port}/git/team/repo.git` },
       }),
     );
     const reference = parseChangeRequestUrl("http://forge.example:4000/git/team/repo/pulls/42")!;
-    expect(findProjectForChangeRequest(projects, reference)).toBe(projects[1]);
-    expect(findProjectOnChangeRequestHost(projects, reference)).toBe(projects[1]);
-    expect(
-      findProjectOnChangeRequestHost(projects, { ...reference, repository: "git/team/other" }),
-    ).toBe(projects[1]);
-    expect(findProjectForChangeRequest([projects[0]!], reference)).toBeUndefined();
-    expect(findProjectOnChangeRequestHost([projects[0]!], reference)).toBeUndefined();
+    expectMembership(projects, reference, projects[1]);
+    expectMembership([projects[0]!], reference, undefined);
+    expectMembership(projects, { ...reference, repository: "git/team/other" }, undefined);
+    expectMembership(projects, { ...reference, repository: "team/repo" }, undefined);
   });
 
-  it("lets tea resolve the web port for Forgejo SSH remotes", () => {
+  it("uses an explicit related web endpoint for Forgejo SSH origin", () => {
+    const identity = repositoryIdentity(
+      "forgejo",
+      "forge.example/team/repo",
+      "git@forge.example:team/repo.git",
+    );
     const checkout = project("forgejo-ssh", {
-      canonicalKey: "forge.example/git/team/repo",
-      provider: "forgejo",
-      displayName: "git/team/repo",
-      locator: { remoteUrl: "git@forge.example:git/team/repo.git" },
-    });
-    const reference = parseChangeRequestUrl("http://forge.example:4000/git/team/repo/pulls/42")!;
-    expect(findProjectForChangeRequest([checkout], reference)).toBe(checkout);
-    const aliased = project("forgejo-alias", {
-      canonicalKey: "ssh.forge.example/team/repo",
-      provider: "forgejo",
-      displayName: "team/repo",
-      locator: { remoteUrl: "git@ssh.forge.example:team/repo.git" },
+      ...identity,
       webUrl: "http://forge.example:4000/git/team/repo",
     });
-    expect(findProjectForChangeRequest([aliased], reference)).toBe(aliased);
-    expect(findProjectOnChangeRequestHost([aliased], reference)).toBe(aliased);
-    expect(
-      findProjectOnChangeRequestHost([aliased], { ...reference, repository: "git/team/other" }),
-    ).toBe(aliased);
+    const reference = parseChangeRequestUrl("http://forge.example:4000/git/team/repo/pulls/42")!;
+    expectMembership([checkout], reference, checkout);
+    expectMembership([project("ssh-unresolved", identity)], reference, undefined);
     for (const url of [
       "http://other.example:4000/git/team/repo/pulls/42",
       "http://forge.example:3000/git/team/repo/pulls/42",
-    ]) {
-      const other = parseChangeRequestUrl(url)!;
-      expect(findProjectForChangeRequest([aliased], other)).toBeUndefined();
-      expect(findProjectOnChangeRequestHost([aliased], other)).toBeUndefined();
-    }
-    const otherMount = parseChangeRequestUrl("http://forge.example:4000/other/team/repo/pulls/42")!;
-    expect(findProjectForChangeRequest([aliased], otherMount)).toBeUndefined();
-    expect(findProjectOnChangeRequestHost([aliased], otherMount)).toBeUndefined();
+      "http://forge.example/git/team/repo/pulls/42",
+      "http://forge.example:4000/other/team/repo/pulls/42",
+      "http://forge.example:4000/git/team/other/pulls/42",
+    ])
+      expectMembership([checkout], parseChangeRequestUrl(url)!, undefined);
+    const foreignWeb = project("ssh-foreign-web", {
+      ...identity,
+      webUrl: "http://other.example:4000/git/team/repo",
+    });
+    expectMembership(
+      [foreignWeb],
+      parseChangeRequestUrl("http://other.example:4000/git/team/repo/pulls/42")!,
+      undefined,
+    );
+    const mismatchedRepository = project("ssh-foreign-repo", {
+      ...identity,
+      webUrl: "http://forge.example:4000/git/team/other",
+    });
+    expectMembership(
+      [mismatchedRepository],
+      parseChangeRequestUrl("http://forge.example:4000/git/team/other/pulls/42")!,
+      undefined,
+    );
   });
 
-  it("lends any project on the host to a repository nobody has checked out", () => {
-    expect(
-      findProjectOnChangeRequestHost([frontend], {
-        host: "github.com",
-        repository: "acme/backend",
-        number: 7,
-      }),
-    ).toBe(frontend);
-  });
-});
+  it.each(["upstream", "backup"])(
+    "refuses a %s locator even when the canonical identity matches",
+    (remoteName) => {
+      const own = backend.repositoryIdentity!;
+      const wrongRemote = project("wrong-remote", {
+        ...own,
+        locator: { ...own.locator, remoteName },
+      });
+      expectMembership([wrongRemote], backendReference, undefined);
+    },
+  );
 
-describe("findProjectForChangeRequest", () => {
-  const project = (identity: Record<string, unknown>) =>
-    ({ id: "p1", repositoryIdentity: identity }) as never;
-
-  it("matches a nested GitLab group by the whole path below the host", () => {
-    const projects = [
-      project({
-        canonicalKey: "gitlab.com/t3tools/platform/t3code",
-        provider: "gitlab",
-        displayName: "t3tools/platform/t3code",
-        owner: "t3tools",
-        name: "t3code",
-      }),
-    ];
-    expect(
-      findProjectForChangeRequest(projects, {
-        host: "gitlab.com",
-        repository: "t3tools/platform/t3code",
-        number: 42,
-      }),
-    ).toBe(projects[0]);
+  it("refuses missing repository identity and keeps display grouping from authorizing links", () => {
+    expectMembership([project("missing-origin", null)], backendReference, undefined);
+    const displayOnly = project("display-only", {
+      ...frontend.repositoryIdentity!,
+      canonicalKey: "github.com/acme/backend",
+      displayName: "acme/backend",
+      owner: "acme",
+      name: "backend",
+    });
+    expectMembership([displayOnly], backendReference, undefined);
   });
 
-  it("claims nothing for a lookalike host, which is what keeps a link a link", () => {
-    const projects = [
-      project({
-        canonicalKey: "github.com/pingdotgg/t3code",
-        provider: "github",
-        owner: "pingdotgg",
-        name: "t3code",
-      }),
-    ];
-    expect(
-      findProjectForChangeRequest(projects, {
-        host: "github.com-evil.test",
-        repository: "pingdotgg/t3code",
-        number: 1,
-      }),
-    ).toBeUndefined();
+  it("matches nested GitLab groups using the complete origin path", () => {
+    const checkout = project("nested-gitlab", {
+      ...repositoryIdentity(
+        "gitlab",
+        "gitlab.com/t3tools/platform/t3code",
+        "https://gitlab.com/t3tools/platform/t3code.git",
+      ),
+      displayName: "t3tools/platform/t3code",
+      owner: "t3tools",
+      name: "t3code",
+    });
+    const own = { host: "gitlab.com", repository: "t3tools/platform/t3code", number: 42 };
+    expectMembership([checkout], own, checkout);
+    expectMembership([checkout], { ...own, repository: "t3tools/t3code" }, undefined);
+    expectMembership([checkout], { ...own, repository: "other/platform/t3code" }, undefined);
+  });
+
+  it("matches Azure SSH transport while retaining organization and project identity", () => {
+    const remoteUrl = "git@ssh.dev.azure.com:v3/T3Tools/Platform/T3Code";
+    const canonicalKey = normalizeGitRemoteUrl(remoteUrl);
+    const checkout = project(
+      "azure-ssh",
+      repositoryIdentity("azure-devops", canonicalKey, remoteUrl),
+    );
+    expectMembership(
+      [checkout],
+      { host: "dev.azure.com", repository: "t3tools/platform/_git/t3code", number: 1 },
+      checkout,
+    );
+    expectMembership(
+      [checkout],
+      { host: "dev.azure.com", repository: "other/platform/_git/t3code", number: 1 },
+      undefined,
+    );
+  });
+
+  it("keeps public, Enterprise and lookalike hosts separate", () => {
+    const own = { host: "github.com", repository: "acme/backend", number: 7 };
+    expectMembership([backend], own, backend);
+    expectMembership([backend], { ...own, host: "github.acme.test" }, undefined);
+    expectMembership([backend], { ...own, host: "github.com-evil.test" }, undefined);
   });
 });

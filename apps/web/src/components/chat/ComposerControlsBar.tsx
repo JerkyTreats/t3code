@@ -3,6 +3,7 @@ import type { PromptUltrathink } from "./TraitsPicker";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { type AppModelOption } from "../../modelSelection";
 import { CircleAlertIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
 import { ComposerControl, ComposerControlSeparator } from "./ComposerControl";
 import {
@@ -78,6 +79,11 @@ export function ComposerControlsBar(props: {
   onModelPickerOpenChange: (open: boolean) => void;
   modelPickerIconClassName: string | undefined;
   getModelDisabledReason: ChatComposerProps["getModelDisabledReason"];
+  /** Fork presentation: the floating control owns runtime mode and the P toggle on desktop. */
+  runtimePlacement: "footer" | "hidden";
+  runtimeIconOnly: boolean;
+  modelLabelMode: "display" | "identifier";
+  potetoControl: ReactNode;
 }) {
   const {
     environmentId,
@@ -127,6 +133,10 @@ export function ComposerControlsBar(props: {
     onModelPickerOpenChange,
     modelPickerIconClassName,
     getModelDisabledReason,
+    runtimePlacement,
+    runtimeIconOnly,
+    modelLabelMode,
+    potetoControl,
   } = props;
   const providerTraitsMenuContent = renderProviderTraitsMenuContent({
     provider: selectedProvider,
@@ -183,6 +193,8 @@ export function ComposerControlsBar(props: {
           interactionMode={interactionMode}
           runtimeMode={compatibleRuntimeMode}
           runtimeModeOptions={compatibleRuntimeModeOptions}
+          runtimePlacement={runtimePlacement}
+          iconOnly={runtimeIconOnly}
           size={composerControlsCollapsed ? "xs" : "sm"}
           hidden={composerControlsHidden || restingHiddenBlockCount > 0}
           onToggleInteractionMode={toggleInteractionMode}
@@ -200,6 +212,7 @@ export function ComposerControlsBar(props: {
       environmentId={environmentId}
       compact={false}
       isComposerOwned
+      labelMode={modelLabelMode}
       disabled={providerCatalogPending || isSendBusy}
       multipleModelsEnabled={multipleModelsEnabled}
       multipleModelSelections={multipleModelSelections}
@@ -253,20 +266,23 @@ export function ComposerControlsBar(props: {
     />
   );
   return showProviderUnavailable ? (
-    <ComposerControl
-      type="button"
-      disabled={!providerSetupInstanceId}
-      onClick={() => {
-        if (providerSetupInstanceId) {
-          onOpenProviderSetup(providerSetupInstanceId);
-        }
-      }}
-      data-chat-provider-unavailable="true"
-      className="shrink-0"
-    >
-      <CircleAlertIcon className="size-4" />
-      {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
-    </ComposerControl>
+    <>
+      {potetoControl}
+      <ComposerControl
+        type="button"
+        disabled={!providerSetupInstanceId}
+        onClick={() => {
+          if (providerSetupInstanceId) {
+            onOpenProviderSetup(providerSetupInstanceId);
+          }
+        }}
+        data-chat-provider-unavailable="true"
+        className="shrink-0"
+      >
+        <CircleAlertIcon className="size-4" />
+        {providerSetupInstanceId ? "Open provider settings" : "No provider available"}
+      </ComposerControl>
+    </>
   ) : (
     <>
       {showLeadingSeparator ? (
@@ -277,6 +293,7 @@ export function ComposerControlsBar(props: {
         />
       ) : null}
       {composerModelPicker}
+      {potetoControl}
 
       <>
         {restingBlockDefs.map((def, index) => {

@@ -44,6 +44,7 @@ import {
   waitForRevertedMessage,
 } from "../ChatView.logic";
 import { readPreparedConnection } from "../../state/session";
+import type { PotetoModeSelection } from "../../fork/potetoMode";
 import { recallableComposerPrompt } from "./composerPromptHistory";
 
 // Kept per route so a send in flight, and the multiple-model selections, survive
@@ -288,6 +289,8 @@ export function resolveMultipleModelTargets(input: {
   readonly messageText: string;
   readonly planModeEnabled: boolean;
   readonly interactionMode: ProviderInteractionMode;
+  readonly potetoMode?: PotetoModeSelection | null;
+  readonly hasRetainedContext?: boolean;
 }): Array<MultipleModelTarget | { readonly error: string }> {
   const { messageText, planModeEnabled } = input;
   return input.selections.map((selection) => {
@@ -319,6 +322,8 @@ export function resolveMultipleModelTargets(input: {
         models: provider.models,
         effort: providerState.promptEffort,
         text: messageText || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+        potetoMode: input.potetoMode ?? null,
+        hasRetainedContext: input.hasRetainedContext === true,
       }),
       interactionMode: resolveComposerInteractionMode({
         planModeEnabled,

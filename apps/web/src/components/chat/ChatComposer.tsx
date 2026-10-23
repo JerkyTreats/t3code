@@ -1,3 +1,24 @@
+import { PotetoModeControl } from "../../fork/PotetoModeControl";
+import {
+  potetoModeScope,
+  potetoModeSubmissionError,
+  potetoModeUnavailableReason,
+  togglePotetoModeSelection,
+  type PotetoModeSelection,
+} from "../../fork/potetoMode";
+import { usePotetoModeStore } from "../../fork/potetoModeStore";
+import { threadComposerPresentation } from "../../fork/threadComposerPresentation";
+import {
+  ComposerAttachmentAdmission,
+  composerAttachmentScope,
+} from "../../fork/composerAttachmentAdmission";
+import { resolveComposerScreenshotCapture } from "../../fork/composerScreenshot";
+import { ComposerScreenshotButton } from "../../fork/ComposerScreenshotButton";
+import {
+  chatComposerPresentation,
+  FloatingComposerRuntimeControl,
+  shouldFloatComposerRuntimeControl,
+} from "../../fork/chatComposerPresentation";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
 import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
@@ -204,7 +225,7 @@ import {
   ComposerRestingImagePreviews,
 } from "./ComposerAttachmentStrip";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
-import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
+import { ComposerFooterModeControls, ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
@@ -347,11 +368,13 @@ export interface ChatComposerHandle {
     previewAnnotations: PreviewAnnotationPayload[];
     reviewComments: ReviewCommentContext[];
     threadContexts: ThreadContextRecord[];
+    potetoMode: PotetoModeSelection | null;
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
     multipleModelSelections: ReadonlyArray<ModelSelection> | null;
     providerAvailable: boolean;
+    submissionReady: boolean;
     selectedProvider: ProviderDriverKind;
     selectedModel: string;
     selectedProviderModels: ReadonlyArray<ServerProvider["models"][number]>;
@@ -389,6 +412,10 @@ export interface ChatComposerProps {
   isLocalDraftThread: boolean;
   forceExpandedOnMobile: boolean;
   projectSelectionRequired: boolean;
+  /** T3 Thread client presentation: readable model identity and expanded controls. */
+  threadClient?: boolean;
+  /** Runs after each commit so the desktop launcher can re-check send readiness. */
+  onSendContextCommitted?: () => void;
 
   phase: SessionPhase;
   canInterrupt: boolean;
@@ -714,6 +741,44 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useLayoutEffect(() => {
     attachmentTargetKeyRef.current = attachmentTargetKey;
   });
+  const attachmentDraftId = typeof composerDraftTarget === "string" ? composerDraftTarget : null;
+  const draftSession = useComposerDraftStore((store) =>
+    attachmentDraftId ? store.getDraftSession(attachmentDraftId) : null,
+  );
+  const attachmentScope = composerAttachmentScope({
+    environmentId,
+    targetKey: attachmentTargetKey,
+    threadId: activeThreadId,
+    draftProject: draftSession,
+  });
+  const [attachmentActivity, setAttachmentActivity] = useState({ pending: 0, capturing: false });
+  const [attachmentAdmission] = useState(
+    () => new ComposerAttachmentAdmission(setAttachmentActivity),
+  );
+  const screenshotCapture = resolveComposerScreenshotCapture(
+    typeof window === "undefined" ? undefined : window.desktopBridge,
+  );
+  useLayoutEffect(() => {
+    // Draft metadata can change in the store before React commits a rerender.
+    attachmentAdmission.activate(attachmentScope, () =>
+      composerAttachmentScope({
+        environmentId,
+        targetKey: attachmentTargetKey,
+        threadId: activeThreadId,
+        draftProject: attachmentDraftId
+          ? useComposerDraftStore.getState().getDraftSession(attachmentDraftId)
+          : null,
+      }),
+    );
+    return () => attachmentAdmission.dispose();
+  }, [
+    attachmentAdmission,
+    attachmentScope,
+    environmentId,
+    attachmentTargetKey,
+    attachmentDraftId,
+    activeThreadId,
+  ]);
   const questionPreparations = useQuestionAttachmentPreparation((state) => state.counts);
   const prompt = composerDraft.prompt;
   const composerImages = attachmentDraft.images;
@@ -986,19 +1051,38 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProviderEntry?.snapshot,
     selectedModel,
   );
-  const sendDisabledReason =
+  const baseSendDisabledReason =
     externalSendDisabledReason ??
+    (attachmentActivity.pending > 0 ? "Preparing attachments" : null) ??
     (multipleModelSelections?.length === 0 ? "Select at least one model." : null) ??
     (activePendingProgress
       ? attachmentBlockReason
       : (attachmentBlockReason ??
         (multipleModelSelections === null ? providerSendBlockReason : null)));
-  const isSendDisabled = sendDisabledReason !== null;
   const selectedProviderStatus = selectedProviderEntry?.snapshot ?? null;
   const compactCommandAvailable = providerSupportsManualCompaction(selectedProviderEntry);
   const selectedProviderSkills = selectedProviderStatus
     ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
     : NO_PROVIDER_SKILLS;
+  const potetoModeKey = potetoModeScope(environmentId, activeThreadId ?? composerDraftTargetKey);
+  const potetoMode = usePotetoModeStore((state) => state.selections[potetoModeKey] ?? null);
+  const potetoUnavailableReason = potetoModeUnavailableReason(
+    potetoMode,
+    selectedInstanceId,
+    selectedProvider,
+    selectedProviderSkills,
+    multipleModelSelections !== null,
+  );
+  const sendDisabledReason =
+    baseSendDisabledReason ??
+    potetoModeSubmissionError({
+      selection: potetoMode,
+      unavailableReason: potetoUnavailableReason,
+      text: prompt,
+      answeringPendingInput: activePendingProgress !== null,
+      editingQueuedMessage: isEditingQueuedMessage,
+    });
+  const isSendDisabled = sendDisabledReason !== null;
   const selectedProviderSlashCommands = selectedProviderStatus
     ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
     : NO_PROVIDER_SLASH_COMMANDS;
@@ -1124,7 +1208,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerScrollCollapseEligibleRef = useRef(false);
   const windowRefocusInFlightRef = useRef(false);
   const composerScrollGestureRef = useRef(createComposerScrollGestureState());
-  const pendingImageCompressionsRef = useRef<Map<string, number>>(new Map());
   const pendingThreadImportsRef = useRef<Map<string, number>>(new Map());
   const isRevertingCheckpointRef = useRef(isRevertingCheckpoint);
   useLayoutEffect(() => {
@@ -1434,7 +1517,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerContextRecords,
     composerImages,
     composerFilesRef,
-    pendingImageCompressionsRef,
+    readPendingAttachmentCount: () => attachmentAdmission.pending,
     pendingThreadImportsRef,
     addComposerFilesToDraft,
   });
@@ -2120,14 +2203,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event?.preventDefault();
       return;
     }
-    // A send while a pasted image is still compressing would strand that image:
-    // the turn snapshot wouldn't include it, and it would surface in the *next*
-    // draft instead.
-    if (activeThreadId && (pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) > 0) {
+    // A send while an attachment is still being prepared would strand it: the turn
+    // snapshot wouldn't include it, and it would surface in the *next* draft instead.
+    if (attachmentAdmission.pending > 0) {
       event?.preventDefault();
       toastManager.add({
         type: "info",
-        title: "Still compressing a pasted image.",
+        title: "Still preparing an attachment.",
         description: "Send again once its thumbnail appears.",
       });
       return;
@@ -2214,6 +2296,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       isConnecting ||
       !activeThreadId
     ) {
+      return;
+    }
+    // Imperative compact commands must honor the same pre-render reservation.
+    if (attachmentAdmission.pending > 0) {
+      toastManager.add({
+        type: "info",
+        title: "Still preparing an attachment.",
+        description: "Compact again once its thumbnail appears.",
+      });
       return;
     }
     onCompactContext();
@@ -2542,8 +2633,48 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const iconOnlyBlockCount = composerControlsCollapsed
     ? restingControlsIconOnlyBlockCount
     : expandedControlsIconOnlyBlockCount;
+  const threadPresentation = threadComposerPresentation(
+    props.threadClient === true,
+    composerControlsCollapsed,
+  );
+  const floatRuntimeControl = shouldFloatComposerRuntimeControl({
+    isMobileViewport,
+    isResting: isComposerResting,
+    isApprovalState: isComposerApprovalState,
+    hasPendingInput: pendingUserInputs.length > 0,
+    noProviderAvailable,
+    controlsCompact:
+      !threadPresentation.keepControlsExpanded &&
+      !composerControlsCollapsed &&
+      isComposerFooterCompact,
+  });
+  const potetoControl = (
+    <PotetoModeControl
+      on={potetoMode !== null}
+      unavailableReason={potetoUnavailableReason}
+      size={composerControlsCollapsed ? "xs" : "sm"}
+      hidden={composerControlsHidden}
+      floating={floatRuntimeControl}
+      onToggle={() => {
+        usePotetoModeStore.getState().setSelection(
+          potetoModeKey,
+          togglePotetoModeSelection({
+            selection: potetoMode,
+            instanceId: selectedInstanceId,
+            driver: selectedProvider,
+            skills: selectedProviderSkills,
+            multipleModels: multipleModelSelections !== null,
+          }),
+        );
+      }}
+    />
+  );
   const composerControls = (
     <ComposerControlsBar
+      runtimePlacement={floatRuntimeControl ? "hidden" : "footer"}
+      runtimeIconOnly={threadPresentation.runtimeIconOnly}
+      modelLabelMode={threadPresentation.modelLabelMode}
+      potetoControl={floatRuntimeControl ? null : potetoControl}
       environmentId={environmentId}
       routeKind={routeKind}
       routeThreadRef={routeThreadRef}
@@ -2716,33 +2847,44 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     });
   };
 
-  const { addComposerAttachments, removeComposerImage, foldPastedText } =
-    useComposerAttachmentIntake({
-      activeThreadId,
-      activePendingProgress,
-      activePendingIsResponding,
-      pendingUserInputs,
-      supportsQuestionAttachments,
-      isLiteralPendingAnswer,
-      isConnecting,
-      projectSelectionRequired,
-      questionAttachmentTarget,
-      attachmentTargetKey,
-      fileStagingLimit,
-      promptRef,
-      composerImagesRef,
-      composerFilesRef,
-      composerEditorRef,
-      isRevertingCheckpointRef,
-      pendingImageCompressionsRef,
-      setThreadError,
-      countReservedAttachments,
-      addComposerImage,
-      addComposerImagesToDraft,
-      addComposerFilesToDraft,
-      removeComposerImageFromDraft,
-      insertAttachmentReferences,
-    });
+  const {
+    addComposerAttachments,
+    captureScreenshotAttachment,
+    removeComposerImage,
+    foldPastedText,
+  } = useComposerAttachmentIntake({
+    activeThreadId,
+    activePendingProgress,
+    activePendingIsResponding,
+    pendingUserInputs,
+    supportsQuestionAttachments,
+    isLiteralPendingAnswer,
+    isConnecting,
+    projectSelectionRequired,
+    questionAttachmentTarget,
+    attachmentTargetKey,
+    fileStagingLimit,
+    promptRef,
+    composerImagesRef,
+    composerFilesRef,
+    composerEditorRef,
+    isRevertingCheckpointRef,
+    attachmentAdmission,
+    attachmentScope,
+    readOccupiedAttachments: () => {
+      const draft = getComposerDraft(attachmentDraftTarget);
+      return (draft?.images.length ?? 0) + (draft?.files.length ?? 0);
+    },
+    screenshotCapture,
+    blockScreenshotCapture: pendingUserInputs.length > 0 || isComposerApprovalState,
+    setThreadError,
+    countReservedAttachments,
+    addComposerImage,
+    addComposerImagesToDraft,
+    addComposerFilesToDraft,
+    removeComposerImageFromDraft,
+    insertAttachmentReferences,
+  });
 
   const onComposerCommandKeyStable = useStableCallback(onComposerCommandKey);
   const isPathQueryActiveStable = useStableCallback(
@@ -3103,8 +3245,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
       addDroppedFolders: addComposerFoldersStable,
       hasPendingAttachments: () =>
-        (pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) > 0 ||
-        pendingDraftWork.has(attachmentTargetKey),
+        attachmentAdmission.pending > 0 || pendingDraftWork.has(attachmentTargetKey),
       insertTextAtEnd: insertComposerTextAtEndStable,
       pasteTextAtEnd: (text: string, options) => {
         const shortcutArmed = consumePasteAsTextShortcut(pasteAsTextShortcutUntilRef);
@@ -3269,6 +3410,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         previewAnnotations: composerPreviewAnnotations,
         reviewComments: composerReviewComments,
         threadContexts: composerThreadContexts,
+        potetoMode: usePotetoModeStore.getState().selections[potetoModeKey] ?? null,
         selectedPromptEffort,
         selectedModelOptionsForDispatch,
         selectedModelSelection,
@@ -3284,6 +3426,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         providerAvailable:
           multipleModelSelections !== null ||
           (!noProviderAvailable && providerSendBlockReason === null),
+        submissionReady:
+          !isSendDisabled &&
+          !noProviderAvailable &&
+          providerSendBlockReason === null &&
+          attachmentAdmission.pending === 0,
         selectedProvider,
         selectedModel,
         selectedProviderModels,
@@ -3292,11 +3439,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }),
       setMultipleModelSelections,
       validateProviderInput: (providerInput: string) => {
-        const validationMessage = getComposerSubmissionValidationMessage({
-          prompt: promptRef.current,
-          providerInput,
-          submissionTarget: "provider-turn",
+        const currentPotetoMode = usePotetoModeStore.getState().selections[potetoModeKey] ?? null;
+        const modeError = potetoModeSubmissionError({
+          selection: currentPotetoMode,
+          unavailableReason: potetoModeUnavailableReason(
+            currentPotetoMode,
+            selectedInstanceId,
+            selectedProvider,
+            selectedProviderSkills,
+            multipleModelSelections !== null,
+          ),
+          text: providerInput,
+          answeringPendingInput: activePendingProgress !== null,
+          editingQueuedMessage: isEditingQueuedMessage,
         });
+        const validationMessage =
+          modeError ??
+          getComposerSubmissionValidationMessage({
+            prompt: promptRef.current,
+            providerInput,
+            submissionTarget: "provider-turn",
+          });
         providerInputRejectedRef.current = validationMessage !== null;
         setProviderInputSubmissionError(validationMessage);
         return validationMessage === null;
@@ -3349,6 +3512,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       routeKind,
       noProviderAvailable,
       providerSendBlockReason,
+      isSendDisabled,
+      attachmentAdmission,
+      potetoModeKey,
+      selectedProviderSkills,
       selectedPromptEffort,
       selectedProvider,
       selectedProviderModels,
@@ -3361,6 +3528,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setIsComposerScrollCollapsed,
     ],
   );
+
+  // Notify after all parent refs have synchronized; child-only provider changes also commit here.
+  useEffect(() => {
+    props.onSendContextCommitted?.();
+  });
 
   // Built outside the form's JSX so typing, which rebuilds that JSX, leaves them cached.
   const composerAttachmentMediaRow =
@@ -3401,6 +3573,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         canOperateThread={canOperateThread}
         onPreviewFile={setPreviewFileId}
         onRemoveFile={removeComposerFileFromDraft}
+      />
+    ) : null;
+  const composerScreenshotButton =
+    screenshotCapture && pendingUserInputs.length === 0 ? (
+      <ComposerScreenshotButton
+        capturing={attachmentActivity.capturing}
+        disabled={!activeThreadId}
+        onCapture={() => void captureScreenshotAttachment()}
       />
     ) : null;
   const composerAttachButton = showComposerAttachAction ? (
@@ -3491,6 +3671,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               inert={restingControlsVisible ? undefined : true}
               className={cn(
                 "relative flex w-max min-w-0 max-w-full items-center gap-1 font-normal text-muted-foreground/70 [&_button]:text-xs!",
+                threadPresentation.controlsClassName,
                 !restingControlsVisible && "invisible",
               )}
             >
@@ -3605,20 +3786,38 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         />
       </ComposerBanner.Dock>
       <div className="relative">
+        {floatRuntimeControl ? (
+          <FloatingComposerRuntimeControl>
+            <ComposerFooterModeControls
+              showInteractionModeToggle={false}
+              interactionMode={interactionMode}
+              runtimeMode={compatibleRuntimeMode}
+              runtimeModeOptions={compatibleRuntimeModeOptions}
+              runtimePlacement="floating"
+              iconOnly={threadPresentation.runtimeIconOnly}
+              onToggleInteractionMode={toggleInteractionMode}
+              onRuntimeModeChange={handleRuntimeModeChange}
+            />
+            {potetoControl}
+          </FloatingComposerRuntimeControl>
+        ) : null}
         <ComposerSurface.Main
           ref={composerMainSurfaceRef}
           data-inline-resting-controls={restingControlsHost === null ? "true" : undefined}
           data-model-only-strip={
             restingControlsHost?.closest("[data-composer-model-strip]") ? "true" : undefined
           }
-          className={composerProviderState.composerFrameClassName}
+          className={cn(
+            chatComposerPresentation.mainClassName,
+            composerProviderState.composerFrameClassName,
+          )}
         >
           <div
             ref={composerSurfaceRef}
             data-chat-composer-surface="true"
             data-chat-composer-mobile-collapsed={isComposerCollapsedMobile ? "true" : "false"}
             className={cn(
-              "rounded-3xl transition-[background-color] duration-200",
+              chatComposerPresentation.surfaceClassName,
               "in-data-[thread-context-over]:bg-accent/45 in-data-[thread-context-over]:ring-1 in-data-[thread-context-over]:ring-inset in-data-[thread-context-over]:ring-primary/70",
               isDragOverComposer ? "bg-accent/45 ring-1 ring-inset ring-primary/70" : null,
               projectSelectionRequired ? "opacity-75" : null,
@@ -3885,6 +4084,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   data-chat-composer-footer-controls="true"
                   className={cn(
                     "relative -m-1 -ms-3.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto p-1 ps-3.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+                    threadPresentation.controlsClassName,
                     isComposerResting && "hidden",
                   )}
                 >
@@ -3900,6 +4100,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  {composerScreenshotButton}
                   {composerAttachButton}
                   <ComposerFooterPrimaryActions
                     compact={isComposerResting || isComposerPrimaryActionsCompact}
@@ -3955,7 +4156,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     keepFullHistory={props.keepFullHistory}
                     onToggleKeepFullHistory={props.onToggleKeepFullHistory}
                     compactDisabled={
-                      compactDisabled || noProviderAvailable || isSendBusy || isConnecting
+                      compactDisabled ||
+                      attachmentActivity.pending > 0 ||
+                      noProviderAvailable ||
+                      isSendBusy ||
+                      isConnecting
                     }
                     compactDisabledReason={resolvedCompactDisabledReason}
                     {...(compactCommandAvailable

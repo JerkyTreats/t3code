@@ -83,7 +83,7 @@ describe("pull request checkout commands", () => {
     locator: {
       source: "git-remote",
       remoteName: "origin",
-      remoteUrl: "git@github.com:acme/web.git",
+      remoteUrl: `git@${canonicalKey.split("/")[0]}:acme/web.git`,
     },
     provider,
   });

@@ -1,3 +1,4 @@
+import { publicationProviderEndpoint } from "@t3tools/client-runtime/operations/projects";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -476,6 +477,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     useState<SourceControlRepositoryVisibility>("private");
   const [publishRemoteName, setPublishRemoteName] = useState("origin");
   const [publishProtocol, setPublishProtocol] = useState<SourceControlCloneProtocol>("ssh");
+  const [azureOrganizationEndpoint, setAzureOrganizationEndpoint] = useState("");
   const [publishWizardStep, setPublishWizardStep] = useState(0);
   const [publishAdvancedOpen, setPublishAdvancedOpen] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -528,13 +530,18 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
   const publishRepositoryPrefill = publishAccount ? `${publishAccount}/` : "";
   const publishRepository = publishRepositoryOverride ?? publishRepositoryPrefill;
   const currentPublishProvider = publishProviderOption(publishProvider);
-  const publishHost = currentPublishProvider.definition.publishHost(
-    Option.getOrNull(
-      sourceControlDiscovery.data?.sourceControlProviders.find(
-        (provider) => provider.kind === publishProvider,
-      )?.auth.host ?? Option.none(),
-    ),
+  const authenticatedPublishHost = Option.getOrNull(
+    sourceControlDiscovery.data?.sourceControlProviders.find(
+      (provider) => provider.kind === publishProvider,
+    )?.auth.host ?? Option.none(),
   );
+  const publishHost = currentPublishProvider.definition.publishHost(authenticatedPublishHost);
+  // Fork F06: publication binds to the provider's authenticated endpoint (and Azure organization).
+  const publishProviderBaseUrl = publicationProviderEndpoint({
+    kind: publishProvider,
+    host: authenticatedPublishHost,
+    organizationEndpoint: azureOrganizationEndpoint.trim(),
+  });
   const publishPathPlaceholder = currentPublishProvider.pathPlaceholder;
   const publishProviderLabel = currentPublishProvider.label;
   const publishWizardSteps = ["Provider", "Repository", "Summary"] as const;
@@ -551,11 +558,12 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     publishRepositoryAction.isAllowed &&
     selectedPublishProviderReadiness.ready &&
     !publishRepositoryAction.isPending &&
+    publishProviderBaseUrl !== null &&
     publishRepositoryOwner.length > 0 &&
     publishRepositoryName.length > 0;
 
   const submitPublishRepository = () => {
-    if (!canSubmitPublishRepository) {
+    if (!canSubmitPublishRepository || publishProviderBaseUrl === null) {
       return;
     }
 
@@ -564,6 +572,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     void (async () => {
       const result = await publishRepositoryAction.run({
         provider: publishProvider,
+        providerBaseUrl: publishProviderBaseUrl,
         repository: publishRepository.trim(),
         visibility: publishVisibility,
         remoteName: publishRemoteName.trim() || "origin",
@@ -587,6 +596,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
 
   const resetState = () => {
     setPublishRemoteName("origin");
+    setAzureOrganizationEndpoint("");
     setPublishRepositoryOverride(null);
     setPublishWizardStep(0);
     setPublishAdvancedOpen(false);
@@ -702,6 +712,23 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
           </div>
 
           <div className={cn("space-y-5", publishWizardStep !== 1 && "hidden")}>
+            {publishProvider === "azure-devops" ? (
+              <div className="space-y-2">
+                <label
+                  htmlFor="publish-organization-endpoint"
+                  className="text-xs font-medium text-foreground"
+                >
+                  Organization endpoint
+                </label>
+                <Input
+                  id="publish-organization-endpoint"
+                  value={azureOrganizationEndpoint}
+                  onChange={(event) => setAzureOrganizationEndpoint(event.target.value)}
+                  placeholder={`https://${authenticatedPublishHost ?? "dev.azure.com"}/organization`}
+                  disabled={publishRepositoryAction.isPending}
+                />
+              </div>
+            ) : null}
             <div className="space-y-2">
               <label
                 htmlFor="publish-repository-path"

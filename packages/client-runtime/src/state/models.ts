@@ -135,6 +135,7 @@ function threadRunStatusIsActive(status: ThreadRuntimeSummary["status"]): boolea
 }
 
 export interface EnvironmentThreadShell {
+  readonly creationSurface?: OrchestrationV2ThreadShell["creationSurface"];
   readonly environmentId: EnvironmentId;
   readonly id: ThreadId;
   readonly projectId: ProjectId;
@@ -146,6 +147,8 @@ export interface EnvironmentThreadShell {
   readonly branch: string | null;
   readonly worktreePath: string | null;
   readonly lineage: OrchestrationV2ThreadShell["lineage"];
+  /** Ordinary thread this one is grouped under. Absent when the server predates nesting. */
+  readonly nestedUnderThreadId?: ThreadId | null;
   readonly forkedFrom: OrchestrationV2ThreadShell["forkedFrom"];
   readonly activeProviderThreadId: OrchestrationV2ThreadShell["activeProviderThreadId"];
   readonly latestRun: ThreadRunSummary | null;
@@ -153,6 +156,8 @@ export interface EnvironmentThreadShell {
   readonly blockedOnThreadWait?: boolean;
   readonly latestUserMessageAt: string | null;
   readonly latestUserAuthoredMessageAt?: string | null;
+  readonly latestAssistantResponseAt?: string | null;
+  readonly latestPublishedResponseAt?: string | null;
   readonly hasPendingApprovals: boolean;
   readonly hasPendingUserInput: boolean;
   readonly pendingSubagentRequest?: PendingSubagentRequest | null;
@@ -278,6 +283,7 @@ export function presentThreadShell(
   return {
     environmentId,
     id: thread.id,
+    ...(thread.creationSurface === undefined ? {} : { creationSurface: thread.creationSurface }),
     projectId: thread.projectId,
     title:
       thread.lineage.relationshipToParent === "subagent"
@@ -293,15 +299,24 @@ export function presentThreadShell(
     linkedPullRequest: thread.linkedPullRequest ?? null,
     branchPullRequest: thread.branchPullRequest ?? null,
     lineage: thread.lineage,
+    ...(thread.nestedUnderThreadId === undefined
+      ? {}
+      : { nestedUnderThreadId: thread.nestedUnderThreadId }),
     forkedFrom: thread.forkedFrom,
     activeProviderThreadId: thread.activeProviderThreadId,
     latestRun,
     runtime,
     blockedOnThreadWait: thread.blockedOnThreadWait ?? false,
     latestUserMessageAt: nullableIso(thread.latestUserMessageAt),
+    ...(thread.latestPublishedResponseAt === undefined
+      ? {}
+      : { latestPublishedResponseAt: nullableIso(thread.latestPublishedResponseAt) }),
     ...(thread.latestUserAuthoredMessageAt === undefined
       ? {}
       : { latestUserAuthoredMessageAt: nullableIso(thread.latestUserAuthoredMessageAt) }),
+    ...(thread.latestAssistantResponseAt === undefined
+      ? {}
+      : { latestAssistantResponseAt: nullableIso(thread.latestAssistantResponseAt) }),
     hasPendingApprovals:
       thread.pendingRuntimeRequest !== null &&
       thread.pendingRuntimeRequest.kind !== "user_input" &&

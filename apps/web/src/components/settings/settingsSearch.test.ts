@@ -74,7 +74,13 @@ describe("searchSettings", () => {
       searchSettings("remote pairing")
         .slice(0, 2)
         .map((item) => item.id),
-    ).toEqual(["network-access", "connections-environment"]);
+    ).toEqual(["network-access"]);
+  });
+
+  it("does not advertise retired access administration", () => {
+    expect(searchSettings("authorized clients")).toEqual([]);
+    expect(searchSettings("administrative access")).toEqual([]);
+    expect(searchSettings("revoke client session")).toEqual([]);
   });
 
   it("hides desktop-only settings from browser search", () => {

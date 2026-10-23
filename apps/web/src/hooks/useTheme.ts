@@ -1,4 +1,4 @@
-import type { DesktopBridge } from "@t3tools/contracts";
+import type { DesktopBridge, DesktopSystemTheme } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
@@ -24,9 +24,16 @@ import {
   type ThemeHalves,
   type ThemePreferenceMode,
 } from "../themePalette";
+import {
+  localDesktopTheme,
+  localSystemDark,
+  observeDesktopSystemTheme,
+} from "../fork/desktopSystemTheme";
+import { OMARCHY_SYSTEM_THEME_ID, projectOmarchySystemTheme } from "../fork/omarchySystemTheme";
 
 type Theme = ThemePreference;
 type ThemeSnapshot = {
+  systemThemeRevision: number;
   theme: Theme;
   resolvedTheme: ThemeAppearance;
   systemDark: boolean;
@@ -40,6 +47,7 @@ type DesktopThemeBridge = Pick<DesktopBridge, "setTheme">;
 const STORAGE_KEY = "t3code:theme";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
 const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
+  systemThemeRevision: 0,
   theme: "system",
   resolvedTheme: "light",
   systemDark: false,
@@ -130,6 +138,8 @@ export class DesktopThemeSyncError extends Schema.TaggedError<DesktopThemeSyncEr
 
 const isDesktopThemeSyncError = Schema.is(DesktopThemeSyncError);
 
+let desktopSystemTheme: DesktopSystemTheme | null = null;
+let systemThemeRevision = 0;
 let listeners: Array<() => void> = [];
 let lastSnapshot: ThemeSnapshot | null = null;
 let snapshotStale = true;
@@ -143,10 +153,11 @@ function emitChange() {
 }
 
 function getSystemDark() {
-  return (
+  return localSystemDark(
+    desktopSystemTheme,
     typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia(MEDIA_QUERY).matches
+      typeof window.matchMedia === "function" &&
+      window.matchMedia(MEDIA_QUERY).matches,
   );
 }
 
@@ -321,6 +332,7 @@ function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview
   const themeHalves = readStoredThemeHalves();
   if (
     lastAppliedTheme?.theme === theme &&
+    lastAppliedTheme.systemThemeRevision === systemThemeRevision &&
     lastAppliedTheme.systemDark === systemDark &&
     lastAppliedTheme.followSystem === followSystem &&
     lastAppliedTheme.appearanceMode === appearanceMode &&
@@ -340,9 +352,26 @@ function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview
     appearanceMode,
     themeHalves,
   );
-  applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
+  const localColors = projectOmarchySystemTheme({
+    theme: desktopSystemTheme,
+    appearanceMode,
+    themePreference: theme,
+    themeHalves,
+  });
+  applyThemePalette(
+    resolveThemeHalf(theme, themeHalves, resolvedAppearance),
+    resolvedAppearance,
+    localColors ? { id: OMARCHY_SYSTEM_THEME_ID, colors: localColors } : null,
+  );
   document.documentElement.classList.toggle("dark", resolvedAppearance === "dark");
-  lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
+  lastAppliedTheme = {
+    theme,
+    systemDark,
+    followSystem,
+    appearanceMode,
+    themeHalves,
+    systemThemeRevision,
+  };
   syncBrowserChromeTheme();
   syncDesktopTheme(theme, followSystem, appearanceMode);
   if (suppressTransitions) {
@@ -362,7 +391,12 @@ async function syncDesktopThemePreference(
   halves: ThemeHalves | null = readStoredThemeHalves(),
 ): Promise<void> {
   try {
-    await bridge.setTheme(resolveDesktopTheme(theme, followSystem, appearanceMode, halves));
+    await bridge.setTheme(
+      localDesktopTheme(
+        desktopSystemTheme,
+        resolveDesktopTheme(theme, followSystem, appearanceMode, halves),
+      ),
+    );
   } catch (cause) {
     throw new DesktopThemeSyncError({ theme, cause });
   }
@@ -376,7 +410,10 @@ function syncDesktopTheme(
   if (typeof window === "undefined") return;
   const bridge = window.desktopBridge;
   const halves = readStoredThemeHalves();
-  const desktopTheme = resolveDesktopTheme(theme, followSystem, appearanceMode, halves);
+  const desktopTheme = localDesktopTheme(
+    desktopSystemTheme,
+    resolveDesktopTheme(theme, followSystem, appearanceMode, halves),
+  );
   if (!bridge || typeof bridge.setTheme !== "function" || lastDesktopTheme === desktopTheme) {
     return;
   }
@@ -424,6 +461,7 @@ function getSnapshot(): ThemeSnapshot {
   if (
     lastSnapshot &&
     lastSnapshot.theme === theme &&
+    lastSnapshot.systemThemeRevision === systemThemeRevision &&
     lastSnapshot.resolvedTheme === resolvedTheme &&
     lastSnapshot.systemDark === systemDark &&
     lastSnapshot.followSystem === followSystem &&
@@ -433,7 +471,15 @@ function getSnapshot(): ThemeSnapshot {
     return lastSnapshot;
   }
 
-  lastSnapshot = { theme, resolvedTheme, systemDark, followSystem, appearanceMode, themeHalves };
+  lastSnapshot = {
+    theme,
+    resolvedTheme,
+    systemDark,
+    followSystem,
+    appearanceMode,
+    themeHalves,
+    systemThemeRevision,
+  };
   return lastSnapshot;
 }
 
@@ -479,7 +525,17 @@ function subscribe(listener: () => void): () => void {
     const mq = typeof window.matchMedia === "function" ? window.matchMedia(MEDIA_QUERY) : null;
     mq?.addEventListener("change", handleSystemAppearanceChange);
     window.addEventListener("storage", handleStorageChange);
+    const stopLocalTheme = observeDesktopSystemTheme(
+      window.t3ThreadBridge ?? window.desktopBridge,
+      (next) => {
+        desktopSystemTheme = next;
+        systemThemeRevision += 1;
+        applyTheme(getStored(), { suppressTransitions: true });
+        emitChange();
+      },
+    );
     removeWindowListeners = () => {
+      stopLocalTheme();
       mq?.removeEventListener("change", handleSystemAppearanceChange);
       window.removeEventListener("storage", handleStorageChange);
     };

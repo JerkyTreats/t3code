@@ -18,6 +18,7 @@ import {
   type ShortcutEventLike,
   type ShortcutModifierStateLike,
 } from "@t3tools/shared/keybindings";
+import { isNativePreviewTabCommand } from "./components/preview/previewActionBus";
 import { isElectron } from "./env";
 import { projectScriptIdFromCommand } from "./projectScripts";
 
@@ -29,6 +30,8 @@ export interface ShortcutMatchContext {
   terminalOpen: boolean;
   previewFocus: boolean;
   previewOpen: boolean;
+  /** Whether the focused preview is hosted by this client’s Electron guest. */
+  nativePreviewFocus?: boolean;
   isWeb: boolean;
   isDesktop: boolean;
   editableFocus?: boolean;
@@ -137,6 +140,8 @@ export function effectiveShortcutsForCommand(
   for (let index = keybindings.length - 1; index >= 0; index -= 1) {
     const binding = keybindings[index];
     if (!binding) continue;
+    if (context.nativePreviewFocus === false && isNativePreviewTabCommand(binding.command))
+      continue;
     if (!matchesWhenClause(binding.whenAst, context)) continue;
 
     const shortcut = shortcutForContext(binding, context);
@@ -182,6 +187,8 @@ export function resolveShortcutCommand(
   for (let index = keybindings.length - 1; index >= 0; index -= 1) {
     const binding = keybindings[index];
     if (!binding) continue;
+    if (context.nativePreviewFocus === false && isNativePreviewTabCommand(binding.command))
+      continue;
     if (!matchesWhenClause(binding.whenAst, context)) continue;
     if (!matchesKeybindingShortcut(event, shortcutForContext(binding, context), platform)) continue;
     return binding.command;

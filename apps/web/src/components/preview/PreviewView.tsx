@@ -150,6 +150,7 @@ export function PreviewView({
   visible,
   onSendAnnotation,
 }: Props) {
+  const previewViewRef = useRef<HTMLDivElement | null>(null);
   const [focusUrlNonce, setFocusUrlNonce] = useState<number | undefined>(undefined);
   const [pickActive, setPickActive] = useState(false);
   const canSendAnnotation =
@@ -200,6 +201,14 @@ export function PreviewView({
         : findActiveBrowserRecordingRuntimeTabId(threadRef, tabId)
       : null;
   const snapshot = tabId ? (previewState.sessions[tabId] ?? null) : null;
+  const idle = snapshot?.navStatus._tag === "Idle" || tabId === null;
+  useEffect(() => {
+    if (!visible || !idle) return;
+    const view = previewViewRef.current;
+    if (view?.dataset.previewRuntimeTab !== (runtimeTabId ?? "")) return;
+    view.querySelector<HTMLInputElement>("[data-preview-url-input]")?.focus();
+  }, [idle, runtimeTabId, visible]);
+
   const nativeServerTab = useRendersServerTabNatively(threadRef.environmentId, snapshot);
   const isServerTab = snapshot?.runtime === "server" && !nativeServerTab;
   const serverOwnsRendering = snapshot?.runtime === "server";
@@ -898,6 +907,9 @@ export function PreviewView({
           handleResetZoom();
           return;
         case "toggle-panel":
+        case "new-tab":
+        case "close-tab":
+        case "reopen-closed":
           return;
       }
     },
@@ -910,6 +922,8 @@ export function PreviewView({
   return (
     <div
       className="flex min-h-0 flex-1 flex-col bg-background"
+      ref={previewViewRef}
+      data-preview-runtime-tab={runtimeTabId ?? ""}
       data-thread-key={scopedThreadKey(threadRef)}
     >
       <PreviewChromeRow

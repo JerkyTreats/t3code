@@ -41,7 +41,15 @@ import {
 import { prepareImageForAttachment } from "../../lib/imageCompression";
 import { requestConfirmDialog } from "~/confirmDialog";
 import { toastManager } from "../ui/toast";
-import { type RefObject, useRef } from "react";
+import { type RefObject, useLayoutEffect, useRef } from "react";
+import type {
+  ComposerAttachmentAdmission,
+  ComposerAttachmentReservation,
+} from "../../fork/composerAttachmentAdmission";
+import {
+  captureComposerScreenshot,
+  type ComposerScreenshotCapture,
+} from "../../fork/composerScreenshot";
 import { videoMimeType } from "../../types";
 
 /**
@@ -65,7 +73,11 @@ export function useComposerAttachmentIntake(input: {
   readonly composerFilesRef: ChatComposerProps["composerFilesRef"];
   readonly composerEditorRef: RefObject<ComposerPromptEditorHandle | null>;
   readonly isRevertingCheckpointRef: RefObject<boolean>;
-  readonly pendingImageCompressionsRef: RefObject<Map<string, number>>;
+  readonly attachmentAdmission: ComposerAttachmentAdmission;
+  readonly attachmentScope: string;
+  readonly readOccupiedAttachments: () => number;
+  readonly screenshotCapture: ComposerScreenshotCapture | null;
+  readonly blockScreenshotCapture: boolean;
   readonly setThreadError: ChatComposerProps["setThreadError"];
   readonly countReservedAttachments: () => number;
   readonly addComposerImage: (image: ComposerImageAttachment) => string[];
@@ -94,7 +106,11 @@ export function useComposerAttachmentIntake(input: {
     composerFilesRef,
     composerEditorRef,
     isRevertingCheckpointRef,
-    pendingImageCompressionsRef,
+    attachmentAdmission,
+    attachmentScope,
+    readOccupiedAttachments,
+    screenshotCapture,
+    blockScreenshotCapture,
     setThreadError,
     countReservedAttachments,
     addComposerImage,
@@ -103,6 +119,11 @@ export function useComposerAttachmentIntake(input: {
     removeComposerImageFromDraft,
     insertAttachmentReferences,
   } = input;
+  // A capture or compression that outlives a draft switch must not land in the new draft.
+  const attachmentTargetKeyRef = useRef(attachmentTargetKey);
+  useLayoutEffect(() => {
+    attachmentTargetKeyRef.current = attachmentTargetKey;
+  });
   const pastedTextFileNamesRef = useRef<{ targetKey: string; names: Set<string> }>({
     targetKey: "",
     names: new Set(),
@@ -115,8 +136,10 @@ export function useComposerAttachmentIntake(input: {
       readonly selection?: { start: number; end: number };
       readonly skipImageInlineChip?: boolean;
     },
+    captureReservation?: ComposerAttachmentReservation,
   ): Promise<boolean> => {
     if (!activeThreadId || files.length === 0 || isRevertingCheckpointRef.current) return false;
+    if (captureReservation && !attachmentAdmission.transfer(captureReservation)) return false;
     if (
       pendingUserInputs.length > 0 &&
       (!supportsQuestionAttachments ||
@@ -142,10 +165,9 @@ export function useComposerAttachmentIntake(input: {
         stripInlineContextReferences(promptRef.current).trim().length > 0);
 
     // Validation happens synchronously so concurrent pastes see each other:
-    // accepted files reserve their attachment slots (via the pending counter)
-    // before the first await, keeping the total under the limit.
-    const pendingCount = pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0;
-    let reservedCount = countReservedAttachments();
+    // accepted images reserve their attachment slots through the shared admission owner
+    // before the first await, keeping the total under the limit. A capture already holds its slot.
+    let reservedCount = countReservedAttachments() - (captureReservation?.count ?? 0);
     // A pick that matches a needs-reattach marker replaces it in the draft, so
     // it must not consume a slot; a draft full of markers would otherwise hit
     // the capacity error before the replacement path could run.
@@ -242,10 +264,14 @@ export function useComposerAttachmentIntake(input: {
     }
     if (acceptedImages.length === 0) return insertedAny;
 
-    pendingImageCompressionsRef.current.set(
-      attachmentTargetKey,
-      pendingCount + acceptedImages.length,
-    );
+    const reservation =
+      captureReservation ??
+      attachmentAdmission.reserve(
+        attachmentScope,
+        readOccupiedAttachments(),
+        acceptedImages.length,
+      );
+    if (!reservation) return insertedAny;
     if (questionAttachmentTarget)
       changeQuestionAttachmentPreparation(questionAttachmentTarget, acceptedImages.length);
     const compressAndStoreImages = async (): Promise<boolean> => {
@@ -256,6 +282,10 @@ export function useComposerAttachmentIntake(input: {
           file,
           PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
         );
+        if (!attachmentAdmission.isCurrent(reservation)) {
+          for (const image of nextImages) URL.revokeObjectURL(image.previewUrl);
+          return false;
+        }
         if (!compressed.ok) {
           compressionError =
             compressed.reason === "unreadable"
@@ -276,8 +306,9 @@ export function useComposerAttachmentIntake(input: {
         });
       }
       if (
-        questionAttachmentTarget &&
-        !useQuestionAttachmentPreparation.getState().counts[questionAttachmentTarget]
+        attachmentTargetKeyRef.current !== attachmentTargetKey ||
+        (questionAttachmentTarget &&
+          !useQuestionAttachmentPreparation.getState().counts[questionAttachmentTarget])
       ) {
         for (const image of nextImages) URL.revokeObjectURL(image.previewUrl);
         return false;
@@ -306,13 +337,22 @@ export function useComposerAttachmentIntake(input: {
     return await compressAndStoreImages().finally(() => {
       if (questionAttachmentTarget)
         changeQuestionAttachmentPreparation(questionAttachmentTarget, -acceptedImages.length);
-      const remaining =
-        (pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) - acceptedImages.length;
-      if (remaining > 0) {
-        pendingImageCompressionsRef.current.set(attachmentTargetKey, remaining);
-      } else {
-        pendingImageCompressionsRef.current.delete(attachmentTargetKey);
-      }
+      attachmentAdmission.release(reservation);
+    });
+  };
+
+  /** One native capture at a time, holding its slot from before capture until the image lands. */
+  const captureScreenshotAttachment = async () => {
+    if (!screenshotCapture || !activeThreadId || blockScreenshotCapture) return;
+    const threadId = activeThreadId;
+    await attachmentAdmission.captureScreenshot({
+      scope: attachmentScope,
+      occupied: readOccupiedAttachments(),
+      capture: () => captureComposerScreenshot(screenshotCapture),
+      admit: async (file, reservation) => {
+        await addComposerAttachments([file], undefined, reservation);
+      },
+      reportError: (message) => setThreadError(threadId, message),
     });
   };
 
@@ -417,6 +457,7 @@ export function useComposerAttachmentIntake(input: {
 
   return {
     addComposerAttachments,
+    captureScreenshotAttachment,
     removeComposerImage,
     foldPastedText,
   };

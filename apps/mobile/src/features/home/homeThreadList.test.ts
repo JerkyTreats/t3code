@@ -5,7 +5,11 @@ import type {
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildHomeProjectScopes, findHomeProjectScope } from "./homeThreadList";
+import {
+  buildHomeProjectScopes,
+  findHomeProjectScope,
+  sortHomeProjectScopes,
+} from "./homeThreadList";
 import { makeThreadShellFixture } from "../../test-fixtures";
 import { buildThreadListV2Items } from "../threads/threadListV2";
 
@@ -45,6 +49,54 @@ function makeThread(
 }
 
 describe("home project scopes", () => {
+  it("sorts project scopes by authored prompts and published responses (project activity)", () => {
+    const environmentId = EnvironmentId.make("environment-1");
+    const olderProject = makeProject({
+      environmentId,
+      id: ProjectId.make("project-older"),
+      title: "Older project",
+    });
+    const newerProject = makeProject({
+      environmentId,
+      id: ProjectId.make("project-newer"),
+      title: "Newer project",
+    });
+    const scopes = buildHomeProjectScopes({
+      projects: [newerProject, olderProject],
+      environmentId: null,
+      projectGroupingMode: "separate",
+    });
+
+    expect(
+      sortHomeProjectScopes({
+        scopes,
+        threads: [
+          makeThread({
+            environmentId,
+            id: ThreadId.make("thread-older-project"),
+            projectId: olderProject.id,
+            title: "Most recently active",
+            updatedAt: "2026-06-03T00:00:00.000Z",
+            latestPublishedResponseAt: "2026-06-03T00:00:00.000Z",
+            latestUserAuthoredMessageAt: "2026-06-01T00:00:00.000Z",
+            latestUserMessageAt: "2026-06-04T00:00:00.000Z",
+          }),
+          makeThread({
+            environmentId,
+            id: ThreadId.make("thread-newer-project"),
+            projectId: newerProject.id,
+            title: "Less recently active",
+            updatedAt: "2026-06-02T00:00:00.000Z",
+            latestUserAuthoredMessageAt: "2026-06-02T00:00:00.000Z",
+            latestUserMessageAt: "2026-06-05T00:00:00.000Z",
+          }),
+        ],
+        pendingTasks: [],
+        projectSortOrder: "updated_at",
+      }).map((scope) => scope.representative.id),
+    ).toEqual([olderProject.id, newerProject.id]);
+  });
+
   it("filters threads across both scratch hosts while retaining the selected environment boundary", () => {
     const localEnvironmentId = EnvironmentId.make("local");
     const remoteEnvironmentId = EnvironmentId.make("remote");

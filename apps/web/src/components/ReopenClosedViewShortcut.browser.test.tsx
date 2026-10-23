@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   keybindings: [] as ResolvedKeybindingsConfig,
   params: {} as Record<string, string>,
   workspaceAvailable: true,
+  nativePreviewFocused: false,
   navigate: vi.fn(),
   openPreview: vi.fn(),
   setShortcuts: vi.fn(async () => undefined),
@@ -67,6 +68,11 @@ vi.mock(import("../state/entities"), async (original) => ({
   readProject: (() =>
     state.workspaceAvailable ? { workspaceRoot: "/work/project" } : null) as never,
 }));
+// F23: a focused native preview guest owns its own reopen history.
+vi.mock(import("./preview/previewHostActions"), async (original) => ({
+  ...(await original()),
+  readFocusedPreviewHost: (() => (state.nativePreviewFocused ? {} : null)) as never,
+}));
 vi.mock(import("./ui/toast"), async (original) => {
   const actual = await original();
   return { ...actual, toastManager: { ...actual.toastManager, add: state.toast } };
@@ -94,6 +100,7 @@ function setup() {
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     params: {},
     workspaceAvailable: true,
+    nativePreviewFocused: false,
   });
   state.navigate.mockResolvedValue(undefined);
   state.openPreview.mockReset();
@@ -261,6 +268,24 @@ describe("root reopen shortcut", () => {
         kind === "browser" ? "browser:new-tab" : kind === "file" ? "file:src/app.ts" : "files",
       );
       expect(useClosedViewStore.getState().entries).toEqual([]);
+    },
+  );
+
+  it.each([false, true])(
+    "leaves reopen to focused native preview controls when native=%s",
+    async (native) => {
+      setup();
+      state.nativePreviewFocused = native;
+      useClosedViewStore
+        .getState()
+        .remember({ kind: "panel-tab", threadRef: ref, surface: { kind: "diff", id: "diff" } });
+      await using _view = await renderShortcut();
+      let event!: KeyboardEvent;
+      await act(() => {
+        event = press();
+      });
+      expect(event.defaultPrevented).toBe(!native);
+      expect(useClosedViewStore.getState().entries).toHaveLength(native ? 1 : 0);
     },
   );
 });

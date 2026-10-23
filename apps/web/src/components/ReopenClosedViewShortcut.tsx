@@ -8,6 +8,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef } from "react";
 
+import { readFocusedPreviewHost } from "./preview/previewHostActions";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { useClosedViewStore } from "../closedViewStore";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -148,6 +149,7 @@ export function ReopenClosedViewShortcut() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (
         event.defaultPrevented ||
+        readFocusedPreviewHost(threadRef) !== null ||
         isCommandPaletteOpen() ||
         useClosedViewStore.getState().entries.length === 0 ||
         (event.target instanceof HTMLElement && event.target.closest("[data-keybinding-capture]"))
@@ -158,6 +160,7 @@ export function ReopenClosedViewShortcut() {
           terminalFocus: isTerminalFocused(),
           terminalOpen,
           previewFocus: isPreviewFocused(),
+          nativePreviewFocus: false,
           previewOpen,
           editableFocus: isEditableFocused(event.target),
           modelPickerOpen: isModelPickerOpen(),
@@ -176,7 +179,7 @@ export function ReopenClosedViewShortcut() {
       window.removeEventListener("keydown", onKeyDown, true);
       unsubscribe?.();
     };
-  }, [keybindings, previewOpen, terminalOpen]);
+  }, [keybindings, previewOpen, terminalOpen, threadRef]);
 
   useEffect(() => {
     const preview = window.desktopBridge?.preview;

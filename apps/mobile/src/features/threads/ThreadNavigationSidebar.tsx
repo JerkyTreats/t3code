@@ -3,7 +3,7 @@ import { ThreadUndoNotice } from "../home/ThreadUndoNotice";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { resolveScratchProjectScopeKey } from "@t3tools/client-runtime/state/project-grouping";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
-import { computeThreadMoveAvailability } from "./threadOrder";
+import type { ThreadMoveAvailability } from "./threadOrder";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
@@ -33,7 +33,11 @@ import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useProjects, useNavigationThreadShells } from "../../state/entities";
 import { useThreadSearch } from "../../state/queries";
-import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-preferences";
+import {
+  useClearNestedExpansionOnSelection,
+  useThreadListV2NestedExpansion,
+  useThreadListV2ShelfPreferences,
+} from "./use-thread-list-v2-shelf-preferences";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { threadListEnvironmentsAtom } from "../../state/server";
 import { usePendingNewTasks, type PendingNewTask } from "../../state/use-pending-new-tasks";
@@ -71,7 +75,6 @@ import { useThreadRowProviderInstanceResolver } from "./thread-provider-instance
 import type { ThreadPrPresentation } from "../../state/thread-pr-presentation";
 import {
   buildThreadListV2Items,
-  getThreadListV2OrderedSection,
   buildThreadListV2ListItems,
   isThreadListV2ListItem,
   threadListV2ListItemsAreEqual,
@@ -156,6 +159,7 @@ function ThreadNavigationSidebarPane(
     moveThread,
     renameThread,
     regenerateThreadTitle,
+    moveThreadToTopLevel,
   } = useThreadListActions();
   const pendingTasks = usePendingNewTasks();
   const activeNewTask = useActiveNewTask();
@@ -275,6 +279,15 @@ function ThreadNavigationSidebarPane(
     toggleSnoozedShelf,
     toggleWorkingShelf,
   } = useThreadListV2ShelfPreferences();
+  const { nestedExpansion, setNestedExpansion } = useThreadListV2NestedExpansion(threads);
+  useClearNestedExpansionOnSelection(
+    props.selectedThreadKey ?? null,
+    threads,
+    nestedExpansion,
+    setNestedExpansion,
+  );
+  const handleToggleNested = (thread: EnvironmentThreadShell, expanded: boolean) =>
+    setNestedExpansion(scopedThreadKey(thread.environmentId, thread.id), expanded);
   // The list's clock is state: the compiler caches anything computed from it on
   // its other inputs, so a render-time `new Date()` would stop moving. The minute
   // interval and the snooze-wake timer below both advance it.
@@ -294,38 +307,12 @@ function ThreadNavigationSidebarPane(
     snoozeEnvironmentIds,
     pinningEnvironmentIds,
     autoSettleOptOutEnvironmentIds,
-    pinReorderEnvironmentIds,
-    activeReorderEnvironmentIds,
     titleRegenerationEnvironmentIds,
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder(nowMinute, snoozeWakeTick);
-  // Up/down menu availability for every card, computed once per section per
-  // rebuild (see computeThreadMoveAvailability): per-thread planner calls made
-  // list construction quadratic, and this list rebuilds on every minute tick.
-  const threadMoveAvailability = (() => {
-    const sectionAvailability = (section: "pinned" | "active") =>
-      computeThreadMoveAvailability({
-        allThreads: threads,
-        section,
-        pendingOrder,
-        reorderableEnvironmentIds:
-          section === "pinned" ? pinReorderEnvironmentIds : activeReorderEnvironmentIds,
-        ordered: getThreadListV2OrderedSection({
-          threads,
-          section,
-          pendingOrder,
-          now,
-          settlementEnvironmentIds,
-          snoozeEnvironmentIds,
-          queuedThreadKeys,
-        }),
-      });
-    return new Map([
-      ...sectionAvailability("pinned"),
-      ...(workingShelfEnabled ? [] : sectionAvailability("active")),
-    ]);
-  })();
+  // Conversation order owns placement, so Move up/down is never offered.
+  const threadMoveAvailability = new Map<string, ThreadMoveAvailability>();
   const threadListV2Layout = (() => {
     threadListInboxReturns.observe(workingShelfEnabled ? threads : null);
     return buildThreadListV2Items({
@@ -346,6 +333,7 @@ function ThreadNavigationSidebarPane(
       snoozedShelfExpanded,
       settledShelfExpanded,
       selectedThreadKey: props.selectedThreadKey ?? null,
+      nestedExpansion,
     });
   })();
   const nextSnoozeWakeAt = threadListV2Layout.nextSnoozeWakeAt;
@@ -604,11 +592,16 @@ function ThreadNavigationSidebarPane(
           />
         );
       }
-      case "v2-thread": {
+      case "v2-thread":
+      case "v2-nested-thread": {
         const thread = item.item.thread;
         const scopeKey = scopedProjectKey(thread.environmentId, thread.projectId);
         return (
           <ThreadListV2Row
+            nested={item.type === "v2-thread" ? item.nested : null}
+            nestedChild={item.type === "v2-nested-thread"}
+            onToggleNested={handleToggleNested}
+            onMoveThreadToTopLevel={moveThreadToTopLevel}
             onNewThreadOnBranch={props.onNewThreadOnBranch}
             thread={thread}
             variant={item.item.variant}
@@ -654,11 +647,7 @@ function ThreadNavigationSidebarPane(
             snoozeSupported={snoozeEnvironmentIds.has(thread.environmentId)}
             pinningSupported={pinningEnvironmentIds.has(thread.environmentId)}
             autoSettleOptOutSupported={autoSettleOptOutEnvironmentIds.has(thread.environmentId)}
-            reorderSupported={
-              item.item.pinned
-                ? pinReorderEnvironmentIds.has(thread.environmentId)
-                : !workingShelfEnabled && activeReorderEnvironmentIds.has(thread.environmentId)
-            }
+            reorderSupported={false}
             canMoveUp={item.canMoveUp}
             canMoveDown={item.canMoveDown}
             onSnoozeThread={snoozeThread}

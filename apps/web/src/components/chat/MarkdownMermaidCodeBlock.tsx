@@ -7,6 +7,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock";
 import { findRevealRef, MarkdownFindContext } from "./markdownFindContext";
 import { MermaidDiagram } from "./MermaidDiagram";
+import { MermaidVisibleDiagram } from "../../features/mermaid/MermaidVisibleDiagram";
 
 export function MarkdownMermaidCodeBlock({
   code,
@@ -29,6 +30,11 @@ export function MarkdownMermaidCodeBlock({
   const sourceRevealRef = findRevealRef(revealSource);
   const showDiagram = !showCode && !isStreaming && code.trim().length > 0;
   const toggleLabel = showCode ? "Show diagram" : "Show code";
+  const sourcePlaceholder = (
+    <pre className="invisible" aria-hidden>
+      {code}
+    </pre>
+  );
   return (
     <MarkdownCodeBlock
       code={code}
@@ -61,15 +67,11 @@ export function MarkdownMermaidCodeBlock({
     >
       {showDiagram ? (
         <RenderErrorBoundary resetKeys={[code, theme]} fallback={children}>
-          <Suspense
-            fallback={
-              <pre className="invisible" aria-hidden>
-                {code}
-              </pre>
-            }
-          >
-            <MermaidDiagram source={code} onExpand={onExpand} />
-          </Suspense>
+          <MermaidVisibleDiagram source={code} placeholder={sourcePlaceholder}>
+            <Suspense fallback={sourcePlaceholder}>
+              <MermaidDiagram source={code} onExpand={onExpand} />
+            </Suspense>
+          </MermaidVisibleDiagram>
           {searching ? (
             <pre ref={sourceRevealRef} hidden aria-hidden>
               {code}

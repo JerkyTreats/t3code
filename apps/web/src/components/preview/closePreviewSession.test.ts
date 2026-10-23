@@ -3,11 +3,14 @@ import type {
   PreviewSessionSnapshot,
   ScopedThreadRef,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
-import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   applyPreviewServerSnapshot,
+  reconcilePreviewServerSessions,
+  removePreviewThread,
   readThreadPreviewState,
   resetPreviewStateForTests,
 } from "~/previewStateStore";
@@ -37,7 +40,10 @@ const snapshot: PreviewSessionSnapshot = {
 beforeEach(() => {
   resetPreviewStateForTests();
   useClosedViewStore.setState({ entries: [] });
+  vi.stubGlobal("window", { desktopBridge: { preview: {} } });
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("closePreviewSession", () => {
   it("suppresses stale server snapshots while the close is in flight", async () => {
@@ -64,9 +70,106 @@ describe("closePreviewSession", () => {
 
     finishClose?.();
     await closing;
-    expect(useClosedViewStore.getState().entries).toMatchObject([
-      { kind: "browser", threadRef, snapshot },
+    expect(useClosedViewStore.getState().entries).toEqual([]);
+    expect(readThreadPreviewState(threadRef).closedTabs).toMatchObject([
+      { tabId: snapshot.tabId, status: "closed" },
     ]);
     expect(closePreview).toHaveBeenCalledWith({ threadId: "thread-1", tabId: "tab-1" });
   });
+
+  it.each(["web", "streamed desktop"])(
+    "retains upstream global history for a %s preview without native duplicate",
+    async (client) => {
+      if (client === "web") vi.stubGlobal("window", {});
+      const remote = { ...snapshot, runtime: "server" as const };
+      applyPreviewServerSnapshot(threadRef, remote);
+      await closePreviewSession({
+        threadRef,
+        snapshot: remote,
+        tabId: remote.tabId,
+        closePreview: async () => AsyncResult.success(undefined),
+      });
+      expect(useClosedViewStore.getState().entries).toMatchObject([
+        { kind: "browser", threadRef, snapshot: remote },
+      ]);
+      expect(readThreadPreviewState(threadRef).closedTabs).toEqual([]);
+    },
+  );
+
+  it("restores the last snapshot and keeps full history when the server close fails", async () => {
+    applyPreviewServerSnapshot(threadRef, snapshot);
+    for (let index = 0; index < 20; index++) {
+      useClosedViewStore.getState().remember({
+        kind: "browser",
+        threadRef,
+        snapshot: { ...snapshot, tabId: `closed-${index}` },
+      });
+    }
+    const history = useClosedViewStore.getState().entries;
+
+    const result = await closePreviewSession({
+      closePreview: async () => AsyncResult.failure(Cause.fail(new Error("close failed"))),
+      snapshot,
+      tabId: snapshot.tabId,
+      threadRef,
+    });
+
+    expect(result._tag).toBe("Failure");
+    expect(useClosedViewStore.getState().entries).toEqual(history);
+    expect(readThreadPreviewState(threadRef).snapshot).toEqual(snapshot);
+    expect(readThreadPreviewState(threadRef).sessions).toEqual({ [snapshot.tabId]: snapshot });
+  });
+  it("records only successful closes and rolls back thrown failures", async () => {
+    applyPreviewServerSnapshot(threadRef, snapshot);
+    const failure = new Error("disconnected");
+    await expect(
+      closePreviewSession({
+        threadRef,
+        snapshot,
+        tabId: snapshot.tabId,
+        closePreview: async () => {
+          throw failure;
+        },
+      }),
+    ).rejects.toBe(failure);
+    expect(readThreadPreviewState(threadRef).closedTabs).toEqual([]);
+    expect(readThreadPreviewState(threadRef).snapshot).toEqual(snapshot);
+    await closePreviewSession({
+      threadRef,
+      snapshot,
+      tabId: snapshot.tabId,
+      closePreview: async () => AsyncResult.success(undefined),
+    });
+    expect(readThreadPreviewState(threadRef).closedTabs).toMatchObject([
+      { status: "closed", tabId: snapshot.tabId },
+    ]);
+  });
+
+  it.each(["epoch", "thread"] as const)(
+    "does not roll a failed close into a new %s lifetime",
+    async (change) => {
+      applyPreviewServerSnapshot(threadRef, snapshot);
+      let finish!: (value: ReturnType<typeof AsyncResult.failure<void, Error>>) => void;
+      const closing = closePreviewSession({
+        threadRef,
+        snapshot,
+        tabId: snapshot.tabId,
+        closePreview: () =>
+          new Promise<ReturnType<typeof AsyncResult.failure<void, Error>>>((resolve) => {
+            finish = resolve;
+          }),
+      });
+      if (change === "thread") removePreviewThread(threadRef);
+      else
+        reconcilePreviewServerSessions(threadRef, {
+          serverEpoch: "replacement",
+          revision: 1,
+          sessions: [],
+        });
+      finish(AsyncResult.failure(Cause.fail(new Error("late failure"))));
+      await closing;
+      expect(readThreadPreviewState(threadRef).sessions).toEqual({});
+      expect(readThreadPreviewState(threadRef).closedTabs).toEqual([]);
+    },
+  );
 });

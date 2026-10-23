@@ -65,12 +65,14 @@ describe("collectServerUpdateTargets", () => {
       "0.0.50",
     );
 
+    // Only desktop-managed servers self-update; boot services update through
+    // their deployment manager.
     expect(targets.map((target) => [target.serverLabel, target.targetVersion])).toEqual([
-      ["service", "0.0.50"],
       ["other-desktop", "0.0.50"],
     ]);
     expect(skipped.map((entry) => [entry.label, entry.reason])).toEqual([
-      ["nightly-service", "on the nightly channel"],
+      ["service", "needs a manual update"],
+      ["nightly-service", "needs a manual update"],
       ["offline", "not connected"],
       ["never-connected", "not connected"],
       ["no-scope", "no permission"],

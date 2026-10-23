@@ -10,7 +10,12 @@ import {
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import * as Option from "effect/Option";
 import type { SetStateAction } from "react";
-import { applyClaudePromptEffortPrefix, resolvePromptInjectedEffort } from "@t3tools/shared/model";
+import { resolvePromptInjectedEffort } from "@t3tools/shared/model";
+import { applyPotetoMode, type PotetoModeSelection } from "../fork/potetoMode";
+import {
+  formatReferencedChatPrompt,
+  normalizeReferencedChatPrompt,
+} from "../fork/chatPromptContext";
 import { getProviderModelCapabilities } from "../providerModels";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import type {
@@ -1386,10 +1391,16 @@ export function formatOutgoingPrompt(params: {
   models: ReadonlyArray<ServerProvider["models"][number]>;
   effort: string | null;
   text: string;
+  hasRetainedContext?: boolean;
+  potetoMode?: PotetoModeSelection | null;
 }): string {
   const caps = getProviderModelCapabilities(params.models, params.model, params.provider);
   const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
-  return applyClaudePromptEffortPrefix(params.text, promptEffort);
+  return formatReferencedChatPrompt(
+    applyPotetoMode(params.text, params.potetoMode ?? null),
+    promptEffort,
+    params.hasRetainedContext === true,
+  );
 }
 
 export function isCompactCommandMessage(message: ChatMessage): boolean {
@@ -1500,6 +1511,7 @@ export function snapshotComposerSend(contents: ComposerSendContents) {
   const images = [...contents.images];
   const files = [...contents.files];
   const terminalContexts = [...contents.sendableTerminalContexts];
+  const hasRetainedContext = terminalContexts.length > 0 || contents.previewAnnotations.length > 0;
   return {
     images,
     files,
@@ -1508,14 +1520,17 @@ export function snapshotComposerSend(contents: ComposerSendContents) {
     previewAnnotations: [...contents.previewAnnotations],
     reviewComments: [...contents.reviewComments],
     threadContexts: [...contents.threadContexts],
-    messageText: contents.terminalContexts
-      .filter((context) => !terminalContexts.includes(context))
-      .reduce(
-        (text, context) =>
-          removeInlineContextReference(text, terminalContextReference(context).contextId).prompt,
-        contents.prompt,
-      )
-      .trim(),
+    messageText: normalizeReferencedChatPrompt(
+      contents.terminalContexts
+        .filter((context) => !terminalContexts.includes(context))
+        .reduce(
+          (text, context) =>
+            removeInlineContextReference(text, terminalContextReference(context).contextId).prompt,
+          contents.prompt,
+        ),
+      hasRetainedContext,
+    ),
+    hasRetainedContext,
   };
 }
 

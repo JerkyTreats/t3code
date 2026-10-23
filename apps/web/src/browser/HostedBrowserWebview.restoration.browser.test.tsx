@@ -6,9 +6,9 @@ import {
   type ClientSettings,
   type DesktopPreviewBridge,
 } from "@t3tools/contracts";
-import { act, createElement } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+import { act, fakeTimers, render } from "../../test/render";
 
 const mocks = vi.hoisted(() => ({
   getClientSettings: vi.fn<() => Promise<ClientSettings | null>>(),
@@ -58,9 +58,19 @@ import {
   setPendingPreviewRestoration,
   removePreviewThread,
 } from "~/previewStateStore";
+import { AppAtomRegistryProvider } from "~/rpc/atomRegistry";
 import { HostedBrowserWebview, restorePreviewPresentation } from "./HostedBrowserWebview";
 
-let renderer: ReactTestRenderer | undefined;
+let webContentsId = 0;
+
+type HostedProps = Parameters<typeof HostedBrowserWebview>[0];
+function hosted(props: HostedProps) {
+  return (
+    <AppAtomRegistryProvider>
+      <HostedBrowserWebview {...props} />
+    </AppAtomRegistryProvider>
+  );
+}
 
 function deferred<A>() {
   let resolve!: (value: A) => void;
@@ -72,7 +82,7 @@ function deferred<A>() {
   return { promise, resolve, reject };
 }
 
-beforeEach(() => {
+function setup(): Disposable {
   __resetClientSettingsPersistenceForTests();
   useBrowserSurfaceStore.setState({ activityByTabId: {}, byTabId: {} });
   mocks.getClientSettings.mockReset();
@@ -88,28 +98,38 @@ beforeEach(() => {
     webPreferences: "contextIsolation=yes",
     preloadUrl: null,
   });
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("window", globalThis);
-  vi.stubGlobal("navigator", { platform: "Linux" });
-  vi.stubGlobal(
-    "requestAnimationFrame",
-    vi.fn(() => 0),
-  );
-  vi.stubGlobal("cancelAnimationFrame", vi.fn());
-  vi.spyOn(console, "error").mockImplementation(() => undefined);
-});
+  // A browser has no Electron guest; the <webview> element answers with a synthetic id.
+  const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "getWebContentsId");
+  Object.defineProperty(HTMLElement.prototype, "getWebContentsId", {
+    configurable: true,
+    value: () => webContentsId,
+  });
+  return {
+    [Symbol.dispose]() {
+      __resetClientSettingsPersistenceForTests();
+      useBrowserSurfaceStore.setState({ activityByTabId: {}, byTabId: {} });
+      resetPreviewStateForTests();
+      if (original) Object.defineProperty(HTMLElement.prototype, "getWebContentsId", original);
+      else Reflect.deleteProperty(HTMLElement.prototype, "getWebContentsId");
+    },
+  };
+}
 
-afterEach(async () => {
-  vi.useFakeTimers();
-  await act(() => renderer?.unmount());
-  renderer = undefined;
-  await vi.advanceTimersByTimeAsync(0);
-  vi.useRealTimers();
-  __resetClientSettingsPersistenceForTests();
-  useBrowserSurfaceStore.setState({ activityByTabId: {}, byTabId: {} });
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
+async function renderHosted(props: HostedProps) {
+  await using stack = new AsyncDisposableStack();
+  const screen = stack.use(await render(hosted(props), { router: false }));
+  // Unmounting releases the tab on a close timer; run it now so it never fires in a later test.
+  stack.defer(async () => {
+    using _timers = fakeTimers();
+    await screen.unmount();
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  const environment = stack.move();
+  return {
+    rerender: (next: HostedProps) => screen.rerender(hosted(next)),
+    [Symbol.asyncDispose]: () => environment.disposeAsync(),
+  };
+}
 
 describe("restorePreviewPresentation", () => {
   it("waits for a late desktop tab lease before applying restoration", async () => {
@@ -147,6 +167,7 @@ describe("HostedBrowserWebview restoration lifecycle", () => {
   it.each([false, true])(
     "waits for real tab creation and guest registration with stale=%s",
     async (stale) => {
+      using _state = setup();
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
       const creation = deferred<void>();
       const registration = deferred<void>();
@@ -168,27 +189,17 @@ describe("HostedBrowserWebview restoration lifecycle", () => {
         updatedAt: "2026-09-05T00:00:00.000Z",
       });
       setPendingPreviewRestoration(threadRef, tabId, restoration);
-      const guest = Object.assign(new EventTarget(), { getWebContentsId: () => 41 });
-      await act(() => {
-        renderer = create(
-          createElement(HostedBrowserWebview, {
-            threadRef,
-            tabId,
-            runtimeTabId,
-            initialUrl: null,
-            viewport: FILL_PREVIEW_VIEWPORT,
-            pictureInPicture: false,
-            profileId: "retained-profile",
-            zoomFactor: 1,
-            restoration,
-          }),
-          {
-            createNodeMock: (element) =>
-              element.type === "webview"
-                ? guest
-                : { scrollLeft: 0, scrollTop: 0, scrollTo: () => undefined },
-          },
-        );
+      webContentsId = 41;
+      await using _screen = await renderHosted({
+        threadRef,
+        tabId,
+        runtimeTabId,
+        initialUrl: null,
+        viewport: FILL_PREVIEW_VIEWPORT,
+        pictureInPicture: false,
+        profileId: "retained-profile",
+        zoomFactor: 1,
+        restoration,
       });
       expect(mocks.createTab).toHaveBeenCalledWith(runtimeTabId, restoration);
       expect(mocks.registerWebview).not.toHaveBeenCalled();
@@ -197,7 +208,7 @@ describe("HostedBrowserWebview restoration lifecycle", () => {
         creation.resolve();
         await creation.promise;
       });
-      expect(mocks.registerWebview).toHaveBeenCalledWith(runtimeTabId, 41);
+      await vi.waitFor(() => expect(mocks.registerWebview).toHaveBeenCalledWith(runtimeTabId, 41));
       expect(mocks.setZoomFactor).not.toHaveBeenCalled();
       if (stale) removePreviewThread(threadRef);
       await act(async () => {
@@ -217,6 +228,7 @@ describe("HostedBrowserWebview restoration lifecycle", () => {
   it.each([false, true])(
     "restores a late pending response without resetting the lease, stale during zoom=%s",
     async (stale) => {
+      using _state = setup();
       __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
       const threadRef = {
         environmentId: EnvironmentId.make("late-restore"),
@@ -236,7 +248,7 @@ describe("HostedBrowserWebview restoration lifecycle", () => {
         profileId: undefined,
         zoomFactor: 1,
       };
-      const guest = Object.assign(new EventTarget(), { getWebContentsId: () => 42 });
+      webContentsId = 42;
       applyPreviewServerSnapshot(threadRef, {
         threadId: threadRef.threadId,
         tabId,
@@ -245,22 +257,13 @@ describe("HostedBrowserWebview restoration lifecycle", () => {
         canGoForward: false,
         updatedAt: "2026-09-05T00:00:00.000Z",
       });
-      await act(() => {
-        renderer = create(createElement(HostedBrowserWebview, props), {
-          createNodeMock: (element) =>
-            element.type === "webview"
-              ? guest
-              : { scrollLeft: 0, scrollTop: 0, scrollTo: () => undefined },
-        });
-      });
-      expect(mocks.registerWebview).toHaveBeenCalledWith(runtimeTabId, 42);
+      await using screen = await renderHosted(props);
+      await vi.waitFor(() => expect(mocks.registerWebview).toHaveBeenCalledWith(runtimeTabId, 42));
       const restoration = { zoomFactor: 1.5, colorScheme: "light" as const };
       setPendingPreviewRestoration(threadRef, tabId, restoration);
-      await act(() => {
-        renderer?.update(createElement(HostedBrowserWebview, { ...props, restoration }));
-      });
+      await screen.rerender({ ...props, restoration });
       expect(mocks.createTab).toHaveBeenCalledOnce();
-      expect(mocks.setZoomFactor).toHaveBeenCalledWith(runtimeTabId, 1.5);
+      await vi.waitFor(() => expect(mocks.setZoomFactor).toHaveBeenCalledWith(runtimeTabId, 1.5));
       const replacement = { zoomFactor: 2, colorScheme: "dark" as const };
       if (stale) setPendingPreviewRestoration(threadRef, tabId, replacement);
       await act(async () => {

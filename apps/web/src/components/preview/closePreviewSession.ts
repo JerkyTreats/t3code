@@ -6,8 +6,20 @@ import type {
   ScopedThreadRef,
 } from "@t3tools/contracts";
 
+import { rendersPreviewTabNatively } from "~/browser/previewRuntime";
 import { useClosedViewStore } from "~/closedViewStore";
-import { beginPreviewSessionClose, cancelPreviewSessionClose } from "~/previewStateStore";
+
+import {
+  applyPreviewDesktopState,
+  setPendingPreviewRestoration,
+  readThreadPreviewState,
+  previewStateLifetimeIsCurrent,
+  reserveClosedPreviewTab,
+  commitClosedPreviewTab,
+  rollbackClosedPreviewTab,
+  beginPreviewSessionClose,
+  cancelPreviewSessionClose,
+} from "~/previewStateStore";
 
 interface ClosePreviewSessionInput<E> {
   readonly closePreview: (input: {
@@ -22,19 +34,50 @@ interface ClosePreviewSessionInput<E> {
 export async function closePreviewSession<E>(
   input: ClosePreviewSessionInput<E>,
 ): Promise<AtomCommandResult<void, E>> {
+  const isCurrent = previewStateLifetimeIsCurrent(input.threadRef);
+  const current = readThreadPreviewState(input.threadRef);
+  const snapshot = current.sessions[input.tabId] ?? input.snapshot;
+  const native = rendersPreviewTabNatively(input.threadRef.environmentId, snapshot);
+  const canRemember = snapshot !== null && !current.suppressedTabIds.has(input.tabId);
+  const reservation =
+    snapshot && canRemember && native
+      ? reserveClosedPreviewTab(
+          input.threadRef,
+          snapshot,
+          current.desktopByTabId[input.tabId] ?? null,
+        )
+      : null;
   beginPreviewSessionClose(input.threadRef, input.tabId);
-  const result = await input.closePreview({
-    environmentId: input.threadRef.environmentId,
-    input: { threadId: input.threadRef.threadId, tabId: input.tabId },
-  });
-  if (result._tag === "Failure") {
-    cancelPreviewSessionClose(input.threadRef, input.snapshot, input.tabId);
-  } else if (input.snapshot) {
-    useClosedViewStore.getState().remember({
-      kind: "browser",
-      threadRef: input.threadRef,
-      snapshot: input.snapshot,
+  const rollback = () => {
+    if (!isCurrent()) return;
+    if (reservation) rollbackClosedPreviewTab(input.threadRef, reservation.reservationId);
+    cancelPreviewSessionClose(input.threadRef, snapshot, input.tabId);
+    const overlay = current.desktopByTabId[input.tabId];
+    if (overlay && readThreadPreviewState(input.threadRef).sessions[input.tabId]) {
+      applyPreviewDesktopState(input.threadRef, input.tabId, overlay);
+      setPendingPreviewRestoration(input.threadRef, input.tabId, {
+        zoomFactor: overlay.zoomFactor,
+        colorScheme: overlay.colorScheme,
+      });
+    }
+  };
+  try {
+    const result = await input.closePreview({
+      environmentId: input.threadRef.environmentId,
+      input: { threadId: input.threadRef.threadId, tabId: input.tabId },
     });
+    if (result._tag === "Failure") rollback();
+    else if (isCurrent()) {
+      if (reservation) commitClosedPreviewTab(input.threadRef, reservation.reservationId);
+      else if (!native && canRemember && snapshot) {
+        useClosedViewStore
+          .getState()
+          .remember({ kind: "browser", threadRef: input.threadRef, snapshot });
+      }
+    }
+    return result;
+  } catch (error) {
+    rollback();
+    throw error;
   }
-  return result;
 }

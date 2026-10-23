@@ -100,6 +100,7 @@ const cases = [
         run: () =>
           action.run({
             provider: SourceControlProviderKind.make("github"),
+            providerBaseUrl: "https://github.com",
             repository: "owner/repo",
             visibility: "private",
             remoteName: "origin",

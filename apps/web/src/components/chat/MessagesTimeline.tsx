@@ -1,3 +1,4 @@
+import { chatTimelinePresentation } from "../../fork/chatPresentation";
 import { ThreadFindTimelineContext } from "./ThreadFindProvider";
 import { MarkdownFindContext } from "./markdownFindContext";
 import { useChatCanvas } from "./ChatCanvasContext";
@@ -132,9 +133,7 @@ function timelineListStateFor(identity: string): {
 }
 
 const TIMELINE_LIST_HEADER = <div className="h-3 sm:h-4" />;
-const TIMELINE_LIST_FADE_HEADER = (
-  <div className="h-[var(--workspace-titlebar-scroll-fade-height)]" />
-);
+const TIMELINE_LIST_FADE_HEADER = <div className={chatTimelinePresentation.fadeHeaderClassName} />;
 function TimelineListFooter({
   composerInset,
   children,

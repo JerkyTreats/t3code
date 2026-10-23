@@ -145,6 +145,31 @@ describe("serializeLegacyContextMessage", () => {
     });
   });
 
+  it.each([terminal, annotation])(
+    "preserves authored trailing whitespace before an appended $kind block",
+    (record) => {
+      const text = `  Keep the leading bytes\n${formatComposerContextReference(record)}  \n\t `;
+      const legacy = serializeLegacyContextMessage({ text, records: [record] });
+      const inline = record.kind === "terminal" ? "@terminal-1:3-4" : record.label;
+      expect(legacy.startsWith(`  Keep the leading bytes\n${inline}  \n\t \n\n<`)).toBe(true);
+      const upgraded = upgradeLegacyContextMessage(legacy);
+      const retained = `  Keep the leading bytes\n${
+        record.kind === "terminal" ? formatComposerContextReference(upgraded.records[0]!) : inline
+      }  \n\t `;
+      expect(upgraded.text.startsWith(retained)).toBe(true);
+    },
+  );
+
+  it("keeps a whitespace-only prompt ahead of retained context and leaves plain whitespace alone", () => {
+    const authored = " \n\t  ";
+    expect(serializeLegacyContextMessage({ text: authored, records: [] })).toBe(authored);
+    expect(
+      serializeLegacyContextMessage({ text: authored, records: [terminal] }).startsWith(
+        `${authored}\n\n<terminal_context>`,
+      ),
+    ).toBe(true);
+  });
+
   it("appends review comments the text never referenced", () => {
     const legacy = serializeLegacyContextMessage({ text: "just prose", records: [review] });
 

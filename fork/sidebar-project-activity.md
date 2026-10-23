@@ -8,7 +8,8 @@ initial anchor. Creation and manual sorting keep their existing behavior.
 `project-activity.order` is owned by
 `packages/client-runtime/src/state/projectActivity.ts`. The owner takes shell
 timestamps and returns a sortable timestamp without using mutable update time.
-Web sidebar and landing project groups consume it through `Sidebar.logic.ts`;
+Web sidebar and landing project groups consume it through the private project
+timestamp helper in `Sidebar.logic.ts`, which upstream no longer exports;
 the desktop shell shares that client. Mobile home project scopes consume the
 same owner through `homeThreadList.ts`.
 

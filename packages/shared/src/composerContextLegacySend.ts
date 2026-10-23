@@ -42,7 +42,7 @@ export function serializeLegacyContextMessage(input: {
       .map(renderReviewComment),
   ].filter((block) => block.length > 0);
 
-  return [text.trimEnd(), ...blocks].filter((part) => part.length > 0).join("\n\n");
+  return [text, ...blocks].filter((part) => part.length > 0).join("\n\n");
 }
 
 function inlineLabel(record: ComposerContextRecord): string {

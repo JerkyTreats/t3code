@@ -12,6 +12,7 @@ import { Atom } from "effect/reactivity";
 
 import type { EnvironmentThreadShell, PendingSubagentRequest } from "./models.ts";
 import { presentThreadShell, threadRuntimeIsActive } from "./models.ts";
+import { isNestedUnder } from "./fork/threadNesting.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 import {
   arrayElementsEqual,
@@ -61,15 +62,30 @@ function subagentRequest(thread: OrchestrationV2ThreadShell): PendingSubagentReq
   return kind === "user_input" ? "user_input" : "approval";
 }
 
+/** What a nested child waits on the user for, read like its own row. */
+function nestedChildRequest(thread: OrchestrationV2ThreadShell): PendingSubagentRequest | null {
+  const kind = thread.pendingRuntimeRequest?.kind;
+  if (kind === undefined || kind === "auth_refresh") return null;
+  return kind === "user_input" ? "user_input" : "approval";
+}
+
+/**
+ * Threads above a child that waits on the user, by what it waits on. Every
+ * thread up to the visible one carries a subagent's request, because subagent
+ * rows are hidden. A nested child's request, its own or one bubbled up from
+ * its subagents, also surfaces on its parent, which may be collapsed. An
+ * approval outranks a question. The map is compared by content before it
+ * reaches shells, so child streaming ticks never re-render a parent row.
+ */
 export function pendingSubagentRequestsByThread(
   threads: ReadonlyArray<OrchestrationV2ThreadShell>,
 ): ReadonlyMap<ThreadId, PendingSubagentRequest> {
   const requests = new Map<ThreadId, PendingSubagentRequest>();
   let byId: ReadonlyMap<ThreadId, OrchestrationV2ThreadShell> | undefined;
+  const index = () => (byId ??= new Map(threads.map((thread) => [thread.id, thread] as const)));
   for (const child of threads) {
     const request = subagentRequest(child);
     if (request === null) continue;
-    byId ??= new Map(threads.map((thread) => [thread.id, thread] as const));
     const seen = new Set<ThreadId>([child.id]);
     let current: OrchestrationV2ThreadShell | undefined = child;
     while (current?.lineage.relationshipToParent === "subagent") {
@@ -77,20 +93,35 @@ export function pendingSubagentRequestsByThread(
       if (parentId === null || seen.has(parentId)) break;
       seen.add(parentId);
       if (requests.get(parentId) !== "approval") requests.set(parentId, request);
-      current = byId.get(parentId);
+      current = index().get(parentId);
     }
+  }
+  const nested: Array<readonly [ThreadId, PendingSubagentRequest]> = [];
+  for (const child of threads) {
+    if (child.nestedUnderThreadId == null) continue;
+    const own = nestedChildRequest(child);
+    const request = own === "approval" ? own : (requests.get(child.id) ?? own);
+    if (request === null) continue;
+    const parent = index().get(child.nestedUnderThreadId);
+    if (parent !== undefined && isNestedUnder(child, parent)) nested.push([parent.id, request]);
+  }
+  for (const [parentId, request] of nested) {
+    if (requests.get(parentId) !== "approval") requests.set(parentId, request);
   }
   return requests.size === 0 ? EMPTY_SUBAGENT_REQUESTS : requests;
 }
 
+/** Banner title for the subagents and nested threads `childThreadInputsAtom` lists. */
 export function childThreadInputsTitle(
-  children: ReadonlyArray<Pick<EnvironmentThreadShell, "hasPendingApprovals">>,
+  children: ReadonlyArray<Pick<EnvironmentThreadShell, "hasPendingApprovals" | "lineage">>,
 ): string {
   const approvals = children.filter((child) => child.hasPendingApprovals).length;
   const need = approvals === 0 ? "input" : approvals === children.length ? "approval" : "you";
+  const subagents = children.every((child) => child.lineage.relationshipToParent === "subagent");
+  const noun = subagents ? "subagent" : "thread";
   return children.length === 1
-    ? `Subagent needs ${need}`
-    : `${children.length} subagents need ${need}`;
+    ? `${subagents ? "Subagent" : "Thread"} needs ${need}`
+    : `${children.length} ${noun}s need ${need}`;
 }
 
 const sameWireThreadShell = Schema.toEquivalence(OrchestrationV2ThreadShell);
@@ -279,19 +310,27 @@ export function createEnvironmentThreadShellAtoms(input: {
     }).pipe(Atom.withLabel(`environment-quiet-thread-shell:${key}`));
   });
 
-  // Child approvals and questions are hidden with their sidebar rows. Read their
-  // shell summaries, without subscribing to every child transcript.
+  // Subagent approvals and questions are hidden with their sidebar rows, and
+  // nested children may sit under a collapsed parent. Read their shell
+  // summaries, without subscribing to every child transcript.
   const childThreadInputsAtomFamily = Atom.family((key: string) => {
     const ref = parseThreadKey(key);
     let previous: ReadonlyArray<EnvironmentThreadShell> = [];
     return Atom.make((get) => {
       const children = new Map<ThreadId, OrchestrationV2ThreadShell[]>();
-      for (const thread of get(environmentThreadsAtom(ref.environmentId))) {
-        const parent = thread.lineage.parentThreadId;
-        if (parent === null || thread.lineage.relationshipToParent !== "subagent") continue;
+      const adopt = (parent: ThreadId, thread: OrchestrationV2ThreadShell) => {
         const siblings = children.get(parent);
         if (siblings) siblings.push(thread);
         else children.set(parent, [thread]);
+      };
+      const root = get(environmentThreadIndexAtom(ref.environmentId)).get(ref.threadId);
+      for (const thread of get(environmentThreadsAtom(ref.environmentId))) {
+        const parent = thread.lineage.parentThreadId;
+        if (parent !== null && thread.lineage.relationshipToParent === "subagent") {
+          adopt(parent, thread);
+        } else if (root !== undefined && isNestedUnder(thread, root)) {
+          adopt(root.id, thread);
+        }
       }
       const subagentRequests = get(pendingSubagentRequestsAtom(ref.environmentId));
       const seen = new Set<ThreadId>([ref.threadId]);
@@ -302,7 +341,11 @@ export function createEnvironmentThreadShellAtoms(input: {
           if (seen.has(child.id)) continue;
           seen.add(child.id);
           pending.push(child.id);
-          if (subagentRequest(child) !== null) {
+          const request =
+            child.lineage.relationshipToParent === "subagent"
+              ? subagentRequest(child)
+              : nestedChildRequest(child);
+          if (request !== null) {
             next.push(scopedThread(ref.environmentId, child, subagentRequests));
           }
         }

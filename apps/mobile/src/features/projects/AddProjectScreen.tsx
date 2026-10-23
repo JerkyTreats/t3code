@@ -22,6 +22,7 @@ import {
   getNewProjectPublishTargets,
   getNewProjectRepository,
   normalizePastedCloneUrl,
+  resolveAddProjectRepositoryLookupTarget,
   parseAddProjectRemoteSource,
   resolveAddProjectPath,
   sortAddProjectProviderSources,
@@ -760,6 +761,14 @@ export function AddProjectRepositoryScreen(props: {
   const navigation = useNavigation();
   const environment = useEnvironmentFromParam(props.environmentId);
   const source = sourceFromParam(props.source);
+  const discoveryState = useEnvironmentQuery(
+    environment === null
+      ? null
+      : sourceControlEnvironment.discovery({
+          environmentId: environment.environmentId,
+          input: {},
+        }),
+  );
   const [repositoryInput, setRepositoryInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -784,11 +793,28 @@ export function AddProjectRepositoryScreen(props: {
       return;
     }
 
+    // Exact origin (F06): a lookup binds to the discovered provider endpoint.
+    const lookupTarget = resolveAddProjectRepositoryLookupTarget({
+      source: provider,
+      repository: repositoryInput,
+      discovery: discoveryState.data,
+    });
+    if (!lookupTarget) {
+      setError(
+        provider === "azure-devops"
+          ? "Enter an Azure repository as organization/project/repository."
+          : "Rescan Source Control after signing in to the intended provider endpoint.",
+      );
+      setIsSubmitting(false);
+      return;
+    }
+
     const result = await lookupRepositoryQuery({
       environmentId: environment.environmentId,
       input: {
         provider,
-        repository: repositoryInput.trim(),
+        providerBaseUrl: lookupTarget.providerBaseUrl,
+        repository: lookupTarget.repository,
       },
     });
     if (AsyncResult.isFailure(result)) {
@@ -1043,6 +1069,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
         input: {
           cwd: workspaceRoot,
           provider: publishTarget.definition.kind,
+          providerBaseUrl: publishTarget.providerBaseUrl,
           repository: getNewProjectRepository(publishTarget, workspaceRoot),
           visibility: "private",
         },

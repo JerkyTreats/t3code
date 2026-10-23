@@ -1,3 +1,4 @@
+import type { DesktopPreviewTabDefaults } from "@t3tools/contracts";
 import { previewBridge } from "~/components/preview/previewBridge";
 
 import { browserDefaultTabState, resolveBrowserDefaults } from "./browserDefaults";
@@ -46,8 +47,11 @@ export interface AcquiredDesktopTab {
 
 export function acquireDesktopTab(
   tabId: string,
+  restoration?: DesktopPreviewTabDefaults,
   serverTab?: { readonly threadId: string; readonly tabId: string },
 ): AcquiredDesktopTab {
+  // Capture values before settings hydration or a queued close can suspend creation.
+  const capturedRestoration = restoration ? { ...restoration } : undefined;
   const current =
     leases.get(tabId) ??
     ({
@@ -58,6 +62,7 @@ export function acquireDesktopTab(
       ready: enqueueDesktopTabOperation(tabId, async () =>
         previewBridge?.createTab(tabId, {
           ...browserDefaultTabState(await resolveBrowserDefaults()),
+          ...capturedRestoration,
           ...(serverTab === undefined ? {} : { serverTab }),
         }),
       ),

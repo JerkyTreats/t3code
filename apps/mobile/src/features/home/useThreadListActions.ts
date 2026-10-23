@@ -243,6 +243,8 @@ export function useThreadListActions(): {
   ) => Promise<boolean>;
   readonly renameThread: (thread: EnvironmentThreadShell) => void;
   readonly regenerateThreadTitle: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  /** Clears a nested thread's parent so it lists on its own again. */
+  readonly moveThreadToTopLevel: (thread: EnvironmentThreadShell) => Promise<boolean>;
 } {
   const executeAction = useThreadActionExecutor();
   const snoozeMutation = useAtomCommand(threadEnvironment.snooze, { reportFailure: false });
@@ -605,6 +607,26 @@ export function useThreadListActions(): {
     });
   };
 
+  const moveThreadToTopLevel = async (thread: EnvironmentThreadShell) => {
+    if (!checkThreadOperationPermission(thread, "Could not move thread to top level")) {
+      return false;
+    }
+    selectionHaptic();
+    const result = await updateThreadMetadata({
+      environmentId: thread.environmentId,
+      input: { threadId: thread.id, nestedUnderThreadId: null },
+    });
+    if (result._tag === "Success") return true;
+    const error = Cause.squash(result.cause);
+    Dialog.alert(
+      "Could not move thread to top level",
+      error instanceof Error && error.message.trim().length > 0
+        ? error.message
+        : "The thread could not be moved.",
+    );
+    return false;
+  };
+
   // Plan against the complete section so filtering does not change a move.
   const reorderPinnedMutation = useAtomCommand(threadEnvironment.reorderPin, {
     reportFailure: false,
@@ -782,6 +804,7 @@ export function useThreadListActions(): {
     moveThread,
     renameThread,
     regenerateThreadTitle,
+    moveThreadToTopLevel,
   };
 }
 

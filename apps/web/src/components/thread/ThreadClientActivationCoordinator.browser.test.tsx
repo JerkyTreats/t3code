@@ -2,23 +2,18 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type { ThreadAppActivation } from "@t3tools/contracts/threadAppActivation";
-import type { ReactTestRenderer } from "react-test-renderer";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
+import { act, render, type Screen } from "../../../test/render";
+import { onOpenCommandPalette } from "../../commandPaletteBus";
 import type { DraftId } from "../../composerDraftStore";
 import { createThreadClientActivationOwner } from "../../fork/threadClientActivation";
-import type { ThreadClientActivationHostProps } from "./ThreadClientActivationCoordinator";
-
-process.env.NODE_ENV = "development";
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
-const React = await import("react");
-const TestRenderer = await import("react-test-renderer");
-const {
+import {
   ThreadClientActivationHost,
   resolveThreadClientDraftDisposition,
   selectThreadClientActivationProject,
-} = await import("./ThreadClientActivationCoordinator");
+  type ThreadClientActivationHostProps,
+} from "./ThreadClientActivationCoordinator";
 
 const primaryEnvironmentId = EnvironmentId.make("primary");
 const projectRef = scopeProjectRef(primaryEnvironmentId, ProjectId.make("project-1"));
@@ -55,9 +50,17 @@ function hostProps(
   };
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+function mount(props: ThreadClientActivationHostProps): Promise<Screen> {
+  return render(<ThreadClientActivationHost {...props} />, { router: false });
+}
+
+const text = (screen: Screen) => screen.container.textContent ?? "";
+
+async function clickOnlyButton(screen: Screen) {
+  const buttons = screen.container.querySelectorAll("button");
+  expect(buttons).toHaveLength(1);
+  await act(async () => buttons[0]!.click());
+}
 
 describe("Thread client activation coordinator host", () => {
   it("retains requested scope across auth and opens the resolved project with local workspace options", async () => {
@@ -79,20 +82,14 @@ describe("Thread client activation coordinator host", () => {
       finishOpen,
       stageDraft,
     });
-    let renderer!: ReactTestRenderer;
-    await React.act(async () => {
-      renderer = TestRenderer.create(
-        React.createElement(ThreadClientActivationHost, { ...props, shellLive: false }),
-      );
-    });
-    expect(resolveProject).not.toHaveBeenCalled();
-    await React.act(async () => renderer.unmount());
-    await React.act(async () => {
-      renderer = TestRenderer.create(React.createElement(ThreadClientActivationHost, props));
-    });
+    {
+      await using _waiting = await mount({ ...props, shellLive: false });
+      expect(resolveProject).not.toHaveBeenCalled();
+    }
+    await using _screen = await mount(props);
     expect(resolveProject).toHaveBeenCalledWith(scopedActivation.workingDirectory);
     expect(openDraft).not.toHaveBeenCalled();
-    await React.act(async () => resolving.resolve(projectRef));
+    await act(async () => resolving.resolve(projectRef));
     expect(openDraft).toHaveBeenCalledWith(projectRef, {
       envMode: "local",
       branch: null,
@@ -103,7 +100,6 @@ describe("Thread client activation coordinator host", () => {
     expect(finishOpen).toHaveBeenCalledWith({ draftId, threadId }, projectRef);
     expect(stageDraft).toHaveBeenCalledWith(draftId, scopedActivation.draft);
     expect(owner.read()).toMatchObject({ activation: scopedActivation });
-    await React.act(async () => renderer.unmount());
   });
 
   it("fails a scoped resolution visibly and preserves invested content after retry", async () => {
@@ -115,54 +111,42 @@ describe("Thread client activation coordinator host", () => {
       .mockResolvedValueOnce(projectRef);
     const openDraft = vi.fn(async () => ({ draftId, threadId }));
     const stageDraft = vi.fn();
-    let renderer!: ReactTestRenderer;
-    await React.act(async () => {
-      renderer = TestRenderer.create(
-        React.createElement(
-          ThreadClientActivationHost,
-          hostProps({
-            owner,
-            resolveProject,
-            openDraft,
-            stageDraft,
-            inspectDraft: () => "authored",
-          }),
-        ),
-      );
-    });
+    await using screen = await mount(
+      hostProps({
+        owner,
+        resolveProject,
+        openDraft,
+        stageDraft,
+        inspectDraft: () => "authored",
+      }),
+    );
+    await act(async () => {});
     expect(owner.read()).toMatchObject({ phase: "failed" });
     expect(openDraft).not.toHaveBeenCalled();
-    expect(JSON.stringify(renderer.toJSON())).toContain("The directory is unavailable.");
-    await React.act(async () => renderer.root.findByType("button").props.onClick());
+    expect(text(screen)).toContain("The directory is unavailable.");
+    await clickOnlyButton(screen);
     expect(openDraft).toHaveBeenCalledTimes(1);
     expect(stageDraft).not.toHaveBeenCalled();
-    expect(JSON.stringify(renderer.toJSON())).toContain("contains your work");
-    await React.act(async () => renderer.unmount());
+    expect(text(screen)).toContain("contains your work");
   });
 
   it("rejects a scoped project returned from a different environment", async () => {
     const owner = createThreadClientActivationOwner();
     owner.admit({ ...activation, workingDirectory: "/workspace/requested" });
     const openDraft = vi.fn(async () => ({ draftId, threadId }));
-    let renderer!: ReactTestRenderer;
-    await React.act(async () => {
-      renderer = TestRenderer.create(
-        React.createElement(
-          ThreadClientActivationHost,
-          hostProps({
-            owner,
-            openDraft,
-            resolveProject: async () => ({
-              ...projectRef,
-              environmentId: EnvironmentId.make("remote"),
-            }),
-          }),
-        ),
-      );
-    });
+    await using _screen = await mount(
+      hostProps({
+        owner,
+        openDraft,
+        resolveProject: async () => ({
+          ...projectRef,
+          environmentId: EnvironmentId.make("remote"),
+        }),
+      }),
+    );
+    await act(async () => {});
     expect(owner.read()).toMatchObject({ phase: "failed" });
     expect(openDraft).not.toHaveBeenCalled();
-    await React.act(async () => renderer.unmount());
   });
 
   it("selects the current primary scoped project by shared activity order", () => {
@@ -223,51 +207,30 @@ describe("Thread client activation coordinator host", () => {
   it("waits visibly for a project, offers Add project, then opens when one appears", async () => {
     const owner = createThreadClientActivationOwner();
     owner.admit(activation);
-    const dispatchEvent = vi.fn();
+    const paletteRequests: Array<unknown> = [];
+    const stopListening = onOpenCommandPalette((detail) => paletteRequests.push(detail));
     const openDraft = vi.fn(async () => ({ draftId, threadId }));
     const stageDraft = vi.fn();
     const baseProps = hostProps({ openDraft, owner, stageDraft });
-    vi.stubGlobal("window", { dispatchEvent });
-    let renderer!: ReactTestRenderer;
+    try {
+      await using screen = await mount({ ...baseProps, projectRef: null, shellLive: false });
+      expect(text(screen)).toContain("Waiting for the primary environment");
 
-    await React.act(async () => {
-      renderer = TestRenderer.create(
-        React.createElement(ThreadClientActivationHost, {
-          ...baseProps,
-          projectRef: null,
-          shellLive: false,
-        }),
+      await screen.rerender(
+        <ThreadClientActivationHost {...baseProps} projectRef={null} shellLive />,
       );
-    });
-    expect(JSON.stringify(renderer.toJSON())).toContain("Waiting for the primary environment");
+      expect(text(screen)).toContain("Add a project to continue");
+      await clickOnlyButton(screen);
+      expect(paletteRequests).toEqual([{ open: "add-project" }]);
 
-    await React.act(async () => {
-      renderer.update(
-        React.createElement(ThreadClientActivationHost, {
-          ...baseProps,
-          projectRef: null,
-          shellLive: true,
-        }),
+      await screen.rerender(
+        <ThreadClientActivationHost {...baseProps} projectRef={projectRef} shellLive />,
       );
-    });
-    expect(JSON.stringify(renderer.toJSON())).toContain("Add a project to continue");
-    const button = renderer.root.findByType("button");
-    await React.act(async () => button.props.onClick());
-    expect(dispatchEvent).toHaveBeenCalledTimes(1);
-
-    await React.act(async () => {
-      renderer.update(
-        React.createElement(ThreadClientActivationHost, {
-          ...baseProps,
-          projectRef,
-          shellLive: true,
-        }),
-      );
-    });
-    expect(openDraft).toHaveBeenCalledWith(projectRef);
-    expect(stageDraft).toHaveBeenCalledWith(draftId, activation.draft);
-
-    await React.act(async () => renderer.unmount());
+      expect(openDraft).toHaveBeenCalledWith(projectRef);
+      expect(stageDraft).toHaveBeenCalledWith(draftId, activation.draft);
+    } finally {
+      stopListening();
+    }
   });
 
   it("finishes an in-flight open across unmount and deduplicates replay after remount", async () => {
@@ -286,17 +249,14 @@ describe("Thread client activation coordinator host", () => {
       owner,
       stageDraft,
     });
-    let renderer!: ReactTestRenderer;
 
-    await React.act(async () => {
-      renderer = TestRenderer.create(React.createElement(ThreadClientActivationHost, props));
-    });
-    expect(openDraft).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(renderer.toJSON())).toContain("Opening your launch message");
-
-    await React.act(async () => renderer.unmount());
+    {
+      await using screen = await mount(props);
+      expect(openDraft).toHaveBeenCalledTimes(1);
+      expect(text(screen)).toContain("Opening your launch message");
+    }
     opening.resolve({ draftId, threadId });
-    await React.act(async () => opening.promise);
+    await act(async () => opening.promise);
 
     expect(stageDraft).toHaveBeenCalledWith(draftId, activation.draft);
     expect(completeActivation).toHaveBeenCalledWith({
@@ -305,13 +265,10 @@ describe("Thread client activation coordinator host", () => {
     });
     expect(owner.read()).toMatchObject({ phase: "completed" });
 
-    await React.act(async () => {
-      renderer = TestRenderer.create(React.createElement(ThreadClientActivationHost, props));
-    });
+    await using screen = await mount(props);
     expect(subscribe).toHaveBeenCalledTimes(2);
     expect(openDraft).toHaveBeenCalledTimes(1);
-    expect(renderer.toJSON()).toBeNull();
-    await React.act(async () => renderer.unmount());
+    expect(screen.container.childElementCount).toBe(0);
   });
 
   it("offers explicit receipt retry without opening or staging again", async () => {
@@ -323,31 +280,25 @@ describe("Thread client activation coordinator host", () => {
     const openDraft = vi.fn(async () => ({ draftId, threadId }));
     const stageDraft = vi.fn();
     owner.admit(activation);
-    let renderer!: ReactTestRenderer;
 
-    await React.act(async () => {
-      renderer = TestRenderer.create(
-        React.createElement(
-          ThreadClientActivationHost,
-          hostProps({
-            bridge: { completeActivation, subscribe: vi.fn(() => vi.fn()) },
-            openDraft,
-            owner,
-            stageDraft,
-          }),
-        ),
-      );
-    });
+    await using screen = await mount(
+      hostProps({
+        bridge: { completeActivation, subscribe: vi.fn(() => vi.fn()) },
+        openDraft,
+        owner,
+        stageDraft,
+      }),
+    );
+    await act(async () => {});
     expect(owner.read()).toMatchObject({ phase: "receipt-pending" });
-    expect(JSON.stringify(renderer.toJSON())).toContain("Launch message needs confirmation");
+    expect(text(screen)).toContain("Launch message needs confirmation");
 
-    await React.act(async () => renderer.root.findByType("button").props.onClick());
+    await clickOnlyButton(screen);
 
     expect(owner.read()).toMatchObject({ phase: "completed" });
     expect(openDraft).toHaveBeenCalledTimes(1);
     expect(stageDraft).toHaveBeenCalledTimes(1);
     expect(completeActivation).toHaveBeenCalledTimes(2);
-    await React.act(async () => renderer.unmount());
   });
 
   it("keeps a failed open visible until retry is requested", async () => {
@@ -361,18 +312,12 @@ describe("Thread client activation coordinator host", () => {
       stageDraft: vi.fn(),
     });
     const openDraft = vi.fn(async () => ({ draftId, threadId }));
-    let renderer!: ReactTestRenderer;
 
-    await React.act(async () => {
-      renderer = TestRenderer.create(
-        React.createElement(ThreadClientActivationHost, hostProps({ openDraft, owner })),
-      );
-    });
-    expect(JSON.stringify(renderer.toJSON())).toContain("Couldn’t open the launch message");
+    await using screen = await mount(hostProps({ openDraft, owner }));
+    expect(text(screen)).toContain("Couldn’t open the launch message");
     expect(openDraft).not.toHaveBeenCalled();
 
-    await React.act(async () => renderer.root.findByType("button").props.onClick());
+    await clickOnlyButton(screen);
     expect(openDraft).toHaveBeenCalledTimes(1);
-    await React.act(async () => renderer.unmount());
   });
 });

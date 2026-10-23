@@ -41,6 +41,7 @@ import {
   revertThreadCheckpoint,
   resumeThreadQueue,
   startThreadTurn,
+  updateThreadMetadata,
 } from "./commands.ts";
 
 const layerTestCrypto = Layer.succeed(
@@ -688,6 +689,28 @@ describe("V2 environment commands", () => {
           type: "thread.stop",
           commandId: "stop-outside-history-window",
           threadId: v2ThreadId,
+        },
+      ]);
+    }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
+  it.effect("moves a nested thread back to top level through metadata update", () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationV2Command[] = [];
+      const supervisor = yield* makeSupervisor({ commands, projects: [] });
+
+      yield* updateThreadMetadata({
+        commandId: CommandId.make("move-to-top-level"),
+        threadId: v2ThreadId,
+        nestedUnderThreadId: null,
+      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+
+      expect(commands).toEqual([
+        {
+          type: "thread.metadata.update",
+          commandId: "move-to-top-level",
+          threadId: v2ThreadId,
+          nestedUnderThreadId: null,
         },
       ]);
     }).pipe(Effect.provide(layerTestCrypto)),

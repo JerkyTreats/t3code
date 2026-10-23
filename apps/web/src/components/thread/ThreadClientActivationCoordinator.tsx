@@ -6,7 +6,7 @@ import type {
 } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, ScopedProjectRef } from "@t3tools/contracts";
 import { PlusIcon, RotateCcwIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 import { openCommandPalette } from "../../commandPaletteBus";
 import {
@@ -162,7 +162,7 @@ export function ThreadClientActivationHost(props: ThreadClientActivationHostProp
     stageDraft,
   ]);
 
-  const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  const openAddProject = () => openCommandPalette({ open: "add-project" });
 
   if (activationState.phase === "idle" || activationState.phase === "completed") return null;
 
@@ -245,70 +245,61 @@ export function ThreadClientActivationCoordinator(props: {
   const threads = useThreadShells();
   const openDraft = useNewThreadHandler();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
-  const resolveProject = useCallback(
-    async (directory: string) => {
-      if (primaryEnvironmentId === null) throw new Error("The primary environment is unavailable.");
-      return resolveThreadClientProject(primaryEnvironmentId, directory, {
-        readProjects,
-        waitForProject,
-        createProject: async (environmentId, workspaceRoot) => {
-          const projectId = newProjectId();
-          const result = await createProject({
-            environmentId,
-            input: {
-              projectId,
-              title: inferProjectTitleFromPath(workspaceRoot),
-              workspaceRoot,
-              createWorkspaceRootIfMissing: false,
-            },
-          });
-          if (result._tag === "Failure") {
-            const error = squashAtomCommandFailure(result);
-            throw error instanceof Error
-              ? error
-              : new Error("T3 Thread could not add the requested project.");
-          }
-          return projectId;
-        },
-      });
-    },
-    [createProject, primaryEnvironmentId],
-  );
-  const projectRef = useMemo(
-    () =>
-      primaryEnvironmentId === null
-        ? null
-        : selectThreadClientActivationProject(
-            primaryEnvironmentId,
-            projects,
-            threads,
-            workingDirectory,
-          ),
-    [primaryEnvironmentId, projects, threads, workingDirectory],
-  );
-  const inspectDraft = useCallback(
-    (draftId: OpenedThreadClientDraft["draftId"], selectedProjectRef: ScopedProjectRef) => {
-      const store = useComposerDraftStore.getState();
-      const session = store.getDraftSession(draftId);
-      return resolveThreadClientDraftDisposition(
-        selectedProjectRef,
-        session,
-        composerDraftHasUserContent(store.getComposerDraft(draftId)),
-      );
-    },
-    [],
-  );
-  const stageDraft = useCallback((draftId: OpenedThreadClientDraft["draftId"], draft: string) => {
+  const resolveProject = async (directory: string) => {
+    if (primaryEnvironmentId === null) throw new Error("The primary environment is unavailable.");
+    return resolveThreadClientProject(primaryEnvironmentId, directory, {
+      readProjects,
+      waitForProject,
+      createProject: async (environmentId, workspaceRoot) => {
+        const projectId = newProjectId();
+        const result = await createProject({
+          environmentId,
+          input: {
+            projectId,
+            title: inferProjectTitleFromPath(workspaceRoot),
+            workspaceRoot,
+            createWorkspaceRootIfMissing: false,
+          },
+        });
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
+          throw error instanceof Error
+            ? error
+            : new Error("T3 Thread could not add the requested project.");
+        }
+        return projectId;
+      },
+    });
+  };
+  const projectRef =
+    primaryEnvironmentId === null
+      ? null
+      : selectThreadClientActivationProject(
+          primaryEnvironmentId,
+          projects,
+          threads,
+          workingDirectory,
+        );
+  const inspectDraft = (
+    draftId: OpenedThreadClientDraft["draftId"],
+    selectedProjectRef: ScopedProjectRef,
+  ) => {
+    const store = useComposerDraftStore.getState();
+    const session = store.getDraftSession(draftId);
+    return resolveThreadClientDraftDisposition(
+      selectedProjectRef,
+      session,
+      composerDraftHasUserContent(store.getComposerDraft(draftId)),
+    );
+  };
+  const stageDraft = (draftId: OpenedThreadClientDraft["draftId"], draft: string) => {
     useComposerDraftStore.getState().setPrompt(draftId, draft);
-  }, []);
-  const finishOpen = useCallback(
-    (opened: OpenedThreadClientDraft, selectedProjectRef: ScopedProjectRef) => {
-      useRightPanelStore
-        .getState()
-        .close(scopeThreadRef(selectedProjectRef.environmentId, opened.threadId));
-    },
-    [],
-  );
+  };
+  const finishOpen = (opened: OpenedThreadClientDraft, selectedProjectRef: ScopedProjectRef) => {
+    useRightPanelStore
+      .getState()
+      .close(scopeThreadRef(selectedProjectRef.environmentId, opened.threadId));
+  };
 
   return (
     <ThreadClientActivationHost

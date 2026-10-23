@@ -1,4 +1,4 @@
-import { ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -11,7 +11,9 @@ import {
   persistState,
   reorderProjects,
   resolveProjectExpanded,
+  setNestedThreadExpanded,
   setProjectExpanded,
+  setSidebarView,
   type UiState,
 } from "./uiStateStore";
 
@@ -20,8 +22,10 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectExpandedById: {},
     projectOrder: [],
     sidebarProjectScopeKey: null,
+    sidebarView: "projects",
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
+    nestedThreadExpandedByKey: {},
     defaultAdvertisedEndpointKey: null,
     pullRequestMergeMethod: "merge",
     ...overrides,
@@ -94,6 +98,36 @@ describe("uiStateStore pure functions", () => {
   });
 });
 
+describe("setNestedThreadExpanded", () => {
+  it("stores an explicit choice and clears it back to automatic", () => {
+    const initial = makeUiState();
+    const collapsed = setNestedThreadExpanded(initial, "environment:parent", false);
+    expect(collapsed.nestedThreadExpandedByKey).toEqual({ "environment:parent": false });
+    expect(setNestedThreadExpanded(collapsed, "environment:parent", false)).toBe(collapsed);
+    const cleared = setNestedThreadExpanded(collapsed, "environment:parent", null);
+    expect(cleared.nestedThreadExpandedByKey).toEqual({});
+    expect(setNestedThreadExpanded(cleared, "environment:parent", null)).toBe(cleared);
+  });
+
+  it("drops stored parents that no longer host nested threads when writing", () => {
+    const stale = setNestedThreadExpanded(
+      setNestedThreadExpanded(makeUiState(), "environment:gone", true),
+      "environment:parent",
+      false,
+    );
+    const threads = [
+      {
+        environmentId: EnvironmentId.make("environment"),
+        nestedUnderThreadId: ThreadId.make("parent"),
+      },
+    ];
+    expect(
+      setNestedThreadExpanded(stale, "environment:parent", true, threads).nestedThreadExpandedByKey,
+    ).toEqual({ "environment:parent": true });
+    expect(setNestedThreadExpanded(stale, "environment:parent", false, threads)).not.toBe(stale);
+  });
+});
+
 describe("parsePersistedState", () => {
   it("hydrates raw UI-owned state without server entities", () => {
     const parsed = parsePersistedState({
@@ -126,6 +160,7 @@ describe("parsePersistedState", () => {
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKey: null,
+      sidebarView: "projects",
       pullRequestMergeMethod: "merge",
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
@@ -133,7 +168,21 @@ describe("parsePersistedState", () => {
           "turn-2": true,
         },
       },
+      nestedThreadExpandedByKey: {},
     });
+  });
+
+  it("hydrates nested-thread expansion and defaults state written before it existed", () => {
+    expect(
+      parsePersistedState({
+        nestedThreadExpandedByKey: {
+          "environment:parent-1": true,
+          "environment:parent-2": false,
+          invalid: "yes" as unknown as boolean,
+        },
+      }).nestedThreadExpandedByKey,
+    ).toEqual({ "environment:parent-1": true, "environment:parent-2": false });
+    expect(parsePersistedState({}).nestedThreadExpandedByKey).toEqual({});
   });
 
   it.each([undefined, 1])("ignores changed-file expansion version %s", (version) => {
@@ -231,6 +280,7 @@ describe("uiStateStore persistence", () => {
       },
       defaultAdvertisedEndpointKey: "desktop-core:lan:http",
       sidebarProjectScopeKey: null,
+      sidebarView: "projects",
       threadChangedFilesExpansionVersion: 2,
       threadChangedFilesExpandedById: {
         "environment:thread-1": {
@@ -238,11 +288,24 @@ describe("uiStateStore persistence", () => {
           "turn-2": true,
         },
       },
+      nestedThreadExpandedByKey: {},
       pullRequestMergeMethod: "merge",
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,
     });
+  });
+
+  it("restores the T3 Threads view across reloads", () => {
+    const state = setSidebarView(makeUiState(), "threads");
+    persistState(state);
+    const persisted = JSON.parse(
+      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
+    ) as PersistedUiState;
+    expect(parsePersistedState(persisted).sidebarView).toBe("threads");
+    expect(parsePersistedState({ sidebarView: "unknown" as "projects" }).sidebarView).toBe(
+      "projects",
+    );
   });
 
   it("restores the sidebar project scope across reloads", () => {

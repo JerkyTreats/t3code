@@ -269,6 +269,7 @@ export function useSourceControlPublishRepositoryAction(scope: SourceControlActi
   );
   const action = async (input: {
     provider: SourceControlProviderKind;
+    providerBaseUrl: string;
     repository: string;
     visibility: SourceControlRepositoryVisibility;
     remoteName: string;

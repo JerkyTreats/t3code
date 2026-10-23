@@ -13,6 +13,7 @@ import {
   getNewProjectPublishTargets,
   getNewProjectRepository,
   normalizePastedCloneUrl,
+  resolveAddProjectRepositoryLookupTarget,
   addProjectRemoteSourceLabel,
   addProjectRemoteSourcePathHint,
   addProjectRemoteSourceProvider,
@@ -1870,13 +1871,34 @@ function OpenCommandPaletteDialog(props: {
         return;
       }
 
+      // Fork F06: bind the lookup to the provider's authenticated endpoint.
+      const lookupTarget = resolveAddProjectRepositoryLookupTarget({
+        source: provider,
+        repository: rawRepository,
+        discovery: sourceControlDiscovery.data ?? null,
+      });
+      if (!lookupTarget) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Repository endpoint unavailable",
+            description:
+              provider === "azure-devops"
+                ? "Enter an Azure repository as organization/project/repository."
+                : "Rescan Source Control after signing in to the intended provider endpoint.",
+          }),
+        );
+        return;
+      }
+
       setIsRemoteProjectLookingUp(true);
       const lookupGeneration = ++cloneLookupGeneration.current;
       const lookupResult = await lookupRepository({
         environmentId: addProjectCloneFlow.environmentId,
         input: {
           provider,
-          repository: rawRepository,
+          providerBaseUrl: lookupTarget.providerBaseUrl,
+          repository: lookupTarget.repository,
         },
       });
       if (lookupGeneration !== cloneLookupGeneration.current) return;

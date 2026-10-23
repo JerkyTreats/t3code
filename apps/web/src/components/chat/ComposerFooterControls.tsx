@@ -23,6 +23,7 @@ import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWind
 import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import { runtimeModeConfig } from "./runtimeModeConfig";
+import { chatComposerPresentation } from "../../fork/chatComposerPresentation";
 import { useComposerMenuState } from "./useComposerMenuState";
 
 export type RuntimeModeOption = { mode: RuntimeMode } & (typeof runtimeModeConfig)[RuntimeMode];
@@ -35,12 +36,16 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
+  /** Fork chat presentation: the runtime control floats above the composer or stays here. */
+  runtimePlacement?: "footer" | "floating" | "hidden";
+  iconOnly?: boolean;
   size?: "sm" | "xs";
   hidden?: boolean;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   const size = props.size ?? "sm";
+  const floating = props.runtimePlacement === "floating";
   const composerFloatingLayerProps = useComposerMenuProps();
   const [open, setOpen] = useComposerMenuState(props.hidden);
   const runtimeModeOption =
@@ -92,56 +97,69 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
 
   return (
     <>
-      <ComposerControlSeparator size={size} />
+      {props.runtimePlacement === "hidden" ? null : (
+        <>
+          {floating ? null : <ComposerControlSeparator size={size} />}
 
-      <Tooltip>
-        <Select
-          open={open}
-          onOpenChange={setOpen}
-          value={props.runtimeMode}
-          onValueChange={(value) => props.onRuntimeModeChange(value!)}
-        >
-          <TooltipTrigger
-            render={
-              <ComposerSelectControl
-                data-composer-shortcut="composer.mode"
-                size={size}
-                aria-label="Runtime mode"
-              />
-            }
-          >
-            <ComposerControlIcon icon={RuntimeModeIcon} size={size} />
-            <SelectValue data-composer-control-label>{runtimeModeOption.label}</SelectValue>
-          </TooltipTrigger>
-          <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>
-            {props.runtimeModeOptions.map((option) => {
-              const OptionIcon = option.icon;
-              return (
-                <SelectItem
-                  key={option.mode}
-                  value={option.mode}
-                  hideIndicator
-                  className="min-w-64"
+          <Tooltip>
+            <Select
+              open={open}
+              onOpenChange={setOpen}
+              value={props.runtimeMode}
+              onValueChange={(value) => props.onRuntimeModeChange(value!)}
+            >
+              <TooltipTrigger
+                render={
+                  <ComposerSelectControl
+                    data-composer-shortcut="composer.mode"
+                    size={size}
+                    className={
+                      floating ? chatComposerPresentation.runtimeTriggerClassName : undefined
+                    }
+                    aria-label={
+                      props.iconOnly ? `Runtime mode: ${runtimeModeOption.label}` : "Runtime mode"
+                    }
+                  />
+                }
+              >
+                <ComposerControlIcon icon={RuntimeModeIcon} size={size} />
+                <SelectValue
+                  data-composer-control-label
+                  className={props.iconOnly || floating ? "sr-only" : undefined}
                 >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid min-w-0 flex-1 gap-0.5">
-                      <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                        <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                        {option.label}
-                      </span>
-                      <span className="text-muted-foreground text-xs leading-4">
-                        {option.description}
-                      </span>
-                    </div>
-                  </div>
-                </SelectItem>
-              );
-            })}
-          </SelectPopup>
-        </Select>
-        <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
-      </Tooltip>
-
+                  {runtimeModeOption.label}
+                </SelectValue>
+              </TooltipTrigger>
+              <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>
+                {props.runtimeModeOptions.map((option) => {
+                  const OptionIcon = option.icon;
+                  return (
+                    <SelectItem
+                      key={option.mode}
+                      value={option.mode}
+                      hideIndicator
+                      className="min-w-64"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="grid min-w-0 flex-1 gap-0.5">
+                          <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+                            <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                            {option.label}
+                          </span>
+                          <span className="text-muted-foreground text-xs leading-4">
+                            {option.description}
+                          </span>
+                        </div>
+                      </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectPopup>
+            </Select>
+            <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
+          </Tooltip>
+        </>
+      )}
       {interactionModeToggle}
     </>
   );

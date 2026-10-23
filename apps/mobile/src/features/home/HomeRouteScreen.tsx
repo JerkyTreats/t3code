@@ -100,6 +100,7 @@ export function HomeRouteScreen() {
     renameThread,
     regenerateThreadTitle,
     unsettleThread,
+    moveThreadToTopLevel,
   } = useThreadListActions();
   const pendingTasks = usePendingNewTasks();
   const { openPendingTask, confirmDeletePendingTask } = usePendingTaskListActions();
@@ -270,6 +271,7 @@ export function HomeRouteScreen() {
           onUnpinThread={unpinThread}
           onSetThreadAutoSettle={setThreadAutoSettle}
           onMoveThread={moveThread}
+          onMoveThreadToTopLevel={moveThreadToTopLevel}
           onRenameThread={renameThread}
           onRegenerateThreadTitle={regenerateThreadTitle}
           onEnvironmentChange={setSelectedEnvironmentId}

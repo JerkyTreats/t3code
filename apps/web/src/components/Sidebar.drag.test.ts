@@ -510,6 +510,19 @@ describe("sidebar drag projection", () => {
     expect(result.get(sidebarMarkerId("settled-placeholder"))).toEqual({ ...stationary, y: -83 });
   });
 
+  it("previews a pinned drop in conversation order instead of pointer placement", () => {
+    const items = [
+      pinnedHeader,
+      thread("p1", "pinned"),
+      thread("p2", "pinned"),
+      divider,
+      thread("a", "active"),
+    ];
+    const input = { items, settledOrder: [], settledExpanded: false };
+    expect(preview(input, "a", "p1").get("p2")?.y).toBeGreaterThan(0);
+    expect(preview({ ...input, pinnedOrder: ["p1", "p2", "a"] }, "a", "p1").get("p2")?.y).toBe(0);
+  });
+
   it("previews a time-ordered inbox drop at its time slot, above the Working shelf", () => {
     const items = [
       pinnedHeader,

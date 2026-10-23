@@ -11,20 +11,19 @@ import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-searc
 import type { ContextMenuItem, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import type { AsyncResult } from "effect/reactivity";
-import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
+import {
+  getProjectThreadSortTimestamp,
+  planPinnedReorder,
+} from "@t3tools/client-runtime/state/thread-sort";
 import {
   effectiveSnoozed,
   type ThreadSnoozeShell,
 } from "@t3tools/client-runtime/state/thread-settled";
-import {
-  getThreadSortTimestamp,
-  sortThreads,
-  toSortableTimestamp,
-  type ThreadSortInput,
-} from "../lib/threadSort";
+import { sortThreads, toSortableTimestamp, type ThreadSortInput } from "../lib/threadSort";
 import type { SidebarThreadSummary, Thread } from "../types";
 import { normalizeSearchText } from "../lib/utils";
 import { isLatestRunSettled } from "../session-logic";
+import { SIDEBAR_NESTED_TOGGLE_SELECTOR } from "../fork/sidebarThreadNesting";
 
 export function shouldNavigateAfterThreadPark(input: {
   readonly threadKey: string;
@@ -211,7 +210,7 @@ export type SidebarThreadDropPlan =
     }
   | {
       readonly kind: "pin";
-      readonly order: readonly string[];
+      readonly order: readonly string[] | null;
       readonly orderKey: string | undefined;
       readonly extraAssignments: ReadonlyArray<{ readonly id: string; readonly orderKey: string }>;
     }
@@ -275,7 +274,9 @@ export function planSidebarThreadDrop(input: {
   readonly activeOrder: readonly string[];
   readonly activeKeysById: ReadonlyMap<string, string | null | undefined>;
   readonly activeReorderableKeys?: ReadonlySet<string>;
+  /** Time-ordered sections admit lifecycle moves without manual placement. */
   readonly activeTimeOrdered?: boolean;
+  readonly pinnedTimeOrdered?: boolean;
 }): SidebarThreadDropPlan {
   const {
     activeKey,
@@ -344,6 +345,11 @@ export function planSidebarThreadDrop(input: {
     case "settled":
       return activeSection === "settled" ? { kind: "none" } : { kind: "settle" };
     case "pinned": {
+      if (input.pinnedTimeOrdered) {
+        return activeSection === "pinned"
+          ? { kind: "none" }
+          : { kind: "pin", order: null, orderKey: undefined, extraAssignments: [] };
+      }
       const order = target.pinnedOrder;
       if (
         activeSection === "pinned" &&
@@ -757,9 +763,10 @@ function nodeClosest(node: object | null, selector: string): unknown {
   return node.closest(selector);
 }
 
+/** Clicks on a nested link or the nested-thread chevron keep their own meaning. The row must not treat them as multi-select. */
 export function isSidebarNestedLinkClick(target: EventTarget | null): boolean {
   if (target == null || typeof target !== "object") return false;
-  if (nodeClosest(target, "a[href]") !== null) return true;
+  if (nodeClosest(target, `a[href], ${SIDEBAR_NESTED_TOGGLE_SELECTOR}`) !== null) return true;
   const parent =
     "parentElement" in target &&
     target.parentElement !== null &&
@@ -1204,7 +1211,8 @@ function getProjectSortTimestamp(
 ): number {
   if (projectThreads.length > 0) {
     return projectThreads.reduce(
-      (latest, thread) => Math.max(latest, getThreadSortTimestamp(thread, sortOrder)),
+      // Project activity (fork): only authored prompts and published responses move a project.
+      (latest, thread) => Math.max(latest, getProjectThreadSortTimestamp(thread, sortOrder)),
       Number.NEGATIVE_INFINITY,
     );
   }

@@ -1,7 +1,10 @@
 import { Debouncer } from "@tanstack/react-pacer";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { pruneNestedThreadExpansion } from "@t3tools/client-runtime/state/thread-nesting";
 import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
+import type { SidebarView } from "./fork/threadSidebarView";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";
 const THREAD_CHANGED_FILES_EXPANSION_VERSION = 2;
@@ -27,8 +30,10 @@ export interface PersistedUiState {
   projectOrderCwds?: string[];
   defaultAdvertisedEndpointKey?: string | null;
   sidebarProjectScopeKey?: string | null;
+  sidebarView?: SidebarView;
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
+  nestedThreadExpandedByKey?: Record<string, boolean>;
   pullRequestMergeMethod?: string;
 }
 
@@ -36,11 +41,15 @@ export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
   projectOrder: string[];
   sidebarProjectScopeKey: string | null;
+  sidebarView: SidebarView;
 }
 
 export interface UiThreadState {
   threadLastVisitedAtById: Record<string, string>;
   threadChangedFilesExpandedById: Record<string, Record<string, boolean>>;
+  // Explicit sidebar expansion of nested-thread parents, by scoped thread key.
+  // An absent key follows the active thread.
+  nestedThreadExpandedByKey: Record<string, boolean>;
 }
 
 export interface UiEndpointState {
@@ -58,8 +67,10 @@ const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
   sidebarProjectScopeKey: null,
+  sidebarView: "projects",
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
+  nestedThreadExpandedByKey: {},
   defaultAdvertisedEndpointKey: null,
   pullRequestMergeMethod: "merge",
 };
@@ -149,8 +160,10 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.threadChangedFilesExpansionVersion === THREAD_CHANGED_FILES_EXPANSION_VERSION
         ? sanitizePersistedThreadChangedFilesExpanded(parsed.threadChangedFilesExpandedById)
         : {},
+    nestedThreadExpandedByKey: sanitizeBooleanRecord(parsed.nestedThreadExpandedByKey),
     defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
     sidebarProjectScopeKey: sanitizeOptionalKey(parsed.sidebarProjectScopeKey),
+    sidebarView: parsed.sidebarView === "threads" ? "threads" : "projects",
     pullRequestMergeMethod: isPullRequestMergeMethod(parsed.pullRequestMergeMethod)
       ? parsed.pullRequestMergeMethod
       : initialState.pullRequestMergeMethod,
@@ -225,8 +238,10 @@ export function persistState(state: UiState): void {
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         sidebarProjectScopeKey: state.sidebarProjectScopeKey,
+        sidebarView: state.sidebarView,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
+        nestedThreadExpandedByKey: state.nestedThreadExpandedByKey,
         pullRequestMergeMethod: state.pullRequestMergeMethod,
       } satisfies PersistedUiState),
     );
@@ -312,6 +327,35 @@ function setThreadChangedFilesExpanded(
   };
 }
 
+/**
+ * Stores a parent's explicit expansion. Null clears it, so the parent follows
+ * the active thread again. Passing the known threads drops entries for
+ * threads that no longer host nested threads.
+ */
+export function setNestedThreadExpanded(
+  state: UiState,
+  threadKey: string,
+  expanded: boolean | null,
+  threads?: ReadonlyArray<Parameters<typeof pruneNestedThreadExpansion>[1][number]>,
+): UiState {
+  const current =
+    threads === undefined
+      ? state.nestedThreadExpandedByKey
+      : pruneNestedThreadExpansion(state.nestedThreadExpandedByKey, threads, scopedThreadKey);
+  let next: Readonly<Record<string, boolean>> = current;
+  if (expanded === null) {
+    if (threadKey in current) {
+      const rest = { ...current };
+      delete rest[threadKey];
+      next = rest;
+    }
+  } else if (current[threadKey] !== expanded) {
+    next = { ...current, [threadKey]: expanded };
+  }
+  if (next === state.nestedThreadExpandedByKey) return state;
+  return { ...state, nestedThreadExpandedByKey: next };
+}
+
 function setDefaultAdvertisedEndpointKey(state: UiState, key: string | null): UiState {
   const nextKey = key && key.length > 0 ? key : null;
   if (state.defaultAdvertisedEndpointKey === nextKey) {
@@ -332,6 +376,10 @@ function setSidebarProjectScopeKey(state: UiState, projectKey: string | null): U
     ...state,
     sidebarProjectScopeKey: nextKey,
   };
+}
+
+export function setSidebarView(state: UiState, view: UiProjectState["sidebarView"]): UiState {
+  return state.sidebarView === view ? state : { ...state, sidebarView: view };
 }
 
 function setPullRequestMergeMethod(state: UiState, method: PullRequestMergeMethod): UiState {
@@ -421,8 +469,14 @@ interface UiStateStore extends UiState {
   markThreadVisited: (threadId: string, visitedAt: string) => void;
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
+  setNestedThreadExpanded: (
+    threadKey: string,
+    expanded: boolean | null,
+    threads?: Parameters<typeof setNestedThreadExpanded>[3],
+  ) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setSidebarProjectScopeKey: (projectKey: string | null) => void;
+  setSidebarView: (view: UiProjectState["sidebarView"]) => void;
   setPullRequestMergeMethod: (method: PullRequestMergeMethod) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
@@ -440,10 +494,13 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => markThreadUnread(state, threadId, latestTurnCompletedAt)),
   setThreadChangedFilesExpanded: (threadId, turnId, expanded) =>
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
+  setNestedThreadExpanded: (threadKey, expanded, threads) =>
+    set((state) => setNestedThreadExpanded(state, threadKey, expanded, threads)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
   setSidebarProjectScopeKey: (projectKey) =>
     set((state) => setSidebarProjectScopeKey(state, projectKey)),
+  setSidebarView: (view) => set((state) => setSidebarView(state, view)),
   setPullRequestMergeMethod: (method) => set((state) => setPullRequestMergeMethod(state, method)),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),

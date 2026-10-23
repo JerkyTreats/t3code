@@ -1,3 +1,4 @@
+import { presentPotetoMessage } from "./fork/potetoMessage.ts";
 import {
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
@@ -24,7 +25,7 @@ export function resolveUserMessagePresentation(message: {
   }
   if (message.scheduledTaskId !== undefined) {
     return {
-      text: message.text,
+      text: presentPotetoMessage(message.text),
       attribution: "automation",
       scheduledTaskId: message.scheduledTaskId,
     };
@@ -35,13 +36,13 @@ export function resolveUserMessagePresentation(message: {
     : undefined;
   if (legacyPrefix !== null && (legacyTaskId !== undefined || message.createdBy === "agent")) {
     return {
-      text: message.text.slice(legacyPrefix[0].length),
+      text: presentPotetoMessage(message.text.slice(legacyPrefix[0].length)),
       attribution: "automation",
       scheduledTaskId: legacyTaskId === undefined ? undefined : ScheduledTaskId.make(legacyTaskId),
     };
   }
   return {
-    text: message.text,
+    text: presentPotetoMessage(message.text),
     attribution:
       message.createdBy !== "agent"
         ? null

@@ -2,7 +2,6 @@ import {
   type PendingSubagentRequest,
   presentThreadShell,
 } from "@t3tools/client-runtime/state/models";
-import { pendingSubagentRequestsByThread } from "@t3tools/client-runtime/state/threads";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef } from "react";
 
+import { notificationSubagentRequests } from "../fork/sidebarThreadNesting";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useEnvironmentIds } from "../state/environments";
 import { environmentShell } from "../state/shell";
@@ -126,7 +126,9 @@ function EnvironmentNotifications({
       return;
     }
     const next = new Map<ThreadId, NotificationState>();
-    const subagentRequests = pendingSubagentRequestsByThread(threads);
+    // Subagents are skipped below, so their requests notify through the thread
+    // above them. Nested children notify for themselves, never via their parent.
+    const subagentRequests = notificationSubagentRequests(threads);
     for (const rawThread of threads) {
       if (rawThread.lineage.relationshipToParent === "subagent") continue;
       const prior = previous.current.get(rawThread.id);

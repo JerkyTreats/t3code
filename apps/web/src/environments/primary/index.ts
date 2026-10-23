@@ -4,19 +4,13 @@ export {
 } from "./context";
 
 export {
-  createServerPairingCredential,
   peekPairingTokenFromUrl,
   PrimaryEnvironmentPairingCredentialRejectedError,
   PrimaryEnvironmentRequestError,
   resolveInitialServerAuthGateState,
-  revokeOtherServerClientSessions,
-  revokeServerClientSession,
-  revokeServerPairingLink,
   stripPairingTokenFromUrl,
   submitServerAuthCredential,
   takePairingTokenFromUrl,
-  type ServerClientSessionRecord,
-  type ServerPairingLinkRecord,
   __resetServerAuthBootstrapForTests,
 } from "./auth";
 

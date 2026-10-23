@@ -97,6 +97,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     readFileBlockReason,
     buildOutgoingMessageContext,
     isCurrentSend,
+    onStarted,
   }: {
     readonly threadId: ThreadId;
     readonly project: EnvironmentProject;
@@ -113,6 +114,8 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     ) => ReturnType<typeof buildMessageContext>;
     /** False once a newer send from this composer started. */
     readonly isCurrentSend: () => boolean;
+    /** Runs once when at least one model's thread started. */
+    readonly onStarted?: () => void;
   }) => {
     const { attachments: attachmentsSnapshot, messageText } = sendSnapshot;
     const failedSelections: ModelSelection[] = [];
@@ -218,6 +221,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
       releasedComposer = true;
       await starts;
       if (startedCount > 0) {
+        onStarted?.();
         toastManager.add(
           stackedThreadToast({
             type: "success",

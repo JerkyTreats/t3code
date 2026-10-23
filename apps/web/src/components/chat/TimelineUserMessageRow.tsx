@@ -303,7 +303,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       ? { environmentId: ctx.activeThreadEnvironmentId, threadId: senderThreadId }
       : null,
   );
-  const resolvedContext = resolveUserMessageContext(row.message);
+  // Display text drops fork-owned invocation lines; stored text is unchanged.
+  const resolvedContext = resolveUserMessageContext({ ...row.message, text: userMessage.text });
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const revertTurnCount = row.revertTurnCount;
   const chippedAttachmentIds = new Set(

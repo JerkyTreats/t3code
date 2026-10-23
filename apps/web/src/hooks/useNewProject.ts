@@ -40,6 +40,7 @@ export function useNewProject() {
       input: {
         cwd: input.workspaceRoot,
         provider: input.target.definition.kind,
+        providerBaseUrl: input.target.providerBaseUrl,
         repository: getNewProjectRepository(input.target, input.workspaceRoot),
         visibility: "private",
       },

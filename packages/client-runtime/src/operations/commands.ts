@@ -127,6 +127,8 @@ export interface UpdateThreadMetadataInput extends ThreadCommandInput {
   readonly regenerateTitle?: boolean;
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null;
   readonly expectedEmpty?: boolean;
+  /** Null moves a nested thread back to top level. */
+  readonly nestedUnderThreadId?: null;
 }
 
 export interface SetThreadRuntimeModeInput extends ThreadCommandInput {
@@ -565,7 +567,8 @@ export const updateThreadMetadata = Effect.fn("EnvironmentCommands.updateThreadM
       input.worktreePath !== undefined ||
       input.regenerateTitle !== undefined ||
       input.linkedPullRequest !== undefined ||
-      input.limitRecovery !== undefined
+      input.limitRecovery !== undefined ||
+      input.nestedUnderThreadId !== undefined
     ) {
       result = yield* dispatch({
         type: "thread.metadata.update",
@@ -580,6 +583,9 @@ export const updateThreadMetadata = Effect.fn("EnvironmentCommands.updateThreadM
         ...(input.linkedPullRequest === undefined
           ? {}
           : { linkedPullRequest: input.linkedPullRequest }),
+        ...(input.nestedUnderThreadId === undefined
+          ? {}
+          : { nestedUnderThreadId: input.nestedUnderThreadId }),
       });
     }
     if (input.modelSelection !== undefined) {

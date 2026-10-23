@@ -1,10 +1,12 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { indexThreadsByNestingKey } from "@t3tools/client-runtime/state/thread-nesting";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { MessageSquareIcon } from "lucide-react";
 
+import { nestedThreadPaletteTitle } from "../fork/sidebarThreadNesting";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   applyProviderInstanceSettings,
@@ -75,6 +77,7 @@ export function useCommandPaletteThreadItems(input: {
   const { activeThreadId, threadSearchQuery } = input;
   const navigate = useNavigate();
   const threads = useThreadShells();
+  const threadsByNestingKey = indexThreadsByNestingKey(threads);
   const sidebarThreadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const { projectEnvironmentLocationById } = useEnvironmentLookups();
   const providerEntryByEnvironmentAndInstanceId = useProviderEntryByEnvironmentAndInstanceId();
@@ -123,6 +126,7 @@ export function useCommandPaletteThreadItems(input: {
         />
       );
     },
+    resolveTitle: (thread) => nestedThreadPaletteTitle(thread, threadsByNestingKey),
     getContentMatch: (thread) => {
       const match = contentMatchByKey.get(
         threadSearchMatchKey({

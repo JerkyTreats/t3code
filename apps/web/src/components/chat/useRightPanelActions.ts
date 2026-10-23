@@ -7,7 +7,7 @@ import { resolveExplicitDiffOpenOnActivate } from "../ChatView.logic";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { type ScopedThreadRef, type RunId } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { type SetStateAction, useEffect } from "react";
+import { type SetStateAction } from "react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -16,13 +16,22 @@ import { useDiffPanelStore } from "../../diffPanelStore";
 import { type ThreadPanelPresentation } from "../../rightPanelLayout";
 import {
   selectActiveRightPanel,
+  selectActiveRightPanelSurface,
   type RightPanelSurface,
   useRightPanelStore,
 } from "../../rightPanelStore";
-import { setActivePreviewTab } from "../../previewStateStore";
+import { previewStateLifetimeIsCurrent, setActivePreviewTab } from "../../previewStateStore";
 import { BrowserSettingsReadError } from "../../browser/openFileInPreview";
 import { addBrowserSurface } from "../preview/addBrowserSurface";
-import { subscribePreviewAction } from "../preview/previewActionBus";
+import { dispatchPreviewAction } from "../preview/previewActionBus";
+import { closeFocusedPreviewSurface } from "../preview/closeFocusedPreviewSurface";
+import { reopenClosedPreviewSession } from "../preview/reopenClosedPreviewSession";
+import {
+  guardPreviewHostMutation,
+  isPreviewHostRouteCurrent,
+  usePreviewHostActions,
+} from "../preview/previewHostActions";
+import { useRouter } from "@tanstack/react-router";
 import { browserMiniPlayerSource, usePreviewMiniPlayerStore } from "../../previewMiniPlayerStore";
 import type { threadPullRequestPanelTarget } from "../pullRequest/pullRequestDetail.logic";
 import type { useDeviceState } from "../../state/device";
@@ -55,7 +64,7 @@ interface RightPanelActionsInput {
   readonly explicitDiffOpenRef: { current: ScopedThreadRef | null };
   readonly setTerminalFocusRequestId: Dispatch<SetStateAction<number>>;
   readonly onDiffPanelOpen: (() => void) | undefined;
-  readonly closeRightPanelSurface: (surface: RightPanelSurface) => void;
+  readonly closeRightPanelSurface: (surface: RightPanelSurface) => Promise<boolean>;
 }
 
 /**
@@ -91,6 +100,12 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   } = input;
 
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
+  const resizePreview = useAtomCommand(previewEnvironment.resize, "preview viewport resize");
+  const adjustPreview = useAtomCommand(previewEnvironment.adjust, "preview appearance restore");
+  const router = useRouter();
+  // Preview actions are admitted against the live route, which can move before this host rerenders.
+  const isCurrentPreviewHost = () =>
+    isPreviewHostRouteCurrent(activeThreadRef, router.state.matches.at(-1)?.params ?? {});
   const onToggleDiff = () => {
     if (!isServerThread) {
       return;
@@ -104,10 +119,16 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   };
   const onToggleDiffStable = useStableCallback(onToggleDiff);
   const createBrowserSurface = (profileId?: string) => {
-    if (!activeThreadRef || !canOperatePreview) return;
+    if (!activeThreadRef || !canOperatePreview || !isCurrentPreviewHost() || !browserAvailable)
+      return;
+    const sameLifetime = previewStateLifetimeIsCurrent(activeThreadRef);
     void addBrowserSurface({
       threadRef: activeThreadRef,
-      openPreview,
+      openPreview: guardPreviewHostMutation(
+        openPreview,
+        () => sameLifetime() && isCurrentPreviewHost(),
+        sameLifetime,
+      ),
       ...(profileId === undefined ? {} : { profileId }),
     }).then((result) => {
       if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
@@ -285,13 +306,52 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     onDiffPanelOpen?.();
   };
   const onOpenTurnDiffStable = useStableCallback(onOpenTurnDiff);
-  useEffect(
-    () =>
-      subscribePreviewAction((action) => {
-        if (action === "toggle-panel") togglePreviewPanelStable();
-      }),
-    [togglePreviewPanelStable],
-  );
+  const syncActivePreviewSurface = () => {
+    if (!activeThreadRef) return;
+    const nextActiveSurface = selectActiveRightPanelSurface(
+      useRightPanelStore.getState().byThreadKey,
+      activeThreadRef,
+    );
+    if (nextActiveSurface?.kind === "preview" && nextActiveSurface.resourceId) {
+      setActivePreviewTab(activeThreadRef, nextActiveSurface.resourceId);
+    }
+  };
+  usePreviewHostActions({
+    threadRef: activeThreadRef,
+    isCurrent: isCurrentPreviewHost,
+    toggle: togglePreviewPanelStable,
+    create: () => createBrowserSurface(),
+    close: async () => {
+      if (!activeThreadRef) return;
+      await closeFocusedPreviewSurface({
+        threadRef: activeThreadRef,
+        closeSurface: closeRightPanelSurface,
+        syncActivePreview: syncActivePreviewSurface,
+        focusUrl: () => dispatchPreviewAction("focus-url"),
+      });
+    },
+    reopen: async () => {
+      if (!activeThreadRef) return;
+      const sameLifetime = previewStateLifetimeIsCurrent(activeThreadRef);
+      const isCurrent = () => sameLifetime() && isCurrentPreviewHost();
+      await reopenClosedPreviewSession({
+        threadRef: activeThreadRef,
+        openPreview: guardPreviewHostMutation(openPreview, isCurrent),
+        resizePreview: guardPreviewHostMutation(resizePreview, sameLifetime),
+        adjustPreview: guardPreviewHostMutation(adjustPreview, sameLifetime),
+        canFocus: isCurrentPreviewHost,
+      });
+    },
+    onError: (error) =>
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Browser action failed",
+          description:
+            error instanceof Error ? error.message : "The browser action could not finish.",
+        }),
+      ),
+  });
 
   const shortcuts = {
     "rightPanel.toggle": () => toggleRightPanel(),
@@ -301,7 +361,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     "threadPanel.toggle": () => toggleThreadPanel(),
     "rightPanel.close": ({ event }) => {
       if (!activeRightPanelSurface) return false;
-      if (!event.repeat) closeRightPanelSurface(activeRightPanelSurface);
+      if (!event.repeat) void closeRightPanelSurface(activeRightPanelSurface);
     },
     "diff.toggle": () => onToggleDiff(),
   } satisfies ChatShortcutCommands;

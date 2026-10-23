@@ -186,4 +186,19 @@ describe("mobile connection storage", () => {
     await expect(loadPreferences()).resolves.toEqual({ baseFontSize: 21 });
     expect(JSON.parse(mocks.getPreferencesJson() ?? "")).toEqual({ baseFontSize: 21 });
   });
+
+  it("keeps boolean nested thread expansion entries and drops the rest", async () => {
+    mocks.setPreferencesJson(
+      JSON.stringify({
+        threadListNestedExpansion: { "env:parent": true, "env:other": false, "env:bad": "yes" },
+      }),
+      10,
+    );
+    await expect(loadPreferences()).resolves.toEqual({
+      threadListNestedExpansion: { "env:parent": true, "env:other": false },
+    });
+
+    mocks.setPreferencesJson(JSON.stringify({ threadListNestedExpansion: ["env:parent"] }), 11);
+    await expect(loadPreferences()).resolves.toEqual({});
+  });
 });

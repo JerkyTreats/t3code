@@ -1,5 +1,9 @@
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import {
+  hasRetainedChatPromptContext,
+  normalizeReferencedChatPrompt,
+} from "../../fork/chatPromptContext";
+import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   type ChatAttachment,
   type EnvironmentId,
@@ -77,7 +81,12 @@ async function submitQueuedRunEdit(input: {
   readonly editQueuedRun: ReturnType<typeof useEditQueuedRunCommand>;
 }): Promise<string | null> {
   const { environmentId, draftTarget, editing, content } = input;
-  const editText = content.prompt.trim();
+  const editText = normalizeReferencedChatPrompt(
+    content.prompt,
+    content.terminalContexts.length > 0 ||
+      content.previewAnnotations.length > 0 ||
+      hasRetainedChatPromptContext(editing.context),
+  );
   const newAttachments = [...content.images, ...content.files];
   const uploadFiles = async (files: ReadonlyArray<ComposerFileAttachment>) => {
     const validateFiles = () => {

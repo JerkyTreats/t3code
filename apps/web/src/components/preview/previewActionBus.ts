@@ -1,5 +1,10 @@
+import type { DesktopPreviewBrowserActionEvent, KeybindingCommand } from "@t3tools/contracts";
+
 export type PreviewAction =
   | "toggle-panel"
+  | "new-tab"
+  | "close-tab"
+  | "reopen-closed"
   | "refresh"
   | "focus-url"
   | "zoom-in"
@@ -7,6 +12,49 @@ export type PreviewAction =
   | "reset-zoom";
 
 const EVENT_NAME = "t3code:preview-action";
+
+/** Fork tab lifecycle shortcuts belong only to a focused native Electron guest. */
+export function isNativePreviewTabCommand(command: KeybindingCommand | null): boolean {
+  return (
+    command === "preview.new" || command === "preview.close" || command === "preview.reopenClosed"
+  );
+}
+
+export function previewActionForFocusedCommand(
+  command: KeybindingCommand | null,
+  previewFocused: boolean,
+): PreviewAction | null {
+  if (!previewFocused) return null;
+  switch (command) {
+    case "preview.new":
+      return "new-tab";
+    case "preview.close":
+      return "close-tab";
+    case "preview.reopenClosed":
+      return "reopen-closed";
+    case "preview.refresh":
+      return "refresh";
+    case "preview.focusUrl":
+      return "focus-url";
+    case "preview.zoomIn":
+      return "zoom-in";
+    case "preview.zoomOut":
+      return "zoom-out";
+    case "preview.resetZoom":
+      return "reset-zoom";
+    default:
+      return null;
+  }
+}
+
+export function previewActionForDesktopBrowserEvent(
+  event: DesktopPreviewBrowserActionEvent,
+  activePreviewRuntimeTabId: string | null,
+  previewFocused: boolean,
+): PreviewAction | null {
+  if (event.tabId !== activePreviewRuntimeTabId) return null;
+  return previewActionForFocusedCommand(event.action, previewFocused);
+}
 
 export function dispatchPreviewAction(action: PreviewAction): void {
   if (typeof window === "undefined") return;

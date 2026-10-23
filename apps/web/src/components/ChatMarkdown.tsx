@@ -187,6 +187,7 @@ import { resolveLinkTarget } from "../browser/browserLinkTarget";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 import { MarkdownCodeBlock, SuspenseShikiCodeBlock } from "./chat/MarkdownCodeBlock";
 import { MarkdownMermaidCodeBlock } from "./chat/MarkdownMermaidCodeBlock";
+import { isMermaidFenceLanguage } from "../features/mermaid/mermaidFence";
 import { MarkdownTable } from "./chat/MarkdownTable";
 import { MarkdownDetails } from "./chat/MarkdownDetails";
 import {
@@ -1529,7 +1530,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
         </Suspense>
       </RenderErrorBoundary>
     );
-    if (language === "mermaid") {
+    if (isMermaidFenceLanguage(language)) {
       return (
         <MarkdownMermaidCodeBlock
           code={codeBlock.code}

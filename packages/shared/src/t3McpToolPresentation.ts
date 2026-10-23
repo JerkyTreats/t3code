@@ -82,7 +82,18 @@ function tool(
   return { displayName, labels, icon, summaryAction };
 }
 
-const T3_MCP_SERVER_ALIASES = new Set(["t3-code", "t3_code", "t3code"]);
+// Fork: independently admitted preview, device and pull-request servers share the T3 labels.
+const T3_MCP_SERVER_ALIASES = new Set([
+  "t3-code",
+  "t3_code",
+  "t3code",
+  "t3-code-preview",
+  "t3_code_preview",
+  "t3-code-device",
+  "t3_code_device",
+  "t3-code-pull-requests",
+  "t3_code_pull_requests",
+]);
 
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   link_pull_request: tool(
@@ -358,16 +369,26 @@ function resolveT3McpToolName(value: string): string | null {
       : null;
   }
 
-  const namespaceMatch = /^(?<server>t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(
-    label,
-  );
+  const namespaceMatch =
+    /^(?<server>t3-code(?:-(?:preview|device|pull-requests))?|t3_code(?:_(?:preview|device|pull_requests))?|t3code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(
+      label,
+    );
   if (namespaceMatch?.groups) {
     return namespaceMatch.groups.tool ?? null;
   }
 
-  const prefixed = /^(?:mcp[-_]{1,2})?t3[-_ ]?code(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(label);
+  const prefixed =
+    /^(?:mcp[-_]{1,2})?t3[-_ ]?code(?:[-_](?:preview|device|pull[-_]requests))?(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(
+      label,
+    );
   const candidate = prefixed?.groups?.tool ?? label;
   if (Object.hasOwn(T3_MCP_TOOLS, candidate)) return candidate;
+  // A loose old prefix may end directly in preview_ or device_. Do not
+  // consume that tool prefix as a toolkit namespace when it is not one.
+  const originalPrefix = /^(?:mcp[-_]{1,2})?t3[-_ ]?code(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(label);
+  const originalCandidate = originalPrefix?.groups?.tool;
+  if (originalCandidate !== undefined && Object.hasOwn(T3_MCP_TOOLS, originalCandidate))
+    return originalCandidate;
   // OpenCode 2 registers one server per thread, `t3-code-<thread>`, and joins
   // it to the tool with `_`. Thread ids can hold `_` too, so take the longest
   // known tool name that ends the label.

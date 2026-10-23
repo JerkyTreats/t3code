@@ -268,7 +268,11 @@ function stripTrailing(
 ): { text: string; match: RegExpExecArray } | null {
   const match = pattern.exec(text);
   if (!match) return null;
-  return { text: text.slice(0, match.index).replace(/\n+$/, ""), match };
+  // New sends insert exactly two newlines before a helper block. Older messages may use one;
+  // remove at most the generated separator so earlier authored newlines survive.
+  const leadingNewlines = /^\n*/.exec(match[0])?.[0].length ?? 0;
+  const authoredNewlines = Math.max(0, leadingNewlines - 2);
+  return { text: `${text.slice(0, match.index)}${"\n".repeat(authoredNewlines)}`, match };
 }
 
 /** Review source can contain literal closing tags inside its dynamically sized code fence. */
@@ -397,11 +401,18 @@ export function upgradeLegacyContextMessage(text: string): UpgradedLegacyContext
   );
 
   let placeholderIndex = 0;
-  body = body.replace(new RegExp(PLACEHOLDER, "g"), () => {
+  let converted = "";
+  let consumed = 0;
+  for (const match of body.matchAll(new RegExp(PLACEHOLDER, "g"))) {
     const record = terminals[placeholderIndex];
     placeholderIndex += 1;
-    return record ? formatComposerContextReference(record) : "";
-  });
+    let before = body.slice(consumed, match.index);
+    // An orphan placeholder is generated context, so remove its one adjoining separator too.
+    if (!record && before.endsWith(" ")) before = before.slice(0, -1);
+    converted += before + (record ? formatComposerContextReference(record) : "");
+    consumed = match.index + match[0].length;
+  }
+  body = converted + body.slice(consumed);
 
   const placedTerminals = new Set(terminals.slice(0, placeholderIndex));
   for (const record of terminals) {
@@ -422,7 +433,6 @@ export function upgradeLegacyContextMessage(text: string): UpgradedLegacyContext
     body = `${body.slice(0, at)}${formatComposerContextReference(record)}${body.slice(at + label.length)}`;
     placedTerminals.add(record);
   }
-  body = body.trimEnd();
 
   const appended = [
     ...terminals.filter((record) => !placedTerminals.has(record)),

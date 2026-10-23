@@ -5,10 +5,10 @@ import {
   type DesktopPreviewBrowserActionEvent,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import { act, type ReactNode } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
 import { AsyncResult } from "effect/reactivity";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+import { act, render } from "../../../test/render";
 
 const mocks = vi.hoisted(() => ({
   router: {
@@ -18,52 +18,61 @@ const mocks = vi.hoisted(() => ({
   canOperate: true,
   desktopListener: null as ((event: DesktopPreviewBrowserActionEvent) => void) | null,
 }));
-vi.mock("@tanstack/react-router", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
-  useRouter: () => mocks.router,
-  createFileRoute: () => (config: unknown) => config,
-  redirect: vi.fn(),
-  Outlet: () => null,
+vi.mock(import("@tanstack/react-router"), async (original) => ({
+  ...(await original()),
+  useRouter: (() => mocks.router) as never,
 }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => [] }));
-vi.mock("~/hooks/useSettings", () => ({
-  useClientSettings: () => ({}),
+vi.mock(import("@effect/atom-react"), async (original) => ({
+  ...(await original()),
+  useAtomValue: (() => []) as never,
+}));
+vi.mock(import("~/hooks/useSettings"), async (original) => ({
+  ...(await original()),
+  useClientSettings: (() => ({})) as never,
   useLegacySidebarEnabled: () => false,
 }));
-vi.mock("~/hooks/useHandleNewThread", () => ({
-  useHandleNewThread: () => ({
+vi.mock(import("~/hooks/useHandleNewThread"), async (original) => ({
+  ...(await original()),
+  useHandleNewThread: (() => ({
     routeThreadRef: mocks.router.state.matches[0]!.params,
     handleNewThread: vi.fn(),
-  }),
+  })) as never,
 }));
-vi.mock("~/hooks/useScratchProject", () => ({
-  useScratchProject: () => ({ scratchEnvironmentId: null, startScratchThread: vi.fn() }),
+vi.mock(import("~/hooks/useScratchProject"), async (original) => ({
+  ...(await original()),
+  useScratchProject: (() => ({
+    scratchEnvironmentId: null,
+    startScratchThread: vi.fn(),
+  })) as never,
 }));
-vi.mock("~/state/entities", () => ({ useProjects: () => [] }));
-vi.mock("~/state/environments", () => ({ usePrimaryEnvironmentId: () => "host-env" }));
-vi.mock("~/logicalProject", () => ({ selectProjectGroupingSettings: vi.fn() }));
-vi.mock("~/sidebarProjectGrouping", () => ({ buildSidebarProjectSnapshots: () => [] }));
-vi.mock("~/state/session", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/state/session")>()),
+vi.mock(import("~/state/entities"), async (original) => ({
+  ...(await original()),
+  useProjects: () => [],
+}));
+vi.mock(import("~/state/environments"), async (original) => ({
+  ...(await original()),
+  usePrimaryEnvironmentId: (() => "host-env") as never,
+}));
+vi.mock(import("~/sidebarProjectGrouping"), async (original) => ({
+  ...(await original()),
+  buildSidebarProjectSnapshots: () => [],
+}));
+vi.mock(import("~/state/session"), async (original) => ({
+  ...(await original()),
   useEnvironmentScope: () => mocks.canOperate,
   readEnvironmentScope: () => mocks.canOperate,
 }));
-vi.mock("~/state/server", async () => {
-  const { Atom } = await import("effect/reactivity");
-  return {
-    primaryServerKeybindingsAtom: Atom.make([]),
-    serverEnvironment: { configValueAtom: Atom.family(() => Atom.make(null)) },
-  };
-});
-vi.mock("~/keybindings", () => ({ resolveShortcutCommand: () => mocks.command }));
-vi.mock("~/lib/chatThreadActions", () => ({ startNewThreadFromContext: vi.fn() }));
-vi.mock("~/lib/terminalFocus", () => ({ isTerminalFocused: () => false }));
-vi.mock("~/components/ui/toast", () => ({
-  stackedThreadToast: (value: unknown) => value,
-  toastManager: { add: vi.fn() },
+vi.mock(import("~/keybindings"), async (original) => ({
+  ...(await original()),
+  resolveShortcutCommand: (() => mocks.command) as never,
 }));
-vi.mock("~/components/DiffWorkerPoolProvider", () => ({
-  DiffWorkerPoolProvider: ({ children }: { children?: ReactNode }) => children,
+vi.mock(import("~/lib/chatThreadActions"), async (original) => ({
+  ...(await original()),
+  startNewThreadFromContext: vi.fn(),
+}));
+vi.mock(import("~/lib/terminalFocus"), async (original) => ({
+  ...(await original()),
+  isTerminalFocused: () => false,
 }));
 
 import { ChatRouteGlobalShortcuts } from "~/routes/_chat";
@@ -98,19 +107,8 @@ const snapshot = {
   canGoForward: false,
   updatedAt: "2026-09-05T00:00:00.000Z",
 };
-class FocusElement {
-  isConnected = true;
-  tagName = "INPUT";
-  dataset: Record<string, string> = { threadKey: scopedThreadKey(ref) };
-  closest(selector: string) {
-    return selector === "[data-thread-key]" || selector === "[data-preview-panel-mode]"
-      ? this
-      : null;
-  }
-}
-let renderer: ReactTestRenderer | undefined;
-let element: FocusElement;
-let target: EventTarget;
+let panel: HTMLDivElement;
+let element: HTMLInputElement;
 const createTab = vi.fn();
 const reopen = vi.fn(async () => undefined);
 const confirm = vi.fn(async () => true);
@@ -153,7 +151,7 @@ function Host() {
   return null;
 }
 
-beforeEach(() => {
+function setup(): Disposable {
   resetPreviewStateForTests();
   useRightPanelStore.setState({ byThreadKey: {} });
   mocks.router.state.matches[0]!.params = { environmentId: "host-env", threadId: "host-thread" };
@@ -163,59 +161,64 @@ beforeEach(() => {
   reopen.mockClear();
   confirm.mockReset().mockResolvedValue(true);
   closeMutation.mockReset().mockResolvedValue(AsyncResult.success(undefined));
-  element = new FocusElement();
-  target = new EventTarget();
-  vi.stubGlobal("HTMLElement", FocusElement);
-  vi.stubGlobal("Element", FocusElement);
-  vi.stubGlobal("document", { activeElement: element, querySelector: () => null });
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal(
-    "window",
-    Object.assign(target, {
-      desktopBridge: {
-        preview: {},
-        onPreviewBrowserAction: (listener: typeof mocks.desktopListener) => {
-          mocks.desktopListener = listener;
-          return () => {
-            mocks.desktopListener = null;
-          };
-        },
-      },
-    }),
-  );
-  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  // A focused field inside this thread's preview panel.
+  panel = document.createElement("div");
+  panel.dataset.threadKey = scopedThreadKey(ref);
+  panel.dataset.previewPanelMode = "";
+  element = document.createElement("input");
+  panel.append(element);
+  document.body.append(panel);
+  element.focus();
+  setDesktopBridge({
+    preview: {},
+    onPreviewBrowserAction: (listener: typeof mocks.desktopListener) => {
+      mocks.desktopListener = listener;
+      return () => {
+        mocks.desktopListener = null;
+      };
+    },
+  });
   reconcilePreviewServerSessions(ref, { serverEpoch: "epoch", revision: 1, sessions: [snapshot] });
   useRightPanelStore.getState().openBrowser(ref, "tab");
-});
-afterEach(async () => {
-  await act(() => renderer?.unmount());
-  renderer = undefined;
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
-async function mount() {
-  await act(() => {
-    renderer = create(
-      <>
-        <ChatRouteGlobalShortcuts />
-        <Host />
-      </>,
-    );
+  return {
+    [Symbol.dispose]() {
+      panel.remove();
+      setDesktopBridge(undefined);
+      resetPreviewStateForTests();
+    },
+  };
+}
+// The Electron bridge is a window property; a browser has none.
+function setDesktopBridge(bridge: unknown) {
+  Object.defineProperty(window, "desktopBridge", {
+    configurable: true,
+    writable: true,
+    value: bridge,
   });
+}
+const hosts = () => (
+  <>
+    <ChatRouteGlobalShortcuts />
+    <Host />
+  </>
+);
+function mount() {
+  return render(hosts(), { router: false });
 }
 async function key(command: string) {
   mocks.command = command;
-  const event = new Event("keydown", { cancelable: true });
+  const event = new KeyboardEvent("keydown", { cancelable: true });
   await act(() => {
-    target.dispatchEvent(event);
+    window.dispatchEvent(event);
   });
   return event;
 }
 
 describe("preview route and current chat host", () => {
   it("rejects preview mutations when the current grant cannot operate previews", async () => {
+    using _state = setup();
     mocks.canOperate = false;
-    await mount();
+    await using _view = await mount();
     await key("preview.new");
     await key("preview.reopenClosed");
     await key("preview.close");
@@ -225,12 +228,13 @@ describe("preview route and current chat host", () => {
   });
 
   it("routes focused new and reopen but rejects a misconfigured shortcut outside the preview", async () => {
-    await mount();
+    using _state = setup();
+    await using _view = await mount();
     expect((await key("preview.new")).defaultPrevented).toBe(true);
     expect(createTab).toHaveBeenCalledOnce();
     await key("preview.reopenClosed");
     expect(reopen).toHaveBeenCalledOnce();
-    element.dataset.threadKey = "wrong-thread";
+    panel.dataset.threadKey = "wrong-thread";
     expect((await key("preview.new")).defaultPrevented).toBe(false);
     expect(createTab).toHaveBeenCalledOnce();
   });
@@ -238,8 +242,8 @@ describe("preview route and current chat host", () => {
   it.each(["web", "streamed"] as const)(
     "preserves upstream preview actions but rejects native tab commands in %s previews",
     async (runtime) => {
-      if (runtime === "web")
-        vi.stubGlobal("window", Object.assign(target, { desktopBridge: undefined }));
+      using _state = setup();
+      if (runtime === "web") setDesktopBridge(undefined);
       else
         reconcilePreviewServerSessions(ref, {
           serverEpoch: "epoch",
@@ -249,7 +253,7 @@ describe("preview route and current chat host", () => {
       const actions = vi.fn();
       const unsubscribe = subscribePreviewAction(actions);
       try {
-        await mount();
+        await using view = await mount();
         for (const command of ["preview.new", "preview.close", "preview.reopenClosed"]) {
           expect((await key(command)).defaultPrevented).toBe(false);
         }
@@ -268,14 +272,7 @@ describe("preview route and current chat host", () => {
         }
         actions.mockClear();
         mocks.canOperate = false;
-        await act(() =>
-          renderer?.update(
-            <>
-              <ChatRouteGlobalShortcuts />
-              <Host />
-            </>,
-          ),
-        );
+        await view.rerender(hosts());
         await key("preview.refresh");
         expect(actions).not.toHaveBeenCalled();
       } finally {
@@ -285,7 +282,8 @@ describe("preview route and current chat host", () => {
   );
 
   it("uses live router, epoch and guest identity before admitting native actions", async () => {
-    await mount();
+    using _state = setup();
+    await using _view = await mount();
     const tabId = previewRuntimeTabId(ref, "epoch", "tab");
     await act(() => {
       mocks.desktopListener?.({ action: "preview.new", tabId });
@@ -306,8 +304,11 @@ describe("preview route and current chat host", () => {
       mocks.desktopListener?.({ action: "preview.new", tabId });
     });
     expect(createTab).toHaveBeenCalledOnce();
-    element.tagName = "WEBVIEW";
-    element.dataset.previewTab = tabId;
+    const guest = document.createElement("webview");
+    guest.tabIndex = 0;
+    guest.dataset.previewTab = tabId;
+    panel.append(guest);
+    guest.focus();
     await act(() => {
       mocks.desktopListener?.({
         action: "preview.new",
@@ -320,6 +321,7 @@ describe("preview route and current chat host", () => {
   it.each([false, true])(
     "records a user close only after agent confirmation=%s",
     async (accepted) => {
+      using _state = setup();
       applyPreviewDesktopState(ref, "tab", {
         hasWebContents: true,
         canGoBack: false,
@@ -334,7 +336,7 @@ describe("preview route and current chat host", () => {
         favicon: null,
       });
       confirm.mockResolvedValue(accepted);
-      await mount();
+      await using _view = await mount();
       await key("preview.close");
       expect(confirm).toHaveBeenCalledOnce();
       expect(closeMutation).toHaveBeenCalledTimes(accepted ? 1 : 0);
@@ -350,6 +352,7 @@ describe("preview route and current chat host", () => {
   ])(
     "closes two distinct focused tabs from $tabCount before either reply settles, first fails=$firstFails",
     async ({ tabCount, firstFails }) => {
+      using _state = setup();
       // Panel order and server recency deliberately choose different successors after third.
       const sessions = [
         { ...snapshot, updatedAt: "2026-09-05T00:00:02.000Z" },
@@ -381,12 +384,12 @@ describe("preview route and current chat host", () => {
               secondDone = resolve;
             }),
         );
-      await mount();
+      await using _view = await mount();
       mocks.command = "preview.close";
       // Both events run in the same React batch, without awaiting the first close or a rerender.
       await act(() => {
-        target.dispatchEvent(new Event("keydown", { cancelable: true }));
-        target.dispatchEvent(new Event("keydown", { cancelable: true }));
+        window.dispatchEvent(new KeyboardEvent("keydown", { cancelable: true }));
+        window.dispatchEvent(new KeyboardEvent("keydown", { cancelable: true }));
       });
       expect(closeMutation).toHaveBeenCalledTimes(2);
       expect(closeMutation.mock.calls.map((args) => args[0])).toMatchObject([

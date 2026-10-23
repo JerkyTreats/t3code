@@ -6,6 +6,13 @@ import type {
 import { useShallow } from "zustand/react/shallow";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
+import {
+  clearPendingPreviewRestoration,
+  previewStateLifetimeIsCurrent,
+  readThreadPreviewState,
+  type PreviewDesktopRestoration,
+} from "~/previewStateStore";
+
 import { previewBridge } from "~/components/preview/previewBridge";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
@@ -30,6 +37,27 @@ import {
   planWebviewCrashRecovery,
   type WebviewCrashRecoveryState,
 } from "./webviewCrashRecovery";
+
+/** Wait for the actual lease and retry transient attachment failures without consuming history. */
+export async function restorePreviewPresentation(input: {
+  readonly ready: Promise<void>;
+  readonly restore: () => Promise<void>;
+  readonly isCurrent?: () => boolean;
+  readonly retry?: () => Promise<void>;
+}): Promise<boolean> {
+  await input.ready;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (input.isCurrent && !input.isCurrent()) return false;
+    try {
+      await input.restore();
+      return !input.isCurrent || input.isCurrent();
+    } catch {
+      if (attempt === 2) return false;
+      await (input.retry?.() ?? new Promise<void>((resolve) => setTimeout(resolve, 50)));
+    }
+  }
+  return false;
+}
 
 interface ElectronWebview extends HTMLElement {
   src: string;
@@ -59,6 +87,7 @@ export function HostedBrowserWebview(props: {
    */
   readonly profileId: string | undefined;
   readonly zoomFactor: number;
+  readonly restoration?: PreviewDesktopRestoration | null;
   readonly serverDriven?: boolean;
   readonly serverRendering?: {
     readonly colorScheme: DesktopPreviewColorScheme;
@@ -74,12 +103,14 @@ export function HostedBrowserWebview(props: {
     pictureInPicture,
     zoomFactor,
     profileId,
+    restoration,
     serverDriven = false,
     serverRendering,
   } = props;
   const clientSettingsHydrated = useClientSettingsHydrated();
   const config = usePreviewWebviewConfig(threadRef.environmentId, profileId);
   const [initialSrc] = useState(() => initialUrl ?? "about:blank");
+  const initialRestoration = useRef(restoration);
   const tabLeaseRef = useRef<AcquiredDesktopTab | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const webviewRef = useRef<ElectronWebview | null>(null);
@@ -113,6 +144,7 @@ export function HostedBrowserWebview(props: {
     crashRecoveryRef.current = INITIAL_WEBVIEW_CRASH_RECOVERY_STATE;
     const lease = acquireDesktopTab(
       runtimeTabId,
+      initialRestoration.current ?? undefined,
       serverDriven ? { threadId: threadRef.threadId, tabId } : undefined,
     );
     tabLeaseRef.current = lease;
@@ -132,6 +164,41 @@ export function HostedBrowserWebview(props: {
     if (!bridge || serverZoomFactor === undefined) return;
     withDesktopTab(runtimeTabId, () => bridge.setZoomFactor(runtimeTabId, serverZoomFactor));
   }, [runtimeTabId, serverZoomFactor]);
+
+  const [registeredWebview, setRegisteredWebview] = useState<ElectronWebview | null>(null);
+
+  useEffect(() => {
+    const lease = tabLeaseRef.current;
+    const bridge = previewBridge;
+    if (!clientSettingsHydrated || !lease || !bridge || !restoration || !registeredWebview) return;
+    // An older shell can use creation defaults but cannot guarantee a late zoom override.
+    const setZoomFactor = bridge.setZoomFactor;
+    if (!setZoomFactor) return;
+    let disposed = false;
+    const isCurrentLifetime = previewStateLifetimeIsCurrent(threadRef);
+    const isCurrent = () =>
+      !disposed &&
+      isCurrentLifetime() &&
+      webviewRef.current === registeredWebview &&
+      readThreadPreviewState(threadRef).pendingRestorations[tabId] === restoration;
+    void restorePreviewPresentation({
+      ready: lease.ready,
+      isCurrent,
+      restore: async () => {
+        await setZoomFactor(runtimeTabId, restoration.zoomFactor);
+        if (isCurrent()) await bridge.setColorScheme(runtimeTabId, restoration.colorScheme);
+      },
+    })
+      .then((restored) => {
+        if (restored && isCurrent()) clearPendingPreviewRestoration(threadRef, tabId);
+      })
+      .catch(() => {
+        /* Keep the pending restoration for the next guest attachment. */
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [clientSettingsHydrated, registeredWebview, restoration, runtimeTabId, tabId, threadRef]);
 
   const [webviewGeneration, setWebviewGeneration] = useState(0);
   const [recoverySrc, setRecoverySrc] = useState(initialSrc);
@@ -163,6 +230,7 @@ export function HostedBrowserWebview(props: {
           const webContentsId = webview.getWebContentsId();
           if (Number.isInteger(webContentsId) && webContentsId > 0) {
             await bridge.registerWebview(runtimeTabId, webContentsId);
+            if (!disposed && webviewRef.current === webview) setRegisteredWebview(webview);
           }
         } catch {}
       })();

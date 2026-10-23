@@ -8,6 +8,10 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { canSnooze, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import {
+  canMoveNestedThreadToTopLevel,
+  canPinThread,
+} from "@t3tools/client-runtime/state/thread-nesting";
+import {
   AuthOrchestrationOperateScope,
   type ScopedThreadRef,
   type ThreadId,
@@ -83,6 +87,7 @@ export function useThreadActionMenu(input: {
     archiveThread,
     deleteThread,
     markThreadUnread,
+    moveThreadToTopLevel,
   } = useThreadActions();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
@@ -139,6 +144,8 @@ export function useThreadActionMenu(input: {
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
         isRegeneratingTitle,
         isRunning: !threadRuntimeCanArchive(thread.runtime),
+        canMoveToTopLevel: canMoveNestedThreadToTopLevel(thread),
+        canPin: canPinThread(thread),
         supports,
         snoozePresets,
       });
@@ -226,6 +233,11 @@ export function useThreadActionMenu(input: {
         case "auto-settle:disabled":
           await reportFailure("Failed to update auto-settle", () =>
             setThreadAutoSettle(threadRef, action === "auto-settle:enabled"),
+          );
+          return;
+        case "move-to-top-level":
+          await reportFailure("Failed to move thread to top level", () =>
+            moveThreadToTopLevel(threadRef),
           );
           return;
         case "rename":

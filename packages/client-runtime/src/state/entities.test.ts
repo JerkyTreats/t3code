@@ -22,6 +22,16 @@ import { canSnooze, effectiveSnoozed } from "./threadSettled.ts";
 const environmentId = EnvironmentId.make("environment-v2");
 
 describe("V2 client presentation", () => {
+  it("keeps Thread creation classification through the current V2 shell presentation", () => {
+    const marked = presentThreadShell(environmentId, {
+      ...v2ThreadShell,
+      creationSurface: "thread",
+    });
+    expect(marked.creationSurface).toBe("thread");
+    const historical = presentThreadShell(environmentId, v2ThreadShell);
+    expect(historical.creationSurface).toBeUndefined();
+  });
+
   it("keeps async questions in Working until the run completes", () => {
     const runId = RunId.make("run-async-question");
     const running = {

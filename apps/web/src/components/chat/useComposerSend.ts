@@ -57,7 +57,8 @@ import {
   collapseExpandedComposerCursor,
   parseStandaloneComposerSlashCommand,
 } from "../../composer-logic";
-import { resolvePlanFollowUpSubmission } from "../../proposedPlan";
+import { resolveReferencedPlanFollowUpSubmission } from "../../fork/chatPromptContext";
+import { desktopLauncherActivationOwner } from "../../fork/desktopLauncherActivation";
 import { type ChatMessage } from "../../types";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { newMessageId, newThreadId } from "~/lib/utils";
@@ -408,11 +409,11 @@ export function useComposerSend(input: ComposerSendInput) {
         setComposerDraftPrompt(composerDraftTarget, "");
         composerRef.current?.resetCursorState();
       }
-      return;
+      return false;
     }
 
     const notifyDirectAnnotationAttached = () => {
-      if (!directAnnotation) return;
+      if (!directAnnotation) return false;
       toastManager.add(
         stackedThreadToast({
           type: "info",
@@ -434,7 +435,7 @@ export function useComposerSend(input: ComposerSendInput) {
       feedbackUploadsInFlightRef.current.has(routeThreadKey)
     ) {
       notifyDirectAnnotationAttached();
-      return;
+      return false;
     }
     if (needsLoadBalancing) {
       const draft = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
@@ -448,7 +449,7 @@ export function useComposerSend(input: ComposerSendInput) {
           ),
         }),
       });
-      return;
+      return false;
     }
     if (activeEnvironmentUnavailable) {
       const toastSlot = environmentUnavailableSendToastSlotRef.current;
@@ -462,20 +463,20 @@ export function useComposerSend(input: ComposerSendInput) {
         }),
         id: `chat-send-environment-unavailable:${toastSlot}`,
       });
-      return;
+      return false;
     }
     const sendCtx = composerRef.current?.getSendContext();
     if (activePendingProgress && sendCtx?.answeringPendingUserInput !== false) {
       if (directAnnotation) {
         notifyDirectAnnotationAttached();
-        return;
+        return false;
       }
       onAdvanceActivePendingUserInput();
-      return;
+      return false;
     }
     if (!sendCtx?.providerAvailable) {
       notifyDirectAnnotationAttached();
-      return;
+      return false;
     }
     const multipleModelSelections = sendCtx.multipleModelSelections;
     const approvalFeedbackTarget = pendingApprovalsRef.current.find(
@@ -496,7 +497,7 @@ export function useComposerSend(input: ComposerSendInput) {
           });
     if (multipleModelBlock === "server-outdated") {
       setThreadError(activeThread.id, "Update this server before starting multiple models.");
-      return;
+      return false;
     }
     if (multipleModelBlock === "needs-new-git-thread") {
       toastManager.add(
@@ -507,7 +508,7 @@ export function useComposerSend(input: ComposerSendInput) {
             "Multiple models need a new thread in a Git project. Each gets its own worktree.",
         }),
       );
-      return;
+      return false;
     }
     const {
       images: sendContextImages,
@@ -554,7 +555,7 @@ export function useComposerSend(input: ComposerSendInput) {
           description: `This machine's agent can't read "${strandedThread.title}". Remove it, or switch back to ${owner} to send.`,
         }),
       );
-      return;
+      return false;
     }
     if (queuedRunEdit.isEditing) {
       // Edit mode repurposes the composer: sending saves the queued message
@@ -571,7 +572,7 @@ export function useComposerSend(input: ComposerSendInput) {
         },
         setThreadError,
       );
-      return;
+      return false;
     }
     const {
       trimmedPrompt: trimmed,
@@ -606,7 +607,7 @@ export function useComposerSend(input: ComposerSendInput) {
             description: "Send a message before you submit feedback.",
           }),
         );
-        return;
+        return false;
       }
       feedbackUploadsInFlightRef.current.add(routeThreadKey);
       await submitCodexFeedback({
@@ -641,7 +642,7 @@ export function useComposerSend(input: ComposerSendInput) {
         feedbackUploadsInFlightRef.current.delete(routeThreadKey);
       });
 
-      return;
+      return false;
     }
     if (
       !directAnnotation &&
@@ -651,19 +652,24 @@ export function useComposerSend(input: ComposerSendInput) {
       composerImages.length === 0 &&
       composerFiles.length === 0
     ) {
-      const followUp = resolvePlanFollowUpSubmission({
+      const hasRetainedFollowUpContext =
+        sendableComposerTerminalContexts.length > 0 || composerPreviewAnnotations.length > 0;
+      const followUp = resolveReferencedPlanFollowUpSubmission({
         draftText: promptForSend,
         planMarkdown: activeProposedPlan.planMarkdown,
+        hasRetainedContext: hasRetainedFollowUpContext,
       });
       const outgoingFollowUpText = formatOutgoingPrompt({
+        potetoMode: sendCtx.potetoMode,
         provider: ctxSelectedProvider,
         model: ctxSelectedModel,
         models: ctxSelectedProviderModels,
         effort: ctxSelectedPromptEffort,
-        text: followUp.text.trim(),
+        text: followUp.text,
+        hasRetainedContext: hasRetainedFollowUpContext,
       });
       if (composerRef.current?.validateProviderInput(outgoingFollowUpText) === false) {
-        return;
+        return false;
       }
       const followUpPromptSnapshot = promptRef.current;
       const followUpTerminalContexts = [...sendableComposerTerminalContexts];
@@ -711,7 +717,7 @@ export function useComposerSend(input: ComposerSendInput) {
       ) {
         handleNewThreadInActiveProject();
       }
-      return;
+      return false;
     }
     const standaloneSlashCommand =
       sendInteractionModeEnabled &&
@@ -728,7 +734,7 @@ export function useComposerSend(input: ComposerSendInput) {
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
-      return;
+      return false;
     }
     if (!hasSendableContent) {
       if (expiredTerminalContextCount > 0) {
@@ -744,7 +750,7 @@ export function useComposerSend(input: ComposerSendInput) {
           }),
         );
       }
-      return;
+      return false;
     }
     if (!activeProject) {
       toastManager.add(
@@ -754,7 +760,7 @@ export function useComposerSend(input: ComposerSendInput) {
           description: "This draft no longer points to an available project.",
         }),
       );
-      return;
+      return false;
     }
     const threadIdForSend = activeThread.id;
     const sendSnapshot = snapshotComposerSend({
@@ -775,6 +781,7 @@ export function useComposerSend(input: ComposerSendInput) {
       reviewComments: composerReviewCommentsSnapshot,
       threadContexts: composerThreadContextsSnapshot,
       messageText: messageTextForSend,
+      hasRetainedContext,
     } = sendSnapshot;
     const {
       missingWorktreeBaseBranch,
@@ -797,7 +804,7 @@ export function useComposerSend(input: ComposerSendInput) {
     });
     if (missingWorktreeBaseBranch) {
       setThreadError(threadIdForSend, "Select a base branch before sending in New worktree mode.");
-      return;
+      return false;
     }
     // Records bind attachments by the id each side knows: the local id for the optimistic
     // row, the upload id (or local id on the data-URL path) on the wire; the server
@@ -819,14 +826,16 @@ export function useComposerSend(input: ComposerSendInput) {
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const outgoingMessageText = formatOutgoingPrompt({
+      potetoMode: sendCtx.potetoMode,
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
       text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+      hasRetainedContext,
     });
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
-      return;
+      return false;
     }
 
     const readLiveAttachmentCapabilities = () => {
@@ -852,12 +861,14 @@ export function useComposerSend(input: ComposerSendInput) {
       messageText: messageTextForSend,
       planModeEnabled,
       interactionMode: sendInteractionMode,
+      potetoMode: sendCtx.potetoMode,
+      hasRetainedContext,
     })) {
       if ("error" in resolved) {
         setThreadError(threadIdForSend, resolved.error);
-        return;
+        return false;
       }
-      if (composerRef.current?.validateProviderInput(resolved.text) === false) return;
+      if (composerRef.current?.validateProviderInput(resolved.text) === false) return false;
       multipleTargets.push(resolved);
     }
 
@@ -867,7 +878,7 @@ export function useComposerSend(input: ComposerSendInput) {
     if (attachmentCapabilitiesBeforeUpload.fileBlockReason !== null) {
       sendInFlightRef.current = false;
       setThreadError(threadIdForSend, attachmentCapabilitiesBeforeUpload.fileBlockReason);
-      return;
+      return false;
     }
     const turnUsesAttachmentUploads =
       composerFilesSnapshot.length > 0
@@ -891,12 +902,12 @@ export function useComposerSend(input: ComposerSendInput) {
       if (attachmentCapabilitiesAfterUpload.fileBlockReason !== null) {
         sendInFlightRef.current = false;
         setThreadError(threadIdForSend, attachmentCapabilitiesAfterUpload.fileBlockReason);
-        return;
+        return false;
       }
       if (getUploadedAttachments({ environmentId, images: composerAttachmentsSnapshot }) === null) {
         sendInFlightRef.current = false;
         setThreadError(threadIdForSend, "Retry or remove failed uploads before sending.");
-        return;
+        return false;
       }
     }
 
@@ -940,7 +951,7 @@ export function useComposerSend(input: ComposerSendInput) {
       setDockedDraftHeroThreadKey((currentThreadKey) =>
         currentThreadKey === activeThreadKey ? null : currentThreadKey,
       );
-      return;
+      return false;
     }
     // A message sent while approvals are pending redirects the agent. They are declined only
     // here, after everything above has accepted the send, so local commands and rejected
@@ -995,7 +1006,7 @@ export function useComposerSend(input: ComposerSendInput) {
             "Send approval feedback without attachments or added context.",
           );
           sendInFlightRef.current = false;
-          return;
+          return false;
         }
         if (
           changedBeforeDecline ||
@@ -1003,7 +1014,7 @@ export function useComposerSend(input: ComposerSendInput) {
           currentRouteThreadKeyRef.current !== routeThreadKey
         ) {
           sendInFlightRef.current = false;
-          return;
+          return false;
         }
         const sent = await sendApprovalFeedback(
           approvalFeedbackTarget,
@@ -1063,7 +1074,7 @@ export function useComposerSend(input: ComposerSendInput) {
             description: "Send again when it's ready.",
           });
         }
-        return;
+        return false;
       }
     }
     if (sendQueuesBehindSetup) {
@@ -1102,6 +1113,8 @@ export function useComposerSend(input: ComposerSendInput) {
         readFileBlockReason: () => readLiveAttachmentCapabilities().fileBlockReason,
         buildOutgoingMessageContext,
         isCurrentSend: () => composerSendGenerationRef.current === sendGeneration,
+        onStarted: () =>
+          void desktopLauncherActivationOwner.completeAdmittedSubmit(draftId, promptForSend),
       });
       return;
     }
@@ -1304,6 +1317,7 @@ export function useComposerSend(input: ComposerSendInput) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        void desktopLauncherActivationOwner.completeAdmittedSubmit(draftId, promptForSend);
         setKeepFullHistory(routeThreadKey, false);
         clearUsageLimitsFor(routeThreadKey);
         if (turnUsesAttachmentUploads) {

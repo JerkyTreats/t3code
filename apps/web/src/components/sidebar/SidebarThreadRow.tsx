@@ -19,9 +19,11 @@ import {
   resolveThreadProviderStack,
 } from "@t3tools/client-runtime/state/models";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { NestedThreadBadge } from "@t3tools/client-runtime/state/thread-nesting";
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentMachineKind,
+  type ProviderInstanceId,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 
@@ -110,6 +112,10 @@ import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } f
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { useThreadHasUnsentDraft } from "../../composerDraftStore";
+import {
+  SidebarNestedThreadBadge,
+  SidebarNestedThreadToggle,
+} from "../../fork/SidebarNestedThreads";
 
 // The fields thread rows show. Provider status pushes refresh `checkedAt`,
 // status and auth on every provider; leaving those out keeps each
@@ -473,6 +479,24 @@ export function SortableThreadRow(
   // Keyed by variant so a card/slim switch remounts the row.
   return <SidebarThreadRow key={rowProps.variant} {...rowProps} thread={thread} sortable={bag} />;
 }
+
+/**
+ * A nested child row (F31). Children list under their parent outside the
+ * sections, so they never drag or take drops; like sortable rows they read
+ * their own live shell.
+ */
+export function NestedThreadRow(props: Parameters<typeof SortableThreadRow>[0]) {
+  const {
+    sortableId: _sortableId,
+    sortableDisabled: _sortableDisabled,
+    contextDrag: _contextDrag,
+    ...rowProps
+  } = props;
+  const thread =
+    useThreadShell(scopeThreadRef(rowProps.thread.environmentId, rowProps.thread.id)) ??
+    rowProps.thread;
+  return <SidebarThreadRow key={rowProps.variant} {...rowProps} thread={thread} isNestedChild />;
+}
 export type SidebarSweepAction = "settle" | "unsettle" | "unsnooze";
 const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
   pin: (
@@ -556,6 +580,13 @@ type SidebarThreadRowProps = {
   onUnpin: (threadRef: ScopedThreadRef) => void;
   onAcknowledgeWoke: (threadRef: ScopedThreadRef, visitedAt: string) => void;
   onFileDropThreads?: ((threadRef: ScopedThreadRef, files: File[]) => void) | undefined;
+  // Nested threads (F31). A parent carries its children's badge and a
+  // chevron; a child row is indented under its parent.
+  nestedBadge?: NestedThreadBadge<ProviderInstanceId> | null | undefined;
+  // Null hides the chevron.
+  nestedExpanded?: boolean | null | undefined;
+  onToggleNested?: ((threadRef: ScopedThreadRef) => void) | undefined;
+  isNestedChild?: boolean | undefined;
 };
 
 const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowProps) {
@@ -838,6 +869,25 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     event.stopPropagation();
     onUnpin(threadRef);
   };
+  // The row's click guard skips the chevron, so this click only toggles.
+  const handleNestedToggleClick = (event: ReactMouseEvent) => {
+    event.preventDefault();
+    props.onToggleNested?.(threadRef);
+  };
+  const nestedBadge = props.nestedBadge ? (
+    <SidebarNestedThreadBadge
+      badge={props.nestedBadge}
+      parentProviderInstanceId={resolveThreadProviderStack(thread).at(-1)!}
+      providerEntryByInstanceId={props.providerEntryByInstanceId}
+    />
+  ) : null;
+  const nestedToggle =
+    props.nestedExpanded != null ? (
+      <SidebarNestedThreadToggle
+        expanded={props.nestedExpanded}
+        onToggle={handleNestedToggleClick}
+      />
+    ) : null;
   const handleSnoozePreset = (preset: Pick<SnoozePreset, "snoozedUntil">) => {
     onSnooze(threadRef, preset);
   };
@@ -1080,6 +1130,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         {...(fileDropHandlers ?? {})}
         className={cn(
           "list-none [content-visibility:auto] [contain-intrinsic-size:auto_36px]",
+          props.isNestedChild && "pl-3",
           sortable?.isDragging && "relative z-20",
         )}
       >
@@ -1113,7 +1164,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {props.project ? <ProjectFavicon project={props.project} className="size-4" /> : null}
             </span>
             {draftIndicator}
+            {nestedToggle}
             {title}
+            {nestedBadge}
             {pinIndicator}
             {terminalStatusIcon}
             {isRegeneratingTitle ? (
@@ -1239,6 +1292,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {...(fileDropHandlers ?? {})}
       className={cn(
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
+        props.isNestedChild && "pl-3",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1427,7 +1481,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
-            <div className="mt-1 flex min-w-0">
+            <div className="mt-1 flex min-w-0 items-center gap-1">
+              {nestedToggle}
               {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
@@ -1469,12 +1524,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   </span>
                 </span>
               ) : null}
-              <span
-                aria-hidden
-                className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
-              >
+              <span className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1">
                 {isRemote && !showsScratchMachine ? (
-                  <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
+                  <span
+                    aria-hidden
+                    className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70"
+                  >
                     <EnvironmentMachineIcon
                       aria-hidden
                       kind={props.environmentMachine}
@@ -1482,10 +1537,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     />
                   </span>
                 ) : null}
-                <SidebarProviderStack
-                  thread={thread}
-                  providerEntryByInstanceId={props.providerEntryByInstanceId}
-                />
+                {/* A nested parent's badge stands in for its provider history (F31). */}
+                {nestedBadge ?? (
+                  <span aria-hidden className="inline-flex shrink-0 items-center">
+                    <SidebarProviderStack
+                      thread={thread}
+                      providerEntryByInstanceId={props.providerEntryByInstanceId}
+                    />
+                  </span>
+                )}
               </span>
             </div>
           </div>

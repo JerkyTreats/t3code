@@ -83,7 +83,8 @@ export type RightPanelSurface =
   | { id: "pull-requests"; kind: "pull-requests" };
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
-const RIGHT_PANEL_STORAGE_VERSION = 14;
+// v15 validates persisted surfaces against the currently registered kinds.
+const RIGHT_PANEL_STORAGE_VERSION = 15;
 
 export const PULL_REQUESTS_PANEL_REF = scopeThreadRef(
   EnvironmentId.make("pull-requests-panel"),
@@ -464,7 +465,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
               const surfaces = Array.isArray(validThreadState?.surfaces)
                 ? validThreadState.surfaces.flatMap<RightPanelSurface>((surface) => {
                     const kind = (surface as { kind?: string }).kind;
-                    if (kind === "plan" || kind === "agents") return [];
+                    if (!RIGHT_PANEL_KINDS.some((allowed) => allowed === kind)) return [];
                     if (
                       (surface.kind === "file" || surface.kind === "files") &&
                       "folderTrail" in surface &&

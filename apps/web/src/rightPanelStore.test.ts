@@ -39,6 +39,69 @@ async function reloadRightPanelStore() {
 }
 
 describe("rightPanelStore", () => {
+  it("accepts only registered surface kinds when loading persisted state", () => {
+    const migrated = migratePersistedRightPanelState({
+      byThreadKey: {
+        "env-1:thread-A": {
+          isOpen: true,
+          activeSurfaceId: "unsupported",
+          surfaces: [
+            { id: "unsupported", kind: "unsupported" },
+            { id: "files", kind: "files" },
+          ],
+        },
+      },
+    });
+
+    expect(selectThreadRightPanelState(migrated.byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "files",
+      surfaces: [{ id: "files", kind: "files" }],
+    });
+  });
+
+  it("rehydrates version 14 using registered kinds and preserves surviving panel selections", async () => {
+    const { storage, name } = useRightPanelStore.persist.getOptions();
+    expect(storage).toBeDefined();
+    await storage!.setItem(name!, {
+      version: 14,
+      state: {
+        byThreadKey: {
+          "env-1:thread-A": {
+            isOpen: true,
+            activeSurfaceId: "files",
+            surfaces: [
+              { id: "unsupported", kind: "unsupported" },
+              { id: "files", kind: "files" },
+            ],
+          },
+          "env-1:thread-B": {
+            isOpen: true,
+            activeSurfaceId: "unsupported",
+            surfaces: [
+              { id: "unsupported", kind: "unsupported" },
+              { id: "diff", kind: "diff" },
+            ],
+          },
+        },
+      },
+    } as never);
+
+    await useRightPanelStore.persist.rehydrate();
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "files",
+      surfaces: [{ id: "files", kind: "files" }],
+    });
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refB)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "diff",
+      surfaces: [{ id: "diff", kind: "diff" }],
+    });
+    expect(await storage!.getItem(name!)).toMatchObject({ version: 15 });
+  });
+
   it("records single and bulk tab closes, newest first", () => {
     const store = useRightPanelStore.getState();
     const pr = pullRequestSurface({

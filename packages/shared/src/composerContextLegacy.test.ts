@@ -6,6 +6,15 @@ describe("upgradeLegacyContextMessage", () => {
   const review =
     '<review_comment sectionId="s" filePath="f.ts" startIndex="1" endIndex="1">note</review_comment>';
 
+  it("removes only the helper separator before a trailing context block", () => {
+    const source =
+      "  Keep authored whitespace\n\t \n\n\n<terminal_context>\n- Build line 1:\n  output\n</terminal_context>";
+    const upgraded = upgradeLegacyContextMessage(source);
+    expect(upgraded.text).toBe(
+      "  Keep authored whitespace\n\t \n\n\n[Build line 1](t3-context://v1/terminal/legacy_terminal_1)",
+    );
+  });
+
   it.each([
     {
       tag: "terminal_context",

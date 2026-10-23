@@ -9,6 +9,7 @@ import {
   CheckpointId,
   CheckpointRef,
   CheckpointScopeId,
+  ClientSurface,
   CommandId,
   ContextHandoffId,
   ContextTransferId,
@@ -372,6 +373,7 @@ export type OrchestrationV2LimitRecoveryUpdate = typeof OrchestrationV2LimitReco
 
 export const OrchestrationV2AppThread = Schema.Struct({
   ...OrchestrationV2CreationFields,
+  creationSurface: Schema.optional(ClientSurface),
   id: ThreadId,
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
@@ -387,6 +389,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
   lineage: OrchestrationV2AppThreadLineage,
+  /** Ordinary parent thread this thread is grouped under; older peers ignore it and list the thread at top level. */
+  nestedUnderThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   forkedFrom: Schema.NullOr(
     Schema.Union([
       Schema.Struct({ type: Schema.Literal("run"), threadId: ThreadId, runId: RunId }),
@@ -535,6 +539,8 @@ export type OrchestrationV2ThreadLaunchWorkspaceStrategy =
 export const ORCHESTRATION_V2_WORKSPACE_PREPARATION_FAILURE_CODE = "workspace_preparation_failed";
 
 export const OrchestrationV2Run = Schema.Struct({
+  // Admission-time intent survives queued work while thread settings change.
+  interactionMode: Schema.optional(ProviderInteractionMode),
   id: RunId,
   threadId: ThreadId,
   ordinal: PositiveInt,
@@ -1094,6 +1100,8 @@ export const OrchestrationV2Notification = Schema.Struct({
 export type OrchestrationV2Notification = typeof OrchestrationV2Notification.Type;
 
 export const OrchestrationV2ConversationMessage = Schema.Struct({
+  // Captured intent survives queued messages later promoted into steering.
+  interactionMode: Schema.optional(ProviderInteractionMode),
   notification: Schema.optional(OrchestrationV2Notification),
   ...OrchestrationV2CreationFields,
   scheduledTaskId: Schema.optional(ScheduledTaskId),
@@ -1108,6 +1116,8 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
   runId: Schema.NullOr(RunId),
   nodeId: Schema.NullOr(NodeId),
   role: Schema.Literals(["user", "assistant", "system"]),
+  /** Providers that distinguish interim commentary from a final answer retain it here. */
+  responsePhase: Schema.optional(Schema.Literals(["commentary", "final_answer"])),
   text: Schema.String,
   context: Schema.optional(OrchestrationMessageContext),
   attachments: Schema.Array(ChatAttachment),
@@ -1813,6 +1823,7 @@ export type OrchestrationV2LatestVisibleMessageSummary =
 
 export const OrchestrationV2ThreadShell = Schema.Struct({
   ...OrchestrationV2CreationFields,
+  creationSurface: Schema.optional(ClientSurface),
   id: ThreadId,
   projectId: ProjectId,
   title: Schema.String,
@@ -1826,6 +1837,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   lineage: OrchestrationV2AppThreadLineage,
+  /** Ordinary parent thread this thread is grouped under; older peers ignore it and list the thread at top level. */
+  nestedUnderThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
@@ -1853,6 +1866,10 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
    * user role, so they move latestUserMessageAt but not this.
    */
   latestUserAuthoredMessageAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /** Last delivered assistant message, excluding unfinished streaming text. */
+  latestAssistantResponseAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /** Last published final assistant response, retained across subsequent runs. */
+  latestPublishedResponseAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   hasActionableProposedPlan: Schema.Boolean,
   pendingBackgroundTasks: Schema.optional(Schema.Array(OrchestrationV2PendingBackgroundTask)).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -2375,6 +2392,8 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
   latestVisibleMessage: Schema.NullOr(OrchestrationV2LatestVisibleMessageSummaryJson),
   latestUserMessageAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   latestUserAuthoredMessageAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  latestAssistantResponseAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  latestPublishedResponseAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   createdAt: Schema.DateTimeUtcFromString,
   updatedAt: Schema.DateTimeUtcFromString,
   archivedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
@@ -2586,6 +2605,7 @@ export const OrchestrationV2Command = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("thread.create"),
     ...OrchestrationV2CreationFields,
+    creationSurface: Schema.optional(ClientSurface),
     commandId: CommandId,
     threadId: ThreadId,
     projectId: ProjectId,
@@ -2595,6 +2615,8 @@ export const OrchestrationV2Command = Schema.Union([
     interactionMode: ProviderInteractionMode,
     branch: Schema.NullOr(TrimmedNonEmptyString),
     worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+    /** Group the new thread under this ordinary top-level thread in the same project. */
+    nestedUnderThreadId: Schema.optional(ThreadId),
     importedNativeThread: Schema.optional(
       Schema.Struct({
         ref: Schema.Struct({
@@ -2712,6 +2734,8 @@ export const OrchestrationV2Command = Schema.Union([
     limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecoveryUpdate)),
     /** Link (object) or unlink (null) a pull request (#8160); absent leaves it unchanged. */
     linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+    /** Null moves a nested thread back to top level; nesting is chosen only at creation. */
+    nestedUnderThreadId: Schema.optional(Schema.Null),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),
@@ -2952,6 +2976,7 @@ export const OrchestrationV2Command = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("thread.fork"),
     ...OrchestrationV2CreationFields,
+    creationSurface: Schema.optional(ClientSurface),
     commandId: CommandId,
     sourceThreadId: ThreadId,
     targetThreadId: ThreadId,
@@ -2971,6 +2996,7 @@ export const OrchestrationV2Command = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("delegated_task.request"),
     ...OrchestrationV2CreationFields,
+    creationSurface: Schema.optional(ClientSurface),
     commandId: CommandId,
     parentThreadId: ThreadId,
     parentRunId: RunId,
@@ -3177,6 +3203,7 @@ export type OrchestrationV2ArchivedShellStreamItem =
 
 export const OrchestrationV2ThreadLaunchInput = Schema.Struct({
   commandId: CommandId,
+  creationSurface: Schema.optional(ClientSurface),
   creationSource: Schema.optional(OrchestrationV2CreationSource),
   threadId: Schema.optional(ThreadId),
   reuseExistingThread: Schema.optional(Schema.Boolean),

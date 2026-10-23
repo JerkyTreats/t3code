@@ -376,6 +376,8 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
   renderTrailingContent?: (thread: TThread) => ReactNode;
   renderDescription?: (thread: TThread, meta: { projectTitle: string | undefined }) => ReactNode;
   getContentMatch?: (thread: TThread) => CommandPaletteThreadContentMatch | undefined;
+  /** Display title, such as `parent › child` for a nested thread. Defaults to the thread title. */
+  resolveTitle?: (thread: TThread) => string;
   runThread: (thread: Pick<SidebarThreadSummary, "environmentId" | "id">) => Promise<void>;
   limit?: number;
 }): CommandPaletteActionItem[] {
@@ -421,7 +423,7 @@ export function buildThreadActionItems<TThread extends BuildThreadActionItemsThr
           contentMatch?.snippet ?? ``,
           thread.id,
         ],
-        title: thread.title,
+        title: input.resolveTitle?.(thread) ?? thread.title,
         description,
         timestamp: formatRelativeTimeLabel(
           thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,

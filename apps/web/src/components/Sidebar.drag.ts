@@ -95,7 +95,9 @@ export function createSidebarSortingStrategy(input: {
   items: readonly SidebarListItem[];
   enabled?: boolean;
   settledOrder: readonly string[];
+  /** Conversation order at the destination of a lifecycle drop. */
   activeOrder?: readonly string[];
+  pinnedOrder?: readonly string[];
   settledExpanded: boolean;
   settledVisibleCount?: number;
   routeThreadKey?: string | null;
@@ -147,7 +149,7 @@ export function createSidebarSortingStrategy(input: {
     const group = groups[target.section];
     const order =
       target.section === "pinned"
-        ? target.pinnedOrder
+        ? (input.pinnedOrder ?? target.pinnedOrder)
         : target.section === "settled"
           ? input.settledOrder
           : (input.activeOrder ?? target.activeOrder);

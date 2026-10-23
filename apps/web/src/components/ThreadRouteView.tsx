@@ -23,6 +23,7 @@ import {
   resolveThreadRouteRenderState,
   type ThreadRouteTarget,
 } from "../threadRoutes";
+import { resolveThreadClientSurface } from "../threadClientSurface";
 
 /**
  * Plain server threads are unkeyed, so navigating between them reuses one instance as ChatView
@@ -169,6 +170,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
       view = (
         <ChatView
           key={target.draftId}
+          compactThreadClient={resolveThreadClientSurface()}
           draftId={target.draftId}
           environmentId={draftSession.environmentId}
           threadId={draftSession.threadId}
@@ -181,6 +183,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     view = (
       <ChatView
         key={nextChatViewKey?.key}
+        compactThreadClient={resolveThreadClientSurface()}
         environmentId={target.threadRef.environmentId}
         threadId={target.threadRef.threadId}
         routeKind="server"

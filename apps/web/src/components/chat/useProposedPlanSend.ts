@@ -1,3 +1,9 @@
+import { potetoModeScope } from "../../fork/potetoMode";
+import { usePotetoModeStore } from "../../fork/potetoModeStore";
+import {
+  hasRetainedChatPromptContext,
+  normalizeReferencedChatPrompt,
+} from "../../fork/chatPromptContext";
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
@@ -125,8 +131,9 @@ export function usePlanFollowUpSend(input: PlanFollowUpSendInput) {
       return false;
     }
 
-    const trimmed = text.trim();
-    if (!trimmed) {
+    const hasRetainedContext = hasRetainedChatPromptContext(context);
+    const messageText = normalizeReferencedChatPrompt(text, hasRetainedContext);
+    if (!messageText.trim()) {
       return false;
     }
 
@@ -139,12 +146,15 @@ export function usePlanFollowUpSend(input: PlanFollowUpSendInput) {
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
     const outgoingMessageText = formatOutgoingPrompt({
+      potetoMode: sendCtx.potetoMode,
       provider: sendCtx.selectedProvider,
       model: sendCtx.selectedModel,
       models: sendCtx.selectedProviderModels,
       effort: sendCtx.selectedPromptEffort,
-      text: trimmed,
+      text: messageText,
+      hasRetainedContext,
     });
+    if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) return false;
 
     sendInFlightRef.current = true;
     beginLocalDispatch({ preparingWorktree: false });
@@ -295,12 +305,14 @@ export function useImplementPlanInNewThread(input: ImplementPlanInNewThreadInput
     const nextThreadId = newThreadId();
     const planMarkdown = activeProposedPlan.planMarkdown;
     const outgoingImplementationPrompt = formatOutgoingPrompt({
+      potetoMode: sendCtx.potetoMode,
       provider: sendCtx.selectedProvider,
       model: sendCtx.selectedModel,
       models: sendCtx.selectedProviderModels,
       effort: sendCtx.selectedPromptEffort,
       text: buildPlanImplementationPrompt(planMarkdown),
     });
+    if (composerRef.current?.validateProviderInput(outgoingImplementationPrompt) === false) return;
     const nextThreadTitle = truncate(buildPlanImplementationThreadTitle(planMarkdown));
     const nextThreadModelSelection: ModelSelection = sendCtx.selectedModelSelection;
 
@@ -325,6 +337,9 @@ export function useImplementPlanInNewThread(input: ImplementPlanInNewThreadInput
       createResult._tag === "Failure" ? createResult : null;
 
     if (failure === null) {
+      usePotetoModeStore
+        .getState()
+        .setSelection(potetoModeScope(environmentId, nextThreadId), sendCtx.potetoMode);
       const startResult = await startThreadTurn({
         environmentId,
         input: {

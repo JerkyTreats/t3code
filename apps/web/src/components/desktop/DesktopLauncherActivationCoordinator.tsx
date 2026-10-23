@@ -1,14 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId } from "@t3tools/contracts";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { useComposerDraftStore, type DraftId } from "../../composerDraftStore";
 import {
@@ -34,23 +27,22 @@ function ReadyDesktopLauncherActivationCoordinator(props: {
   const projects = useProjects();
   const openDraft = useNewThreadHandler();
 
-  const stage = useCallback(
-    async (activation: Parameters<typeof stageDesktopLauncherActivation>[0]["activation"]) => {
-      const bridge = window.desktopBridge;
-      return stageDesktopLauncherActivation({
-        activation,
-        primaryEnvironmentId,
-        projects,
-        openDraft: (project) => openDraft(scopeProjectRef(project.environmentId, project.id)),
-        readDraft: (draftId) => useComposerDraftStore.getState().getComposerDraft(draftId),
-        setPrompt: (draftId, prompt) => useComposerDraftStore.getState().setPrompt(draftId, prompt),
-        owner,
-        complete: async (activationId) =>
-          (await bridge?.completeLauncherActivation?.({ activationId })) ?? false,
-      });
-    },
-    [openDraft, primaryEnvironmentId, projects, owner],
-  );
+  const stage = async (
+    activation: Parameters<typeof stageDesktopLauncherActivation>[0]["activation"],
+  ) => {
+    const bridge = window.desktopBridge;
+    return stageDesktopLauncherActivation({
+      activation,
+      primaryEnvironmentId,
+      projects,
+      openDraft: (project) => openDraft(scopeProjectRef(project.environmentId, project.id)),
+      readDraft: (draftId) => useComposerDraftStore.getState().getComposerDraft(draftId),
+      setPrompt: (draftId, prompt) => useComposerDraftStore.getState().setPrompt(draftId, prompt),
+      owner,
+      complete: async (activationId) =>
+        (await bridge?.completeLauncherActivation?.({ activationId })) ?? false,
+    });
+  };
 
   useEffect(() => {
     const bridge = window.desktopBridge;
@@ -127,9 +119,9 @@ export function useDesktopLauncherSubmitAdmission(
     hostRef.current = { draftId, onSend, readComposerState };
   });
 
-  const refresh = useCallback(() => {
+  const refresh = () => {
     if (draftId) owner.refreshSubmitter(draftId);
-  }, [draftId, owner]);
+  };
 
   useEffect(() => {
     if (!draftId) return;

@@ -1,7 +1,6 @@
 import {
   EnvironmentAuthInvalidError,
   type AuthBrowserSessionResult,
-  type AuthCreatePairingCredentialInput,
   type AuthSessionState,
   type DesktopBridge,
 } from "@t3tools/contracts";
@@ -20,6 +19,7 @@ type TestWindow = {
     replaceState: (_data: unknown, _unused: string, url?: string) => void;
   };
   desktopBridge?: DesktopBridge;
+  t3ThreadBridge?: Window["t3ThreadBridge"];
 };
 
 const LOOPBACK_AUTH = {
@@ -96,20 +96,11 @@ async function installAuthApi(input: {
   readonly browserSession?: (
     credential: string,
   ) => Effect.Effect<AuthBrowserSessionResult, EnvironmentAuthInvalidError>;
-  readonly pairingCredential?: (payload: AuthCreatePairingCredentialInput) => Effect.Effect<{
-    readonly id: string;
-    readonly credential: string;
-    readonly label?: string;
-    readonly expiresAt: DateTime.Utc;
-  }>;
 }) {
   const testApi = await installEnvironmentHttpTest({
     ...(input.session ? { session: () => Effect.succeed(input.session!()) } : {}),
     ...(input.browserSession
       ? { browserSession: (payload) => input.browserSession!(payload.credential) }
-      : {}),
-    ...(input.pairingCredential
-      ? { pairingCredential: (payload) => input.pairingCredential!(payload) }
       : {}),
   });
   disposeHttpTest = testApi.dispose;
@@ -132,6 +123,71 @@ describe("resolveInitialServerAuthGateState", () => {
     vi.unstubAllEnvs();
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("rechecks the real session after protected Thread enrollment without a browser exchange", async () => {
+    let enrolled = false;
+    const testWindow = installTestBrowser("https://thread.example.test/");
+    const submitPairingCredential = vi.fn(async () => {
+      enrolled = true;
+      return { status: "accepted" as const };
+    });
+    testWindow.t3ThreadBridge = { subscribe: () => () => {}, submitPairingCredential };
+    testWindow.desktopBridge = {
+      getLocalEnvironmentBootstraps: () => {
+        throw new Error("desktop bootstrap forbidden");
+      },
+    } as unknown as DesktopBridge;
+    const testApi = await installAuthApi({
+      session: () =>
+        enrolled ? authenticatedSession(LOOPBACK_AUTH) : unauthenticatedSession(LOOPBACK_AUTH),
+    });
+    const { resolveInitialServerAuthGateState, submitServerAuthCredential } =
+      await import("./environments/primary");
+    expect(await resolveInitialServerAuthGateState()).toMatchObject({ status: "requires-auth" });
+    await submitServerAuthCredential(" synthetic-pairing ");
+    expect(await resolveInitialServerAuthGateState()).toEqual({ status: "authenticated" });
+    expect(submitPairingCredential).toHaveBeenCalledExactlyOnceWith("synthetic-pairing");
+    expect(testApi.calls.session).toBe(2);
+    expect(testApi.calls.browserSession).toEqual([]);
+  });
+
+  it.each(["rejected", "unavailable"] as const)(
+    "keeps Thread unauthenticated after enrollment is %s",
+    async (status) => {
+      const testWindow = installTestBrowser("https://thread.example.test/");
+      testWindow.t3ThreadBridge = {
+        subscribe: () => () => {},
+        submitPairingCredential: async () => ({ status }),
+      };
+      const testApi = await installAuthApi({
+        session: () => unauthenticatedSession(LOOPBACK_AUTH),
+      });
+      const { resolveInitialServerAuthGateState, submitServerAuthCredential } =
+        await import("./environments/primary");
+      await expect(submitServerAuthCredential("synthetic-pairing")).rejects.toThrow();
+      expect(await resolveInitialServerAuthGateState()).toMatchObject({ status: "requires-auth" });
+      expect(testApi.calls.browserSession).toEqual([]);
+    },
+  );
+
+  it("does not trust an accepted Thread enrollment without a successful session check", async () => {
+    const testWindow = installTestBrowser("https://thread.example.test/");
+    testWindow.t3ThreadBridge = {
+      subscribe: () => () => {},
+      submitPairingCredential: async () => ({ status: "accepted" }),
+    };
+    const testApi = await installAuthApi({ session: () => unauthenticatedSession(LOOPBACK_AUTH) });
+    const { resolveInitialServerAuthGateState, submitServerAuthCredential } =
+      await import("./environments/primary");
+    vi.useFakeTimers();
+    const submitted = expect(submitServerAuthCredential("synthetic-pairing")).rejects.toThrow(
+      "Timed out waiting",
+    );
+    await vi.runAllTimersAsync();
+    await submitted;
+    expect(await resolveInitialServerAuthGateState()).toMatchObject({ status: "requires-auth" });
+    expect(testApi.calls.browserSession).toEqual([]);
   });
 
   it("reuses an in-flight silent bootstrap attempt", async () => {

@@ -1065,9 +1065,11 @@ describe("snapshotComposerSend", () => {
     });
 
     expect(snapshot.terminalContexts).toEqual([live]);
-    expect(snapshot.messageText).toBe(
+    // Fork F04: retained context keeps authored bytes, so only the expired reference leaves.
+    expect(snapshot.messageText.trim()).toBe(
       ensureInlineContextReferences("run", [terminalContextReference(live)]).trim(),
     );
+    expect(snapshot.hasRetainedContext).toBe(true);
   });
 });
 

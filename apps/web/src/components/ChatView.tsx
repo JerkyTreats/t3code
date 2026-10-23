@@ -266,6 +266,11 @@ import {
   resolveScrollToEndClearance,
 } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
+import { readFocusedPreviewHost } from "./preview/previewHostActions";
+import { useDesktopLauncherSubmitAdmission } from "./desktop/DesktopLauncherActivationCoordinator";
+import { ThreadClientStatus } from "./thread/ThreadClientStatus";
+import { useThreadWindowTitle } from "../fork/threadWindowTitle";
+import { chatComposerPresentation } from "../fork/chatComposerPresentation";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
@@ -380,6 +385,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      compactThreadClient?: boolean;
       routeKind: "server";
       draftId?: never;
     }
@@ -389,6 +395,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      compactThreadClient?: boolean;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -406,6 +413,7 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
+    compactThreadClient = false,
   } = props;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -1407,6 +1415,12 @@ export default function ChatView(props: ChatViewProps) {
     isConnecting ||
     isCompacting ||
     runlessWorkStartedAt !== null;
+  useThreadWindowTitle({
+    enabled: compactThreadClient,
+    title: activeThread?.title ?? "",
+    working: isWorking,
+    latestRunStatus: activeLatestRun?.status ?? null,
+  });
   const activeContextWindow = deriveLatestContextWindowSnapshot(
     serverVisibleTurnItems ?? [],
     activeThreadLiveTokenUsage,
@@ -1542,14 +1556,16 @@ export default function ChatView(props: ChatViewProps) {
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
-  const isDraftHeroState = resolveDraftHeroState({
-    isLocalDraftThread,
-    hasTimelineEntries: !timelineEmpty,
-    isWorking,
-    draftHeroDockRequested,
-    backgroundSubmissionPending,
-    hasWorktreeSetupCard: worktreeSetup !== null,
-  });
+  const isDraftHeroState =
+    !compactThreadClient &&
+    resolveDraftHeroState({
+      isLocalDraftThread,
+      hasTimelineEntries: !timelineEmpty,
+      isWorking,
+      draftHeroDockRequested,
+      backgroundSubmissionPending,
+      hasWorktreeSetupCard: worktreeSetup !== null,
+    });
   const {
     transitionGroupRef: draftHeroTransitionGroupRef,
     composerAnchorRef: draftHeroComposerAnchorRef,
@@ -2681,6 +2697,7 @@ export default function ChatView(props: ChatViewProps) {
     terminalFocus: getTerminalFocusOwner() !== null,
     terminalOpen: Boolean(terminalUiState.terminalOpen),
     previewFocus: isPreviewFocused(),
+    nativePreviewFocus: readFocusedPreviewHost(activeThreadRef) !== null,
     previewOpen: previewPanelOpen,
     editableFocus: isEditableFocused(eventTarget),
     modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
@@ -2943,6 +2960,25 @@ export default function ChatView(props: ChatViewProps) {
   };
   const onWorktreeSetupWorkLocallyStable = useStableCallback(onWorktreeSetupWorkLocally);
   const onComposerSendStable = useStableCallback(onSend);
+  const onLauncherComposerCommitted = useDesktopLauncherSubmitAdmission(
+    draftId,
+    () => onSend(),
+    () => ({
+      prompt: promptRef.current,
+      ready: Boolean(
+        activeThread &&
+        activeProject &&
+        !isSendBusy &&
+        !isConnecting &&
+        !threadDetailLoading &&
+        !sendInFlightRef.current &&
+        !feedbackUploadsInFlightRef.current.has(routeThreadKey) &&
+        !activeEnvironmentUnavailable &&
+        !activePendingProgress &&
+        composerRef.current?.getSendContext().submissionReady,
+      ),
+    }),
+  );
   const sendPreviewAnnotation = (
     annotation: PreviewAnnotationPayload,
     image: ComposerImageAttachment | null,
@@ -3173,45 +3209,47 @@ export default function ChatView(props: ChatViewProps) {
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
         data-chat-column
       >
-        <header
-          ref={threadPanelPopoverAnchorRef}
-          data-chat-header
-          className={cn(
-            "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
-            isElectron
-              ? cn(
-                  "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
-                  reserveTitleBarControlInset &&
-                    !inlineRightPanelOwnsTitleBar &&
-                    "wco:pr-(--workspace-native-controls-inset)",
-                )
-              : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
-            COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-          )}
-        >
-          {isElectron && rightPanelControlsAtRoot ? (
-            <span
-              aria-hidden
-              className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
+        {compactThreadClient ? null : (
+          <header
+            ref={threadPanelPopoverAnchorRef}
+            data-chat-header
+            className={cn(
+              "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
+              isElectron
+                ? cn(
+                    "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
+                    reserveTitleBarControlInset &&
+                      !inlineRightPanelOwnsTitleBar &&
+                      "wco:pr-(--workspace-native-controls-inset)",
+                  )
+                : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
+              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+            )}
+          >
+            {isElectron && rightPanelControlsAtRoot ? (
+              <span
+                aria-hidden
+                className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
+              />
+            ) : null}
+            {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
+            {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
+            <ChatHeader
+              activeThreadEnvironmentId={activeThread.environmentId}
+              activeThreadId={activeThread.id}
+              isServerThread={isServerThread}
+              activeThreadTitle={activeThread.title}
+              activeProject={activeProject ?? null}
+              parentThreadLink={parentThreadLink}
+              onOpenThread={onOpenRelatedThreadStable}
+              rightPanelOpen={inlineRightPanelOwnsTitleBar}
+              onNewThreadInProject={handleNewThreadInActiveProjectStable}
+              {...(activeDraftLogicalProjectKey
+                ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
+                : {})}
             />
-          ) : null}
-          {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
-          {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
-          <ChatHeader
-            activeThreadEnvironmentId={activeThread.environmentId}
-            activeThreadId={activeThread.id}
-            isServerThread={isServerThread}
-            activeThreadTitle={activeThread.title}
-            activeProject={activeProject ?? null}
-            parentThreadLink={parentThreadLink}
-            onOpenThread={onOpenRelatedThreadStable}
-            rightPanelOpen={inlineRightPanelOwnsTitleBar}
-            onNewThreadInProject={handleNewThreadInActiveProjectStable}
-            {...(activeDraftLogicalProjectKey
-              ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
-              : {})}
-          />
-        </header>
+          </header>
+        )}
 
         <div className="relative flex min-h-0 min-w-0 flex-1">
           <ThreadFindCanvas
@@ -3400,7 +3438,9 @@ export default function ChatView(props: ChatViewProps) {
                 onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEndStable}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigationStable}
                 cancelPositionRestoreRef={cancelPositionRestoreRef}
-                hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
+                hideEmptyPlaceholder={
+                  compactThreadClient || isDraftHeroState || threadDetailLoading
+                }
                 emptyPlaceholderInset={composerReservedHeight}
                 topFadeEnabled={!hasTimelineTopBanner}
                 {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined
@@ -3434,6 +3474,18 @@ export default function ChatView(props: ChatViewProps) {
                   data-chat-composer-stack="true"
                   className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-(--chat-content-max-width)"
                 >
+                  {compactThreadClient ? (
+                    <ThreadClientStatus
+                      modelLabel={
+                        serverProjection?.runs.find((run) => run.id === activeActivityRun?.runId)
+                          ?.modelSelection.model ?? activeThread.modelSelection.model
+                      }
+                      isWorking={isWorking}
+                      isConnecting={isConnecting}
+                      disconnected={activeEnvironmentUnavailable || phase === "disconnected"}
+                      {...(activeWorkStartedAt ? { startedAt: activeWorkStartedAt } : {})}
+                    />
+                  ) : null}
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full">
                       <div
@@ -3463,8 +3515,10 @@ export default function ChatView(props: ChatViewProps) {
                   >
                     <ComposerSurface.Shell
                       contextStrip={showComposerContextStrip || showComposerModelStrip}
+                      className={chatComposerPresentation.shellClassName}
                     >
                       <ComposerSurface.Host
+                        className={chatComposerPresentation.hostClassName}
                         inert={queuedRunEdit.isSaving}
                         aria-busy={queuedRunEdit.isSaving}
                       >
@@ -3491,6 +3545,7 @@ export default function ChatView(props: ChatViewProps) {
                           ) : null}
                           {!composerMounted ? null : (
                             <ChatComposer
+                              threadClient={compactThreadClient}
                               canOperateThread={canOperateThread}
                               reportedModelSelection={reportedModelSelection}
                               multipleModelSelections={multipleModelSelections}
@@ -3517,7 +3572,8 @@ export default function ChatView(props: ChatViewProps) {
                               isServerThread={isServerThread}
                               isLocalDraftThread={isLocalDraftThread}
                               forceExpandedOnMobile={
-                                forceExpandedMobileComposer && isDraftHeroState
+                                compactThreadClient ||
+                                (forceExpandedMobileComposer && isDraftHeroState)
                               }
                               projectSelectionRequired={
                                 isLocalDraftThread && activeProject === null
@@ -3626,6 +3682,7 @@ export default function ChatView(props: ChatViewProps) {
                               onPageScrollRelease={onComposerPageScrollReleaseStable}
                               onCompactContext={onComposerCompactContextStable}
                               onSend={onComposerSendStable}
+                              onSendContextCommitted={onLauncherComposerCommitted}
                               onResume={onComposerResumeStable}
                               onInterrupt={onInterruptStable}
                               onImplementPlanInNewThread={onImplementPlanInNewThreadStable}

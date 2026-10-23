@@ -112,6 +112,19 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
 }
 
 describe("buildThreadActionItems", () => {
+  it("titles a thread through resolveTitle, as nested threads use for parent › child", () => {
+    const [item] = buildThreadActionItems({
+      threads: [makeThread({ title: "Child" })],
+      projectTitleById: new Map(),
+      sortOrder: "updated_at",
+      icon: null,
+      resolveTitle: (thread) => `Parent › ${thread.title}`,
+      runThread: async (_thread) => undefined,
+    });
+    expect(item?.title).toBe("Parent › Child");
+    expect(item?.searchTerms[0]).toBe("Child");
+  });
+
   it("ranks thread title matches ahead of contextual project-name matches", () => {
     const threadItems = buildThreadActionItems({
       threads: [

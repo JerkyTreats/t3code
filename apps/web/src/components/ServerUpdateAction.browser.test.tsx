@@ -124,7 +124,9 @@ function renderAction(props: Partial<Parameters<typeof ServerUpdateAction>[0]> =
     <ServerUpdateAction
       environmentId={"env-test" as EnvironmentId}
       serverLabel="Test server"
-      selfUpdate="boot-service"
+      // Fork: only the desktop-managed runtime updates in app.
+      selfUpdate="desktop-managed"
+      desktopAppUpdate
       targetVersion="0.0.31"
       {...props}
     />,

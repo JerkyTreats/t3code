@@ -1,8 +1,9 @@
 import { DesktopLauncherActivation, EnvironmentId, ProjectId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import type { ReactTestRenderer } from "react-test-renderer";
+import { useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { act, render, stubGlobal, type Screen } from "../../../test/render";
 import type { DraftId } from "../../composerDraftStore";
 import type { DesktopLauncherActivationOwner as DesktopLauncherActivationOwnerType } from "../../fork/desktopLauncherActivation";
 
@@ -10,24 +11,39 @@ const host = vi.hoisted(() => ({
   primary: null as { environmentId: string } | null,
   projects: [] as unknown[],
   status: "bootstrapping",
+  statusListeners: new Set<() => void>(),
+  setStatus(status: string) {
+    host.status = status;
+    for (const listener of host.statusListeners) listener();
+  },
   openDraft: vi.fn(),
 }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => ({ status: host.status }) }));
+// Subscribed like the real atom hook: compiled parents skip rerendering unchanged children.
+vi.mock(import("@effect/atom-react"), async (original) => {
+  const { useSyncExternalStore } = await import("react");
+  const subscribe = (listener: () => void) => {
+    host.statusListeners.add(listener);
+    return () => host.statusListeners.delete(listener);
+  };
+  return {
+    ...(await original()),
+    useAtomValue: (() => ({
+      status: useSyncExternalStore(subscribe, () => host.status),
+    })) as never,
+  };
+});
 vi.mock("../../state/environments", () => ({ usePrimaryEnvironment: () => host.primary }));
 vi.mock("../../state/entities", () => ({ useProjects: () => host.projects }));
 vi.mock("../../state/shell", () => ({ environmentShell: { stateValueAtom: () => null } }));
 vi.mock("../../hooks/useHandleNewThread", () => ({ useNewThreadHandler: () => host.openDraft }));
 
-process.env.NODE_ENV = "development";
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+import { useComposerDraftStore } from "../../composerDraftStore";
+import { DesktopLauncherActivationOwner } from "../../fork/desktopLauncherActivation";
+import {
+  DesktopLauncherActivationCoordinator,
+  useDesktopLauncherSubmitAdmission,
+} from "./DesktopLauncherActivationCoordinator";
 
-const React = await import("react");
-const { useComposerDraftStore } = await import("../../composerDraftStore");
-const TestRenderer = await import("react-test-renderer");
-const { DesktopLauncherActivationOwner } = await import("../../fork/desktopLauncherActivation");
-const { useDesktopLauncherSubmitAdmission, DesktopLauncherActivationCoordinator } =
-  await import("./DesktopLauncherActivationCoordinator");
 const decodeActivation = Schema.decodeUnknownSync(DesktopLauncherActivation);
 const ACTIVATION_ID = decodeActivation({
   activationId: "12345678-1234-4234-8234-1234567890ab",
@@ -36,6 +52,12 @@ const ACTIVATION_ID = decodeActivation({
   action: "submit",
   prompt: "Send once",
 }).activationId;
+
+async function clickOnlyButton(screen: Screen) {
+  const buttons = screen.container.querySelectorAll("button");
+  expect(buttons).toHaveLength(1);
+  await act(async () => buttons[0]!.click());
+}
 
 function SubmitHost(props: {
   readonly owner: DesktopLauncherActivationOwnerType;
@@ -73,22 +95,20 @@ describe("DesktopLauncherActivationCoordinator ChatView admission seam", () => {
       complete,
     });
 
-    let renderer: ReactTestRenderer | undefined;
-    await React.act(async () => {
-      renderer = TestRenderer.create(
-        <SubmitHost owner={owner} draftId={"other-draft" as DraftId} onSend={onSend} />,
-      );
-    });
+    await using renderer = await render(
+      <SubmitHost owner={owner} draftId={"other-draft" as DraftId} onSend={onSend} />,
+      { router: false },
+    );
     expect(onSend).not.toHaveBeenCalled();
 
-    await React.act(async () => {
-      renderer!.update(<SubmitHost owner={owner} draftId={matchingDraftId} onSend={onSend} />);
-    });
+    await renderer!.rerender(
+      <SubmitHost owner={owner} draftId={matchingDraftId} onSend={onSend} />,
+    );
     await vi.waitFor(() => expect(complete).toHaveBeenCalledWith(ACTIVATION_ID));
 
-    await React.act(async () => {
-      renderer!.update(<SubmitHost owner={owner} draftId={matchingDraftId} onSend={onSend} />);
-    });
+    await renderer!.rerender(
+      <SubmitHost owner={owner} draftId={matchingDraftId} onSend={onSend} />,
+    );
 
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(complete).toHaveBeenCalledTimes(1);
@@ -109,36 +129,30 @@ describe("actual launcher coordinator host", () => {
     });
     const take = vi.fn(async () => activation);
     const complete = vi.fn(async () => true);
-    vi.stubGlobal("window", {
-      desktopBridge: { takeLauncherActivation: take, completeLauncherActivation: complete },
+    using _bridge = stubGlobal("desktopBridge", {
+      takeLauncherActivation: take,
+      completeLauncherActivation: complete,
     });
     host.primary = null;
     host.projects = [];
     host.status = "bootstrapping";
     host.openDraft.mockResolvedValue({ draftId });
-    let renderer: ReactTestRenderer | undefined;
+    let renderer: Screen | undefined;
     try {
-      await React.act(async () => {
-        renderer = TestRenderer.create(<DesktopLauncherActivationCoordinator owner={owner} />);
+      renderer = await render(<DesktopLauncherActivationCoordinator owner={owner} />, {
+        router: false,
       });
       expect(take).not.toHaveBeenCalled();
       host.primary = { environmentId: EnvironmentId.make("primary") };
-      await React.act(async () => {
-        renderer!.update(<DesktopLauncherActivationCoordinator owner={owner} />);
-      });
+      await renderer!.rerender(<DesktopLauncherActivationCoordinator owner={owner} />);
       expect(take).not.toHaveBeenCalled();
-      host.status = "live";
-      await React.act(async () => {
-        renderer!.update(<DesktopLauncherActivationCoordinator owner={owner} />);
-      });
+      await act(async () => host.setStatus("live"));
       expect(take).toHaveBeenCalledTimes(1);
       expect(host.openDraft).not.toHaveBeenCalled();
-      expect(
-        renderer!.root.findByProps({ role: "status" }).findByType("span").children.join(""),
-      ).toContain("waiting for its project");
-      await React.act(async () => {
-        renderer!.unmount();
-      });
+      expect(renderer!.container.querySelector('[role="status"]')?.textContent).toContain(
+        "waiting for its project",
+      );
+      await renderer![Symbol.asyncDispose]();
       host.projects = [
         {
           environmentId: EnvironmentId.make("primary"),
@@ -146,22 +160,17 @@ describe("actual launcher coordinator host", () => {
           workspaceRoot: "/workspace/project",
         },
       ];
-      await React.act(async () => {
-        renderer = TestRenderer.create(<DesktopLauncherActivationCoordinator owner={owner} />);
+      renderer = await render(<DesktopLauncherActivationCoordinator owner={owner} />, {
+        router: false,
       });
       expect(host.openDraft).not.toHaveBeenCalled();
-      await React.act(async () => {
-        renderer!.root.findByType("button").props.onClick();
-      });
+      await clickOnlyButton(renderer!);
       expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.prompt).toBe(prompt);
       expect(complete).toHaveBeenCalledWith({ activationId: ACTIVATION_ID });
       expect(take).toHaveBeenCalledTimes(1);
       expect(host.openDraft).toHaveBeenCalledTimes(1);
     } finally {
-      await React.act(async () => {
-        renderer?.unmount();
-      });
-      vi.unstubAllGlobals();
+      await renderer?.[Symbol.asyncDispose]();
     }
   });
 
@@ -172,17 +181,13 @@ describe("actual launcher coordinator host", () => {
     const onSend = vi.fn(async () => true);
     owner.queueSubmit({ activationId: ACTIVATION_ID, draftId, prompt: "original", complete });
     useComposerDraftStore.getState().setPrompt(draftId, "user edited");
-    let renderer: ReactTestRenderer | undefined;
-    await React.act(async () => {
-      renderer = TestRenderer.create(
-        <SubmitHost owner={owner} draftId={draftId} onSend={onSend} />,
-      );
+    let renderer: Screen | undefined;
+    renderer = await render(<SubmitHost owner={owner} draftId={draftId} onSend={onSend} />, {
+      router: false,
     });
     expect(onSend).not.toHaveBeenCalled();
     expect(complete).not.toHaveBeenCalled();
-    await React.act(async () => {
-      renderer!.unmount();
-    });
+    await renderer![Symbol.asyncDispose]();
   });
 });
 
@@ -202,16 +207,16 @@ describe("committed composer admission timing", () => {
       notify: () => void;
     }) {
       const draft = useComposerDraftStore((state) => state.getComposerDraft(draftId));
-      React.useEffect(() => {
+      useEffect(() => {
         promptRef.current = draft?.prompt ?? "";
       }, [draft?.prompt, promptRef]);
-      React.useEffect(() => {
+      useEffect(() => {
         notify();
       });
       return null;
     }
     function CurrentHost({ busy = false }: { busy?: boolean }) {
-      const promptRef = React.useRef("");
+      const promptRef = useRef("");
       const notify = useDesktopLauncherSubmitAdmission(
         draftId,
         async () => {
@@ -224,29 +229,23 @@ describe("committed composer admission timing", () => {
       );
       return <Composer promptRef={promptRef} notify={notify} />;
     }
-    let renderer: ReactTestRenderer | undefined;
+    let renderer: Screen | undefined;
     try {
-      await React.act(async () => {
-        renderer = TestRenderer.create(<CurrentHost busy />);
-      });
-      await React.act(async () => {
+      renderer = await render(<CurrentHost busy />, { router: false });
+      await act(async () => {
         useComposerDraftStore.getState().setPrompt(draftId, prompt);
         owner.queueSubmit({ activationId: ACTIVATION_ID, draftId, prompt, complete });
         expect(attempts).toEqual([]);
       });
       expect(attempts).toEqual([]);
       expect(owner.getSubmitState()).toBe("waiting");
-      await React.act(async () => {
-        renderer!.update(<CurrentHost />);
-      });
+      await renderer!.rerender(<CurrentHost />);
       expect(attempts).toEqual([prompt]);
       expect(complete).toHaveBeenCalledOnce();
-      await React.act(async () => {
-        renderer!.update(<CurrentHost />);
-      });
+      await renderer!.rerender(<CurrentHost />);
       expect(attempts).toEqual([prompt]);
     } finally {
-      await React.act(async () => renderer?.unmount());
+      await renderer?.[Symbol.asyncDispose]();
     }
   });
 
@@ -264,22 +263,22 @@ describe("committed composer admission timing", () => {
       context,
       notify,
     }: {
-      context: React.RefObject<{ prompt: string; ready: boolean }>;
+      context: RefObject<{ prompt: string; ready: boolean }>;
       notify: () => void;
     }) {
-      const [ready, setReady] = React.useState(false);
-      React.useEffect(() => {
+      const [ready, setReady] = useState(false);
+      useEffect(() => {
         enableProvider = () => setReady(true);
       }, []);
-      React.useImperativeHandle(context, () => ({ prompt, ready }), [ready]);
-      React.useEffect(() => {
+      useImperativeHandle(context, () => ({ prompt, ready }), [ready]);
+      useEffect(() => {
         notify();
       });
       return null;
     }
     function CurrentHost() {
       parentRenders++;
-      const context = React.useRef({ prompt: "", ready: false });
+      const context = useRef({ prompt: "", ready: false });
       const notify = useDesktopLauncherSubmitAdmission(
         draftId,
         attempts,
@@ -288,12 +287,10 @@ describe("committed composer admission timing", () => {
       );
       return <Composer context={context} notify={notify} />;
     }
-    let renderer: ReactTestRenderer | undefined;
+    let renderer: Screen | undefined;
     try {
-      await React.act(async () => {
-        renderer = TestRenderer.create(<CurrentHost />);
-      });
-      await React.act(async () => {
+      renderer = await render(<CurrentHost />, { router: false });
+      await act(async () => {
         owner.queueSubmit({
           activationId: ACTIVATION_ID,
           draftId,
@@ -303,13 +300,13 @@ describe("committed composer admission timing", () => {
       });
       expect(attempts).not.toHaveBeenCalled();
       const initialParentRenders = parentRenders;
-      await React.act(async () => {
+      await act(async () => {
         enableProvider!();
       });
       expect(attempts).toHaveBeenCalledOnce();
       expect(parentRenders).toBe(initialParentRenders);
     } finally {
-      await React.act(async () => renderer?.unmount());
+      await renderer?.[Symbol.asyncDispose]();
     }
   });
 });
@@ -327,34 +324,29 @@ describe("launcher refusal recovery surface", () => {
       owner.registerSubmitter(draftId, send);
       host.primary = { environmentId: EnvironmentId.make("primary") };
       host.status = "bootstrapping";
-      vi.stubGlobal("window", { desktopBridge: {} });
-      let renderer: ReactTestRenderer | undefined;
+      using _bridge = stubGlobal("desktopBridge", {});
+      let renderer: Screen | undefined;
       try {
-        await React.act(async () => {
-          renderer = TestRenderer.create(<DesktopLauncherActivationCoordinator owner={owner} />);
+        renderer = await render(<DesktopLauncherActivationCoordinator owner={owner} />, {
+          router: false,
         });
-        await React.act(async () => {
+        await act(async () => {
           owner.queueSubmit({ activationId: ACTIVATION_ID, draftId, prompt, complete });
         });
         expect(owner.getSubmitState()).toBe(state);
-        expect(renderer!.root.findByProps({ role: "status" })).toBeDefined();
-        await React.act(async () => {
-          renderer!.update(<DesktopLauncherActivationCoordinator owner={owner} />);
-        });
+        expect(renderer!.container.querySelector('[role="status"]')).not.toBeNull();
+        await renderer!.rerender(<DesktopLauncherActivationCoordinator owner={owner} />);
         expect(send).toHaveBeenCalledTimes(1);
         expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.prompt).toBe(prompt);
         expect(complete).not.toHaveBeenCalled();
         if (state === "refused") {
-          await React.act(async () => {
-            renderer!.root.findByType("button").props.onClick();
-          });
+          await clickOnlyButton(renderer!);
           expect(send).toHaveBeenCalledTimes(2);
         } else {
-          expect(renderer!.root.findAllByType("button")).toHaveLength(0);
+          expect(renderer!.container.querySelectorAll("button")).toHaveLength(0);
         }
       } finally {
-        await React.act(async () => renderer?.unmount());
-        vi.unstubAllGlobals();
+        await renderer?.[Symbol.asyncDispose]();
       }
     },
   );

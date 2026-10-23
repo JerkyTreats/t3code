@@ -737,11 +737,13 @@ describe("sortScopedProjectsForSidebar", () => {
         environmentId: localEnvironmentId,
         projectId: sharedProjectId,
         updatedAt: "2026-03-09T10:02:00.000Z",
+        latestUserAuthoredMessageAt: "2026-03-09T10:02:00.000Z",
       }),
       makeThread({
         environmentId: remoteEnvironmentId,
         projectId: sharedProjectId,
         updatedAt: "2026-03-09T10:10:00.000Z",
+        latestUserAuthoredMessageAt: "2026-03-09T10:10:00.000Z",
       }),
     ];
 
@@ -768,6 +770,7 @@ describe("sortScopedProjectsForSidebar", () => {
         id: ThreadId.make("thread-visible"),
         projectId: ProjectId.make("project-visible"),
         updatedAt: "2026-03-09T10:02:00.000Z",
+        latestUserAuthoredMessageAt: "2026-03-09T10:02:00.000Z",
       }),
       makeThread({
         id: ThreadId.make("thread-archived"),
@@ -787,6 +790,54 @@ describe("sortScopedProjectsForSidebar", () => {
 });
 
 describe("sortSidebarV2ProjectGroups", () => {
+  it("does not let progress or background messages reorder projects", () => {
+    const projects = ["older", "newer"].map((name) => {
+      const id = ProjectId.make(`project-${name}`);
+      return {
+        ...makeProject({ id, title: name }),
+        projectKey: name,
+        memberProjectRefs: [{ environmentId: localEnvironmentId, projectId: id }],
+      };
+    });
+    const threads = [
+      makeThread({
+        projectId: projects[0]!.id,
+        latestUserAuthoredMessageAt: "2026-03-09T10:01:00.000Z",
+        latestUserMessageAt: "2026-03-09T10:10:00.000Z",
+        updatedAt: "2026-03-09T10:11:00.000Z",
+      }),
+      makeThread({
+        id: ThreadId.make("thread-newer"),
+        projectId: projects[1]!.id,
+        latestUserAuthoredMessageAt: "2026-03-09T10:05:00.000Z",
+        latestUserMessageAt: "2026-03-09T10:05:00.000Z",
+      }),
+    ];
+
+    expect(
+      sortSidebarV2ProjectGroups(projects, threads, "updated_at").map(
+        (project) => project.projectKey,
+      ),
+    ).toEqual(["newer", "older"]);
+
+    const publishedThreads = threads.map((thread, index) =>
+      index === 0 ? { ...thread, latestPublishedResponseAt: "2026-03-09T10:12:00.000Z" } : thread,
+    );
+    expect(
+      sortSidebarV2ProjectGroups(projects, publishedThreads, "updated_at").map(
+        (project) => project.projectKey,
+      ),
+    ).toEqual(["older", "newer"]);
+    const promptedThreads = publishedThreads.map((thread, index) =>
+      index === 1 ? { ...thread, latestUserAuthoredMessageAt: "2026-03-09T10:13:00.000Z" } : thread,
+    );
+    expect(
+      sortSidebarV2ProjectGroups(projects, promptedThreads, "updated_at").map(
+        (project) => project.projectKey,
+      ),
+    ).toEqual(["newer", "older"]);
+  });
+
   it("does not let a hidden subagent thread reorder projects", () => {
     const olderProjectId = ProjectId.make("project-older");
     const newerProjectId = ProjectId.make("project-newer");
@@ -808,16 +859,19 @@ describe("sortSidebarV2ProjectGroups", () => {
         id: olderRootThreadId,
         projectId: olderProjectId,
         updatedAt: "2026-03-09T10:01:00.000Z",
+        latestUserAuthoredMessageAt: "2026-03-09T10:01:00.000Z",
       }),
       makeThread({
         id: ThreadId.make("thread-newer-root"),
         projectId: newerProjectId,
         updatedAt: "2026-03-09T10:05:00.000Z",
+        latestUserAuthoredMessageAt: "2026-03-09T10:05:00.000Z",
       }),
       makeThread({
         id: ThreadId.make("thread-hidden-subagent"),
         projectId: olderProjectId,
         updatedAt: "2026-03-09T10:10:00.000Z",
+        latestPublishedResponseAt: "2026-03-09T10:10:00.000Z",
         lineage: {
           rootThreadId: olderRootThreadId,
           parentThreadId: olderRootThreadId,
@@ -1178,6 +1232,32 @@ describe("Working shelf (beta)", () => {
         activeReorderableKeys: new Set(["a2"]),
       });
       expect(above.kind === "move-active" && above.assignments[0]!.orderKey < "m").toBe(true);
+    });
+
+    it("pins into conversation order without writing placement keys", () => {
+      const base = {
+        pinnedOrder: ["p1"],
+        pinnedKeysById: new Map([["p1", "m"]]),
+        activeOrder: ["a1"],
+        activeKeysById: new Map([["a1", "f"]]),
+        pinnedTimeOrdered: true,
+      };
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "a1",
+          activeSection: "active",
+          target: { section: "pinned", pinnedOrder: ["a1", "p1"], activeOrder: [] },
+        }),
+      ).toEqual({ kind: "pin", order: null, orderKey: undefined, extraAssignments: [] });
+      expect(
+        planSidebarThreadDrop({
+          ...base,
+          activeKey: "p1",
+          activeSection: "pinned",
+          target: { section: "pinned", pinnedOrder: ["p1"], activeOrder: ["a1"] },
+        }),
+      ).toEqual({ kind: "none" });
     });
 
     it("only changes lifecycle when the inbox is time-ordered", () => {

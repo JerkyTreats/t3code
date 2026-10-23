@@ -282,6 +282,9 @@ export function useThreadActions() {
   const unsnoozeThreadMutation = useOrchestrationCommand(threadEnvironment.unsnooze, {
     reportFailure: false,
   });
+  const updateThreadMetadataMutation = useOrchestrationCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
   const markThreadUnread = useMarkThreadUnread();
   const stopThreadSession = useOrchestrationCommand(threadEnvironment.stopSession);
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, {
@@ -633,6 +636,13 @@ export function useThreadActions() {
     });
   };
 
+  /** Lists a nested thread on its own again (F31). */
+  const moveThreadToTopLevel = (target: ScopedThreadRef) =>
+    updateThreadMetadataMutation({
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId, nestedUnderThreadId: null },
+    });
+
   const pinThread = async (target: ScopedThreadRef, opts: { orderKey?: string } = {}) => {
     if (!readEnvironmentSupportsPinning(target.environmentId)) {
       return AsyncResult.failure(
@@ -914,5 +924,6 @@ export function useThreadActions() {
     reorderActiveThread,
     markThreadUnread,
     setThreadAutoSettle,
+    moveThreadToTopLevel,
   };
 }

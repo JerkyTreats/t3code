@@ -1,13 +1,4 @@
-import type {
-  AuthBrowserSessionResult,
-  AuthClientMetadata,
-  AuthEnvironmentScope,
-  AuthGrantScope,
-  AuthPairingCredentialResult,
-  ServerAuthSessionMethod,
-  AuthSessionId,
-  AuthSessionState,
-} from "@t3tools/contracts";
+import type { AuthBrowserSessionResult, AuthSessionState } from "@t3tools/contracts";
 import { EnvironmentHttpCommonError, PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
 import type { EnvironmentHttpCommonError as EnvironmentHttpCommonErrorType } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -19,6 +10,7 @@ import {
   stripPairingTokenFromUrl as stripPairingTokenUrl,
 } from "../../pairingUrl";
 
+import { submitThreadEnrollmentCredential } from "./threadAuth";
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
 import { runPrimaryHttp } from "../../lib/runtime";
 
@@ -26,12 +18,6 @@ const PrimaryEnvironmentRequestOperation = Schema.Literals([
   "fetch-session-state",
   "exchange-bootstrap-credential",
   "fetch-environment-descriptor",
-  "create-pairing-credential",
-  "list-pairing-links",
-  "revoke-pairing-link",
-  "list-client-sessions",
-  "revoke-client-session",
-  "revoke-other-client-sessions",
 ]);
 type PrimaryEnvironmentRequestOperation = typeof PrimaryEnvironmentRequestOperation.Type;
 
@@ -40,23 +26,17 @@ export class PrimaryEnvironmentRequestError extends Schema.TaggedError<PrimaryEn
   {
     operation: PrimaryEnvironmentRequestOperation,
     status: Schema.Number,
-    pairingLinkId: Schema.optional(Schema.String),
-    sessionId: Schema.optional(Schema.String),
     cause: Schema.Defect(),
   },
 ) {
   static fromCause(input: {
     readonly operation: PrimaryEnvironmentRequestOperation;
     readonly cause: unknown;
-    readonly pairingLinkId?: string;
-    readonly sessionId?: string;
   }): PrimaryEnvironmentRequestError {
     const status = readHttpApiStatus(input.cause) ?? 500;
     return new PrimaryEnvironmentRequestError({
       operation: input.operation,
       status,
-      ...(input.pairingLinkId !== undefined ? { pairingLinkId: input.pairingLinkId } : {}),
-      ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
       cause: input.cause,
     });
   }
@@ -105,28 +85,6 @@ export class PrimaryEnvironmentPairingCredentialRequiredError extends Schema.Tag
 
 const isEnvironmentHttpCommonError = Schema.is(EnvironmentHttpCommonError);
 
-export interface ServerPairingLinkRecord {
-  readonly id: string;
-  readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
-  readonly subject: string;
-  readonly label?: string;
-  readonly createdAt: string;
-  readonly expiresAt: string;
-}
-
-export interface ServerClientSessionRecord {
-  readonly sessionId: AuthSessionId;
-  readonly subject: string;
-  readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
-  readonly method: ServerAuthSessionMethod;
-  readonly client: AuthClientMetadata;
-  readonly issuedAt: string;
-  readonly expiresAt: string;
-  readonly lastConnectedAt: string | null;
-  readonly connected: boolean;
-  readonly current: boolean;
-}
-
 type ServerAuthGateState =
   | { status: "authenticated" }
   | {
@@ -164,6 +122,7 @@ export function takePairingTokenFromUrl(): string | null {
 }
 
 function getDesktopBootstrapCredential(): string | null {
+  if (window.t3ThreadBridge) return null;
   // Both backends share the same bootstrap token (DesktopBackendConfiguration
   // mints one tokenRef and feeds it to both resolvers), so picking the
   // primary entry is fine even when the WSL backend is also registered.
@@ -341,89 +300,25 @@ export async function submitServerAuthCredential(credential: string): Promise<vo
   }
 
   resolvedAuthenticatedGateState = null;
-  await exchangeBootstrapCredential(trimmedCredential);
+  const enrollment = await submitThreadEnrollmentCredential(trimmedCredential);
+  if (enrollment === null) {
+    await exchangeBootstrapCredential(trimmedCredential);
+  } else if (enrollment.status === "rejected") {
+    throw new PrimaryEnvironmentPairingCredentialRejectedError({
+      providedLength: trimmedCredential.length,
+      cause: new Error("Protected Thread enrollment rejected the pairing credential."),
+    });
+  } else if (enrollment.status !== "accepted") {
+    throw PrimaryEnvironmentRequestError.fromCause({
+      operation: "exchange-bootstrap-credential",
+      cause: new Error("Protected Thread enrollment is unavailable."),
+    });
+  }
   await waitForAuthenticatedSessionAfterBootstrap();
   resolvedAuthenticatedGateState = { status: "authenticated" };
   bootstrapPromise = null;
   explicitPairingRequested = false;
   stripPairingTokenFromUrl();
-}
-
-export async function createServerPairingCredential(input?: {
-  readonly label?: string;
-  readonly scopes?: ReadonlyArray<AuthGrantScope>;
-}): Promise<AuthPairingCredentialResult> {
-  const trimmedLabel = input?.label?.trim();
-  try {
-    return await runPrimaryHttp(
-      PrimaryEnvironmentHttpClient.pipe(
-        Effect.flatMap((client) =>
-          client.auth.pairingCredential({
-            headers: {},
-            payload: {
-              ...(trimmedLabel ? { label: trimmedLabel } : {}),
-              ...(input?.scopes ? { scopes: input.scopes } : {}),
-            },
-          }),
-        ),
-      ),
-    );
-  } catch (error) {
-    throw PrimaryEnvironmentRequestError.fromCause({
-      operation: "create-pairing-credential",
-      cause: error,
-    });
-  }
-}
-
-export async function revokeServerPairingLink(id: string): Promise<void> {
-  try {
-    await runPrimaryHttp(
-      PrimaryEnvironmentHttpClient.pipe(
-        Effect.flatMap((client) => client.auth.revokePairingLink({ headers: {}, payload: { id } })),
-      ),
-    );
-  } catch (error) {
-    throw PrimaryEnvironmentRequestError.fromCause({
-      operation: "revoke-pairing-link",
-      pairingLinkId: id,
-      cause: error,
-    });
-  }
-}
-
-export async function revokeServerClientSession(sessionId: AuthSessionId): Promise<void> {
-  try {
-    await runPrimaryHttp(
-      PrimaryEnvironmentHttpClient.pipe(
-        Effect.flatMap((client) =>
-          client.auth.revokeClient({ headers: {}, payload: { sessionId } }),
-        ),
-      ),
-    );
-  } catch (error) {
-    throw PrimaryEnvironmentRequestError.fromCause({
-      operation: "revoke-client-session",
-      sessionId,
-      cause: error,
-    });
-  }
-}
-
-export async function revokeOtherServerClientSessions(): Promise<number> {
-  try {
-    const result = await runPrimaryHttp(
-      PrimaryEnvironmentHttpClient.pipe(
-        Effect.flatMap((client) => client.auth.revokeOtherClients({ headers: {} })),
-      ),
-    );
-    return result.revokedCount;
-  } catch (error) {
-    throw PrimaryEnvironmentRequestError.fromCause({
-      operation: "revoke-other-client-sessions",
-      cause: error,
-    });
-  }
 }
 
 export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGateState> {

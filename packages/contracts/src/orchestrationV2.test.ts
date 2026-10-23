@@ -5,16 +5,29 @@ import * as Schema from "effect/Schema";
 import { NodeId, RunAttemptId, TrimmedNonEmptyString } from "./index.ts";
 import {
   latestProviderTurnForAttempt,
+  OrchestrationV2ConversationMessage,
+  OrchestrationV2ConversationMessageJson,
   OrchestrationV2ProviderCapabilities,
   OrchestrationV2ProviderThread,
   OrchestrationV2ProviderThreadJson,
   OrchestrationV2RpcSchemas,
+  OrchestrationV2Run,
+  OrchestrationV2RunJson,
   OrchestrationV2Subagent,
   OrchestrationV2SubagentJson,
   OrchestrationV2ThreadHistoryPage,
   OrchestrationV2TurnItem,
   OrchestrationV2TurnItemJson,
 } from "./orchestrationV2.ts";
+
+const decodeConversationMessage = Schema.decodeUnknownSync(OrchestrationV2ConversationMessage);
+const encodeConversationMessageJson = Schema.encodeSync(OrchestrationV2ConversationMessageJson);
+const decodeConversationMessageJson = Schema.decodeUnknownSync(
+  OrchestrationV2ConversationMessageJson,
+);
+const decodeRun = Schema.decodeUnknownSync(OrchestrationV2Run);
+const encodeRunJson = Schema.encodeSync(OrchestrationV2RunJson);
+const decodeRunJson = Schema.decodeUnknownSync(OrchestrationV2RunJson);
 
 const now = DateTime.makeUnsafe("2026-04-20T00:00:00.000Z");
 
@@ -34,6 +47,53 @@ const decodeOrchestrationV2ProviderCapabilities = Schema.decodeUnknownSync(
 );
 
 describe("orchestration V2 contracts", () => {
+  it("retains message admission intent through JSON without changing historical messages", () => {
+    const base = {
+      createdBy: "user",
+      creationSource: "web",
+      id: "message:admission",
+      threadId: "thread:admission",
+      runId: null,
+      nodeId: null,
+      role: "user",
+      text: "Plan the change",
+      attachments: [],
+      streaming: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+    expect(decodeConversationMessage(base).interactionMode).toBeUndefined();
+    const message = decodeConversationMessage({ ...base, interactionMode: "plan" });
+    const json = encodeConversationMessageJson(message);
+    expect(decodeConversationMessageJson(json).interactionMode).toBe("plan");
+  });
+
+  it("retains captured run intent while older runs keep their absent admission mode", () => {
+    const base = {
+      id: "run:admission",
+      threadId: "thread:admission",
+      ordinal: 1,
+      providerInstanceId: "codex",
+      modelSelection: { instanceId: "codex", model: "gpt-5.4" },
+      providerThreadId: null,
+      userMessageId: "message:admission",
+      rootNodeId: null,
+      activeAttemptId: null,
+      status: "queued",
+      requestedAt: now,
+      startedAt: null,
+      completedAt: null,
+      checkpointId: null,
+      contextHandoffId: null,
+    };
+    expect(decodeRun(base).interactionMode).toBeUndefined();
+    for (const interactionMode of ["plan", "default"] as const) {
+      const run = decodeRun({ ...base, interactionMode });
+      const json = encodeRunJson(run);
+      expect(decodeRunJson(json).interactionMode).toBe(interactionMode);
+    }
+  });
+
   it("decodes thread event types from a newer server as skippable items", () => {
     const decodeWireItems = Schema.decodeUnknownSync(
       Schema.toCodecJson(Schema.Array(OrchestrationV2RpcSchemas.subscribeThread.output)),

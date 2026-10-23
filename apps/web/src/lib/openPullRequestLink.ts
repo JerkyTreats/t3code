@@ -81,6 +81,11 @@ export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null,
   });
 }
 
+/**
+ * A project whose recorded origin permits reading this change request. The registry definition
+ * applies the same scoped repository authority as exact project matching; a shared host alone
+ * does not let another repository lend its credentials.
+ */
 export function findProjectOnChangeRequestHost(
   projects: ReadonlyArray<EnvironmentProject>,
   link: ChangeRequestLink,

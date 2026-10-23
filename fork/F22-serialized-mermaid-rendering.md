@@ -1,67 +1,62 @@
-# F22 Serialized Mermaid Rendering
+# F22 Visibility-Gated Mermaid Rendering
 
 Date: 2026-09-05
+Amended: 2026-10-23 (user decision UD-2026-10-23-1)
 Status: active
 
 ## Intent
 
-Render Mermaid fences safely and predictably across concurrent Markdown surfaces, streaming updates, theme changes, failures, and scroll movement.
+Render Mermaid fences predictably across concurrent Markdown surfaces, streaming updates, theme changes, failures, and scroll movement, using the upstream `pele` renderer.
+
+## Decision History
+
+The 2026-10-23 intake accepted upstream's `pele` renderer and dropped the `mermaid` dependency. Pele renders synchronously into a mounted element, loads each diagram type lazily and colors diagrams through CSS variables bound to semantic theme roles. Global Mermaid configuration and render serialization (F22.D3) retired with the library. The semantic SVG cache, palette conversion, document color observer and per-surface host identities retired because pele output no longer depends on resolved colors or asynchronous render admission.
 
 ## Required Behavior
 
-- `mermaid` and `mmd` fences load Mermaid only when first needed.
-- Completed diagrams begin rendering only after their block enters the visible scroll area. Cached
-  SVG remains visibility-gated on remount so hidden Markdown does not pay DOM layout cost.
-- Global Mermaid configuration and render work are serialized.
-- Pending work and completed semantic cache entries are bounded.
-- Cache identity includes exact source, normalized effective semantic colors, source offsets and stable owner-level surface identity. Modern literal colors use the existing theme color converter; composed CSS colors resolve through the live document before conversion to Mermaid-compatible hex with alpha preserved. Invalid values fall back independently by semantic role.
-- Same-mode palette updates, including transient Omarchy changes, invalidate rendered colors through one shared document observer with final-subscriber cleanup.
-- Failed dynamic imports and renders remain retryable.
-- Streaming code remains a source-backed placeholder until complete.
-- Stale generations cannot replace newer output.
-- Successful render corrects scroll position only when needed.
+- `mermaid` and `mmd` fences load pele, and each diagram type, only when first needed. KaTeX loads only for diagrams containing math.
+- Completed diagrams mount only after their fence enters the visible scroll area. A remounted fence is gated again; it reserves the last rendered height of the same source while pending.
+- Remembered heights are bounded by entry count and memory and keyed by exact source.
+- Diagram colors follow semantic theme roles through CSS variables, so same-mode palette changes, including transient Omarchy changes, recolor rendered diagrams without another render.
+- Failed renderer and diagram-type loads remain retryable. Render errors show the source and reset when the source or theme changes.
+- Streaming code remains the highlighted source until the fence closes.
+- An unmounted or replaced diagram is destroyed before its successor mounts, so stale output cannot replace newer output.
+- A diagram whose height changes above the viewport corrects the scroll position; diagrams in view and live-edge following are left alone.
+- Diagrams stay behind the upstream Markdown fence seam with its source toggle, image expansion and find reveal.
 
 ## Durable Owners
 
-- `apps/web/src/features/mermaid/mermaidRenderer.ts`
-- `apps/web/src/features/mermaid/mermaidRenderCache.ts`
-- `apps/web/src/features/mermaid/MermaidDiagramBlock.tsx`
-- `apps/web/src/features/mermaid/mermaidScrollStability.ts`
-- `apps/web/src/features/mermaid/mermaidTheme.ts`
+- `apps/web/src/features/mermaid/mermaidFence.ts` selects the diagram fence languages.
+- `apps/web/src/features/mermaid/MermaidVisibleDiagram.tsx` owns visibility gating, height reservation and scroll stability around the upstream diagram.
+- `apps/web/src/features/mermaid/mermaidDiagramHeights.ts` owns the bounded height cache.
+- `apps/web/src/features/mermaid/mermaidScrollStability.ts` owns the scroll correction decision.
 
 ## Upstream Sensitive Adapters
 
-- `apps/web/src/components/ChatMarkdown.tsx`
-- `apps/web/src/components/chat/MessagesTimeline.tsx`
-- `apps/web/src/components/chat/ProposedPlanCard.tsx`
-- `apps/web/src/components/pullRequest/PullRequestMarkdown.tsx` and its description, comment, review-thread, timeline and editor hosts
-- `apps/web/src/components/pullRequest/guide/GuideProse.tsx` supplies stable repository, stop and note identities to the same Markdown fence owner
-- `apps/web/src/components/files/FileMarkdownPreview.tsx`
-- `apps/web/src/components/files/AttachmentFilePreview.tsx`
-- `apps/web/src/features/mermaid/mermaid.css` and its import in `apps/web/src/index.css`
+- `apps/web/src/components/ChatMarkdown.tsx` routes fences selected by `mermaidFence.ts` to the upstream fence component.
+- `apps/web/src/components/chat/MarkdownMermaidCodeBlock.tsx` wraps the upstream diagram in `MermaidVisibleDiagram`.
 
 ## Upstream Substrate
 
-- Markdown fenced-code dispatch
-- theme state and semantic colors
-- message and pull-request surface identity
+- `apps/web/src/components/chat/MermaidDiagram.tsx`: pele loading, sanitization, math, expansion and load retry
+- the `.pele` semantic color variables in `apps/web/src/index.css`
+- Markdown fenced-code dispatch, source toggle and find reveal
+- message, plan, file, attachment and pull-request Markdown hosts
 
 ## Non Ownership Boundaries
 
-- F22 does not replace the general Markdown renderer or syntax highlighter.
+- F22 does not replace the general Markdown renderer, syntax highlighter or pele.
 - F22 does not allocate review state for ordinary diagrams.
-- F22 does not persist rendered SVG or Mermaid runtime state.
+- F22 does not persist rendered SVG or renderer state.
+- F22 adds no host-specific identity to Markdown surfaces.
 
 ## Verification
 
-- renderer tests cover visibility-gated lazy import, import retry, serialization, theme identity, stale generations, bounded pending work, cache eviction, failure source, and scroll correction.
-- Host integration tests cover streaming completion, stable message, plan, file and pull-request identities, source offsets, exact current code-block fallback and coexistence with upstream source/PR review.
-- production build evidence proves Mermaid remains split from the initial web runtime.
+- `mermaidFence.test.ts` covers fence languages, exact-source height retention, unusable sizes, the entry bound and lazy pele and KaTeX imports.
+- `MermaidVisibleDiagram.browser.test.tsx` covers deferral until scrolled into view, gated remount with reserved height, real pele output following a live semantic color change, and scroll correction for a diagram above the viewport.
+- `mermaidScrollStability.test.ts` covers the scroll correction decision.
+- Production build evidence that pele stays split from the initial web runtime belongs to the joined intake gate.
 
 ## Reconciliation Rule
 
-Keep Mermaid behind the current Markdown fence adapter and preserve the isolated serialized renderer and bounded semantic cache.
-
-## Current Fence Contract
-
-`ChatMarkdown` delegates only `mermaid` and `mmd` fences. Its thin `MarkdownMermaidFence` retains upstream source-toggle, image expansion and find-source reveal around the existing Mermaid owner and ordinary source fallback. `MermaidDiagramBlock` passes its current serialized SVG as an image data URL to an optional expansion callback without rendering again. The separate upstream diagram implementation is not retained. Other languages and fallback source use its existing Markdown code block. Known hosts supply semantic identity; standalone callers receive a stable React instance fallback. The owner uses strict Mermaid rendering and bounds serialized work and caches. It does not restore F09 document rendering, F21 rendered-document review or their CSS variants. The dependency accepts the upstream Mermaid range `^11.17.2` declared in `apps/web/package.json`; the frozen lockfile selects the installed version, and final build evidence belongs to the joined intake gate.
+Keep pele behind the upstream fence seam and keep visibility gating, height reservation and scroll stability in the owner wrapper. Accept upstream renderer, sanitization and loading changes.

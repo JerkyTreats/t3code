@@ -43,10 +43,13 @@ import * as Stream from "effect/Stream";
 import { FetchHttpClient } from "effect/http";
 
 import { APP_VERSION } from "../branding";
+import { makeThreadPrimaryAuth } from "../environments/primary/threadAuth";
 import { readDesktopPrimaryBearerToken } from "../environments/primary/desktopAuth";
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
 import {
   readPrimaryEnvironmentTarget,
+  isStandaloneDesktopPrimary,
+  hasBridgeBoundPrimaryTarget,
   type PrimaryEnvironmentTarget,
 } from "../environments/primary/target";
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
@@ -164,6 +167,7 @@ function clientMetadata() {
       maxTouchPoints: navigator.maxTouchPoints,
     },
     desktopBridge: window.desktopBridge,
+    threadBridge: window.t3ThreadBridge !== undefined,
   });
 }
 
@@ -316,6 +320,24 @@ const analyticsDevice = {
   }).pipe(Effect.option),
 };
 
+export function makePrimaryEnvironmentAuth(): ClientCapabilities.PrimaryEnvironmentAuth["Service"] {
+  return (
+    makeThreadPrimaryAuth() ??
+    ClientCapabilities.PrimaryEnvironmentAuth.of({
+      bearerToken: isStandaloneDesktopPrimary()
+        ? Effect.succeedNone
+        : Effect.tryPromise({
+            try: readDesktopPrimaryBearerToken,
+            catch: (cause) =>
+              new ConnectionTransientError({
+                reason: "remote-unavailable",
+                detail: `Could not load the desktop primary credential: ${String(cause)}`,
+              }),
+          }).pipe(Effect.map(Option.fromNullishOr)),
+    })
+  );
+}
+
 const layerCapabilities = Layer.effectContext(
   Effect.sync(() => {
     const presentation = ClientCapabilities.ClientPresentation.of({
@@ -354,16 +376,7 @@ const layerCapabilities = Layer.effectContext(
     const identity = ClientCapabilities.RelayDeviceIdentity.of({
       deviceId: Effect.succeedNone,
     });
-    const primaryAuth = ClientCapabilities.PrimaryEnvironmentAuth.of({
-      bearerToken: Effect.tryPromise({
-        try: readDesktopPrimaryBearerToken,
-        catch: (cause) =>
-          new ConnectionTransientError({
-            reason: "remote-unavailable",
-            detail: `Could not load the desktop primary credential: ${String(cause)}`,
-          }),
-      }).pipe(Effect.map(Option.fromNullishOr)),
-    });
+    const primaryAuth = makePrimaryEnvironmentAuth();
     const ssh = ClientCapabilities.SshEnvironmentGateway.of({
       provision: Effect.fn("web.connectionPlatform.ssh.provision")(
         function* (target, expectedEnvironmentId) {
@@ -414,7 +427,7 @@ const layerCapabilities = Layer.effectContext(
   }),
 );
 
-const loadPrimaryConnectionRegistration = Effect.fn(
+export const loadPrimaryConnectionRegistration = Effect.fn(
   "web.connectionPlatform.loadPrimaryConnectionRegistration",
 )(function* (resolved: PrimaryEnvironmentTarget) {
   const descriptor = yield* fetchRemoteEnvironmentDescriptor({
@@ -626,10 +639,10 @@ export function secondaryRegistrationsToRetainAfterTopologyRead(
   );
 }
 
-const layerPlatformConnectionSource = Layer.effect(
+export const layerPlatformConnectionSource = Layer.effect(
   PlatformConnectionSource.PlatformConnectionSource,
   Effect.gen(function* () {
-    if (isHostedStaticApp() || isLocalEnvironmentDisabled()) {
+    if ((isHostedStaticApp() && !hasBridgeBoundPrimaryTarget()) || isLocalEnvironmentDisabled()) {
       return PlatformConnectionSource.PlatformConnectionSource.of({
         registrations: Stream.empty,
       });

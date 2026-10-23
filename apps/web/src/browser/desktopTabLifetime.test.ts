@@ -21,6 +21,7 @@ vi.mock("./browserRecording", () => ({
   stopBrowserRecording,
 }));
 
+import * as browserDefaults from "./browserDefaults";
 import { acquireDesktopTab } from "./desktopTabLifetime";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 
@@ -43,6 +44,25 @@ describe("desktopTabLifetime", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("passes native server identity alongside captured restored presentation", async () => {
+    vi.useFakeTimers();
+    createTab.mockResolvedValueOnce(undefined);
+    const serverTab = { threadId: "thread-native", tabId: "tab-native" };
+    const lease = acquireDesktopTab(
+      "runtime-native",
+      { zoomFactor: 1.5, colorScheme: "dark" },
+      serverTab,
+    );
+    await lease.ready;
+    expect(createTab).toHaveBeenCalledExactlyOnceWith("runtime-native", {
+      zoomFactor: 1.5,
+      colorScheme: "dark",
+      serverTab,
+    });
+    lease.release();
+    await vi.advanceTimersByTimeAsync(0);
   });
 
   it("keeps identical server tab ids from two environments in separate desktop slots", async () => {
@@ -125,5 +145,35 @@ describe("desktopTabLifetime", () => {
     resolveClose?.();
     await reacquired.ready;
     expect(createTab).toHaveBeenCalledTimes(2);
+  });
+  it("captures presentation before delayed settings and preserves an existing shared lease", async () => {
+    vi.useFakeTimers();
+    let finishSettings!: (
+      value: Awaited<ReturnType<typeof browserDefaults.resolveBrowserDefaults>>,
+    ) => void;
+    const defaults = await browserDefaults.resolveBrowserDefaults();
+    vi.spyOn(browserDefaults, "resolveBrowserDefaults").mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishSettings = resolve;
+      }),
+    );
+    createTab.mockResolvedValue(undefined);
+    const restoration = { zoomFactor: 1.75, colorScheme: "dark" as const };
+    const first = acquireDesktopTab("tab_captured_restoration", restoration);
+    restoration.zoomFactor = 2;
+    const second = acquireDesktopTab("tab_captured_restoration", {
+      zoomFactor: 3,
+      colorScheme: "light",
+    });
+    finishSettings(defaults);
+    await first.ready;
+    expect(first.ready).toBe(second.ready);
+    expect(createTab).toHaveBeenCalledExactlyOnceWith("tab_captured_restoration", {
+      zoomFactor: 1.75,
+      colorScheme: "dark",
+    });
+    first.release();
+    second.release();
+    await vi.advanceTimersByTimeAsync(0);
   });
 });

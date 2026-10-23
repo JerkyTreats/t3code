@@ -6,6 +6,7 @@ import "./index.css";
 
 import { prepareProviderAuthDelivery } from "./providerAuthDelivery";
 import { isElectron } from "./env";
+import { isStandaloneDesktopPrimary } from "./environments/primary/target";
 import { hasCloudPublicConfig } from "./cloud/publicConfig";
 import { getRouter } from "./router";
 import {
@@ -48,7 +49,7 @@ const app = <AppRoot router={router} />;
 // of the browser build entirely.
 const managedAuthShellModule =
   clerkPublishableKey && hasCloudPublicConfig()
-    ? isElectron
+    ? isElectron && !isStandaloneDesktopPrimary()
       ? import("./components/clerk/ElectronManagedAuthShell")
       : import("./components/clerk/BrowserManagedAuthShell")
     : null;

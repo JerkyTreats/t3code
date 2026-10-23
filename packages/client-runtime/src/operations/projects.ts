@@ -1,3 +1,9 @@
+import {
+  authenticatedProviderEndpoint,
+  publicationProviderEndpoint,
+  repositoryLookupTarget,
+} from "../fork/sourceControlEndpoint.ts";
+export { publicationProviderEndpoint } from "../fork/sourceControlEndpoint.ts";
 import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 import type {
   CommandId,
@@ -109,6 +115,19 @@ export function getDefaultCloneUrl(
     : repository.sshUrl;
 }
 
+/** Fork F06: repository lookups bind to the provider's authenticated endpoint. */
+export function resolveAddProjectRepositoryLookupTarget(input: {
+  readonly source: SourceControlProviderKind;
+  readonly repository: string;
+  readonly discovery: SourceControlDiscoveryResult | null;
+}): { readonly providerBaseUrl: string; readonly repository: string } | null {
+  const provider = input.discovery?.sourceControlProviders.find(
+    (candidate) => candidate.kind === input.source,
+  );
+  const host = provider ? Option.getOrNull(provider.auth.host) : null;
+  return repositoryLookupTarget({ kind: input.source, host, repository: input.repository });
+}
+
 export function sortAddProjectProviderSources(
   readiness: AddProjectRemoteSourceReadiness,
 ): ReadonlyArray<SourceControlProviderKind> {
@@ -152,7 +171,12 @@ export function buildAddProjectRemoteSourceReadiness(
           `${provider.label} is not authenticated. Open Source Control settings for setup guidance.`,
       };
     }
-    return READY;
+    return authenticatedProviderEndpoint(Option.getOrNull(provider.auth.host))
+      ? READY
+      : {
+          ready: false,
+          hint: `${provider.label} did not report an authenticated endpoint. Rescan after signing in.`,
+        };
   };
 }
 
@@ -196,6 +220,7 @@ export function getNewProjectPathPreview(newProjectsRoot: string, name: string):
 export interface NewProjectPublishTarget {
   readonly definition: SourceControlClientDefinition;
   readonly owner: string | null;
+  readonly providerBaseUrl: string;
 }
 
 export function getNewProjectPublishTargets(
@@ -210,7 +235,13 @@ export function getNewProjectPublishTargets(
     const placement = definition.newRepositoryOwner(
       provider ? Option.getOrNull(provider.auth.account) : null,
     );
-    return placement === null ? [] : [{ definition, owner: placement.owner }];
+    const providerBaseUrl = publicationProviderEndpoint({
+      kind: definition.kind,
+      host: provider ? Option.getOrNull(provider.auth.host) : null,
+    });
+    return placement === null || providerBaseUrl === null
+      ? []
+      : [{ definition, owner: placement.owner, providerBaseUrl }];
   });
 }
 
