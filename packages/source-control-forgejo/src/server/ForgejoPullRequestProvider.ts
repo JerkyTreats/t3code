@@ -35,6 +35,7 @@ import {
 } from "./forgejoPullRequestJson.ts";
 import { ForgejoBranchStatusChecks, markRequiredForgejoChecks } from "./forgejoRequiredChecks.ts";
 import { definition } from "../client/definition.ts";
+import { isOriginHeadRepository } from "@t3tools/source-control-core/server/fork/originHostedProviderPolicy";
 
 const isForgejoCliError = Schema.is(ForgejoCli.ForgejoCliError);
 
@@ -68,6 +69,29 @@ const issuePath = (input: ProviderRepositoryRef & { readonly number: number }) =
 const reviewCommentId = (review: typeof ForgejoReview.Type) =>
   /#issuecomment-([1-9]\d*)$/.exec(review.html_url ?? "")?.[1];
 
+type ForgejoRequestInput = ForgejoCli.ForgejoApiInput & {
+  readonly origin?: ProviderRepositoryRef["origin"];
+};
+
+const withOriginContext = ({
+  origin,
+  ...input
+}: ForgejoRequestInput): ForgejoCli.ForgejoApiInput =>
+  origin === undefined
+    ? input
+    : {
+        ...input,
+        context: {
+          remoteName: origin.remoteName,
+          remoteUrl: origin.remoteUrl,
+          provider: {
+            kind: SourceControlProviderKind.make("forgejo"),
+            name: "Forgejo",
+            baseUrl: `https://${input.host}`,
+          },
+        },
+      };
+
 export const make = Effect.gen(function* () {
   const cli = yield* ForgejoCli.ForgejoCli;
   const failure = (operation: string, detail: string, cause?: unknown) =>
@@ -78,8 +102,9 @@ export const make = Effect.gen(function* () {
       detail,
       ...(cause === undefined ? {} : { cause }),
     });
-  const request = (input: ForgejoCli.ForgejoApiInput) =>
-    cli.api(input).pipe(
+  // Fork F06: an admitted origin locator becomes the CLI context, so it outranks host defaults.
+  const request = (input: ForgejoRequestInput) =>
+    cli.api(withOriginContext(input)).pipe(
       Effect.mapError(
         (error) =>
           new PullRequestProviderError({
@@ -101,7 +126,7 @@ export const make = Effect.gen(function* () {
       ),
     );
   const read = Effect.fn("ForgejoPullRequestProvider.read")(function* <A>(
-    input: ForgejoCli.ForgejoApiInput,
+    input: ForgejoRequestInput,
     schema: Schema.Codec<A, unknown, never, never>,
   ) {
     const result = yield* request(input);
@@ -113,11 +138,11 @@ export const make = Effect.gen(function* () {
       : yield* failure(input.path, "Forgejo returned an invalid response.", decoded.failure);
   });
   const readArray = <A>(
-    input: ForgejoCli.ForgejoApiInput,
+    input: ForgejoRequestInput,
     schema: Schema.Codec<A, unknown, never, never>,
   ) => read(input, Schema.NullOr(Schema.Array(schema))).pipe(Effect.map((rows) => rows ?? []));
   const readPage = Effect.fn("ForgejoPullRequestProvider.readPage")(function* <A>(
-    input: ForgejoCli.ForgejoApiInput,
+    input: ForgejoRequestInput,
     schema: Schema.Codec<A, unknown, never, never>,
     index: number,
   ) {
@@ -139,7 +164,7 @@ export const make = Effect.gen(function* () {
   });
   // Use a stable, small page size that also works with Forgejo's default maximum of 50.
   const page = Effect.fn("ForgejoPullRequestProvider.page")(function* <A>(
-    input: ForgejoCli.ForgejoApiInput,
+    input: ForgejoRequestInput,
     schema: Schema.Codec<A, unknown, never, never>,
     limit = 500,
   ) {
@@ -151,10 +176,11 @@ export const make = Effect.gen(function* () {
     }
     return { items, truncated: true };
   });
-  const write = (input: ForgejoCli.ForgejoApiInput) => request(input).pipe(Effect.asVoid);
+  const write = (input: ForgejoRequestInput) => request(input).pipe(Effect.asVoid);
   const getPull = (input: ProviderRepositoryRef & { readonly number: number }) =>
     read(
       {
+        ...(input.origin === undefined ? {} : { origin: input.origin }),
         cwd: input.cwd,
         repository: input.repository,
         host: input.host,
@@ -466,7 +492,17 @@ export const make = Effect.gen(function* () {
       switch (input.action) {
         case "merge":
           return Effect.gen(function* () {
-            const deleteBranch = (yield* getRepo(input)).default_delete_branch_after_merge ?? false;
+            const [repo, pr] = yield* Effect.all([getRepo(input), getPull(input)], {
+              concurrency: 2,
+            });
+            // Fork F06: host-side branch deletion writes only to a head branch inside origin.
+            const deleteBranch =
+              (repo.default_delete_branch_after_merge ?? false) &&
+              pr.head.repo !== null &&
+              isOriginHeadRepository({
+                originRepositoryId: repo.full_name.toLowerCase(),
+                headRepositoryId: pr.head.repo.full_name.toLowerCase(),
+              });
             yield* write({
               ...input,
               path: `${pullPath(input)}/merge`,

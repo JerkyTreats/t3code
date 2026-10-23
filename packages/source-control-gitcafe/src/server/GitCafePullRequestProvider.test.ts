@@ -74,7 +74,13 @@ function fakeGitCafe(
   return { layer, sent, writes };
 }
 
-const target = { cwd: "/repo", host: "git.cafe", repository: "owner/repo", number: 7 };
+const target = {
+  origin: { remoteName: "origin", remoteUrl: "https://git.cafe/owner/repo.git" },
+  cwd: "/repo",
+  host: "git.cafe",
+  repository: "owner/repo",
+  number: 7,
+};
 const timestamp = "2026-09-12T12:00:00Z";
 const headOid = "0123456789abcdef0123456789abcdef01234567";
 const baseOid = "89abcdef0123456789abcdef0123456789abcdef";
@@ -176,6 +182,7 @@ describe("GitCafePullRequestProvider", () => {
       const summary = yield* provider.getChangeRequestSummary!({
         ...target,
         host: "staging.git.cafe",
+        origin: { remoteName: "origin", remoteUrl: "https://staging.git.cafe/owner/repo.git" },
       });
       assert.strictEqual(summary.url, "https://staging.git.cafe/owner/repo/pulls/7");
       assert.isTrue(server.sent.every((request) => request.host === "staging.git.cafe"));
@@ -190,6 +197,37 @@ describe("GitCafePullRequestProvider", () => {
         .getChangeRequest({ ...target, host: "github.com" })
         .pipe(Effect.result);
       assert.strictEqual(result._tag, "Failure");
+      assert.deepStrictEqual(server.sent, []);
+    }).pipe(Effect.provide(server.layer));
+  });
+
+  // Fork F06: reviewer and label mutations bind to the exact origin before any request.
+  it.effect("refuses reviewer and label mutations outside the exact origin", () => {
+    const server = fakeGitCafe({});
+    return Effect.gen(function* () {
+      const provider = yield* GitCafePullRequestProvider.make;
+      for (const origin of [
+        undefined,
+        { remoteName: "upstream", remoteUrl: "https://git.cafe/owner/repo.git" },
+        { remoteName: "origin", remoteUrl: "https://git.cafe/someone/else.git" },
+        { remoteName: "origin", remoteUrl: "https://staging.git.cafe/owner/repo.git" },
+      ]) {
+        const foreign = { ...target, origin };
+        const reviewers = yield* provider
+          .setReviewerRequest({
+            ...foreign,
+            reviewers: [{ id: "act_two", kind: "user" }],
+            requested: true,
+          })
+          .pipe(Effect.result);
+        const labels = yield* provider.setLabels!({
+          ...foreign,
+          labels: ["docs"],
+          applied: true,
+        }).pipe(Effect.result);
+        assert.strictEqual(reviewers._tag, "Failure");
+        assert.strictEqual(labels._tag, "Failure");
+      }
       assert.deepStrictEqual(server.sent, []);
     }).pipe(Effect.provide(server.layer));
   });

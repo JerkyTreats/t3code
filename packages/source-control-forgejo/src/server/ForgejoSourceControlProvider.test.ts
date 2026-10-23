@@ -140,14 +140,34 @@ it.effect.each([
   ),
 );
 
-const forgejoMergeProvider = (repository: Effect.Effect<string, ForgejoCli.ForgejoCliError>) => {
+const forgejoMergePull = (headRepository: string | null) =>
+  JSON.stringify({
+    ...requiredChecksPullRequest,
+    number: 1,
+    head: {
+      ref: "feature",
+      sha: "head",
+      repo: headRepository === null ? null : { full_name: headRepository },
+    },
+    base: { ref: "main", sha: "base", repo: { full_name: "reviewer/project" } },
+  });
+const forgejoMergeProvider = (
+  repository: Effect.Effect<string, ForgejoCli.ForgejoCliError>,
+  pull: string = forgejoMergePull("reviewer/project"),
+) => {
   const writes: Array<ForgejoCli.ForgejoApiInput> = [];
   const provider = ForgejoPullRequestProvider.make.pipe(
     Effect.provide(
       Layer.mock(ForgejoCli.ForgejoCli)({
         api: (input) => {
           if (input.method !== undefined && input.method !== "GET") writes.push(input);
-          return (input.path === "repos/reviewer/project" ? repository : Effect.succeed("")).pipe(
+          return (
+            input.path === "repos/reviewer/project"
+              ? repository
+              : input.path === "repos/reviewer/project/pulls/1"
+                ? Effect.succeed(pull)
+                : Effect.succeed("")
+          ).pipe(
             Effect.map((stdout) => ({
               exitCode: ChildProcessSpawner.ExitCode(0),
               stdout,
@@ -191,6 +211,34 @@ it.effect("follows the Forgejo repository's delete-branch-after-merge setting", 
           ],
         ],
         `repository setting ${JSON.stringify(setting)}`,
+      );
+    }
+  }),
+);
+
+// Fork F06: host-side source-branch deletion writes only to a head branch inside origin.
+it.effect("never asks Forgejo to delete a source branch outside the origin repository", () =>
+  Effect.gen(function* () {
+    for (const headRepository of ["contributor/project", null]) {
+      const { provider, writes } = forgejoMergeProvider(
+        Effect.succeed(
+          JSON.stringify({
+            full_name: "reviewer/project",
+            default_delete_branch_after_merge: true,
+          }),
+        ),
+        forgejoMergePull(headRepository),
+      );
+      yield* (yield* provider).runAction(forgejoMergeInput);
+      assert.deepStrictEqual(
+        writes.map((write) => [write.path, write.body]),
+        [
+          [
+            "repos/reviewer/project/pulls/1/merge",
+            { Do: "squash", delete_branch_after_merge: false },
+          ],
+        ],
+        `head repository ${String(headRepository)}`,
       );
     }
   }),
@@ -248,7 +296,11 @@ it.effect.each([
               case "repos/acme/web/pulls/7/merge":
                 return Effect.fail(refused);
               case "repos/acme/web/pulls/7":
-                return respond({ ...requiredChecksPullRequest, merged });
+                return respond({
+                  ...requiredChecksPullRequest,
+                  head: { ref: "feature", sha: "head", repo: { full_name: "acme/web" } },
+                  merged,
+                });
               default:
                 return Effect.die(`Unexpected Forgejo request: ${input.path}`);
             }
@@ -562,18 +614,48 @@ it.effect("loads Forgejo pull request references from files and commits views", 
       "https://forgejo.test/maria/project/pulls/42/files?w=1#diff-1",
       "http://forgejo.test:3000/git/maria/project/pulls/42/commits",
     ]) {
-      const result = yield* provider.getChangeRequest({ cwd: "/repo", reference });
+      const context = {
+        provider: {
+          kind: SourceControlProviderKind.make("forgejo"),
+          name: "Forgejo",
+          baseUrl: reference.startsWith("http://")
+            ? "http://forgejo.test:3000"
+            : "https://forgejo.test",
+        },
+        remoteName: "origin",
+        remoteUrl: reference.startsWith("http://")
+          ? "http://forgejo.test:3000/git/maria/project.git"
+          : "https://forgejo.test/maria/project.git",
+      };
+      const result = yield* provider.getChangeRequest({ cwd: "/repo", reference, context });
       assert.strictEqual(result.number, 42);
       assert.strictEqual(result.title, "Forgejo view reference");
       assert.strictEqual(result.headSha, "head");
     }
-    const invalid = yield* provider
-      .getChangeRequest({
-        cwd: "/repo",
-        reference: "https://forgejo.test/maria/project/pulls/42invalid/files",
-      })
+    const originContext = {
+      provider: {
+        kind: SourceControlProviderKind.make("forgejo"),
+        name: "Forgejo",
+        baseUrl: "https://forgejo.test",
+      },
+      remoteName: "origin",
+      remoteUrl: "https://forgejo.test/maria/project.git",
+    };
+    for (const reference of [
+      "https://forgejo.test/maria/project/pulls/42invalid/files",
+      // Fork F06: a pull URL in another repository, or on another port, selects nothing.
+      "https://forgejo.test/someone/else/pulls/42",
+      "https://forgejo.test:8443/maria/project/pulls/42",
+    ]) {
+      const invalid = yield* provider
+        .getChangeRequest({ cwd: "/repo", reference, context: originContext })
+        .pipe(Effect.result);
+      assert.strictEqual(invalid._tag, "Failure", reference);
+    }
+    const unbound = yield* provider
+      .getChangeRequest({ cwd: "/repo", reference: "42" })
       .pipe(Effect.result);
-    assert.strictEqual(invalid._tag, "Failure");
+    assert.strictEqual(unbound._tag, "Failure");
   }).pipe(
     Effect.provide(
       Layer.mergeAll(
@@ -1510,3 +1592,36 @@ it.effect(
       }
     }),
 );
+
+// Fork F06: the admitted origin locator binds every pull request API call to origin.
+it.effect("binds Forgejo pull request reads to the admitted origin locator", () => {
+  const contexts: Array<ForgejoCli.ForgejoApiInput["context"]> = [];
+  return Effect.gen(function* () {
+    const provider = yield* ForgejoPullRequestProvider.make;
+    yield* provider
+      .getChangeRequest({
+        ...requiredChecksInput,
+        origin: { remoteName: "origin", remoteUrl: "http://forgejo.test:3000/acme/web.git" },
+      })
+      .pipe(Effect.ignore);
+    assert.isAbove(contexts.length, 0);
+    for (const context of contexts) {
+      assert.deepStrictEqual(
+        [context?.remoteName, context?.remoteUrl],
+        ["origin", "http://forgejo.test:3000/acme/web.git"],
+      );
+    }
+  }).pipe(
+    Effect.provide(
+      Layer.mock(ForgejoCli.ForgejoCli)({
+        api: (input) => {
+          contexts.push(input.context);
+          return encodeJsonEffect(requiredChecksPullRequest).pipe(
+            Effect.orDie,
+            Effect.map(processOutput),
+          );
+        },
+      }),
+    ),
+  );
+});
