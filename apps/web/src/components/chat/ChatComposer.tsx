@@ -1554,6 +1554,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedModel,
     selectedPromptEffort,
     selectedProvider,
+    potetoMode,
   ] as const;
   const [providerInputValidatedFor, setProviderInputValidatedFor] = useState(providerInputInputs);
   if (providerInputInputs.some((value, index) => value !== providerInputValidatedFor[index])) {
