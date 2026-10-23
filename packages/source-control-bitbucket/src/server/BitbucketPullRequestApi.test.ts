@@ -11,6 +11,7 @@ const layer = it.layer(
   BitbucketPullRequestApi.layer.pipe(
     Layer.provide(
       Layer.mock(BitbucketApi.BitbucketApi)({
+        authorizeOrigin: () => Effect.void,
         request: mockedRequest,
       }),
     ),
@@ -75,6 +76,82 @@ function filterOfCall(index: number): string | null {
 
 afterEach(() => {
   mockedRequest.mockReset();
+});
+
+function refusingOriginLayer(request: typeof mockedRequest) {
+  return BitbucketPullRequestApi.layer.pipe(
+    Layer.provide(
+      Layer.mock(BitbucketApi.BitbucketApi)({
+        authorizeOrigin: () =>
+          Effect.fail(
+            new BitbucketApi.BitbucketOriginHostError({
+              reason: "origin-host-mismatch",
+              originHost: "bitbucket.internal.example",
+              apiHost: "api.bitbucket.org",
+            }),
+          ),
+        authorizeOriginHost: () =>
+          Effect.fail(
+            new BitbucketApi.BitbucketOriginHostError({
+              reason: "origin-host-mismatch",
+              originHost: "bitbucket.internal.example",
+              apiHost: "api.bitbucket.org",
+            }),
+          ),
+        request,
+      }),
+    ),
+  );
+}
+
+const foreignOrigin = {
+  remoteName: "origin",
+  remoteUrl: "ssh://git@bitbucket.internal.example/acme/web.git",
+};
+
+it.effect("rejects a read with a mismatched origin before any request", () => {
+  const request = vi.fn<BitbucketApi.BitbucketApi["Service"]["request"]>();
+
+  return Effect.gen(function* () {
+    const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
+    const error = yield* api
+      .listPullRequests({ origin: foreignOrigin, repository: "acme/web", state: "open", limit: 20 })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketOriginHostError);
+    assert.strictEqual(request.mock.calls.length, 0);
+  }).pipe(Effect.provide(refusingOriginLayer(request)));
+});
+
+it.effect("rejects a write with a mismatched origin before any request", () => {
+  const request = vi.fn<BitbucketApi.BitbucketApi["Service"]["request"]>();
+
+  return Effect.gen(function* () {
+    const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
+    const error = yield* api
+      .comment({
+        origin: foreignOrigin,
+        repository: "acme/web",
+        number: 7,
+        body: "This must not leave the process.",
+      })
+      .pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketOriginHostError);
+    assert.strictEqual(request.mock.calls.length, 0);
+  }).pipe(Effect.provide(refusingOriginLayer(request)));
+});
+
+it.effect("rejects the viewer read for a mismatched host before any request", () => {
+  const request = vi.fn<BitbucketApi.BitbucketApi["Service"]["request"]>();
+
+  return Effect.gen(function* () {
+    const api = yield* BitbucketPullRequestApi.BitbucketPullRequestApi;
+    const error = yield* api.getViewer({ host: "bitbucket.internal.example" }).pipe(Effect.flip);
+
+    assert.instanceOf(error, BitbucketApi.BitbucketOriginHostError);
+    assert.strictEqual(request.mock.calls.length, 0);
+  }).pipe(Effect.provide(refusingOriginLayer(request)));
 });
 
 layer("BitbucketPullRequestApi.layer", (it) => {

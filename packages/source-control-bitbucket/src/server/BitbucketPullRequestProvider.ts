@@ -148,12 +148,14 @@ export const make = Effect.gen(function* () {
     kind: SourceControlProviderKind.make("bitbucket"),
     capabilities: CAPABILITIES,
 
-    getViewer: () => api.getViewer().pipe(Effect.mapError(fail("getViewer"))),
+    getViewer: (input) =>
+      api.getViewer({ host: input.host }).pipe(Effect.mapError(fail("getViewer"))),
 
     listChangeRequests: (input) =>
       api
         .listPullRequests({
           repository: input.repository,
+          origin: input.origin,
           state: input.state,
           limit: input.limit,
           query: input.query,
@@ -175,7 +177,7 @@ export const make = Effect.gen(function* () {
       ),
 
     getChangeRequest: (input) => {
-      const target = { repository: input.repository, number: input.number };
+      const target = { repository: input.repository, origin: input.origin, number: input.number };
       return Effect.all(
         [
           api.getPullRequest(target),
@@ -215,7 +217,7 @@ export const make = Effect.gen(function* () {
     },
 
     getChangeRequestActivity: (input) => {
-      const target = { repository: input.repository, number: input.number };
+      const target = { repository: input.repository, origin: input.origin, number: input.number };
       return Effect.all(
         [
           api.getPullRequest(target),
@@ -238,7 +240,7 @@ export const make = Effect.gen(function* () {
     },
 
     getViewerPermissions: (input) =>
-      api.getRepositoryPermission({ repository: input.repository }).pipe(
+      api.getRepositoryPermission({ repository: input.repository, origin: input.origin }).pipe(
         Effect.mapError(fail("getViewerPermissions")),
         Effect.map((canWrite) => bitbucketViewerPermissions({ canWrite })),
       ),
@@ -248,6 +250,7 @@ export const make = Effect.gen(function* () {
       api
         .getPullRequestDiff({
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           ...(input.commit === undefined ? {} : { commit: input.commit }),
         })
@@ -260,6 +263,7 @@ export const make = Effect.gen(function* () {
       api
         .getFileRevisions({
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           paths: input.paths,
         })
@@ -269,13 +273,18 @@ export const make = Effect.gen(function* () {
     // one on a pull request.
     listReviewerCandidates: (input) =>
       api
-        .listReviewerCandidates({ repository: input.repository, number: input.number })
+        .listReviewerCandidates({
+          repository: input.repository,
+          origin: input.origin,
+          number: input.number,
+        })
         .pipe(Effect.mapError(fail("listReviewerCandidates"))),
 
     setReviewerRequest: (input) =>
       api
         .setReviewerRequest({
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           reviewers: input.reviewers,
           requested: input.requested,
@@ -286,6 +295,7 @@ export const make = Effect.gen(function* () {
       api
         .runAction({
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           action: input.action,
           ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
@@ -296,6 +306,7 @@ export const make = Effect.gen(function* () {
       api
         .updateChangeRequest({
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           title: input.title,
           body: input.body,
@@ -304,13 +315,19 @@ export const make = Effect.gen(function* () {
 
     comment: (input) =>
       api
-        .comment({ repository: input.repository, number: input.number, body: input.body })
+        .comment({
+          repository: input.repository,
+          origin: input.origin,
+          number: input.number,
+          body: input.body,
+        })
         .pipe(Effect.mapError(fail("comment"))),
 
     updateComment: (input) =>
       api
         .updateComment({
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           commentId: input.commentId,
           body: input.body,
@@ -321,6 +338,7 @@ export const make = Effect.gen(function* () {
       api
         .submitReview({
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           verdict: input.verdict,
           body: input.body,
@@ -332,6 +350,7 @@ export const make = Effect.gen(function* () {
       api
         .replyToComment({
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           commentId: input.threadId,
           body: input.body,
@@ -352,6 +371,7 @@ export const make = Effect.gen(function* () {
       api
         .setCommentResolution({
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           commentId: input.threadId,
           resolved: input.resolved,
