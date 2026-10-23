@@ -4062,277 +4062,262 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
-  it.effect(
-    "rejects publication through a non-origin fork remote",
-    () =>
-      Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
-        yield* initRepo(repoDir);
-        yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
-        const forkDir = yield* createBareRemote();
-        yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
-        yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
-        yield* configureVisibleRemoteUrlWithLocalRewrite(
-          repoDir,
-          "fork-seed",
-          "git@github.com:octocat/codething-mvp.git",
-          forkDir,
-        );
+  it.effect("rejects publication through a non-origin fork remote", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
+      const forkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+      yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "fork-seed",
+        "git@github.com:octocat/codething-mvp.git",
+        forkDir,
+      );
 
-        const { manager } = yield* makeManager({
-          ghScenario: {
-            prListSequence: [
-              JSON.stringify([
-                {
-                  number: 142,
-                  title: "Existing fork PR",
-                  url: "https://github.com/pingdotgg/codething-mvp/pull/142",
-                  baseRefName: "main",
-                  headRefName: "statemachine",
-                  state: "OPEN",
-                  isCrossRepository: true,
-                  headRepository: {
-                    nameWithOwner: "octocat/codething-mvp",
-                  },
-                  headRepositoryOwner: {
-                    login: "octocat",
-                  },
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListSequence: [
+            JSON.stringify([
+              {
+                number: 142,
+                title: "Existing fork PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/142",
+                baseRefName: "main",
+                headRefName: "statemachine",
+                state: "OPEN",
+                isCrossRepository: true,
+                headRepository: {
+                  nameWithOwner: "octocat/codething-mvp",
                 },
-              ]),
+                headRepositoryOwner: {
+                  login: "octocat",
+                },
+              },
+            ]),
+          ],
+        },
+      });
+
+      const error = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "commit_push_pr",
+      }).pipe(Effect.flip);
+
+      expect(error.message).toContain("configured upstream because it is not origin");
+    }),
+  );
+
+  it.effect("rejects publication through a slash-named non-origin remote", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      const originDir = yield* createBareRemote();
+      const upstreamDir = yield* createBareRemote();
+      yield* configureRemote(repoDir, "origin", originDir, "origin");
+      yield* configureRemote(repoDir, "my-org/upstream", upstreamDir, "my-org/upstream");
+
+      yield* runGit(repoDir, ["checkout", "-b", "effect-atom"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "effect-atom"]);
+      yield* runGit(repoDir, ["push", "-u", "my-org/upstream", "effect-atom"]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "origin",
+        "git@github.com:pingdotgg/codething-mvp.git",
+        originDir,
+      );
+      yield* runGit(repoDir, ["config", "remote.origin.pushurl", originDir]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "my-org/upstream",
+        "ssh://git@github.com/pingdotgg/codething-mvp.git",
+        upstreamDir,
+      );
+      yield* runGit(repoDir, ["config", "remote.my-org/upstream.pushurl", upstreamDir]);
+      yield* runGit(repoDir, ["checkout", "main"]);
+      yield* runGit(repoDir, ["branch", "-D", "effect-atom"]);
+      yield* runGit(repoDir, ["checkout", "--track", "my-org/upstream/effect-atom"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "changes.txt"), "change\n");
+      yield* runGit(repoDir, ["add", "changes.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Feature commit"]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            "effect-atom": JSON.stringify([
+              {
+                number: 1618,
+                title: "Correct PR",
+                url: "https://github.com/pingdotgg/t3code/pull/1618",
+                baseRefName: "main",
+                headRefName: "effect-atom",
+              },
+            ]),
+            "upstream/effect-atom": JSON.stringify([
+              {
+                number: 1518,
+                title: "Wrong PR",
+                url: "https://github.com/pingdotgg/t3code/pull/1518",
+                baseRefName: "main",
+                headRefName: "upstream/effect-atom",
+              },
+            ]),
+          },
+        },
+      });
+
+      const error = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "commit_push_pr",
+      }).pipe(Effect.flip);
+
+      expect(error.message).toContain("configured upstream because it is not origin");
+    }),
+  );
+
+  it.effect("does not probe cross-repository selectors through a non-origin remote", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
+      const forkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+      yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
+      yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-142/statemachine"]);
+      yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "fork-seed",
+        "git@github.com:octocat/codething-mvp.git",
+        forkDir,
+      );
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            "t3code/pr-142/statemachine": JSON.stringify([]),
+            statemachine: JSON.stringify([
+              {
+                number: 41,
+                title: "Unrelated same-repo PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/41",
+                baseRefName: "main",
+                headRefName: "statemachine",
+              },
+              {
+                number: 142,
+                title: "Existing fork PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/142",
+                baseRefName: "main",
+                headRefName: "statemachine",
+                state: "OPEN",
+                isCrossRepository: true,
+                headRepository: {
+                  nameWithOwner: "octocat/codething-mvp",
+                },
+                headRepositoryOwner: {
+                  login: "octocat",
+                },
+              },
+            ]),
+          },
+        },
+      });
+
+      const error = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "commit_push_pr",
+      }).pipe(Effect.flip);
+
+      expect(error.message).toContain("configured upstream because it is not origin");
+    }),
+  );
+
+  it.effect("stops before pull request lookup for a non-origin remote", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
+      const forkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+      yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
+      yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-142/statemachine"]);
+      yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "fork-seed",
+        "git@github.com:octocat/codething-mvp.git",
+        forkDir,
+      );
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListByHeadSelector: {
+            statemachine: JSON.stringify([
+              {
+                number: 142,
+                title: "Existing fork PR",
+                url: "https://github.com/pingdotgg/codething-mvp/pull/142",
+                baseRefName: "main",
+                headRefName: "statemachine",
+                state: "OPEN",
+                isCrossRepository: true,
+                headRepository: {
+                  nameWithOwner: "octocat/codething-mvp",
+                },
+                headRepositoryOwner: {
+                  login: "octocat",
+                },
+              },
+            ]),
+            "t3code/pr-142/statemachine": JSON.stringify([]),
+          },
+        },
+      });
+
+      const error = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "commit_push_pr",
+      }).pipe(Effect.flip);
+
+      expect(error.message).toContain("configured upstream because it is not origin");
+    }),
+  );
+
+  it.effect("rejects a non-origin remote before ambiguous pull request matching", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
+      const forkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
+      yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
+      yield* runGit(repoDir, [
+        "config",
+        "remote.fork-seed.url",
+        "git@github.com:octocat/codething-mvp.git",
+      ]);
+
+      const { manager } = yield* makeManager({
+        ghScenario: {
+          prListSequenceByHeadSelector: {
+            statemachine: [
+              `[{"number":41,"title":"Ambiguous fork PR","url":"https://github.com/pingdotgg/codething-mvp/pull/41","baseRefName":"main","headRefName":"statemachine","state":"OPEN"}]`,
+              `[{"number":142,"title":"Add stacked git actions","url":"https://github.com/pingdotgg/codething-mvp/pull/142","baseRefName":"main","headRefName":"statemachine","state":"OPEN","isCrossRepository":true,"headRepository":{"nameWithOwner":"octocat/codething-mvp"},"headRepositoryOwner":{"login":"octocat"}}]`,
             ],
           },
-        });
+        },
+      });
 
-        const error = yield* runStackedAction(manager, {
-          cwd: repoDir,
-          action: "commit_push_pr",
-        }).pipe(Effect.flip);
+      const error = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "commit_push_pr",
+      }).pipe(Effect.flip);
 
-        expect(error.message).toContain("configured upstream because it is not origin");
-      }),
-    12_000,
-  );
-
-  it.effect(
-    "rejects publication through a slash-named non-origin remote",
-    () =>
-      Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
-        yield* initRepo(repoDir);
-        const originDir = yield* createBareRemote();
-        const upstreamDir = yield* createBareRemote();
-        yield* configureRemote(repoDir, "origin", originDir, "origin");
-        yield* configureRemote(repoDir, "my-org/upstream", upstreamDir, "my-org/upstream");
-
-        yield* runGit(repoDir, ["checkout", "-b", "effect-atom"]);
-        yield* runGit(repoDir, ["push", "-u", "origin", "effect-atom"]);
-        yield* runGit(repoDir, ["push", "-u", "my-org/upstream", "effect-atom"]);
-        yield* configureVisibleRemoteUrlWithLocalRewrite(
-          repoDir,
-          "origin",
-          "git@github.com:pingdotgg/codething-mvp.git",
-          originDir,
-        );
-        yield* runGit(repoDir, ["config", "remote.origin.pushurl", originDir]);
-        yield* configureVisibleRemoteUrlWithLocalRewrite(
-          repoDir,
-          "my-org/upstream",
-          "ssh://git@github.com/pingdotgg/codething-mvp.git",
-          upstreamDir,
-        );
-        yield* runGit(repoDir, ["config", "remote.my-org/upstream.pushurl", upstreamDir]);
-        yield* runGit(repoDir, ["checkout", "main"]);
-        yield* runGit(repoDir, ["branch", "-D", "effect-atom"]);
-        yield* runGit(repoDir, ["checkout", "--track", "my-org/upstream/effect-atom"]);
-        NodeFS.writeFileSync(NodePath.join(repoDir, "changes.txt"), "change\n");
-        yield* runGit(repoDir, ["add", "changes.txt"]);
-        yield* runGit(repoDir, ["commit", "-m", "Feature commit"]);
-
-        const { manager } = yield* makeManager({
-          ghScenario: {
-            prListByHeadSelector: {
-              "effect-atom": JSON.stringify([
-                {
-                  number: 1618,
-                  title: "Correct PR",
-                  url: "https://github.com/pingdotgg/t3code/pull/1618",
-                  baseRefName: "main",
-                  headRefName: "effect-atom",
-                },
-              ]),
-              "upstream/effect-atom": JSON.stringify([
-                {
-                  number: 1518,
-                  title: "Wrong PR",
-                  url: "https://github.com/pingdotgg/t3code/pull/1518",
-                  baseRefName: "main",
-                  headRefName: "upstream/effect-atom",
-                },
-              ]),
-            },
-          },
-        });
-
-        const error = yield* runStackedAction(manager, {
-          cwd: repoDir,
-          action: "commit_push_pr",
-        }).pipe(Effect.flip);
-
-        expect(error.message).toContain("configured upstream because it is not origin");
-      }),
-    20_000,
-  );
-
-  it.effect(
-    "does not probe cross-repository selectors through a non-origin remote",
-    () =>
-      Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
-        yield* initRepo(repoDir);
-        yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
-        const forkDir = yield* createBareRemote();
-        yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
-        yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
-        yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-142/statemachine"]);
-        yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
-        yield* configureVisibleRemoteUrlWithLocalRewrite(
-          repoDir,
-          "fork-seed",
-          "git@github.com:octocat/codething-mvp.git",
-          forkDir,
-        );
-
-        const { manager } = yield* makeManager({
-          ghScenario: {
-            prListByHeadSelector: {
-              "t3code/pr-142/statemachine": JSON.stringify([]),
-              statemachine: JSON.stringify([
-                {
-                  number: 41,
-                  title: "Unrelated same-repo PR",
-                  url: "https://github.com/pingdotgg/codething-mvp/pull/41",
-                  baseRefName: "main",
-                  headRefName: "statemachine",
-                },
-                {
-                  number: 142,
-                  title: "Existing fork PR",
-                  url: "https://github.com/pingdotgg/codething-mvp/pull/142",
-                  baseRefName: "main",
-                  headRefName: "statemachine",
-                  state: "OPEN",
-                  isCrossRepository: true,
-                  headRepository: {
-                    nameWithOwner: "octocat/codething-mvp",
-                  },
-                  headRepositoryOwner: {
-                    login: "octocat",
-                  },
-                },
-              ]),
-            },
-          },
-        });
-
-        const error = yield* runStackedAction(manager, {
-          cwd: repoDir,
-          action: "commit_push_pr",
-        }).pipe(Effect.flip);
-
-        expect(error.message).toContain("configured upstream because it is not origin");
-      }),
-    12_000,
-  );
-
-  it.effect(
-    "stops before pull request lookup for a non-origin remote",
-    () =>
-      Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
-        yield* initRepo(repoDir);
-        yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
-        const forkDir = yield* createBareRemote();
-        yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
-        yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
-        yield* runGit(repoDir, ["checkout", "-b", "t3code/pr-142/statemachine"]);
-        yield* runGit(repoDir, ["branch", "--set-upstream-to", "fork-seed/statemachine"]);
-        yield* configureVisibleRemoteUrlWithLocalRewrite(
-          repoDir,
-          "fork-seed",
-          "git@github.com:octocat/codething-mvp.git",
-          forkDir,
-        );
-
-        const { manager } = yield* makeManager({
-          ghScenario: {
-            prListByHeadSelector: {
-              statemachine: JSON.stringify([
-                {
-                  number: 142,
-                  title: "Existing fork PR",
-                  url: "https://github.com/pingdotgg/codething-mvp/pull/142",
-                  baseRefName: "main",
-                  headRefName: "statemachine",
-                  state: "OPEN",
-                  isCrossRepository: true,
-                  headRepository: {
-                    nameWithOwner: "octocat/codething-mvp",
-                  },
-                  headRepositoryOwner: {
-                    login: "octocat",
-                  },
-                },
-              ]),
-              "t3code/pr-142/statemachine": JSON.stringify([]),
-            },
-          },
-        });
-
-        const error = yield* runStackedAction(manager, {
-          cwd: repoDir,
-          action: "commit_push_pr",
-        }).pipe(Effect.flip);
-
-        expect(error.message).toContain("configured upstream because it is not origin");
-      }),
-    12_000,
-  );
-
-  it.effect(
-    "rejects a non-origin remote before ambiguous pull request matching",
-    () =>
-      Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
-        yield* initRepo(repoDir);
-        yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
-        const forkDir = yield* createBareRemote();
-        yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
-        yield* runGit(repoDir, ["push", "-u", "fork-seed", "statemachine"]);
-        yield* runGit(repoDir, [
-          "config",
-          "remote.fork-seed.url",
-          "git@github.com:octocat/codething-mvp.git",
-        ]);
-
-        const { manager } = yield* makeManager({
-          ghScenario: {
-            prListSequenceByHeadSelector: {
-              statemachine: [
-                `[{"number":41,"title":"Ambiguous fork PR","url":"https://github.com/pingdotgg/codething-mvp/pull/41","baseRefName":"main","headRefName":"statemachine","state":"OPEN"}]`,
-                `[{"number":142,"title":"Add stacked git actions","url":"https://github.com/pingdotgg/codething-mvp/pull/142","baseRefName":"main","headRefName":"statemachine","state":"OPEN","isCrossRepository":true,"headRepository":{"nameWithOwner":"octocat/codething-mvp"},"headRepositoryOwner":{"login":"octocat"}}]`,
-              ],
-            },
-          },
-        });
-
-        const error = yield* runStackedAction(manager, {
-          cwd: repoDir,
-          action: "commit_push_pr",
-        }).pipe(Effect.flip);
-
-        expect(error.message).toContain("configured upstream because it is not origin");
-      }),
-    20_000,
+      expect(error.message).toContain("configured upstream because it is not origin");
+    }),
   );
 
   it.effect("materializes a GitCafe head through bound origin clone lookup", () =>
