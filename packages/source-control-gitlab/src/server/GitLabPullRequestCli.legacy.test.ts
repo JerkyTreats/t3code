@@ -16,7 +16,7 @@ const layer = it.layer(
     Layer.provide(TestSourceControlHost.layer({ process: { run } })),
   ),
 );
-const input = { cwd: "/repo", repository: "acme/nested/web", number: 7 };
+const input = { cwd: "/repo", host: "gitlab.com", repository: "acme/nested/web", number: 7 };
 const file = {
   old_path: "src/old.ts",
   new_path: "src/new.ts",

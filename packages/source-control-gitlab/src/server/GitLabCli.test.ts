@@ -29,6 +29,98 @@ afterEach(() => {
 });
 
 layer("GitLabCli.layer", (it) => {
+  it.effect(
+    "normalizes matching origin URLs before view and checkout while retaining branch selectors",
+    () =>
+      Effect.gen(function* () {
+        const cli = yield* GitLabCli.GitLabCli;
+        const referenceUrl = "https://gitlab.example.test:8443/acme/nested/web/-/merge_requests/42";
+        for (const reference of [referenceUrl, "42", "feature/origin-branch"]) {
+          mockedRun.mockReturnValueOnce(
+            Effect.succeed(
+              processOutput(
+                JSON.stringify({
+                  iid: 42,
+                  title: "Origin MR",
+                  web_url: referenceUrl,
+                  target_branch: "main",
+                  source_branch: "feature/origin-branch",
+                  state: "opened",
+                  draft: true,
+                }),
+              ),
+            ),
+          );
+          const result = yield* cli.getMergeRequest({
+            cwd: "/repo",
+            host: "gitlab.example.test:8443",
+            repository: "acme/nested/web",
+            reference,
+          });
+          assert.equal(result.number, 42);
+          assert.equal(result.url, referenceUrl);
+          mockedRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+          yield* cli.checkoutMergeRequest({
+            cwd: "/repo",
+            host: "gitlab.example.test:8443",
+            repository: "acme/nested/web",
+            reference,
+          });
+        }
+        const commands = mockedRun.mock.calls.map(([input]) => input.args);
+        assert.deepStrictEqual(
+          commands.map((args) => [
+            args[1],
+            args[args.indexOf("--repo") + 1],
+            args.at(-2),
+            args.at(-1),
+          ]),
+          [
+            ["view", "https://gitlab.example.test:8443/acme/nested/web", "--", "42"],
+            ["checkout", "https://gitlab.example.test:8443/acme/nested/web", "--", "42"],
+            ["view", "https://gitlab.example.test:8443/acme/nested/web", "--", "42"],
+            ["checkout", "https://gitlab.example.test:8443/acme/nested/web", "--", "42"],
+            [
+              "view",
+              "https://gitlab.example.test:8443/acme/nested/web",
+              "--",
+              "feature/origin-branch",
+            ],
+            [
+              "checkout",
+              "https://gitlab.example.test:8443/acme/nested/web",
+              "--",
+              "feature/origin-branch",
+            ],
+          ],
+        );
+      }),
+  );
+
+  it.effect("rejects foreign URL targets before view or checkout executes the CLI", () =>
+    Effect.gen(function* () {
+      const cli = yield* GitLabCli.GitLabCli;
+      for (const reference of [
+        "https://gitlab.example.test:8443/foreign/web/-/merge_requests/42",
+        "https://foreign.example.test:8443/acme/nested/web/-/merge_requests/42",
+        "https://gitlab.example.test:9443/acme/nested/web/-/merge_requests/42",
+        "https://gitlab.example.test/acme/nested/web/-/merge_requests/42",
+        "https://[invalid",
+      ]) {
+        for (const action of [cli.getMergeRequest, cli.checkoutMergeRequest]) {
+          const error = yield* action({
+            cwd: "/repo",
+            host: "gitlab.example.test:8443",
+            repository: "acme/nested/web",
+            reference,
+          }).pipe(Effect.flip);
+          assert.equal(error._tag, "GitLabCliCommandError");
+        }
+      }
+      expect(mockedRun).not.toHaveBeenCalled();
+    }),
+  );
+
   it.effect("parses merge request view output", () =>
     Effect.gen(function* () {
       mockedRun.mockReturnValueOnce(
@@ -57,6 +149,8 @@ layer("GitLabCli.layer", (it) => {
         const glab = yield* GitLabCli.GitLabCli;
         return yield* glab.getMergeRequest({
           cwd: "/repo",
+          host: "gitlab.example.test",
+          repository: "fork/project",
           reference: "42",
         });
       });
@@ -79,7 +173,16 @@ layer("GitLabCli.layer", (it) => {
         expect.objectContaining({
           command: "glab",
           cwd: "/repo",
-          args: ["mr", "view", "--output", "json", "--", "42"],
+          args: [
+            "mr",
+            "view",
+            "--output",
+            "json",
+            "--repo",
+            "https://gitlab.example.test/fork/project",
+            "--",
+            "42",
+          ],
         }),
       );
     }),
@@ -116,6 +219,8 @@ layer("GitLabCli.layer", (it) => {
         const glab = yield* GitLabCli.GitLabCli;
         return yield* glab.listMergeRequests({
           cwd: "/repo",
+          host: "gitlab.example.test",
+          repository: "fork/project",
           headSelector: "feature/mr-list",
           state: "all",
         });
@@ -140,6 +245,8 @@ layer("GitLabCli.layer", (it) => {
           args: [
             "mr",
             "list",
+            "--repo",
+            "https://gitlab.example.test/fork/project",
             "--source-branch",
             "feature/mr-list",
             "--all",
@@ -147,6 +254,165 @@ layer("GitLabCli.layer", (it) => {
             "20",
             "--output",
             "json",
+          ],
+        }),
+      );
+    }),
+  );
+
+  it.effect("pins default branch lookup to the origin GitLab project", () =>
+    Effect.gen(function* () {
+      mockedRun.mockReturnValueOnce(
+        Effect.succeed(processOutput(JSON.stringify({ default_branch: "main" }))),
+      );
+
+      const glab = yield* GitLabCli.GitLabCli;
+      const branch = yield* glab.getDefaultBranch({
+        cwd: "/repo",
+        host: "gitlab.example.test",
+        repository: "fork/project",
+      });
+
+      assert.strictEqual(branch, "main");
+      expect(mockedRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          command: "glab",
+          cwd: "/repo",
+          args: ["api", "--hostname", "gitlab.example.test", "projects/fork%2Fproject"],
+        }),
+      );
+    }),
+  );
+
+  it.effect("pins merge request creation to the origin repository target", () =>
+    Effect.gen(function* () {
+      mockedRun.mockReturnValueOnce(Effect.succeed(processOutput("{}")));
+
+      const glab = yield* GitLabCli.GitLabCli;
+      yield* glab.createMergeRequest({
+        cwd: "/repo",
+        host: "gitlab.example.test",
+        repository: "fork/project",
+        baseBranch: "main",
+        headSelector: "owner:feature/provider",
+        title: "Provider MR",
+        bodyFile: "/tmp/t3-mr-body.md",
+      });
+
+      expect(mockedRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          command: "glab",
+          cwd: "/repo",
+          args: [
+            "api",
+            "--hostname",
+            "gitlab.example.test",
+            "--method",
+            "POST",
+            "projects/fork%2Fproject/merge_requests",
+            "--raw-field",
+            "source_branch=feature/provider",
+            "--raw-field",
+            "target_branch=main",
+            "--raw-field",
+            "title=Provider MR",
+            "--field",
+            "description=@/tmp/t3-mr-body.md",
+          ],
+        }),
+      );
+    }),
+  );
+
+  it.effect("creates repositories under an explicit namespace", () =>
+    Effect.gen(function* () {
+      mockedRun
+
+        .mockReturnValueOnce(Effect.succeed(processOutput(JSON.stringify({ id: 1234 }))))
+        .mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              JSON.stringify({
+                path_with_namespace: "octocat/t3code",
+                web_url: "https://gitlab.com/octocat/t3code",
+                http_url_to_repo: "https://gitlab.com/octocat/t3code.git",
+                ssh_url_to_repo: "git@gitlab.com:octocat/t3code.git",
+              }),
+            ),
+          ),
+        );
+
+      const glab = yield* GitLabCli.GitLabCli;
+      const result = yield* glab.createRepository({
+        cwd: "/repo",
+        host: "gitlab.com",
+        repository: "octocat/t3code",
+        visibility: "public",
+      });
+
+      assert.deepStrictEqual(result, {
+        nameWithOwner: "octocat/t3code",
+        url: "https://gitlab.com/octocat/t3code",
+        sshUrl: "git@gitlab.com:octocat/t3code.git",
+      });
+      expect(mockedRun).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          command: "glab",
+          cwd: "/repo",
+          args: ["api", "--hostname", "gitlab.com", "namespaces/octocat"],
+        }),
+      );
+      expect(mockedRun).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          command: "glab",
+          cwd: "/repo",
+          args: [
+            "api",
+            "--hostname",
+            "gitlab.com",
+            "--method",
+            "POST",
+            "projects",
+            "--raw-field",
+            "path=t3code",
+            "--raw-field",
+            "name=t3code",
+            "--raw-field",
+            "visibility=public",
+            "--raw-field",
+            "namespace_id=1234",
+          ],
+        }),
+      );
+    }),
+  );
+
+  it.effect("does not pass unsupported force flags when checking out merge requests", () =>
+    Effect.gen(function* () {
+      mockedRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+
+      const glab = yield* GitLabCli.GitLabCli;
+      yield* glab.checkoutMergeRequest({
+        cwd: "/repo",
+        host: "gitlab.example.test",
+        repository: "fork/project",
+        reference: "42",
+        force: true,
+      });
+
+      expect(mockedRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          command: "glab",
+          cwd: "/repo",
+          args: [
+            "mr",
+            "checkout",
+            "--repo",
+            "https://gitlab.example.test/fork/project",
+            "--",
+            "42",
           ],
         }),
       );
@@ -169,6 +435,8 @@ layer("GitLabCli.layer", (it) => {
         const glab = yield* GitLabCli.GitLabCli;
         return yield* glab.getMergeRequest({
           cwd: "/repo",
+          host: "gitlab.example.test",
+          repository: "fork/project",
           reference: "4888",
         });
       }).pipe(Effect.flip);

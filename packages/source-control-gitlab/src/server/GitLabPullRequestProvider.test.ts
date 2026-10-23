@@ -1,10 +1,17 @@
-import { describe, expect, it } from "@effect/vitest";
+import { assert, describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import * as GitLabCli from "./GitLabCli.ts";
 import * as GitLabPullRequestCli from "./GitLabPullRequestCli.ts";
 import { gitLabViewerPermissions, make } from "./GitLabPullRequestProvider.ts";
+
+const exactOrigin = {
+  origin: {
+    remoteName: "origin",
+    remoteUrl: "ssh://git@gitlab.internal.test:2222/acme/web.git",
+  },
+} as const;
 
 describe("gitLabViewerPermissions", () => {
   it("offers everything to a viewer GitLab says can merge", () => {
@@ -72,6 +79,7 @@ describe("getChangeRequest base freshness", () => {
         cwd: "/w",
         repository: "acme/web",
         host: "gitlab.com",
+        ...exactOrigin,
         number: 7,
       });
     }).pipe(
@@ -104,7 +112,13 @@ describe("getChangeRequest base freshness", () => {
 });
 
 describe("optional activity reads", () => {
-  const reference = { cwd: "/w", repository: "acme/web", host: "gitlab.com", number: 7 };
+  const reference = {
+    cwd: "/w",
+    repository: "acme/web",
+    host: "gitlab.com",
+    ...exactOrigin,
+    number: 7,
+  };
   const comment = {
     id: "42",
     kind: "issue-comment" as const,
@@ -199,6 +213,90 @@ describe("optional activity reads", () => {
         reactions: [],
         commits: [commit],
       });
+    }),
+  );
+});
+
+describe("exact origin binding", () => {
+  const updateMergeRequest = vi.fn(() => Effect.void);
+  const updateNote = vi.fn(() => Effect.void);
+
+  const providerWith = make.pipe(
+    Effect.provide(
+      Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({ updateMergeRequest, updateNote }),
+    ),
+  );
+
+  it.effect("writes to the origin host and repository rather than the caller's repository", () =>
+    Effect.gen(function* () {
+      const provider = yield* providerWith;
+      assert.isDefined(provider.updateChangeRequest);
+
+      yield* provider.updateChangeRequest({
+        cwd: "/w",
+        repository: "upstream/other",
+        host: "gitlab.com",
+        ...exactOrigin,
+        number: 7,
+        body: "What this changes.",
+      });
+
+      expect(updateMergeRequest).toHaveBeenCalledWith({
+        cwd: "/w",
+        host: "gitlab.internal.test:2222",
+        repository: "acme/web",
+        number: 7,
+        description: "What this changes.",
+      });
+    }),
+  );
+
+  it.effect("rewrites a positioned comment on the origin target", () =>
+    Effect.gen(function* () {
+      const provider = yield* providerWith;
+      assert.isDefined(provider.updateComment);
+
+      yield* provider.updateComment({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "gitlab.com",
+        ...exactOrigin,
+        number: 7,
+        commentId: "42",
+        kind: "review-comment",
+        body: "Reworded.",
+      });
+
+      expect(updateNote).toHaveBeenCalledWith({
+        cwd: "/w",
+        host: "gitlab.internal.test:2222",
+        repository: "acme/web",
+        number: 7,
+        noteId: "42",
+        body: "Reworded.",
+      });
+    }),
+  );
+
+  it.effect("refuses a reference without an exact origin before any CLI call", () =>
+    Effect.gen(function* () {
+      updateMergeRequest.mockClear();
+      const provider = yield* providerWith;
+      assert.isDefined(provider.updateChangeRequest);
+
+      const error = yield* Effect.flip(
+        provider.updateChangeRequest({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "gitlab.com",
+          origin: { remoteName: "upstream", remoteUrl: "https://gitlab.com/acme/web.git" },
+          number: 7,
+          body: "What this changes.",
+        }),
+      );
+
+      expect(error.detail).toContain("exact GitLab origin");
+      expect(updateMergeRequest).not.toHaveBeenCalled();
     }),
   );
 });
