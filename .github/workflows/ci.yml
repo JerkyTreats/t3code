@@ -6,8 +6,7 @@ on:
     branches:
       - main
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
@@ -22,6 +21,8 @@ jobs:
   # open: if the diff cannot be resolved, everything runs.
   changes:
     name: Changes
+    permissions:
+      contents: read
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     outputs:
@@ -32,7 +33,6 @@ jobs:
       test_web: ${{ steps.detect.outputs.test_web }}
       test_server: ${{ steps.detect.outputs.test_server }}
       rust: ${{ steps.detect.outputs.rust }}
-      release_smoke: ${{ steps.detect.outputs.release_smoke }}
       mobile_native: ${{ steps.detect.outputs.mobile_native }}
     steps:
       # Only the package manifests the script reads to build the dependency graph.
@@ -40,6 +40,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           fetch-depth: 2
           sparse-checkout: |
             /pnpm-workspace.yaml
@@ -60,12 +61,15 @@ jobs:
   # when every other job passes or was skipped by `changes`.
   lint:
     name: Lint
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -109,6 +113,8 @@ jobs:
 
   build:
     name: Build and Typecheck
+    permissions:
+      contents: read
     needs: changes
     if: ${{ !cancelled() && (needs.changes.outputs.build != 'false' || needs.changes.outputs.typecheck != 'false') }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
@@ -117,6 +123,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -198,6 +205,8 @@ jobs:
   # per runner is unchanged.
   test:
     name: Test
+    permissions:
+      contents: read
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.test != 'false' }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
@@ -206,6 +215,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -253,7 +263,7 @@ jobs:
         run: python3 -B .github/scripts/stage-preview-bundle.test.py
 
       - name: Test release checks
-        run: node --test .github/scripts/check-nightly-release.test.cjs .github/scripts/vercel-deployment-output.test.cjs
+        run: node --test .github/scripts/check-nightly-release.test.cjs
 
       - name: Finish installing browser secret helper build libraries
         timeout-minutes: 5
@@ -276,9 +286,10 @@ jobs:
 
   # The web suite is the largest outside the server. In the shared Test job it
   # started last and ran alone for about 40s after everything else finished.
-  # release.yml mirrors this test, test_web, and test_server split.
   test_web:
     name: Test Web
+    permissions:
+      contents: read
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.test_web != 'false' }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
@@ -287,6 +298,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -334,6 +346,8 @@ jobs:
   # ~15s for `changes`: a shard the change cannot affect stops after checkout.
   test_server:
     name: Test Server ${{ matrix.shard }}
+    permissions:
+      contents: read
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     strategy:
@@ -345,6 +359,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           fetch-depth: 2
           sparse-checkout: |
             /*
@@ -433,6 +448,8 @@ jobs:
   # for checks that take under 3s, on the critical path of every PR.
   rust:
     name: Rust
+    permissions:
+      contents: read
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -441,6 +458,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -466,6 +484,8 @@ jobs:
 
   mobile_native_static_analysis:
     name: Mobile Native Static Analysis
+    permissions:
+      contents: read
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.mobile_native != 'false' }}
     runs-on: blacksmith-6vcpu-macos-26
@@ -474,6 +494,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
@@ -494,27 +515,35 @@ jobs:
       - name: Lint mobile native sources
         run: vp run lint:mobile
 
-  release_smoke:
-    name: Release Smoke
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.release_smoke != 'false' }}
+  # Exact-origin authority review for every retained workflow. Cheap, so it
+  # runs on every change instead of waiting for `changes`.
+  release_authority:
+    name: Release Authority
+    permissions:
+      contents: read
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          persist-credentials: false
           sparse-checkout: |
             /*
             !/.repos/
-            !/apps/mobile/modules/t3-terminal/Vendor/**/*.a
           sparse-checkout-cone-mode: false
 
       - name: Setup Vite+
-        uses: ./.github/actions/setup-ci-deps
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
 
-      - name: Exercise release-only workflow steps
-        run: node scripts/release-smoke.ts
+      - name: Verify fork release authority
+        run: node scripts/lib/release-workflow-safety.ts
 
   # Branch protection requires this job by its name, `Check`. It fails when any
   # other job fails, is cancelled, or is skipped without a reason, so splitting
@@ -523,6 +552,8 @@ jobs:
   # branch protection, so a cancelled run must still produce a failing check.
   check:
     name: Check
+    permissions:
+      contents: read
     if: ${{ always() }}
     needs:
       [
@@ -534,7 +565,7 @@ jobs:
         test_server,
         rust,
         mobile_native_static_analysis,
-        release_smoke,
+        release_authority,
       ]
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5

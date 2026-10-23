@@ -26,14 +26,28 @@ const EXACT_SERVER_IMAGE_JOB_GUARD = [
 ].join(" && ");
 const CHECKOUT_ACTION = "actions/checkout@v6";
 const CHECKOUT_ACTIONS = new Set([CHECKOUT_ACTION, SERVER_IMAGE_CHECKOUT_ACTION]);
-const SETUP_APT_MIRRORS_ACTION = "./.github/actions/setup-apt-mirrors";
-const SETUP_APT_MIRRORS_ACTION_FILE = ".github/actions/setup-apt-mirrors/action.yml";
-const SETUP_APT_MIRRORS_ACTION_SHA256 =
-  "332e294c658c807066e06cb9ef497c6b57eb54b3f9e881d90e231532cbab81ad";
+// Local composite actions are accepted only by the exact reviewed action.yml digest.
+// Each one is read-only: mirror selection, dependency install from cache, or a
+// credential-free local Git diff that decides which CI jobs run.
+const REVIEWED_LOCAL_ACTIONS: ReadonlyMap<string, string> = new Map([
+  [
+    "./.github/actions/setup-apt-mirrors",
+    "332e294c658c807066e06cb9ef497c6b57eb54b3f9e881d90e231532cbab81ad",
+  ],
+  [
+    "./.github/actions/setup-ci-deps",
+    "3a6fdabba70d53f534bd23f776a81e30a7eb8072f347a7fea67ab03cdf2a7b22",
+  ],
+  [
+    "./.github/actions/ci-changes",
+    "bdfc779581d689f5dba2282a3c08e55dd1802ce5e35331de71997b1d7026fa1a",
+  ],
+]);
 const UPSTREAM_TARGET_PATTERN = /(?:github\.com\/|ghcr\.io\/)?pingdotgg\/t3code/iu;
 const DYNAMIC_CONTAINER_NAMESPACE_PATTERN = /ghcr\.io\/[^\s"']*\$\{\{/iu;
 const ALLOWED_NON_PUBLICATION_ACTIONS = new Set([
   CHECKOUT_ACTION,
+  "actions/cache@v6",
   "actions/setup-java@v5",
   "actions/upload-artifact@v7",
   "actions/download-artifact@v8",
@@ -55,6 +69,13 @@ const SERVER_IMAGE_MUTATION_RUN_DIGESTS = new Set([
 const READ_ONLY_RUN_SOURCES = new Set([
   "node apps/server/node_modules/playwright-core/cli.js install --with-deps --only-shell chromium",
   "brew bundle install --file apps/mobile/Brewfile",
+  'echo "version=$(node -p "require(\'./apps/web/node_modules/playwright/package.json\').version")" >> "$GITHUB_OUTPUT"',
+  'echo "version=$(node -p "require(\'./apps/server/node_modules/playwright-core/package.json\').version")" >> "$GITHUB_OUTPUT"',
+  "node apps/web/node_modules/playwright/cli.js install --only-shell chromium",
+  "node apps/server/node_modules/playwright-core/cli.js install --only-shell chromium",
+  "npm install --global agent-device@0.21.25",
+  "vp run --filter @t3tools/source-control-github generate --check",
+  "vp run --filter t3 generate --check",
   "cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check",
   "cargo test --locked --manifest-path native/resource-monitor/Cargo.toml",
   "node scripts/lib/release-workflow-safety.ts",
@@ -84,6 +105,12 @@ const READ_ONLY_RUN_SOURCES = new Set([
 // Multiline shell is accepted only by an exact content digest. This keeps the
 // authority review local to this file without normalizing away shell meaning.
 const READ_ONLY_MULTILINE_RUN_DIGESTS = new Set([
+  "5420f25f805874d12c1dd347741d626c7acf5c8bdcc07f68735f1b64efc7fd04",
+  "3e84d085a97bab04097752608e9737cc7cd4572f9ed0a092d2e951f36caf5685",
+  "2620bce32ad637da57217092480e8ddca985812cf0dbf8ae8a891ca8fd658290",
+  "085a0164f4dbe086b88f9dea1af1a201350d28446f9f925c5ab123c13b3bda99",
+  "e6151ae3575267412eeda576be63bdbe8b8c71c20fbeb807b98bdf617921c29c",
+  "89eea0392c3a2ca5b50c6b208ac1f058bcefda46d75111266391cf9e933a353c",
   "ae568dbbce1f1dc910a7835bfce0ea9cbc2eb67b8d5a50dd0401ba866e4139ae",
   "c21bd18295ed6471015ac5afd3b5377edc2a957005be63c47ba82d2c5f9528d2",
   "23e155c1bdfb5dda3d99db1d69f8d8d844a0bc3f5de3cf1de388406a528e49c7",
@@ -292,9 +319,10 @@ function runSourceDigest(source: string): string {
 }
 
 function assertReviewedLocalAction(repositoryRoot: string, action: string, label: string): boolean {
-  if (action !== SETUP_APT_MIRRORS_ACTION) return false;
-  const actionDirectory = NodePath.join(repositoryRoot, ".github", "actions", "setup-apt-mirrors");
-  const actionFile = NodePath.join(repositoryRoot, SETUP_APT_MIRRORS_ACTION_FILE);
+  const reviewedDigest = REVIEWED_LOCAL_ACTIONS.get(action);
+  if (reviewedDigest === undefined) return false;
+  const actionDirectory = NodePath.join(repositoryRoot, action);
+  const actionFile = NodePath.join(actionDirectory, "action.yml");
   const directoryStat = NodeFS.lstatSync(actionDirectory);
   const actionStat = NodeFS.lstatSync(actionFile);
   const entries = NodeFS.readdirSync(actionDirectory).sort();
@@ -304,7 +332,7 @@ function assertReviewedLocalAction(repositoryRoot: string, action: string, label
     !actionStat.isFile() ||
     actionStat.isSymbolicLink() ||
     JSON.stringify(entries) !== JSON.stringify(["action.yml"]) ||
-    runSourceDigest(NodeFS.readFileSync(actionFile, "utf8")) !== SETUP_APT_MIRRORS_ACTION_SHA256
+    runSourceDigest(NodeFS.readFileSync(actionFile, "utf8")) !== reviewedDigest
   ) {
     fail(`${label} local action content does not match the reviewed source.`);
   }
