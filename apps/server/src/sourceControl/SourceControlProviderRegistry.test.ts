@@ -609,6 +609,72 @@ it.effect("keeps direct provider lookup from exposing an unscoped change request
   }),
 );
 
+it.effect("fails closed when origin is not configured", () =>
+  Effect.gen(function* () {
+    let linkReads = 0;
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "upstream", url: "https://github.com/team/project.git" }],
+      githubApi: {
+        rest: () => {
+          linkReads += 1;
+          return Effect.succeed({
+            status: 200,
+            headers: {},
+            body: JSON.stringify({ title: "Upstream issue", body: null }),
+            truncated: false,
+            invalidUtf8: false,
+          });
+        },
+      },
+    });
+
+    const provider = yield* registry.resolve({ cwd: "/repo" });
+    assert.strictEqual(provider.kind, "unknown");
+
+    // A linked subject in the non-origin remote's repository is never read.
+    const lookup = registry.resolveLink({
+      cwd: "/repo",
+      url: new URL("https://github.com/team/project/issues/1"),
+    });
+    assert.ok(lookup);
+    const error = yield* lookup.pipe(Effect.flip);
+    assert.strictEqual(error.operation, "resolveLink");
+    assert.strictEqual(linkReads, 0);
+  }),
+);
+
+it.effect("does not let a caller-selected context override exact origin", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "git@github.com:fork/project.git" }],
+      process: {
+        run: () =>
+          Effect.succeed(
+            processOutput(`self-hosted.example.test
+  ✓ Logged in to self-hosted.example.test as gitlab-user
+`),
+          ),
+      },
+    });
+
+    const handle = yield* registry.resolveHandle({
+      cwd: "/repo",
+      context: {
+        provider: {
+          kind: SourceControlProviderKind.make("unknown"),
+          name: "self-hosted.example.test",
+          baseUrl: "https://self-hosted.example.test",
+        },
+        remoteName: "upstream",
+        remoteUrl: "https://self-hosted.example.test/group/project.git",
+      },
+    });
+
+    assert.strictEqual(handle.context?.provider.kind, "github");
+    assert.strictEqual(handle.context?.remoteName, "origin");
+  }),
+);
+
 it.effect("rejects change request operations when exact origin is absent", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry({
