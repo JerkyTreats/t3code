@@ -2,6 +2,7 @@ import { expect, it } from "@effect/vitest";
 import {
   CommandId,
   MessageId,
+  type OrchestrationV2Command,
   type OrchestrationV2Run,
   type OrchestrationV2StoredEvent,
   type OrchestrationV2ThreadProjection,
@@ -337,3 +338,44 @@ it.effect.each([
     expect(dispatched).toEqual(settles ? ["thread.settle"] : []);
   }),
 );
+
+it("stamps server-admitted creation surface only from provenance", () => {
+  const command: OrchestrationV2Command = {
+    type: "thread.create",
+    createdBy: "agent",
+    creationSource: "mcp",
+    creationSurface: "thread",
+    commandId: CommandId.make("command:thread-management:create"),
+    threadId: ThreadId.make("thread:thread-management:create"),
+    projectId: ProjectId.make("project:thread-management"),
+    title: "Thread management",
+    modelSelection: {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5-codex",
+    },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+  };
+
+  expect(
+    ThreadManagementService.withCreationProvenance(command, {
+      createdBy: "user",
+      creationSource: "web",
+    }),
+  ).toMatchObject({ createdBy: "user", creationSource: "web" });
+  expect(
+    ThreadManagementService.withCreationProvenance(command, {
+      createdBy: "user",
+      creationSource: "web",
+    }),
+  ).not.toHaveProperty("creationSurface");
+  expect(
+    ThreadManagementService.withCreationProvenance(command, {
+      createdBy: "user",
+      creationSource: "web",
+      creationSurface: "desktop",
+    }),
+  ).toMatchObject({ creationSurface: "desktop" });
+});

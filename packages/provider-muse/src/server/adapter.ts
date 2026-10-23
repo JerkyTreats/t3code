@@ -1820,24 +1820,34 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         return yield* Effect.gen(function* () {
           nativeSessionId = requestedId ?? host.connection.mintCommandId();
           const mcpSession = yield* mcpSessions.read(args.threadId);
-          if (mcpSession && !host.initializeResult.grantedCapabilities.includes("sessionMcp"))
+          const attachments = mcpSession
+            ? McpProviderSession.getMcpProviderServerAttachments(mcpSession)
+            : [];
+          if (
+            attachments.length > 0 &&
+            !host.initializeResult.grantedCapabilities.includes("sessionMcp")
+          )
             return yield* protocolError(
               "Update Muse Code to a version that supports session MCP servers",
             );
-          const config = mcpSession
-            ? {
-                mcpServers: {
-                  // Muse defaults to "required", which fails the whole run when T3's
-                  // tools cannot be reached. The agent should still work without them.
-                  "t3-code": {
-                    transport: "streamableHttp",
-                    mode: "optional",
-                    url: mcpSession.endpoint,
-                    headers: { Authorization: mcpSession.authorizationHeader },
-                  },
-                },
-              }
-            : undefined;
+          const config =
+            attachments.length > 0
+              ? {
+                  mcpServers: Object.fromEntries(
+                    attachments.map((attachment) => [
+                      attachment.name,
+                      {
+                        // Muse defaults to "required", which fails the whole run when T3's
+                        // tools cannot be reached. The agent should still work without them.
+                        transport: "streamableHttp",
+                        mode: "optional",
+                        url: attachment.endpoint,
+                        headers: { Authorization: attachment.authorizationHeader },
+                      },
+                    ]),
+                  ),
+                }
+              : undefined;
           const startModel = yield* resolveModel(args.modelSelection);
           const permissionProfile = musePermissionProfile(args.runtimePolicy.runtimeMode);
           const result = yield* request(

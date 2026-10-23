@@ -462,8 +462,6 @@ export const layerWithOptions = (
                   // revoke the credential between validation and reservation.
                   reserveMcpCredential(threadId, existing.providerSessionId);
                   const rawToken = existing.authorizationHeader.replace(/^Bearer\s+/, "");
-                  // The caller only learns of the reservation once this returns,
-                  // so a stop while resolving must drop it here.
                   const resolved = yield* mcpSessionRegistry
                     .resolve(rawToken)
                     .pipe(
@@ -497,19 +495,18 @@ export const layerWithOptions = (
               }),
             );
       const clearMcpSession = (threadId: ThreadId, mcpCredentialId?: string) =>
-        mcpCredentialId === undefined
-          ? mcpSessionRegistry
-              .revokeThread(threadId)
-              .pipe(Effect.tap(() => mcpSessions.clear(threadId)))
-          : mcpSessionRegistry.revokeProviderSession(mcpCredentialId).pipe(
-              Effect.tap(() =>
-                Effect.gen(function* () {
-                  if ((yield* mcpSessions.read(threadId))?.providerSessionId === mcpCredentialId) {
-                    yield* mcpSessions.clear(threadId);
-                  }
-                }),
-              ),
-            );
+        mcpPrepareLock.withLock(
+          threadId,
+          Effect.gen(function* () {
+            const currentId = (yield* mcpSessions.read(threadId))?.providerSessionId;
+            const affectsCurrent = mcpCredentialId === undefined || currentId === mcpCredentialId;
+            if (mcpCredentialId === undefined) yield* mcpSessionRegistry.revokeThread(threadId);
+            else yield* mcpSessionRegistry.revokeProviderSession(mcpCredentialId);
+            if (affectsCurrent) {
+              yield* mcpSessions.clear(threadId);
+            }
+          }),
+        );
 
       const publishToSubscribers = (
         subscribers: Ref.Ref<

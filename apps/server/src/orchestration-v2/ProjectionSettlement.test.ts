@@ -349,6 +349,67 @@ it.effect.each([
   }).pipe(Effect.provide(testLayer)),
 );
 
+it.effect(
+  "projects delivered response stamps without moving them for streaming text or wake prompts",
+  () =>
+    Effect.gen(function* () {
+      const store = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = yield* createThread("conversation-order");
+      const deliveredAt = DateTime.subtract(now, { hours: 1 });
+      const writeMessage = (
+        id: string,
+        role: "user" | "assistant",
+        streaming: boolean,
+        at: DateTime.Utc,
+      ) =>
+        store.apply({
+          id: EventId.make(`event:conversation:${id}:${streaming}`),
+          type: "message.updated",
+          threadId,
+          occurredAt: at,
+          payload: {
+            createdBy: "agent",
+            creationSource: "provider",
+            id: MessageId.make(`message:conversation:${id}`),
+            threadId,
+            runId: null,
+            nodeId: null,
+            role,
+            text: id,
+            attachments: [],
+            streaming,
+            createdAt: at,
+            updatedAt: at,
+          },
+        });
+      yield* writeMessage("delivered", "assistant", false, deliveredAt);
+      yield* writeMessage("streaming", "assistant", true, now);
+      yield* writeMessage("wake", "user", false, now);
+      const shell = (yield* store.getShellSnapshot()).threads.find(
+        (thread) => thread.id === threadId,
+      )!;
+      assert.equal(
+        DateTime.formatIso(shell.latestAssistantResponseAt!),
+        DateTime.formatIso(deliveredAt),
+      );
+      assert.isNull(shell.latestUserAuthoredMessageAt);
+      const detail = yield* store.getThreadSnapshot(threadId);
+      const projected = ProjectionStore.threadShellFromProjection(detail.projection);
+      assert.equal(
+        DateTime.formatIso(projected.latestAssistantResponseAt!),
+        DateTime.formatIso(deliveredAt),
+      );
+      yield* writeMessage("streaming", "assistant", false, now);
+      const completed = (yield* store.getShellSnapshot()).threads.find(
+        (thread) => thread.id === threadId,
+      )!;
+      assert.equal(
+        DateTime.formatIso(completed.latestAssistantResponseAt!),
+        DateTime.formatIso(now),
+      );
+    }).pipe(Effect.provide(layerSql)),
+);
+
 const pullRequestLink = (number: number) => ({
   host: "github.com",
   repository: "owner/repository",

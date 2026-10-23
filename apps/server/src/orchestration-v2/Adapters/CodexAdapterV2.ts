@@ -785,7 +785,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     const additionalContext =
       t3Context === undefined && Object.keys(appContext).length === 0
         ? undefined
-        : { ...t3Context, ...appContext };
+        : { ...appContext, ...t3Context };
     const collaborationMode: CodexSchema.ClientRequest__CollaborationMode | undefined =
       input.runtimePolicy.interactionMode !== "plan" && developerInstructions === undefined
         ? undefined
@@ -1373,18 +1373,19 @@ function codexThreadRuntimeParams(input: {
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
+      // Override only T3's servers so launch-argument MCP servers survive.
       ...(mcpSession === undefined
         ? {}
-        : {
-            // Override only T3's server so launch-argument MCP servers survive.
-            "mcp_servers.t3-code": {
-              url: mcpSession.endpoint,
-              tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
-              http_headers: {
-                Authorization: mcpSession.authorizationHeader,
+        : Object.fromEntries(
+            McpProviderSession.getMcpProviderServerAttachments(mcpSession).map((server) => [
+              `mcp_servers.${server.name}`,
+              {
+                url: server.endpoint,
+                tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
+                http_headers: { Authorization: server.authorizationHeader },
               },
-            },
-          }),
+            ]),
+          )),
     },
   };
 }
@@ -3462,7 +3463,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 yield* emitProviderEvent({
                   type: "message.updated",
                   driver: CODEX_PROVIDER,
-                  message: artifacts.message,
+                  message: {
+                    ...artifacts.message,
+                    responsePhase: finalAnswerItem ? "final_answer" : "commentary",
+                  },
                 });
               }
               yield* emitProviderEvent({
@@ -6408,7 +6412,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               codexInput,
               runtimePolicy: turnInput.runtimePolicy,
               modelSelection: turnInput.modelSelection,
-              hasT3Mcp: mcpSession !== undefined,
+              hasT3Mcp:
+                mcpSession !== undefined &&
+                McpProviderSession.getMcpProviderServerAttachments(mcpSession).some(
+                  (server) => server.name === "t3-code",
+                ),
               browserToolsAvailable: mcpSession?.browserToolsAvailable ?? true,
               deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
               omitServiceTier: adapterOptions.resolveRuntime !== undefined,

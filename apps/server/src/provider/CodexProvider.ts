@@ -50,7 +50,7 @@ import {
   type CodexResetCreditsSummary,
 } from "./codexUsageLimits.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import packageJson from "../../package.json" with { type: "json" };
+import { serverVersion } from "../serverVersion.ts";
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 const RATE_LIMITS_PROBE_TIMEOUT_MS = 3_000;
 
@@ -458,7 +458,7 @@ export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
     clientInfo: {
       name: CODEX_CLIENT_NAME,
       title: CODEX_CLIENT_NAME,
-      version: packageJson.version,
+      version: serverVersion,
     },
     capabilities: {
       experimentalApi: true,

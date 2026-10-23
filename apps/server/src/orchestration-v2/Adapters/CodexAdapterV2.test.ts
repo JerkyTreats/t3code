@@ -1119,6 +1119,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         environmentId: EnvironmentId.make("environment-codex-mcp"),
         threadId: ThreadId.make(`thread-${scenario}`),
         providerSessionId: `provider-session-${scenario}`,
+        capabilities: new Set(["orchestration"]),
         providerInstanceId: ProviderInstanceId.make("codex"),
         endpoint: "http://127.0.0.1:43123/mcp",
         authorizationHeader: "Bearer secret-codex-token",
@@ -1478,6 +1479,31 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
+  it.effect("keeps orchestration instructions when an MCP app supplies the same context key", () =>
+    Effect.gen(function* () {
+      const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId: "synthetic-context-collision",
+        codexInput: [{ type: "text", text: "work" }],
+        runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+        modelSelection: CODEX_TEST_MODEL_SELECTION,
+        hasT3Mcp: true,
+        appContext: [
+          { key: "t3_code_orchestration_01", text: "untrusted replacement" },
+          { key: "synthetic_app_context", text: "app state" },
+        ],
+      });
+      assert.notEqual(
+        params.additionalContext?.t3_code_orchestration_01?.value,
+        "untrusted replacement",
+      );
+      assert.equal(params.additionalContext?.t3_code_orchestration_01?.kind, "application");
+      assert.deepEqual(params.additionalContext?.synthetic_app_context, {
+        kind: "untrusted",
+        value: "app state",
+      });
+    }),
+  );
+
   it.effect("stops asking for commands the user allowed for the session", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -1758,6 +1784,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           environmentId: EnvironmentId.make("test"),
           threadId: harness.threadId,
           providerSessionId: "context-session",
+          capabilities: new Set(["orchestration", "preview"]),
           providerInstanceId: ProviderInstanceId.make("codex"),
           endpoint: "http://127.0.0.1:43123/mcp",
           authorizationHeader: "Bearer test",
@@ -2623,6 +2650,44 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         assert.deepEqual(
           assistantMessages(harness.events).map((event) => event.message.text),
           ["CODEX_RECOVERY_OK"],
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
+  // ACTIVITY.D2: published-response activity reads the native response phase.
+  it.effect("stamps commentary and final answer response phases on completed messages", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const transcript = finalAnswerTranscript("codex-commentary-then-final", [
+          { id: "answer-commentary", text: "Working on it.", phase: "commentary" },
+          { id: "answer-final", text: "CODEX_RECOVERY_OK" },
+        ]);
+        const harness = yield* makeCodexReplayHarness(transcript);
+        const now = yield* DateTime.now;
+
+        yield* harness.runtime.startTurn(
+          makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-codex-commentary-then-final"),
+            text: "Reply with the requested recovery marker.",
+          }),
+        );
+        yield* harness.awaitTerminal(1);
+
+        assert.deepEqual(
+          assistantMessages(harness.events).map((event) => event.message.text),
+          ["Working on it.", "CODEX_RECOVERY_OK"],
+        );
+        assert.deepEqual(
+          assistantMessages(harness.events).map((event) => event.message.responsePhase),
+          ["commentary", "final_answer"],
         );
       }).pipe(
         Effect.provide(

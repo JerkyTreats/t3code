@@ -438,6 +438,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     threadId: ThreadId,
     authorizationHeader = "Bearer secret-claude-token",
   ): McpProviderSession.McpProviderSessionConfig => ({
+    capabilities: new Set(["orchestration"]),
     environmentId: EnvironmentId.make(`environment-${threadId}`),
     threadId,
     providerSessionId: `mcp-session-${threadId}`,
@@ -459,11 +460,56 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.deepEqual(overrides, {
       allowedTools: [
         ...ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS,
-        ...ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS,
+        ...ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS.filter((tool) =>
+          tool.startsWith("mcp__t3-code__"),
+        ),
       ],
       mcpServers: T3_MCP_SERVERS,
     });
     assert.isFalse(overrides.allowedTools?.includes(ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD));
+  });
+
+  it("attaches and preapproves only the independently admitted preview toolkit", () => {
+    const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      mcpSession: {
+        ...mcpSessionFor(ThreadId.make("synthetic-preview-only")),
+        capabilities: new Set(["preview"]),
+        previewEndpoint: "http://fixture.invalid/independent-preview",
+      },
+      readOnlySandbox: true,
+    });
+    assert.deepEqual(overrides.allowedTools, ["mcp__t3-code-preview__t3_preview_list"]);
+    assert.deepEqual(overrides.mcpServers, {
+      "t3-code-preview": {
+        type: "http",
+        url: "http://fixture.invalid/independent-preview",
+        headers: { Authorization: "Bearer secret-claude-token" },
+        timeout: ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
+      },
+    });
+  });
+
+  it("does not preapprove an absent orchestration toolkit for pull-request-only or empty grants", () => {
+    for (const capabilities of [new Set(["pull-requests"]), new Set<string>()]) {
+      const mcpSession = {
+        ...mcpSessionFor(ThreadId.make("synthetic-restricted-grants")),
+        capabilities,
+      };
+      const readOnly = ClaudeAdapterV2.claudeMcpQueryOverrides({
+        mcpSession,
+        readOnlySandbox: true,
+      });
+      assert.deepEqual(readOnly.allowedTools, []);
+      const mutable = ClaudeAdapterV2.claudeMcpQueryOverrides({
+        mcpSession,
+        readOnlySandbox: false,
+      });
+      assert.deepEqual(
+        mutable.allowedTools,
+        capabilities.size === 0 ? [] : ["mcp__t3-code-pull-requests__*"],
+      );
+      assert.notProperty(mutable.mcpServers, "t3-code");
+    }
   });
 
   it("invalidates live-query reuse when MCP credentials rotate", () => {
@@ -502,7 +548,10 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       ...Object.values(HtmlToolkit.tools),
     ]
       .filter((tool) => Context.get(tool.annotations, Tool.Readonly))
-      .map((tool) => `mcp__t3-code__${tool.name}`)
+      .map(
+        (tool) =>
+          `mcp__${tool.name === "t3_preview_list" ? "t3-code-preview" : "t3-code"}__${tool.name}`,
+      )
       .sort();
 
     assert.deepEqual(
@@ -516,6 +565,7 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
   it("injects thread-scoped MCP configuration without logging the credential", () => {
     const threadId = ThreadId.make("thread-claude-mcp");
     const mcpSession = {
+      capabilities: new Set(["orchestration"]),
       environmentId: EnvironmentId.make("environment-claude-mcp"),
       threadId,
       providerSessionId: "mcp-session-claude",

@@ -36,6 +36,7 @@ import {
   type ProviderInstanceId,
   type RunId,
   type RuntimeRequestId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import type * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -58,6 +59,7 @@ import * as OpenCode2Client from "./OpenCode2Client.ts";
 import * as OpenCode2Server from "./OpenCode2Server.ts";
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import { t3OrchestrationSystemPrompt } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
@@ -319,9 +321,14 @@ interface ThreadState {
   >;
   readonly stoppedChildren: Set<string>;
   readonly strandedSteers: Set<string>;
-  mcp:
-    | { readonly name: string; readonly directory: string; readonly credential: string }
-    | undefined;
+  /** T3's MCP server as registered for this thread, and the instructions entry sent with it. */
+  mcp: ReadonlyArray<{
+    readonly name: string;
+    readonly directory: string;
+    readonly credential: string;
+    readonly endpoint: string;
+    readonly toolkit: McpProviderSession.McpProviderServerAttachment["name"];
+  }>;
   instructions: string | undefined;
 }
 
@@ -362,15 +369,20 @@ const rule = (action: string, effect: Rule["effect"]): Rule => ({ action, resour
  * tool namespace limit), and its router rejects adding one over 100, so a
  * thread id that does not fit is replaced by a digest of it.
  */
-export const t3McpServerName = Effect.fn("t3McpServerName")(function* (threadId: string) {
+const mcpServerNameWithinLimit = Effect.fn("t3McpServerName")(function* (
+  threadId: string,
+  maxLength: number,
+) {
   const name = `t3-code-${threadId.replaceAll(/[^a-zA-Z0-9_-]/g, "_")}`;
-  if (name.length <= 64) return name;
+  if (name.length <= maxLength) return name;
   const crypto = yield* Crypto.Crypto;
   const digest = yield* crypto
     .digest("SHA-256", new TextEncoder().encode(threadId))
     .pipe(Effect.orDie);
   return `t3-code-${Hex.encode(digest).slice(0, 16)}`;
 });
+
+export const t3McpServerName = (threadId: string) => mcpServerNameWithinLimit(threadId, 64);
 
 /**
  * The rules that keep T3's MCP servers to their own thread, after the mode's:
@@ -688,8 +700,21 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
   const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
   const crypto = yield* Crypto.Crypto;
   const driver = OPENCODE_PROVIDER;
-  const mcpServerNameFor = (threadId: string) =>
-    t3McpServerName(threadId).pipe(Effect.provideService(Crypto.Crypto, crypto));
+  const mcpServerNameFor = Effect.fnUntraced(function* (threadId: ThreadId) {
+    const session = yield* mcpSessions.read(threadId);
+    const attachments =
+      session === undefined ? [] : McpProviderSession.getMcpProviderServerAttachments(session);
+    const suffixLength = Math.max(
+      0,
+      ...attachments.map((attachment) =>
+        attachment.name === "t3-code" ? 0 : 1 + attachment.name.slice("t3-code-".length).length,
+      ),
+    );
+    // Keep upstream names when they fit, reserving only the attached toolkits' suffixes.
+    return yield* mcpServerNameWithinLimit(threadId, 64 - suffixLength).pipe(
+      Effect.provideService(Crypto.Crypto, crypto),
+    );
+  });
 
   const borrow = Effect.gen(function* () {
     const lent = yield* Deferred.make<
@@ -788,7 +813,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       reports: new Map(),
       stoppedChildren: new Set(),
       strandedSteers: new Set(),
-      mcp: undefined,
+      mcp: [],
       instructions: undefined,
     });
 
@@ -2701,7 +2726,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       currentScope = scope;
       yield* Scope.close(previous, Exit.void);
       // A restarted server forgot T3's MCP servers; the next turn adds them again.
-      for (const state of threads.values()) state.mcp = undefined;
+      for (const state of threads.values()) state.mcp = [];
       yield* lock.withPermit(reconcile).pipe(Effect.timeout(RECONCILE_TIMEOUT));
       return stream;
     }).pipe(
@@ -2824,7 +2849,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     const rulesFor = Effect.fnUntraced(function* (
       thread: Pick<ThreadState, "directory" | "agent" | "grants">,
       policy: RulesPolicy,
-      appThreadId: string | null,
+      appThreadId: ThreadId | null,
     ) {
       const plan = policy.interactionMode === "plan";
       const paths =
@@ -3082,7 +3107,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
 
     yield* Effect.addFinalizer(() =>
       Effect.forEach(
-        [...threads.values()].flatMap((state) => (state.mcp === undefined ? [] : [state.mcp])),
+        [...threads.values()].flatMap((state) => state.mcp),
         removeMcp,
         { concurrency: 8, discard: true },
       ),
@@ -3099,29 +3124,38 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       // An external server may not reach T3's MCP endpoint, as with 1.x.
       const wanted =
         mcpSession === undefined || connection.external
-          ? undefined
-          : { name, directory, credential: mcpSession.authorizationHeader };
-      if (
-        state.mcp !== undefined &&
-        (wanted === undefined ||
-          state.mcp.directory !== wanted.directory ||
-          state.mcp.credential !== wanted.credential)
-      ) {
-        yield* removeMcp(state.mcp);
-        state.mcp = undefined;
+          ? []
+          : McpProviderSession.getMcpProviderServerAttachments(mcpSession).map((attachment) => ({
+              name:
+                attachment.name === "t3-code"
+                  ? name
+                  : `${name}_${attachment.name.slice("t3-code-".length)}`,
+              directory,
+              credential: attachment.authorizationHeader,
+              endpoint: attachment.endpoint,
+              toolkit: attachment.name,
+            }));
+      const matches = (left: (typeof wanted)[number], right: (typeof wanted)[number]) =>
+        left.name === right.name &&
+        left.directory === right.directory &&
+        left.credential === right.credential &&
+        left.endpoint === right.endpoint;
+      for (const current of state.mcp) {
+        if (!wanted.some((next) => matches(current, next))) yield* removeMcp(current);
       }
       // Idle Location eviction drops runtime MCP servers without clearing T3's cache.
-      // Re-adding an unchanged config keeps its existing connection.
-      let mcpAvailable = false;
-      if (wanted !== undefined) {
-        mcpAvailable = yield* client.mcp
+      // Re-adding an unchanged config keeps its existing connection. Each independently
+      // admitted toolkit keeps the same thread-specific credential boundary.
+      const admitted: Array<(typeof wanted)[number]> = [];
+      for (const next of wanted) {
+        const added = yield* client.mcp
           .add({
-            server: name,
+            server: next.name,
             location: { directory },
             config: new Mcp.RemoteConfig({
               type: "remote",
-              url: mcpSession!.endpoint,
-              headers: { Authorization: wanted.credential },
+              url: next.endpoint,
+              headers: { Authorization: next.credential },
               oauth: false,
             }),
           })
@@ -3134,11 +3168,15 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
               ),
             ),
           );
-        if (mcpAvailable) state.mcp = wanted;
+        if (added) admitted.push(next);
       }
+      // A failed re-add may leave the earlier registration live, so unload still removes it.
+      state.mcp = wanted.filter(
+        (next) => admitted.includes(next) || state.mcp.some((current) => matches(current, next)),
+      );
       const instructions = [
         buildRuntimeInstructions({ harness: "OpenCode", model: turnInput.modelSelection.model }),
-        t3OrchestrationSystemPrompt(mcpAvailable),
+        t3OrchestrationSystemPrompt(admitted.some((entry) => entry.toolkit === "t3-code")),
       ]
         .filter((part) => part !== undefined && part.length > 0)
         .join("\n\n");
@@ -3888,7 +3926,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           childOwners.delete(child);
           threads.delete(child);
         }
-        if (state.mcp !== undefined) yield* removeMcp(state.mcp);
+        yield* Effect.forEach(state.mcp, removeMcp, { discard: true });
       }),
       respondToRuntimeRequest: Effect.fn("OpenCode2Adapter.respondToRuntimeRequest")(
         function* (requestInput) {

@@ -2,7 +2,7 @@
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 import * as NodeVM from "node:vm";
-import { PI_T3_MCP_EXTENSION_SOURCE } from "./mcpExtensionSource.ts";
+import { PI_T3_MCP_EXTENSION_SOURCE, T3_MCP_SERVERS_ENV } from "./mcpExtensionSource.ts";
 
 interface RegisteredTool {
   readonly name: string;
@@ -23,6 +23,7 @@ interface RegisteredTool {
       readonly data?: string;
       readonly mimeType?: string;
     }>;
+    readonly details: { readonly server: string; readonly tool: string };
     readonly structuredContent?: unknown;
     readonly isError?: boolean;
   }>;
@@ -48,17 +49,40 @@ export async function loadMcpBridge(
     readonly allowsTool?: (name: string) => boolean;
     readonly runtimeMode?: string;
     readonly inputSchema?: Record<string, unknown>;
+    readonly servers?: ReadonlyArray<{
+      readonly name: string;
+      readonly endpoint: string;
+      readonly authorizationHeader: string;
+    }>;
+    readonly serverConfig?: string;
+    readonly catalogs?: Readonly<
+      Record<
+        string,
+        ReadonlyArray<{
+          readonly name: string;
+          readonly annotations?: { readonly readOnlyHint: boolean };
+          readonly inputSchema?: Record<string, unknown>;
+        }>
+      >
+    >;
+    readonly failEndpointOnce?: string;
+    readonly failMethod?: string;
+    readonly failCloseEndpoint?: string;
+    readonly blockToolCalls?: boolean;
   } = {},
 ) {
   const handlers = new Map<string, AgentStartHook>();
   const tools: RegisteredTool[] = [];
   const requests: Array<{ readonly method: string; readonly params?: unknown }> = [];
   let activeTools = ["read"];
+  let failedOnce = false;
   let bridgeSourcePath = "/fixture/pi-t3-extension.ts";
   const transports: Array<{
     readonly url: string;
     readonly authorization: string;
     readonly signal: AbortSignal | undefined;
+    readonly sessionId: string | undefined;
+    readonly method: string;
   }> = [];
   const servers: Array<{ readonly name: string; readonly config: Record<string, unknown> }> = [];
   const catalog = [
@@ -88,39 +112,77 @@ export async function loadMcpBridge(
   await NodeVM.runInNewContext(`${source}\nt3McpExtension(pi)`, {
     process: {
       env: {
-        T3_MCP_URL: "http://fixture.invalid/mcp",
-        T3_MCP_BEARER_TOKEN: "fixture-token",
+        [T3_MCP_SERVERS_ENV]:
+          options.serverConfig ??
+          JSON.stringify(
+            options.servers ?? [
+              {
+                name: "t3-code",
+                endpoint: "http://fixture.invalid/mcp",
+                authorizationHeader: "Bearer fixture-token",
+              },
+            ],
+          ),
         T3_PI_MCP_EXTENSION_PATH: "/fixture/pi-t3-extension.ts",
         T3_PI_RUNTIME_MODE: options.runtimeMode,
       },
     },
     AbortSignal,
+    AbortController,
     NodePath,
     Type: { Unsafe: (schema: unknown) => schema },
     fetch: async (
       url: string,
-      transport: { body: string; headers: Record<string, string>; signal?: AbortSignal },
+      requestOptions: {
+        method: string;
+        body?: string;
+        headers: Record<string, string>;
+        signal?: AbortSignal;
+      },
     ) => {
-      transport.signal?.throwIfAborted();
+      requestOptions.signal?.throwIfAborted();
       transports.push({
         url,
-        authorization: transport.headers.authorization!,
-        signal: transport.signal,
+        authorization: requestOptions.headers.authorization!,
+        sessionId: requestOptions.headers["mcp-session-id"],
+        method: requestOptions.method,
+        signal: requestOptions.signal,
       });
-      const request = JSON.parse(transport.body) as {
+      if (requestOptions.method === "DELETE") {
+        if (url === options.failCloseEndpoint) throw new Error("fixture close failure");
+        return new Response(null, { status: 202 });
+      }
+      const request = JSON.parse(requestOptions.body!) as {
         id: number;
         method: string;
         params?: unknown;
       };
+      if (
+        request.method === (options.failMethod ?? "initialize") &&
+        url === options.failEndpointOnce &&
+        !failedOnce
+      ) {
+        failedOnce = true;
+        return new Response("fixture unavailable", { status: 503 });
+      }
+      if (request.method === "tools/call" && options.blockToolCalls) {
+        return new Promise<Response>((_resolve, reject) => {
+          requestOptions.signal!.addEventListener(
+            "abort",
+            () => reject(new Error("fixture aborted")),
+            { once: true },
+          );
+        });
+      }
       requests.push(request);
       const result =
         request.method === "tools/list"
-          ? { tools: catalog }
+          ? { tools: options.catalogs?.[url] ?? catalog }
           : request.method === "tools/call"
             ? (options.result ?? { content: [{ type: "text", text: "browser snapshot" }] })
             : {};
       return new Response(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }), {
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", "mcp-session-id": "session:" + url },
       });
     },
     pi: {

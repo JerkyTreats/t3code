@@ -14,6 +14,7 @@ import type { SqlError } from "effect/sql/SqlError";
 import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../../config.ts";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
+import type { Migration42BackupInvalidError } from "../../persistence/Migration42Backup.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import * as ThreadManagementService from "../ThreadManagementService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -189,7 +190,7 @@ export function runOrchestratorV2ProviderReplayScenario<
   options: {
     readonly databaseLayer?: Layer.Layer<
       SqlClient.SqlClient,
-      MigrationError | PlatformError.PlatformError | SqlError
+      MigrationError | Migration42BackupInvalidError | PlatformError.PlatformError | SqlError
     >;
     readonly runEffectWorker?: boolean;
     readonly runContinuationWorker?: boolean;
@@ -202,6 +203,7 @@ export function runOrchestratorV2ProviderReplayScenario<
   | OrchestratorV2ScenarioStepError
   | Error
   | MigrationError
+  | Migration42BackupInvalidError
   | PlatformError.PlatformError
   | SqlError,
   never
@@ -231,7 +233,7 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
   options: {
     readonly databaseLayer?: Layer.Layer<
       SqlClient.SqlClient,
-      MigrationError | PlatformError.PlatformError | SqlError
+      MigrationError | Migration42BackupInvalidError | PlatformError.PlatformError | SqlError
     >;
     readonly runEffectWorker?: boolean;
     readonly runContinuationWorker?: boolean;
@@ -245,7 +247,7 @@ export function layerProviderReplay<Transcript extends ProviderReplayTranscript,
   | EventSink.EventSinkV2
   | CommandOutputRecorder.CommandOutputRecorder
   | ProviderSessionManager.ProviderSessionManagerV2,
-  Error | MigrationError | PlatformError.PlatformError | SqlError
+  Error | MigrationError | Migration42BackupInvalidError | PlatformError.PlatformError | SqlError
 > {
   const layerRegistry = harness.makeProviderAdapterRegistryLayer(
     scenario.transcript,
@@ -264,7 +266,7 @@ export function layerWithRegistry<Error>(
   options: {
     readonly databaseLayer?: Layer.Layer<
       SqlClient.SqlClient,
-      MigrationError | PlatformError.PlatformError | SqlError
+      MigrationError | Migration42BackupInvalidError | PlatformError.PlatformError | SqlError
     >;
     readonly runEffectWorker?: boolean;
     readonly runContinuationWorker?: boolean;
@@ -275,9 +277,10 @@ export function layerWithRegistry<Error>(
   | Orchestrator.OrchestratorV2
   | EffectWorker.OrchestrationEffectWorkerV2
   | EventSink.EventSinkV2
+  | IdAllocator.IdAllocatorV2
   | ProviderSessionManager.ProviderSessionManagerV2
   | CommandOutputRecorder.CommandOutputRecorder,
-  Error | MigrationError | PlatformError.PlatformError | SqlError
+  Error | Migration42BackupInvalidError | MigrationError | PlatformError.PlatformError | SqlError
 > {
   const layerServerConfig = Layer.effect(
     ServerConfig.ServerConfig,
@@ -508,6 +511,7 @@ export function layerWithRegistry<Error>(
     Layer.provide(Layer.merge(layerStores, layerEffectExecutorProvided)),
   );
   const layerReplayRuntime = Layer.mergeAll(
+    IdAllocator.layer,
     layerOrchestratorProvided,
     layerProviderSessionManagerProvided,
     layerEffectWorkerProvided,
@@ -523,7 +527,7 @@ export function layerWithRegistry<Error>(
   // the effect worker claims anything, as in serverRuntimeStartup.
   const layerStartupRecovery: Layer.Layer<
     never,
-    MigrationError | PlatformError.PlatformError | SqlError
+    MigrationError | Migration42BackupInvalidError | PlatformError.PlatformError | SqlError
   > =
     options.recoverOnStartup === true
       ? Layer.effectDiscard(

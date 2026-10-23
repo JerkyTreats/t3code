@@ -223,7 +223,9 @@ describe("Pi MCP tool exposure", () => {
       const controller = new AbortController();
       const result = await tool!.execute("call-1", { depth: 2 }, controller.signal);
       assert.equal(result.content[0]?.text, "browser snapshot");
-      assert.strictEqual(bridge.transports.at(-1)?.signal, controller.signal);
+      assert.isFalse(bridge.transports.at(-1)?.signal?.aborted);
+      controller.abort();
+      assert.isTrue(bridge.transports.at(-1)?.signal?.aborted);
       assert.equal(bridge.transports.at(-1)?.url, "http://fixture.invalid/mcp");
       assert.equal(bridge.transports.at(-1)?.authorization, "Bearer fixture-token");
       assert.deepEqual(JSON.parse(JSON.stringify(bridge.requests.at(-1))), {
@@ -265,6 +267,54 @@ describe("Pi MCP tool schemas", () => {
 });
 
 describe("Pi tool discovery permissions", () => {
+  it("retains read-only provenance for every independently attached toolkit", async () => {
+    const endpoints = ["http://fixture.invalid/main", "http://fixture.invalid/preview"];
+    const bridge = await loadMcpBridge({
+      modern: true,
+      runtimeMode: "approval-required",
+      servers: [
+        { name: "t3-code", endpoint: endpoints[0]!, authorizationHeader: "Bearer synthetic-main" },
+        {
+          name: "t3-code-preview",
+          endpoint: endpoints[1]!,
+          authorizationHeader: "Bearer synthetic-preview",
+        },
+      ],
+      catalogs: Object.fromEntries(
+        endpoints.map((endpoint) => [
+          endpoint,
+          [
+            {
+              name: "read_state",
+              annotations: { readOnlyHint: true },
+              inputSchema: { type: "object", properties: {} },
+            },
+            {
+              name: "mutate_state",
+              annotations: { readOnlyHint: false },
+              inputSchema: { type: "object", properties: {} },
+            },
+          ],
+        ]),
+      ),
+    });
+    const hook = bridge.handlers.get("tool_call") as unknown as (
+      event: { toolName: string; input: unknown },
+      ctx: { ui: { confirm: () => Promise<boolean> } },
+    ) => Promise<{ block: true } | undefined>;
+    const ctx = { ui: { confirm: async () => false } };
+    for (const server of ["t3-code", "t3-code-preview"]) {
+      assert.isUndefined(await hook({ toolName: `mcp__${server}__read_state`, input: {} }, ctx));
+      assert.isTrue(
+        (await hook({ toolName: `mcp__${server}__mutate_state`, input: {} }, ctx))?.block,
+      );
+    }
+    bridge.setBridgeSourcePath("/fixture/foreign-extension.ts");
+    assert.isTrue(
+      (await hook({ toolName: "mcp__t3-code-preview__read_state", input: {} }, ctx))?.block,
+    );
+  });
+
   it.each(["approval-required", "auto-accept-edits", "auto"])(
     "allows annotated T3 reads in %s while gating mutations and replacements",
     async (runtimeMode) => {
@@ -518,5 +568,157 @@ describe("Pi skill references", () => {
     } finally {
       await NodeFSP.rm(directory, { recursive: true });
     }
+  });
+});
+
+const independentServers = [
+  {
+    name: "t3-code",
+    endpoint: "http://fixture.invalid/mcp",
+    authorizationHeader: "Bearer main-token",
+  },
+  {
+    name: "t3-code-preview",
+    endpoint: "http://fixture.invalid/mcp/preview",
+    authorizationHeader: "Bearer preview-token",
+  },
+  {
+    name: "t3-code-device",
+    endpoint: "http://fixture.invalid/mcp/device",
+    authorizationHeader: "Bearer device-token",
+  },
+  {
+    name: "t3-code-pull-requests",
+    endpoint: "http://fixture.invalid/mcp/pull-requests",
+    authorizationHeader: "Bearer pr-token",
+  },
+];
+const independentCatalogs = Object.fromEntries(
+  independentServers.map(({ endpoint }) => [
+    endpoint,
+    [{ name: "shared_tool", inputSchema: { type: "object", properties: {} } }],
+  ]),
+);
+const sessionEvent = { systemPrompt: "" };
+const sessionContext = { ui: { notify: () => undefined } };
+
+describe("Pi independent MCP endpoints", () => {
+  it("routes matching tool names to their own credentials, session and native namespace", async () => {
+    const bridge = await loadMcpBridge({
+      modern: true,
+      servers: independentServers,
+      catalogs: independentCatalogs,
+    });
+    assert.equal(bridge.servers.length, 0);
+    assert.equal(bridge.tools.length, 8);
+    for (const server of independentServers) {
+      const publicName = "mcp__" + server.name + "__shared_tool";
+      const canonicalName = "mcp__" + server.name.replaceAll("-", "_") + "__shared_tool";
+      assert.equal(bridge.tools.find(({ name }) => name === canonicalName)?.exposure, "hidden");
+      const tool = bridge.tools.find(({ name }) => name === publicName)!;
+      assert.equal(tool.exposure, "deferred");
+      const result = await tool.execute("routed-call", { source: server.name });
+      assert.deepEqual(JSON.parse(JSON.stringify(result.details)), {
+        server: server.name,
+        tool: "shared_tool",
+      });
+      assert.equal(bridge.transports.at(-1)?.url, server.endpoint);
+      assert.equal(bridge.transports.at(-1)?.authorization, server.authorizationHeader);
+      assert.equal(bridge.transports.at(-1)?.sessionId, "session:" + server.endpoint);
+      assert.deepEqual(JSON.parse(JSON.stringify(bridge.requests.at(-1)?.params)), {
+        name: "shared_tool",
+        arguments: { source: server.name },
+      });
+    }
+  });
+
+  it.each(independentServers.slice(1))(
+    "connects $name without orchestration or other toolkits",
+    async (server) => {
+      const bridge = await loadMcpBridge({ servers: [server], catalogs: independentCatalogs });
+      assert.deepEqual(
+        bridge.tools.map(({ name }) => name),
+        ["mcp__" + server.name + "__shared_tool"],
+      );
+      assert.isUndefined(bridge.handlers.get("before_agent_start"));
+      assert.isTrue(bridge.transports.every(({ url }) => url === server.endpoint));
+    },
+  );
+
+  it.each(["[]", "{}", "not-json", '[{"name":"t3-code"}]'])(
+    "does not connect absent or malformed grants: %s",
+    async (serverConfig) => {
+      const bridge = await loadMcpBridge({ serverConfig });
+      assert.equal(bridge.transports.length, 0);
+      assert.equal(bridge.tools.length, 0);
+      assert.isUndefined(bridge.handlers.get("before_agent_start"));
+    },
+  );
+
+  it.each(["initialize", "tools/list"])(
+    "retries only the unavailable endpoint after %s while preserving healthy clients",
+    async (failMethod) => {
+      const bridge = await loadMcpBridge({
+        servers: independentServers,
+        catalogs: independentCatalogs,
+        failEndpointOnce: independentServers[1]!.endpoint,
+        failMethod,
+      });
+      assert.equal(bridge.tools.length, 3);
+      const closedFailed = bridge.transports.filter(({ method }) => method === "DELETE");
+      assert.equal(closedFailed.length, failMethod === "tools/list" ? 1 : 0);
+      if (closedFailed[0]) {
+        assert.equal(closedFailed[0].url, independentServers[1]!.endpoint);
+        assert.equal(closedFailed[0].sessionId, "session:" + independentServers[1]!.endpoint);
+      }
+      const healthyRequests = bridge.transports.filter(
+        ({ url }) => url === independentServers[0]!.endpoint,
+      ).length;
+      await bridge.handlers.get("session_start")!(sessionEvent, sessionContext);
+      assert.equal(bridge.tools.length, 4);
+      assert.equal(
+        bridge.transports.filter(({ url }) => url === independentServers[0]!.endpoint).length,
+        healthyRequests,
+      );
+    },
+  );
+
+  it("aborts work and closes every session once even when one close fails", async () => {
+    const bridge = await loadMcpBridge({
+      servers: independentServers,
+      catalogs: independentCatalogs,
+      failCloseEndpoint: independentServers[0]!.endpoint,
+      blockToolCalls: true,
+    });
+    const pending = bridge.tools[0]!.execute("pending-call", {}).then(
+      () => "completed",
+      () => "aborted",
+    );
+    const pendingSignal = bridge.transports.at(-1)!.signal;
+    await bridge.handlers.get("session_shutdown")!(sessionEvent, sessionContext);
+    assert.equal(await pending, "aborted");
+    assert.isTrue(pendingSignal?.aborted);
+    const deletes = bridge.transports.filter(({ method }) => method === "DELETE");
+    assert.deepEqual(
+      deletes.map(({ url }) => url).sort(),
+      independentServers.map(({ endpoint }) => endpoint).sort(),
+    );
+    for (const server of independentServers) {
+      const closed = deletes.find(({ url }) => url === server.endpoint)!;
+      assert.equal(closed.authorization, server.authorizationHeader);
+      assert.equal(closed.sessionId, "session:" + server.endpoint);
+    }
+    const count = bridge.transports.length;
+    await bridge.handlers.get("session_shutdown")!(sessionEvent, sessionContext);
+    await bridge.handlers.get("session_start")!(sessionEvent, sessionContext);
+    assert.equal(bridge.transports.length, count);
+    assert.equal(
+      await bridge.tools[0]!.execute("closed-call", {}).then(
+        () => "completed",
+        () => "closed",
+      ),
+      "closed",
+    );
+    assert.equal(bridge.transports.length, count);
   });
 });

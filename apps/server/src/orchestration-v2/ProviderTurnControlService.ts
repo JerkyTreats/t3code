@@ -357,6 +357,9 @@ export const layer: Layer.Layer<
             .steerTurn({
               threadId: input.threadId,
               runId: run.id,
+              ...(message.interactionMode === undefined
+                ? {}
+                : { interactionMode: message.interactionMode }),
               providerThread: loaded.providerThread,
               providerTurnId: loaded.providerTurn.id,
               message: {

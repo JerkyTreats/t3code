@@ -4,6 +4,7 @@ import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts"
 import {
   T3_MCP_BEARER_ENV,
   T3_MCP_URL_ENV,
+  T3_MCP_SERVERS_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
 } from "./mcpExtensionSource.ts";
@@ -22,6 +23,47 @@ const mcpSession = {
 };
 
 describe("pi T3 MCP injection", () => {
+  it.each([
+    { capability: "orchestration", name: "t3-code", endpoint: "/main" },
+    { capability: "preview", name: "t3-code-preview", endpoint: "/preview" },
+    { capability: "device", name: "t3-code-device", endpoint: "/device" },
+    { capability: "pull-requests", name: "t3-code-pull-requests", endpoint: "/pull-requests" },
+    { capability: "worktree", name: undefined, endpoint: undefined },
+    { capability: undefined, name: undefined, endpoint: undefined },
+  ])("attaches only the admitted $capability endpoint", ({ capability, name, endpoint }) => {
+    const launch = buildPiRpcLaunch({
+      launchArgs: [],
+      environment: {
+        [T3_MCP_URL_ENV]: "http://stale.invalid/mcp",
+        [T3_MCP_BEARER_ENV]: "stale-token",
+        [T3_MCP_SERVERS_ENV]: "stale-servers",
+      },
+      mcpSession: {
+        ...mcpSession,
+        endpoint: "http://fixture.invalid/main",
+        previewEndpoint: "http://fixture.invalid/preview",
+        deviceEndpoint: "http://fixture.invalid/device",
+        pullRequestsEndpoint: "http://fixture.invalid/pull-requests",
+        capabilities: new Set(capability === undefined ? [] : [capability]),
+      },
+      extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
+    });
+    assert.isUndefined(launch.env[T3_MCP_URL_ENV]);
+    assert.isUndefined(launch.env[T3_MCP_BEARER_ENV]);
+    assert.equal(launch.hasT3Mcp, name !== undefined);
+    if (name === undefined) {
+      assert.isUndefined(launch.env[T3_MCP_SERVERS_ENV]);
+    } else {
+      assert.deepEqual(JSON.parse(launch.env[T3_MCP_SERVERS_ENV]!), [
+        {
+          name,
+          endpoint: "http://fixture.invalid" + endpoint,
+          authorizationHeader: mcpSession.authorizationHeader,
+        },
+      ]);
+    }
+  });
+
   it("always adds the permission bridge and configures MCP when available", () => {
     const resolvedArgs = resolvePiLaunchArgs(
       "--extension=/home/user/.pi/agent/extensions/demo.ts --session-dir=/tmp/pi-sessions --provider=anthropic --model=claude-sonnet --tools='' --name=-review --extension-flag=kept",
@@ -55,8 +97,25 @@ describe("pi T3 MCP injection", () => {
       "/tmp/cache/pi-t3-mcp-extension.ts",
     ]);
     assert.notInclude(launch.args, "--no-extensions");
-    assert.equal(launch.env[T3_MCP_URL_ENV], "http://127.0.0.1:43123/mcp");
-    assert.equal(launch.env[T3_MCP_BEARER_ENV], "secret-pi-token");
+    assert.deepEqual(JSON.parse(launch.env[T3_MCP_SERVERS_ENV]!), [
+      {
+        name: "t3-code",
+        endpoint: mcpSession.endpoint,
+        authorizationHeader: mcpSession.authorizationHeader,
+      },
+      {
+        name: "t3-code-preview",
+        endpoint: mcpSession.endpoint + "/preview",
+        authorizationHeader: mcpSession.authorizationHeader,
+      },
+      {
+        name: "t3-code-pull-requests",
+        endpoint: mcpSession.endpoint + "/pull-requests",
+        authorizationHeader: mcpSession.authorizationHeader,
+      },
+    ]);
+    assert.isUndefined(launch.env[T3_MCP_URL_ENV]);
+    assert.isUndefined(launch.env[T3_MCP_BEARER_ENV]);
     assert.equal(launch.env[T3_PI_RUNTIME_MODE_ENV], "approval-required");
     assert.equal(launch.env[T3_PI_MCP_EXTENSION_PATH_ENV], "/tmp/cache/pi-t3-mcp-extension.ts");
 
@@ -65,6 +124,7 @@ describe("pi T3 MCP injection", () => {
       environment: {
         [T3_MCP_URL_ENV]: "http://127.0.0.1:9999/stale",
         [T3_MCP_BEARER_ENV]: "stale-token",
+        [T3_MCP_SERVERS_ENV]: "stale-servers",
         [T3_PI_MCP_EXTENSION_PATH_ENV]: "/stale/extension.ts",
       },
       mcpSession: undefined,
@@ -80,6 +140,7 @@ describe("pi T3 MCP injection", () => {
     assert.isFalse(permissionOnly.hasT3Mcp);
     assert.isUndefined(permissionOnly.env[T3_MCP_URL_ENV]);
     assert.isUndefined(permissionOnly.env[T3_MCP_BEARER_ENV]);
+    assert.isUndefined(permissionOnly.env[T3_MCP_SERVERS_ENV]);
     assert.equal(permissionOnly.env[T3_PI_RUNTIME_MODE_ENV], "auto-accept-edits");
     assert.equal(
       permissionOnly.env[T3_PI_MCP_EXTENSION_PATH_ENV],

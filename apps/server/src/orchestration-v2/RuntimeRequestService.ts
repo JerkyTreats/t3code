@@ -117,6 +117,7 @@ export const layer: Layer.Layer<
             });
           }
           yield* session.value.respondToRuntimeRequest({
+            threadId: input.threadId,
             requestId: input.requestId,
             ...(input.decision === undefined ? {} : { decision: input.decision }),
             ...(input.feedback === undefined ? {} : { feedback: input.feedback }),

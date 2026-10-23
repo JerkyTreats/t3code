@@ -9,6 +9,7 @@ import {
   ORCHESTRATION_PROTOCOL_HEADER,
   ORCHESTRATION_PROTOCOL_VERSION,
   AuthSessionId,
+  AuthClientId,
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
   EnvironmentId,
@@ -130,6 +131,8 @@ const layerAuth = Layer.succeed(EnvironmentAuthenticatedAuth, (effect) =>
   effect.pipe(
     Effect.provideService(EnvironmentAuthenticatedPrincipal, {
       sessionId: AuthSessionId.make("transfer-session"),
+      clientId: AuthClientId.make("transfer-client"),
+      authorityClass: "client",
       subject: "transfer-test",
       method: "browser-session-cookie",
       scopes: new Set([AuthOrchestrationReadScope]),

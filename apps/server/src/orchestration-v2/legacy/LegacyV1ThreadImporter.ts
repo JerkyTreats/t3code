@@ -4,6 +4,7 @@ import {
 } from "@t3tools/shared/threadPullRequests";
 import {
   ChatAttachment,
+  ClientSurface,
   OrchestrationMessageContext,
   DEFAULT_MODEL,
   EventId,
@@ -42,6 +43,7 @@ interface LegacyThreadRow {
   readonly thread_id: string;
   readonly project_id: string;
   readonly title: string;
+  readonly creation_surface: string | null;
   readonly model_selection_json: string | null;
   readonly runtime_mode: string;
   readonly interaction_mode: string;
@@ -121,6 +123,7 @@ export class LegacyV1ThreadImporter extends Context.Service<
   LegacyV1ThreadImporterShape
 >()("t3/orchestration-v2/legacy/LegacyV1ThreadImporter") {}
 
+const decodeCreationSurface = Schema.decodeUnknownOption(ClientSurface);
 const decodeModelSelection = Schema.decodeUnknownOption(ModelSelection);
 const decodeAttachments = Schema.decodeUnknownOption(Schema.Array(ChatAttachment));
 const decodePullRequests = Schema.decodeUnknownOption(Schema.Array(ThreadPullRequestLink));
@@ -197,6 +200,7 @@ function nullableDateTime(value: string | null): DateTime.Utc | null {
 function importedThread(row: LegacyThreadRow): OrchestrationV2AppThread {
   const threadId = ThreadId.make(row.thread_id);
   const modelSelection = modelSelectionFor(row);
+  const creationSurface = Option.getOrUndefined(decodeCreationSurface(row.creation_surface));
   const branch = row.branch?.trim() || null;
   const worktreePath = row.worktree_path?.trim() || null;
   const pullRequests = Option.getOrElse(
@@ -213,6 +217,7 @@ function importedThread(row: LegacyThreadRow): OrchestrationV2AppThread {
   return {
     createdBy: "system",
     creationSource: "server",
+    ...(creationSurface === undefined ? {} : { creationSurface }),
     id: threadId,
     projectId: ProjectId.make(row.project_id),
     title: row.title.trim() === "" ? "Untitled thread" : row.title,
@@ -439,6 +444,7 @@ const make = Effect.gen(function* () {
         thread.thread_id,
         thread.project_id,
         thread.title,
+        thread.creation_surface,
         thread.model_selection_json,
         thread.runtime_mode,
         thread.interaction_mode,
@@ -475,6 +481,8 @@ const make = Effect.gen(function* () {
          OR json_type(projection.payload_json, '$.pullRequests') IS NULL
          OR json_type(projection.payload_json, '$.branchPullRequest') IS NULL
          OR json_type(projection.payload_json, '$.activeOrderKey') IS NULL
+         OR (thread.creation_surface IS NOT NULL
+             AND json_type(projection.payload_json, '$.creationSurface') IS NULL)
       ORDER BY thread.created_at ASC, thread.thread_id ASC
     `;
     let repairedThreadCount = 0;
@@ -486,6 +494,9 @@ const make = Effect.gen(function* () {
       const legacyPullRequests = legacy.pullRequests ?? [];
       const repaired: OrchestrationV2AppThread = {
         ...current,
+        ...(current.creationSurface === undefined && legacy.creationSurface !== undefined
+          ? { creationSurface: legacy.creationSurface }
+          : {}),
         pinnedAt: current.pinnedAt === undefined ? legacy.pinnedAt : current.pinnedAt,
         autoSettleDisabledAt:
           current.autoSettleDisabledAt === undefined
@@ -543,6 +554,7 @@ const make = Effect.gen(function* () {
         thread.thread_id,
         thread.project_id,
         thread.title,
+        thread.creation_surface,
         thread.model_selection_json,
         thread.runtime_mode,
         thread.interaction_mode,

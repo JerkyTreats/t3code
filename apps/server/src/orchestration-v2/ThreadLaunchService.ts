@@ -5,6 +5,7 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   CommandId,
   type ChatAttachment,
+  type ClientSurface,
   type MessageId,
   type ModelSelection,
   type OrchestrationV2Actor,
@@ -96,6 +97,7 @@ export interface ThreadLaunchInput {
   };
   readonly createdBy: OrchestrationV2Actor;
   readonly creationSource: OrchestrationV2CreationSource;
+  readonly creationSurface?: ClientSurface;
 }
 
 type PreparationInput = Pick<
@@ -924,6 +926,9 @@ const make = Effect.gen(function* () {
                   : { importedNativeThread: input.importedNativeThread }),
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
+                ...(input.creationSurface === undefined
+                  ? {}
+                  : { creationSurface: input.creationSurface }),
               });
         const claimed = yield* claimDispatch.pipe(
           Effect.mapError(

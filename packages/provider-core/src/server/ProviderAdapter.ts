@@ -439,6 +439,7 @@ export interface ProviderAdapterV2TurnInput {
 }
 
 export interface ProviderAdapterV2SteerInput {
+  readonly interactionMode?: ProviderInteractionMode;
   readonly threadId: ThreadId;
   readonly runId: RunId;
   readonly providerThread: OrchestrationV2ProviderThread;
@@ -453,6 +454,8 @@ export interface ProviderAdapterV2InterruptInput {
 }
 
 export interface ProviderAdapterV2RuntimeRequestResponseInput {
+  readonly threadId?: ThreadId;
+  readonly interactionMode?: ProviderInteractionMode;
   readonly requestId: RuntimeRequestId;
   readonly decision?: ProviderApprovalDecision;
   readonly feedback?: string;

@@ -2312,6 +2312,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         environmentId: EnvironmentId.make("environment:opencode2-adapter"),
         threadId,
         providerSessionId: "mcp:opencode2-adapter",
+        capabilities: new Set(["orchestration"]),
         providerInstanceId: instanceId,
         endpoint: "http://127.0.0.1:3773/mcp",
         authorizationHeader: "Bearer thread-credential",
@@ -2359,65 +2360,124 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("registers a long thread id's MCP server under a name OpenCode accepts", () =>
-    Effect.gen(function* () {
-      const child = ThreadId.make(
-        "thread:delegated-task:command%3Amcp%3A48bef2bf-6d0e-4f7a-9c3b-2e5d8a1f7c40%3Adelegate-task%3Asubproject-b-round1",
-      );
-      const server = "t3-code-aa73fa1e03099934";
-      const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
-      yield* mcpSessions.set({
-        environmentId: EnvironmentId.make("environment:opencode2-adapter"),
-        threadId: child,
-        providerSessionId: "mcp:opencode2-adapter",
-        providerInstanceId: instanceId,
-        endpoint: "http://127.0.0.1:3773/mcp",
-        authorizationHeader: "Bearer thread-credential",
-        browserToolsAvailable: false,
-      });
-      yield* Effect.addFinalizer(() => mcpSessions.clear(child));
-      const runtime = yield* openCode2ReplayRuntimeWithInstructions([
-        ...opening,
-        out("session.get", { sessionID: SESSION }),
-        replyData(
-          "session.get",
-          sessionInfo({
-            permissions: [
-              { action: "*", resource: "*", effect: "allow" },
-              { action: "t3-code-*", resource: "*", effect: "deny" },
-              { action: `${server}_*`, resource: "*", effect: "allow" },
-            ],
+  it.effect(
+    "attaches the admitted pull request toolkit without preview and removes its thread registration",
+    () =>
+      Effect.gen(function* () {
+        yield* (yield* McpProviderSessions.McpProviderSessions).set({
+          environmentId: EnvironmentId.make("environment:opencode2-pull-requests"),
+          threadId,
+          providerSessionId: "mcp:opencode2-pull-requests",
+          providerInstanceId: instanceId,
+          capabilities: new Set(["pull-requests"]),
+          endpoint: "http://127.0.0.1:3773/mcp",
+          pullRequestsEndpoint: "http://127.0.0.1:3773/mcp/pull-requests",
+          authorizationHeader: "Bearer pull-request-credential",
+          browserToolsAvailable: false,
+        });
+        yield* Effect.addFinalizer(() =>
+          McpProviderSessions.McpProviderSessions.use((sessions) => sessions.clear(threadId)),
+        );
+        const server = "t3-code-thread_opencode2-adapter_pull-requests";
+        const { runtime, thread } = yield* resumed([
+          out("mcp.add", {
+            server,
+            "location[directory]": WORK,
+            config: {
+              type: "remote",
+              url: "http://127.0.0.1:3773/mcp/pull-requests",
+              headers: { Authorization: "Bearer pull-request-credential" },
+              oauth: false,
+            },
           }),
-        ),
-        ...noOpenRequests,
-        out("mcp.add", {
-          server,
-          "location[directory]": WORK,
-          config: {
-            type: "remote",
-            url: "http://127.0.0.1:3773/mcp",
-            headers: { Authorization: "Bearer thread-credential" },
-            oauth: false,
-          },
-        }),
-        reply("mcp.add", null),
-        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
-        promptAccepted,
-        event("session.execution.succeeded", { sessionID: SESSION }),
-        out("mcp.remove", { server, "location[directory]": WORK }),
-        reply("mcp.remove", null),
-      ]);
-      const thread = yield* runtime.resumeThread({
-        providerThread: { ...providerThread(yield* DateTime.now), appThreadId: child },
-        threadId: child,
-        modelSelection: bigPickle,
-        runtimePolicy: policy(),
-      });
-      const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
-      yield* runtime.startTurn({ ...turnInput(thread), threadId: child });
-      assert.equal((yield* Fiber.join(terminal))?.status, "completed");
-      yield* runtime.unloadThread!({ providerThread: thread });
-    }).pipe(Effect.scoped),
+          reply("mcp.add", null),
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          out("mcp.remove", { server, "location[directory]": WORK }),
+          reply("mcp.remove", null),
+        ]);
+        const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn(turnInput(thread));
+        assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+        yield* runtime.unloadThread!({ providerThread: thread });
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect.each(["main", "pull-requests"] as const)(
+    "keeps the %s MCP registration within OpenCode's name limit",
+    (toolkit) =>
+      Effect.gen(function* () {
+        // Spelled out, this delegated thread's server name would be 120 characters.
+        const child = ThreadId.make(
+          toolkit === "main"
+            ? "thread:delegated-task:command%3Amcp%3A48bef2bf-6d0e-4f7a-9c3b-2e5d8a1f7c40%3Adelegate-task%3Asubproject-b-round1"
+            : `thread:${"x".repeat(49)}`,
+        );
+        const namespace =
+          toolkit === "main" ? "t3-code-aa73fa1e03099934" : "t3-code-3feb5005ac6d1c36";
+        const server = toolkit === "main" ? namespace : `${namespace}_pull-requests`;
+        assert.isAtMost(server.length, 64);
+        yield* (yield* McpProviderSessions.McpProviderSessions).set({
+          environmentId: EnvironmentId.make("environment:opencode2-adapter"),
+          threadId: child,
+          providerSessionId: "mcp:opencode2-adapter",
+          capabilities: new Set(toolkit === "main" ? ["orchestration"] : ["pull-requests"]),
+          providerInstanceId: instanceId,
+          endpoint: "http://127.0.0.1:3773/mcp",
+          pullRequestsEndpoint: "http://127.0.0.1:3773/mcp/pull-requests",
+          authorizationHeader: "Bearer thread-credential",
+          browserToolsAvailable: false,
+        });
+        yield* Effect.addFinalizer(() =>
+          McpProviderSessions.McpProviderSessions.use((sessions) => sessions.clear(child)),
+        );
+        const runtime = yield* openCode2ReplayRuntimeWithInstructions([
+          ...opening,
+          out("session.get", { sessionID: SESSION }),
+          // The session already has this thread's rules, so they are not rewritten.
+          replyData(
+            "session.get",
+            sessionInfo({
+              permissions: [
+                { action: "*", resource: "*", effect: "allow" },
+                { action: "t3-code-*", resource: "*", effect: "deny" },
+                { action: `${namespace}_*`, resource: "*", effect: "allow" },
+              ],
+            }),
+          ),
+          ...noOpenRequests,
+          out("mcp.add", {
+            server,
+            "location[directory]": WORK,
+            config: {
+              type: "remote",
+              url:
+                toolkit === "main"
+                  ? "http://127.0.0.1:3773/mcp"
+                  : "http://127.0.0.1:3773/mcp/pull-requests",
+              headers: { Authorization: "Bearer thread-credential" },
+              oauth: false,
+            },
+          }),
+          reply("mcp.add", null),
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          out("mcp.remove", { server, "location[directory]": WORK }),
+          reply("mcp.remove", null),
+        ]);
+        const thread = yield* runtime.resumeThread({
+          providerThread: { ...providerThread(yield* DateTime.now), appThreadId: child },
+          threadId: child,
+          modelSelection: bigPickle,
+          runtimePolicy: policy(),
+        });
+        const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn({ ...turnInput(thread), threadId: child });
+        assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+        yield* runtime.unloadThread!({ providerThread: thread });
+      }).pipe(Effect.scoped),
   );
 
   // regression: #16142 OpenCode 2 threads were missing T3 Code's MCP tools
@@ -2436,6 +2496,8 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       assert.deepEqual(yield* Effect.forEach(ids, t3McpServerName), names);
       assert.equal(names[0], "t3-code-63abb5df2b188bdd");
       assert.equal(yield* t3McpServerName(threadId), "t3-code-thread_opencode2-adapter");
+      const boundaryThread = `thread:${"x".repeat(49)}`;
+      assert.equal(yield* t3McpServerName(boundaryThread), `t3-code-thread_${"x".repeat(49)}`);
     }).pipe(Effect.provide(NodeCrypto.layer)),
   );
 

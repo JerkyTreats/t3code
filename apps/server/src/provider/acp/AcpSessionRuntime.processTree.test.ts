@@ -289,7 +289,9 @@ describe("terminatePosixOwnedProcessTree", () => {
           encoding: "utf8",
         },
       );
-      expect(missingTargetResult.status, missingTargetResult.stderr).toBe(125);
+      // Shells may preserve exec's missing-command status instead of the EXIT trap status.
+      expect([125, 127], missingTargetResult.stderr).toContain(missingTargetResult.status);
+      expect(NodeFS.existsSync(outputPath)).toBe(false);
       // CI's /bin/sh is dash, which runs the EXIT trap after a failed exec. Bash does not,
       // so run the same wrapper under bash too.
       const missingTargetBash = NodeChildProcess.spawnSync("bash", missingTarget.args, {

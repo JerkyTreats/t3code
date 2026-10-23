@@ -7,6 +7,7 @@ import {
   AuthOrchestrationReadScope,
   AuthPreviewOperateScope,
   AuthSessionId,
+  AuthClientId,
   PREVIEW_STREAM_HOST_SETUP_CLOSE_CODE,
   PreviewStreamHostSetup,
   type AuthEnvironmentScope,
@@ -38,6 +39,8 @@ const makeAuth = (
       return error
         ? Effect.fail(error)
         : Effect.succeed({
+            clientId: AuthClientId.make("stream-client"),
+            authorityClass: "client" as const,
             sessionId: AuthSessionId.make("stream-test"),
             subject: "stream-test",
             method: "bearer-access-token",

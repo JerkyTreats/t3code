@@ -12,7 +12,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 
 import * as EffectAcpAgent from "effect-acp/agent";
 import * as AcpError from "effect-acp/errors";
-import type * as AcpSchema from "effect-acp/schema";
+import * as AcpSchema from "effect-acp/schema";
 import type * as AcpCompat from "effect-acp/compat";
 
 import { beginAcpMockPrompt } from "./acpMockCancellationState.ts";
@@ -528,8 +528,26 @@ function emitGrokKillTaskScenario(
   });
 }
 
+const decodeMcpConnectRequest = Schema.decodeUnknownEffect(AcpSchema.ConnectMcpRequest);
+const decodeMcpMessageRequest = Schema.decodeUnknownEffect(AcpSchema.MessageMcpRequest);
+const decodeMcpDisconnectRequest = Schema.decodeUnknownEffect(AcpSchema.DisconnectMcpRequest);
+
 const program = Effect.gen(function* () {
   const agent = yield* EffectAcpAgent.AcpAgent;
+  const programScope = yield* Effect.scope;
+  // A test trigger must return before waiting on reverse ACP requests, because
+  // the extension dispatcher also processes their responses.
+  const startMcpTestCall = <A>(call: Effect.Effect<A, AcpError.AcpError>) =>
+    call.pipe(
+      Effect.matchEffect({
+        onFailure: (error) =>
+          agent.client.extNotification("_test/mcp-result", { ok: false, error: error.message }),
+        onSuccess: (result) =>
+          agent.client.extNotification("_test/mcp-result", { ok: true, result }),
+      }),
+      Effect.forkIn(programScope),
+      Effect.as({}),
+    );
   const resumeRelease = yield* Deferred.make<void>();
   const nativeCancelRequested = yield* Deferred.make<void>();
   const nativeCancelRelease = yield* Deferred.make<void>();
@@ -2470,6 +2488,24 @@ const program = Effect.gen(function* () {
   );
 
   yield* agent.handleUnknownExtRequest((method, params) => {
+    if (method === "_test/mcp-connect") {
+      return decodeMcpConnectRequest(params).pipe(
+        Effect.flatMap((request) => startMcpTestCall(agent.client.connectMcp(request))),
+        Effect.mapError((cause) => AcpError.AcpRequestError.internalError(String(cause))),
+      );
+    }
+    if (method === "_test/mcp-message") {
+      return decodeMcpMessageRequest(params).pipe(
+        Effect.flatMap((request) => startMcpTestCall(agent.client.messageMcp(request))),
+        Effect.mapError((cause) => AcpError.AcpRequestError.internalError(String(cause))),
+      );
+    }
+    if (method === "_test/mcp-disconnect") {
+      return decodeMcpDisconnectRequest(params).pipe(
+        Effect.flatMap((request) => startMcpTestCall(agent.client.disconnectMcp(request))),
+        Effect.mapError((cause) => AcpError.AcpRequestError.internalError(String(cause))),
+      );
+    }
     if (method === "_test/environment") {
       return Effect.succeed({
         inherited: process.env.T3_ACP_RUNTIME_AMBIENT === "sentinel",

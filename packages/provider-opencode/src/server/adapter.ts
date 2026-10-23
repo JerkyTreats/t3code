@@ -57,6 +57,7 @@ import * as Stream from "effect/Stream";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import {
   structuralProtocolMethod,
@@ -957,19 +958,26 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
 
         const mcpSession = yield* mcpSessions.read(input.threadId);
         const hasT3Mcp = mcpSession !== undefined && !connection.external;
-        const orchestrationSystemPrompt = t3OrchestrationSystemPrompt(hasT3Mcp);
+        const orchestrationSystemPrompt = t3OrchestrationSystemPrompt(
+          hasT3Mcp &&
+            McpProviderSession.getMcpProviderServerAttachments(mcpSession!).some(
+              (server) => server.name === "t3-code",
+            ),
+        );
         if (hasT3Mcp) {
-          yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
-            client.mcp.add({
-              name: "t3-code",
-              config: {
-                type: "remote",
-                url: mcpSession.endpoint,
-                headers: { Authorization: mcpSession.authorizationHeader },
-                oauth: false,
-              },
-            }),
-          );
+          for (const server of McpProviderSession.getMcpProviderServerAttachments(mcpSession)) {
+            yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
+              client.mcp.add({
+                name: server.name,
+                config: {
+                  type: "remote",
+                  url: server.endpoint,
+                  headers: { Authorization: server.authorizationHeader },
+                  oauth: false,
+                },
+              }),
+            );
+          }
         }
 
         const now = yield* DateTime.now;

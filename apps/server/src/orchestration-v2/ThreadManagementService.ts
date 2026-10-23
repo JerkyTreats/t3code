@@ -9,6 +9,7 @@ import type {
 } from "./ProjectionStore.ts";
 import {
   type ChatAttachment,
+  type ClientSurface,
   CommandId,
   MessageId,
   OrchestrationV2StopWorkflowError,
@@ -62,6 +63,7 @@ export type ThreadManagementSendMode = "auto" | "queue" | "steer" | "restart";
 export interface ThreadManagementProvenance {
   readonly createdBy: OrchestrationV2Actor;
   readonly creationSource: OrchestrationV2CreationSource;
+  readonly creationSurface?: ClientSurface;
 }
 
 export function withCreationProvenance(
@@ -70,11 +72,19 @@ export function withCreationProvenance(
 ): OrchestrationV2Command {
   switch (command.type) {
     case "thread.create":
-    case "message.dispatch":
     case "thread.fork":
+    case "delegated_task.request": {
+      // Creation surface comes from the server-admitted client identity.
+      const { creationSurface: _untrustedSurface, ...authoredCommand } = command;
+      return { ...authoredCommand, ...provenance };
+    }
+    case "message.dispatch":
     case "thread.merge_back":
-    case "delegated_task.request":
-      return { ...command, ...provenance };
+      return {
+        ...command,
+        createdBy: provenance.createdBy,
+        creationSource: provenance.creationSource,
+      };
     default:
       return command;
   }

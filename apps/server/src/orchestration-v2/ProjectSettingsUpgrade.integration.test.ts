@@ -50,9 +50,10 @@ const readSettings = Effect.gen(function* () {
   return rows[0];
 });
 
+/** A released fork V1 database at migration 67 whose project carries all four settings. */
 const seedV1Database = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
-  yield* runMigrations({ toMigrationInclusive: 54 });
+  yield* runMigrations({ toMigrationInclusive: 67 });
   const events = [
     {
       type: "project.created",
@@ -181,12 +182,41 @@ it.live("keeps project settings through the V2 migrations and the first V2 boot"
       const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-project-upgrade-" });
       const dbPath = path.join(stateDir, "statev2.sqlite");
 
+      // Fork migration 67 includes auto-pull and project icons before the V2 cutover.
       yield* seedV1Database.pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));
+      yield* Effect.gen(function* () {
+        assert.deepEqual(yield* readSettings, expectedSettings);
+        assert.deepEqual(yield* runMigrations(), [
+          [68, "OrchestrationV2"],
+          [69, "RemoveRedundantProjectionIndexes"],
+          [79, "ScheduledTaskWebhooks"],
+          [80, "WebhookRelayDeliveries"],
+          [81, "McpAppModelContext"],
+          [82, "ThreadSnapshotWindowIndexes"],
+          [83, "RetireBoardAndCollective"],
+          [84, "PullRequestReviewGuides"],
+          [85, "PublishedResponseActivityIndex"],
+          [86, "ThreadFailureLookupIndex"],
+          [87, "DropUnusedV1Projections"],
+          [88, "CanonicalizeThreadPullRequestLinks"],
+          [89, "CodexUsageNativeTurnIndex"],
+          [90, "RepairClientSettlementTimestamps"],
+          [91, "WebhookDedupe"],
+          [92, "ShellStopRequestIndex"],
+        ]);
+        assert.deepEqual(yield* readSettings, expectedSettings);
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));
       yield* Effect.gen(function* () {
         yield* (yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter).reconcileShells;
         assert.deepEqual(yield* readSettings, expectedSettings);
         const project = yield* (yield* ProjectService.ProjectService).getById(projectId);
         assert.equal(project._tag, "Some");
+        if (project._tag === "Some") {
+          assert.equal(project.value.defaultThreadEnvMode, "worktree");
+          assert.equal(project.value.autoPull, true);
+          assert.equal(project.value.faviconPath, expectedSettings.favicon_path);
+          assert.deepEqual(project.value.projectIcon, icon);
+        }
       }).pipe(Effect.provide(layerRuntime(dbPath)));
     }),
   ).pipe(Effect.provide(NodeServices.layer)),

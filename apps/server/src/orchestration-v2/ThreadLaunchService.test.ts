@@ -140,7 +140,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const layerServerSettings = ServerSettings.layerTest(options.serverSettings);
   const layerReceipts = CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase));
   const layerThreadManagement = ThreadManagement.layer.pipe(
-    Layer.provide(layerOrchestrator),
+    Layer.provideMerge(layerOrchestrator),
     Layer.provide(layerServerSettings),
     Layer.provide(layerReceipts),
   );
@@ -463,6 +463,25 @@ it.effect("runs a thread-bound automation on the provider the thread uses now", 
     assert.deepStrictEqual(projection.thread.modelSelection, claudeModelSelection);
   }).pipe(Effect.provide(Layer.mergeAll(harness.layer, layerScheduledTasks)));
 });
+
+it.effect(
+  "preserves admitted Thread creation surface without classifying ordinary launches",
+  () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threadLaunch = yield* launches.launch({
+        ...launchInput({ command: "command:surface:thread", thread: "thread:surface:thread" }),
+        creationSurface: "thread",
+      });
+      assert.equal(threadLaunch.projection.thread.creationSurface, "thread");
+      const ordinaryLaunch = yield* launches.launch(
+        launchInput({ command: "command:surface:ordinary", thread: "thread:surface:ordinary" }),
+      );
+      assert.isUndefined(ordinaryLaunch.projection.thread.creationSurface);
+    }).pipe(Effect.provide(harness.layer));
+  },
+);
 
 it.effect("retains automation and sender attribution while a message waits in the queue", () => {
   const harness = makeHarness({ runSetup: () => Effect.never });
@@ -1779,8 +1798,9 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
     );
     assert.isDefined(stored);
     assert.notEqual(stored.attachments[0]?.id, attachment.id);
+    assert.isDefined(stored.context);
     assert.equal(
-      (stored.context?.records[0] as { attachmentId: string }).attachmentId,
+      (stored.context.records[0] as { attachmentId: string }).attachmentId,
       stored.attachments[0]?.id,
     );
     const userItem = accepted.turnItems.find(
