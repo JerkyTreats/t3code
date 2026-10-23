@@ -1,19 +1,34 @@
 import {
   EnvironmentId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  ProviderDriverKind,
-  ProviderInstanceId,
+  ProjectId,
+  RuntimeRequestId,
   ThreadId,
 } from "@t3tools/contracts";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-import { act, render } from "../../../test/render";
+import { act, render, type Screen } from "../../../test/render";
+import {
+  attachment,
+  deferred,
+  environmentId,
+  image,
+  pngCapture,
+  props,
+  target,
+  threadId,
+} from "../../../test/fixtures/chatComposer";
 
 // Mounted-host evidence for F03 desktop screenshot capture; owner rules live in
 // fork/composerAttachmentAdmission.test.ts and fork/composerScreenshot.test.ts.
-const mocks = vi.hoisted(() => ({ prepare: vi.fn(), capture: vi.fn(), toast: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  prepare: vi.fn(),
+  capture: vi.fn(),
+  toast: vi.fn(),
+  editor: null as null | { onPaste: (event: unknown) => void },
+}));
 vi.mock(import("../../lib/imageCompression"), async (original) => ({
   ...(await original()),
   prepareImageForAttachment: mocks.prepare,
@@ -36,178 +51,23 @@ vi.mock(import("../ui/toast"), async (original) => {
 });
 vi.mock(import("../ComposerPromptEditor"), async (original) => ({
   ...(await original()),
-  ComposerPromptEditor: (() => null) as never,
+  ComposerPromptEditor: ((editorProps: { onPaste: (event: unknown) => void }) => {
+    mocks.editor = editorProps;
+    return null;
+  }) as never,
 }));
 
-import { ChatComposer, type ChatComposerProps } from "./ChatComposer";
-import { useComposerDraftStore, type ComposerImageAttachment } from "../../composerDraftStore";
+import { ChatComposer } from "./ChatComposer";
+import { DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { ComposerAttachmentAdmission } from "../../fork/composerAttachmentAdmission";
+import {
+  questionAttachmentDraftId,
+  useQuestionAttachmentPreparation,
+} from "../../questionAttachments";
 
 const initialStore = useComposerDraftStore.getState();
-const environmentId = EnvironmentId.make("environment-one");
-const threadId = ThreadId.make("synthetic-thread");
-const target = { environmentId, threadId };
-const pngCapture = {
-  name: "capture.png",
-  mimeType: "image/png",
-  data: new Uint8Array([1, 2, 3]),
-};
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-function attachment(id: string): ComposerImageAttachment {
-  const file = new File(["image"], `${id}.png`, { type: "image/png" });
-  return {
-    type: "image",
-    id,
-    name: file.name,
-    mimeType: file.type,
-    sizeBytes: file.size,
-    file,
-    previewUrl: `blob:${id}`,
-  };
-}
 const draft = () => useComposerDraftStore.getState().getComposerDraft(target);
 const bridgeWindow = window as unknown as { desktopBridge?: unknown };
-
-function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerProps {
-  return {
-    canOperateThread: true,
-    activeProjectId: null,
-    threadPullRequests: undefined,
-    resumeCompactionTokens: null,
-    keepFullHistory: false,
-    onToggleKeepFullHistory: vi.fn(),
-    supportsQuestionAttachments: false,
-    composerDraftTarget: target,
-    environmentId,
-    attachmentUploadsCapabilityKnown: true,
-    supportsAttachmentUploads: false,
-    maxFileAttachmentBytes: null,
-    routeKind: "server",
-    routeThreadRef: target,
-    draftId: null,
-    multipleModelSelections: null,
-    supportsMultipleModels: false,
-    onMultipleModelSelectionsChange: vi.fn(),
-    activeThreadShell: null,
-    providerCatalogKnown: true,
-    pullRequestProjectId: null,
-    pullRequestRepository: null,
-    onCompactContext: vi.fn(),
-    activeThreadId: threadId,
-    activeThreadEnvironmentId: environmentId,
-    activeThread: undefined,
-    promptHistoryMessages: [],
-    isServerThread: true,
-    isLocalDraftThread: false,
-    forceExpandedOnMobile: false,
-    projectSelectionRequired: false,
-    phase: "ready",
-    canInterrupt: false,
-    canResume: false,
-    queuedRunsControl: null,
-    editingQueuedAttachments: null,
-    onRemoveEditingQueuedAttachment: vi.fn(),
-    onResume: vi.fn(),
-    isConnecting: false,
-    isCompacting: false,
-    isSendBusy: false,
-    sendDisabledReason: null,
-    isPreparingWorktree: false,
-    bannerItems: [],
-    environmentUnavailable: null,
-    activePendingApproval: null,
-    pendingApprovals: [],
-    pendingUserInputs: [],
-    activePendingProgress: null,
-    activePendingResolvedAnswers: null,
-    activePendingIsResponding: false,
-    activePendingDraftAnswers: {},
-    activePendingQuestionIndex: 0,
-    respondingRequestIds: [],
-    showPlanFollowUpPrompt: false,
-    activeProposedPlan: null,
-    activeTasksProgress: null,
-    activeTaskSteps: null,
-    threadSyncPhase: null,
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    lockedProvider: null,
-    providerStatuses: [
-      {
-        instanceId: ProviderInstanceId.make("codex"),
-        driver: ProviderDriverKind.make("codex"),
-        enabled: true,
-        installed: true,
-        version: null,
-        status: "ready",
-        auth: { status: "authenticated" },
-        checkedAt: "2026-01-01T00:00:00.000Z",
-        models: [
-          { slug: "test", name: "Test", isDefault: true, isCustom: false, capabilities: {} },
-        ],
-        slashCommands: [],
-        skills: [],
-      },
-    ],
-    activeProjectDefaultModelSelection: null,
-    activeThreadModelSelection: null,
-    activeContextWindow: null,
-    compactThreadUnavailable: false,
-    compactDisabled: false,
-    compactDisabledReason: null,
-    resolvedTheme: "light",
-    settings: { ...DEFAULT_UNIFIED_SETTINGS, composerCollapseOnScroll: false },
-    keybindings: [],
-    terminalOpen: false,
-    gitCwd: null,
-    restingControlsHost: null,
-    restingControlsHaveLeadingContext: false,
-    onRestingControlsVisibilityChange: vi.fn(),
-    getTimelineScrollableNode: () => null,
-    isTimelineAtLogicalEnd: () => true,
-    timelineOverflows: false,
-    onComposerOverlayHeightChange: vi.fn(),
-    onRestingChange: vi.fn(),
-    promptRef: { current: "" },
-    composerImagesRef: { current: [] },
-    composerFilesRef: { current: [] },
-    composerTerminalContextsRef: { current: [] },
-    composerRef: { current: null },
-    onPageScrollKeyDown: vi.fn(),
-    onPageScrollKeyUp: vi.fn(),
-    onPageScrollRelease: vi.fn(),
-    onSend: vi.fn(),
-    onInterrupt: vi.fn(),
-    onImplementPlanInNewThread: vi.fn(),
-    onRespondToApproval: vi.fn(),
-    onSelectActivePendingUserInputOption: vi.fn(),
-    onAdvanceActivePendingUserInput: vi.fn(),
-    onDismissActivePendingUserInput: vi.fn(),
-    onPreviousActivePendingUserInputQuestion: vi.fn(),
-    onChangeActivePendingUserInputCustomAnswer: vi.fn(),
-    onProviderModelSelect: vi.fn(),
-    onOpenProviderSetup: vi.fn(),
-    getModelDisabledReason: () => null,
-    toggleInteractionMode: vi.fn(),
-    handleRuntimeModeChange: vi.fn(),
-    handleInteractionModeChange: vi.fn(),
-    focusComposer: vi.fn(),
-    scheduleComposerFocus: vi.fn(),
-    setThreadError: vi.fn(),
-    onExpandImage: vi.fn(),
-    onFileOpen: vi.fn(),
-    ...overrides,
-  };
-}
 
 function setup({ desktopCapture = true } = {}) {
   useComposerDraftStore.setState(initialStore, true);
@@ -215,6 +75,8 @@ function setup({ desktopCapture = true } = {}) {
   mocks.toast.mockClear();
   mocks.prepare.mockReset();
   mocks.prepare.mockImplementation(async (file: File) => ({ ok: true, file }));
+  mocks.editor = null;
+  useQuestionAttachmentPreparation.setState({ counts: {} });
   if (desktopCapture) bridgeWindow.desktopBridge = { captureDesktopScreenshot: mocks.capture };
   return {
     [Symbol.dispose]() {
@@ -302,5 +164,357 @@ describe("ChatComposer desktop screenshot capture", () => {
     expect(mocks.capture).toHaveBeenCalledOnce();
     await expect.element(field).toHaveFocus();
     expect(mocks.toast).not.toHaveBeenCalled();
+  });
+});
+
+// A synchronous DOM click, so a test can interleave it with other admissions in one act.
+function capture(screen: Screen) {
+  (screen.getByRole("button", { name: "Capture screenshot" }).element() as HTMLElement).click();
+}
+function fill(count: number) {
+  useComposerDraftStore.getState().addImages(
+    target,
+    Array.from({ length: count }, (_, i) => attachment(`a${i}`)),
+  );
+}
+// Its accessible name is its status, such as "Preparing attachments" while disabled.
+function sendButton(screen: Screen) {
+  return screen.container.querySelector<HTMLButtonElement>("button[type='submit']")!;
+}
+function submit(screen: Screen) {
+  screen.container.querySelector("form")!.requestSubmit();
+}
+function urlSpies() {
+  return {
+    create: vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:prepared"),
+    revoke: vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {}),
+  };
+}
+
+describe("ChatComposer screenshot admission", () => {
+  it("shares paste capacity with a single native capture and transfers without double counting", async () => {
+    using _fixture = setup();
+    fill(PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 2);
+    const native = deferred<typeof pngCapture | null>();
+    const pastePreparation = deferred<{ ok: true; file: File }>();
+    mocks.capture.mockReturnValue(native.promise);
+    mocks.prepare.mockImplementationOnce(() => pastePreparation.promise);
+    await using screen = await render(<ChatComposer {...props()} />);
+    const preventDefault = vi.fn();
+    await act(() => {
+      capture(screen);
+      mocks.editor!.onPaste({
+        clipboardData: { files: [image("first.png"), image("overflow.png")], getData: () => "" },
+        preventDefault,
+        stopPropagation: vi.fn(),
+      });
+    });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(mocks.capture).toHaveBeenCalledOnce();
+    expect(mocks.prepare).toHaveBeenCalledOnce();
+    await act(() => native.resolve(pngCapture));
+    await expect.poll(() => draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1);
+    expect(draft()?.images.at(-1)?.name).toBe("capture.png");
+    await act(() => pastePreparation.resolve({ ok: true, file: image("first.png") }));
+    await expect.poll(() => draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+    expect(draft()?.images.map((value) => value.name)).toContain("first.png");
+    expect(mocks.prepare).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses capture when an ordinary paste already reserved the last slot", async () => {
+    using _fixture = setup();
+    fill(PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1);
+    const pending = deferred<{ ok: true; file: File }>();
+    mocks.prepare.mockReturnValue(pending.promise);
+    const input = props();
+    await using screen = await render(<ChatComposer {...input} />);
+    await act(() => {
+      input.composerRef.current!.addDroppedFiles([image()]);
+      capture(screen);
+    });
+    expect(mocks.capture).not.toHaveBeenCalled();
+    await act(() => pending.resolve({ ok: true, file: image() }));
+    await expect.poll(() => draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+  });
+
+  it.each(["cancel", "native-error", "compression-error"] as const)(
+    "releases capacity after %s and allows a fresh capture",
+    async (outcome) => {
+      using _fixture = setup();
+      const native = deferred<typeof pngCapture | null>();
+      mocks.capture.mockReturnValueOnce(native.promise).mockResolvedValueOnce(pngCapture);
+      if (outcome === "compression-error")
+        mocks.prepare.mockRejectedValueOnce(new Error("preparation failed"));
+      const input = props();
+      await using screen = await render(<ChatComposer {...input} />);
+      const button = screen.getByRole("button", { name: "Capture screenshot" });
+      await button.click();
+      await act(() => {
+        if (outcome === "native-error") native.reject(new Error("native failed"));
+        else native.resolve(outcome === "cancel" ? null : pngCapture);
+      });
+      await expect.element(button).toBeEnabled();
+      expect(draft()?.images ?? []).toHaveLength(0);
+      if (outcome !== "cancel")
+        expect(input.setThreadError).toHaveBeenCalledWith(
+          threadId,
+          outcome === "native-error" ? "native failed" : "preparation failed",
+        );
+      await button.click();
+      expect(mocks.capture).toHaveBeenCalledTimes(2);
+      await expect.poll(() => draft()?.images).toHaveLength(1);
+    },
+  );
+
+  it.each(["unreadable", "too-large"] as const)(
+    "releases an image rejected as %s by ordinary preparation",
+    async (reason) => {
+      using _fixture = setup();
+      mocks.capture.mockResolvedValue(pngCapture);
+      mocks.prepare.mockResolvedValueOnce({ ok: false, reason });
+      const input = props();
+      await using screen = await render(<ChatComposer {...input} />);
+      const button = screen.getByRole("button", { name: "Capture screenshot" });
+      await button.click();
+      await expect
+        .poll(() => input.setThreadError)
+        .toHaveBeenCalledWith(
+          threadId,
+          expect.stringContaining(reason === "unreadable" ? "could not be read" : "too large"),
+        );
+      expect(draft()?.images ?? []).toHaveLength(0);
+      await expect.element(button).toBeEnabled();
+      await button.click();
+      await expect.poll(() => draft()?.images).toHaveLength(1);
+    },
+  );
+
+  it("blocks synchronous send and compact commands throughout capture and image preparation", async () => {
+    using _fixture = setup();
+    useComposerDraftStore.getState().setPrompt(target, "Keep this prompt");
+    const native = deferred<typeof pngCapture | null>();
+    const preparation = deferred<{ ok: true; file: File }>();
+    mocks.capture.mockReturnValue(native.promise);
+    mocks.prepare.mockReturnValue(preparation.promise);
+    const input = props();
+    await using screen = await render(<ChatComposer {...input} />);
+    await act(() => {
+      capture(screen);
+      submit(screen);
+      input.composerRef.current!.compactContext();
+    });
+    expect(input.onSend).not.toHaveBeenCalled();
+    expect(input.onCompactContext).not.toHaveBeenCalled();
+    expect(draft()?.prompt).toBe("Keep this prompt");
+    await expect.element(sendButton(screen)).toBeDisabled();
+    await act(() => native.resolve(pngCapture));
+    await act(() => {
+      submit(screen);
+      input.composerRef.current!.compactContext();
+    });
+    expect(input.onSend).not.toHaveBeenCalled();
+    expect(input.onCompactContext).not.toHaveBeenCalled();
+    await act(() => preparation.resolve({ ok: true, file: image("capture.png") }));
+    await expect.element(sendButton(screen)).toBeEnabled();
+    await act(() => submit(screen));
+    expect(input.onSend).toHaveBeenCalledOnce();
+    expect(input.composerRef.current!.getSendContext().images).toHaveLength(1);
+  });
+
+  it("drops a native result after switching environments with the same ThreadId, even after returning", async () => {
+    using _fixture = setup();
+    const native = deferred<typeof pngCapture | null>();
+    mocks.capture.mockReturnValue(native.promise);
+    const input = props();
+    await using screen = await render(<ChatComposer {...input} />);
+    await act(() => capture(screen));
+    const otherEnvironment = EnvironmentId.make("environment-two");
+    const otherTarget = { environmentId: otherEnvironment, threadId };
+    await screen.rerender(
+      <ChatComposer
+        {...input}
+        environmentId={otherEnvironment}
+        activeThreadEnvironmentId={otherEnvironment}
+        composerDraftTarget={otherTarget}
+        routeThreadRef={otherTarget}
+      />,
+    );
+    await screen.rerender(<ChatComposer {...input} />);
+    await act(() => native.resolve(pngCapture));
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(draft()?.images ?? []).toHaveLength(0);
+    expect(
+      useComposerDraftStore.getState().getComposerDraft(otherTarget)?.images ?? [],
+    ).toHaveLength(0);
+    expect(input.setThreadError).not.toHaveBeenCalledWith(threadId, expect.any(String));
+  });
+
+  it("drops capture when an unsaved draft is retargeted to another project", async () => {
+    using _fixture = setup();
+    const draftId = DraftId.make("unsaved-draft");
+    const firstProject = { environmentId, projectId: ProjectId.make("first-project") };
+    useComposerDraftStore.getState().setLogicalProjectDraftThreadId("first", firstProject, draftId);
+    const native = deferred<typeof pngCapture | null>();
+    mocks.capture.mockReturnValue(native.promise);
+    await using screen = await render(
+      <ChatComposer {...props({ composerDraftTarget: draftId, draftId, routeKind: "draft" })} />,
+    );
+    await act(() => capture(screen));
+    expect(mocks.capture).toHaveBeenCalledOnce();
+    await act(() =>
+      useComposerDraftStore
+        .getState()
+        .setLogicalProjectDraftThreadId(
+          "second",
+          { environmentId, projectId: ProjectId.make("second-project") },
+          draftId,
+        ),
+    );
+    await act(() => native.resolve(pngCapture));
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.images ?? []).toHaveLength(
+      0,
+    );
+  });
+
+  it("releases ordinary preparation and revokes partial previews when the scoped destination changes", async () => {
+    using _fixture = setup();
+    const urls = urlSpies();
+    const pending = deferred<{ ok: true; file: File }>();
+    mocks.prepare
+      .mockResolvedValueOnce({ ok: true, file: image("first.png") })
+      .mockReturnValueOnce(pending.promise);
+    const input = props();
+    await using screen = await render(<ChatComposer {...input} />);
+    await act(() =>
+      input.composerRef.current!.addDroppedFiles([image("first.png"), image("second.png")]),
+    );
+    await expect.poll(() => urls.create).toHaveBeenCalledOnce();
+    const otherTarget = { environmentId, threadId: ThreadId.make("other-thread") };
+    await screen.rerender(
+      <ChatComposer
+        {...input}
+        activeThreadId={otherTarget.threadId}
+        composerDraftTarget={otherTarget}
+        routeThreadRef={otherTarget}
+      />,
+    );
+    await act(() => pending.resolve({ ok: true, file: image("second.png") }));
+    await expect.poll(() => urls.revoke).toHaveBeenCalledWith("blob:prepared");
+    expect(draft()?.images ?? []).toHaveLength(0);
+    expect(
+      useComposerDraftStore.getState().getComposerDraft(otherTarget)?.images ?? [],
+    ).toHaveLength(0);
+  });
+
+  it("preserves the generic picker and replaces a reattachment marker at the cap", async () => {
+    using _fixture = setup();
+    fill(PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1);
+    const file = new File(["report"], "report.txt", { type: "text/plain" });
+    useComposerDraftStore.getState().addFiles(target, [
+      {
+        type: "file",
+        id: "reattach",
+        name: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        file: null,
+      },
+    ]);
+    await using screen = await render(
+      <ChatComposer
+        {...props({ supportsAttachmentUploads: true, maxFileAttachmentBytes: 1024 })}
+      />,
+    );
+    await expect.element(screen.getByRole("button", { name: "Attach files" })).toBeVisible();
+    await act(() => capture(screen));
+    expect(mocks.capture).not.toHaveBeenCalled();
+    const picker = screen.container.querySelector<HTMLInputElement>("input[type='file']")!;
+    await userEvent.upload(picker, file);
+    await expect.poll(() => draft()?.files[0]?.file?.name).toBe("report.txt");
+    expect(draft()?.files).toHaveLength(1);
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1);
+    expect(mocks.prepare).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary classification and supported-image errors", async () => {
+    using _fixture = setup();
+    const input = props({ supportsAttachmentUploads: true, maxFileAttachmentBytes: 1024 });
+    await using _screen = await render(<ChatComposer {...input} />);
+    await act(() =>
+      input.composerRef.current!.addDroppedFiles([
+        new File(["body"], "notes.txt", { type: "text/plain" }),
+        new File(["svg"], "vector.svg", { type: "image/svg+xml" }),
+        image(),
+      ]),
+    );
+    await expect.poll(() => draft()?.images).toHaveLength(1);
+    expect(draft()?.files[0]?.mimeType).toBe("text/plain");
+    expect(input.setThreadError).toHaveBeenCalledWith(
+      threadId,
+      expect.stringContaining("not a supported image type"),
+    );
+  });
+});
+
+describe("ChatComposer question attachment reservations", () => {
+  const requestId = RuntimeRequestId.make("synthetic-request");
+  function questionProps(questionId = "one", base = props()) {
+    return {
+      ...base,
+      supportsQuestionAttachments: true,
+      pendingUserInputs: [
+        {
+          requestId,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          responseCapability: "live" as const,
+          dismissible: true,
+          questions: ["one", "two"].map((id) => ({
+            id,
+            header: "Question",
+            question: "Synthetic question",
+            options: [],
+            multiSelect: false,
+            allowCustomAnswer: true,
+          })),
+        },
+      ],
+      activePendingProgress: {
+        questionIndex: questionId === "one" ? 0 : 1,
+        isLastQuestion: questionId === "two",
+        canAdvance: false,
+        customAnswer: "",
+        activeQuestion: { id: questionId, allowCustomAnswer: true },
+      },
+    } as ComponentProps<typeof ChatComposer>;
+  }
+  const answerDraft = (questionId: string) =>
+    useComposerDraftStore
+      .getState()
+      .getComposerDraft(questionAttachmentDraftId(environmentId, threadId, requestId, questionId));
+
+  it("admits an ordinary question image when the preserved thread draft is full", async () => {
+    using _fixture = setup();
+    fill(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+    const input = questionProps();
+    await using _screen = await render(<ChatComposer {...input} />);
+    await act(() => input.composerRef.current!.addDroppedFiles([image("answer.png")]));
+    await expect.poll(() => answerDraft("one")?.images).toHaveLength(1);
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+    expect(mocks.capture).not.toHaveBeenCalled();
+  });
+
+  it("drops image preparation when the active question changes", async () => {
+    using _fixture = setup();
+    const urls = urlSpies();
+    const preparation = deferred<{ ok: true; file: File }>();
+    mocks.prepare.mockReturnValue(preparation.promise);
+    const input = questionProps();
+    await using screen = await render(<ChatComposer {...input} />);
+    await act(() => input.composerRef.current!.addDroppedFiles([image("first.png")]));
+    await screen.rerender(<ChatComposer {...questionProps("two", input)} />);
+    await act(() => preparation.resolve({ ok: true, file: image("first.png") }));
+    for (const id of ["one", "two"]) expect(answerDraft(id)?.images ?? []).toHaveLength(0);
+    expect(urls.create).not.toHaveBeenCalled();
   });
 });

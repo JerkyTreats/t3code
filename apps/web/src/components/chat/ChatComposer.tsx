@@ -1080,6 +1080,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       unavailableReason: potetoUnavailableReason,
       text: prompt,
       answeringPendingInput: activePendingProgress !== null,
+      answeringApproval: activePendingApproval?.supportsFeedback === true,
       editingQueuedMessage: isEditingQueuedMessage,
     });
   const isSendDisabled = sendDisabledReason !== null;
@@ -1553,6 +1554,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedModel,
     selectedPromptEffort,
     selectedProvider,
+    potetoMode,
   ] as const;
   const [providerInputValidatedFor, setProviderInputValidatedFor] = useState(providerInputInputs);
   if (providerInputInputs.some((value, index) => value !== providerInputValidatedFor[index])) {
@@ -3451,6 +3453,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           ),
           text: providerInput,
           answeringPendingInput: activePendingProgress !== null,
+          answeringApproval: activePendingApproval?.supportsFeedback === true,
           editingQueuedMessage: isEditingQueuedMessage,
         });
         const validationMessage =
@@ -3475,6 +3478,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       isEditingQueuedMessage,
       composerCursor,
       activePendingProgress,
+      activePendingApproval,
       pendingApprovals,
       heldRequestIds,
       composerTerminalContexts,

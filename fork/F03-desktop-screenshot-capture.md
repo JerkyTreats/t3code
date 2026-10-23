@@ -61,7 +61,7 @@ Expose a bounded Linux desktop screenshot capture through an optional capability
 - PNG tests cover signature, header, terminal marker, incomplete state, invalid state, and the exact image ceiling.
 - Capture tests cover delayed output, changed clipboard, cancellation, fallback, child termination, timeout, and cleanup.
 - IPC and preload tests cover capability absence, valid capture, malformed payload rejection, and distinct top-level capture and unchanged nested preview capture. Packaged output remains part of later installed acceptance.
-- Owner tests (`composerAttachmentAdmission.test.ts`, `composerScreenshot.test.ts`) cover capability absence, exact PNG conversion, shared budget, transfer without double counting, scoped destination invalidation, cancellation and single flight. The earlier mounted composer test used renderer tooling upstream removed; mounted submission gating, unmount cleanup and focus evidence must be re-established through the browser test harness.
+- Owner tests (`composerAttachmentAdmission.test.ts`, `composerScreenshot.test.ts`) cover capability absence, exact PNG conversion, shared budget, transfer without double counting, scoped destination invalidation, cancellation and single flight. `ChatComposer.screenshot.browser.test.tsx` mounts the composer to cover submission and compact gating through capture and preparation, shared paste capacity, last-slot refusal, failure release, environment and draft retarget drops, unmount cleanup, focus retention and question-image admission.
 
 ## Reconciliation Rule
 

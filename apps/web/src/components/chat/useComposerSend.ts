@@ -825,8 +825,9 @@ export function useComposerSend(input: ComposerSendInput) {
     );
     const messageIdForSend = newMessageId();
     const messageCreatedAt = new Date().toISOString();
+    // Approval feedback answers the request with the authored text, so it skips Poteto Mode.
     const outgoingMessageText = formatOutgoingPrompt({
-      potetoMode: sendCtx.potetoMode,
+      potetoMode: approvalFeedbackTarget === undefined ? sendCtx.potetoMode : null,
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,

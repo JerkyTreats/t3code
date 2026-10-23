@@ -334,11 +334,22 @@ export function useComposerAttachmentIntake(input: {
       }
       return insertedAny;
     };
-    return await compressAndStoreImages().finally(() => {
-      if (questionAttachmentTarget)
-        changeQuestionAttachmentPreparation(questionAttachmentTarget, -acceptedImages.length);
-      attachmentAdmission.release(reservation);
-    });
+    return await compressAndStoreImages()
+      .catch((cause: unknown) => {
+        // A failed preparation still owns its slot here, so the error belongs to this draft.
+        if (attachmentAdmission.isCurrent(reservation)) {
+          setThreadError(
+            threadId,
+            cause instanceof Error ? cause.message : "Could not prepare attachment.",
+          );
+        }
+        return false;
+      })
+      .finally(() => {
+        if (questionAttachmentTarget)
+          changeQuestionAttachmentPreparation(questionAttachmentTarget, -acceptedImages.length);
+        attachmentAdmission.release(reservation);
+      });
   };
 
   /** One native capture at a time, holding its slot from before capture until the image lands. */
