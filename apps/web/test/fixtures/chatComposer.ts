@@ -155,7 +155,8 @@ export function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerP
     onPageScrollKeyDown: vi.fn(),
     onPageScrollKeyUp: vi.fn(),
     onPageScrollRelease: vi.fn(),
-    onSend: vi.fn(),
+    // The real send handler keeps a submitted form from navigating the test page.
+    onSend: vi.fn((event?: { preventDefault: () => void }) => event?.preventDefault()),
     onInterrupt: vi.fn(),
     onImplementPlanInNewThread: vi.fn(),
     onRespondToApproval: vi.fn(),
