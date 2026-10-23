@@ -1,4 +1,5 @@
 import * as Cause from "effect/Cause";
+import { offersOriginSourceBranchDeletion } from "@t3tools/source-control-core/server/fork/originHostedProviderPolicy";
 import * as Exit from "effect/Exit";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -1135,7 +1136,10 @@ export function toPullRequestCore(result: PullRequestCore.Result): GitHubPullReq
     headRepositoryNameWithOwner: trimmed(pr.headRepository?.nameWithOwner),
     viewerAccess: {
       canWrite: toCanWrite(repository.viewerPermission),
-      canDeleteBranch: toCanWrite(pr.headRepository?.viewerPermission) && pr.headRef !== null,
+      canDeleteBranch:
+        toCanWrite(pr.headRepository?.viewerPermission) &&
+        pr.headRef !== null &&
+        offersOriginSourceBranchDeletion(pr.isCrossRepository),
       canTriage: toCanTriage(repository.viewerPermission),
       ...toPullRequestViewerFields(pr),
       canMergeNow: IMMEDIATELY_MERGEABLE.has(pr.mergeStateStatus),
@@ -1694,7 +1698,9 @@ export function toViewerPermissions(
     },
     autoMergeAllowed: repository.autoMergeAllowed,
     canWrite: toCanWrite(repository.viewerPermission),
-    canDeleteBranch: toCanWrite(repository.pullRequest?.headRepository?.viewerPermission),
+    canDeleteBranch:
+      toCanWrite(repository.pullRequest?.headRepository?.viewerPermission) &&
+      offersOriginSourceBranchDeletion(repository.pullRequest?.isCrossRepository),
     canTriage: toCanTriage(repository.viewerPermission),
     ...toPullRequestViewerFields(repository.pullRequest),
   };

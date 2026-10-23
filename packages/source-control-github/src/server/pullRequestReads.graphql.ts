@@ -1015,6 +1015,8 @@ export const ViewerPermissionsRepositoryPullRequestPullRequest = Schema.Struct({
   viewerCanUpdate: Schema.Boolean,
   /** Did the viewer author this comment. */
   viewerDidAuthor: Schema.Boolean,
+  /** The head and base repositories are different. */
+  isCrossRepository: Schema.Boolean,
   /** The repository associated with this pull request's head Ref. */
   headRepository: Schema.NullOr(ViewerPermissionsRepositoryPullRequestHeadRepositoryRepository)
 })
@@ -1046,7 +1048,7 @@ export const ViewerPermissions = GraphQL.query("ViewerPermissions", {
       { name: "number", body: "Int!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){viewerCanUpdate viewerDidAuthor headRepository{viewerPermission}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed autoMergeAllowed viewerPermission pullRequest(number:$", "number", "){viewerCanUpdate viewerDidAuthor isCrossRepository headRepository{viewerPermission}}}"] }
     ],
     fragments: []
   },
@@ -1486,6 +1488,8 @@ export interface PullRequestBranchToDeleteRepositoryPullRequestPullRequest exten
 
 /** A repository contains the content for a project. */
 export const PullRequestBranchToDeleteRepositoryRepository = Schema.Struct({
+  /** The Node ID of the Repository object */
+  id: Shared.ID,
   /** Returns a single pull request from the current repository by number. */
   pullRequest: Schema.NullOr(PullRequestBranchToDeleteRepositoryPullRequestPullRequest)
 })
@@ -1500,7 +1504,7 @@ export const PullRequestBranchToDelete = GraphQL.query("PullRequestBranchToDelet
       { name: "number", body: "Int!" }
     ],
     selections: [
-      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){pullRequest(number:$", "number", "){state headRefName baseRefName headRefOid headRepository{id}}}"] }
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){id pullRequest(number:$", "number", "){state headRefName baseRefName headRefOid headRepository{id}}}"] }
     ],
     fragments: []
   },

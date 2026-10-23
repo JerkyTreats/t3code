@@ -253,7 +253,7 @@ export const make = Effect.gen(function* () {
 
     getViewer: (input) =>
       cli
-        .getViewerLogin({ cwd: input.cwd, host: input.host ?? "github.com" })
+        .getViewerLogin({ cwd: input.cwd, host: input.host })
         .pipe(Effect.mapError(fail("getViewer"))),
 
     listChangeRequests: (input) =>
@@ -612,6 +612,7 @@ export const make = Effect.gen(function* () {
           cwd: input.cwd,
           repository: input.repository,
           host: input.host,
+          number: input.number,
           threadId: input.threadId,
           body: input.body,
         })
@@ -636,6 +637,7 @@ export const make = Effect.gen(function* () {
           cwd: input.cwd,
           repository: input.repository,
           host: input.host,
+          number: input.number,
           threadId: input.threadId,
           resolved: input.resolved,
         })

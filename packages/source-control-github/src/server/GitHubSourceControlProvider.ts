@@ -23,6 +23,11 @@ import {
 } from "@t3tools/contracts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import {
+  gitHubRepositoryTargetFromSelector,
+  originChangeRequestSelector,
+  requireGitHubRepository,
+} from "@t3tools/source-control-core/server/fork/originHostedProviderPolicy";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 
@@ -37,9 +42,7 @@ import {
 import {
   gitHubApiHostForRemote,
   parseFetchRemotes,
-  parseGitHubRepositorySelector,
   parsePullRequestReference,
-  resolveGitHubRepository,
   type GitHubRepositoryLocator,
 } from "./gitHubRepositoryResolution.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
@@ -452,7 +455,6 @@ export const make = Effect.gen(function* () {
   const api = yield* GitHubRest.GitHubRest;
   const sourceControlHost = yield* SourceControlHost.SourceControlHost;
   const process = sourceControlHost.process;
-  const environment = yield* HostProcess.Environment;
   const git = sourceControlHost.git;
   const fileSystem = yield* FileSystem.FileSystem;
 
@@ -472,37 +474,33 @@ export const make = Effect.gen(function* () {
       readonly host?: string | undefined;
       readonly context?: SourceControlProvider.SourceControlProviderContext | undefined;
     }) {
-      const envRepository = environment.GH_REPO?.trim();
-      const hostHint = input.host ?? contextHost(input.context);
-      const defaultHost = (hostHint ?? environment.GH_HOST ?? "github.com").toLowerCase();
-      if (envRepository) {
-        const locator = parseGitHubRepositorySelector(envRepository, defaultHost);
-        if (locator !== null) return locator;
-      }
-      const [remotes, resolved] = yield* Effect.all([
-        gitRead(input.cwd, ["remote", "-v"]),
-        gitRead(input.cwd, ["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"]),
-      ]).pipe(Effect.orElseSucceed(() => [null, null] as const));
-      const { host, locator } = resolveGitHubRepository({
-        remotes: remotes?.exitCode === 0 ? remotes.stdout : "",
-        resolved: resolved?.exitCode === 0 ? resolved.stdout : "",
-        hostHint,
-        defaultHost,
-      });
-      if (locator !== null) return locator;
-      if (input.context) {
-        const remote = normalizeGitRemoteUrl(input.context.remoteUrl);
-        const fallback = parseGitHubRepositorySelector(
-          `${host}/${remote.slice(remote.indexOf("/") + 1)}`,
-          host,
-        );
-        if (fallback !== null) return fallback;
-      }
-      return yield* failure(
-        `No GitHub repository on ${host} was found among this checkout's git remotes.`,
-      );
+      // Fork F06: the bound origin context is the only repository authority; GH_REPO, gh's
+      // resolved remote and other remotes never select a product repository.
+      const repository = yield* requireGitHubRepository({
+        cwd: input.cwd,
+        operation: "getChangeRequest",
+        context: input.context,
+        reference: undefined,
+      }).pipe(Effect.mapError((error) => failure(error.detail, error)));
+      const locator = gitHubRepositoryTargetFromSelector(repository);
+      if (locator === null)
+        return yield* failure("Origin-only policy requires an exact GitHub origin repository.");
+      return locator;
     },
   );
+
+  /** Fork F06: publication names its repository on the explicitly selected provider endpoint. */
+  const publicationLocator = (repository: string, endpoint: string | undefined) => {
+    const host =
+      endpoint === undefined ? null : SourceControlProvider.providerHostFromBaseUrl(endpoint);
+    const locator =
+      host === null ? null : gitHubRepositoryTargetFromSelector(`${host}/${repository}`);
+    return locator === null
+      ? Effect.fail(
+          failure("An explicit GitHub provider endpoint and owner/name repository are required."),
+        )
+      : Effect.succeed(locator);
+  };
 
   const client = yield* GraphQLClient.make(
     GraphQLGroup.make(LenientPullRequestsByHead, PullRequestByNumber).middleware(
@@ -603,7 +601,16 @@ export const make = Effect.gen(function* () {
       readonly context?: SourceControlProvider.SourceControlProviderContext | undefined;
       readonly host?: string | undefined;
     }) {
-      const parsed = parsePullRequestReference(input.reference);
+      const locator = yield* resolveRepository(input);
+      // Fork F06: a URL selector must name the origin repository and reduces to its number.
+      const reference = originChangeRequestSelector({
+        provider: SourceControlProviderKind.make("github"),
+        repository: `${locator.host}/${locator.owner}/${locator.name}`,
+        reference: input.reference,
+      });
+      if (reference === null)
+        return yield* failure("Origin-only policy rejected a pull request outside origin.");
+      const parsed = parsePullRequestReference(reference);
       if (parsed.kind === "branch") {
         // `gh pr view <branch>` prefers an open pull request, then the newest of any state.
         const lookup = (state: PullRequestListState) =>
@@ -621,7 +628,6 @@ export const make = Effect.gen(function* () {
         if (found === undefined) return yield* notFound("No pull request has this head branch.");
         return found;
       }
-      const locator = parsed.kind === "url" ? parsed.locator : yield* resolveRepository(input);
       const decodeDetail = "GitHub returned an invalid pull request.";
       const result = yield* graphqlRead(
         { host: locator.host, operation: "getPullRequest", allowReserve: true },
@@ -698,9 +704,8 @@ export const make = Effect.gen(function* () {
       readonly force?: boolean;
       readonly context?: SourceControlProvider.SourceControlProviderContext;
     }) {
-      const reference = parsePullRequestReference(input.reference);
       const pullRequest = yield* readPullRequest(input);
-      const base = reference.kind === "url" ? reference.locator : yield* resolveRepository(input);
+      const base = yield* resolveRepository(input);
       const baseNameWithOwner = `${base.owner}/${base.name}`.toLowerCase();
       const headNameWithOwner = pullRequest.headRepositoryNameWithOwner ?? null;
       const isCrossRepository =
@@ -963,17 +968,10 @@ export const make = Effect.gen(function* () {
     ),
     getRepositoryCloneUrls: Effect.fn("GitHubSourceControlProvider.getRepositoryCloneUrls")(
       function* (input) {
-        const fallbackHost = (yield* resolveRepository(input).pipe(
-          Effect.map((locator) => locator.host),
-          Effect.orElseSucceed(() => environment.GH_HOST ?? "github.com"),
-        )).toLowerCase();
-        const bareName = input.repository.trim().replace(/\.git$/i, "");
-        const locator =
-          parseGitHubRepositorySelector(input.repository, fallbackHost) ??
-          (/^[^/\s]+$/.test(bareName)
-            ? { host: fallbackHost, owner: yield* readViewerLogin(fallbackHost), name: bareName }
-            : null);
-        if (locator === null) return yield* failure("Repositories are named owner/name.");
+        const locator = yield* publicationLocator(
+          input.repository,
+          input.context?.provider.baseUrl ?? input.providerBaseUrl,
+        );
         return repositoryCloneUrls(yield* readRepository(locator));
       },
       (effect, input) =>
@@ -985,27 +983,21 @@ export const make = Effect.gen(function* () {
     ),
     createRepository: Effect.fn("GitHubSourceControlProvider.createRepository")(
       function* (input) {
-        const locator = parseGitHubRepositorySelector(
-          input.repository,
-          (environment.GH_HOST ?? "github.com").toLowerCase(),
-        );
-        const viewer = locator === null ? null : yield* readViewerLogin(locator.host);
-        const owner = locator?.owner ?? viewer;
-        const name = locator?.name ?? input.repository.trim();
-        const host = locator?.host ?? (environment.GH_HOST?.trim().toLowerCase() || "github.com");
-        const isViewer = viewer !== null && owner?.toLowerCase() === viewer.toLowerCase();
+        const locator = yield* publicationLocator(input.repository, input.providerBaseUrl);
+        const viewer = yield* readViewerLogin(locator.host);
+        const { owner, name, host } = locator;
+        const isViewer = owner.toLowerCase() === viewer.toLowerCase();
         const response = yield* rest(
           {
             host,
             operation: "createRepository",
             method: "POST",
             allowReserve: true,
-            path:
-              isViewer || owner === null ? "user/repos" : `orgs/${encodeURIComponent(owner)}/repos`,
+            path: isViewer ? "user/repos" : `orgs/${encodeURIComponent(owner)}/repos`,
             body: { name, private: input.visibility === "private" },
           },
           // GitHub answers 404 for an organization the account cannot create repositories in.
-          `No organization named ${owner ?? "that"} that this account can create repositories in.`,
+          `No organization named ${owner} that this account can create repositories in.`,
         );
         const decoded = decodeRawRepository(response.body);
         if (Result.isFailure(decoded)) {
