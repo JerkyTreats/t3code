@@ -267,7 +267,18 @@ describe("pull request toolkit handlers", () => {
 
   it.effect("links a GitCafe pull request by its canonical /pull/ URL", () =>
     Effect.gen(function* () {
-      const harness = yield* makeHarness();
+      const harness = yield* makeHarness({
+        project: makeProject({
+          canonicalKey: "git.cafe/pingdotgg/t3code",
+          locator: {
+            source: "git-remote",
+            remoteName: "origin",
+            remoteUrl: "https://git.cafe/pingdotgg/t3code.git",
+          },
+          provider: "gitcafe",
+          displayName: "pingdotgg/t3code",
+        }),
+      });
       const result = yield* harness.call("link_pull_request", {
         url: "https://git.cafe/pingdotgg/t3code/pull/23897",
       });
@@ -280,6 +291,22 @@ describe("pull request toolkit handlers", () => {
       expect(yield* Ref.get(harness.commands)).toMatchObject([
         { type: "thread.pull-request.link", host: "git.cafe", number: 23897 },
       ]);
+    }),
+  );
+
+  it.effect("refuses to link or watch a pull request outside the project's exact origin", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      for (const url of [
+        "https://github.com/someone-else/t3code/pull/7",
+        "https://github.example.test:8443/t3tools/t3code/pull/7",
+      ]) {
+        const linked = yield* harness.call("link_pull_request", { url }).pipe(Effect.flip);
+        expect(linked).toMatchObject({ _tag: "PullRequestLinkFailedError" });
+        const watched = yield* harness.call("watch_pull_request", { url }).pipe(Effect.flip);
+        expect(watched).toMatchObject({ _tag: "PullRequestWatchFailedError" });
+      }
+      expect(yield* Ref.get(harness.commands)).toEqual([]);
     }),
   );
 
@@ -418,12 +445,11 @@ describe("pull request toolkit handlers", () => {
         url: "http://forge.example:3000/git/owner/repo/pulls/42",
         alreadyLinked: false,
       });
-      const other = yield* harness.call("link_pull_request", {
-        host: "other.example",
-        repository: "owner/repo",
-        number: 42,
-      });
-      expect(other.url).toBe("https://other.example/owner/repo/pull/42");
+      // Fork F06: a pull request on another host is not this project's origin.
+      const other = yield* harness
+        .call("link_pull_request", { host: "other.example", repository: "owner/repo", number: 42 })
+        .pipe(Effect.flip);
+      expect(other).toMatchObject({ _tag: "PullRequestLinkFailedError" });
     }),
   );
 
@@ -449,15 +475,23 @@ describe("pull request toolkit handlers", () => {
       });
       expect.soft(fromNumber.url).toBe(generated);
 
-      const supplied = "https://scm.example.test/tfs/Collection/Project/_git/Repo/pullrequest/123";
+      const supplied =
+        "http://scm.example.test:8080/tfs/Collection/Project/_git/Repo/pullrequest/123";
       const fromUrl = yield* harness.call("link_pull_request", { url: supplied });
       expect(fromUrl).toEqual({
-        host: "scm.example.test",
+        host: "scm.example.test:8080",
         repository: "tfs/collection/project/_git/repo",
         number: 123,
         url: supplied,
         alreadyLinked: false,
       });
+      // Fork F06: the same path on the default port is a different origin authority.
+      const portless = yield* harness
+        .call("link_pull_request", {
+          url: "https://scm.example.test/tfs/Collection/Project/_git/Repo/pullrequest/125",
+        })
+        .pipe(Effect.flip);
+      expect(portless).toMatchObject({ _tag: "PullRequestLinkFailedError" });
       expect(yield* Ref.get(harness.commands)).toMatchObject([
         { type: "thread.pull-request.link", number: 124, url: generated },
         { type: "thread.pull-request.link", number: 123, url: supplied },
