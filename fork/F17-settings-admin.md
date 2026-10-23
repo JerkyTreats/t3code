@@ -46,7 +46,7 @@ The portal credential is intentionally a high-value device-admission root. Its a
 
 - `packages/contracts/src/auth.ts`
 - `packages/contracts/src/environmentHttp.ts`
-- `apps/server/src/auth/AdminAccess.ts`
+- `apps/server/src/auth/AdminAccess.ts` (`PortalIssuedPairingScopes`)
 - `apps/server/src/auth/DeviceAdministratorPolicy.ts`
 - `apps/server/src/auth/ClientConnectionRegistry.ts`
 - `apps/server/src/auth/EnvironmentAuth.ts`
@@ -103,6 +103,16 @@ The portal credential is intentionally a high-value device-admission root. Its a
 - Privacy tests prove credentials, digests, and private topology never enter responses, logs, traces, or analytics.
 - Full repository gates and a fresh adversarial security review pass before canary use.
 
+## Portal-Issued Scope Set
+
+Upstream removed `AuthAdministrativeScopes` and folded `access:read`, `access:write` and
+`relay:write` into `AuthStandardClientScopes`. Ordinary bootstrap, CLI, dev and pairing defaults
+follow upstream. Portal-issued pairing does not: `AdminAccess.PortalIssuedPairingScopes` is the
+single fork-owned fixed set and excludes all three, so portal-enrolled devices cannot approve MCP
+OAuth clients or manage T3 Connect relays. MCP OAuth approval and relay management stay with owner
+sessions. Whether the portal set follows upstream's widening is a pending user decision; widening
+is a one-constant change in that owner.
+
 ## Compatibility Notes
 
 The current intake accepts upstream granular permissions. Existing stored and signed scope bytes remain unchanged; historical broad grants do not gain newly split permissions. Clients that need the current standard grant re-enroll through a fresh portal-issued one-time pairing credential after cutover. This operator transition does not add a scope-rewrite shim. Portal authority remains a separate signed and persisted class. Every RPC rechecks current session admission before checking its exact permission or invoking a handler.
@@ -120,14 +130,14 @@ The current intake accepts upstream granular permissions. Existing stored and si
 
 ## Protected Decisions And Isolation Evidence
 
-| Decision                                                            | Durable owner                                                          | Mechanical adapters                                              | Focused evidence                                                                                                                                                                                                  |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F17-D01 explicit external authority and signed persistence equality | `auth/SessionAuthorityPolicy.ts`                                       | `auth/SessionStore.ts`, `auth/EnvironmentAuth.ts`, `cli/auth.ts` | `SessionAuthorityPolicy.test.ts` executes issuance, reconstruction and claim agreement without the session host; `DeviceAdministratorAuthority.test.ts` proves signed persistence integration                     |
-| F17-D02 six-route server-to-server admission and bounded polling    | `auth/DeviceAdministratorPolicy.ts`, `auth/authorizationCredential.ts` | `auth/http.ts`, broad HTTP dispatch                              | `DeviceAdministratorPolicy.test.ts` runs the same exact route and credential matrix against replacement hosts and exercises rate windows                                                                          |
-| F17-D03 durable managed-device enrollment                           | `auth/PairingGrantStore.ts`, `persistence/AuthPairingLinks.ts`         | `auth/EnvironmentAuth.ts`, migration 58                          | `DeviceAdministratorAuthority.test.ts` closes and reopens the real database around portal issuance, grant consumption, and inventory; an identical spoofed subject stays unclassified                             |
-| F17-D04 private inventory and revisioned lifecycle                  | `auth/AdminAccess.ts`, `persistence/AuthClients.ts`                    | six Admin HTTP handlers                                          | `AdminAccess.test.ts` and `DeviceAdministratorAuthority.test.ts` prove private keys, fixed scopes, hidden operators, stale conflicts, expiry and outstanding limits                                               |
-| F17-D05 post-commit exact connection teardown                       | `auth/ClientConnectionRegistry.ts`, `auth/SessionAuthorityPolicy.ts`   | `auth/SessionStore.ts`, WebSocket client and session guards      | `SessionAuthorityPolicy.test.ts` directly proves lifecycle admission and failure ordering; `AdminAccess.test.ts` and `DeviceAdministratorAuthority.test.ts` prove committed exact teardown and admission rechecks |
-| F17-D06 pre42 rollback snapshot                                     | `persistence/Migration42Backup.ts`                                     | shared SQLite initialization in `persistence/Sqlite.ts`          | `Migration42Backup.test.ts` covers pending canonical schemas and restoration; `Sqlite.test.ts` migrates released fork 41 through the real startup adapter, closes, restores, and reopens journal 41               |
+| Decision                                                            | Durable owner                                                          | Mechanical adapters                                              | Focused evidence                                                                                                                                                                                                     |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F17-D01 explicit external authority and signed persistence equality | `auth/SessionAuthorityPolicy.ts`                                       | `auth/SessionStore.ts`, `auth/EnvironmentAuth.ts`, `cli/auth.ts` | `SessionAuthorityPolicy.test.ts` executes issuance, reconstruction and claim agreement without the session host; `DeviceAdministratorAuthority.test.ts` proves signed persistence integration                        |
+| F17-D02 six-route server-to-server admission and bounded polling    | `auth/DeviceAdministratorPolicy.ts`, `auth/authorizationCredential.ts` | `auth/http.ts`, broad HTTP dispatch                              | `DeviceAdministratorPolicy.test.ts` runs the same exact route and credential matrix against replacement hosts and exercises rate windows                                                                             |
+| F17-D03 durable managed-device enrollment                           | `auth/PairingGrantStore.ts`, `persistence/AuthPairingLinks.ts`         | `auth/EnvironmentAuth.ts`, migration 58                          | `DeviceAdministratorAuthority.test.ts` closes and reopens the real database around portal issuance, grant consumption, and inventory; an identical spoofed subject stays unclassified                                |
+| F17-D04 private inventory and revisioned lifecycle                  | `auth/AdminAccess.ts`, `persistence/AuthClients.ts`                    | six Admin HTTP handlers                                          | `AdminAccess.test.ts` and `DeviceAdministratorAuthority.test.ts` prove private keys, the fixed portal scope set without access or relay management, hidden operators, stale conflicts, expiry and outstanding limits |
+| F17-D05 post-commit exact connection teardown                       | `auth/ClientConnectionRegistry.ts`, `auth/SessionAuthorityPolicy.ts`   | `auth/SessionStore.ts`, WebSocket client and session guards      | `SessionAuthorityPolicy.test.ts` directly proves lifecycle admission and failure ordering; `AdminAccess.test.ts` and `DeviceAdministratorAuthority.test.ts` prove committed exact teardown and admission rechecks    |
+| F17-D06 pre42 rollback snapshot                                     | `persistence/Migration42Backup.ts`                                     | shared SQLite initialization in `persistence/Sqlite.ts`          | `Migration42Backup.test.ts` covers pending canonical schemas and restoration; `Sqlite.test.ts` migrates released fork 41 through the real startup adapter, closes, restores, and reopens journal 41                  |
 
 Paths in this table are relative to `apps/server/src` unless a migration or contract is named.
 
@@ -171,6 +181,15 @@ clock-controlled observation, and a live peer that still completes RPC on its ex
 The disable test also keeps its subscription source open, so natural finite-stream completion
 cannot substitute for revocation teardown. Registry tests cover shared checks, failed
 reads, timeout teardown, and guard cleanup.
+
+Upstream routes session reads (`AuthSessions.getById`, `listActive`, pairing `listActive`) to the
+read-only connection. Reads inside an open write transaction keep the writer, and WAL readers see
+every committed revocation, so persisted admission through `getById` still observes
+writer-committed state. Fork digest and client-row reads stay on the writer. The independent-runtime revocation proof passes after this
+routing. The upstream startup gate rejects every request with 503 before routes exist, and the
+global Admin boundary wraps every route, including new upstream routes, before dispatch. WebSocket
+`client.connected` analytics carry only surface, version, platform and hashed owner fields; session
+connection metadata is still recorded inside the exact guards after admission.
 
 `@t3tools/shared/nodeSqliteClient`, upstream environment identity, OAuth and DPoP machinery remain
 upstream substrate. They do not select portal authority. Legacy access HTTP inventory, RPC streams,

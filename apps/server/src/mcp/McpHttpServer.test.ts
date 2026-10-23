@@ -30,6 +30,28 @@ import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
+import * as DeviceService from "../device/DeviceService.ts";
+import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as PreviewManager from "../preview/Manager.ts";
+import * as PreviewBrowser from "../preview/PreviewBrowser.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
+import * as ScheduledTasks from "../scheduledTasks/ScheduledTaskService.ts";
+import * as GitWorkflow from "../git/GitWorkflowService.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import * as SetupScript from "../project/ProjectSetupScriptRunner.ts";
+import * as VcsStatus from "../vcs/VcsStatusBroadcaster.ts";
+import * as ManagedFolders from "../project/ManagedProjectFolders.ts";
+import * as SourceControl from "../sourceControl/SourceControlRepositoryService.ts";
+import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
+import * as ThreadSearch from "../orchestration-v2/ThreadSearch.ts";
+import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
+import * as SecretRequests from "../secrets/SecretRequests.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 
 const environmentId = EnvironmentId.make("environment-mcp-test");
 const threadId = ThreadId.make("thread-mcp-test");
@@ -79,6 +101,35 @@ const layerPullRequestsTest = McpHttpServer.layerPullRequestsToolkit.pipe(
     ),
   ),
 );
+const mcpRouteTestDependencies = Layer.mergeAll(
+  IdAllocator.layer,
+  McpProviderSessions.layer,
+  Layer.mock(DeviceService.DeviceService)({}),
+  Layer.mock(PreviewManager.PreviewManager)({}),
+  Layer.mock(PreviewBrowser.PreviewBrowser)({}),
+  Layer.mock(ProjectService.ProjectService)({}),
+  Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
+  Layer.mock(Orchestrator.OrchestratorV2)({}),
+  Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+  Layer.mock(ThreadManagement.ThreadManagementService)({}),
+  Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+  Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
+  Layer.mock(ScheduledTasks.ScheduledTaskService)({}),
+  Layer.mock(GitWorkflow.GitWorkflowService)({}),
+  Layer.mock(ServerSettings.ServerSettingsService)({}),
+  Layer.mock(SetupScript.ProjectSetupScriptRunner)({}),
+  Layer.mock(VcsStatus.VcsStatusBroadcaster)({}),
+  Layer.mock(ManagedFolders.ManagedProjectFolders)({ namedProjectsRoot: "/workspace/projects" }),
+  Layer.mock(SourceControl.SourceControlRepositoryService)({}),
+  Layer.mock(ThreadLaunch.ThreadLaunchService)({}),
+  Layer.mock(ThreadSearch.ThreadSearch)({}),
+  Layer.mock(ThreadCommandExecutor.ThreadCommandExecutor)({}),
+  Layer.mock(SecretRequests.SecretRequests)({}),
+  Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+  Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+  Layer.mock(ServerSecretStore.ServerSecretStore)({}),
+  ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-route-test-" }),
+).pipe(Layer.provideMerge(NodeServices.layer));
 
 const snapshotResult = {
   url: "http://example.test/",
@@ -689,6 +740,252 @@ it.effect("terminates HTTP MCP sessions with DELETE", () =>
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
+it.effect("requires bearer authentication for the MCP server that registers preview tools", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = McpSessionRegistry.McpSessionRegistry.of({
+        issue: () => Effect.die("unused"),
+        resolve: (token) =>
+          Effect.succeed(
+            token === "trusted-preview-token"
+              ? {
+                  ...invocation,
+                  capabilities: new Set<McpInvocationContext.McpCapability>(["preview"]),
+                }
+              : undefined,
+          ),
+        touch: () => Effect.void,
+        revokeProviderSession: () => Effect.void,
+        revokeThread: () => Effect.void,
+        revokeAll: Effect.void,
+      });
+      const routes = McpHttpServer.layer.pipe(
+        Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
+        Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+        Layer.provide(mcpRouteTestDependencies),
+      );
+      yield* HttpRouter.serve(routes, {
+        disableListenLog: true,
+        disableLogger: true,
+      }).pipe(Layer.build);
+      const httpClient = yield* HttpClient.HttpClient;
+      const initializeBody = HttpBody.text(
+        `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"preview-auth-test","version":"1.0.0"}}}`,
+        "application/json",
+      );
+
+      const unauthorizedResponse = yield* httpClient.post("/mcp/preview", {
+        headers: { accept: "application/json, text/event-stream" },
+        body: initializeBody,
+      });
+      expect(unauthorizedResponse.status).toBe(401);
+
+      const initializeResponse = yield* httpClient.post("/mcp/preview", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: "Bearer trusted-preview-token",
+        },
+        body: initializeBody,
+      });
+      expect(initializeResponse.status).toBe(200);
+      expect(initializeResponse.headers["mcp-session-id"]).toBeDefined();
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("lists only admitted toolkit tools and rejects cross-endpoint credentials", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const registry = McpSessionRegistry.McpSessionRegistry.of({
+        issue: () => Effect.die("unused"),
+        resolve: (token) =>
+          Effect.succeed(
+            token === "device-only-token"
+              ? {
+                  ...invocation,
+                  capabilities: new Set<McpInvocationContext.McpCapability>(["device"]),
+                }
+              : token === "preview-only-token"
+                ? {
+                    ...invocation,
+                    capabilities: new Set<McpInvocationContext.McpCapability>(["preview"]),
+                  }
+                : token === "orchestrator-only-token"
+                  ? {
+                      ...invocation,
+                      capabilities: new Set<McpInvocationContext.McpCapability>([
+                        "orchestration",
+                        "worktree",
+                        "pull-requests",
+                      ]),
+                    }
+                  : undefined,
+          ),
+        touch: () => Effect.void,
+        revokeProviderSession: () => Effect.void,
+        revokeThread: () => Effect.void,
+        revokeAll: Effect.void,
+      });
+      const routes = McpHttpServer.layer.pipe(
+        Layer.provide(
+          Layer.succeed(McpHttpServer.McpClientAuthenticator, {
+            authenticate: (request) =>
+              Effect.succeed({
+                environmentId,
+                requestNamespace: "client:external",
+                thread: undefined,
+                client: { sessionId: "external", label: "External agent", access: "full-access" },
+                capabilities: new Set<McpInvocationContext.McpCapability>(
+                  request.headers.authorization === "Bearer external.no-pr"
+                    ? ["orchestration"]
+                    : ["orchestration", "preview", "device", "pull-requests"],
+                ),
+                issuedAt: 1,
+              }),
+          }),
+        ),
+        Layer.provide(Layer.succeed(McpSessionRegistry.McpSessionRegistry, registry)),
+        Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+        Layer.provide(mcpRouteTestDependencies),
+      );
+      yield* HttpRouter.serve(routes, {
+        disableListenLog: true,
+        disableLogger: true,
+      }).pipe(Layer.build);
+      const httpClient = yield* HttpClient.HttpClient;
+      const initializeBody = HttpBody.text(
+        `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"discovery-test","version":"1.0.0"}}}`,
+        "application/json",
+      );
+      const listTools = (endpoint: string, token: string) =>
+        Effect.gen(function* () {
+          const initializeResponse = yield* httpClient.post(endpoint, {
+            headers: {
+              accept: "application/json, text/event-stream",
+              authorization: `Bearer ${token}`,
+            },
+            body: initializeBody,
+          });
+          expect(initializeResponse.status).toBe(200);
+          const sessionId = initializeResponse.headers["mcp-session-id"];
+          expect(sessionId).toBeDefined();
+          const listResponse = yield* httpClient.post(endpoint, {
+            headers: {
+              accept: "application/json, text/event-stream",
+              authorization: `Bearer ${token}`,
+              "mcp-session-id": sessionId!,
+              "mcp-protocol-version": "2025-06-18",
+            },
+            body: HttpBody.text(
+              `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}`,
+              "application/json",
+            ),
+          });
+          expect(listResponse.status).toBe(200);
+          const payload = (yield* listResponse.json) as {
+            readonly result: { readonly tools: ReadonlyArray<{ readonly name: string }> };
+          };
+          return {
+            names: payload.result.tools.map((tool) => tool.name).sort(),
+            sessionId: sessionId!,
+          };
+        });
+
+      for (const endpoint of ["/mcp/preview", "/mcp/device"]) {
+        const denied = yield* httpClient.post(endpoint, {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: "Bearer external.client",
+          },
+          body: initializeBody,
+        });
+        expect(denied.status).toBe(401);
+        expect(denied.headers["www-authenticate"]).not.toContain("resource_metadata");
+      }
+      const externalPullRequests = yield* listTools("/mcp/pull-requests", "external.client");
+      expect(externalPullRequests.names).toEqual([
+        "link_pull_request",
+        "list_thread_pull_requests",
+        "read_pull_request_guide",
+        "unlink_pull_request",
+        "unwatch_pull_request",
+        "watch_pull_request",
+        "write_pull_request_guides",
+      ]);
+      const noPullRequests = yield* httpClient.post("/mcp/pull-requests", {
+        headers: {
+          accept: "application/json, text/event-stream",
+          authorization: "Bearer external.no-pr",
+        },
+        body: initializeBody,
+      });
+      expect(noPullRequests.status).toBe(403);
+      const previewSession = yield* listTools("/mcp/preview", "preview-only-token");
+      const previewTools = previewSession.names;
+      expect(previewTools.length).toBeGreaterThan(0);
+      expect(
+        previewTools.every((name) => name.startsWith("preview_") || name.startsWith("t3_preview_")),
+      ).toBe(true);
+      const upstreamTools = (yield* listTools("/mcp", "orchestrator-only-token")).names;
+      expect(upstreamTools).toContain("t3_thread_launch");
+      expect(upstreamTools).toContain("t3_thread_organize");
+      expect(upstreamTools).toContain("t3_workflow_stop");
+      expect(upstreamTools).not.toContain("write_pull_request_guides");
+      expect(upstreamTools).not.toContain("read_pull_request_guide");
+      expect(
+        upstreamTools.every(
+          (name) =>
+            !name.startsWith("preview_") &&
+            !name.startsWith("t3_preview_") &&
+            !name.startsWith("device_"),
+        ),
+      ).toBe(true);
+      for (const method of ["initialize", "tools/list", "tools/call"] as const) {
+        const denied = yield* httpClient.post("/mcp/preview", {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: "Bearer orchestrator-only-token",
+            "mcp-session-id": previewSession.sessionId,
+          },
+          body: HttpBody.jsonUnsafe({
+            jsonrpc: "2.0",
+            id: 3,
+            method,
+            params: method === "tools/call" ? { name: "preview_list_tabs", arguments: {} } : {},
+          }),
+        });
+        expect(denied.status).toBe(403);
+      }
+      for (const endpoint of ["/mcp", "/mcp/preview", "/mcp/pull-requests"]) {
+        const denied = yield* httpClient.post(endpoint, {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: "Bearer device-only-token",
+          },
+          body: initializeBody,
+        });
+        expect(denied.status).toBe(403);
+        for (const method of ["tools/list", "tools/call"] as const) {
+          const rejected = yield* httpClient.post(endpoint, {
+            headers: {
+              accept: "application/json, text/event-stream",
+              authorization: "Bearer device-only-token",
+              "mcp-session-id": previewSession.sessionId,
+            },
+            body: HttpBody.jsonUnsafe({
+              jsonrpc: "2.0",
+              id: 4,
+              method,
+              params: method === "tools/call" ? { name: "t3_thread_organize", arguments: {} } : {},
+            }),
+          });
+          expect(rejected.status).toBe(403);
+        }
+      }
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
 it.effect("admits provider and OAuth client credentials and points only clients at OAuth", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -806,6 +1103,86 @@ it.effect("admits provider and OAuth client credentials and points only clients 
       const deadProvider = yield* call("deadProviderToken");
       expect(deadProvider.status).toBe(401);
       expect(deadProvider.headers["www-authenticate"]).toBe('Bearer error="invalid_token"');
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("admits DELETE by endpoint capability and isolates endpoint session registries", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const endpoints = ["/mcp", "/mcp/preview", "/mcp/device", "/mcp/pull-requests"] as const;
+      const routes = McpHttpServer.layer.pipe(
+        Layer.provide(
+          Layer.mock(McpSessionRegistry.McpSessionRegistry)({
+            resolve: (token) =>
+              Effect.succeed(
+                token === "synthetic-all-endpoints"
+                  ? {
+                      ...invocation,
+                      capabilities: new Set<McpInvocationContext.McpCapability>([
+                        "orchestration",
+                        "preview",
+                        "device",
+                        "pull-requests",
+                      ]),
+                    }
+                  : token === "synthetic-no-capabilities"
+                    ? { ...invocation, capabilities: new Set<McpInvocationContext.McpCapability>() }
+                    : undefined,
+              ),
+          }),
+        ),
+        Layer.provide(PreviewAutomationBroker.layer.pipe(Layer.provide(NodeServices.layer))),
+        Layer.provide(mcpRouteTestDependencies),
+      );
+      yield* HttpRouter.serve(routes, {
+        disableListenLog: true,
+        disableLogger: true,
+      }).pipe(Layer.build);
+      const httpClient = yield* HttpClient.HttpClient;
+      const initializeBody = HttpBody.jsonUnsafe({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "synthetic-endpoint-termination", version: "1.0.0" },
+        },
+      });
+      for (const endpoint of endpoints) {
+        const initialized = yield* httpClient.post(endpoint, {
+          headers: {
+            accept: "application/json, text/event-stream",
+            authorization: "Bearer synthetic-all-endpoints",
+          },
+          body: initializeBody,
+        });
+        expect(initialized.status).toBe(200);
+        const sessionId = initialized.headers["mcp-session-id"];
+        expect(sessionId).toBeDefined();
+        const headers = { "mcp-session-id": sessionId! };
+        const unauthenticated = yield* httpClient.del(endpoint, { headers });
+        expect(unauthenticated.status).toBe(401);
+        const capabilityDenied = yield* httpClient.del(endpoint, {
+          headers: { ...headers, authorization: "Bearer synthetic-no-capabilities" },
+        });
+        expect(capabilityDenied.status).toBe(403);
+        for (const otherEndpoint of endpoints.filter((other) => other !== endpoint)) {
+          const foreignSession = yield* httpClient.del(otherEndpoint, {
+            headers: { ...headers, authorization: "Bearer synthetic-all-endpoints" },
+          });
+          expect(foreignSession.status).toBe(404);
+        }
+        const terminated = yield* httpClient.del(endpoint, {
+          headers: { ...headers, authorization: "Bearer synthetic-all-endpoints" },
+        });
+        expect(terminated.status).toBe(204);
+        const replay = yield* httpClient.del(endpoint, {
+          headers: { ...headers, authorization: "Bearer synthetic-all-endpoints" },
+        });
+        expect(replay.status).toBe(404);
+      }
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

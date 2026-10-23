@@ -3,6 +3,7 @@ import { authScopeResponse, AuthStandardClientScopes } from "@t3tools/contracts"
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as Redacted from "effect/Redacted";
 
 import * as ServerConfig from "../config.ts";
@@ -69,6 +70,45 @@ const requestMetadata = {
 };
 
 it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
+  it.effect.each(["bearer", "cookie"] as const)(
+    "rejects websocket ticket replay despite a valid fallback %s credential",
+    (fallback) =>
+      Effect.gen(function* () {
+        const auth = yield* EnvironmentAuth.EnvironmentAuth;
+        const sessions = yield* SessionStore.SessionStore;
+        const issued = yield* sessions.issue({
+          method: fallback === "bearer" ? "bearer-access-token" : "browser-session-cookie",
+        });
+        const headers: Record<string, string> =
+          fallback === "bearer"
+            ? { authorization: `Bearer ${issued.token}` }
+            : { cookie: `${sessions.cookieName}=${issued.token}` };
+        const baseUrl = "http://127.0.0.1:13773/";
+        const fallbackRequest = HttpServerRequest.fromWeb(new Request(baseUrl, { headers }));
+        const session = yield* auth.authenticateHttpRequest(fallbackRequest);
+        const ticket = yield* auth.issueWebSocketTicket(session);
+        const upgrade = HttpServerRequest.fromWeb(
+          new Request(`${baseUrl}?wsTicket=${encodeURIComponent(ticket.ticket)}`, { headers }),
+        );
+        expect((yield* auth.authenticateWebSocketUpgrade(upgrade)).sessionId).toBe(
+          session.sessionId,
+        );
+        expect((yield* auth.authenticateWebSocketUpgrade(upgrade).pipe(Effect.flip))._tag).toBe(
+          "ServerAuthInvalidCredentialError",
+        );
+        expect((yield* auth.authenticateHttpRequest(fallbackRequest)).sessionId).toBe(
+          session.sessionId,
+        );
+        const fresh = yield* auth.issueWebSocketTicket(session);
+        expect(
+          (yield* auth.authenticateWebSocketUpgrade(
+            HttpServerRequest.fromWeb(
+              new Request(`${baseUrl}?wsTicket=${encodeURIComponent(fresh.ticket)}`),
+            ),
+          )).sessionId,
+        ).toBe(session.sessionId);
+      }).pipe(Effect.provide(layerEnvironmentAuth())),
+  );
   it.effect("uses the reusable dev cookie without overriding a normal scoped cookie", () =>
     Effect.gen(function* () {
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
@@ -206,7 +246,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
       expect(firstSession.subject).toBe("reusable-dev-token-child");
       expect(secondSession.subject).toBe("reusable-dev-token-child");
       expect((yield* sessions.verify(token)).subject).toBe("reusable-dev-token");
-      const before = yield* serverAuth.listClientSessions(firstSession.sessionId);
+      const before = yield* serverAuth.listSessions();
       const denied = yield* serverAuth
         .exchangeBootstrapCredentialForAccessToken(token, ["review:write"], requestMetadata)
         .pipe(Effect.flip);
@@ -215,7 +255,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         .exchangeBootstrapCredentialForAccessToken(token, [], requestMetadata)
         .pipe(Effect.flip);
       expect(empty._tag).toBe("ServerAuthScopeNotGrantedError");
-      expect(yield* serverAuth.listClientSessions(firstSession.sessionId)).toEqual(before);
+      expect(yield* serverAuth.listSessions()).toEqual(before);
     }).pipe(
       Effect.provide(
         layerEnvironmentAuth({
@@ -478,28 +518,17 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         const clientSession = yield* serverAuth.authenticateHttpRequest(
           makeCookieRequest(sessions.cookieName, clientExchange.sessionToken),
         );
-        const clientsBeforeRevoke = yield* serverAuth.listClientSessions(
+        const clientsBeforeRevoke = yield* serverAuth.listSessions();
+        const revokedCount = yield* serverAuth.revokeOtherSessionsExcept(
           administrativeSession.sessionId,
         );
-        const revokedCount = yield* serverAuth.revokeOtherClientSessions(
-          administrativeSession.sessionId,
-        );
-        const clientsAfterRevoke = yield* serverAuth.listClientSessions(
-          administrativeSession.sessionId,
-        );
+        const clientsAfterRevoke = yield* serverAuth.listSessions();
 
         expect(listedPairingLinks.map((entry) => entry.id)).toContain(pairingCredential.id);
         expect(listedPairingLinks.find((entry) => entry.id === pairingCredential.id)?.label).toBe(
           "Julius iPhone",
         );
         expect(clientsBeforeRevoke).toHaveLength(2);
-        expect(
-          clientsBeforeRevoke.find((entry) => entry.sessionId === administrativeSession.sessionId)
-            ?.current,
-        ).toBe(true);
-        expect(
-          clientsBeforeRevoke.find((entry) => entry.sessionId === clientSession.sessionId)?.current,
-        ).toBe(false);
         expect(
           clientsBeforeRevoke.find((entry) => entry.sessionId === clientSession.sessionId)?.client
             .label,

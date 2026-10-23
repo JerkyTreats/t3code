@@ -229,7 +229,10 @@ it.layer(NodeServices.layer)("persisted external device authority", (it) => {
         expect(outcomes.filter((outcome) => outcome._tag === "Success")).toHaveLength(1);
         const success = outcomes.find((outcome) => outcome._tag === "Success");
         if (success?._tag === "Success") {
-          expect(success.success.scopes).toEqual(AuthStandardClientScopes);
+          expect(success.success.scopes).toEqual(AdminAccess.PortalIssuedPairingScopes);
+          for (const excluded of ["access:read", "access:write", "relay:write"]) {
+            expect(success.success.scopes).not.toContain(excluded);
+          }
           expect(success.success.clientManagementClass).toBe("portal-managed-device");
         }
         const revocable = yield* admin.createPairingCode({ ttlSeconds: 60 });

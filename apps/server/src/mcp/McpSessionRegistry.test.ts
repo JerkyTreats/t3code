@@ -7,6 +7,7 @@ import * as NetAddress from "effect/net/NetAddress";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
+import type { McpCapability } from "./McpInvocationContext.ts";
 
 const environmentId = EnvironmentId.make("environment-1");
 const makeFakeHttpServer = (hostname: string, port = 43123) =>
@@ -42,15 +43,14 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
       providerInstanceId: ProviderInstanceId.make("codex"),
       capabilities: new Set(["preview"]),
     });
+    expect(issued.config.previewEndpoint).toBe("http://127.0.0.1:43123/mcp/preview");
     expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
     const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
     expect(token.length).toBeGreaterThan(20);
 
     const resolved = yield* registry.resolve(token);
     expect(resolved?.thread.threadId).toBe(threadId);
-    expect(resolved?.capabilities).toEqual(
-      new Set(["preview", "orchestration", "worktree", "pull-requests"]),
-    );
+    expect(resolved?.capabilities).toEqual(new Set(["preview"]));
 
     yield* registry.revokeThread(threadId);
     expect(yield* registry.resolve(token)).toBeUndefined();
@@ -59,7 +59,7 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
   }),
 );
 
-it.effect("always grants pull-requests and gates browser and device access independently", () =>
+it.effect("honors explicit capabilities and gates browser and device access independently", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry(() => 1_000);
     const withPreview = yield* registry.issue({
@@ -82,23 +82,9 @@ it.effect("always grants pull-requests and gates browser and device access indep
         .resolve(issued.config.authorizationHeader.replace(/^Bearer\s+/, ""))
         .pipe(Effect.map((scope) => [...(scope?.capabilities ?? [])].sort()));
 
-    expect(yield* capabilitiesOf(withPreview)).toEqual([
-      "orchestration",
-      "preview",
-      "pull-requests",
-      "worktree",
-    ]);
-    expect(yield* capabilitiesOf(withoutPreview)).toEqual([
-      "orchestration",
-      "pull-requests",
-      "worktree",
-    ]);
-    expect(yield* capabilitiesOf(withDevice)).toEqual([
-      "device",
-      "orchestration",
-      "pull-requests",
-      "worktree",
-    ]);
+    expect(yield* capabilitiesOf(withPreview)).toEqual(["preview"]);
+    expect(yield* capabilitiesOf(withoutPreview)).toEqual([]);
+    expect(yield* capabilitiesOf(withDevice)).toEqual(["device"]);
   }),
 );
 
@@ -120,7 +106,7 @@ it.effect("builds MCP endpoints from the bound server host", () =>
         providerInstanceId: ProviderInstanceId.make("codex"),
         capabilities: new Set(["preview"]),
       });
-      expect(issued.config.endpoint).toBe(expectedEndpoint);
+      expect(issued.config.previewEndpoint).toBe(`${expectedEndpoint}/preview`);
     }
   }),
 );
@@ -219,4 +205,58 @@ it.effect.each(["provider-session", "thread", "all"] as const)(
       yield* registry.touch(threadId);
       expect(yield* registry.resolve(token)).toBeUndefined();
     }),
+);
+
+it.effect("preserves exact toolkit admission", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const cases: ReadonlyArray<ReadonlyArray<McpCapability>> = [
+      [],
+      ["preview"],
+      ["device"],
+      ["orchestration", "worktree"],
+      ["pull-requests", "preview"],
+    ];
+    for (const requested of cases) {
+      const capabilities = new Set(requested);
+      const issued = yield* registry.issue({
+        threadId: ThreadId.make(`thread-${requested.join("-") || "empty"}`),
+        providerInstanceId: ProviderInstanceId.make("custom-instance"),
+        capabilities,
+      });
+      const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+      capabilities.add("worktree");
+      const resolved = yield* registry.resolve(token);
+      expect(resolved?.capabilities).toEqual(new Set(requested));
+      expect(issued.config.capabilities).toEqual(new Set(requested));
+      expect(issued.config.endpoint).toBe("http://127.0.0.1:43123/mcp");
+      expect(issued.config.previewEndpoint).toBe(
+        requested.includes("preview") ? "http://127.0.0.1:43123/mcp/preview" : undefined,
+      );
+    }
+  }),
+);
+
+it.effect("keeps upstream defaults only when explicit capability admission is absent", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    for (const browserToolsAvailable of [false, true]) {
+      const issued = yield* registry.issue({
+        threadId: ThreadId.make(`default-${browserToolsAvailable}`),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        browserToolsAvailable,
+      });
+      const resolved = yield* registry.resolve(issued.config.authorizationHeader.slice(7));
+      expect(resolved?.capabilities).toEqual(
+        new Set([
+          "orchestration",
+          "worktree",
+          "pull-requests",
+          ...(browserToolsAvailable ? ["preview"] : []),
+        ]),
+      );
+      expect(issued.config.pullRequestsEndpoint).toBe("http://127.0.0.1:43123/mcp/pull-requests");
+      expect(issued.config.browserToolsAvailable).toBe(browserToolsAvailable);
+    }
+  }),
 );

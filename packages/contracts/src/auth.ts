@@ -2,7 +2,6 @@ import * as Schema from "effect/Schema";
 import * as HttpApiSchema from "effect/http-api/HttpApiSchema";
 
 import {
-  AuthSessionId,
   ForwardCompatibleArray,
   ClientSurface,
   ClientWebDeployment,
@@ -26,6 +25,13 @@ export const ServerAuthSessionMethod = Schema.Literals([
   "dpop-access-token",
 ]);
 export type ServerAuthSessionMethod = typeof ServerAuthSessionMethod.Type;
+
+/**
+ * Separates ordinary clients from the external device administration portal.
+ * Authority class is an authenticated identity property rather than a scope bundle.
+ */
+export const AuthSessionAuthorityClass = Schema.Literals(["client", "device-administrator"]);
+export type AuthSessionAuthorityClass = typeof AuthSessionAuthorityClass.Type;
 
 export const AuthOrchestrationReadScope = "orchestration:read" as const;
 export const AuthOrchestrationOperateScope = "orchestration:operate" as const;
@@ -167,6 +173,7 @@ export const AuthStandardClientScopes = [
   AuthAccessWriteScope,
   AuthRelayWriteScope,
 ] as const;
+export const AuthDeviceAdministratorScopes = [] as const;
 
 export const AuthTokenExchangeGrantType =
   "urn:ietf:params:oauth:grant-type:token-exchange" as const;
@@ -254,16 +261,6 @@ export const AuthPairingCredentialResult = Schema.Struct({
 });
 export type AuthPairingCredentialResult = typeof AuthPairingCredentialResult.Type;
 
-export const AuthPairingLink = Schema.Struct({
-  id: TrimmedNonEmptyString,
-  ...authScopeResponseFields,
-  subject: TrimmedNonEmptyString,
-  label: Schema.optionalKey(TrimmedNonEmptyString),
-  createdAt: Schema.DateTimeUtc,
-  expiresAt: Schema.DateTimeUtc,
-});
-export type AuthPairingLink = typeof AuthPairingLink.Type;
-
 export const AuthClientMetadata = Schema.Struct({
   label: Schema.optionalKey(TrimmedNonEmptyString),
   ipAddress: Schema.optionalKey(TrimmedNonEmptyString),
@@ -274,61 +271,6 @@ export const AuthClientMetadata = Schema.Struct({
 });
 export type AuthClientMetadata = typeof AuthClientMetadata.Type;
 
-export const AuthClientSession = Schema.Struct({
-  sessionId: AuthSessionId,
-  subject: TrimmedNonEmptyString,
-  ...authScopeResponseFields,
-  method: ServerAuthSessionMethod,
-  client: AuthClientMetadata,
-  issuedAt: Schema.DateTimeUtc,
-  expiresAt: Schema.DateTimeUtc,
-  lastConnectedAt: Schema.NullOr(Schema.DateTimeUtc),
-  connected: Schema.Boolean,
-  current: Schema.Boolean,
-});
-export type AuthClientSession = typeof AuthClientSession.Type;
-
-export const AuthAccessSnapshot = Schema.Struct({
-  pairingLinks: Schema.Array(AuthPairingLink),
-  clientSessions: Schema.Array(AuthClientSession),
-});
-export type AuthAccessSnapshot = typeof AuthAccessSnapshot.Type;
-
-export const AuthAccessStreamSnapshotEvent = Schema.Struct({
-  version: Schema.Literal(1),
-  revision: Schema.Number,
-  type: Schema.Literal("snapshot"),
-  payload: AuthAccessSnapshot,
-});
-export type AuthAccessStreamSnapshotEvent = typeof AuthAccessStreamSnapshotEvent.Type;
-
-export const AuthAccessStreamPairingLinkUpsertedEvent = Schema.Struct({
-  version: Schema.Literal(1),
-  revision: Schema.Number,
-  type: Schema.Literal("pairingLinkUpserted"),
-  payload: AuthPairingLink,
-});
-export type AuthAccessStreamPairingLinkUpsertedEvent =
-  typeof AuthAccessStreamPairingLinkUpsertedEvent.Type;
-
-export const AuthAccessStreamPairingLinkRemovedEvent = Schema.Struct({
-  version: Schema.Literal(1),
-  revision: Schema.Number,
-  type: Schema.Literal("pairingLinkRemoved"),
-  payload: Schema.Struct({
-    id: TrimmedNonEmptyString,
-  }),
-});
-export type AuthAccessStreamPairingLinkRemovedEvent =
-  typeof AuthAccessStreamPairingLinkRemovedEvent.Type;
-
-export class AuthAccessStreamError extends Schema.TaggedError<AuthAccessStreamError>()(
-  "AuthAccessStreamError",
-  {
-    message: Schema.String,
-  },
-) {}
-
 export class EnvironmentAuthorizationError extends Schema.TaggedError<EnvironmentAuthorizationError>()(
   "EnvironmentAuthorizationError",
   {
@@ -337,43 +279,6 @@ export class EnvironmentAuthorizationError extends Schema.TaggedError<Environmen
     requiredPermission: Schema.optionalKey(Schema.String),
   },
 ) {}
-
-export const AuthAccessStreamClientUpsertedEvent = Schema.Struct({
-  version: Schema.Literal(1),
-  revision: Schema.Number,
-  type: Schema.Literal("clientUpserted"),
-  payload: AuthClientSession,
-});
-export type AuthAccessStreamClientUpsertedEvent = typeof AuthAccessStreamClientUpsertedEvent.Type;
-
-export const AuthAccessStreamClientRemovedEvent = Schema.Struct({
-  version: Schema.Literal(1),
-  revision: Schema.Number,
-  type: Schema.Literal("clientRemoved"),
-  payload: Schema.Struct({
-    sessionId: AuthSessionId,
-  }),
-});
-export type AuthAccessStreamClientRemovedEvent = typeof AuthAccessStreamClientRemovedEvent.Type;
-
-export const AuthAccessStreamEvent = Schema.Union([
-  AuthAccessStreamSnapshotEvent,
-  AuthAccessStreamPairingLinkUpsertedEvent,
-  AuthAccessStreamPairingLinkRemovedEvent,
-  AuthAccessStreamClientUpsertedEvent,
-  AuthAccessStreamClientRemovedEvent,
-]);
-export type AuthAccessStreamEvent = typeof AuthAccessStreamEvent.Type;
-
-export const AuthRevokePairingLinkInput = Schema.Struct({
-  id: TrimmedNonEmptyString,
-});
-export type AuthRevokePairingLinkInput = typeof AuthRevokePairingLinkInput.Type;
-
-export const AuthRevokeClientSessionInput = Schema.Struct({
-  sessionId: AuthSessionId,
-});
-export type AuthRevokeClientSessionInput = typeof AuthRevokeClientSessionInput.Type;
 
 export const AuthCreatePairingCredentialInput = Schema.Struct({
   label: Schema.optionalKey(TrimmedNonEmptyString),
@@ -385,6 +290,7 @@ export const AuthSessionState = Schema.Struct({
   authenticated: Schema.Boolean,
   auth: ServerAuthDescriptor,
   scopes: Schema.optionalKey(AuthEnvironmentScopes),
+  authorityClass: Schema.optionalKey(AuthSessionAuthorityClass),
   permissions: authScopeResponseFields.permissions,
   sessionMethod: Schema.optionalKey(ServerAuthSessionMethod),
   expiresAt: Schema.optionalKey(Schema.DateTimeUtc),
