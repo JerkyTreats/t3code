@@ -6,19 +6,7 @@ import {
   type AdminPairingCodeIssued,
   type AdminPairingCodeSummary,
   AuthClientId,
-  AuthDiagnosticsReadScope,
-  AuthEnvironmentMaintainScope,
-  AuthFilesystemReadScope,
-  AuthFilesystemWriteScope,
-  AuthOrchestrationOperateScope,
-  AuthOrchestrationReadScope,
-  AuthPreviewOperateScope,
-  AuthProvidersManageScope,
-  AuthRelayReadScope,
-  AuthSettingsWriteScope,
-  AuthSourceControlWriteScope,
-  AuthTerminalOperateScope,
-  AuthTerminalReadScope,
+  AuthStandardClientScopes,
   NonNegativeInt,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -33,29 +21,6 @@ import * as AuthClients from "../persistence/AuthClients.ts";
 import * as ClientConnectionRegistry from "./ClientConnectionRegistry.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as SessionStore from "./SessionStore.ts";
-
-/**
- * The fixed scope set the Admin portal issues to enrolled devices (F17-D04).
- * Upstream folded access and relay management into the standard client scopes;
- * portal-enrolled devices stay without access:read, access:write and relay:write,
- * so they cannot approve MCP OAuth clients or manage T3 Connect relays. Widening
- * this set is a recorded product decision.
- */
-export const PortalIssuedPairingScopes = [
-  AuthOrchestrationReadScope,
-  AuthOrchestrationOperateScope,
-  AuthSettingsWriteScope,
-  AuthProvidersManageScope,
-  AuthEnvironmentMaintainScope,
-  AuthPreviewOperateScope,
-  AuthDiagnosticsReadScope,
-  AuthTerminalReadScope,
-  AuthTerminalOperateScope,
-  AuthSourceControlWriteScope,
-  AuthFilesystemReadScope,
-  AuthFilesystemWriteScope,
-  AuthRelayReadScope,
-] as const;
 
 export class AdminAccessInternalError extends Schema.TaggedError<AdminAccessInternalError>()(
   "AdminAccessInternalError",
@@ -172,7 +137,7 @@ export const make = Effect.gen(function* () {
         });
       }
       const issued = yield* pairingGrants.issueOneTimeToken({
-        scopes: PortalIssuedPairingScopes,
+        scopes: AuthStandardClientScopes,
         clientManagementClass: "portal-managed-device",
         subject: PairingGrantStore.PORTAL_MANAGED_DEVICE_PAIRING_SUBJECT,
         ttl: Duration.seconds(input.ttlSeconds),

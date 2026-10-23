@@ -206,7 +206,7 @@ it.layer(NodeServices.layer)("persisted external device authority", (it) => {
   );
 
   it.effect(
-    "uses atomic digest consumption, fixed scopes, revision checks, expiry and grant eligibility",
+    "uses atomic digest consumption, standard scopes, revision checks, expiry and grant eligibility",
     () =>
       Effect.gen(function* () {
         const admin = yield* AdminAccess.AdminAccess;
@@ -229,10 +229,7 @@ it.layer(NodeServices.layer)("persisted external device authority", (it) => {
         expect(outcomes.filter((outcome) => outcome._tag === "Success")).toHaveLength(1);
         const success = outcomes.find((outcome) => outcome._tag === "Success");
         if (success?._tag === "Success") {
-          expect(success.success.scopes).toEqual(AdminAccess.PortalIssuedPairingScopes);
-          for (const excluded of ["access:read", "access:write", "relay:write"]) {
-            expect(success.success.scopes).not.toContain(excluded);
-          }
+          expect(success.success.scopes).toEqual(AuthStandardClientScopes);
           expect(success.success.clientManagementClass).toBe("portal-managed-device");
         }
         const revocable = yield* admin.createPairingCode({ ttlSeconds: 60 });
