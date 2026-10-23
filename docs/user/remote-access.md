@@ -271,6 +271,13 @@ Electron devices. It can create one-time standard-device enrollment links and
 enable, disable, or delete eligible devices. Headless operators and devices not
 enrolled through a portal-created grant stay outside that inventory.
 
+A device enrolled through the portal receives the standard permissions, which
+include access management and T3 Connect management. It can approve outside
+agent sign-ins and manage T3 Connect like any other standard device. The portal
+is how you contain it: revoking an unused enrollment link, disabling a device,
+or deleting it takes effect at once and disconnects the device. A device
+enrolled earlier keeps the permissions it was issued until it pairs again.
+
 The portal receives its short-lived high-value authority from an explicit host
 operator command. Choose a bounded lifetime no longer than seven days:
 
@@ -289,9 +296,8 @@ t3 pair --scope orchestration:read --scope relay:read
 
 The selected scopes replace the default permissions. The same option works with
 `t3 auth pairing create` and `t3 auth session issue`; each command's
-`--help` lists the available scopes. Without `--scope`, pairing tokens retain
-standard client permissions and issued bearer sessions retain administrative
-permissions.
+`--help` lists the available scopes. Without `--scope`, pairing tokens and
+issued bearer sessions both receive the standard permissions.
 
 To change an existing client's permissions, create a fresh pairing link with the
 scopes it needs. In a browser opened directly on the environment, open that link

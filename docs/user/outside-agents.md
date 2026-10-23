@@ -40,7 +40,7 @@ The page names the agent and where its access goes:
 - For a hosted agent, approval goes to that service, such as `chatgpt.com`.
   Anyone who runs that service gets the access.
 
-Only approve a sign-in you just started. An authorized host operator can issue a pairing code with `t3 auth pairing create`. A browser session with the required access-management authority can approve without a code. Ordinary paired clients cannot issue or manage credentials. The external Admin portal remains responsible for enrolled browser and Electron devices.
+Only approve a sign-in you just started. A browser paired with the standard permissions, including one enrolled through the Admin portal, includes access management and can approve without a code. A browser paired with narrower permissions, or paired before access management joined the standard permissions, needs a pairing code from an authorized host operator, issued with `t3 auth pairing create`, or a fresh pairing. The app has no controls for issuing or managing credentials. The external Admin portal remains responsible for enrolled browser and Electron devices, and disabling or deleting a device there ends its access at once.
 
 Then choose what the agent may do:
 
