@@ -33,15 +33,7 @@ import {
   resolveNestedRowClick,
 } from "@t3tools/client-runtime/state/thread-nesting";
 import type { MenuAction } from "@react-native-menu/menu";
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ComponentProps } from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
@@ -79,6 +71,7 @@ import {
 import { QueuedMessageIcon } from "./queued-message-icon";
 import { shouldRecedeThreadRow } from "./thread-row-emphasis";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
+import { ThreadListV2NestedBadge } from "./thread-list-v2-nested-badge";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { pullRequestStatus } from "../pull-requests/pullRequestStatus";
 
@@ -168,68 +161,6 @@ const MOVE_TO_TOP_LEVEL_ACTION: MenuAction = {
   title: "Move to top level",
   image: "arrow.turn.left.up",
 };
-
-/**
- * The parent's own provider icon, then one icon per shown child, most recently
- * active first, plus `+n`. On card rows it stands in for the row's provider.
- * With `onToggle`, pressing it expands or collapses the nested threads without
- * opening the parent.
- */
-function NestedThreadBadge(props: {
-  readonly summary: ThreadListV2NestedSummary;
-  readonly title: string;
-  readonly parentIcon: ReactNode;
-  readonly providers: ReadonlyArray<ThreadListProvider> | undefined;
-  readonly textClassName: string;
-  readonly onToggle?: () => void;
-}) {
-  const { providerInstanceIds, overflow } = props.summary.badge;
-  const { count, expanded } = props.summary;
-  const countLabel = `${count} nested ${count === 1 ? "thread" : "threads"}`;
-  const content = (
-    <>
-      {props.parentIcon}
-      {providerInstanceIds.map((instanceId, index) => {
-        const provider = props.providers?.find((candidate) => candidate.instanceId === instanceId);
-        return (
-          <ProviderIcon
-            key={`${instanceId}:${index}`}
-            iconUrl={provider?.iconUrl}
-            provider={provider?.driver ?? instanceId}
-            size={12}
-          />
-        );
-      })}
-      {overflow > 0 ? (
-        <Text className={cn("text-[11px] tabular-nums", props.textClassName)}>+{overflow}</Text>
-      ) : null}
-    </>
-  );
-  const className = cn(
-    "flex-row items-center gap-0.5 rounded-full border border-border-subtle px-1.5 py-1",
-    expanded && props.onToggle !== undefined && "bg-border-subtle",
-  );
-  if (props.onToggle === undefined) {
-    return (
-      <View accessible accessibilityLabel={countLabel} className={className}>
-        {content}
-      </View>
-    );
-  }
-  return (
-    <Pressable
-      accessibilityHint={`${expanded ? "Hides" : "Shows"} the threads nested under ${props.title}.`}
-      accessibilityLabel={`${expanded ? "Hide" : "Show"} ${countLabel}`}
-      accessibilityRole="button"
-      accessibilityState={{ expanded }}
-      hitSlop={8}
-      onPress={props.onToggle}
-      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-    >
-      <View className={className}>{content}</View>
-    </Pressable>
-  );
-}
 
 function ThreadListV2Section(props: {
   readonly label: string;
@@ -1118,22 +1049,19 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   const nestedBadge =
     nested !== null ? (
-      <NestedThreadBadge
+      <ThreadListV2NestedBadge
         summary={nested}
         title={thread.title}
-        parentIcon={
-          providerInstance ? (
-            <ProviderInstanceIcon
-              iconUrl={providerIconUrl}
-              provider={providerInstance.driverKind}
-              // One step larger than the children's icons marks it as the parent.
-              size={14}
-              displayName={providerInstance.displayName}
-              accentColor={providerInstance.accentColor}
-              showBadge={false}
-              surfaceColor={rowAppearance.providerIconSurfaceColor}
-            />
-          ) : null
+        parentProvider={
+          providerInstance
+            ? {
+                iconUrl: providerIconUrl,
+                driverKind: providerInstance.driverKind,
+                displayName: providerInstance.displayName,
+                accentColor: providerInstance.accentColor,
+                surfaceColor: rowAppearance.providerIconSurfaceColor,
+              }
+            : null
         }
         providers={props.providers}
         textClassName={

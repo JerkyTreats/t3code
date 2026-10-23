@@ -28,6 +28,7 @@ Let an orchestrating thread own ordinary child threads so a manager running many
 - `packages/client-runtime/src/state/fork/threadNesting.ts`
 - `apps/web/src/fork/sidebarThreadNesting.ts`
 - `apps/web/src/fork/SidebarNestedThreads.tsx`
+- `apps/mobile/src/features/threads/thread-list-v2-nested-badge.tsx`
 
 ## Upstream Sensitive Adapters
 
@@ -76,6 +77,8 @@ Let an orchestrating thread own ordinary child threads so a manager running many
 - Fork tests prove a fork of a nested thread is top-level.
 - Client-runtime owner tests cover grouping, orphans, badge, expansion, attention, traversal, palette label, move eligibility and stable identity.
 - Web and mobile adapter tests cover rows, expansion control, drag exclusion, traversal, palette and move availability.
+- `SidebarNestedThreads.browser.test.tsx` renders the web badge alone and inside nested parent rows: the parent's provider icon leads one size larger, children follow by recency with `+n`, card rows place it after the machine icon in place of the provider history, and slim rows keep it after the title.
+- Mobile `thread-list-v2-nested-badge.test.tsx` covers the parent icon leading one size larger, child order, overflow, and the press toggle with its filled expanded state. The mobile card-row provider slot is a one-line host choice in `thread-list-v2-items.tsx` without a mounted test.
 
 ## Current Adapter Contract
 

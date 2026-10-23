@@ -55,6 +55,8 @@ The 2026-10-23 intake accepted upstream's `pele` renderer and dropped the `merma
 - `mermaidFence.test.ts` covers fence languages, exact-source height retention, unusable sizes, the entry bound and lazy pele and KaTeX imports.
 - `MermaidVisibleDiagram.browser.test.tsx` covers deferral until scrolled into view, gated remount with reserved height, real pele output following a live semantic color change, and scroll correction for a diagram above the viewport.
 - `mermaidScrollStability.test.ts` covers the scroll correction decision.
+- `ChatMarkdown.browser.test.tsx` covers routing `mermaid`, `mmd` and `MMD` fences to the diagram block, other fences staying code, and an open streaming fence staying source until it closes.
+- `MarkdownMermaidCodeBlock.browser.test.tsx` mounts the fence block with the visibility gate over a stubbed pele and covers the source toggle, find reveal, image expansion, streaming source, diagram-type load retry, render-error reset on source change, crash reset on source or theme change, and destroy-before-remount of a replaced diagram.
 - Production build evidence that pele stays split from the initial web runtime belongs to the joined intake gate.
 
 ## Reconciliation Rule
