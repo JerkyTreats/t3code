@@ -57,15 +57,6 @@ export class DatabaseCompactError extends Schema.TaggedError<DatabaseCompactErro
   }
 }
 
-export class LegacyDatabaseRemoveError extends Schema.TaggedError<LegacyDatabaseRemoveError>()(
-  "LegacyDatabaseRemoveError",
-  { path: Schema.String, cause: Schema.Defect() },
-) {
-  override get message() {
-    return "Could not delete the database from before 0.1.0. Check that this user can write to the data directory.";
-  }
-}
-
 /** Offline inspection and repair of a T3 state database, for `t3 doctor`. */
 export class DatabaseMaintenance extends Context.Service<
   DatabaseMaintenance,
@@ -93,13 +84,6 @@ export class DatabaseMaintenance extends Context.Service<
       | DatabaseProjectionsInvalidError
       | DatabaseCompactError
     >;
-    /**
-     * Deletes the database from before 0.1.0 kept beside this one. Versions
-     * before 0.1.0 read only that file; this one stays intact.
-     */
-    readonly removeLegacyDatabase: (
-      databasePath: string,
-    ) => Effect.Effect<void, DatabaseInUseError | LegacyDatabaseRemoveError>;
   }
 >()("t3/persistence/DatabaseMaintenance") {}
 
@@ -220,31 +204,7 @@ const make = Effect.gen(function* () {
       ),
   );
 
-  const removeLegacyDatabase = Effect.fn("DatabaseMaintenance.removeLegacyDatabase")(
-    function* (databasePath: string) {
-      const legacy = legacyPath(databasePath);
-      if (!(yield* fs.exists(legacy))) return;
-      // A version before 0.1.0 may still be running against it. Keep the lock
-      // while deleting, and delete the database before its WAL so a failure
-      // never leaves it without committed transactions.
-      yield* Effect.gen(function* () {
-        yield* lockExclusively(legacy);
-        for (const suffix of ["", "-wal", "-shm"]) {
-          yield* fs.remove(legacy + suffix, { force: true });
-        }
-      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: legacy })));
-    },
-    (effect, databasePath) =>
-      effect.pipe(
-        Effect.mapError((cause) =>
-          cause._tag === "DatabaseInUseError"
-            ? cause
-            : new LegacyDatabaseRemoveError({ path: legacyPath(databasePath), cause }),
-        ),
-      ),
-  );
-
-  return DatabaseMaintenance.of({ inspect, compact, removeLegacyDatabase });
+  return DatabaseMaintenance.of({ inspect, compact });
 });
 
 export const layer = Layer.effect(DatabaseMaintenance, make);
