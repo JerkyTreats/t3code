@@ -14,8 +14,23 @@ export const SETUP_NODE_ACTION = "actions/setup-node@249970729cb0ef3589644e28966
 export const SETUP_BUILDX_ACTION =
   "docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c";
 export const LOGIN_ACTION = "docker/login-action@dbcb813823bdd20940b903addbd779551569679f";
-export const SCANNER_DEPENDENCY_BOOTSTRAP =
-  "npx --yes pnpm@12.14.0 install --frozen-lockfile --ignore-scripts --filter @t3tools/scripts";
+// The workflow and the Dockerfile acquire the same checksum-pinned pnpm executable. Node 26 ships
+// no Corepack, and registry launchers such as npx would run unverified bytes in the package-write job.
+const PNPM_VERSION = "12.14.0";
+const PNPM_EXE_URL = `https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-${PNPM_VERSION}.tgz`;
+const PNPM_EXE_SHA256 = "1de98ed2e9621113b0887b06322b461efb9df73d913fc1d151039b10b7117a41";
+export const SCANNER_DEPENDENCY_BOOTSTRAP = `set -euo pipefail
+
+pnpm_archive="$RUNNER_TEMP/pnpm.tgz"
+pnpm_bin="$RUNNER_TEMP/pnpm-bin"
+curl --fail --silent --show-error --proto '=https' --output "$pnpm_archive" ${PNPM_EXE_URL}
+echo "${PNPM_EXE_SHA256}  $pnpm_archive" | sha256sum --check --strict -
+mkdir -p "$pnpm_bin"
+tar -xzf "$pnpm_archive" --strip-components=1 -C "$pnpm_bin" package/pnpm
+test "$("$pnpm_bin/pnpm" --version)" = "${PNPM_VERSION}"
+"$pnpm_bin/pnpm" install --frozen-lockfile --ignore-scripts --filter @t3tools/scripts
+`;
+const REGISTRY_LAUNCHER_PATTERN = /\b(?:npx|pnpx|bunx)\b|\b(?:pnpm|npm|yarn)\s+(?:dlx|exec)\b/u;
 
 const NODE_BASE =
   "node:26.12.1-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe";
@@ -168,8 +183,8 @@ const EXPECTED_DOCKERFILE_INSTRUCTIONS = [
   "ENV PNPM_HOME=/pnpm",
   'ENV PATH="${PNPM_HOME}:${PATH}"',
   "WORKDIR /app",
-  "ADD --checksum=sha256:1de98ed2e9621113b0887b06322b461efb9df73d913fc1d151039b10b7117a41 https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.14.0.tgz /tmp/pnpm.tgz",
-  'RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates=20250419~deb12u1 g++=4:12.2.0-3 git=1:2.39.5-0+deb12u3 make=4.3-4.1 python3=3.11.2-1+b1 && rm -rf /var/lib/apt/lists/* && tar -xzf /tmp/pnpm.tgz --strip-components=1 -C /usr/local/bin package/pnpm && rm /tmp/pnpm.tgz && test "$(pnpm --version)" = "12.14.0"',
+  `ADD --checksum=sha256:${PNPM_EXE_SHA256} ${PNPM_EXE_URL} /tmp/pnpm.tgz`,
+  `RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates=20250419~deb12u1 g++=4:12.2.0-3 git=1:2.39.5-0+deb12u3 make=4.3-4.1 python3=3.11.2-1+b1 && rm -rf /var/lib/apt/lists/* && tar -xzf /tmp/pnpm.tgz --strip-components=1 -C /usr/local/bin package/pnpm && rm /tmp/pnpm.tgz && test "$(pnpm --version)" = "${PNPM_VERSION}"`,
   "COPY . .",
   "RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile",
   'RUN test -n "$T3CODE_BUILD_COMMIT" && pnpm exec vp run --filter t3 build',
@@ -354,6 +369,14 @@ export function assertServerImageWorkflowSource(source: string): void {
   );
 
   const steps = requireArray(job.steps, "Server image build steps");
+  for (const [index, rawStep] of steps.entries()) {
+    const run = requireRecord(rawStep, `Server image build step ${index}`).run;
+    if (typeof run === "string" && REGISTRY_LAUNCHER_PATTERN.test(run)) {
+      throw new Error(
+        `Server image build step ${index} must not run a registry launcher; use the checksum-pinned pnpm.`,
+      );
+    }
+  }
   if (steps.length !== 9) {
     throw new Error("Server image workflow must contain exactly nine approved steps.");
   }
@@ -379,6 +402,7 @@ export function assertServerImageWorkflowSource(source: string): void {
   }
   requireExactStep(steps, 2, {
     name: "Install scanner dependencies without lifecycle scripts",
+    shell: "bash",
     run: SCANNER_DEPENDENCY_BOOTSTRAP,
   });
   requireExactStep(steps, 3, {

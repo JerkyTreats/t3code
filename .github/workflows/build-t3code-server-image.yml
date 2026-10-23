@@ -56,7 +56,18 @@ jobs:
           node-version-file: package.json
 
       - name: Install scanner dependencies without lifecycle scripts
-        run: npx --yes pnpm@12.14.0 install --frozen-lockfile --ignore-scripts --filter @t3tools/scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pnpm_archive="$RUNNER_TEMP/pnpm.tgz"
+          pnpm_bin="$RUNNER_TEMP/pnpm-bin"
+          curl --fail --silent --show-error --proto '=https' --output "$pnpm_archive" https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.14.0.tgz
+          echo "1de98ed2e9621113b0887b06322b461efb9df73d913fc1d151039b10b7117a41  $pnpm_archive" | sha256sum --check --strict -
+          mkdir -p "$pnpm_bin"
+          tar -xzf "$pnpm_archive" --strip-components=1 -C "$pnpm_bin" package/pnpm
+          test "$("$pnpm_bin/pnpm" --version)" = "12.14.0"
+          "$pnpm_bin/pnpm" install --frozen-lockfile --ignore-scripts --filter @t3tools/scripts
 
       - name: Verify global release authority
         run: node scripts/lib/release-workflow-safety.ts

@@ -83,7 +83,6 @@ const READ_ONLY_RUN_SOURCES = new Set([
   "node scripts/server-image-smoke.ts",
   "node apps/desktop/scripts/verify-preload-bundle.mjs",
   "pnpm test:quattro",
-  SCANNER_DEPENDENCY_BOOTSTRAP,
   'pnpm screenshots:mobile --platform android --appearance "${{ inputs.appearance }}" --theme "${{ inputs.theme }}" --validate-only',
   'pnpm screenshots:mobile --platform ios --appearance "${{ inputs.appearance }}" --theme "${{ inputs.theme }}"',
   'pnpm screenshots:mobile --platform ios --appearance "${{ inputs.appearance }}" --theme "${{ inputs.theme }}" --validate-only',
@@ -389,7 +388,9 @@ function assertAllowedStep(
     fail(`${label} contains an unauthorized GitHub mutation command.`);
   }
   const allowed = command.includes("\n")
-    ? READ_ONLY_MULTILINE_RUN_DIGESTS.has(digest) || isServerImageMutationRun
+    ? READ_ONLY_MULTILINE_RUN_DIGESTS.has(digest) ||
+      isServerImageMutationRun ||
+      (isServerImageWriter && command === SCANNER_DEPENDENCY_BOOTSTRAP)
     : READ_ONLY_RUN_SOURCES.has(command);
   if (!allowed) {
     fail(`${label} uses a workflow command that is not allowlisted.`);

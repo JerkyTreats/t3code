@@ -122,10 +122,36 @@ it("requires immutable revisions for every action in the package-write job", () 
 
 it("requires the exact lifecycle-free scanner dependency bootstrap", () => {
   assertWorkflowMutationRejected(
-    `run: ${SCANNER_DEPENDENCY_BOOTSTRAP}`,
-    "run: npx --yes pnpm@12.14.0 install --frozen-lockfile --filter @t3tools/scripts",
+    "--ignore-scripts --filter @t3tools/scripts",
+    "--filter @t3tools/scripts",
+  );
+  assertWorkflowMutationRejected(
+    "1de98ed2e9621113b0887b06322b461efb9df73d913fc1d151039b10b7117a41  $pnpm_archive",
+    `${"0".repeat(64)}  $pnpm_archive`,
   );
   assertWorkflowMutationRejected("node-version-file: package.json", "node-version: latest");
+});
+
+it("rejects registry launchers in place of the checksum-pinned pnpm", () => {
+  assert.include(SCANNER_DEPENDENCY_BOOTSTRAP, "sha256sum --check --strict");
+  for (const launcher of [
+    "npx --yes pnpm@12.14.0 install --frozen-lockfile --ignore-scripts --filter @t3tools/scripts",
+    "npm exec --yes pnpm@12.14.0 -- install --frozen-lockfile --ignore-scripts",
+    "pnpm dlx pnpm@12.14.0 install --frozen-lockfile --ignore-scripts",
+  ]) {
+    withFixture((fixtureRoot) => {
+      replaceFixtureSource(
+        fixtureRoot,
+        SERVER_IMAGE_WORKFLOW_PATH,
+        "run: node scripts/lib/release-workflow-safety.ts",
+        `run: ${launcher}`,
+      );
+      assert.throws(
+        () => assertServerImagePublicationSafety(fixtureRoot),
+        /must not run a registry launcher/u,
+      );
+    });
+  }
 });
 
 it("rejects arbitrary actions instead of relying on an action denylist", () => {
