@@ -65,8 +65,7 @@ The host's tunnel is up, but it cannot reach T3 Code on the host. Common causes:
 - The server binds only one network address with `T3CODE_HOST`. The tunnel
   sends requests to `127.0.0.1`, so the server must also listen there.
 
-Fix: restart T3 Code on the host. For the background service, run
-`t3 service restart`. Then run `t3 connect status` on the host.
+Fix: restart T3 Code on the host. Then run `t3 connect status` on the host.
 
 ## The T3 Connect address does not resolve or answer
 
@@ -107,8 +106,8 @@ T3 Connect does not have an active link between your account and the host.
 - **T3 Connect is off on the host, or the host only publishes agent activity.**
   On the host, open **Settings > Connections** and turn **T3 Connect** on, or
   run `t3 connect`.
-- **The host was linked, but the server did not apply the link yet.** Run
-  `t3 service restart` on the host, or restart `t3 serve`.
+- **The host was linked, but the server did not apply the link yet.** Restart
+  T3 Code on the host.
 - **This device's sign-in expired, or the host no longer accepts this
   device.** Sign out of T3 Connect and sign in again.
 - **Your account reached its tunnel limit.** Remove an environment you do not
@@ -135,8 +134,9 @@ This app needs a newer T3 Code on the host. Update T3 Code on the host. See
 | HTTP 403 without a recognized error                       | Check relay access, proxies, and firewall rules. Keep any Cloudflare Ray ID for a bug report.                                               |
 | HTTP 408, 429, or 5xx                                     | Wait a few minutes. T3 Code retries temporary failures on its own.                                                                          |
 
-After you fix a permanent rejection, restart the host's server with
-`t3 service restart`. For a foreground server, stop it and run `t3 serve` again.
+After you fix a permanent rejection, restart the host. Restart the managed Linux
+desktop with `systemctl --user restart t3code-desktop.service`. For an
+operator-managed server, stop it and run `t3 serve` again.
 
 If T3 Code on the host disappears when SSH closes, see
 [background-service troubleshooting](./background-service.md#troubleshooting).
