@@ -112,6 +112,39 @@ describe("ChatMarkdown favicon privacy", () => {
   });
 });
 
+describe("ChatMarkdown mermaid fences", () => {
+  const diagrams = (container: HTMLElement) =>
+    container.querySelectorAll('[data-mermaid-visibility] svg[aria-label="Diagram"]');
+
+  it.each(["mermaid", "mmd", "MMD"])("routes a %s fence to the diagram block", async (language) => {
+    setup();
+    await using screen = await renderText(`\`\`\`${language}\ngraph TD; A-->B\n\`\`\``);
+    await vi.waitFor(() => expect(diagrams(screen.container)).toHaveLength(1));
+    expect(renderDiagram).toHaveBeenCalledWith("graph TD; A-->B\n");
+    expect(buttonsLabelled(screen.container, "Show code")).toHaveLength(1);
+  });
+
+  it("keeps other fences as code", async () => {
+    setup();
+    await using screen = await renderText("```ts\ngraph TD; A-->B\n```");
+    expect(screen.container.querySelector("[data-mermaid-visibility]")).toBeNull();
+    expect(renderDiagram).not.toHaveBeenCalled();
+  });
+
+  it("keeps an open streaming fence as source until the fence closes", async () => {
+    setup();
+    const message = (text: string) => <ChatMarkdown cwd="/tmp/project" text={text} isStreaming />;
+    await using screen = await render(message("```mmd\ngraph TD; A-->B"));
+    expect(screen.container.querySelector("[data-mermaid-visibility]")).toBeNull();
+    expect(screen.container.textContent).toContain("graph TD; A-->B");
+    expect(buttonsLabelled(screen.container, "Show code")).toHaveLength(0);
+    expect(renderDiagram).not.toHaveBeenCalled();
+
+    await screen.rerender(message("```mmd\ngraph TD; A-->B\n```\n\nMore text"));
+    await vi.waitFor(() => expect(diagrams(screen.container)).toHaveLength(1));
+  });
+});
+
 describe("ChatMarkdown streaming", () => {
   it("runs only a complete single-line shell block after a click", async () => {
     setup();
