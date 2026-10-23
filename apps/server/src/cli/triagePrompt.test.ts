@@ -4,7 +4,12 @@ import * as NodePath from "node:path";
 
 import { assert, it } from "@effect/vitest";
 
-import { buildTriageContext, buildTriageLaunchPrompt, TRIAGE_PLAYBOOK } from "./triagePrompt.ts";
+import {
+  buildTriageContext,
+  buildTriageLaunchPrompt,
+  buildTriageSeedPrompt,
+  TRIAGE_PLAYBOOK,
+} from "./triagePrompt.ts";
 
 it("stays byte-identical to .github/triage/PLAYBOOK.md", () => {
   // Old releases fetch the repo copy from `main` and follow it when it differs
@@ -18,6 +23,42 @@ it("stays byte-identical to .github/triage/PLAYBOOK.md", () => {
   assert.equal(TRIAGE_PLAYBOOK, NodeFS.readFileSync(canonicalPath, "utf8"));
 });
 
+it("seed prompt names the context file and embeds the playbook", () => {
+  const prompt = buildTriageSeedPrompt("/tmp/triage-run/context.md");
+  assert.include(prompt, "/tmp/triage-run/context.md");
+  assert.include(prompt, TRIAGE_PLAYBOOK);
+});
+
+it("routes source and issue guidance only to exact origin", () => {
+  assert.include(TRIAGE_PLAYBOOK, "https://github.com/JerkyTreats/t3code");
+  assert.include(
+    TRIAGE_PLAYBOOK,
+    "https://raw.githubusercontent.com/JerkyTreats/t3code/main/.github/triage/PLAYBOOK.md",
+  );
+  assert.include(TRIAGE_PLAYBOOK, "https://github.com/JerkyTreats/t3code.git");
+  assert.include(TRIAGE_PLAYBOOK, "https://github.com/JerkyTreats/t3code/issues/new");
+  assert.notInclude(TRIAGE_PLAYBOOK, "pingdotgg/t3code");
+});
+
+it("requires exact clone approval and preserves existing source caches", () => {
+  assert.include(TRIAGE_PLAYBOOK, "exact source URL");
+  assert.include(TRIAGE_PLAYBOOK, "exact destination path");
+  assert.include(TRIAGE_PLAYBOOK, "get explicit permission for both");
+  assert.include(TRIAGE_PLAYBOOK, "verifying its exact-origin identity and matching commit");
+  assert.include(
+    TRIAGE_PLAYBOOK,
+    "Never delete, replace, or clean another source-cache entry\nautomatically.",
+  );
+});
+
+it("never suggests resolving T3 from a public package runner", () => {
+  assert.notMatch(TRIAGE_PLAYBOOK, /\b(?:npx|bunx|pnpm\s+dlx)\b/u);
+  assert.include(
+    TRIAGE_PLAYBOOK,
+    "Never suggest a package\nrunner or a public-registry T3 command.",
+  );
+});
+
 it("launch prompt stays a single argv-safe line naming the prompt file", () => {
   // The launch argument goes through cmd.exe on Windows (.cmd shims), which
   // cannot carry newlines; the playbook itself must stay on disk.
@@ -27,15 +68,50 @@ it("launch prompt stays a single argv-safe line naming the prompt file", () => {
   assert.isBelow(launch.length, 1_000);
 });
 
+it("context file carries every path the playbook depends on", () => {
+  const context = buildTriageContext({
+    generatedAt: "2026-08-13T00:00:00.000Z",
+    cliVersion: "0.0.33",
+    os: "linux x64 (7.0.0)",
+    nodeVersion: "v24.0.0",
+    launchedAs: "/usr/bin/node /workspace/t3code/apps/server/dist/bin.mjs triage",
+    server: "running (pid 42, http://127.0.0.1:4501)",
+    paths: {
+      stateDir: "/home/u/.t3/userdata",
+      dbPath: "/home/u/.t3/userdata/state.sqlite",
+      settingsPath: "/home/u/.t3/userdata/settings.json",
+      logsDir: "/home/u/.t3/userdata/logs",
+      serviceLogPath: "/home/u/.t3/userdata/logs/boot-service.log",
+      desktopBackendLogGlob: "/home/u/.t3/userdata/logs/server-child*.log*",
+      serverTracePath: "/home/u/.t3/userdata/logs/server.trace.ndjson",
+      providerEventLogPath: "/home/u/.t3/userdata/logs/provider/events.log",
+      terminalLogsDir: "/home/u/.t3/userdata/logs/terminals",
+      providerStatusCacheDir: "/home/u/.t3/caches",
+      secretsDir: "/home/u/.t3/userdata/secrets",
+      sourceCacheDir: "/home/u/.t3/source",
+    },
+  });
+  assert.include(context, "/home/u/.t3/userdata/state.sqlite");
+  assert.include(context, "/home/u/.t3/userdata/logs/server.trace.ndjson");
+  assert.include(context, "/home/u/.t3/userdata/logs/boot-service.log");
+  assert.include(context, "/home/u/.t3/userdata/logs/server-child*.log*");
+  assert.include(context, "/home/u/.t3/userdata/logs/provider/events.log");
+  assert.include(context, "/home/u/.t3/userdata/secrets");
+  assert.include(context, "/home/u/.t3/source");
+  assert.include(context, "/usr/bin/node /workspace/t3code/apps/server/dist/bin.mjs triage");
+  assert.include(context, "https://github.com/JerkyTreats/t3code");
+  assert.include(context, "exact source and destination approval");
+});
+
 it("context file labels the CLI version as the CLI's, not the user's build", () => {
-  // `npx t3 triage` can resolve a different `t3` than the app the bug
-  // happened on (#13337), so the agent must not read it as the user's version.
+  // The `t3` that runs triage can differ from the app the bug happened on
+  // (#13337), so the agent must not read it as the user's version.
   const context = buildTriageContext({
     generatedAt: "2026-09-24T00:00:00.000Z",
     cliVersion: "0.0.42",
     os: "linux x64 (7.2.0)",
     nodeVersion: "v26.8.2",
-    launchedAs: "npx t3 triage",
+    launchedAs: "/usr/bin/node /workspace/t3code/apps/server/dist/bin.mjs triage",
     server: "running (pid 42, http://127.0.0.1:3773, version 0.0.43-nightly.20260923.2173)",
     paths: {
       stateDir: "/home/u/.t3/userdata",

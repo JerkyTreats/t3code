@@ -5,9 +5,9 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
-import packageJson from "../../package.json" with { type: "json" };
 import {
   resolveHostCliCommand,
+  resolveCliCommand,
   resolveRootCliCommand,
   resolveServerInstallation,
 } from "./invocation.ts";
@@ -38,19 +38,21 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
 
   it.effect("keeps a user-installed Node reachable when the command runs under sudo", () =>
     Effect.gen(function* () {
-      const npx = "/home/theo/.npm/_npx/abc/node_modules/t3/dist/bin.mjs";
+      const npx = "/home/example/.npm/_npx/abc/node_modules/t3/dist/bin.mjs";
       // sudo's secure_path already has a system Node.
       expect(yield* rootCommand({ node: "/usr/bin/node", entry: npx })).toBe(
-        "sudo npx t3 browser setup",
+        `sudo /usr/bin/node ${npx} browser setup`,
       );
       // nvm, fnm, and tarball installs are dropped by sudo's PATH reset.
       expect(
-        yield* rootCommand({ node: "/home/theo/.nvm/versions/node/v24/bin/node", entry: npx }),
-      ).toBe('sudo env "PATH=$PATH" npx t3 browser setup');
+        yield* rootCommand({ node: "/home/example/.nvm/versions/node/v24/bin/node", entry: npx }),
+      ).toBe(
+        `sudo env "PATH=$PATH" /home/example/.nvm/versions/node/v24/bin/node ${npx} browser setup`,
+      );
       expect(
         yield* rootCommand({
-          node: "/home/theo/.local/node/bin/node",
-          entry: "/home/theo/.local/lib/node_modules/t3/dist/bin.mjs",
+          node: "/home/example/.local/node/bin/node",
+          entry: "/home/example/.local/lib/node_modules/t3/dist/bin.mjs",
           path: yield* pathWithT3,
         }),
       ).toBe('sudo env "PATH=$PATH" t3 browser setup');
@@ -140,36 +142,22 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
 });
 
 it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
-  it.effect("recognizes runner caches for script packages and the npm launcher", () =>
+  it.effect("recognizes runner caches for script packages", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped();
-      const executable = path.join(root, ".t3/runtime/versions/1.0.0/t3");
-      yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
-      yield* fs.writeFileString(executable, "");
       for (const [relative, kind] of [
         ["npm/_npx/hash/node_modules/t3/dist/bin.mjs", "npx"],
-        ["npm/_npx/hash/node_modules/t3/bin/t3.mjs", "npx"],
         ["pnpm/dlx/hash/node_modules/t3/dist/bin.mjs", "pnpm-dlx"],
         [".bun/install/cache/t3/dist/bin.mjs", "bunx"],
       ] as const) {
         const entry = path.join(root, relative);
         yield* fs.makeDirectory(path.dirname(entry), { recursive: true });
         yield* fs.writeFileString(entry, "");
-        yield* fs.writeFileString(
-          path.join(path.dirname(entry), "../package.json"),
-          `{"name":"t3","version":"${packageJson.version}","bin":{"t3":"./bin/t3.mjs"}}`,
-        );
-        const launchedBy = entry.endsWith("t3.mjs");
         const installation = yield* resolveServerInstallation.pipe(
-          Effect.provideService(HostProcess.Arguments, [launchedBy ? executable : "node", entry]),
-          Effect.provideService(HostProcess.ExecutablePath, executable),
-          Effect.provideService(HostProcess.IsExecutable, launchedBy),
-          Effect.provideService(
-            HostProcess.Environment,
-            launchedBy ? { T3CODE_NPM_LAUNCHER_PATH: entry } : {},
-          ),
+          Effect.provideService(HostProcess.Arguments, ["node", entry]),
+          Effect.provideService(HostProcess.IsExecutable, false),
         );
         expect(installation).toEqual({ kind });
       }
@@ -207,43 +195,6 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
     }),
   );
 
-  it.effect("proves the downloaded executable was started by a global npm launcher", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped();
-      const prefix = path.join(root, "bunx-tools");
-      const packageRoot = path.join(prefix, "lib/node_modules/t3");
-      const launcher = path.join(packageRoot, "bin/t3.mjs");
-      const executable = path.join(root, ".t3/runtime/versions/1.0.0/t3");
-      yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
-      yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
-      yield* fs.makeDirectory(path.join(prefix, "bin"));
-      yield* fs.writeFileString(launcher, "");
-      yield* fs.writeFileString(executable, "");
-      yield* fs.symlink(launcher, path.join(prefix, "bin/t3"));
-      const resolve = resolveServerInstallation.pipe(
-        Effect.provideService(HostProcess.ExecutablePath, executable),
-        Effect.provideService(HostProcess.Arguments, [executable, executable]),
-        Effect.provideService(HostProcess.IsExecutable, true),
-        Effect.provideService(HostProcess.Platform, "linux"),
-        Effect.provideService(HostProcess.Environment, { T3CODE_NPM_LAUNCHER_PATH: launcher }),
-      );
-      // A launcher for another version is some other `t3` the server spawned
-      // (the variable is inherited), not the install this executable runs from.
-      for (const [version, expected] of [
-        ["0.0.1", null],
-        [packageJson.version, { kind: "npm-global", prefix }],
-      ] as const) {
-        yield* fs.writeFileString(
-          path.join(packageRoot, "package.json"),
-          `{"name":"t3","version":"${version}","bin":{"t3":"./bin/t3.mjs"}}`,
-        );
-        expect(yield* resolve).toEqual(expected);
-      }
-    }),
-  );
-
   it.effect("leaves local, standalone, missing and unreadable installs unknown", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -270,3 +221,19 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
     }),
   );
 });
+
+it.effect(
+  "uses current HostProcess arguments and platform for registry-free follow-up guidance",
+  () =>
+    Effect.gen(function* () {
+      expect(yield* resolveCliCommand("serve")).toBe(
+        "'/opt/Node Runtime/bin/node' '/workspace/T3 Cache/.npm/_npx/abc/node_modules/t3/dist/bin.mjs' serve",
+      );
+    }).pipe(
+      Effect.provideService(HostProcess.Arguments, [
+        "/opt/Node Runtime/bin/node",
+        "/workspace/T3 Cache/.npm/_npx/abc/node_modules/t3/dist/bin.mjs",
+      ]),
+      Effect.provideService(HostProcess.Platform, "linux"),
+    ),
+);

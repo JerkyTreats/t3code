@@ -5,8 +5,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as References from "effect/References";
 import { Argument, Command, Flag, GlobalFlag } from "effect/cli";
+import * as CliError from "effect/cli/CliError";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import * as SessionAuthorityPolicy from "../auth/SessionAuthorityPolicy.ts";
 
 import {
   formatIssuedPairingCredential,
@@ -76,6 +78,19 @@ const tokenOnlyFlag = Flag.Boolean("token-only").pipe(
   Flag.withDescription("Print only the issued bearer token."),
   Flag.withDefault(false),
 );
+
+const deviceAdministratorFlag = Flag.Boolean("device-administrator").pipe(
+  Flag.withDescription(
+    "Issue high-value device-admission authority for the external portal. Keep the credential out of browser state.",
+  ),
+  Flag.withDefault(false),
+);
+
+class DeviceAdministratorTtlError extends CliError.UserError {
+  override get message() {
+    return String(this.cause);
+  }
+}
 
 const pairingCreateCommand = Command.make("create", {
   ...authLocationFlags,
@@ -163,6 +178,7 @@ const sessionIssueCommand = Command.make("issue", {
   label: labelFlag,
   subject: subjectFlag,
   tokenOnly: tokenOnlyFlag,
+  deviceAdministrator: deviceAdministratorFlag,
   json: jsonFlag,
 }).pipe(
   Command.withDescription("Issue a scoped bearer access token for headless or remote clients."),
@@ -171,9 +187,26 @@ const sessionIssueCommand = Command.make("issue", {
       flags,
       (environmentAuth) =>
         Effect.gen(function* () {
-          const issued = yield* environmentAuth.issueSession({
-            scopes: flags.scopes,
+          const authorityInput = {
+            authorityClass: flags.deviceAdministrator
+              ? ("device-administrator" as const)
+              : ("client" as const),
+            method: "bearer-access-token" as const,
+            scopes: flags.deviceAdministrator ? [] : flags.scopes,
             ...(Option.isSome(flags.ttl) ? { ttl: flags.ttl.value } : {}),
+          };
+          yield* SessionAuthorityPolicy.resolveIssuance(authorityInput).pipe(
+            Effect.catchTags({
+              SessionAuthorityIssuanceError: (error) =>
+                Effect.fail(
+                  new DeviceAdministratorTtlError({
+                    cause: `Invalid --ttl: ${error.message}`,
+                  }),
+                ),
+            }),
+          );
+          const issued = yield* environmentAuth.issueSession({
+            ...authorityInput,
             ...(Option.isSome(flags.label) ? { label: flags.label.value } : {}),
             ...(Option.isSome(flags.subject) ? { subject: flags.subject.value } : {}),
           });
