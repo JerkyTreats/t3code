@@ -62,8 +62,20 @@ import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import {
+  isPreviewRefreshShortcut,
+  previewBrowserActionForShortcut,
+} from "../fork/PreviewShortcutPolicy.ts";
+export {
+  isPreviewRefreshShortcut,
+  previewBrowserActionForShortcut,
+} from "../fork/PreviewShortcutPolicy.ts";
+import {
+  MENU_ACTION_CHANNEL,
+  PREVIEW_BROWSER_ACTION_CHANNEL,
+  PREVIEW_PICTURE_IN_PICTURE_FRAME_CHANNEL,
+} from "../ipc/channels.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
-import { MENU_ACTION_CHANNEL, PREVIEW_PICTURE_IN_PICTURE_FRAME_CHANNEL } from "../ipc/channels.ts";
 import * as DesktopBrowserHost from "./DesktopBrowserHost.ts";
 import * as PreviewPasskeys from "./Passkeys.ts";
 import * as BrowserSession from "./BrowserSession.ts";
@@ -494,13 +506,6 @@ export const previewWindowOpenAction = (details: {
     ? "new-tab"
     : "navigate";
 };
-
-const isPreviewRefreshShortcut = (input: Electron.Input): boolean =>
-  input.type === "keyDown" &&
-  input.key.toLowerCase() === "r" &&
-  (input.meta || input.control) &&
-  !input.shift &&
-  !input.alt;
 
 export const isPreviewEditingShortcut = (
   input: Electron.Input,
@@ -1539,6 +1544,32 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     };
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
       syncMenuShortcuts(wc, input);
+      const focused = holdsKeyboardFocus(wc);
+      if (focused && !input.isComposing && isPreviewRefreshShortcut(input, hostPlatform)) {
+        event.preventDefault();
+        runFork(
+          attempt({ operation: "shortcut.refresh", tabId, webContentsId: wc.id }, () =>
+            wc.reload(),
+          ).pipe(Effect.ignore),
+        );
+        return;
+      }
+      const browserAction = previewBrowserActionForShortcut(input, hostPlatform);
+      if (focused && !input.isComposing && browserAction) {
+        event.preventDefault();
+        if (input.isAutoRepeat) return;
+        runFork(
+          Effect.gen(function* () {
+            const mainWindow = yield* Ref.get(mainWindowRef);
+            if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed()) return;
+            mainWindow.value.webContents.send(PREVIEW_BROWSER_ACTION_CHANNEL, {
+              action: browserAction,
+              tabId,
+            });
+          }).pipe(Effect.ignore),
+        );
+        return;
+      }
       const host = wc.hostWebContents;
       const forwarded =
         input.type === "keyDown" &&
@@ -1569,15 +1600,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       if (forwarded && host) {
         event.preventDefault();
         if (!input.isAutoRepeat) host.send(MENU_ACTION_CHANNEL, forwarded.command);
-        return;
-      }
-      if (isPreviewRefreshShortcut(input)) {
-        event.preventDefault();
-        runFork(
-          attempt({ operation: "shortcut.refresh", tabId, webContentsId: wc.id }, () =>
-            wc.reload(),
-          ).pipe(Effect.ignore),
-        );
         return;
       }
     };

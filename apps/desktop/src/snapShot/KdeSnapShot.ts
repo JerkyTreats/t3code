@@ -169,11 +169,13 @@ export class KdeCaptureSetup {
       try {
         const staged = NodePath.join(staging, KDE_CAPTURE_EXECUTABLE);
         await NodeFSP.writeFile(staged, bundle, { mode: 0o755 });
+        await NodeFSP.chmod(staged, 0o755);
         await NodeFSP.rename(staged, executable);
         await NodeFSP.writeFile(stagedDesktop, kdeCaptureDesktopEntry(executable), {
           mode: 0o644,
           flag: "wx",
         });
+        await NodeFSP.chmod(stagedDesktop, 0o644);
         await NodeFSP.rename(stagedDesktop, desktop);
       } finally {
         await NodeFSP.rm(stagedDesktop, { force: true });

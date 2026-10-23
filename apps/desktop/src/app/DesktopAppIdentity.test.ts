@@ -207,3 +207,34 @@ describe("DesktopAppIdentity", () => {
     );
   });
 });
+
+describe("standalone browser identity", () => {
+  it.effect("never probes or adopts a legacy upstream profile", () =>
+    withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        assert.equal(yield* identity.resolveUserDataPath, "/config/t3code-production/t3code");
+      }),
+      {
+        environment: {
+          platform: "linux",
+          homeDirectory: "/home/example",
+          env: {
+            T3CODE_DESKTOP_SERVER_URL: "https://code.example.test/",
+            T3CODE_DESKTOP_DISPLAY_NAME: "T3 Code",
+            XDG_CONFIG_HOME: "/config/t3code-production",
+            XDG_DATA_HOME: "/data",
+            T3CODE_HOME: "/data/t3code-production/state",
+            T3CODE_DISABLE_AUTO_UPDATE: "true",
+          },
+        },
+        legacyPathProbeError: PlatformError.systemError({
+          _tag: "PermissionDenied",
+          module: "FileSystem",
+          method: "exists",
+          pathOrDescriptor: "/config/t3code-production",
+        }),
+      },
+    ),
+  );
+});

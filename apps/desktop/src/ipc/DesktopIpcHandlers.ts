@@ -1,4 +1,15 @@
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { isStandaloneDesktop } from "../fork/StandaloneDesktopPolicy.ts";
+
+import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import { watchDesktopSystemTheme } from "../fork/OmarchyThemeSource.ts";
+import * as IpcChannels from "./channels.ts";
 import * as Effect from "effect/Effect";
+
+import {
+  takeLauncherActivation,
+  completeLauncherActivation,
+} from "./methods/launcherActivation.ts";
 
 import { receiveProviderAuthCallback, cancelProviderAuthCallback } from "./methods/providerAuth.ts";
 import * as DesktopIpc from "./DesktopIpc.ts";
@@ -43,6 +54,9 @@ import {
   getLocalEnvironmentBearerToken,
   getRelayTelemetryEnabled,
   getSystemLocale,
+  getSystemTheme,
+  getScreenshotCaptureAvailability,
+  captureDesktopScreenshot,
   getWindowFullscreenState,
   openExternal,
   openSystemSettings,
@@ -89,6 +103,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* installNotificationBadge();
   yield* PreviewIpc.installPreviewEventForwarding();
 
+  yield* ipc.handle(takeLauncherActivation);
+  yield* ipc.handle(completeLauncherActivation);
   yield* ipc.handle(AppActivationIpc.setReady);
   yield* ipc.handle(AppActivationIpc.complete);
   yield* ipc.handle(WebLinksIpc.setReady);
@@ -98,6 +114,28 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getAppBranding);
   yield* ipc.handleSync(getRelayTelemetryEnabled);
   yield* ipc.handleSync(getSystemLocale);
+  yield* ipc.handle(getSystemTheme);
+  yield* ipc.handleSync(getScreenshotCaptureAvailability);
+  yield* ipc.handle(captureDesktopScreenshot);
+  const electronWindow = yield* ElectronWindow.ElectronWindow;
+  const context = yield* Effect.context<ElectronWindow.ElectronWindow>();
+  const runPromise = Effect.runPromiseWith(context);
+  yield* Effect.acquireRelease(
+    Effect.sync(() =>
+      watchDesktopSystemTheme((theme) => {
+        void runPromise(
+          electronWindow
+            .sendAll(IpcChannels.SYSTEM_THEME_CHANNEL, theme)
+            .pipe(
+              Effect.catchCause(() =>
+                Effect.logWarning("Failed to broadcast desktop system theme."),
+              ),
+            ),
+        );
+      }),
+    ),
+    (cleanup) => Effect.sync(cleanup),
+  );
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handleSync(getLocalEnvironmentEnabled);
@@ -133,14 +171,17 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(resolveSshPasswordPrompt);
 
   yield* ipc.handle(getServerExposureState);
-  yield* ipc.handle(setServerExposureMode);
-  yield* ipc.handle(setTailscaleServeEnabled);
+  const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  if (!isStandaloneDesktop(environment)) {
+    yield* ipc.handle(setServerExposureMode);
+    yield* ipc.handle(setTailscaleServeEnabled);
+    yield* ipc.handle(setWslBackendEnabled);
+    yield* ipc.handle(setWslDistro);
+    yield* ipc.handle(setWslOnly);
+  }
   yield* ipc.handle(getAdvertisedEndpoints);
 
   yield* ipc.handle(getWslState);
-  yield* ipc.handle(setWslBackendEnabled);
-  yield* ipc.handle(setWslDistro);
-  yield* ipc.handle(setWslOnly);
 
   yield* ipc.handle(pickFolder);
   yield* ipc.handle(pickProjectFavicon);

@@ -1,3 +1,9 @@
+import * as DesktopLauncherRuntime from "../app/DesktopLauncherRuntime.ts";
+import {
+  resolveDesktopApplicationUrl,
+  isStandaloneDesktop,
+} from "../fork/StandaloneDesktopPolicy.ts";
+
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -71,6 +77,7 @@ type WindowTitleBarOptions = Pick<
 type DesktopWindowRuntimeServices =
   | DesktopEnvironment.DesktopEnvironment
   | DesktopState.DesktopState
+  | DesktopLauncherRuntime.DesktopLauncherRuntime
   | DesktopAssets.DesktopAssets
   | DesktopAppSettings.DesktopAppSettings
   | DesktopClientSettings.DesktopClientSettings
@@ -290,6 +297,7 @@ function bindFirstRevealTrigger(
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const desktopState = yield* DesktopState.DesktopState;
+  const launcher = yield* DesktopLauncherRuntime.DesktopLauncherRuntime;
   const assets = yield* DesktopAssets.DesktopAssets;
   const electronMenu = yield* ElectronMenu.ElectronMenu;
   const electronShell = yield* ElectronShell.ElectronShell;
@@ -306,6 +314,8 @@ export const make = Effect.gen(function* () {
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
+  const withdrawRendererReadiness = launcher.markRendererNotReady.pipe(Effect.ignoreCause);
+  yield* Effect.addFinalizer(() => withdrawRendererReadiness);
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
 
   const dismissConnectingSplash = Effect.gen(function* () {
@@ -353,7 +363,10 @@ export const make = Effect.gen(function* () {
   > {
     if (yield* Ref.get(desktopState.quitting)) return Option.none();
     yield* previewManager.getBrowserSession();
-    const applicationUrl = getDesktopUrl(environment.isDevelopment);
+    const applicationUrl = resolveDesktopApplicationUrl(
+      environment,
+      getDesktopUrl(environment.isDevelopment),
+    );
     const iconPaths = yield* assets.iconPaths;
     const iconOption = getIconOption(iconPaths, environment.platform);
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
@@ -706,6 +719,36 @@ export const make = Effect.gen(function* () {
     let developmentLoadRetryIndex = 0;
     let developmentLoadRetryFiber: Fiber.Fiber<void, never> | undefined;
     let rendererRecoveryTimestamps: number[] = [];
+    let mainFrameLoadFailed = false;
+    const publishRendererReadiness = () => {
+      if (
+        !mainFrameLoadFailed &&
+        isSameOriginRendererNavigation({
+          applicationUrl,
+          navigationUrl: window.webContents.getURL(),
+        })
+      ) {
+        void runPromise(launcher.markRendererReady);
+      }
+    };
+    window.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+      if (!isMainFrame || isInPlace) return;
+      mainFrameLoadFailed = false;
+      void runPromise(withdrawRendererReadiness);
+    });
+    // An external redirect must never receive the desktop bridge under a different HTTPS identity.
+    if (isStandaloneDesktop(environment)) {
+      window.webContents.on("will-redirect", (event, url, _isInPlace, isMainFrame) => {
+        if (
+          isMainFrame &&
+          !isSameOriginRendererNavigation({ applicationUrl, navigationUrl: url })
+        ) {
+          event.preventDefault();
+          mainFrameLoadFailed = true;
+          void runPromise(withdrawRendererReadiness);
+        }
+      });
+    }
     const clearDevelopmentLoadRetry = () => {
       if (developmentLoadRetryFiber === undefined) {
         return;
@@ -759,6 +802,7 @@ export const make = Effect.gen(function* () {
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
       window.setTitle(environment.displayName);
+      publishRendererReadiness();
       if (environment.platform === "darwin") syncMacosWindowButtons(window);
     });
     window.webContents.on(
@@ -767,6 +811,8 @@ export const make = Effect.gen(function* () {
         if (!isMainFrame) {
           return;
         }
+        mainFrameLoadFailed = true;
+        void runPromise(withdrawRendererReadiness);
         const retryInMs =
           environment.isDevelopment &&
           isRetryableDevelopmentRendererLoadFailure({
@@ -788,6 +834,8 @@ export const make = Effect.gen(function* () {
       },
     );
     window.webContents.on("render-process-gone", (_event, details) => {
+      mainFrameLoadFailed = true;
+      void runPromise(withdrawRendererReadiness);
       const recoverable =
         details.reason === "crashed" ||
         details.reason === "oom" ||
@@ -828,6 +876,7 @@ export const make = Effect.gen(function* () {
       revealSubscribers.push((fire) => window.webContents.once("did-finish-load", fire));
     }
     bindFirstRevealTrigger(revealSubscribers, () => {
+      publishRendererReadiness();
       if (!window.isDestroyed()) {
         window.webContents.setBackgroundThrottling(true);
       }
@@ -843,6 +892,8 @@ export const make = Effect.gen(function* () {
     }
 
     window.on("closed", () => {
+      mainFrameLoadFailed = true;
+      void runPromise(withdrawRendererReadiness);
       clearDevelopmentLoadRetry();
       clearBoundsPersist();
       void runPromise(electronWindow.clearMain(Option.some(window)));
@@ -890,8 +941,8 @@ export const make = Effect.gen(function* () {
     if (yield* Ref.get(desktopState.quitting)) return;
     if (yield* waitingForBackend) return;
     const existingWindow = yield* currentMainWindow;
-    if (Option.isSome(existingWindow)) return;
-    yield* createMain;
+    if (Option.isNone(existingWindow)) yield* createMain;
+    yield* launcher.markBackendReady;
   }).pipe(Effect.withSpan("desktop.window.createMainIfBackendReady"));
 
   const showConnectingSplash = Effect.gen(function* () {
@@ -1006,6 +1057,7 @@ export const make = Effect.gen(function* () {
       yield* createMainIfBackendReady;
     }),
     handleBackendNotReady: Ref.set(backendReadyRef, false).pipe(
+      Effect.andThen(launcher.markBackendNotReady),
       Effect.withSpan("desktop.window.handleBackendNotReady"),
     ),
     flushMainWindowBounds: Effect.suspend(() => flushMainWindowBounds).pipe(

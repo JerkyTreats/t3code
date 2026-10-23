@@ -33,6 +33,8 @@ vi.mock("electron", async (importOriginal) => ({
   },
 }));
 
+import * as DesktopLauncherRuntime from "../app/DesktopLauncherRuntime.ts";
+
 import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -89,6 +91,7 @@ function makeFakeBrowserWindow() {
     send: vi.fn(),
     setBackgroundThrottling: vi.fn(),
     setWindowOpenHandler: vi.fn(),
+    session: { setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn() },
     toggleDevTools: vi.fn(),
   };
 
@@ -140,6 +143,8 @@ function makeFakeBrowserWindow() {
     setZoomLevel: webContents.setZoomLevel,
     setWindowButtonPosition: window.setWindowButtonPosition,
     setBackgroundThrottling: webContents.setBackgroundThrottling,
+    setPermissionRequestHandler: webContents.session.setPermissionRequestHandler,
+    setPermissionCheckHandler: webContents.session.setPermissionCheckHandler,
     setAutoHideCursor: window.setAutoHideCursor,
     setFullScreen: window.setFullScreen,
     setOpacity: window.setOpacity,
@@ -213,6 +218,8 @@ function layerTest(input: {
   readonly window: Electron.BrowserWindow;
   readonly createCount: Ref.Ref<number>;
   readonly mainWindow: Ref.Ref<Option.Option<Electron.BrowserWindow>>;
+  readonly environmentLayer?: typeof layerDesktopEnvironment;
+  readonly launcher?: DesktopLauncherRuntime.DesktopLauncherRuntime["Service"];
   readonly createdWindowOptions?: Electron.BrowserWindowConstructorOptions[];
   readonly desktopSettings?: DesktopAppSettings.DesktopSettings;
   readonly mainWindowBoundsUpdates?: DesktopAppSettings.DesktopWindowBounds[];
@@ -292,13 +299,23 @@ function layerTest(input: {
   return DesktopWindow.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        Layer.succeed(
+          DesktopLauncherRuntime.DesktopLauncherRuntime,
+          input.launcher ?? {
+            markBackendReady: Effect.void,
+            markBackendNotReady: Effect.void,
+            markRendererReady: Effect.void,
+            markRendererNotReady: Effect.void,
+            acceptSingleInstanceHandoff: () => Effect.succeed(false),
+          },
+        ),
         layerDesktopAssets,
         Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {
           register: () => Effect.void,
           recordMetrics: () => Effect.void,
           shutdown: Effect.void,
         }),
-        layerDesktopEnvironment,
+        input.environmentLayer ?? layerDesktopEnvironment,
         layerDesktopAppSettings,
         layerDesktopClientSettings,
         layerDesktopServerExposure,
@@ -413,6 +430,13 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
     const layer = DesktopWindow.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
+          Layer.succeed(DesktopLauncherRuntime.DesktopLauncherRuntime, {
+            markBackendReady: Effect.void,
+            markBackendNotReady: Effect.void,
+            markRendererReady: Effect.void,
+            markRendererNotReady: Effect.void,
+            acceptSingleInstanceHandoff: () => Effect.succeed(false),
+          }),
           layerDesktopAssets,
           Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {
             register: () => Effect.void,
@@ -1082,5 +1106,96 @@ describe("DesktopWindow", () => {
         assert.equal(onReveal.mock.calls.length, 0);
       }).pipe(Effect.provide(layer));
     }),
+  );
+});
+
+describe("standalone window host readiness", () => {
+  it.effect(
+    "loads exact HTTPS and withdraws readiness on navigation, failure, crash, close and backend shutdown",
+    () =>
+      Effect.gen(function* () {
+        const fake = makeFakeBrowserWindow();
+        vi.mocked(fake.window.webContents.getURL).mockReturnValue("https://code.example.test/");
+        const events: string[] = [];
+        const mark = (event: string) =>
+          Effect.sync(() => {
+            events.push(event);
+          });
+        const launcher = {
+          markBackendReady: mark("backend-ready"),
+          markBackendNotReady: mark("backend-withdrawn"),
+          markRendererReady: mark("renderer-ready"),
+          markRendererNotReady: mark("renderer-withdrawn"),
+          acceptSingleInstanceHandoff: () => Effect.succeed(false),
+        } satisfies DesktopLauncherRuntime.DesktopLauncherRuntime["Service"];
+        const layer = layerTest({
+          window: fake.window,
+          createCount: yield* Ref.make(0),
+          mainWindow: yield* Ref.make(Option.none<Electron.BrowserWindow>()),
+          launcher,
+          environmentLayer: DesktopEnvironment.layer({
+            ...environmentInput,
+            platform: "linux",
+            isPackaged: true,
+          }).pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                NodeServices.layer,
+                DesktopConfig.layerTest({
+                  XDG_CONFIG_HOME: "/config/t3code-production",
+                  XDG_DATA_HOME: "/data",
+                  T3CODE_HOME: "/data/t3code-production/state",
+                  T3CODE_DESKTOP_DISPLAY_NAME: "T3 Code",
+                  T3CODE_DESKTOP_SERVER_URL: "https://code.example.test/",
+                  T3CODE_DISABLE_AUTO_UPDATE: "true",
+                }),
+              ),
+            ),
+          ),
+        });
+        yield* Effect.gen(function* () {
+          const window = yield* DesktopWindow.DesktopWindow;
+          yield* window.handleBackendReady(new URL("https://code.example.test/"));
+          assert.deepEqual(fake.loadURL.mock.calls, [["https://code.example.test/"]]);
+          assert.deepEqual(events, ["backend-ready"]);
+          fake.windowListeners.get("ready-to-show")?.();
+          yield* Effect.yieldNow;
+          assert.equal(events.at(-1), "renderer-ready");
+          fake.webContentsListeners.get("did-start-navigation")?.(
+            {},
+            "https://code.example.test/next",
+            false,
+            true,
+          );
+          yield* Effect.yieldNow;
+          assert.equal(events.at(-1), "renderer-withdrawn");
+          fake.webContentsListeners.get("did-finish-load")?.();
+          yield* Effect.yieldNow;
+          assert.equal(events.at(-1), "renderer-ready");
+          const preventDefault = vi.fn();
+          fake.webContentsListeners.get("will-redirect")?.(
+            { preventDefault },
+            "https://foreign.example.test/",
+            false,
+            true,
+          );
+          yield* Effect.yieldNow;
+          assert.equal(preventDefault.mock.calls.length, 1);
+          assert.equal(events.at(-1), "renderer-withdrawn");
+          for (const [event, args] of [
+            ["did-fail-load", [{}, -2, "failed", "https://code.example.test/", true]],
+            ["render-process-gone", [{}, { reason: "clean-exit", exitCode: 0 }]],
+          ] as const) {
+            fake.webContentsListeners.get(event)?.(...args);
+            yield* Effect.yieldNow;
+            assert.equal(events.at(-1), "renderer-withdrawn");
+          }
+          fake.windowListeners.get("closed")?.();
+          yield* Effect.yieldNow;
+          assert.equal(events.at(-1), "renderer-withdrawn");
+          yield* window.handleBackendNotReady;
+          assert.equal(events.at(-1), "backend-withdrawn");
+        }).pipe(Effect.provide(layer));
+      }),
   );
 });

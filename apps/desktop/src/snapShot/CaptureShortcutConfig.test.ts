@@ -24,6 +24,7 @@ beforeEach(async () => {
   directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-capture-config-"));
   path = NodePath.join(directory, "config.kdl");
   await NodeFSP.writeFile(path, "binds {\n    Mod+Q { quit; }\n}\n", { mode: 0o640 });
+  await NodeFSP.chmod(path, 0o640);
   tools.validateNiri.mockReset().mockResolvedValue(undefined);
   tools.hyprlandBindings.mockReset().mockResolvedValue([]);
   tools.reloadHyprland.mockReset().mockResolvedValue(undefined);

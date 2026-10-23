@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
@@ -70,6 +71,33 @@ describe("DesktopEnvironment", () => {
 
       assert.equal(development.stateDir, "/Users/alice/.t3/dev");
       assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
+    }),
+  );
+});
+
+describe("standalone environment host", () => {
+  it.effect("selects isolated HTTPS identity with current state paths", () =>
+    Effect.gen(function* () {
+      const environment = yield* makeEnvironment(
+        { platform: "linux", isPackaged: true },
+        {
+          XDG_CONFIG_HOME: "/config/t3code-production",
+          XDG_DATA_HOME: "/data",
+          T3CODE_HOME: "/data/t3code-production/state",
+          T3CODE_DESKTOP_DISPLAY_NAME: "T3 Code",
+          T3CODE_DESKTOP_SERVER_URL: "https://code.example.test/",
+          T3CODE_DISABLE_AUTO_UPDATE: "true",
+        },
+      );
+      assert.equal(
+        Option.getOrThrow(environment.standaloneServerUrl!).href,
+        "https://code.example.test/",
+      );
+      assert.equal(environment.displayName, "T3 Code");
+      assert.equal(environment.linuxDesktopEntryName, "t3code.desktop");
+      assert.equal(environment.stateDir, "/data/t3code-production/state/userdata");
+      assert.equal(environment.appDataDirectory, "/config/t3code-production");
+      assert.isTrue(Option.isNone(environment.configuredBackendPort));
     }),
   );
 });
