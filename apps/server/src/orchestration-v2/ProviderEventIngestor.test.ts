@@ -1995,6 +1995,60 @@ layer("ProviderEventIngestorV2", (it) => {
       }),
   );
 
+  it.effect("starts a provider-created thread at top level when it copies a nested parent", () =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const eventSink = yield* EventSink.EventSinkV2;
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const rootEvent = yield* threadCreatedEvent(now);
+      if (rootEvent.type !== "thread.created") throw new Error("Expected thread fixture");
+      const childThreadId = idAllocator.derive.threadFromProviderThread({
+        driver: CODEX_DRIVER,
+        nativeThreadId: "provider-child-of-nested-parent",
+      });
+      const providerSessionId = yield* idAllocator.allocate.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+        threadId: rootEvent.threadId,
+      });
+      yield* eventSink.write({ events: [rootEvent] });
+      // The provider copies its parent thread, including the parent's sidebar nesting.
+      const stored = yield* ingestor.ingestNormalized({
+        providerSessionId,
+        providerInstanceId: modelSelection.instanceId,
+        threadId: rootEvent.threadId,
+        event: {
+          type: "app_thread.created",
+          driver: CODEX_DRIVER,
+          appThread: {
+            ...rootEvent.payload,
+            nestedUnderThreadId: rootEvent.threadId,
+            id: childThreadId,
+            title: "Provider child",
+            activeProviderThreadId: null,
+            lineage: {
+              parentThreadId: rootEvent.threadId,
+              relationshipToParent: "subagent",
+              rootThreadId: rootEvent.threadId,
+            },
+          },
+        },
+      });
+
+      assert.deepEqual(
+        stored.map((entry) => entry.event.type),
+        ["thread.created"],
+      );
+      const created = stored[0]?.event;
+      if (created?.type !== "thread.created") throw new Error("Expected thread.created");
+      assert.isFalse("nestedUnderThreadId" in created.payload);
+      const projected = yield* projectionStore.getThread(childThreadId);
+      assert.isUndefined(projected.nestedUnderThreadId);
+      assert.equal(projected.lineage.parentThreadId, rootEvent.threadId);
+    }),
+  );
+
   it.effect("moves a native subagent's thread to the model its provider reports later", () =>
     Effect.gen(function* () {
       const now = yield* DateTime.now;

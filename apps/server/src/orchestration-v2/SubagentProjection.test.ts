@@ -119,6 +119,29 @@ it("keeps a subagent child awake when its parent thread is snoozed", () => {
   });
 });
 
+it("starts a subagent child at top level even when its parent is nested", () => {
+  const parentThread = {
+    ...makeParentThread(),
+    nestedUnderThreadId: ThreadId.make("thread:subagent-nesting-target"),
+  };
+  const childThread = makeSubagentChildThread({
+    parentThread,
+    childThreadId,
+    parentNodeId: NodeId.make("node:subagent-nested-parent"),
+    activeProviderThreadId: null,
+    providerInstanceId: childProviderInstanceId,
+    modelSelection: childModelSelection,
+    title: "Top-level child",
+    now: childCreatedAt,
+    createdBy: "agent",
+    creationSource: "provider",
+  });
+
+  assert.isFalse("nestedUnderThreadId" in childThread);
+  assert.equal(childThread.lineage.parentThreadId, parentThreadId);
+  assert.equal(childThread.lineage.relationshipToParent, "subagent");
+});
+
 it("uses only explicitly admitted creation surface for app-owned subagents", () => {
   const childThread = makeSubagentChildThread({
     parentThread: makeParentThread(),
