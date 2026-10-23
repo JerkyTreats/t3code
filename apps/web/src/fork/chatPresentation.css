@@ -1,0 +1,10 @@
+/* The retained full-width checkout strip shares one continuous glass surface. */
+[data-slot="composer-shell"].fork-chat-composer-shell::before {
+  clip-path: none;
+  border-radius: 24px;
+}
+
+[data-slot="composer-shell"].fork-chat-composer-shell[data-with-context]::before {
+  bottom: 0;
+  border-radius: 24px 24px 16px 16px;
+}

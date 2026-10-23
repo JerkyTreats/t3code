@@ -7,6 +7,8 @@ import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
+import { resolveStandaloneUserDataPath } from "../fork/StandaloneDesktopPolicy.ts";
+
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
@@ -85,9 +87,10 @@ export const make = Effect.gen(function* () {
     return commitHash;
   });
 
-  const userDataPath = DesktopUserData.resolveUserDataPath(environment).pipe(
-    Effect.provide(userDataContext),
-  );
+  const userDataPath = Option.match(resolveStandaloneUserDataPath(environment), {
+    onNone: () => DesktopUserData.resolveUserDataPath(environment),
+    onSome: Effect.succeed,
+  }).pipe(Effect.provide(userDataContext));
 
   const configure = Effect.gen(function* () {
     const commitHash = yield* resolveAboutCommitHash;

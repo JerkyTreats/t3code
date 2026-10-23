@@ -72,3 +72,25 @@ it.effect("does not present a cached catalog as account entitlements when discov
     assert.strictEqual(error._tag, "ChatGptCatalogError");
   }),
 );
+
+it.effect("retains account-owned qualified model ids and their native capabilities", () =>
+  Effect.gen(function* () {
+    const slug = "openai.gpt-6.1-sol";
+    const capabilities = { optionDescriptors: [] };
+    const http = HttpClient.make((request) =>
+      Effect.succeed(
+        HttpClientResponse.fromWeb(
+          request,
+          Response.json({
+            models: [{ slug, display_name: "GPT-6.1 Sol", visibility: "list" }],
+          }),
+        ),
+      ),
+    );
+    const models = yield* chatGptModels("synthetic-account", [
+      { slug, name: "Native name", isCustom: false, capabilities },
+      { slug: "gpt-6.1-sol", name: "Other wire id", isCustom: false, capabilities: null },
+    ]).pipe(Effect.provideService(HttpClient.HttpClient, http));
+    assert.deepEqual(models, [{ slug, name: "GPT-6.1 Sol", isCustom: false, capabilities }]);
+  }),
+);

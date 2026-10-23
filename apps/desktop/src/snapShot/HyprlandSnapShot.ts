@@ -137,6 +137,7 @@ export class HyprlandCaptureSetup {
     try {
       const staged = NodePath.join(staging, HYPRLAND_CAPTURE_EXECUTABLE);
       await NodeFSP.writeFile(staged, bundle, { mode: 0o755, flag: "wx" });
+      await NodeFSP.chmod(staged, 0o755);
       await NodeFSP.rename(staged, executable);
     } finally {
       await NodeFSP.rm(staging, { recursive: true, force: true });

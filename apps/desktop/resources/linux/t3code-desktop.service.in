@@ -1,0 +1,23 @@
+[Unit]
+Description={{PRODUCT_NAME}}
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+EnvironmentFile=-{{SYSTEMD_ENVIRONMENT_FILE}}
+Environment=T3CODE_DISABLE_AUTO_UPDATE=true
+Environment=APPIMAGE_EXTRACT_AND_RUN=1
+Environment={{SYSTEMD_STAGING_HOME}}
+Environment={{SYSTEMD_XDG_CONFIG_HOME}}
+Environment={{SYSTEMD_DISPLAY_NAME}}
+Environment={{SYSTEMD_STAGING_SERVER_URL}}
+Environment={{SYSTEMD_CHANNEL}}
+ExecStart={{SYSTEMD_NODE_EXECUTABLE}} {{SYSTEMD_LAUNCHER_PATH}} service
+KillMode=control-group
+TimeoutStopSec=8s
+SendSIGKILL=yes
+Restart=no
+
+[Install]
+WantedBy=graphical-session.target

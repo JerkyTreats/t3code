@@ -1,14 +1,13 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import {
+  AuthClientId,
   AuthSessionId,
   EnvironmentAuthenticatedAuth,
   EnvironmentAuthenticatedPrincipal,
   EnvironmentHttpApi,
   type AuthBrowserSessionRequest,
   type AuthBrowserSessionResult,
-  type AuthCreatePairingCredentialInput,
   type AuthEnvironmentScope,
-  type AuthPairingCredentialResult,
   type AuthSessionState,
   type ExecutionEnvironmentDescriptor,
   type EnvironmentAuthInvalidError,
@@ -32,16 +31,12 @@ interface EnvironmentHttpTestScenario {
   readonly descriptor?: () => Effect.Effect<ExecutionEnvironmentDescriptor>;
   readonly session?: () => Effect.Effect<AuthSessionState>;
   readonly browserSession?: BrowserSessionHandler;
-  readonly pairingCredential?: (
-    payload: AuthCreatePairingCredentialInput,
-  ) => Effect.Effect<AuthPairingCredentialResult>;
 }
 
 export interface EnvironmentHttpTestCalls {
   descriptor: number;
   session: number;
   browserSession: Array<AuthBrowserSessionRequest>;
-  pairingCredential: Array<AuthCreatePairingCredentialInput>;
 }
 
 const unexpectedEndpoint = (endpoint: string) =>
@@ -52,9 +47,11 @@ const authenticatedAuth: Context.Service.Shape<typeof EnvironmentAuthenticatedAu
 ) =>
   httpEffect.pipe(
     Effect.provideService(EnvironmentAuthenticatedPrincipal, {
+      clientId: AuthClientId.make("test-client"),
       sessionId: AuthSessionId.make("test-session"),
       subject: "test-client",
       method: "browser-session-cookie",
+      authorityClass: "client",
       scopes: new Set<AuthEnvironmentScope>(),
       expiresAt: DateTime.makeUnsafe("2026-05-01T12:00:00.000Z"),
     }),
@@ -65,7 +62,6 @@ export async function installEnvironmentHttpTest(scenario: EnvironmentHttpTestSc
     descriptor: 0,
     session: 0,
     browserSession: [],
-    pairingCredential: [],
   };
 
   const client = await Effect.runPromise(
@@ -101,21 +97,7 @@ export async function installEnvironmentHttpTest(scenario: EnvironmentHttpTestSc
             )
             .handle("token", () => unexpectedEndpoint("auth.token"))
             .handle("webSocketTicket", () => unexpectedEndpoint("auth.webSocketTicket"))
-            .handle(
-              "pairingCredential",
-              Effect.fn("test.environment.auth.pairingCredential")(function* ({ payload }) {
-                calls.pairingCredential.push(payload);
-                return yield* (
-                  scenario.pairingCredential?.(payload) ??
-                    unexpectedEndpoint("auth.pairingCredential")
-                );
-              }),
-            )
-            .handle("pairingLinks", () => unexpectedEndpoint("auth.pairingLinks"))
-            .handle("revokePairingLink", () => unexpectedEndpoint("auth.revokePairingLink"))
-            .handle("clients", () => unexpectedEndpoint("auth.clients"))
-            .handle("revokeClient", () => unexpectedEndpoint("auth.revokeClient"))
-            .handle("revokeOtherClients", () => unexpectedEndpoint("auth.revokeOtherClients")),
+            .handle("pairingCredential", () => unexpectedEndpoint("auth.pairingCredential")),
         ),
       ]),
       Effect.provideService(EnvironmentAuthenticatedAuth, authenticatedAuth),

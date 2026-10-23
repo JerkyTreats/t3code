@@ -36,8 +36,9 @@ SSH-managed launch persistence stay unchanged either way.
 
 Completed spans are written as NDJSON records to `serverTracePath`. The default depends on how the
 server starts: production and explicitly configured homes use
-`<home>/userdata/logs/server.trace.ndjson` (so `~/.t3/userdata/...` by default, or
-`/custom/path/userdata/...` with `--home-dir /custom/path`), a linked worktree dev run uses
+`<home>/userdata/logs/server.trace.ndjson`. This is
+`~/.t3/userdata/...` by default, or `/custom/path/userdata/...` with
+`--home-dir /custom/path`. A linked worktree dev run uses
 `<worktree>/.t3/userdata/logs/server.trace.ndjson`, and an implicit dev run outside a linked
 worktree uses `~/.t3/dev/logs/server.trace.ndjson`.
 
@@ -151,7 +152,7 @@ You do not need any extra env vars. Just run the app normally and inspect `serve
 Examples:
 
 ```bash
-npx t3
+t3
 ```
 
 ```bash
@@ -186,7 +187,7 @@ Default Grafana login:
 
 For endpoint settings and startup precedence, see the
 [user telemetry guide](../user/telemetry.md#export-diagnostics-to-your-own-receiver).
-In a worktree, use `vp run dev` instead of `npx t3` to keep state isolated.
+In a worktree, use `vp run dev` to keep state isolated.
 
 ```bash
 export T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces
@@ -207,8 +208,11 @@ export T3CODE_TRACE_TIMING_ENABLED=true
 CLI:
 
 ```bash
-npx t3
+t3
 ```
+
+Use the authorized installed exact-origin runtime. This fork does not acquire
+T3 Code from a public package registry for an observability launch.
 
 Monorepo web/server dev:
 
@@ -671,12 +675,12 @@ Current high-value span and metric boundaries include:
 ## Heap Snapshots
 
 To see what a long-running server holds in memory, send it `SIGUSR2`. The server writes a V8 heap
-snapshot to its logs dir and logs the path. This works for desktop, `npx t3`, and service installs
-on macOS and Linux. Windows has no `SIGUSR2`.
+snapshot to its logs dir and logs the path. This works for desktop and operator-managed server
+deployments on macOS and Linux. Windows has no `SIGUSR2`.
 
 Send the signal to the server pid in `server-runtime.json`, which sits in the server's state dir
 next to the `logs` dir. For a dev server or a `--home-dir` launch, use that server's state dir from
-[Traces](#traces). Do not send it to the desktop app or the service launcher: a process without the
+[Traces](#traces). Do not send it to the desktop app or a process supervisor: a process without the
 handler exits on `SIGUSR2`. After a crash the file can keep a stale pid that now belongs to a
 different process, so check the pid first.
 

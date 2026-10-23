@@ -1,7 +1,7 @@
 # Legacy orchestration migration
 
 Orchestration v2 snapshots `state.sqlite` into `statev2.sqlite` before opening writable persistence
-on its first launch. Only the copy receives v2 migrations; the original remains available to v1.
+on its first launch. Only the copy receives v2 migrations; the original is retained for controlled recovery or rollback.
 Subsequent launches reuse the copy without refreshing it from v1. It creates v2 thread shell events first and imports
 the complete user and assistant transcript lazily when a client reads or continues the thread. The
 v1 projection tables remain the import source and provide a read-only recovery source if an import
@@ -26,15 +26,37 @@ records as migrated history.
 ## First continuation
 
 A migrated thread has no active provider thread. Its first continuation creates a fresh provider
-session and sends a legacy handoff built only from user and assistant messages. The handoff selects
-the newest transcript suffix within a 32,000-character budget, including section labels and the
-import notice. This budget is separate from portable provider handoffs.
+session and sends a handoff built only from user and assistant messages through the portable
+handoff budget. The handoff service separately retains a 32,000-character recovery excerpt. Neither
+budget replaces the full imported transcript.
+
+## Persistence and authority cutover
+
+`initializeV2Database.ts` snapshots committed SQLite data, validates the copied fork journal,
+and publishes `statev2.sqlite` only after validation. An existing destination is never replaced.
+The operation copies authentication and authorization tables once; it does not synchronize
+subsequent access grants, revocations, or provider authority between databases.
+
+Stop the v1 runtime before starting v2 on the same environment data directory. Run only one
+writable runtime. SQLite snapshot consistency is not permission to keep both versions serving
+requests. Shared settings and attachment storage also remain outside the database separation.
+For rollback, stop v2, retain its database, and reconcile authentication and authorization in the
+chosen rollback database before admitting clients. In particular, do not resurrect revoked grants
+from the original snapshot. This is an operator boundary, not an automatic authority merge.
+
+`ForkMigrationPlan.ts` retains supported deployed journal meaning and registers
+`68_OrchestrationV2` and `69_RemoveRedundantProjectionIndexes` under stable fork identities.
+Migration 68 runs the upstream v2 schema body. Retired identities are journal evidence only
+and have no fresh migration bodies. The appended storage cleanup removes retired data while
+preserving ordinary events, transcript projections, authentication, and attachment references.
+Retention does not imply conversion of legacy tools, approvals, plans, checkpoints, or provider
+sessions into v2 timeline items.
 
 ## Client and server cutover
 
-Clients and servers must agree on `ORCHESTRATION_PROTOCOL_VERSION` (currently 2). The client
+Clients and servers must agree on `ORCHESTRATION_PROTOCOL_VERSION`, currently 2. The client
 runtime appends `orchestrationProtocol=2` to the socket URL, and the `/ws` route rejects a missing
-or mismatched version with HTTP 426 (`orchestration_protocol_incompatible`) before any RPC or auth
+or mismatched version with HTTP 426 with `orchestration_protocol_incompatible` before any RPC or auth
 work runs. The client checks the environment descriptor the same way: a missing version means the
 host predates protocol 2, and a different version means both sides need updating. Either direction
 blocks the connection as `unsupported` with a message naming the machine to update rather than
@@ -43,15 +65,17 @@ running half-upgraded. See `packages/client-runtime/src/connection/compatibility
 
 ## Divergent migration ids
 
-`effect_sql_migrations` records `migration_id` and `name`, but the migrator compares ids only:
-rows at or below the recorded maximum are skipped without checking names. A database that ran a
-local or fork migration under an id this build later assigns to a different migration therefore
-never receives this build's migration at that id. After repairing supported V2 preview ledgers,
-[`runMigrations`](../../apps/server/src/persistence/Migrations.ts) rejects history that would skip a
-requested migration at id 55 or later without its expected name. Earlier name clashes remain
-warnings for compatibility with site-local migrations. There is no safe id range for a fork inside
-this ledger: any id at or below a future upstream id masks it forever, so fork schema changes belong
-in a separate migration table or outside the migrator entirely.
+`effect_sql_migrations` records both migration ids and names. The upstream runner compares ids,
+so the fork validates lineage first through `makeMigrationLoader` in `ForkMigrationPlan.ts`.
+Unknown id/name pairs, populated databases without a journal, incomplete required histories,
+and invalid historical-to-canonical transitions fail before migration writes. Supported historical
+names are explicit compatibility inputs rather than alternate implementations. The same loader
+validates the first v2 snapshot before publishing it. Startup does not merely warn and continue.
+
+The deployed migration identities remain stable. New upstream migrations receive the next fork
+identities rather than overwriting a deployed id. Fork startup delegates directly to
+`ForkMigrationPlan.ts`; it rejects preview migration identities before continuation writes.
+The upstream `reconcileV2PreviewMigration.ts` helper is not part of fork startup.
 
 ## Recovery
 

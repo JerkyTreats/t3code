@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name={{PRODUCT_NAME}}
+Comment=Desktop client for coding agents
+Exec=env {{DESKTOP_STAGING_HOME}} {{DESKTOP_XDG_CONFIG_HOME}} {{DESKTOP_DISPLAY_NAME}} {{DESKTOP_STAGING_SERVER_URL}} {{DESKTOP_CHANNEL}} {{DESKTOP_DISABLE_AUTO_UPDATE}} {{DESKTOP_NODE_EXECUTABLE}} {{DESKTOP_LAUNCHER_PATH}} launch
+Icon={{ICON_PATH}}
+Terminal=false
+Categories=Development;
+StartupWMClass={{STARTUP_WM_CLASS}}
+X-T3Code-Managed=true
+X-T3Code-ProductAppId=com.t3tools.t3code

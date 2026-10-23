@@ -1,0 +1,85 @@
+name: Desktop Artifact Validation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/desktop/**"
+      - "apps/server/**"
+      - "apps/web/**"
+      - "assets/**"
+      - "native/resource-monitor/**"
+      - "packages/**"
+      - "patches/**"
+      - "scripts/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/desktop-artifact-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Build Linux desktop artifact
+    if: github.repository == 'JerkyTreats/t3code' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @t3tools/desktop ensure:electron
+
+      - name: Verify release workflow authority
+        run: node scripts/lib/release-workflow-safety.ts
+
+      - name: Install isolated display runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes dbus-x11 xvfb
+
+      - name: Build unsigned Linux artifact
+        run: vp run dist:desktop:linux
+
+      - name: Smoke exact Linux artifact
+        shell: bash
+        run: |
+          mapfile -d '' artifacts < <(find release -maxdepth 1 -type f -name '*.AppImage' -print0)
+          if [[ ${#artifacts[@]} -ne 1 ]]; then
+            echo "Expected exactly one Linux AppImage, found ${#artifacts[@]}." >&2
+            exit 1
+          fi
+          artifact="${artifacts[0]}"
+          mapfile -d '' descriptors < <(find release -maxdepth 1 -type f -name '*.AppImage.release.json' -print0)
+          if [[ ${#descriptors[@]} -ne 1 ]]; then
+            echo "Expected exactly one Linux release descriptor, found ${#descriptors[@]}." >&2
+            exit 1
+          fi
+          descriptor="${descriptors[0]}"
+          if [[ "$descriptor" != "${artifact}.release.json" || -L "$descriptor" ]]; then
+            echo "Release descriptor does not belong to the single physical AppImage." >&2
+            exit 1
+          fi
+          vp run test:desktop-artifact-smoke -- "$artifact" "$descriptor"

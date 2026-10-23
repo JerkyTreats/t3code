@@ -4,10 +4,16 @@ On your first V2 launch, T3 Code copies the V1 database, `state.sqlite`, into `s
 in the same data directory and migrates the copy. Your threads appear automatically, with full
 transcripts imported as needed. You do not need to run an import command.
 
-V1 continues using its original database while V2 uses the copy. The database import can run while
-V1 is open. Opening V2 again resumes your V2 history. The copy happens only once: later conversations
-and changes in either version do not sync to the other. Settings, attachments, and workspace files
-remain shared.
+Stop the V1 server before starting V2 against the same data directory. Keep only one writable
+server active for that environment. The first copy includes authentication and access grants as
+well as conversation data. Later revocations, pairings, permission changes, and conversations do
+not synchronize between the two databases. Settings, attachment files, and workspace files may
+still be shared, so separate database names do not make concurrent operation safe.
+
+Opening V2 again resumes its existing history without refreshing the V1 snapshot. Before a
+rollback, stop V2 and preserve its current data. Reconcile access grants and revoked credentials
+with the database the older runtime will use before reopening access. A rollback can otherwise
+restore credentials that were revoked after cutover. New V2 conversations do not appear in V1.
 
 The V2 desktop app uses a separate browser profile, so browser cookies and caches do not carry
 over from V1. You may need to sign in again to websites opened inside the app. On its first launch,

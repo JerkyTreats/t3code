@@ -1,5 +1,10 @@
-import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate, useRouter } from "@tanstack/react-router";
 
+import { environmentCatalog } from "../connection/catalog";
+import { resumeThreadPrimaryConnection } from "../environments/primary/threadAuth";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
+import { useAtomCommand } from "../state/use-atom-command";
 import {
   HostedPairingRouteSurface,
   PairingPendingSurface,
@@ -29,6 +34,8 @@ export const Route = createFileRoute("/pair")({
 function PairRouteView() {
   const router = useRouter();
   const { authGateState } = Route.useRouteContext();
+  const navigate = useNavigate();
+  const retryPrimaryConnection = useAtomCommand(environmentCatalog.retryNow);
 
   if (!authGateState) {
     return null;
@@ -41,12 +48,18 @@ function PairRouteView() {
   return (
     <PairingRouteSurface
       auth={authGateState.auth}
-      onAuthenticated={() => {
-        // Recreate the primary connection so its WebSocket and cached scopes
-        // use the newly issued cookie after re-pairing.
-        router.history.replace("/");
-        router.history.flush();
-        window.location.reload();
+      onAuthenticated={async () => {
+        if (!window.t3ThreadBridge) {
+          router.history.replace("/");
+          router.history.flush();
+          window.location.reload();
+          return;
+        }
+        await resumeThreadPrimaryConnection({
+          readPrimaryEnvironmentId: () => appAtomRegistry.get(primaryEnvironmentIdAtom),
+          retry: retryPrimaryConnection,
+        });
+        await navigate({ to: "/", replace: true });
       }}
       {...(authGateState.errorMessage ? { initialErrorMessage: authGateState.errorMessage } : {})}
     />

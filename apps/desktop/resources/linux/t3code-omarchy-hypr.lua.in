@@ -1,0 +1,8 @@
+-- T3 Code managed Omarchy adapter PATH integration.
+local adapter_bin = {{LUA_ADAPTER_BIN}}
+local kept = {}
+for entry in (os.getenv("PATH") or "/usr/local/bin:/usr/bin"):gmatch("[^:]+") do
+  if entry ~= adapter_bin then table.insert(kept, entry) end
+end
+table.insert(kept, 1, adapter_bin)
+hl.env("PATH", table.concat(kept, ":"))

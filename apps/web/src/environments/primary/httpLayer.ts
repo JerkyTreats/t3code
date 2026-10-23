@@ -4,12 +4,13 @@ import * as Layer from "effect/Layer";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 import { readDesktopPrimaryBearerToken } from "./desktopAuth";
-import { resolvePrimaryEnvironmentHttpUrl } from "./target";
+import { isStandaloneDesktopPrimary, resolvePrimaryEnvironmentHttpUrl } from "./target";
+import { makeThreadPrimaryFetch, readThreadPrimaryTarget } from "./threadTransport";
 
 function isSameOriginBrowserPrimary(): boolean {
   if (
     typeof window === "undefined" ||
-    window.desktopBridge !== undefined ||
+    (window.desktopBridge !== undefined && !isStandaloneDesktopPrimary()) ||
     !window.location.origin.startsWith("http")
   ) {
     return false;
@@ -33,6 +34,22 @@ function withPrimaryBearerToken(client: HttpClient.HttpClient): HttpClient.HttpC
 export function layerForCurrentOrigin() {
   return Layer.unwrap(
     Effect.sync(() => {
+      const thread = readThreadPrimaryTarget();
+      if (thread) {
+        return layerRemoteHttpClient(
+          makeThreadPrimaryFetch({
+            applicationOrigin: new URL(thread.httpBaseUrl).origin,
+            fetch: globalThis.fetch,
+          }),
+        ).pipe(
+          Layer.provide(
+            Layer.succeed(FetchHttpClient.RequestInit, {
+              credentials: "omit",
+              redirect: "error",
+            }),
+          ),
+        );
+      }
       const layerBase = layerRemoteHttpClient(globalThis.fetch);
       if (isSameOriginBrowserPrimary()) {
         return Layer.merge(

@@ -1,4 +1,5 @@
 import {
+  AuthClientId,
   AuthSessionId,
   type AuthEnvironmentScope,
   EnvironmentAuthenticatedAuth,
@@ -143,6 +144,8 @@ it.effect("exports full history with size, scope, and missing-thread checks", ()
                 sessionId: AuthSessionId.make("test-session"),
                 subject: "test",
                 method: "bearer-access-token",
+                clientId: AuthClientId.make("test-client"),
+                authorityClass: "client",
                 scopes: new Set<AuthEnvironmentScope>(allowed ? ["orchestration:read"] : []),
               }),
             ),

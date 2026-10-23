@@ -1,0 +1,93 @@
+# Patch Guide
+
+Status: current implementation index
+
+This index describes the implemented fork responsibilities. Fleet manager, fork local voice F29, message Board F25 and automatic Board liaison F28 are retired; ordinary upstream input remains substrate. The current source intake targets `42da166d131017335a1158d0b379dd68b8985796` from accepted main `d9ab2bd9767f7b47e2f18a0d975edcf1cae008ba`. Upstream migration 62 runs at fork identity 86. The [current intake record](.ledger/upstream-intake-20261015.md) binds source verification and its installed-acceptance limits. The [20261011 intake record](.ledger/upstream-intake-20261011.md) remains historical evidence for its revision. Accepted main and origin remain unchanged pending separate landing authority. Main assumes Fleet was never installed and excludes the one-time retirement compatibility used during the original production transition. The [mainline cleanup record](.ledger/never-fleet-main-20261009.md) records this boundary and its verification. The [earlier Fleet-free intake record](.ledger/upstream-intake-fleet-free-20261009.md), [v2 intake record](.ledger/upstream-intake-orchestratorv2-20261002.md), and [intake evidence](.ledger/upstream-intake-evidence.json) remain historical evidence for their recorded revisions.
+
+Review this guide and the relevant active specification before changing fork behavior. Update the active contract and this guide in the same completed change. Historical source and plans do not independently require replay.
+
+Upstream is a read-only intake source. Exact origin is the only product repository and publication target. Follow the [reconciliation policy](governance/upstream_merge_policy.md) and [fork isolation policy](governance/fork_isolation_policy.md).
+
+## Active Repository Responsibilities
+
+[F18 protected onboarding and workstream ledgers](fork/F18-protected-onboarding-and-workstream-ledgers.md) owns fork-first documentation, clone authorization, privacy and the implementation ledger. [F19 delivery skills and Commit Effects](fork/F19-repository-delivery-skills-and-commit-effects.md) owns the local workflow and commit-effect record. The mainline cleanup ledger separates source verification from deployment acceptance for the responsibilities indexed below.
+
+The [retired-feature record](fork/retired-features.md) preserves the approved retirement decisions as history. It creates no active replay or compatibility obligation. Upstream ordinary sending, Markdown, mobile outbox, prompt stash, and source/PR review remain the intended surviving substrate; their integrated acceptance is recorded in the intake ledger.
+
+[F30 Poteto Mode workflow](fork/F30-poteto-mode-workflow.md) owns the explicit `$poteto-mode` router, 23 adapted guide playbooks and bespoke fallback, T3-native tool mappings, scope-preserving task continuity and evidence-backed completion. Its shared composer P toggle sits to the right of the floating permission lock, uses a lighter active appearance, falls back to the toolbar in compact layouts, and retains the choice per thread and environment on this client, invokes the installed skill on ordinary Codex turns and fails closed when the selected skill is unavailable. A display owner hides the leading invocation line in user-message history while preserving stored provider input. The skill lives under `.agents/skills/poteto-mode`; the reviewed source lock and user guide describe the bounded implementation. Pure applicability and selection helpers and the compact placement owner adapt current upstream composer mechanics. The toggle supports one model at a time, does not synchronize between clients or cover native mobile, and adds no provider wire state or automatic publication authority.
+
+## Persistence
+
+[Fork persistence compatibility](fork/persistence-compatibility.md) owns migration lineage selection, retained historical cleanup and upstream continuation identities. Keep `Migrations.ts` mechanical and preserve the single upstream transactional runner. The v2 continuation retains supported journal meaning and active identities through 69. Retired feature identities are journal evidence only; fresh databases skip their bodies. Migration 83 removes retired storage while preserving ordinary application data. Current upstream migrations 57 through 60 retain fork identities 79 through 82. Upstream review-guide migration 61 continues at additive fork identity 84; historical admission and earlier journal identities remain unchanged. Main accepts supported histories where Fleet was never installed; it has no Fleet journal admission or retirement guard. A former Fleet deployment requires separately verified offline data alignment before using this runtime. Source journals are validated before the copied database is published and before the runner creates a journal. Legacy events, receipts and attachment references remain available for recovery; historical tool, approval, plan and checkpoint items are not converted. Cutover requires one writable runtime. Rollback must reconcile authentication grants and revocations and account for subsequent v2 writes and shared files.
+
+## Repository And Runtime Authority
+
+Migration 85 adds an ordered assistant-message index for published-response project activity. It preserves stored messages and existing journal identities.
+
+[F06 exact-origin identity](fork/F06-exact-origin-repository-identity.md) owns origin selection, provider binding and mutation authorization. Current upstream Git and provider hosts call those owners, including startup and background automatic pull. Hosted URL selectors, including Forgejo, linked pull requests and file-revision reads, are bound to origin before CLI execution; GitHub qualified branch selectors retain their ordinary meaning. Package-safe target owners now serve the current provider registry, including GitCafe, and client membership requires an exact origin locator. Published branch discovery selects literal origin; review-guide generation revalidates live origin before diff fetch or model execution. Client endpoint preparation retains explicit host and full Azure selectors. Provider refinement rebinds hints to live origin, batched reads retain explicit repository targets, and created PR URLs are validated with exact ports and full Azure selectors before application linking.
+
+[F01 desktop release identity](fork/F01-exact-origin-desktop-release.md) owns exact-origin update metadata, verified Linux descriptors bound to the full build revision, a shared source-commit release version for server, Code, and Thread, and registry-free SSH runtime acquisition. [F20 origin server image](fork/F20-origin-server-image.md) owns private build context, origin image publication rules and operator-managed headless updates. Desktop-controlled updates remain available. The runtime owner also selects admission, refusal and operator guidance; the pure CLI invocation owner retains registry-free acquisition instructions. The current intake record binds source and build checks to this candidate. Installed artifact and image-runtime acceptance require their own evidence.
+
+The web update owner also controls inferred reconnect progress. Only desktop-managed capability may infer a lost update; unsupported runtimes retain deployment guidance, while actual running update progress survives transient descriptor loss.
+
+The server image uses the frozen dependency graph's platform packages without globally forcing native compilation. Its exact Dockerfile policy remains enforced by the image workflow scanner. Local image verification and promotion share the same verified Skopeo 1.22.3 helper, pinned to its immutable manifest digest.
+
+The current image pins Codex 0.159.0 alongside the accepted upstream protocol bindings and model manifest. This provider runtime lists GPT-6.1 Sol where the account catalog admits it.
+
+## External Admin
+
+[F17 external Admin authority](fork/F17-settings-admin.md) owns persisted and signed portal authority, the six-route HTTP boundary, explicit enrollment, private revisioned lifecycle, exact connection teardown and pre42 backup. Current upstream granular permissions require fresh portal-issued client enrollment after cutover where old grants lack the new permissions. Existing signed and stored scopes are not rewritten. Standard clients retain pairing consumption and ordinary authentication; embedded access inventory and mutation UI are absent. The transport adapters register the shared authority services and recheck admission before WebSocket work. Current transport and independent-runtime authority tests pass with synthetic fixtures. Four MCP endpoints retain separate capability admission, canonical namespaces and DELETE session isolation. Earlier installed disable/re-enable evidence does not establish installed v2 acceptance.
+
+## Retained Presentation And Client Adapters
+
+[Project activity ordering](fork/sidebar-project-activity.md) keeps project activity anchored to user-authored prompts and published final responses across web, desktop and mobile. Progress, streaming output, tools and automatic wake prompts do not reorder projects. The shared activity owner consumes bounded shell timestamps; Codex preserves native response phases and other providers publish through completed runs.
+
+[F31 nested threads](fork/F31-nested-threads.md) lets a thread be created nested under an ordinary parent in the same project through an optional `nestedUnderThreadId` that is separate from lineage. Server validation, clearing through metadata update and non-inheritance are owned by `threadNesting.ts`. Web and mobile grouping, the provider badge, expansion, attention, traversal and palette labels are owned by the client-runtime nesting module. Older peers ignore the field and list nested threads at top level.
+
+[Thread conversation order](fork/thread-conversation-order.md) orders every visible thread section
+by the latest user-authored prompt or completed assistant message. Its shared client-runtime owner
+ignores run, tool, wake and lifecycle timestamps. Web and mobile consume the same owner, and
+dragging changes lifecycle without manual placement. Optional shell response stamps retain
+mixed-version connections, with reduced ordering information from older servers.
+
+[F02 Omarchy system theme](fork/F02-omarchy-system-theme.md) keeps coherent local observation and an exact-seed restrained transient palette through current semantic roles. Explicit appearance, preview and onboarding retain upstream precedence. Code and independent Thread shells share the bounded local source and the hosted client projection through fixed read-only bridge methods. No Omarchy preference or general theme generator is added.
+
+[F03 desktop screenshot capture](fork/F03-desktop-screenshot-capture.md) exposes optional top-level desktop capture independently of upstream preview capture. The composer uses a scoped reservation shared with ordinary attachment admission, then transfers one validated PNG through the current image path.
+
+[F04 context whitespace](fork/F04-composer-context-whitespace.md) preserves authored bytes when terminal, element or preview context is appended, including mixed upstream source review. The focused composition and display owner preserves generated ordering and removes only inserted separation. Ordinary and review-only trimming remains upstream behavior.
+
+Current v2 dispatch, queued-message editing and plan follow-ups share the retained-context composition owner. Upstream thread items, runs and server queues carry ordinary execution.
+
+[F22 Mermaid rendering](fork/F22-serialized-mermaid-rendering.md) adds one fence adapter to upstream Markdown. A bounded visibility-gated serialized owner delays hidden diagram work while handling theme-sensitive rendering, stable semantic identity, retries and stale results across message, plan, file, attachment and PR surfaces. The retired document renderer and rendered-document review remain absent.
+
+[F23 preview controls](fork/F23-preview-browser-controls.md) owns focused new, confirmed close and reopen actions, exact scoped runtime identity and ten-entry successful-close history. Current preview sessions, profiles and browser presentation remain upstream substrate. Exact zoom restoration consumes the existing normalized Manager operation.
+
+These v2 adapters passed source verification. Current host evidence and the absence of new visual or installed acceptance are recorded in the v2 intake record. [Ordinary chat and draft appearance](fork/chat-and-draft-presentation.md) keeps the captured message hierarchy, centered draft, plan presentation, floating permission control, full-width checkout strip and composer geometry while consuming current upstream sending, attachments and Markdown.
+
+## Linux And Hosted Thread
+
+The server enforces F27 ticket consumption through the focused `WebSocketTicketAdmission.ts` owner inside its existing session store. A signed random nonce permits one admission attempt after current expiry and parent-authority checks. Pending tickets have a finite capacity, expire lazily and fail closed across restart or another runtime. Reusable enrollment remains unchanged; a new connection requests a fresh ticket.
+
+[F16 official Linux launcher](fork/F16-official-linux-desktop-launcher.md) owns isolated standalone Code identity, verified launch admission, readiness withdrawal and transactional production topology. Managed external links use the session config home to reach its default browser and editor handlers. Selection occurs before bundled backend allocation. Trusted Code launcher submission consumes ordinary send admission; completion retry does not resend. Server lifecycle remains independent.
+
+Desktop bootstrap acquires Clerk and resolves user data synchronously before Electron readiness. Explicit managed profile selection precedes the ordinary v2 DesktopUserData fallback. Launcher runtime I/O follows that acquisition; instance handlers obtain authenticated handoff support during configuration.
+
+The desktop runtime and launcher select the same channel-specific handoff directory. Staging readiness cannot use production handoff state. Managed Code selects the matching production or staging Linux desktop name before Electron is ready, so its Wayland app ID agrees with the installed desktop entry and exact-class launcher focus. Both desktop URL registration writers leave the installer-owned URL handler entry and scheme default untouched for managed Code. F27 scoped external launches retain the requested working directory and default fresh launches to home; the hosted project owner opens an ordinary local draft in that primary project without sending its prefill. The staging desktop harness verifies these outcomes against real clients while preserving core Code and server identities. Thread sets the channel-specific Linux desktop name explicitly so staging compositor rules apply before a window is shown. The native harness explicitly launches Thread on Wayland. The harness requires an unlocked Omarchy session, validates current Lua workspace dispatch arguments, bounds graceful cleanup, and retains partial-run evidence. Code draft preservation requires observed composer content.
+
+[F27 T3 Thread](fork/F27-t3-thread.md) owns the separate hosted Electron shell, one process/window/private writable profile and runtime per launch, verified pre-expanded release code, protected exact-origin enrollment and staging-only activation. Its standalone launcher owns preparation and full inventory verification; the installer prepares before atomic publication, and client cleanup never removes shared release code. The web consumes the current full chat behind compact outer presentation. Main retries pending delivery after the main-frame loading flag clears and retains acknowledged staging across document reload; pending completion remains an explicit recovery state. Fresh one-use WSS tickets keep reusable credentials outside renderer state. The primary HTTP adapter preserves browser fetch invocation semantics while enforcing its exact-origin boundary. Successful Thread pairing resumes the discovered primary connection before chat navigation, so a ticket denial from before enrollment does not leave the launch waiting. Current source and installed acceptance status belongs to the intake ledger.
+
+F27 separates threads created by the T3 Thread client into a persisted T3 Threads sidebar view; creation surface is stamped by trusted transport provenance and retained through v2 persistence, shell projection and supported legacy import. Older unmarked threads stay in Projects; new child threads do not inherit a parent classification. The provider metadata owner explicitly selects child provenance after copying ordinary parent fields.
+
+F27 preparation normalizes the generated AppImage icons' mode 0664 to 0644 before strict release inventory verification. Other unsafe permissions still fail closed.
+
+F27 also owns an opt-in local startup trace and wrapper harness. The fixed inherited channel joins launcher, Electron, hosted document and composer readiness on one timeline without including user or environment values. Normal launches retain their existing process, transport and presentation behavior.
+
+Thread enrollment binds the request origin and rejects redirects while accepting Electron's absent response URL metadata. Supplied foreign response metadata remains invalid.
+
+Thread uses a headerless shared chat with composer-adjacent working and connection feedback. Its fork presentation owner keeps the selected model identifier readable at narrow widths and uses an accessible icon-only permission trigger. Ordinary chat presentation and all existing model, draft and execution authorities remain unchanged.
+
+Thread publishes its current conversation title and working, done or idle state through a bounded native window title. The hosted title formatter consumes v2 latest-run status and owns that status mapping; the Electron shell admits only its Thread title format.
+
+## Verification
+
+Source and runtime build-input changes require `pnpm fmt`, `pnpm lint`, `pnpm typecheck`, and `pnpm test`. Native mobile changes also require `pnpm lint:mobile`. Use synthetic state and keep client installation, production changes and publication within their explicit authorization.

@@ -1,0 +1,1101 @@
+import { potetoModeScope } from "../../fork/potetoMode";
+import { usePotetoModeStore } from "../../fork/potetoModeStore";
+import {
+  act,
+  cloneElement,
+  createElement,
+  type ComponentProps,
+  type ReactElement,
+  type ReactNode,
+} from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import {
+  EnvironmentId,
+  ThreadId,
+  ProjectId,
+  ProviderInstanceId,
+  ProviderDriverKind,
+  RuntimeRequestId,
+  type DesktopScreenshotCapture,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+} from "@t3tools/contracts";
+import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+
+const mocks = vi.hoisted(() => ({ prepare: vi.fn(), capture: vi.fn(), toast: vi.fn() }));
+vi.mock("../../lib/imageCompression", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/imageCompression")>()),
+  prepareImageForAttachment: mocks.prepare,
+  compressImageForStash: vi.fn(),
+}));
+vi.mock("../../state/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../state/session")>()),
+  readEnvironmentScope: () => true,
+}));
+vi.mock("../../state/server", () => ({ serverEnvironment: { refreshProviders: {} } }));
+vi.mock("../../lib/openPullRequestLink", () => ({ useOpenPrLink: () => () => false }));
+vi.mock("../../pierre-icons", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../pierre-icons")>()),
+  ensurePierreIconSprite: vi.fn(),
+}));
+vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
+vi.mock("../../hooks/useMediaQuery", () => ({ useMediaQuery: () => false }));
+vi.mock("../../panelAnimations", () => ({
+  usePanelAnimationSettings: () => ({ active: false, durationMs: 0 }),
+  observeResponsiveBreakpointFade: () => () => {},
+}));
+vi.mock("../../lib/composerPathSearchState", () => ({
+  useComposerPathSearch: () => ({ entries: [], isLoading: false }),
+}));
+vi.mock("../../lib/attachmentUploadQueue", () => ({
+  useAttachmentUploadStore: (select: (state: unknown) => unknown) =>
+    select({ uploadsByImageId: {} }),
+  startAttachmentUpload: vi.fn(),
+  releaseAttachmentUpload: vi.fn(),
+  releaseDraftAttachment: vi.fn(),
+  releasePersistedAttachmentUpload: vi.fn(),
+  readAttachmentUpload: vi.fn(),
+  retryAttachmentUpload: vi.fn(),
+  verifyStashedAttachmentUpload: vi.fn(),
+}));
+vi.mock("../ui/toast", () => ({ toastManager: { add: mocks.toast } }));
+vi.mock("../ui/button", () => ({
+  Button: (props: ComponentProps<"button">) => createElement("button", props),
+  buttonVariants: () => "",
+}));
+vi.mock("../ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({
+    render,
+    children,
+  }: {
+    render: ReactElement<{ children?: ReactNode }>;
+    children: ReactNode;
+  }) => cloneElement(render, {}, children),
+  TooltipPopup: () => null,
+}));
+vi.mock("../ui/select", () => ({
+  Select: ({ children }: { children: ReactNode }) => children,
+  SelectTrigger: (props: ComponentProps<"button">) => createElement("button", props),
+  SelectValue: ({ children }: { children: ReactNode }) => children,
+  SelectItem: () => null,
+  SelectPopup: () => null,
+}));
+vi.mock("./ComposerControl", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ComposerControl")>()),
+  ComposerSelectControl: (props: ComponentProps<"button">) => createElement("button", props),
+}));
+vi.mock("../ComposerPromptEditor", () => ({ ComposerPromptEditor: () => null }));
+vi.mock("./ProviderModelPicker", () => ({ ProviderModelPicker: () => null }));
+vi.mock("./ComposerPrimaryActions", () => ({
+  ComposerPrimaryActions: (props: { sendDisabledReason: string | null }) =>
+    createElement("button", {
+      type: "submit",
+      disabled: props.sendDisabledReason !== null,
+      "aria-label": "Send message",
+    }),
+}));
+vi.mock("./ContextWindowMeter", () => ({ ContextWindowMeter: () => null }));
+vi.mock("./ComposerStashBadge", () => ({ ComposerStashBadge: () => null }));
+vi.mock("./ComposerStashMenu", () => ({ ComposerStashMenu: () => null }));
+vi.mock("./ComposerActivityStatus", () => ({ ComposerActivityRow: () => null }));
+vi.mock("./ComposerBannerStack", () => ({ ComposerBannerStack: () => null }));
+vi.mock("./ComposerPendingUserInputPanel", () => ({ ComposerPendingUserInputPanel: () => null }));
+
+import { ChatComposer, type ChatComposerProps } from "./ChatComposer";
+import { ComposerPromptEditor } from "../ComposerPromptEditor";
+import { ProviderModelPicker } from "./ProviderModelPicker";
+import {
+  useComposerDraftStore,
+  DraftId,
+  type ComposerImageAttachment,
+} from "../../composerDraftStore";
+import { DesktopLauncherActivationOwner } from "../../fork/desktopLauncherActivation";
+import { useDesktopLauncherSubmitAdmission } from "../desktop/DesktopLauncherActivationCoordinator";
+import { ComposerAttachmentAdmission } from "../../fork/composerAttachmentAdmission";
+import {
+  questionAttachmentDraftId,
+  useQuestionAttachmentPreparation,
+} from "../../questionAttachments";
+
+let renderer: ReactTestRenderer | null = null;
+const initialStore = useComposerDraftStore.getState();
+const environmentId = EnvironmentId.make("environment-one");
+const threadId = ThreadId.make("shared-thread");
+const target = { environmentId, threadId };
+const emptyCapture: DesktopScreenshotCapture = {
+  name: "capture.png",
+  mimeType: "image/png",
+  data: new Uint8Array([1, 2, 3]),
+};
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function image(name = "paste.png"): File {
+  return new File(["image"], name, { type: "image/png" });
+}
+function attachment(id: string): ComposerImageAttachment {
+  const file = image(id + ".png");
+  return {
+    type: "image",
+    id,
+    name: file.name,
+    mimeType: file.type,
+    sizeBytes: file.size,
+    file,
+    previewUrl: "blob:" + id,
+  };
+}
+function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerProps {
+  return {
+    canOperateThread: true,
+    activeProjectId: null,
+    threadPullRequests: undefined,
+    resumeCompactionTokens: null,
+    keepFullHistory: false,
+    onToggleKeepFullHistory: vi.fn(),
+    supportsQuestionAttachments: false,
+    composerDraftTarget: target,
+    environmentId,
+    attachmentUploadsCapabilityKnown: true,
+    supportsAttachmentUploads: false,
+    maxFileAttachmentBytes: null,
+    routeKind: "server",
+    routeThreadRef: target,
+    draftId: null,
+    multipleModelSelections: null,
+    supportsMultipleModels: false,
+    onMultipleModelSelectionsChange: vi.fn(),
+    activeThreadShell: null,
+    providerCatalogKnown: true,
+    pullRequestProjectId: null,
+    pullRequestRepository: null,
+    onCompactContext: vi.fn(),
+    activeThreadId: threadId,
+    activeThreadEnvironmentId: environmentId,
+    activeThread: undefined,
+    promptHistoryMessages: [],
+    isServerThread: true,
+    isLocalDraftThread: false,
+    forceExpandedOnMobile: false,
+    projectSelectionRequired: false,
+    phase: "ready",
+    canInterrupt: false,
+    canResume: false,
+    queuedRunsControl: null,
+    editingQueuedAttachments: null,
+    onRemoveEditingQueuedAttachment: vi.fn(),
+    onResume: vi.fn(),
+    isConnecting: false,
+    isSendBusy: false,
+    sendDisabledReason: null,
+    isPreparingWorktree: false,
+    bannerItems: [],
+    environmentUnavailable: null,
+    activePendingApproval: null,
+    pendingApprovals: [],
+    pendingUserInputs: [],
+    activePendingProgress: null,
+    activePendingResolvedAnswers: null,
+    activePendingIsResponding: false,
+    activePendingDraftAnswers: {},
+    activePendingQuestionIndex: 0,
+    respondingRequestIds: [],
+    showPlanFollowUpPrompt: false,
+    activeProposedPlan: null,
+    activeTasksProgress: null,
+    activeTaskSteps: null,
+    threadSyncPhase: null,
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    lockedProvider: null,
+    providerStatuses: [
+      {
+        instanceId: ProviderInstanceId.make("codex"),
+        driver: ProviderDriverKind.make("codex"),
+        enabled: true,
+        installed: true,
+        version: null,
+        status: "ready",
+        auth: { status: "authenticated" },
+        checkedAt: "2026-01-01T00:00:00.000Z",
+        models: [
+          { slug: "test", name: "Test", isDefault: true, isCustom: false, capabilities: {} },
+        ],
+        slashCommands: [],
+        skills: [],
+      },
+    ],
+    activeProjectDefaultModelSelection: null,
+    activeThreadModelSelection: null,
+    activeContextWindow: null,
+    compactThreadUnavailable: false,
+    compactDisabled: false,
+    compactDisabledReason: null,
+    resolvedTheme: "light",
+    settings: { ...DEFAULT_UNIFIED_SETTINGS, composerCollapseOnScroll: false },
+    keybindings: [],
+    terminalOpen: false,
+    gitCwd: null,
+    restingControlsHost: null,
+    restingControlsHaveLeadingContext: false,
+    onRestingControlsVisibilityChange: vi.fn(),
+    getTimelineScrollableNode: () => null,
+    isTimelineAtLogicalEnd: () => true,
+    timelineOverflows: false,
+    onComposerOverlayHeightChange: vi.fn(),
+    onRestingChange: vi.fn(),
+    promptRef: { current: "" },
+    composerImagesRef: { current: [] },
+    composerFilesRef: { current: [] },
+    composerTerminalContextsRef: { current: [] },
+    composerRef: { current: null },
+    onPageScrollKeyDown: vi.fn(),
+    onPageScrollKeyUp: vi.fn(),
+    onPageScrollRelease: vi.fn(),
+    onSend: vi.fn(),
+    onInterrupt: vi.fn(),
+    onImplementPlanInNewThread: vi.fn(),
+    onRespondToApproval: vi.fn(),
+    onSelectActivePendingUserInputOption: vi.fn(),
+    onAdvanceActivePendingUserInput: vi.fn(),
+    onDismissActivePendingUserInput: vi.fn(),
+    onPreviousActivePendingUserInputQuestion: vi.fn(),
+    onChangeActivePendingUserInputCustomAnswer: vi.fn(),
+    onProviderModelSelect: vi.fn(),
+    onOpenProviderSetup: vi.fn(),
+    getModelDisabledReason: () => null,
+    toggleInteractionMode: vi.fn(),
+    handleRuntimeModeChange: vi.fn(),
+    handleInteractionModeChange: vi.fn(),
+    focusComposer: vi.fn(),
+    scheduleComposerFocus: vi.fn(),
+    setThreadError: vi.fn(),
+    onExpandImage: vi.fn(),
+    onFileOpen: vi.fn(),
+    ...overrides,
+  };
+}
+async function mount(input = props()) {
+  await act(() => {
+    renderer = create(<ChatComposer {...input} />);
+  });
+  return input;
+}
+describe("Thread composer controls integration", () => {
+  it("uses the existing selected model and permission handler with Thread presentation", async () => {
+    const input = await mount(props({ threadClient: true }));
+    const picker = renderer!.root.findByType(ProviderModelPicker);
+    expect(picker.props.labelMode).toBe("identifier");
+    expect(picker.props.model).toBeTruthy();
+    await act(() =>
+      picker.props.onInstanceModelChange(input.providerStatuses[0]!.instanceId, "test"),
+    );
+    expect(input.onProviderModelSelect).toHaveBeenCalledWith(
+      input.providerStatuses[0]!.instanceId,
+      "test",
+    );
+    expect(picker.props.triggerClassName).not.toContain(":w-0");
+    expect(
+      renderer!.root
+        .findAllByType("button")
+        .some((node) => node.props["aria-label"] === "Runtime mode: Full access"),
+    ).toBe(true);
+  });
+  it("keeps ordinary chat's model display mode", async () => {
+    await mount();
+    expect(renderer!.root.findByType(ProviderModelPicker).props.labelMode).toBe("display");
+  });
+});
+
+function capture() {
+  renderer!.root
+    .findAllByType("button")
+    .find((node) => node.props["aria-label"] === "Capture screenshot")!
+    .props.onClick();
+}
+function draft() {
+  return useComposerDraftStore.getState().getComposerDraft(target);
+}
+
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("window", {
+    desktopBridge: { captureDesktopScreenshot: mocks.capture },
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    requestAnimationFrame: vi.fn(),
+    cancelAnimationFrame: vi.fn(),
+    setTimeout,
+    clearTimeout,
+    performance,
+    getSelection: () => null,
+    localStorage: { getItem: () => null },
+  });
+  vi.stubGlobal("document", {
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    activeElement: null,
+    getElementById: () => null,
+    createElement: () => ({ setAttribute: vi.fn(), innerHTML: "", append: vi.fn() }),
+    body: { append: vi.fn() },
+  });
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:prepared");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  useComposerDraftStore.setState(initialStore, true);
+  usePotetoModeStore.setState({ selections: {} });
+  useQuestionAttachmentPreparation.setState({ counts: {} });
+  mocks.capture.mockReset();
+  mocks.prepare.mockReset();
+  mocks.toast.mockClear();
+  mocks.prepare.mockImplementation(async (file: File) => ({ ok: true, file }));
+});
+afterEach(async () => {
+  await act(() => renderer?.unmount());
+  renderer = null;
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe("ChatComposer screenshot admission", () => {
+  it("refuses at cap before calling the desktop", async () => {
+    useComposerDraftStore.getState().addImages(
+      target,
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS }, (_, i) => attachment(String(i))),
+    );
+    const input = await mount();
+    await act(() => capture());
+    expect(mocks.capture).not.toHaveBeenCalled();
+    expect(input.setThreadError).toHaveBeenCalledWith(
+      threadId,
+      `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`,
+    );
+  });
+  it("shares paste capacity with a single native capture and transfers without double counting", async () => {
+    useComposerDraftStore.getState().addImages(
+      target,
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 2 }, (_, i) =>
+        attachment(String(i)),
+      ),
+    );
+    const native = deferred<DesktopScreenshotCapture | null>();
+    const pastePreparation = deferred<{ ok: true; file: File }>();
+    mocks.capture.mockReturnValue(native.promise);
+    mocks.prepare.mockImplementationOnce(() => pastePreparation.promise);
+    await mount();
+    const preventDefault = vi.fn();
+    await act(() => {
+      capture();
+      capture();
+      renderer!.root.findByType(ComposerPromptEditor).props.onPaste({
+        clipboardData: { files: [image("first.png"), image("overflow.png")], getData: () => "" },
+        preventDefault,
+        stopPropagation: vi.fn(),
+      });
+    });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(mocks.capture).toHaveBeenCalledOnce();
+    expect(mocks.prepare).toHaveBeenCalledOnce();
+    await act(() => native.resolve(emptyCapture));
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1);
+    expect(draft()?.images.at(-1)?.name).toBe("capture.png");
+    await act(() => pastePreparation.resolve({ ok: true, file: image("first.png") }));
+    expect(draft()?.images.map((value) => value.name)).toContain("first.png");
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+    expect(mocks.prepare).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses capture when an ordinary paste already reserved the last slot", async () => {
+    useComposerDraftStore.getState().addImages(
+      target,
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, i) =>
+        attachment(String(i)),
+      ),
+    );
+    const pending = deferred<{ ok: true; file: File }>();
+    mocks.prepare.mockReturnValue(pending.promise);
+    const input = await mount();
+    await act(() => {
+      input.composerRef.current!.addDroppedFiles([image()]);
+      capture();
+    });
+    expect(mocks.capture).not.toHaveBeenCalled();
+    await act(() => pending.resolve({ ok: true, file: image() }));
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+  });
+
+  it.each(["cancel", "native-error", "compression-error"])(
+    "releases capacity after %s and allows a fresh capture",
+    async (outcome) => {
+      const native = deferred<DesktopScreenshotCapture | null>();
+      mocks.capture.mockReturnValueOnce(native.promise).mockResolvedValueOnce(emptyCapture);
+      if (outcome === "compression-error")
+        mocks.prepare.mockRejectedValueOnce(new Error("preparation failed"));
+      const input = await mount();
+      await act(() => capture());
+      await act(() => {
+        if (outcome === "native-error") native.reject(new Error("native failed"));
+        else native.resolve(outcome === "cancel" ? null : emptyCapture);
+      });
+      expect(draft()?.images ?? []).toHaveLength(0);
+      if (outcome !== "cancel")
+        expect(input.setThreadError).toHaveBeenCalledWith(
+          threadId,
+          outcome === "native-error" ? "native failed" : "preparation failed",
+        );
+      await act(() => capture());
+      expect(mocks.capture).toHaveBeenCalledTimes(2);
+      expect(draft()?.images).toHaveLength(1);
+    },
+  );
+
+  it("blocks synchronous send and compact commands throughout capture and image preparation", async () => {
+    useComposerDraftStore.getState().setPrompt(target, "Keep this prompt");
+    const native = deferred<DesktopScreenshotCapture | null>();
+    const preparation = deferred<{ ok: true; file: File }>();
+    mocks.capture.mockReturnValue(native.promise);
+    mocks.prepare.mockReturnValue(preparation.promise);
+    const input = await mount();
+    await act(() => {
+      capture();
+      renderer!.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() });
+      input.composerRef.current!.compactContext();
+    });
+    expect(input.onSend).not.toHaveBeenCalled();
+    expect(draft()?.prompt).toBe("Keep this prompt");
+    expect(
+      renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props["aria-label"] === "Send message")!.props.disabled,
+    ).toBe(true);
+    await act(() => native.resolve(emptyCapture));
+    await act(() => input.composerRef.current!.compactContext());
+    expect(input.onSend).not.toHaveBeenCalled();
+    await act(() => preparation.resolve({ ok: true, file: image("capture.png") }));
+    await act(() => renderer!.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }));
+    expect(input.onSend).toHaveBeenCalledOnce();
+    expect(input.composerRef.current!.getSendContext().images).toHaveLength(1);
+  });
+
+  it("drops a native result after switching environments with the same ThreadId, even after returning", async () => {
+    const native = deferred<DesktopScreenshotCapture | null>();
+    mocks.capture.mockReturnValue(native.promise);
+    const input = await mount();
+    await act(() => capture());
+    const otherEnvironment = EnvironmentId.make("environment-two");
+    const otherTarget = { environmentId: otherEnvironment, threadId };
+    await act(() =>
+      renderer!.update(
+        <ChatComposer
+          {...input}
+          environmentId={otherEnvironment}
+          composerDraftTarget={otherTarget}
+          routeThreadRef={otherTarget}
+        />,
+      ),
+    );
+    await act(() => renderer!.update(<ChatComposer {...input} />));
+    await act(() => native.resolve(emptyCapture));
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(draft()?.images ?? []).toHaveLength(0);
+    expect(
+      useComposerDraftStore.getState().getComposerDraft(otherTarget)?.images ?? [],
+    ).toHaveLength(0);
+    expect(input.setThreadError).not.toHaveBeenCalled();
+  });
+
+  it("drops capture when an unsaved draft is retargeted to another project", async () => {
+    const draftId = DraftId.make("unsaved-draft");
+    const firstProject = { environmentId, projectId: ProjectId.make("first-project") };
+    useComposerDraftStore.getState().setLogicalProjectDraftThreadId("first", firstProject, draftId);
+    const native = deferred<DesktopScreenshotCapture | null>();
+    mocks.capture.mockReturnValue(native.promise);
+    await mount(props({ composerDraftTarget: draftId, draftId, routeKind: "draft" }));
+    await act(() => capture());
+    await act(() =>
+      useComposerDraftStore
+        .getState()
+        .setLogicalProjectDraftThreadId(
+          "second",
+          { environmentId, projectId: ProjectId.make("second-project") },
+          draftId,
+        ),
+    );
+    await act(() => native.resolve(emptyCapture));
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.images ?? []).toHaveLength(
+      0,
+    );
+  });
+
+  it("releases reservations on unmount and ignores late success and errors", async () => {
+    const reserve = vi.spyOn(ComposerAttachmentAdmission.prototype, "reserve");
+    const native = deferred<DesktopScreenshotCapture | null>();
+    mocks.capture.mockReturnValue(native.promise);
+    const input = await mount();
+    await act(() => capture());
+    const owner = reserve.mock.contexts[0] as ComposerAttachmentAdmission;
+    expect(owner.pending).toBe(1);
+    await act(() => renderer!.unmount());
+    renderer = null;
+    expect(owner.pending).toBe(0);
+    await act(() => native.reject(new Error("late native failure")));
+    expect(input.setThreadError).not.toHaveBeenCalled();
+    expect(owner.pending).toBe(0);
+  });
+
+  it("releases ordinary preparation and revokes partial previews when the scoped destination changes", async () => {
+    const pending = deferred<{ ok: true; file: File }>();
+    mocks.prepare
+      .mockResolvedValueOnce({ ok: true, file: image("first.png") })
+      .mockReturnValueOnce(pending.promise);
+    const input = await mount();
+    await act(() =>
+      input.composerRef.current!.addDroppedFiles([image("first.png"), image("second.png")]),
+    );
+    expect(URL.createObjectURL).toHaveBeenCalledOnce();
+    const otherTarget = { environmentId, threadId: ThreadId.make("other-thread") };
+    await act(() =>
+      renderer!.update(
+        <ChatComposer
+          {...input}
+          activeThreadId={otherTarget.threadId}
+          composerDraftTarget={otherTarget}
+          routeThreadRef={otherTarget}
+        />,
+      ),
+    );
+    await act(() => pending.resolve({ ok: true, file: image("second.png") }));
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:prepared");
+    expect(draft()?.images ?? []).toHaveLength(0);
+    expect(
+      useComposerDraftStore.getState().getComposerDraft(otherTarget)?.images ?? [],
+    ).toHaveLength(0);
+  });
+
+  it("preserves the generic picker and replaces a reattachment marker at the cap", async () => {
+    useComposerDraftStore.getState().addImages(
+      target,
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, i) =>
+        attachment(String(i)),
+      ),
+    );
+    const file = new File(["report"], "report.txt", { type: "text/plain" });
+    useComposerDraftStore.getState().addFiles(target, [
+      {
+        type: "file",
+        id: "reattach",
+        name: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        file: null,
+      },
+    ]);
+    await mount(props({ supportsAttachmentUploads: true, maxFileAttachmentBytes: 1024 }));
+    expect(
+      renderer!.root
+        .findAllByType("button")
+        .some((node) => node.props["aria-label"] === "Attach files"),
+    ).toBe(true);
+    await act(() => capture());
+    expect(mocks.capture).not.toHaveBeenCalled();
+    const picker = renderer!.root.findByType("input");
+    await act(() => picker.props.onChange({ currentTarget: { files: [file], value: "" } }));
+    expect(draft()?.files).toHaveLength(1);
+    expect(draft()?.files[0]?.file).toBe(file);
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1);
+    expect(mocks.prepare).not.toHaveBeenCalled();
+  });
+
+  it("keeps ordinary classification and supported-image errors", async () => {
+    const input = await mount(
+      props({ supportsAttachmentUploads: true, maxFileAttachmentBytes: 1024 }),
+    );
+    await act(() =>
+      input.composerRef.current!.addDroppedFiles([
+        new File(["body"], "notes.txt", { type: "text/plain" }),
+        new File(["svg"], "vector.svg", { type: "image/svg+xml" }),
+        image(),
+      ]),
+    );
+    expect(draft()?.files[0]?.mimeType).toBe("text/plain");
+    expect(draft()?.images).toHaveLength(1);
+    expect(input.setThreadError).toHaveBeenCalledWith(
+      threadId,
+      expect.stringContaining("not a supported image type"),
+    );
+  });
+
+  it("places the unchanged runtime choices in the floating lock control", async () => {
+    const input = await mount();
+    const floating = renderer!.root.findByProps({ "data-chat-composer-floating-runtime": "true" });
+    expect(floating.props.className).toContain("-top-4");
+    expect(
+      floating.findAllByType("button").some((node) => node.props["aria-label"] === "Runtime mode"),
+    ).toBe(true);
+    const { Select } = await import("../ui/select");
+    await act(() => floating.findByType(Select).props.onValueChange("approval-required"));
+    expect(input.handleRuntimeModeChange).toHaveBeenCalledWith("approval-required");
+    expect(
+      renderer!.root.findByProps({ "data-chat-composer-main-surface": "true" }).props.className,
+    ).toContain("rounded-[24px]");
+  });
+  it.each(["unreadable", "too-large"] as const)(
+    "releases an image rejected as %s by ordinary preparation",
+    async (reason) => {
+      mocks.capture.mockResolvedValue(emptyCapture);
+      mocks.prepare.mockResolvedValueOnce({ ok: false, reason });
+      const input = await mount();
+      await act(() => capture());
+      expect(draft()?.images ?? []).toHaveLength(0);
+      expect(input.setThreadError).toHaveBeenCalledWith(
+        threadId,
+        expect.stringContaining(reason === "unreadable" ? "could not be read" : "too large"),
+      );
+      await act(() => capture());
+      expect(draft()?.images).toHaveLength(1);
+    },
+  );
+
+  it("omits capture outside a capable desktop bridge while retaining the ordinary picker", async () => {
+    delete window.desktopBridge;
+    await mount(props({ supportsAttachmentUploads: true, maxFileAttachmentBytes: 1024 }));
+    const labels = renderer!.root.findAllByType("button").map((node) => node.props["aria-label"]);
+    expect(labels).not.toContain("Capture screenshot");
+    expect(labels).toContain("Attach files");
+  });
+});
+
+describe("ChatComposer committed launcher notification", () => {
+  it("notifies only after real prompt refs synchronize and admits a reused mounted draft once", async () => {
+    const owner = new DesktopLauncherActivationOwner();
+    const draftId = DraftId.make("launcher-committed-draft");
+    const prompt = "  actual composer\n\tlauncher bytes  ";
+    const input = props({
+      composerDraftTarget: draftId,
+      draftId,
+      routeKind: "draft",
+      isLocalDraftThread: true,
+      isServerThread: false,
+    });
+    const attempts: string[] = [];
+    const notifications: string[] = [];
+    const complete = vi.fn(async () => true);
+    let parentRenders = 0;
+    function Host() {
+      parentRenders++;
+      const notify = useDesktopLauncherSubmitAdmission(
+        draftId,
+        async () => {
+          const outgoing = input.promptRef.current;
+          attempts.push(outgoing);
+          if (!outgoing.trim()) return false;
+          await owner.completeAdmittedSubmit(draftId, outgoing);
+        },
+        () => ({
+          prompt: input.promptRef.current,
+          ready: input.composerRef.current?.getSendContext().submissionReady === true,
+        }),
+        owner,
+      );
+      return (
+        <ChatComposer
+          {...input}
+          onSendContextCommitted={() => {
+            notifications.push(input.promptRef.current);
+            notify();
+          }}
+        />
+      );
+    }
+    await act(() => {
+      renderer = create(<Host />);
+    });
+    const initialParentRenders = parentRenders;
+    expect(input.promptRef.current).toBe("");
+    await act(async () => {
+      useComposerDraftStore.getState().setPrompt(draftId, prompt);
+      owner.queueSubmit({
+        activationId: "12345678-1234-4234-8234-1234567890ab",
+        draftId,
+        prompt,
+        complete,
+      });
+      expect(attempts).toEqual([]);
+    });
+    expect(parentRenders).toBe(initialParentRenders);
+    expect(notifications).toContain(prompt);
+    expect(attempts).toEqual([prompt]);
+    expect(complete).toHaveBeenCalledOnce();
+    expect(owner.getSubmitState()).toBeNull();
+  });
+
+  it("preserves staged content through provider unavailability and dispatches only when actual send context becomes ready", async () => {
+    const owner = new DesktopLauncherActivationOwner();
+    const draftId = DraftId.make("launcher-provider-wait");
+    const prompt = "wait for provider";
+    const input = props({
+      composerDraftTarget: draftId,
+      draftId,
+      routeKind: "draft",
+      isLocalDraftThread: true,
+      isServerThread: false,
+    });
+    const complete = vi.fn(async () => true);
+    const attempt = vi.fn(async () => {
+      await owner.completeAdmittedSubmit(draftId, input.promptRef.current);
+    });
+    function Host({ available }: { available: boolean }) {
+      const notify = useDesktopLauncherSubmitAdmission(
+        draftId,
+        attempt,
+        () => ({
+          prompt: input.promptRef.current,
+          ready: input.composerRef.current?.getSendContext().submissionReady === true,
+        }),
+        owner,
+      );
+      return (
+        <ChatComposer
+          {...input}
+          providerStatuses={available ? input.providerStatuses : []}
+          onSendContextCommitted={notify}
+        />
+      );
+    }
+    await act(() => {
+      renderer = create(<Host available={false} />);
+    });
+    await act(async () => {
+      useComposerDraftStore.getState().setPrompt(draftId, prompt);
+      owner.queueSubmit({
+        activationId: "12345678-1234-4234-8234-1234567890ab",
+        draftId,
+        prompt,
+        complete,
+      });
+    });
+    expect(attempt).not.toHaveBeenCalled();
+    expect(input.promptRef.current).toBe(prompt);
+    expect(owner.getSubmitState()).toBe("waiting");
+    await act(() => {
+      renderer!.update(<Host available />);
+    });
+    expect(attempt).toHaveBeenCalledOnce();
+    expect(complete).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ChatComposer launcher attachment admission", () => {
+  async function mountLauncher(available = true) {
+    const owner = new DesktopLauncherActivationOwner();
+    const draftId = DraftId.make("launcher-attachment-wait");
+    const prompt = "  attach before launch\n\tkeep these bytes  ";
+    useComposerDraftStore
+      .getState()
+      .setLogicalProjectDraftThreadId(
+        "launcher-project",
+        { environmentId, projectId: ProjectId.make("launcher-project") },
+        draftId,
+        { threadId },
+      );
+    useComposerDraftStore.getState().setPrompt(draftId, prompt);
+    const input = props({
+      composerDraftTarget: draftId,
+      draftId,
+      routeKind: "draft",
+      isLocalDraftThread: true,
+      isServerThread: false,
+    });
+    const sent: Array<{ prompt: string; images: ComposerImageAttachment[] }> = [];
+    const complete = vi.fn(async () => true);
+    const attempt = vi.fn(async () => {
+      sent.push({ prompt: input.promptRef.current, images: [...input.composerImagesRef.current] });
+      await owner.completeAdmittedSubmit(draftId, input.promptRef.current);
+    });
+    function Host({ available }: { available: boolean }) {
+      const notify = useDesktopLauncherSubmitAdmission(
+        draftId,
+        attempt,
+        () => ({
+          prompt: input.promptRef.current,
+          ready: input.composerRef.current?.getSendContext().submissionReady === true,
+        }),
+        owner,
+      );
+      return (
+        <ChatComposer
+          {...input}
+          providerStatuses={available ? input.providerStatuses : []}
+          onSendContextCommitted={notify}
+        />
+      );
+    }
+    await act(() => {
+      renderer = create(<Host available={available} />);
+    });
+    return {
+      owner,
+      input,
+      prompt,
+      sent,
+      attempt,
+      complete,
+      queue: () =>
+        owner.queueSubmit({
+          activationId: "12345678-1234-4234-8234-1234567890ab",
+          draftId,
+          prompt,
+          complete,
+        }),
+      enableProvider: () => renderer!.update(<Host available />),
+    };
+  }
+
+  it.each(["capture", "paste"] as const)(
+    "keeps launcher pending through provider readiness while %s is preparing",
+    async (source) => {
+      const native = deferred<DesktopScreenshotCapture | null>();
+      const preparation = deferred<{ ok: true; file: File }>();
+      mocks.capture.mockReturnValue(native.promise);
+      mocks.prepare.mockReturnValue(preparation.promise);
+      const fixture = await mountLauncher(false);
+      await act(() => {
+        fixture.queue();
+      });
+      await act(() => {
+        if (source === "capture") capture();
+        else fixture.input.composerRef.current!.addDroppedFiles([image()]);
+      });
+      await act(fixture.enableProvider);
+      expect(fixture.attempt).not.toHaveBeenCalled();
+      expect(fixture.owner.getSubmitState()).toBe("waiting");
+      expect(fixture.input.promptRef.current).toBe(fixture.prompt);
+      expect(
+        renderer!.root
+          .findAllByType("button")
+          .find((node) => node.props["aria-label"] === "Send message")!.props.disabled,
+      ).toBe(true);
+      await act(() =>
+        renderer!.root.findByType("form").props.onSubmit({ preventDefault: vi.fn() }),
+      );
+      expect(fixture.input.onSend).not.toHaveBeenCalled();
+      if (source === "capture") {
+        await act(() => native.resolve(emptyCapture));
+        expect(fixture.attempt).not.toHaveBeenCalled();
+      }
+      const prepared = image("prepared.png");
+      await act(() => preparation.resolve({ ok: true, file: prepared }));
+      expect(fixture.sent).toEqual([
+        {
+          prompt: expect.stringContaining(fixture.prompt),
+          images: [expect.objectContaining({ file: prepared })],
+        },
+      ]);
+      expect(fixture.attempt).toHaveBeenCalledOnce();
+      expect(fixture.complete).toHaveBeenCalledOnce();
+      expect(fixture.owner.getSubmitState()).toBeNull();
+      await act(fixture.enableProvider);
+      expect(fixture.attempt).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["capture", "paste"] as const)(
+    "reads the synchronous %s reservation before React commits disabled state",
+    async (source) => {
+      const native = deferred<DesktopScreenshotCapture | null>();
+      const preparation = deferred<{ ok: true; file: File }>();
+      mocks.capture.mockReturnValue(native.promise);
+      mocks.prepare.mockReturnValue(preparation.promise);
+      const fixture = await mountLauncher();
+      await act(() => {
+        const sendButton = renderer!.root
+          .findAllByType("button")
+          .find((node) => node.props["aria-label"] === "Send message")!;
+        expect(sendButton.props.disabled).toBe(false);
+        if (source === "capture") capture();
+        else fixture.input.composerRef.current!.addDroppedFiles([image()]);
+        expect(sendButton.props.disabled).toBe(false);
+        fixture.queue();
+        expect(fixture.attempt).not.toHaveBeenCalled();
+        expect(fixture.owner.getSubmitState()).toBe("waiting");
+      });
+      if (source === "capture") await act(() => native.resolve(emptyCapture));
+      expect(fixture.attempt).not.toHaveBeenCalled();
+      const prepared = image("race.png");
+      await act(() => preparation.resolve({ ok: true, file: prepared }));
+      expect(fixture.sent).toEqual([
+        {
+          prompt: expect.stringContaining(fixture.prompt),
+          images: [expect.objectContaining({ file: prepared })],
+        },
+      ]);
+      expect(fixture.attempt).toHaveBeenCalledOnce();
+      expect(fixture.complete).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["cancel", "native-error", "preparation-error"] as const)(
+    "releases the waiting launcher after %s without attaching a partial result",
+    async (outcome) => {
+      const native = deferred<DesktopScreenshotCapture | null>();
+      const preparation = deferred<{ ok: true; file: File }>();
+      mocks.capture.mockReturnValue(native.promise);
+      mocks.prepare.mockReturnValue(preparation.promise);
+      const fixture = await mountLauncher();
+      await act(() => {
+        capture();
+        fixture.queue();
+      });
+      expect(fixture.attempt).not.toHaveBeenCalled();
+      if (outcome === "preparation-error") {
+        await act(() => native.resolve(emptyCapture));
+        expect(fixture.attempt).not.toHaveBeenCalled();
+        await act(() => preparation.reject(new Error("preparation failed")));
+      } else if (outcome === "native-error") {
+        await act(() => native.reject(new Error("capture failed")));
+      } else {
+        await act(() => native.resolve(null));
+      }
+      expect(fixture.sent).toEqual([{ prompt: fixture.prompt, images: [] }]);
+      expect(fixture.attempt).toHaveBeenCalledOnce();
+      expect(fixture.complete).toHaveBeenCalledOnce();
+      expect(fixture.owner.getSubmitState()).toBeNull();
+    },
+  );
+});
+
+describe("ChatComposer question attachment reservations", () => {
+  const requestId = RuntimeRequestId.make("synthetic-request");
+  function questionProps(questionId = "one") {
+    return props({
+      supportsQuestionAttachments: true,
+      pendingUserInputs: [
+        {
+          requestId,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          responseCapability: "live",
+          dismissible: true,
+          questions: ["one", "two"].map((id) => ({
+            id,
+            header: "Question",
+            question: "Synthetic question",
+            options: [],
+            multiSelect: false,
+            allowCustomAnswer: true,
+          })),
+        },
+      ],
+      activePendingProgress: {
+        questionIndex: questionId === "one" ? 0 : 1,
+        isLastQuestion: questionId === "two",
+        canAdvance: false,
+        customAnswer: "",
+        activeQuestion: { id: questionId, allowCustomAnswer: true },
+      },
+    });
+  }
+
+  it("admits an ordinary question image when the preserved thread draft is full", async () => {
+    useComposerDraftStore.getState().addImages(
+      target,
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS }, (_, i) => attachment(String(i))),
+    );
+    const input = await mount(questionProps());
+    await act(() => input.composerRef.current!.addDroppedFiles([image("answer.png")]));
+    const answerTarget = questionAttachmentDraftId(environmentId, threadId, requestId, "one");
+    expect(useComposerDraftStore.getState().getComposerDraft(answerTarget)?.images).toHaveLength(1);
+    expect(draft()?.images).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+    expect(mocks.capture).not.toHaveBeenCalled();
+  });
+
+  it("drops image preparation when the active question changes", async () => {
+    const preparation = deferred<{ ok: true; file: File }>();
+    mocks.prepare.mockReturnValue(preparation.promise);
+    const input = await mount(questionProps());
+    await act(() => {
+      input.composerRef.current!.addDroppedFiles([image("first.png")]);
+    });
+    await act(() => {
+      renderer!.update(<ChatComposer {...questionProps("two")} />);
+    });
+    await act(() => preparation.resolve({ ok: true, file: image("first.png") }));
+    for (const id of ["one", "two"]) {
+      const answerTarget = questionAttachmentDraftId(environmentId, threadId, requestId, id);
+      expect(
+        useComposerDraftStore.getState().getComposerDraft(answerTarget)?.images ?? [],
+      ).toHaveLength(0);
+    }
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChatComposer Poteto toggle", () => {
+  const skill = {
+    name: "poteto-mode",
+    path: "/fixture/skills/poteto-mode/SKILL.md",
+    enabled: true,
+  };
+  const toggle = () => renderer!.root.findByProps({ "aria-label": "Poteto Mode" });
+  const availableProps = () => {
+    const input = props();
+    input.providerStatuses = input.providerStatuses.map((provider) => ({
+      ...provider,
+      skills: [skill],
+    }));
+    return input;
+  };
+  it("toggles through the real control, survives draft clearing and remount, then stays off", async () => {
+    const input = availableProps();
+    await mount(input);
+    expect(toggle().props["aria-pressed"]).toBe(false);
+    await act(() => toggle().props.onClick());
+    expect(toggle().props["aria-pressed"]).toBe(true);
+    expect(input.composerRef.current!.getSendContext().potetoMode).toEqual({
+      instanceId: "codex",
+      path: skill.path,
+    });
+    await act(() => useComposerDraftStore.getState().clearComposerContent(target));
+    expect(input.composerRef.current!.getSendContext().potetoMode).not.toBeNull();
+    await act(() => renderer!.unmount());
+    await mount(input);
+    expect(toggle().props["aria-pressed"]).toBe(true);
+    await act(() => toggle().props.onClick());
+    expect(input.composerRef.current!.getSendContext().potetoMode).toBeNull();
+    await act(() => renderer!.unmount());
+    await mount(input);
+    expect(toggle().props["aria-pressed"]).toBe(false);
+  });
+  it("explains missing skills and prevents enabling an unavailable workflow", async () => {
+    const input = await mount();
+    expect(toggle().props["aria-disabled"]).toBe(true);
+    await act(() => toggle().props.onClick());
+    expect(input.composerRef.current!.getSendContext().potetoMode).toBeNull();
+  });
+  it("blocks natural turns after a skill disappears, permits commands and remains switchable off", async () => {
+    usePotetoModeStore.getState().setSelection(potetoModeScope(environmentId, threadId), {
+      instanceId: "codex",
+      path: skill.path,
+    });
+    const input = await mount();
+    expect(toggle().props["aria-pressed"]).toBe(true);
+    expect(toggle().props["aria-disabled"]).toBeUndefined();
+    expect(input.composerRef.current!.validateProviderInput("/compact")).toBe(true);
+    await act(() => {
+      expect(input.composerRef.current!.validateProviderInput("ordinary task")).toBe(false);
+    });
+    const error = "Poteto Mode skill is unavailable. Restore the skill or turn it off.";
+    expect(renderer!.root.findAllByProps({ message: error }).length).toBeGreaterThan(0);
+    await act(() => toggle().props.onClick());
+    expect(renderer!.root.findAllByProps({ message: error })).toHaveLength(0);
+    expect(input.composerRef.current!.validateProviderInput("ordinary task")).toBe(true);
+  });
+});

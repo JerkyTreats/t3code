@@ -1,0 +1,12 @@
+export const THREAD_CLIENT_ACTIVATION_CHANNEL = "t3-thread:activation";
+export const THREAD_CLIENT_ACTIVATION_COMPLETION_CHANNEL = "t3-thread:complete-activation";
+export const THREAD_ENROLLMENT_SUBMISSION_CHANNEL = "t3-thread:submit-pairing-credential";
+export const THREAD_STARTUP_MARK_CHANNEL = "t3-thread:startup-mark";
+
+export type ThreadEnrollmentSubmissionResult =
+  | { readonly status: "accepted" }
+  | { readonly status: "rejected" }
+  | { readonly status: "unavailable" };
+
+export const THREAD_SYSTEM_THEME_GET_CHANNEL = "t3-thread:get-system-theme";
+export const THREAD_SYSTEM_THEME_CHANGED_CHANNEL = "t3-thread:system-theme-changed";

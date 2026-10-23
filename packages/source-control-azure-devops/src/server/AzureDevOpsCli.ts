@@ -221,6 +221,9 @@ export class AzureDevOpsCli extends Context.Service<
 
     readonly listPullRequests: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
+      readonly repository: string;
       readonly headSelector: string;
       readonly source?: SourceControlProvider.SourceControlRefSelector;
       readonly state: "open" | "closed" | "merged" | "all";
@@ -229,22 +232,30 @@ export class AzureDevOpsCli extends Context.Service<
 
     readonly getPullRequest: (input: {
       readonly cwd: string;
+      readonly organization: string;
       readonly reference: string;
     }) => Effect.Effect<NormalizedAzureDevOpsPullRequestRecord, AzureDevOpsCliError>;
 
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
+      readonly organization?: string;
+      readonly project?: string;
       readonly repository: string;
     }) => Effect.Effect<AzureDevOpsRepositoryCloneUrls, AzureDevOpsCliError>;
 
     readonly createRepository: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
       readonly repository: string;
       readonly visibility: SourceControlRepositoryVisibility;
     }) => Effect.Effect<AzureDevOpsRepositoryCloneUrls, AzureDevOpsCliError>;
 
     readonly createPullRequest: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
+      readonly repository: string;
       readonly baseBranch: string;
       readonly headSelector: string;
       readonly source?: SourceControlProvider.SourceControlRefSelector;
@@ -255,10 +266,14 @@ export class AzureDevOpsCli extends Context.Service<
 
     readonly getDefaultBranch: (input: {
       readonly cwd: string;
+      readonly organization: string;
+      readonly project: string;
+      readonly repository: string;
     }) => Effect.Effect<string | null, AzureDevOpsCliError>;
 
     readonly checkoutPullRequest: (input: {
       readonly cwd: string;
+      readonly organization: string;
       readonly reference: string;
       readonly remoteName?: string;
     }) => Effect.Effect<void, AzureDevOpsCliError>;
@@ -310,23 +325,6 @@ function normalizeRepositoryCloneUrls(
     nameWithOwner: projectName ? `${projectName}/${raw.name}` : raw.name,
     url: raw.remoteUrl,
     sshUrl: raw.sshUrl,
-  };
-}
-
-function parseRepositorySpecifier(repository: string): {
-  readonly project: string | null;
-  readonly name: string;
-} {
-  const parts: Array<string> = [];
-  for (const part of repository.split("/")) {
-    const trimmed = part.trim();
-    if (trimmed.length > 0) {
-      parts.push(trimmed);
-    }
-  }
-  return {
-    project: parts.length > 1 ? (parts.at(-2) ?? null) : null,
-    name: parts.at(-1) ?? repository.trim(),
   };
 }
 
@@ -393,8 +391,12 @@ export const make = Effect.gen(function* () {
           "repos",
           "pr",
           "list",
-          "--detect",
-          "true",
+          "--organization",
+          input.organization,
+          "--project",
+          input.project,
+          "--repository",
+          input.repository,
           "--source-branch",
           SourceControlProvider.sourceBranch(input),
           "--status",
@@ -433,8 +435,8 @@ export const make = Effect.gen(function* () {
           "repos",
           "pr",
           "show",
-          "--detect",
-          "true",
+          "--organization",
+          input.organization,
           "--id",
           normalizeChangeRequestId(input.reference),
         ],
@@ -463,7 +465,15 @@ export const make = Effect.gen(function* () {
     getRepositoryCloneUrls: (input) =>
       executeJson({
         cwd: input.cwd,
-        args: ["repos", "show", "--detect", "true", "--repository", input.repository],
+        args: [
+          "repos",
+          "show",
+          ...(input.organization && input.project
+            ? ["--organization", input.organization, "--project", input.project]
+            : ["--detect", "true"]),
+          "--repository",
+          input.repository,
+        ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
@@ -477,7 +487,6 @@ export const make = Effect.gen(function* () {
         Effect.map(normalizeRepositoryCloneUrls),
       ),
     createRepository: (input) => {
-      const repository = parseRepositorySpecifier(input.repository);
       // Azure Repos access is governed by project/organization permissions.
       // `az repos create` does not expose a per-repository visibility flag, so
       // the generic source-control visibility input is intentionally not
@@ -487,11 +496,12 @@ export const make = Effect.gen(function* () {
         args: [
           "repos",
           "create",
-          "--detect",
-          "true",
+          "--organization",
+          input.organization,
+          "--project",
+          input.project,
           "--name",
-          repository.name,
-          ...(repository.project ? ["--project", repository.project] : []),
+          input.repository,
         ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
@@ -509,8 +519,12 @@ export const make = Effect.gen(function* () {
           "pr",
           "create",
           "--only-show-errors",
-          "--detect",
-          "true",
+          "--organization",
+          input.organization,
+          "--project",
+          input.project,
+          "--repository",
+          input.repository,
           "--target-branch",
           input.target?.refName ?? input.baseBranch,
           "--source-branch",
@@ -524,7 +538,16 @@ export const make = Effect.gen(function* () {
     getDefaultBranch: (input) =>
       executeJson({
         cwd: input.cwd,
-        args: ["repos", "show", "--detect", "true"],
+        args: [
+          "repos",
+          "show",
+          "--organization",
+          input.organization,
+          "--project",
+          input.project,
+          "--repository",
+          input.repository,
+        ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
@@ -540,8 +563,8 @@ export const make = Effect.gen(function* () {
           "pr",
           "checkout",
           "--only-show-errors",
-          "--detect",
-          "true",
+          "--organization",
+          input.organization,
           "--id",
           normalizeChangeRequestId(input.reference),
           "--remote-name",
