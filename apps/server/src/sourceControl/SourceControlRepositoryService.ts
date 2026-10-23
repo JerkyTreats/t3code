@@ -22,6 +22,16 @@ import {
   type SourceControlRepositoryLookupInput,
 } from "@t3tools/contracts";
 
+import {
+  exactRepositorySelector,
+  originCloneRetryUrl,
+  preflightPublication,
+  publicationRepositoryTarget,
+  requireCloneProviderEndpoint,
+  validateProviderEndpoint,
+  validateRepositoryCloneUrls,
+} from "../fork/originRepositoryPublicationPolicy.ts";
+import { ORIGIN_REMOTE_NAME } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
@@ -238,11 +248,43 @@ export const make = Effect.gen(function* () {
         operation: "lookupRepository",
         provider: input.provider,
       });
-      const provider = yield* providers.get(providerKind);
-      const urls = yield* provider.getRepositoryCloneUrls({
-        cwd: input.cwd ?? config.cwd,
-        repository: input.repository.trim(),
+      // Fork F06: lookup names an explicit provider endpoint and both returned clone
+      // targets must match the requested repository.
+      const providerEndpoint = yield* validateProviderEndpoint({
+        operation: "lookupRepository",
+        provider: providerKind,
+        providerBaseUrl: input.providerBaseUrl,
       });
+      const requestedTarget = publicationRepositoryTarget({
+        provider: providerKind,
+        providerBaseUrl: providerEndpoint.baseUrl,
+        repository: input.repository,
+      });
+      if (requestedTarget === null) {
+        return yield* new SourceControlRepositoryError({
+          operation: "lookupRepository",
+          provider: providerKind,
+          detail:
+            "The selected provider endpoint and repository do not identify an exact repository target.",
+        });
+      }
+      const provider = yield* providers.get(providerKind);
+      const urls = yield* provider
+        .getRepositoryCloneUrls({
+          cwd: input.cwd ?? config.cwd,
+          providerBaseUrl: providerEndpoint.baseUrl,
+          repository: input.repository.trim(),
+        })
+        .pipe(
+          Effect.flatMap((urls) =>
+            validateRepositoryCloneUrls({
+              operation: "lookupRepository",
+              provider: providerKind,
+              requestedTarget,
+              urls,
+            }),
+          ),
+        );
       return toRepositoryInfo(providerKind, urls);
     },
     // Someone adding or cloning a repository is waiting, so a background rate-limit pause must not
@@ -315,8 +357,13 @@ export const make = Effect.gen(function* () {
       input.provider ?? SourceControlProviderKind.make("unknown");
 
     if (input.provider && input.repository) {
+      const providerBaseUrl = yield* requireCloneProviderEndpoint(
+        input.provider,
+        input.providerBaseUrl,
+      );
       repository = yield* lookupRepository({
         provider: input.provider,
+        providerBaseUrl,
         repository: input.repository,
         cwd: preparedDestination.parentPath,
       });
@@ -398,7 +445,13 @@ export const make = Effect.gen(function* () {
     options?: SourceControlCloneOptions,
   ) {
     const prepared = yield* prepareClone(input);
-    const httpsUrl = httpsFallbackUrl(input, prepared);
+    // Fork F06: the HTTPS retry must stay on the validated clone target.
+    const httpsUrl = originCloneRetryUrl({
+      provider: input.provider ?? SourceControlProviderKind.make("unknown"),
+      cloneUrl: prepared.cloneUrl,
+      retryUrl: httpsFallbackUrl(input, prepared),
+      validatedHttpsUrl: prepared.repository?.url ?? null,
+    });
     const remoteUrl = yield* runClone(
       input,
       prepared.destinationPath,
@@ -486,18 +539,59 @@ export const make = Effect.gen(function* () {
         operation: "publishRepository",
         provider: input.provider,
       });
+      // Fork F06: publication validates the endpoint, existing origin, redirects and both
+      // returned clone targets before adding or pushing the literal origin remote.
+      const publicationProvider = yield* validateProviderEndpoint({
+        operation: "publishRepository",
+        provider: providerKind,
+        providerBaseUrl: input.providerBaseUrl,
+      });
+      const requestedTarget = publicationRepositoryTarget({
+        provider: providerKind,
+        providerBaseUrl: publicationProvider.baseUrl,
+        repository: input.repository,
+      });
+      if (requestedTarget === null) {
+        return yield* new SourceControlRepositoryError({
+          operation: "publishRepository",
+          provider: providerKind,
+          detail:
+            "The selected provider endpoint and repository do not identify an exact publication target.",
+        });
+      }
       const provider = yield* providers.get(providerKind);
-      const urls = yield* provider.createRepository({
-        cwd: input.cwd,
-        repository: input.repository.trim(),
-        visibility: input.visibility,
+      const { existingOriginUrl, existingOriginTarget, existingOriginContext } =
+        yield* preflightPublication(git, input, requestedTarget);
+      const urls =
+        existingOriginUrl === null
+          ? yield* provider.createRepository({
+              cwd: input.cwd,
+              providerBaseUrl: publicationProvider.baseUrl,
+              repository: input.repository.trim(),
+              visibility: input.visibility,
+            })
+          : yield* provider.getRepositoryCloneUrls({
+              cwd: input.cwd,
+              context: existingOriginContext!,
+              repository: exactRepositorySelector(existingOriginTarget!),
+            });
+      yield* validateRepositoryCloneUrls({
+        operation: "publishRepository",
+        provider: providerKind,
+        requestedTarget,
+        urls,
       });
       const remoteUrl = selectRemoteUrl(urls, input.protocol);
-      const remoteName = yield* git.ensureRemote({
-        cwd: input.cwd,
-        preferredName: input.remoteName?.trim() || "origin",
-        url: remoteUrl,
-      });
+      if (existingOriginUrl === null) {
+        yield* git.execute({
+          operation: "SourceControlRepositoryService.publishRepository.addOrigin",
+          cwd: input.cwd,
+          args: ["remote", "add", ORIGIN_REMOTE_NAME, remoteUrl],
+          timeoutMs: 5_000,
+          maxOutputBytes: 64 * 1024,
+        });
+      }
+      const remoteName = ORIGIN_REMOTE_NAME;
 
       // An empty local repo (no commits) would make `git push HEAD:...` fail
       // with an opaque "src refspec HEAD does not match any". Treat this as a

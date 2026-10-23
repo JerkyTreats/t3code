@@ -19,6 +19,7 @@ import {
 } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
+import * as OriginRepositoryMutationAuthority from "../fork/OriginRepositoryMutationAuthority.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as PullRequestReviewGuides from "../persistence/PullRequestReviewGuides.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -158,8 +159,14 @@ const makeLayer = (input: {
   readonly enabled?: boolean;
   readonly currentHead?: Ref.Ref<string>;
   readonly identity?: typeof ACME_APP;
+  readonly authorize?: OriginRepositoryMutationAuthority.OriginRepositoryMutationAuthority["Service"]["authorize"];
 }) =>
-  PullRequestReviewGuideService.layer.pipe(
+  PullRequestReviewGuideService.layerWithoutOriginAuthority.pipe(
+    Layer.provide(
+      Layer.mock(OriginRepositoryMutationAuthority.OriginRepositoryMutationAuthority)({
+        authorize: input.authorize ?? (() => Effect.void),
+      }),
+    ),
     Layer.provide(
       Layer.effect(
         PullRequestReviewGuides.PullRequestReviewGuideRepository,
@@ -423,48 +430,88 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
     ),
   );
 
-  it.effect("measures only the PR change using the renamed verified remote's fetch URL", () =>
+  // Fork F06: the diff is fetched from literal origin only. A renamed remote whose fetch URL still
+  // matches the recorded identity is not product authority.
+  it.effect("refuses a renamed remote matching the identity URL instead of literal origin", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const repositories = yield* makeRepositories;
         const fork = `${repositories.root}/fork`;
         yield* git(repositories.root, ["clone", "--quiet", repositories.remote, fork]);
-        yield* git(fork, ["branch", "stack-base", "main~1"]);
-        // The cached identity still names origin, which now belongs to the stale fork.
         yield* git(repositories.workspace, ["remote", "rename", "origin", "upstream"]);
         yield* git(repositories.workspace, ["remote", "add", "origin", fork]);
-        yield* git(repositories.workspace, [
-          "config",
-          `url.${repositories.remote}.insteadOf`,
-          "review-upstream:",
-        ]);
-        yield* git(repositories.workspace, ["remote", "set-url", "upstream", "review-upstream:"]);
-        const changed = yield* Deferred.make<string>();
-        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const started = yield* Deferred.make<Fiber.Fiber<unknown, unknown>>();
         const stored = yield* Deferred.make<void>();
+        const generated = yield* Ref.make(false);
+        const fetchedRemotes: Array<string> = [];
+        const driver = yield* GitVcsDriver.GitVcsDriver;
         const context = yield* Layer.build(
           makeLayer({
             ...repositories,
             stored,
-            generate: (input) =>
-              git(input.cwd, ["diff", "--name-only", `${input.baseCommit}...HEAD`]).pipe(
-                Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
-                Effect.orDie,
-                Effect.flatMap((names) => Deferred.succeed(changed, names)),
-                Effect.as({ stops: [] }),
-              ),
-          }),
+            generate: () => Ref.set(generated, true).pipe(Effect.as({ stops: [] })),
+          }).pipe(
+            Layer.provide(
+              Layer.succeed(GitVcsDriver.GitVcsDriver, {
+                ...driver,
+                execute: (call) =>
+                  Effect.withFiber((fiber) => {
+                    if (call.args[0] === "fetch") fetchedRemotes.push(call.args.join(" "));
+                    return Deferred.succeed(started, fiber).pipe(
+                      Effect.andThen(driver.execute(call)),
+                    );
+                  }),
+              }),
+            ),
+          ),
         );
         const service = Context.get(
           context,
           PullRequestReviewGuideService.PullRequestReviewGuideService,
         );
         yield* service.generate(reference);
-        assert.strictEqual(yield* Deferred.await(changed), "feature.txt");
-        yield* Deferred.await(stored);
+        yield* Fiber.await(yield* Deferred.await(started));
         const result = yield* service.get(reference);
-        assert.strictEqual(result.guide?.headSha, repositories.headSha);
-        assert.deepStrictEqual(result.guide?.stops[0]?.files, [{ path: "feature.txt" }]);
+        assert.strictEqual(result.run?._tag, "Failed");
+        assert.include(
+          result.run?._tag === "Failed" ? result.run.detail : "",
+          "no longer has a remote for the pull request's repository",
+        );
+        assert.deepStrictEqual(fetchedRemotes, []);
+        assert.isFalse(yield* Deferred.isDone(stored));
+        assert.isFalse(yield* Ref.get(generated));
+      }),
+    ),
+  );
+
+  it.effect("refuses changed live origin before starting model or fetch work", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const repositories = yield* makeRepositories;
+        const stored = yield* Deferred.make<void>();
+        const context = yield* Layer.build(
+          makeLayer({
+            ...repositories,
+            stored,
+            authorize: ({ cwd, expectedIdentity }) => {
+              assert.strictEqual(cwd, repositories.workspace);
+              assert.strictEqual(expectedIdentity.locator.remoteName, "origin");
+              return Effect.fail(
+                new OriginRepositoryMutationAuthority.OriginRepositoryMutationAuthorityError({
+                  reason: "origin-changed",
+                  detail: "Synthetic changed origin.",
+                }),
+              );
+            },
+            generate: () => Effect.die("refused origin must not start model work"),
+          }),
+        );
+        const service = Context.get(
+          context,
+          PullRequestReviewGuideService.PullRequestReviewGuideService,
+        );
+        const result = yield* Effect.flip(service.generate(reference));
+        assert.include(result.message, "Synthetic changed origin");
       }),
     ),
   );

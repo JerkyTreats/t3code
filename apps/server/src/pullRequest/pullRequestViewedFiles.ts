@@ -13,6 +13,7 @@ import {
 import type * as PullRequestFilesViewed from "../persistence/PullRequestFilesViewed.ts";
 import type {
   ProviderFileRevisions,
+  ProviderRepositoryRef,
   PullRequestProviderError,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
 import type { PullRequestError, SupportedProject } from "./PullRequestService.ts";
@@ -28,6 +29,8 @@ const FILE_REVISIONS_CACHE_CAPACITY = 64;
 const MAX_FILE_REVISION_PATHS = 1_000;
 
 interface FileRevisionsDependencies {
+  /** Fork F06: provider reads and writes carry the exact origin locator. */
+  readonly providerRepositoryRefOf: (project: SupportedProject) => ProviderRepositoryRef;
   readonly runFork: (effect: Effect.Effect<void>) => unknown;
   readonly refEpoch: (ref: PullRequestRef) => number;
   readonly fileRevisionsEpoch: () => number;
@@ -37,7 +40,8 @@ interface FileRevisionsDependencies {
 }
 
 const makeFileRevisions = (dependencies: FileRevisionsDependencies) => {
-  const { runFork, refEpoch, fileRevisionsEpoch, toPullRequestError } = dependencies;
+  const { runFork, refEpoch, fileRevisionsEpoch, toPullRequestError, providerRepositoryRefOf } =
+    dependencies;
   interface HeldFileRevisions {
     readonly at: number;
     readonly asked: ReadonlySet<string>;
@@ -129,9 +133,7 @@ const makeFileRevisions = (dependencies: FileRevisionsDependencies) => {
     const fetch = Effect.suspend(() => {
       const key = fileRevisionsKey(project, ref);
       return read({
-        cwd: project.project.workspaceRoot,
-        repository: project.repository,
-        host: project.host,
+        ...providerRepositoryRefOf(project),
         number: ref.number,
         paths,
       }).pipe(
@@ -168,6 +170,9 @@ export interface Dependencies extends FileRevisionsDependencies {
   readonly requireProject: (
     ref: PullRequestRef,
   ) => Effect.Effect<SupportedProject, PullRequestError>;
+  readonly requireMutationProject: (
+    ref: PullRequestRef,
+  ) => Effect.Effect<SupportedProject, PullRequestError>;
   readonly requiredViewerOf: (
     project: SupportedProject,
     operation: string,
@@ -179,7 +184,14 @@ export interface Dependencies extends FileRevisionsDependencies {
 // at one instance per service, and a layer provided at two points would give two of each behind
 // one epoch counter.
 export const make = (dependencies: Dependencies) => {
-  const { filesViewedStore, requireProject, requiredViewerOf, toPullRequestError } = dependencies;
+  const {
+    filesViewedStore,
+    requireProject,
+    requireMutationProject,
+    providerRepositoryRefOf,
+    requiredViewerOf,
+    toPullRequestError,
+  } = dependencies;
   const { fileRevisionsOf } = makeFileRevisions(dependencies);
   const filesViewedScope = (project: SupportedProject, number: number, viewer: string | null) => ({
     provider: project.api.kind,
@@ -314,9 +326,7 @@ export const make = (dependencies: Dependencies) => {
         const read = project.api.getFilesViewed;
         if (project.api.capabilities.viewedFiles === "host" && read) {
           return read({
-            cwd: project.project.workspaceRoot,
-            repository: project.repository,
-            host: project.host,
+            ...providerRepositoryRefOf(project),
             number: input.number,
           }).pipe(Effect.mapError(toPullRequestError("filesViewed")));
         }
@@ -339,13 +349,16 @@ export const make = (dependencies: Dependencies) => {
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         const write = project.api.setFilesViewed;
         if (project.api.capabilities.viewedFiles === "host" && write) {
-          return write({
-            cwd: project.project.workspaceRoot,
-            repository: project.repository,
-            host: project.host,
-            number: input.number,
-            files: input.files,
-          }).pipe(Effect.mapError(toPullRequestError("setFilesViewed")));
+          // Fork F06: a host-backed write revalidates live origin before the provider call.
+          return requireMutationProject(input).pipe(
+            Effect.flatMap((authorizedProject) =>
+              write({
+                ...providerRepositoryRefOf(authorizedProject),
+                number: input.number,
+                files: input.files,
+              }).pipe(Effect.mapError(toPullRequestError("setFilesViewed"))),
+            ),
+          );
         }
         if (project.api.capabilities.viewedFiles === "environment") {
           return inFilesViewedOrder(

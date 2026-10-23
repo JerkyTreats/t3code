@@ -15,6 +15,7 @@ import * as Layer from "effect/Layer";
 import * as ProcessRunner from "../processRunner.ts";
 import { explicitBareRepositoryEnv } from "../vcs/VcsProcess.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { selectOriginRemote } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 
 const DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY = 512;
 // Background sweeps resolve every project each minute. A long TTL keeps them
@@ -79,16 +80,9 @@ function parseRemoteFetchUrls(stdout: string): Map<string, string> {
 function pickPrimaryRemote(
   remotes: ReadonlyMap<string, string>,
 ): { readonly remoteName: string; readonly remoteUrl: string } | null {
-  for (const preferredRemoteName of ["upstream", "origin"] as const) {
-    const remoteUrl = remotes.get(preferredRemoteName);
-    if (remoteUrl) {
-      return { remoteName: preferredRemoteName, remoteUrl };
-    }
-  }
-
-  const [remoteName, remoteUrl] =
-    [...remotes.entries()].toSorted(([left], [right]) => left.localeCompare(right))[0] ?? [];
-  return remoteName && remoteUrl ? { remoteName, remoteUrl } : null;
+  // Fork F06: product repository identity is the literal origin remote only.
+  const origin = selectOriginRemote([...remotes.entries()].map(([name, url]) => ({ name, url })));
+  return origin ? { remoteName: origin.name, remoteUrl: origin.url } : null;
 }
 
 function repositoryPathOf(canonicalKey: string, remoteUrl: string): string {

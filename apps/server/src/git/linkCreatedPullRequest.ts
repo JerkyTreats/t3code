@@ -1,17 +1,14 @@
-import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 import {
   type CommandId,
-  pullRequestHostOf,
   type GitRunStackedActionResult,
   type OrchestrationProjectShell,
-  type SourceControlProviderKind,
   type ThreadId,
 } from "@t3tools/contracts";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
+import { originCreatedPullRequestKey } from "../fork/sourceControlContextPolicy.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 
@@ -30,18 +27,8 @@ export function createdPullRequestKey(
   if ((status !== "created" && status !== "opened_existing") || number === undefined || !url) {
     return null;
   }
-  const parsed = parseChangeRequestUrl(url);
-  if (parsed !== null) return { ...parsed, url };
-  const identity = project?.repositoryIdentity;
-  const kind = identity?.provider as SourceControlProviderKind | undefined;
-  const repository = sourceControlRepositorySelector(identity);
-  if (!identity || kind === undefined || repository === null) return null;
-  return {
-    host: pullRequestHostOf(identity, kind),
-    repository: repository.toLowerCase(),
-    number,
-    url,
-  };
+  // Fork F06: only a URL inside the exact origin repository becomes a thread link.
+  return originCreatedPullRequestKey(project?.repositoryIdentity, url, number);
 }
 
 /**

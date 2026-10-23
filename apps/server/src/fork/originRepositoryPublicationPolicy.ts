@@ -237,6 +237,31 @@ export function validateRepositoryCloneUrls(input: {
   );
 }
 
+/**
+ * An HTTPS clone retry after a refused SSH clone must name the same repository target as the
+ * original clone URL, and a looked-up repository's validated HTTPS URL when one exists. A retry
+ * URL that would leave that target is refused rather than cloned.
+ */
+export function originCloneRetryUrl(input: {
+  readonly provider: SourceControlProviderKind;
+  readonly cloneUrl: string;
+  readonly retryUrl: string | null;
+  readonly validatedHttpsUrl: string | null;
+}): string | null {
+  if (input.retryUrl === null) return null;
+  const original = remoteRepositoryTarget({ remoteUrl: input.cloneUrl, provider: input.provider });
+  const retry = remoteRepositoryTarget({ remoteUrl: input.retryUrl, provider: input.provider });
+  if (original === null || !publicationTargetMatchesRemote(original, retry)) return null;
+  if (input.validatedHttpsUrl !== null) {
+    const validated = remoteRepositoryTarget({
+      remoteUrl: input.validatedHttpsUrl,
+      provider: input.provider,
+    });
+    if (validated === null || !publicationTargetMatchesRemote(validated, retry)) return null;
+  }
+  return input.retryUrl;
+}
+
 export function exactRepositorySelector(target: PublicationRepositoryTarget): string {
   return target.kind === "azure-devops" ? target.target.repository : target.repository;
 }

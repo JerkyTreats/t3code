@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import {
   CommandId,
   ProjectId,
@@ -40,7 +41,7 @@ const project: OrchestrationProjectShell = {
       remoteName: "origin",
       remoteUrl: "git@github.acme.test:Platform/API.git",
     },
-    provider: "github",
+    provider: SourceControlProviderKind.make("github"),
     displayName: "Platform/API",
     owner: "Platform",
     name: "API",
@@ -95,36 +96,109 @@ const recordingDispatch = Effect.fn("recordingDispatch")(function* () {
 });
 
 describe("createdPullRequestKey", () => {
-  it("reads host and repository from the URL when it is recognisable", () => {
+  it("links a recognisable URL only when it matches origin", () => {
     expect(
       createdPullRequestKey(
         prResult({
           status: "created",
           number: 12,
-          url: "https://github.com/Other/Fork/pull/12",
+          url: "https://github.acme.test/Platform/API/pull/12",
         }),
-        project,
-      ),
-    ).toEqual({
-      host: "github.com",
-      repository: "other/fork",
-      number: 12,
-      url: "https://github.com/Other/Fork/pull/12",
-    });
-  });
-
-  it("falls back to the project's host and repository for an unreadable URL", () => {
-    expect(
-      createdPullRequestKey(
-        prResult({ status: "opened_existing", number: 3, url: "https://ghe.internal/x/3" }),
         project,
       ),
     ).toEqual({
       host: "github.acme.test",
       repository: "platform/api",
-      number: 3,
-      url: "https://ghe.internal/x/3",
+      number: 12,
+      url: "https://github.acme.test/Platform/API/pull/12",
     });
+    expect(
+      createdPullRequestKey(
+        prResult({ status: "created", number: 12, url: "https://github.com/Other/Fork/pull/12" }),
+        project,
+      ),
+    ).toBeNull();
+  });
+
+  it("links exact custom ports and Azure native identities while rejecting foreign targets", () => {
+    const cases = [
+      {
+        provider: SourceControlProviderKind.make("github"),
+        remote: "https://github.example.test:8443/team/repo.git",
+        url: "https://github.example.test:8443/team/repo/pull/12",
+        host: "github.example.test:8443",
+        repository: "team/repo",
+      },
+      {
+        provider: SourceControlProviderKind.make("gitlab"),
+        remote: "https://gitlab.example.test:8443/team/repo.git",
+        url: "https://gitlab.example.test:8443/team/repo/-/merge_requests/12",
+        host: "gitlab.example.test:8443",
+        repository: "team/repo",
+      },
+      {
+        provider: SourceControlProviderKind.make("forgejo"),
+        remote: "https://forge.example.test:8443/team/repo.git",
+        url: "https://forge.example.test:8443/team/repo/pulls/12",
+        host: "forge.example.test:8443",
+        repository: "team/repo",
+      },
+      {
+        provider: SourceControlProviderKind.make("azure-devops"),
+        remote: "https://dev.azure.com/org/project/_git/repo",
+        url: "https://dev.azure.com/org/project/_git/repo/pullrequest/12",
+        host: "dev.azure.com",
+        repository: "repo",
+      },
+      {
+        provider: SourceControlProviderKind.make("azure-devops"),
+        remote: "git@ssh.dev.azure.com:v3/org/project/repo",
+        url: "https://dev.azure.com/org/project/_git/repo/pullrequest/12",
+        host: "ssh.dev.azure.com",
+        repository: "repo",
+      },
+      {
+        provider: SourceControlProviderKind.make("azure-devops"),
+        remote: "https://org.visualstudio.com/project/_git/repo",
+        url: "https://dev.azure.com/org/project/_git/repo/pullrequest/12",
+        host: "org.visualstudio.com",
+        repository: "repo",
+      },
+    ];
+    for (const item of cases) {
+      const boundProject = {
+        ...project,
+        repositoryIdentity: {
+          ...project.repositoryIdentity!,
+          provider: item.provider,
+          locator: { source: "git-remote" as const, remoteName: "origin", remoteUrl: item.remote },
+        },
+      };
+      expect(
+        createdPullRequestKey(
+          prResult({ status: "created", number: 12, url: item.url }),
+          boundProject,
+        ),
+      ).toEqual({ host: item.host, repository: item.repository, number: 12, url: item.url });
+      const foreign = item.url.includes(":8443")
+        ? item.url.replace(":8443", ":9443")
+        : item.url.replace("/org/project/", "/other/project/");
+      expect(
+        createdPullRequestKey(
+          prResult({ status: "created", number: 12, url: foreign }),
+          boundProject,
+        ),
+      ).toBeNull();
+    }
+  });
+
+  it("refuses an unreadable URL", () => {
+    expect(
+      createdPullRequestKey(
+        prResult({ status: "opened_existing", number: 3, url: "https://ghe.internal/x/3" }),
+        project,
+      ),
+    ).toBeNull();
     expect(
       createdPullRequestKey(
         prResult({ status: "created", number: 3, url: "https://ghe.internal/x/3" }),
@@ -143,7 +217,7 @@ describe("linkCreatedPullRequest", () => {
         result: prResult({
           status: "created",
           number: 42,
-          url: "https://github.com/t3tools/t3code/pull/42",
+          url: "https://github.acme.test/Platform/API/pull/42",
         }),
         commandId,
       }).pipe(Effect.provide(layerDependenciesFor(dispatch)));
@@ -153,10 +227,10 @@ describe("linkCreatedPullRequest", () => {
           type: "thread.pull-request.link",
           commandId: "server:pr-created-link:test",
           threadId: THREAD_ID,
-          host: "github.com",
-          repository: "t3tools/t3code",
+          host: "github.acme.test",
+          repository: "platform/api",
           number: 42,
-          url: "https://github.com/t3tools/t3code/pull/42",
+          url: "https://github.acme.test/Platform/API/pull/42",
           source: "created",
         },
       ]);

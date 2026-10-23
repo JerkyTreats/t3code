@@ -7,6 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
+import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/process";
 
 import {
@@ -17,14 +18,24 @@ import {
 
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
+import * as BitbucketSourceControlProvider from "@t3tools/source-control-bitbucket/server/BitbucketSourceControlProvider";
 import type * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./SourceControlRepositoryService.ts";
+
+const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
 const CLONE_URLS = {
   nameWithOwner: "octocat/t3code",
   url: "https://github.com/octocat/t3code",
   sshUrl: "git@github.com:octocat/t3code.git",
+};
+
+const ENTERPRISE_CLONE_URLS = {
+  nameWithOwner: "octocat/t3code",
+  url: "https://github.example.test/octocat/t3code",
+  sshUrl: "git@github.example.test:octocat/t3code.git",
 };
 
 function makeProvider(
@@ -73,8 +84,13 @@ function layer(input: {
     ),
     Layer.provide(
       Layer.mock(GitVcsDriver.GitVcsDriver)({
-        execute: () => Effect.succeed(processOutput()),
-        ensureRemote: () => Effect.succeed("origin"),
+        execute: (call) =>
+          call.args[0] === "remote" && call.args[1] === "get-url" && input.git?.readConfigValue
+            ? input.git
+                .readConfigValue(call.cwd, "remote.origin.url")
+                .pipe(Effect.map((url) => ({ ...processOutput(), stdout: url ?? "" })))
+            : Effect.succeed(processOutput()),
+        readConfigValue: () => Effect.succeed(null),
         pushCurrentBranch: () =>
           Effect.succeed({
             status: "pushed" as const,
@@ -101,6 +117,213 @@ function layer(input: {
     : layerService.pipe(Layer.provideMerge(NodeServices.layer));
 }
 
+it.effect("looks up repositories through the requested provider and exact endpoint", () => {
+  const calls: Array<{ cwd: string; providerBaseUrl?: string; repository: string }> = [];
+  const provider = makeProvider({
+    getRepositoryCloneUrls: (input) =>
+      Effect.sync(() => {
+        calls.push({
+          cwd: input.cwd,
+          ...(input.providerBaseUrl ? { providerBaseUrl: input.providerBaseUrl } : {}),
+          repository: input.repository,
+        });
+        return ENTERPRISE_CLONE_URLS;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.lookupRepository({
+      provider: SourceControlProviderKind.make("github"),
+      providerBaseUrl: "https://github.example.test",
+      repository: "octocat/t3code",
+      cwd: "/workspace",
+    });
+
+    assert.deepStrictEqual(result, {
+      provider: SourceControlProviderKind.make("github"),
+      ...ENTERPRISE_CLONE_URLS,
+    });
+    assert.deepStrictEqual(calls, [
+      {
+        cwd: "/workspace",
+        providerBaseUrl: "https://github.example.test",
+        repository: "octocat/t3code",
+      },
+    ]);
+  }).pipe(Effect.provide(layer({ provider })));
+});
+
+it.effect("rejects an enterprise lookup when one returned clone URL targets another host", () => {
+  const provider = makeProvider({
+    getRepositoryCloneUrls: () =>
+      Effect.succeed({
+        ...ENTERPRISE_CLONE_URLS,
+        sshUrl: CLONE_URLS.sshUrl,
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .lookupRepository({
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.example.test",
+        repository: "octocat/t3code",
+        cwd: "/workspace",
+      })
+      .pipe(Effect.flip);
+
+    assert.include(error.detail, "do not match the selected provider endpoint and repository");
+  }).pipe(Effect.provide(layer({ provider })));
+});
+
+it.effect("preserves provider failures without deriving the repository message from them", () => {
+  const providerCause = new SourceControlProviderError({
+    provider: SourceControlProviderKind.make("github"),
+    operation: "getRepositoryCloneUrls",
+    cwd: "/workspace",
+    repository: "octocat/t3code",
+    detail: "credential token abc123 was rejected",
+  });
+  const provider = makeProvider({
+    getRepositoryCloneUrls: () => Effect.fail(providerCause),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* Effect.flip(
+      service.lookupRepository({
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.example.test",
+        repository: "octocat/t3code",
+        cwd: "/workspace",
+      }),
+    );
+
+    assert.strictEqual(error.provider, "github");
+    assert.strictEqual(error.operation, "lookupRepository");
+    assert.strictEqual(error.detail, "The source control operation could not be completed.");
+    assert.strictEqual(
+      error.message,
+      "Source control repository operation lookupRepository failed for github: The source control operation could not be completed.",
+    );
+    assert.strictEqual(error.cause, providerCause);
+  }).pipe(Effect.provide(layer({ provider })));
+});
+
+it.effect(
+  "reports the safe Bitbucket locator detail through repository lookup and publishing",
+  () =>
+    Effect.gen(function* () {
+      const locatorCause = new BitbucketApi.BitbucketRepositoryLocatorError({
+        repository: "credential-token-abc123",
+      });
+      const provider = yield* BitbucketSourceControlProvider.make.pipe(
+        Effect.provide(
+          Layer.mock(BitbucketApi.BitbucketApi)({
+            getRepositoryCloneUrls: () => Effect.fail(locatorCause),
+            createRepository: () => Effect.fail(locatorCause),
+          }),
+        ),
+      );
+
+      yield* Effect.gen(function* () {
+        const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+        const input = {
+          provider: SourceControlProviderKind.make("bitbucket"),
+          providerBaseUrl: "https://bitbucket.org",
+          repository: "workspace/repository",
+          cwd: "/workspace",
+        };
+        for (const operation of [
+          service.lookupRepository(input).pipe(Effect.asVoid),
+          service.publishRepository({ ...input, visibility: "private" }).pipe(Effect.asVoid),
+        ]) {
+          const error = yield* Effect.flip(operation);
+
+          assert.strictEqual(error.provider, "bitbucket");
+          assert.strictEqual(
+            error.detail,
+            "Bitbucket repositories must be specified as workspace/repository.",
+          );
+          assert.notInclude(error.message, locatorCause.repository);
+          assert.instanceOf(error.cause, SourceControlProviderError);
+          assert.strictEqual(
+            isSourceControlProviderError(error.cause) ? error.cause.cause : null,
+            locatorCause,
+          );
+        }
+      }).pipe(Effect.provide(layer({ provider })));
+    }),
+);
+
+it.effect("keeps a plain Bitbucket locator lookalike out of the repository message", () => {
+  const provider = makeProvider({
+    kind: SourceControlProviderKind.make("bitbucket"),
+    getRepositoryCloneUrls: () =>
+      Effect.fail(
+        new SourceControlProviderError({
+          provider: SourceControlProviderKind.make("bitbucket"),
+          operation: "getRepositoryCloneUrls",
+          cwd: "/workspace",
+          detail: "credential token abc123 was rejected",
+          cause: {
+            _tag: "BitbucketRepositoryLocatorError",
+            repository: "t3code",
+            detail: "credential token abc123 was rejected",
+          },
+        }),
+      ),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* Effect.flip(
+      service.lookupRepository({
+        provider: SourceControlProviderKind.make("bitbucket"),
+        providerBaseUrl: "https://bitbucket.org",
+        repository: "workspace/repository",
+      }),
+    );
+
+    assert.strictEqual(error.detail, "The source control operation could not be completed.");
+    assert.notInclude(error.message, "abc123");
+  }).pipe(Effect.provide(layer({ provider })));
+});
+
+it.effect("keeps arbitrary Bitbucket request failures out of the repository message", () =>
+  Effect.gen(function* () {
+    const cause = new BitbucketApi.BitbucketRequestError({
+      operation: "getRepository",
+      cause: new Error("credential token abc123 was rejected"),
+    });
+    const provider = yield* BitbucketSourceControlProvider.make.pipe(
+      Effect.provide(
+        Layer.mock(BitbucketApi.BitbucketApi)({
+          getRepositoryCloneUrls: () => Effect.fail(cause),
+        }),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const error = yield* Effect.flip(
+        service.lookupRepository({
+          provider: SourceControlProviderKind.make("bitbucket"),
+          providerBaseUrl: "https://bitbucket.org",
+          repository: "pingdotgg/t3code",
+          cwd: "/workspace",
+        }),
+      );
+
+      assert.strictEqual(error.detail, "The source control operation could not be completed.");
+      assert.notInclude(error.message, "abc123");
+      assert.notInclude(error.message, cause.detail);
+    }).pipe(Effect.provide(layer({ provider })));
+  }),
+);
+
 it.effect("clones a looked-up repository after creating missing parent directories", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -116,6 +339,7 @@ it.effect("clones a looked-up repository after creating missing parent directori
       const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const result = yield* service.cloneRepository({
         provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.com",
         repository: "octocat/t3code",
         destinationPath,
         protocol: "https",
@@ -239,6 +463,7 @@ it.effect("reports clone progress from git's stderr and keeps its error text on 
       { stage: "receiving", percent: 40, detail: "1.00 MiB | 2.00 MiB/s" },
       { stage: "receiving", percent: 100, detail: "2.50 MiB | 2.00 MiB/s" },
     ]);
+    // Git echoes the remote in some failures; the credentials must not follow.
     assert.strictEqual(
       error.detail,
       "fatal: early EOF fatal: unable to access 'https://github.com/octocat/t3code.git/': could not resolve host",
@@ -338,6 +563,35 @@ it.effect.each([
   }),
 );
 
+// Fork F06: the HTTPS retry stays on the validated repository target.
+it.effect("retries a looked-up repository over its validated HTTPS clone URL", () =>
+  Effect.gen(function* () {
+    const urls: Array<string> = [];
+    const result = yield* cloneInTemporaryDirectory(rejectingSsh(urls, false), {
+      provider: SourceControlProviderKind.make("github"),
+      providerBaseUrl: "https://github.com",
+      repository: "octocat/t3code",
+    });
+
+    assert.deepStrictEqual(urls, [CLONE_URLS.sshUrl, CLONE_URLS.url]);
+    assert.strictEqual(result.remoteUrl, CLONE_URLS.url);
+  }),
+);
+
+it.effect("does not retry over HTTPS when the rewritten URL leaves the clone target", () =>
+  Effect.gen(function* () {
+    const urls: Array<string> = [];
+    yield* Effect.flip(
+      cloneInTemporaryDirectory(rejectingSsh(urls, false), {
+        provider: SourceControlProviderKind.make("azure-devops"),
+        remoteUrl: "git@ssh.dev.azure.com:v3/org/project/repo",
+      }),
+    );
+
+    assert.deepStrictEqual(urls, ["git@ssh.dev.azure.com:v3/org/project/repo"]);
+  }),
+);
+
 it.effect("strips embedded credentials from the remote URL it reports", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -365,6 +619,7 @@ it.effect("strips embedded credentials from the remote URL it reports", () =>
       ),
     );
     assert.equal(result.remoteUrl, "https://github.com/octocat/t3code.git");
+    // Git itself still receives the credentials.
     assert.equal(result.cloneUrl, "https://user:s3cret@github.com/octocat/t3code.git");
   }).pipe(Effect.provide(NodeServices.layer)),
 );
@@ -381,6 +636,7 @@ it.effect("discards only a directory git wrote to", () =>
     yield* fs.makeDirectory(foreign);
     yield* fs.writeFileString(path.join(foreign, "notes.txt"), "mine");
 
+    // A file where the directory should be must not be removed either.
     const replaced = path.join(parent, "replaced");
     yield* fs.writeFileString(replaced, "not a directory");
 
@@ -391,9 +647,11 @@ it.effect("discards only a directory git wrote to", () =>
       assert.include(error.detail, "not from the clone");
       const replacedError = yield* Effect.flip(service.discardClone(replaced));
       assert.include(replacedError.detail, "could not be inspected");
+      // A destination that never got created is nothing to discard.
       yield* service.discardClone(path.join(parent, "missing"));
     }).pipe(Effect.provide(layer({})));
 
+    // The partial clone is emptied but its directory (the workspace root) stays.
     assert.deepStrictEqual(yield* fs.readDirectory(partial), []);
     assert.deepStrictEqual(yield* fs.readDirectory(foreign), ["notes.txt"]);
     assert.strictEqual(yield* fs.readFileString(replaced), "not a directory");
@@ -453,34 +711,134 @@ it.effect("preserves destination probe failures instead of treating them as miss
   );
 });
 
-it.effect("publishes to the remote name returned by ensureRemote", () => {
+it.effect(
+  "rejects an enterprise creation result for another repository before Git mutation",
+  () => {
+    let addOriginCalls = 0;
+    let pushCalls = 0;
+    const provider = makeProvider({
+      createRepository: () =>
+        Effect.succeed({
+          ...ENTERPRISE_CLONE_URLS,
+          sshUrl: "git@github.example.test:attacker/t3code.git",
+        }),
+    });
+
+    return Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const error = yield* service
+        .publishRepository({
+          cwd: "/workspace",
+          provider: SourceControlProviderKind.make("github"),
+          providerBaseUrl: "https://github.example.test",
+          repository: "octocat/t3code",
+          visibility: "private",
+          remoteName: "origin",
+          protocol: "ssh",
+        })
+        .pipe(Effect.flip);
+
+      assert.include(error.detail, "do not match the selected provider endpoint and repository");
+      assert.equal(addOriginCalls, 0);
+      assert.equal(pushCalls, 0);
+    }).pipe(
+      Effect.provide(
+        layer({
+          provider,
+          git: {
+            execute: (input) =>
+              Effect.sync(() => {
+                if (input.args[0] === "remote" && input.args[1] === "add") addOriginCalls += 1;
+                return processOutput();
+              }),
+            pushCurrentBranch: () =>
+              Effect.sync(() => {
+                pushCalls += 1;
+                return {
+                  status: "pushed" as const,
+                  branch: "feature/remote-v1",
+                  upstreamBranch: "origin/feature/remote-v1",
+                  setUpstream: true,
+                };
+              }),
+          },
+        }),
+      ),
+    );
+  },
+);
+
+it.effect("publishes by creating the repository, adding a remote, and pushing upstream", () => {
+  const createCalls: Array<{
+    cwd: string;
+    providerBaseUrl: string;
+    repository: string;
+    visibility: string;
+  }> = [];
+  const remoteCalls: Array<ReadonlyArray<string>> = [];
   const pushCalls: Array<{ cwd: string; remoteName: string | null | undefined }> = [];
+  const provider = makeProvider({
+    createRepository: (input) =>
+      Effect.sync(() => {
+        createCalls.push({
+          cwd: input.cwd,
+          providerBaseUrl: input.providerBaseUrl,
+          repository: input.repository,
+          visibility: input.visibility,
+        });
+        return CLONE_URLS;
+      }),
+  });
 
   return Effect.gen(function* () {
     const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const result = yield* service.publishRepository({
       cwd: "/workspace",
       provider: SourceControlProviderKind.make("github"),
+      providerBaseUrl: "https://github.com",
       repository: "octocat/t3code",
       visibility: "private",
       remoteName: "origin",
       protocol: "ssh",
     });
 
-    assert.equal(result.remoteName, "origin-1");
-    assert.deepStrictEqual(pushCalls, [{ cwd: "/workspace", remoteName: "origin-1" }]);
+    assert.deepStrictEqual(result, {
+      repository: { provider: SourceControlProviderKind.make("github"), ...CLONE_URLS },
+      remoteName: "origin",
+      remoteUrl: CLONE_URLS.sshUrl,
+      branch: "feature/remote-v1",
+      upstreamBranch: "origin/feature/remote-v1",
+      status: "pushed",
+    });
+    assert.deepStrictEqual(createCalls, [
+      {
+        cwd: "/workspace",
+        providerBaseUrl: "https://github.com",
+        repository: "octocat/t3code",
+        visibility: "private",
+      },
+    ]);
+    assert.deepStrictEqual(remoteCalls, [["remote", "add", "origin", CLONE_URLS.sshUrl]]);
+    assert.deepStrictEqual(pushCalls, [{ cwd: "/workspace", remoteName: "origin" }]);
   }).pipe(
     Effect.provide(
       layer({
+        provider,
         git: {
-          ensureRemote: () => Effect.succeed("origin-1"),
+          execute: (input) =>
+            Effect.sync(() => {
+              if (input.args[0] === "remote" && input.args[1] === "add") {
+                remoteCalls.push(input.args);
+              }
+              return processOutput();
+            }),
           pushCurrentBranch: (cwd, _fallbackBranch, options) =>
             Effect.sync(() => {
               pushCalls.push({ cwd, remoteName: options?.remoteName });
               return {
                 status: "pushed" as const,
                 branch: "feature/remote-v1",
-                upstreamBranch: `${options?.remoteName ?? "missing"}/feature/remote-v1`,
+                upstreamBranch: "origin/feature/remote-v1",
                 setUpstream: true,
               };
             }),
@@ -512,6 +870,7 @@ it.effect("explains a rejected SSH push after creating the repository", () =>
       service.publishRepository({
         cwd: "/workspace",
         provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.com",
         repository: "octocat/t3code",
         visibility: "private",
         protocol: "ssh",
@@ -535,6 +894,7 @@ it.effect("says the repository exists when an unclassified publish push fails", 
       service.publishRepository({
         cwd: "/workspace",
         provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.com",
         repository: "octocat/t3code",
         visibility: "private",
         protocol: "https",
@@ -548,6 +908,740 @@ it.effect("says the repository exists when an unclassified publish push fails", 
   }).pipe(Effect.provide(layer({ git: failingPush() }))),
 );
 
+it.effect("rejects an unusable occupied origin before external repository creation", () => {
+  let createCalls = 0;
+  let gitMutationCalls = 0;
+  let pushCalls = 0;
+  const provider = makeProvider({
+    createRepository: () =>
+      Effect.sync(() => {
+        createCalls += 1;
+        return CLONE_URLS;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.com",
+        repository: "octocat/t3code",
+        visibility: "private",
+        remoteName: "origin",
+        protocol: "ssh",
+      })
+      .pipe(Effect.flip);
+
+    assert.include(error.detail, "origin exists without a usable fetch URL");
+    assert.equal(createCalls, 0);
+    assert.equal(gitMutationCalls, 0);
+    assert.equal(pushCalls, 0);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider,
+        git: {
+          execute: (input) =>
+            Effect.sync(() => {
+              if (input.args[0] === "remote" && input.args[1] === "add") {
+                gitMutationCalls += 1;
+              }
+              return input.args.length === 1 && input.args[0] === "remote"
+                ? { ...processOutput(), stdout: "origin\n" }
+                : processOutput();
+            }),
+          pushCurrentBranch: () =>
+            Effect.sync(() => {
+              pushCalls += 1;
+              return {
+                status: "pushed" as const,
+                branch: "feature/remote-v1",
+                upstreamBranch: "origin/feature/remote-v1",
+                setUpstream: true,
+              };
+            }),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("rejects a mismatched provider endpoint before external repository creation", () => {
+  let createCalls = 0;
+  const provider = makeProvider({
+    createRepository: () =>
+      Effect.sync(() => {
+        createCalls += 1;
+        return CLONE_URLS;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://gitlab.com",
+        repository: "octocat/t3code",
+        visibility: "private",
+      })
+      .pipe(Effect.flip);
+
+    assert.include(error.detail, "does not match the selected provider");
+    assert.equal(createCalls, 0);
+  }).pipe(Effect.provide(layer({ provider })));
+});
+
+it.effect("rejects a matching non-origin remote before external repository creation", () => {
+  let createCalls = 0;
+  let ensureRemoteCalls = 0;
+  const provider = makeProvider({
+    createRepository: () =>
+      Effect.sync(() => {
+        createCalls += 1;
+        return CLONE_URLS;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.com",
+        repository: "octocat/t3code",
+        visibility: "private",
+        remoteName: "origin",
+        protocol: "ssh",
+      })
+      .pipe(Effect.flip);
+
+    assert.include(error.detail, "non-origin remote");
+    assert.equal(createCalls, 0);
+    assert.equal(ensureRemoteCalls, 0);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider,
+        git: {
+          execute: (input) =>
+            input.args[0] === "remote"
+              ? Effect.succeed({
+                  ...processOutput(),
+                  stdout: "upstream\tgit@github.com:octocat/t3code.git (fetch)\n",
+                })
+              : Effect.succeed(processOutput()),
+          ensureRemote: () =>
+            Effect.sync(() => {
+              ensureRemoteCalls += 1;
+              return "origin";
+            }),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect(
+  "rejects a matching push-only non-origin remote before external repository creation",
+  () => {
+    let createCalls = 0;
+    let ensureRemoteCalls = 0;
+    const provider = makeProvider({
+      createRepository: () =>
+        Effect.sync(() => {
+          createCalls += 1;
+          return CLONE_URLS;
+        }),
+    });
+
+    return Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      const error = yield* service
+        .publishRepository({
+          cwd: "/workspace",
+          provider: SourceControlProviderKind.make("github"),
+          providerBaseUrl: "https://github.com",
+          repository: "octocat/t3code",
+          visibility: "private",
+          remoteName: "origin",
+          protocol: "ssh",
+        })
+        .pipe(Effect.flip);
+
+      assert.include(error.detail, "non-origin remote");
+      assert.equal(createCalls, 0);
+      assert.equal(ensureRemoteCalls, 0);
+    }).pipe(
+      Effect.provide(
+        layer({
+          provider,
+          git: {
+            execute: (input) =>
+              input.args[0] === "remote"
+                ? Effect.succeed({
+                    ...processOutput(),
+                    stdout:
+                      "upstream\tgit@github.com:another/project.git (fetch)\nupstream\tgit@github.com:octocat/t3code.git (push)\n",
+                  })
+                : Effect.succeed(processOutput()),
+            ensureRemote: () =>
+              Effect.sync(() => {
+                ensureRemoteCalls += 1;
+                return "origin";
+              }),
+          },
+        }),
+      ),
+    );
+  },
+);
+
+it.effect("does not reject the same repository path on another host during preflight", () => {
+  let createCalls = 0;
+  const enterpriseUrls = {
+    ...CLONE_URLS,
+    url: "https://git.enterprise.test/octocat/t3code",
+    sshUrl: "git@git.enterprise.test:octocat/t3code.git",
+  };
+  const provider = makeProvider({
+    createRepository: () =>
+      Effect.sync(() => {
+        createCalls += 1;
+        return enterpriseUrls;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.publishRepository({
+      cwd: "/workspace",
+      provider: SourceControlProviderKind.make("github"),
+      providerBaseUrl: "https://git.enterprise.test",
+      repository: "octocat/t3code",
+      visibility: "private",
+      remoteName: "origin",
+      protocol: "ssh",
+    });
+
+    assert.equal(result.remoteUrl, enterpriseUrls.sshUrl);
+    assert.equal(createCalls, 1);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider,
+        git: {
+          execute: (input) =>
+            input.args[0] === "remote" && input.args[1] === "-v"
+              ? Effect.succeed({
+                  ...processOutput(),
+                  stdout: "upstream\tgit@another.enterprise.test:octocat/t3code.git (fetch)\n",
+                })
+              : Effect.succeed(processOutput()),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("includes a non-default endpoint port in publication preflight matching", () => {
+  let createCalls = 0;
+  const enterpriseUrls = {
+    ...CLONE_URLS,
+    url: "https://git.enterprise.test:8443/octocat/t3code",
+    sshUrl: "ssh://git@git.enterprise.test:8443/octocat/t3code.git",
+  };
+  const provider = makeProvider({
+    createRepository: () =>
+      Effect.sync(() => {
+        createCalls += 1;
+        return enterpriseUrls;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.publishRepository({
+      cwd: "/workspace",
+      provider: SourceControlProviderKind.make("github"),
+      providerBaseUrl: "https://git.enterprise.test:8443",
+      repository: "octocat/t3code",
+      visibility: "private",
+      remoteName: "origin",
+      protocol: "ssh",
+    });
+
+    assert.equal(result.remoteUrl, enterpriseUrls.sshUrl);
+    assert.equal(createCalls, 1);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider,
+        git: {
+          execute: (input) =>
+            input.args[0] === "remote" && input.args[1] === "-v"
+              ? Effect.succeed({
+                  ...processOutput(),
+                  stdout:
+                    "upstream\tssh://git@git.enterprise.test:9443/octocat/t3code.git (fetch)\n",
+                })
+              : Effect.succeed(processOutput()),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("rejects an exact neutral enterprise target on a non-origin remote", () => {
+  let createCalls = 0;
+  const provider = makeProvider({
+    createRepository: () =>
+      Effect.sync(() => {
+        createCalls += 1;
+        return CLONE_URLS;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://git.enterprise.test:8443",
+        repository: "octocat/t3code",
+        visibility: "private",
+        remoteName: "origin",
+        protocol: "ssh",
+      })
+      .pipe(Effect.flip);
+
+    assert.include(error.detail, "non-origin remote");
+    assert.equal(createCalls, 0);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider,
+        git: {
+          execute: (input) =>
+            input.args[0] === "remote" && input.args[1] === "-v"
+              ? Effect.succeed({
+                  ...processOutput(),
+                  stdout:
+                    "upstream\tssh://git@git.enterprise.test:8443/octocat/t3code.git (fetch)\n",
+                })
+              : Effect.succeed(processOutput()),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("rejects an exact Azure target on a non-origin remote", () => {
+  let createCalls = 0;
+  const provider = makeProvider({
+    createRepository: () =>
+      Effect.sync(() => {
+        createCalls += 1;
+        return CLONE_URLS;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("azure-devops"),
+        providerBaseUrl: "https://dev.azure.com/org",
+        repository: "project/repository",
+        visibility: "private",
+        remoteName: "origin",
+        protocol: "ssh",
+      })
+      .pipe(Effect.flip);
+
+    assert.include(error.detail, "non-origin remote");
+    assert.equal(createCalls, 0);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider,
+        git: {
+          execute: (input) =>
+            input.args[0] === "remote" && input.args[1] === "-v"
+              ? Effect.succeed({
+                  ...processOutput(),
+                  stdout: "upstream\tgit@ssh.dev.azure.com:v3/org/project/repository (fetch)\n",
+                })
+              : Effect.succeed(processOutput()),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("rejects a conflicting origin before external creation or remote mutation", () => {
+  let createCalls = 0;
+  let ensureRemoteCalls = 0;
+  const provider = makeProvider({
+    createRepository: () =>
+      Effect.sync(() => {
+        createCalls += 1;
+        return CLONE_URLS;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.com",
+        repository: "octocat/t3code",
+        visibility: "private",
+        remoteName: "origin",
+        protocol: "ssh",
+      })
+      .pipe(Effect.flip);
+
+    assert.include(error.detail, "existing origin does not match");
+    assert.equal(createCalls, 0);
+    assert.equal(ensureRemoteCalls, 0);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider,
+        git: {
+          readConfigValue: (_cwd, key) =>
+            Effect.succeed(key === "remote.origin.url" ? "git@github.com:other/project.git" : null),
+          ensureRemote: () =>
+            Effect.sync(() => {
+              ensureRemoteCalls += 1;
+              return "origin";
+            }),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("reuses a matching existing origin without recreating the repository", () => {
+  let createCalls = 0;
+  const readContexts: Array<SourceControlProvider.SourceControlProviderContext | undefined> = [];
+  const provider = makeProvider({
+    createRepository: () =>
+      Effect.sync(() => {
+        createCalls += 1;
+        return CLONE_URLS;
+      }),
+    getRepositoryCloneUrls: (input) =>
+      Effect.sync(() => {
+        readContexts.push(input.context);
+        return CLONE_URLS;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.publishRepository({
+      cwd: "/workspace",
+      provider: SourceControlProviderKind.make("github"),
+      providerBaseUrl: "https://github.com",
+      repository: "octocat/t3code",
+      visibility: "private",
+      remoteName: "origin",
+      protocol: "ssh",
+    });
+
+    assert.equal(result.remoteName, "origin");
+    assert.equal(createCalls, 0);
+    assert.deepStrictEqual(readContexts, [
+      {
+        provider: {
+          kind: SourceControlProviderKind.make("github"),
+          name: "GitHub",
+          baseUrl: "https://github.com",
+        },
+        remoteName: "origin",
+        remoteUrl: CLONE_URLS.url,
+      },
+    ]);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider,
+        git: {
+          readConfigValue: (_cwd, key) =>
+            Effect.succeed(
+              key === "remote.origin.url"
+                ? CLONE_URLS.url
+                : key === "remote.origin.pushurl"
+                  ? CLONE_URLS.sshUrl
+                  : null,
+            ),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("rejects existing origin reuse against another selected endpoint", () => {
+  let readCalls = 0;
+  const provider = makeProvider({
+    getRepositoryCloneUrls: () =>
+      Effect.sync(() => {
+        readCalls += 1;
+        return CLONE_URLS;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.enterprise.test",
+        repository: "octocat/t3code",
+        visibility: "private",
+        remoteName: "origin",
+        protocol: "ssh",
+      })
+      .pipe(Effect.flip);
+
+    assert.include(error.detail, "selected provider endpoint and repository");
+    assert.equal(readCalls, 0);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider,
+        git: {
+          readConfigValue: (_cwd, key) =>
+            Effect.succeed(key === "remote.origin.url" ? CLONE_URLS.url : null),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("reuses an explicitly selected neutral enterprise origin", () => {
+  const enterpriseUrls = {
+    nameWithOwner: "octocat/t3code",
+    url: "https://git.enterprise.test:8443/octocat/t3code",
+    sshUrl: "ssh://git@git.enterprise.test:8443/octocat/t3code.git",
+  };
+  const readInputs: Array<{
+    readonly repository: string;
+    readonly context: SourceControlProvider.SourceControlProviderContext | undefined;
+  }> = [];
+  const provider = makeProvider({
+    getRepositoryCloneUrls: (input) =>
+      Effect.sync(() => {
+        readInputs.push({ repository: input.repository, context: input.context });
+        return enterpriseUrls;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.publishRepository({
+      cwd: "/workspace",
+      provider: SourceControlProviderKind.make("github"),
+      providerBaseUrl: "https://git.enterprise.test:8443",
+      repository: "octocat/t3code",
+      visibility: "private",
+      remoteName: "origin",
+      protocol: "ssh",
+    });
+
+    assert.equal(result.remoteUrl, enterpriseUrls.sshUrl);
+    assert.deepStrictEqual(readInputs, [
+      {
+        repository: "octocat/t3code",
+        context: {
+          provider: {
+            kind: SourceControlProviderKind.make("github"),
+            name: "git.enterprise.test:8443",
+            baseUrl: "https://git.enterprise.test:8443",
+          },
+          remoteName: "origin",
+          remoteUrl: enterpriseUrls.url,
+        },
+      },
+    ]);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider,
+        git: {
+          readConfigValue: (_cwd, key) =>
+            Effect.succeed(key === "remote.origin.url" ? enterpriseUrls.url : null),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("reuses the exact Azure origin repository selector", () => {
+  const azureUrls = {
+    nameWithOwner: "project/repository",
+    url: "https://dev.azure.com/org/project/_git/repository",
+    sshUrl: "git@ssh.dev.azure.com:v3/org/project/repository",
+  };
+  const readInputs: Array<{
+    readonly repository: string;
+    readonly context: SourceControlProvider.SourceControlProviderContext | undefined;
+  }> = [];
+  const provider = makeProvider({
+    getRepositoryCloneUrls: (input) =>
+      Effect.sync(() => {
+        readInputs.push({ repository: input.repository, context: input.context });
+        return azureUrls;
+      }),
+  });
+
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const result = yield* service.publishRepository({
+      cwd: "/workspace",
+      provider: SourceControlProviderKind.make("azure-devops"),
+      providerBaseUrl: "https://dev.azure.com/org",
+      repository: "project/repository",
+      visibility: "private",
+      remoteName: "origin",
+      protocol: "ssh",
+    });
+
+    assert.equal(result.remoteUrl, azureUrls.sshUrl);
+    assert.deepStrictEqual(readInputs, [
+      {
+        repository: "repository",
+        context: {
+          provider: {
+            kind: SourceControlProviderKind.make("azure-devops"),
+            name: "Azure DevOps",
+            baseUrl: "https://dev.azure.com",
+          },
+          remoteName: "origin",
+          remoteUrl: azureUrls.url,
+        },
+      },
+    ]);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider,
+        git: {
+          readConfigValue: (_cwd, key) =>
+            Effect.succeed(key === "remote.origin.url" ? azureUrls.url : null),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("rejects any divergent origin push URL before remote mutation", () => {
+  let ensureRemoteCalls = 0;
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.com",
+        repository: "octocat/t3code",
+        visibility: "private",
+        remoteName: "origin",
+        protocol: "ssh",
+      })
+      .pipe(Effect.flip);
+
+    assert.include(error.detail, "push URL differs");
+    assert.equal(ensureRemoteCalls, 0);
+  }).pipe(
+    Effect.provide(
+      layer({
+        git: {
+          readConfigValue: (_cwd, key) =>
+            Effect.succeed(key === "remote.origin.url" ? CLONE_URLS.url : null),
+          execute: (input) =>
+            input.args[0] === "remote"
+              ? Effect.succeed({
+                  ...processOutput(),
+                  stdout: input.args.includes("--push")
+                    ? `${CLONE_URLS.url}\nhttps://github.com/other/project.git\n`
+                    : CLONE_URLS.url,
+                })
+              : Effect.succeed(processOutput()),
+          ensureRemote: () =>
+            Effect.sync(() => {
+              ensureRemoteCalls += 1;
+              return "origin";
+            }),
+        },
+      }),
+    ),
+  );
+});
+
+it.effect("rejects an origin push URL on a different non-default port", () => {
+  let ensureRemoteCalls = 0;
+  const portUrls = {
+    ...CLONE_URLS,
+    url: "https://github.example.test:8443/octocat/t3code",
+    sshUrl: "ssh://git@github.example.test:8443/octocat/t3code.git",
+  };
+  return Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* service
+      .publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.com",
+        repository: "octocat/t3code",
+        visibility: "private",
+        remoteName: "origin",
+        protocol: "ssh",
+      })
+      .pipe(Effect.flip);
+
+    assert.include(error.detail, "existing origin does not match");
+    assert.equal(ensureRemoteCalls, 0);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider: makeProvider({ getRepositoryCloneUrls: () => Effect.succeed(portUrls) }),
+        git: {
+          readConfigValue: (_cwd, key) =>
+            Effect.succeed(
+              key === "remote.origin.url"
+                ? "https://github.example.test:8443/octocat/t3code.git"
+                : null,
+            ),
+          execute: (input) =>
+            input.args[0] === "remote"
+              ? Effect.succeed({
+                  ...processOutput(),
+                  stdout: "https://github.example.test:9443/octocat/t3code.git\n",
+                })
+              : Effect.succeed(processOutput()),
+          ensureRemote: () =>
+            Effect.sync(() => {
+              ensureRemoteCalls += 1;
+              return "origin";
+            }),
+        },
+      }),
+    ),
+  );
+});
+
 it.effect("publish succeeds with status remote_added when the local repo has no commits", () => {
   let pushCalls = 0;
   return Effect.gen(function* () {
@@ -555,6 +1649,7 @@ it.effect("publish succeeds with status remote_added when the local repo has no 
     const result = yield* service.publishRepository({
       cwd: "/workspace",
       provider: SourceControlProviderKind.make("github"),
+      providerBaseUrl: "https://github.com",
       repository: "octocat/t3code",
       visibility: "private",
       remoteName: "origin",
