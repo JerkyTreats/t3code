@@ -402,58 +402,71 @@ describe("t3_worktree_handoff", () => {
     });
   });
 
-  it.effect("uses the fetched commit and remote PR base for an explicit local alias", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const git = yield* GitVcsDriver.GitVcsDriver;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "handoff-remote-base-" });
-      const cwd = `${directory}/repo`;
-      const remote = `${directory}/remote.git`;
-      const worktreePath = `${directory}/worktree`;
-      yield* fs.makeDirectory(cwd);
-      const command = (at: string, args: string[]) =>
-        git.execute({ operation: "handoff-test", cwd: at, args });
-      yield* command(cwd, ["init", "-b", "stable"]);
-      yield* command(cwd, ["config", "user.name", "Test"]);
-      yield* command(cwd, ["config", "user.email", "test@example.test"]);
-      yield* command(cwd, ["commit", "--allow-empty", "-m", "remote base"]);
-      const remoteHead = (yield* command(cwd, ["rev-parse", "HEAD"])).stdout.trim();
-      yield* command(cwd, ["init", "--bare", remote]);
-      yield* command(cwd, ["remote", "add", "upstream", remote]);
-      yield* command(cwd, ["push", "-u", "upstream", "stable:release"]);
-      yield* command(cwd, ["commit", "--allow-empty", "-m", "local only"]);
-      const harness = makeHarness({
-        git: {
-          fetchWorktreeBaseCommit: (input) => git.fetchWorktreeBaseCommit({ ...input, cwd }),
-          createWorktree: (input) => git.createWorktree({ ...input, cwd, path: worktreePath }),
-        },
-      });
-      const result = yield* runHandoff(harness, {
-        branch: "feature/from-remote",
-        baseRef: "stable",
-        startFromOrigin: true,
-        runSetupScript: false,
-      });
+  // Fork F06: only origin may supply a fetched worktree base; another remote leaves the local base.
+  it.effect.each(["origin", "upstream"])(
+    "uses the fetched %s commit and remote PR base only when it is origin",
+    (remoteName) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const git = yield* GitVcsDriver.GitVcsDriver;
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "handoff-remote-base-" });
+        const cwd = `${directory}/repo`;
+        const remote = `${directory}/remote.git`;
+        const worktreePath = `${directory}/worktree`;
+        yield* fs.makeDirectory(cwd);
+        const command = (at: string, args: string[]) =>
+          git.execute({ operation: "handoff-test", cwd: at, args });
+        yield* command(cwd, ["init", "-b", "stable"]);
+        yield* command(cwd, ["config", "user.name", "Test"]);
+        yield* command(cwd, ["config", "user.email", "test@example.test"]);
+        yield* command(cwd, ["commit", "--allow-empty", "-m", "remote base"]);
+        const remoteHead = (yield* command(cwd, ["rev-parse", "HEAD"])).stdout.trim();
+        yield* command(cwd, ["init", "--bare", remote]);
+        yield* command(cwd, ["remote", "add", remoteName, remote]);
+        yield* command(cwd, ["push", "-u", remoteName, "stable:release"]);
+        yield* command(cwd, ["commit", "--allow-empty", "-m", "local only"]);
+        const localHead = (yield* command(cwd, ["rev-parse", "HEAD"])).stdout.trim();
+        const harness = makeHarness({
+          git: {
+            fetchWorktreeBaseCommit: (input) => git.fetchWorktreeBaseCommit({ ...input, cwd }),
+            createWorktree: (input) => git.createWorktree({ ...input, cwd, path: worktreePath }),
+          },
+        });
+        const result = yield* runHandoff(harness, {
+          branch: "feature/from-remote",
+          baseRef: "stable",
+          startFromOrigin: true,
+          runSetupScript: false,
+        });
 
-      expect(result.worktreePath).toBe(worktreePath);
-      expect(result.startedFromOrigin).toBe(true);
-      expect(result.setupScript).toEqual({ status: "skipped" });
-      expect((yield* command(worktreePath, ["rev-parse", "HEAD"])).stdout.trim()).toBe(remoteHead);
-      const preview = yield* git.getReviewDiffPreview({ cwd: worktreePath });
-      const comparisonBase = preview.sources.find(
-        (source) => source.kind === "branch-range",
-      )!.baseRef;
-      expect(
-        (yield* command(worktreePath, ["rev-parse", `${comparisonBase}^{commit}`])).stdout.trim(),
-      ).toBe(remoteHead);
-    }).pipe(
-      Effect.provide(
-        GitVcsDriver.layer.pipe(
-          Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "handoff-remote-git-" })),
-          Layer.provideMerge(NodeServices.layer),
+        expect(result.worktreePath).toBe(worktreePath);
+        if (remoteName !== "origin") {
+          expect(result.startedFromOrigin).toBe(false);
+          expect((yield* command(worktreePath, ["rev-parse", "HEAD"])).stdout.trim()).toBe(
+            localHead,
+          );
+          return;
+        }
+        expect(result.startedFromOrigin).toBe(true);
+        expect(result.setupScript).toEqual({ status: "skipped" });
+        expect((yield* command(worktreePath, ["rev-parse", "HEAD"])).stdout.trim()).toBe(
+          remoteHead,
+        );
+        const preview = yield* git.getReviewDiffPreview({ cwd: worktreePath });
+        const comparisonBase = preview.sources.find(
+          (source) => source.kind === "branch-range",
+        )!.baseRef;
+        expect(
+          (yield* command(worktreePath, ["rev-parse", `${comparisonBase}^{commit}`])).stdout.trim(),
+        ).toBe(remoteHead);
+      }).pipe(
+        Effect.provide(
+          GitVcsDriver.layer.pipe(
+            Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "handoff-remote-git-" })),
+            Layer.provideMerge(NodeServices.layer),
+          ),
         ),
       ),
-    ),
   );
 
   it.effect("fails when the thread is already attached to a worktree", () => {

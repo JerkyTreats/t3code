@@ -57,17 +57,11 @@ import {
   sanitizeFeatureBranchName,
 } from "@t3tools/shared/git";
 import {
-  canonicalRepositoryKey,
   getChangeRequestTerminologyForKind,
   isSshRemoteUrl,
   type ChangeRequestTerminology,
 } from "@t3tools/shared/sourceControl";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import {
-  parseGitHubRepositorySelector,
-  resolveGitHubRepository,
-} from "@t3tools/source-control-github/server/gitHubRepositoryResolution";
 import {
   normalizeThreadPullRequestKey,
   threadPullRequestKeyOf,
@@ -89,7 +83,11 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
-import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
+import {
+  extractBranchNameFromRemoteRef,
+  parseRemoteNames,
+  parseRemoteRefWithRemoteNames,
+} from "./remoteRefs.ts";
 import { detachStackFrame } from "./detachStackFrame.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import type { GitManagerServiceError } from "@t3tools/contracts";
@@ -97,6 +95,17 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
+import { exactOriginContainsPullUrl } from "@t3tools/source-control-core/client/originRepositoryPolicy";
+import {
+  canUseOriginBranchTracking,
+  hasOriginCreationTracking,
+  isOriginComparisonRef,
+  isOriginRemoteName,
+  isOriginRemoteRef,
+  originHeadAssociation,
+  originRemoteUrlConfigKey,
+  selectOriginRemoteName,
+} from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 import type { ChangeRequest } from "@t3tools/contracts";
 
 export interface GitActionProgressReporter {
@@ -637,11 +646,6 @@ function headBranchProbe(
   );
 }
 
-/** A URL's host as `new URL` reads it: lowercased, any non-default port kept, `:443` dropped. */
-function urlHost(url: string): string | null {
-  return URL.canParse(url) ? new URL(url).host : null;
-}
-
 function appendUnique(values: string[], next: string | null | undefined): void {
   const trimmed = next?.trim() ?? "";
   if (trimmed.length === 0 || values.includes(trimmed)) {
@@ -729,7 +733,6 @@ export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const environment = yield* HostProcess.Environment;
 
   const sourceControlProvider = (cwd: string) => sourceControlProviders.resolve({ cwd });
   const serverSettingsService = yield* ServerSettings.ServerSettingsService;
@@ -1023,12 +1026,10 @@ export const make = Effect.gen(function* () {
                       cwd,
                       `remote.${remoteName}.url`,
                     );
-                    const pullRequestKey = pullRequestRepositoryKey(pullRequest.url);
+                    // Fork F06: exact origin host, port and repository, not display grouping.
                     if (
                       remoteUrl === null ||
-                      pullRequestKey === null ||
-                      canonicalRepositoryKey(pullRequestKey) !==
-                        canonicalRepositoryKey(normalizeGitRemoteUrl(remoteUrl))
+                      !exactOriginContainsPullUrl(remoteUrl, pullRequest.url)
                     ) {
                       return yield* cause;
                     }
@@ -1325,6 +1326,9 @@ export const make = Effect.gen(function* () {
     },
     refreshMissingPullRequest = false,
   ) {
+    // Fork F06: non-origin branch tracking cannot select a product pull request association.
+    const trackingRemote = yield* readConfigValueNullable(cwd, `branch.${details.branch}.remote`);
+    if (!canUseOriginBranchTracking(trackingRemote)) return null;
     // Keyed by (cwd, branch) only: the upstream ref changing (e.g. a first
     // `push -u`) must not orphan the fallback value for the same branch.
     const branchKey = `${cwd}\u0000${details.branch}`;
@@ -1438,59 +1442,19 @@ export const make = Effect.gen(function* () {
   const readConfigValueNullable = (cwd: string, key: string) =>
     gitCore.readConfigValue(cwd, key).pipe(Effect.orElseSucceed(() => null));
 
-  // Whether the GitHub provider creates PRs in the only remote. It picks GH_REPO when that
-  // parses, else what resolveGitHubRepository makes of the remote and its gh-resolved mark from
-  // `gh repo set-default`, given the host the provider's context gets from the remote URL. An
-  // HTTPS remote keeps a non-default port there, and the provider then ignores the mark. With no
-  // answer at all, the provider falls back to the remote itself.
-  const targetsOnlyRemote = Effect.fn("targetsOnlyRemote")(function* (
-    cwd: string,
-    remoteName: string,
-    remote: { readonly remoteUrl: string | null; readonly repositoryNameWithOwner: string | null },
-  ) {
-    const baseUrl =
-      remote.remoteUrl === null
-        ? undefined
-        : detectSourceControlProviderFromGitRemoteUrl(remote.remoteUrl)?.baseUrl;
-    const host = baseUrl === undefined ? null : urlHost(baseUrl);
-    const repository = remote.repositoryNameWithOwner?.toLowerCase();
-    const fromEnvironment = parseGitHubRepositorySelector(environment.GH_REPO ?? "", host ?? "");
-    if (fromEnvironment !== null) {
-      const { host: targetHost, owner, name } = fromEnvironment;
-      return (
-        host !== null &&
-        urlHost(`https://${targetHost}`) === host &&
-        `${owner}/${name}`.toLowerCase() === repository
-      );
-    }
-    const mark = yield* readConfigValueNullable(cwd, `remote.${remoteName}.gh-resolved`);
-    const { locator } = resolveGitHubRepository({
-      remotes: remote.remoteUrl === null ? "" : `${remoteName}\t${remote.remoteUrl} (fetch)`,
-      resolved: mark === null ? "" : `remote.${remoteName}.gh-resolved ${mark}`,
-      hostHint: host ?? undefined,
-      defaultHost: host ?? "github.com",
-    });
-    return locator === null || `${locator.owner}/${locator.name}`.toLowerCase() === repository;
-  });
-
+  // Fork F06: the hosting provider is read from literal origin only.
   const resolveHostingProvider = Effect.fn("resolveHostingProvider")(function* (
     cwd: string,
-    branch: string | null,
+    _branch: string | null,
   ) {
-    const preferredRemoteName =
-      branch === null
-        ? "origin"
-        : ((yield* readConfigValueNullable(cwd, `branch.${branch}.remote`)) ?? "origin");
-    const remoteUrl =
-      (yield* readConfigValueNullable(cwd, `remote.${preferredRemoteName}.url`)) ??
-      (yield* readConfigValueNullable(cwd, "remote.origin.url"));
+    const remoteUrl = yield* readConfigValueNullable(cwd, originRemoteUrlConfigKey());
 
     const provider = remoteUrl ? detectSourceControlProviderFromGitRemoteUrl(remoteUrl) : null;
     if (!remoteUrl || provider?.kind !== "unknown") return provider;
     const handle = yield* sourceControlProviders
       .resolveHandle({
         cwd,
-        context: { provider, remoteName: preferredRemoteName, remoteUrl },
+        context: { provider, remoteName: "origin", remoteUrl },
       })
       .pipe(Effect.orElseSucceed(() => null));
     return handle?.context?.provider ?? provider;
@@ -1500,7 +1464,7 @@ export const make = Effect.gen(function* () {
     cwd: string,
     remoteName: string | null,
   ) {
-    if (!remoteName) {
+    if (!isOriginRemoteName(remoteName)) {
       return {
         remoteUrl: null,
         remoteUrlKey: null,
@@ -1550,13 +1514,9 @@ export const make = Effect.gen(function* () {
     cwd: string,
     details: { branch: string; upstreamRef: string | null; remoteName?: string },
   ) {
-    const remoteName =
-      details.remoteName ??
-      (yield* readConfigValueNullable(cwd, `branch.${details.branch}.remote`));
-    const headBranchFromUpstream = details.upstreamRef
-      ? extractBranchNameFromRemoteRef(details.upstreamRef, { remoteName })
-      : "";
-    const headBranch = headBranchFromUpstream.length > 0 ? headBranchFromUpstream : details.branch;
+    // Fork F06: non-origin local tracking cannot select a product head association.
+    const { remoteName, headBranch } = originHeadAssociation(details.branch, details.upstreamRef);
+    const headBranchFromUpstream = isOriginRemoteRef(details.upstreamRef) ? headBranch : "";
     const shouldProbeLocalBranchSelector =
       headBranchFromUpstream.length === 0 || headBranch === details.branch;
 
@@ -1565,28 +1525,7 @@ export const make = Effect.gen(function* () {
       remoteName,
     );
 
-    // With no origin to compare against, the only remote is the repository gh targets
-    // unless GH_REPO or `gh repo set-default` (gh-resolved) names another, so a branch on it
-    // is not a fork. With several remotes, or with that other target, it may still be a fork.
-    const isOnlyRemote =
-      remoteName !== null &&
-      remoteName !== "origin" &&
-      originRepository.remoteUrlKey === null &&
-      (yield* gitCore
-        .execute({
-          operation: "GitManager.resolveBranchHeadContext.remotes",
-          cwd,
-          args: ["remote"],
-          timeoutMs: 5_000,
-        })
-        .pipe(
-          Effect.map(
-            (result) => result.stdout.split("\n").filter((name) => name.trim().length > 0).length,
-          ),
-          Effect.orElseSucceed(() => 0),
-        )) === 1 &&
-      (yield* targetsOnlyRemote(cwd, remoteName, remoteRepository));
-    const isForeignRemote = remoteName !== null && remoteName !== "origin" && !isOnlyRemote;
+    const isForeignRemote = !isOriginRemoteName(remoteName);
 
     const isCrossRepository =
       remoteRepository.repositoryNameWithOwner !== null &&
@@ -1645,7 +1584,7 @@ export const make = Effect.gen(function* () {
   const findRemoteTrackingRemote = Effect.fn("findRemoteTrackingRemote")(function* (
     cwd: string,
     branch: string,
-    preferredRemoteName: string | null,
+    _preferredRemoteName: string | null,
   ) {
     if (branch.length === 0) return null;
     return yield* Effect.gen(function* () {
@@ -1675,12 +1614,9 @@ export const make = Effect.gen(function* () {
           .filter((ref) => ref.length > 0),
       );
       const matching = remoteNames.filter((name) => refs.has(`refs/remotes/${name}/${branch}`));
-      if (preferredRemoteName !== null && matching.includes(preferredRemoteName)) {
-        return preferredRemoteName;
-      }
-      if (matching.includes("origin")) return "origin";
-      return matching[0] ?? null;
-    });
+      // Fork F06: product lookup selects origin from the matches.
+      return selectOriginRemoteName(matching);
+    }).pipe(Effect.orElseSucceed(() => null));
   });
 
   const findPublishedBranchRemote = Effect.fn("findPublishedBranchRemote")(function* (
@@ -1696,7 +1632,8 @@ export const make = Effect.gen(function* () {
     })).stdout
       .split("\n")
       .map((name) => name.trim())
-      .filter((name) => name.length > 0);
+      // Fork F06: published branch discovery considers literal origin only.
+      .filter(isOriginRemoteName);
     if (remoteNames.length === 0) return null;
 
     const refs = yield* gitCore.execute({
@@ -1844,7 +1781,7 @@ export const make = Effect.gen(function* () {
         ],
         { concurrency: "unbounded" },
       );
-      if (configuredRemote !== null && configuredMerge !== null) {
+      if (isOriginRemoteName(configuredRemote) && configuredMerge !== null) {
         return false;
       }
 
@@ -2027,9 +1964,38 @@ export const make = Effect.gen(function* () {
     upstreamRef: string | null,
     headContext: Pick<BranchHeadContext, "isCrossRepository" | "remoteName">,
   ) {
+    // Fork F06: a configured PR base is a local branch or an origin ref, never another
+    // remote's; such a base falls through to origin's default. Shadow detection stays local.
+    const remoteNames = yield* gitCore
+      .execute({ operation: "GitManager.resolvePrBase.remotes", cwd, args: ["remote"] })
+      .pipe(
+        Effect.map((result) => parseRemoteNames(result.stdout)),
+        Effect.orElseSucceed((): ReadonlyArray<string> => []),
+      );
+    const resolveProductBranchName = Effect.fn("resolveProductBranchName")(function* (
+      refName: string,
+    ) {
+      const fullRef = refName.startsWith("refs/")
+        ? refName
+        : yield* gitCore
+            .execute({
+              operation: "GitManager.resolvePrBase.fullRef",
+              cwd,
+              args: ["rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", refName],
+              allowNonZeroExit: true,
+            })
+            .pipe(Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : refName)));
+      const remoteName = fullRef.startsWith("refs/remotes/")
+        ? (parseRemoteRefWithRemoteNames(fullRef.slice("refs/remotes/".length), remoteNames)
+            ?.remoteName ?? null)
+        : null;
+      return !fullRef.startsWith("refs/remotes/") || isOriginComparisonRef(fullRef, remoteName)
+        ? yield* gitCore.resolveBranchName(cwd, refName)
+        : null;
+    });
     const configuredRef = yield* gitCore.readConfigValue(cwd, `branch.${branch}.t3-merge-base-ref`);
     if (configuredRef?.startsWith("refs/heads/") || configuredRef?.startsWith("refs/remotes/")) {
-      const configuredBranch = yield* gitCore.resolveBranchName(cwd, configuredRef);
+      const configuredBranch = yield* resolveProductBranchName(configuredRef);
       if (configuredBranch) return { baseBranch: configuredBranch, baseRef: configuredRef };
     }
 
@@ -2049,10 +2015,10 @@ export const make = Effect.gen(function* () {
       }
       if (configured.includes("/") && !configured.startsWith("refs/")) {
         const remoteRef = `refs/remotes/${configured}`;
-        const remoteBranch = yield* gitCore.resolveBranchName(cwd, remoteRef);
+        const remoteBranch = yield* resolveProductBranchName(remoteRef);
         if (remoteBranch) return { baseBranch: remoteBranch, baseRef: remoteRef };
       }
-      const configuredBranch = yield* gitCore.resolveBranchName(cwd, configured);
+      const configuredBranch = yield* resolveProductBranchName(configured);
       if (configuredBranch) return { baseBranch: configuredBranch, baseRef: configuredBranch };
     }
 
@@ -2278,7 +2244,8 @@ export const make = Effect.gen(function* () {
     threadId: ThreadId | undefined,
     emit: GitActionProgressEmitter,
   ) {
-    const provider = yield* sourceControlProvider(cwd);
+    // Fork F06: change request creation uses the origin-bound, live-revalidated handle.
+    const { provider } = yield* sourceControlProviders.resolveChangeRequestHandle({ cwd });
     const terms = getChangeRequestTerminologyForKind(provider.kind);
     const details = yield* gitCore.statusDetails(cwd);
     const branch = details.branch ?? fallbackBranch;
@@ -2294,6 +2261,15 @@ export const make = Effect.gen(function* () {
         operation: "runPrStep",
         cwd,
         detail: "Current branch has not been pushed. Push before creating a PR.",
+      });
+    }
+    const trackingRemote = yield* gitCore.readConfigValue(cwd, `branch.${branch}.remote`);
+    if (!hasOriginCreationTracking(trackingRemote, details.upstreamRef)) {
+      return yield* new GitManagerError({
+        operation: "runPrStep",
+        cwd,
+        detail:
+          "Origin-only policy requires the current branch to track origin before creating a PR.",
       });
     }
 
@@ -2523,8 +2499,9 @@ export const make = Effect.gen(function* () {
       .split("\n")
       .map((remoteName) => remoteName.trim())
       .filter((remoteName) => remoteName.length > 0);
-    const [firstRemoteName] = remoteNames;
-    if (firstRemoteName === undefined) return null;
+    // Fork F06: branch pull request association requires literal origin.
+    const originRemoteName = selectOriginRemoteName(remoteNames);
+    if (originRemoteName === null) return null;
     const branchRef = yield* remember(
       `branchRef\u0000${branch}`,
       gitCore
@@ -2549,6 +2526,7 @@ export const make = Effect.gen(function* () {
     let upstreamRef: string | null = null;
     let remoteName: string | null = null;
     if (savedUpstream.length > 0) {
+      if (!isOriginRemoteName(savedRemoteName)) return null;
       if (savedRemoteName.length === 0 || savedRemoteRef.length === 0) {
         return yield* new GitManagerError({
           operation: "branchPullRequest",
@@ -2577,6 +2555,7 @@ export const make = Effect.gen(function* () {
                   .filter((remoteRef) => remoteRef.length > 0),
               );
               return remoteNames
+                .filter(isOriginRemoteName)
                 .filter((candidate) => refNames.has(`refs/remotes/${candidate}/${branch}`))
                 .join("\n");
             }),
@@ -2597,7 +2576,7 @@ export const make = Effect.gen(function* () {
         upstreamRef = `${remoteName}/${branch}`;
       }
     }
-    const defaultRemoteName = remoteNames.includes("origin") ? "origin" : firstRemoteName;
+    const defaultRemoteName = originRemoteName;
     const defaultBranch = yield* remember(
       `defaultBranch\u0000${defaultRemoteName}`,
       gitCore.resolveDefaultBranchName(cacheCwd, defaultRemoteName),
