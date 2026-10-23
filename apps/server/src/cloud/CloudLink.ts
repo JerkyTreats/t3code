@@ -116,7 +116,7 @@ import {
   parseManagedEndpointLocalOrigin,
   requestAbsoluteUrl,
 } from "./linkChecks.ts";
-import { desktopUpdateRestartPending, pendingUpdateHandoffExists } from "./updateHandoff.ts";
+import { desktopUpdateRestartPending } from "./updateHandoff.ts";
 
 const CLOUD_MINT_NONCE_PREFIX = "cloud-mint-nonce-";
 const CLOUD_MINT_JTI_PREFIX = "cloud-mint-jti-";
@@ -1252,15 +1252,12 @@ const make = Effect.gen(function* () {
       return false;
     }
     // A shutdown that hands off to a pending update is not the environment going
-    // offline: the service launcher or the desktop app immediately brings a
-    // server back (the new version, or the old one after a rollback). Deleting
-    // the tunnel here forces that server to provision a replacement UUID, and the
-    // public hostname's route to the new tunnel takes 1-2 minutes to propagate —
-    // the dominant cost of an update restart.
-    if (
-      (yield* withRuntimeFiles(desktopUpdateRestartPending)) ||
-      (yield* withRuntimeFiles(pendingUpdateHandoffExists))
-    ) {
+    // offline: the desktop app immediately brings a server back (the new
+    // version, or the old one after a rollback). Deleting the tunnel here forces
+    // that server to provision a replacement UUID, and the public hostname's
+    // route to the new tunnel takes 1-2 minutes to propagate — the dominant cost
+    // of an update restart.
+    if (yield* withRuntimeFiles(desktopUpdateRestartPending)) {
       yield* Effect.logInfo("Keeping the managed tunnel across the update restart");
       return false;
     }

@@ -556,6 +556,103 @@ describe("PreviewManager", () => {
     webviewSend.mockClear();
   });
 
+  effectIt.effect("keeps preview shortcuts out of the host window", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents();
+        const sendInputEvent = vi.fn();
+        const send = vi.fn();
+        const hostWebContents = { sendInputEvent, send, isDestroyed: () => false };
+        Object.assign(preview.webContents, { hostWebContents });
+        fromId.mockReturnValue(preview.webContents);
+        getFocusedWebContents.mockReturnValue(preview.webContents as never);
+        yield* manager.setMainWindow({
+          isDestroyed: () => false,
+          once: vi.fn(),
+          webContents: hostWebContents,
+        } as never);
+        yield* manager.createTab("tab_keys");
+        yield* manager.registerWebview("tab_keys", 42);
+
+        expect(
+          (preview.webContents as Electron.WebContents).setIgnoreMenuShortcuts,
+        ).toHaveBeenCalledWith(true);
+        // Configured host commands cannot take a protected browser chord.
+        yield* manager.setForwardedShortcuts([
+          { command: "view.reopenClosed", shortcut: parseKeybindingShortcut("mod+shift+t")! },
+        ]);
+        const beforeInput = preview.listeners.get("before-input-event")!;
+        for (const control of [false, true]) {
+          for (const key of ["k", ",", "j", "q", "+"]) {
+            for (const type of ["keyDown", "keyUp"]) {
+              const preventDefault = vi.fn();
+              beforeInput(
+                { preventDefault } as never,
+                { type, key, meta: !control, control, shift: key === "j", alt: false } as never,
+              );
+              yield* Effect.yieldNow;
+              expect(preventDefault).not.toHaveBeenCalled();
+              expect(
+                (preview.webContents as Electron.WebContents).setIgnoreMenuShortcuts,
+              ).toHaveBeenLastCalledWith(true);
+            }
+          }
+        }
+        expect(sendInputEvent).not.toHaveBeenCalled();
+
+        const preventDefault = vi.fn();
+        beforeInput(
+          { preventDefault } as never,
+          {
+            type: "keyDown",
+            key: "r",
+            meta: true,
+            control: false,
+            shift: false,
+            alt: false,
+          } as never,
+        );
+        yield* Effect.yieldNow;
+        expect(preventDefault).toHaveBeenCalledOnce();
+        expect(preview.reload).toHaveBeenCalledOnce();
+        expect(sendInputEvent).not.toHaveBeenCalled();
+        for (const [key, shift, action] of [
+          ["t", false, "preview.new"],
+          ["w", false, "preview.close"],
+          ["t", true, "preview.reopenClosed"],
+          ["l", false, "preview.focusUrl"],
+        ] as const) {
+          const actionPreventDefault = vi.fn();
+          beforeInput(
+            { preventDefault: actionPreventDefault } as never,
+            { type: "keyDown", key, shift, alt: false, meta: true, control: false } as never,
+          );
+          yield* Effect.yieldNow;
+          expect(actionPreventDefault).toHaveBeenCalledOnce();
+          expect(send).toHaveBeenLastCalledWith("desktop:preview-browser-action", {
+            action,
+            tabId: "tab_keys",
+          });
+          expect(sendInputEvent).not.toHaveBeenCalled();
+        }
+        send.mockClear();
+        preview.reload.mockClear();
+        Object.assign(preview.webContents, { focusedFrame: null });
+        for (const key of ["r", "t", "w", "l"]) {
+          const unfocusedPreventDefault = vi.fn();
+          beforeInput(
+            { preventDefault: unfocusedPreventDefault } as never,
+            { type: "keyDown", key, shift: false, alt: false, meta: true, control: false } as never,
+          );
+          expect(unfocusedPreventDefault).not.toHaveBeenCalled();
+        }
+        yield* Effect.yieldNow;
+        expect(send).not.toHaveBeenCalled();
+        expect(preview.reload).not.toHaveBeenCalled();
+      }),
+    ),
+  );
+
   effectIt.effect.each([
     ["linux", "ctrl+alt+[", "[", "BracketLeft", false],
     ["win32", "ctrl+alt+8", "[", "Digit8", false],
@@ -616,7 +713,7 @@ describe("PreviewManager", () => {
         fromId.mockReturnValue(newer.webContents);
         yield* manager.createTab("tab_newer");
         yield* manager.registerWebview("tab_newer", 43);
-        const shortcut = parseKeybindingShortcut("mod+shift+t")!;
+        const shortcut = parseKeybindingShortcut("mod+shift+y")!;
         yield* manager.setForwardedShortcuts([{ command: "view.reopenClosed", shortcut }]);
 
         const beforeInput = older.listeners.get("before-input-event")!;
@@ -630,7 +727,7 @@ describe("PreviewManager", () => {
         ).toHaveBeenLastCalledWith(false);
 
         const preventDefault = vi.fn();
-        beforeInput({ preventDefault } as never, { ...key, key: "T", shift: true } as never);
+        beforeInput({ preventDefault } as never, { ...key, key: "Y", shift: true } as never);
         expect(preventDefault).toHaveBeenCalledOnce();
         expect(send).toHaveBeenCalledExactlyOnceWith("desktop:menu-action", "view.reopenClosed");
 
@@ -647,7 +744,7 @@ describe("PreviewManager", () => {
         ).toHaveBeenLastCalledWith(true);
         agentInput(
           { preventDefault: agentPreventDefault } as never,
-          { ...key, key: "T", shift: true } as never,
+          { ...key, key: "Y", shift: true } as never,
         );
         expect(agentPreventDefault).not.toHaveBeenCalled();
         expect(send).toHaveBeenCalledOnce();
@@ -1043,6 +1140,30 @@ describe("PreviewManager", () => {
         expect(states.at(-1)?.favicon).toBeUndefined();
         expect(initial.off).toHaveBeenCalled();
         expect(replacement.listeners.has("page-favicon-updated")).toBe(true);
+      }),
+    ),
+  );
+
+  effectIt.effect("restores exact presentation through the existing normalized zoom owner", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents();
+        const setZoomFactor = vi.fn();
+        Object.assign(preview.webContents, { setZoomFactor });
+        fromId.mockReturnValue(preview.webContents);
+        const states: PreviewManager.PreviewTabState[] = [];
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          Effect.sync(() => {
+            states.push(state);
+          }),
+        );
+        yield* manager.createTab("restored-zoom");
+        yield* manager.registerWebview("restored-zoom", 42);
+        yield* manager.setZoomFactor("restored-zoom", 1.75);
+        expect(states.at(-1)?.zoomFactor).toBe(1.75);
+        expect(setZoomFactor).toHaveBeenLastCalledWith(1.75);
+        yield* manager.setZoomFactor("restored-zoom", 100);
+        expect(states.at(-1)?.zoomFactor).toBe(5);
       }),
     ),
   );

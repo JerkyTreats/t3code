@@ -12,7 +12,7 @@ import {
   dismissVersionMismatch,
   isServerUpdateFailureDismissed,
   isVersionMismatchDismissed,
-  manualServerUpdateCommand,
+  resolveServerSelfUpdateCapability,
   resolveVersionMismatch,
 } from "./versionSkew";
 
@@ -20,14 +20,6 @@ const MISMATCH_HINT =
   "Version mismatch. Try syncing the client and server to the same T3 Code version.";
 
 describe("versionSkew", () => {
-  it("updates only the proven npm prefix and safely quotes its path", () => {
-    expect(manualServerUpdateCommand("0.0.45", { kind: "npm-global", prefix: "/opt/node" })).toBe(
-      "npm install --global --prefix '/opt/node' t3@0.0.45",
-    );
-    expect(
-      manualServerUpdateCommand("0.0.45", { kind: "npm-global", prefix: "/opt/maria's node" }),
-    ).toBe("npm install --global --prefix '/opt/maria'\\''s node' t3@0.0.45");
-  });
   beforeEach(() => {
     branding.APP_VERSION = "0.0.34";
   });
@@ -132,5 +124,39 @@ describe("versionSkew", () => {
         }),
       ),
     ).toBe(false);
+  });
+
+  it("reads desktop-managed update capabilities from config descriptors", () => {
+    expect(
+      resolveServerSelfUpdateCapability({
+        environment: {
+          environmentId: EnvironmentId.make("environment-desktop"),
+          label: "Desktop",
+          platform: { os: "darwin", arch: "arm64" },
+          serverVersion: "9.9.9",
+          capabilities: {
+            repositoryIdentity: true,
+            serverSelfUpdate: "desktop-managed",
+          },
+        },
+      }),
+    ).toBe("desktop-managed");
+    expect(resolveServerSelfUpdateCapability(null)).toBeNull();
+  });
+
+  it("does not expose legacy registry-backed update modes", () => {
+    for (const serverSelfUpdate of ["boot-service", "respawn"] as const) {
+      expect(
+        resolveServerSelfUpdateCapability({
+          environment: {
+            environmentId: EnvironmentId.make("environment-legacy"),
+            label: "Legacy",
+            platform: { os: "linux", arch: "x64" },
+            serverVersion: "0.0.30",
+            capabilities: { repositoryIdentity: true, serverSelfUpdate },
+          },
+        }),
+      ).toBeNull();
+    }
   });
 });

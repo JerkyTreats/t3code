@@ -23,12 +23,8 @@ import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
 import gnomeCaptureBundle from "../apps/desktop/gnome-extension/bundle.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
+import { forkReleaseVersion } from "./lib/fork-release-version.mjs";
 
-import {
-  ReleasePackageManifestError,
-  releasePackageFiles,
-  updateReleasePackageVersions,
-} from "./update-release-package-versions.ts";
 import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
 import {
   BRAND_ASSET_PATHS,
@@ -43,9 +39,14 @@ import {
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import {
+  selectSingleLinuxAppImage,
+  writeLinuxDesktopReleaseDescriptor,
+} from "./linux-desktop-release-artifact.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import { officialDesktopRepository } from "@t3tools/shared/forkReleaseIdentity";
 import * as Config from "effect/Config";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -114,9 +115,6 @@ const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
 );
 const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
-const decodeReleasePackageManifest = Schema.decodeEffect(
-  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
-);
 const decodeWorkspaceConfig = Schema.decodeEffect(fromYaml(WorkspaceConfig));
 const encodeStageWorkspaceConfig = Schema.encodeEffect(fromYaml(StageWorkspaceConfig));
 
@@ -308,15 +306,6 @@ export class InvalidMockUpdateServerPortError extends Schema.TaggedError<Invalid
       inputLength: configuredPort.length,
       cause,
     });
-  }
-}
-
-export class DesktopBuildManifestRestoreError extends Schema.TaggedError<DesktopBuildManifestRestoreError>()(
-  "DesktopBuildManifestRestoreError",
-  { failures: Schema.Array(ReleasePackageManifestError) },
-) {
-  override get message(): string {
-    return `Failed to restore release manifests: ${this.failures.map((failure) => failure.filePath).join(", ")}`;
   }
 }
 
@@ -861,9 +850,9 @@ const spawnAndCollectOutput = Effect.fn("spawnAndCollectOutput")(function* (
   return { stdout, stderr, exitCode } as const;
 });
 
-const resolveGitCommitHash = Effect.fn("resolveGitCommitHash")(function* (repoRoot: string) {
+export const resolveGitCommitHash = Effect.fn("resolveGitCommitHash")(function* (repoRoot: string) {
   const result = yield* spawnAndCollectOutput(
-    ChildProcess.make("git", ["rev-parse", "--short=12", "HEAD"], {
+    ChildProcess.make("git", ["rev-parse", "--verify", "HEAD^{commit}"], {
       cwd: repoRoot,
     }),
   ).pipe(
@@ -878,7 +867,7 @@ const resolveGitCommitHash = Effect.fn("resolveGitCommitHash")(function* (repoRo
     return "unknown";
   }
   const hash = result.stdout.trim();
-  if (!/^[0-9a-f]{7,40}$/i.test(hash)) {
+  if (!/^[0-9a-f]{40}$/i.test(hash)) {
     return "unknown";
   }
   return hash.toLowerCase();
@@ -1860,65 +1849,24 @@ const withDesktopBuildLock = Effect.fn("withDesktopBuildLock")(function* <A, E, 
 
 // The artifact entry point holds the checkout lock through staging/packaging,
 // so it calls this implementation without reacquiring its own lock.
+// F01.D5: tracked package manifests keep their upstream bases. The derived
+// `<base>-<10hex>` version reaches the bundles only through APP_VERSION and the
+// server's own fork-release-version build input, never by rewriting manifests.
 const buildDesktopBundlesUnlocked = Effect.fn("buildDesktopBundlesUnlocked")(function* (
   repoRoot: string,
   appVersion: string,
   verbose: boolean,
 ) {
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
   const spawnCommand = yield* resolveSpawnCommand("vp", ["run", "build:desktop"]);
-  yield* Effect.acquireUseRelease(
-    Effect.forEach(releasePackageFiles, (relativePath) =>
-      Effect.gen(function* () {
-        const filePath = path.join(repoRoot, relativePath);
-        const contents = yield* fs.readFileString(filePath);
-        const needsRestore = yield* decodeReleasePackageManifest(contents).pipe(
-          Effect.map((manifest) => manifest.version !== appVersion),
-          // Let alignment report invalid manifests after any preceding writes.
-          Effect.orElseSucceed(() => false),
-        );
-        return { filePath, contents, needsRestore };
-      }),
-    ),
-    () =>
-      Effect.gen(function* () {
-        yield* updateReleasePackageVersions(appVersion, { rootDir: repoRoot });
-        // The compiler must stop reading the aligned manifests before restoration.
-        yield* runCommand(
-          ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-            cwd: repoRoot,
-            shell: spawnCommand.shell,
-            env: { APP_VERSION: appVersion },
-            extendEnv: true,
-          }),
-          { label: "vp run build:desktop", verbose },
-        ).pipe(Effect.scoped);
-      }),
-    (originals, exit) =>
-      Effect.gen(function* () {
-        const [, failures] = yield* Effect.partition(
-          originals.filter(({ needsRestore }) => needsRestore),
-          ({ filePath, contents }) =>
-            fs
-              .writeFileString(filePath, contents)
-              .pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ReleasePackageManifestError({ operation: "write", filePath, cause }),
-                ),
-              ),
-        );
-        if (failures.length === 0) return;
-        const error = new DesktopBuildManifestRestoreError({ failures });
-        if (Exit.isFailure(exit)) {
-          // Cleanup must not hide the original build or alignment failure.
-          yield* Effect.logError(error);
-        } else {
-          return yield* error;
-        }
-      }),
-  );
+  yield* runCommand(
+    ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+      cwd: repoRoot,
+      shell: spawnCommand.shell,
+      env: { APP_VERSION: appVersion },
+      extendEnv: true,
+    }),
+    { label: "vp run build:desktop", verbose },
+  ).pipe(Effect.scoped);
 });
 
 export const buildDesktopBundles = Effect.fn("buildDesktopBundles")(
@@ -2742,31 +2690,51 @@ export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig"
     updateRepository: Config.String("T3CODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
     githubRepository: Config.String("GITHUB_REPOSITORY").pipe(Config.option),
   });
-  const rawRepo = (
+  const configuredRepo = (
     Option.getOrUndefined(env.updateRepository)?.trim() ||
     Option.getOrUndefined(env.githubRepository)?.trim() ||
     ""
   ).trim();
-  if (!rawRepo) return undefined;
-
-  const [owner, repo, ...rest] = rawRepo.split("/");
-  if (!owner || !repo || rest.length > 0) return undefined;
+  // This adapter owns environment precedence and publish-channel translation.
+  // Exact repository selection belongs to the portable release identity owner.
+  const repository = officialDesktopRepository(configuredRepo || undefined);
+  if (repository === null) {
+    return yield* new InvalidDesktopUpdateRepositoryError({ repository: configuredRepo });
+  }
 
   return {
     provider: "github",
-    owner,
-    repo,
+    owner: repository.owner,
+    repo: repository.repo,
     releaseType: updateChannel === "nightly" ? "prerelease" : "release",
     ...(updateChannel === "nightly" ? { channel: "nightly" as const } : {}),
   };
 });
 
+export class InvalidDesktopUpdateRepositoryError extends Schema.TaggedError<InvalidDesktopUpdateRepositoryError>()(
+  "InvalidDesktopUpdateRepositoryError",
+  { repository: Schema.String },
+) {
+  override get message(): string {
+    return "Desktop releases require the exact official updater repository.";
+  }
+}
+
+export class LinuxDesktopReleaseDescriptorGenerationError extends Schema.TaggedError<LinuxDesktopReleaseDescriptorGenerationError>()(
+  "LinuxDesktopReleaseDescriptorGenerationError",
+  { cause: Schema.Defect() },
+) {
+  override get message(): string {
+    return "Linux desktop release descriptor generation failed.";
+  }
+}
+
 export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
-  return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
+  return /^[^-+]+-nightly\.\d{8}\.\d+(?:-[0-9a-f]{10})?$/.test(version) ? "nightly" : "latest";
 }
 
 export function isDesktopPreviewVersion(version: string): boolean {
-  return /-pr\./.test(version) || /-preview\.\d{8}\.\d+$/.test(version);
+  return /-pr\./.test(version) || /^[^-+]+-preview\.\d{8}\.\d+(?:-[0-9a-f]{10})?$/.test(version);
 }
 
 export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
@@ -2864,16 +2832,15 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   // against, so writing update manifests then crashes on a null config.
   buildConfig.publish = null;
   if (!isDesktopPreviewVersion(version)) {
-    const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
-    if (publishConfig) {
-      buildConfig.publish = [publishConfig];
-    } else if (mockUpdates) {
+    if (mockUpdates) {
       buildConfig.publish = [
         {
           provider: "generic",
           url: resolveMockUpdateServerUrl(mockUpdateServerPort),
         },
       ];
+    } else {
+      buildConfig.publish = [yield* resolveGitHubPublishConfig(updateChannel)];
     }
   }
 
@@ -3681,9 +3648,9 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       }),
   });
 
-  const appVersion = options.version ?? serverPackageJson.version;
-  const iconAssets = resolveDesktopBuildIconAssets(appVersion);
   const commitHash = yield* resolveGitCommitHash(repoRoot);
+  const appVersion = forkReleaseVersion(serverPackageJson.version, commitHash, options.version);
+  const iconAssets = resolveDesktopBuildIconAssets(appVersion);
   const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;
   const stageRoot = yield* mkdir({
     prefix: `t3code-desktop-${options.platform}-stage-`,
@@ -4127,6 +4094,29 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       platform: options.platform,
       arch: options.arch,
     });
+  }
+
+  if (options.platform === "linux" && options.target === "AppImage" && !options.mockUpdates) {
+    const finalOutputEntries = yield* fs.readDirectory(options.outputDir);
+    const finalOutputFiles: string[] = [];
+    for (const entry of finalOutputEntries) {
+      const outputPath = path.join(options.outputDir, entry);
+      const outputStat = yield* fs.stat(outputPath).pipe(Effect.orElseSucceed(() => null));
+      if (outputStat?.type === "File") finalOutputFiles.push(outputPath);
+    }
+    const descriptor = yield* Effect.tryPromise({
+      try: () => {
+        const appImagePath = selectSingleLinuxAppImage(finalOutputFiles);
+        return writeLinuxDesktopReleaseDescriptor({
+          artifactPath: appImagePath,
+          version: appVersion,
+          commitHash,
+          architecture: options.arch as "x64" | "arm64",
+        });
+      },
+      catch: (cause) => new LinuxDesktopReleaseDescriptorGenerationError({ cause }),
+    });
+    copiedArtifacts.push(descriptor.descriptorPath);
   }
 
   yield* Effect.log("[desktop-artifact] Done. Artifacts:").pipe(

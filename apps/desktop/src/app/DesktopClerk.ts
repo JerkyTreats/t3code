@@ -1,3 +1,9 @@
+import {
+  isStandaloneDesktop,
+  resolveStandaloneUserDataPath,
+} from "../fork/StandaloneDesktopPolicy.ts";
+import * as DesktopLauncherRuntime from "./DesktopLauncherRuntime.ts";
+
 import { createClerkBridge } from "@clerk/electron";
 import * as NodeURL from "node:url";
 import { storage } from "@clerk/electron/storage";
@@ -64,7 +70,7 @@ export class DesktopClerk extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopClerk") {}
 
-function resolveDesktopClerkFrontendApiHostname(
+export function resolveDesktopClerkFrontendApiHostname(
   publishableKey: string | undefined,
 ): string | undefined {
   const normalizedKey = publishableKey?.trim();
@@ -102,7 +108,10 @@ export const make = Effect.gen(function* () {
   const shell = yield* ElectronShell.ElectronShell;
 
   // Must not yield: the bridge registers a scheme Electron rejects once ready.
-  const userDataPath = yield* DesktopUserData.resolveUserDataPath(environment);
+  const userDataPath = yield* Option.match(resolveStandaloneUserDataPath(environment), {
+    onNone: () => DesktopUserData.resolveUserDataPath(environment),
+    onSome: Effect.succeed,
+  });
   yield* electronApp.setPath("userData", userDataPath);
 
   // T3 owns the profile-scoped lock on every platform; Clerk skips it on macOS.
@@ -120,6 +129,35 @@ export const make = Effect.gen(function* () {
   yield* electronApp.on("second-instance", (_event: unknown, argv: readonly string[]) => {
     handleSecondInstance(argv);
   });
+
+  // Standalone HTTPS clients register no custom-scheme Clerk bridge.
+  if (isStandaloneDesktop(environment)) {
+    return DesktopClerk.of({
+      configure: Effect.gen(function* () {
+        const launcherOption = yield* Effect.serviceOption(
+          DesktopLauncherRuntime.DesktopLauncherRuntime,
+        );
+        const electronWindow = yield* ElectronWindow.ElectronWindow;
+        const context = yield* Effect.context<ElectronWindow.ElectronWindow>();
+        const runPromise = Effect.runPromiseWith(context);
+        handleSecondInstance = (argv) => {
+          void runPromise(
+            Effect.gen(function* () {
+              // Standalone launcher wakeups require authenticated runtime-directory handoff before focus.
+              if (
+                Option.isNone(launcherOption) ||
+                !(yield* launcherOption.value.acceptSingleInstanceHandoff(argv))
+              )
+                return;
+              const mainWindow = yield* electronWindow.currentMainOrFirst;
+              if (Option.isSome(mainWindow)) yield* electronWindow.reveal(mainWindow.value);
+            }),
+          );
+        };
+        for (const argv of pendingSecondInstances.splice(0)) handleSecondInstance(argv);
+      }).pipe(Effect.withSpan("desktop.clerk.configure")),
+    });
+  }
 
   yield* Effect.acquireRelease(
     Effect.try({
@@ -145,6 +183,9 @@ export const make = Effect.gen(function* () {
 
   return DesktopClerk.of({
     configure: Effect.gen(function* () {
+      const launcherOption = yield* Effect.serviceOption(
+        DesktopLauncherRuntime.DesktopLauncherRuntime,
+      );
       const electronApp = yield* ElectronApp.ElectronApp;
       const electronWindow = yield* ElectronWindow.ElectronWindow;
       const webLinks = yield* DesktopWebLinks.DesktopWebLinks;
@@ -231,6 +272,12 @@ export const make = Effect.gen(function* () {
           return;
         void runPromise(
           Effect.gen(function* () {
+            if (
+              Option.isSome(launcherOption) &&
+              DesktopLauncherRuntime.resolveDesktopLauncherHandoffGeneration(argv) !== undefined &&
+              !(yield* launcherOption.value.acceptSingleInstanceHandoff(argv))
+            )
+              return;
             const mainWindow = yield* electronWindow.currentMainOrFirst;
             if (Option.isSome(mainWindow)) yield* electronWindow.reveal(mainWindow.value);
           }),

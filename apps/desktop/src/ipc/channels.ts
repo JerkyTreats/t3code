@@ -86,7 +86,6 @@ export const PREVIEW_REFRESH_CHANNEL = "desktop:preview-refresh";
 export const PREVIEW_ZOOM_IN_CHANNEL = "desktop:preview-zoom-in";
 export const PREVIEW_ZOOM_OUT_CHANNEL = "desktop:preview-zoom-out";
 export const PREVIEW_RESET_ZOOM_CHANNEL = "desktop:preview-reset-zoom";
-export const PREVIEW_SET_ZOOM_FACTOR_CHANNEL = "desktop:preview-set-zoom-factor";
 export const PREVIEW_HARD_RELOAD_CHANNEL = "desktop:preview-hard-reload";
 export const PREVIEW_SET_COLOR_SCHEME_CHANNEL = "desktop:preview-set-color-scheme";
 export const PREVIEW_SET_AUDIO_MUTED_CHANNEL = "desktop:preview-set-audio-muted";
@@ -115,6 +114,17 @@ export const PREVIEW_STATE_CHANGE_CHANNEL = "desktop:preview-state-change";
 export const PREVIEW_POINTER_EVENT_CHANNEL = "desktop:preview-pointer-event";
 export const PREVIEW_OPEN_LINK_CHANNEL = "desktop:preview-open-link";
 
+export const GET_SYSTEM_THEME_CHANNEL = "desktop:get-system-theme";
+export const SYSTEM_THEME_CHANNEL = "desktop:system-theme";
+export const GET_DESKTOP_SCREENSHOT_CAPTURE_AVAILABILITY_CHANNEL =
+  "desktop:get-screenshot-capture-availability";
+export const CAPTURE_DESKTOP_SCREENSHOT_CHANNEL = "desktop:capture-desktop-screenshot";
+export const PREVIEW_BROWSER_ACTION_CHANNEL = "desktop:preview-browser-action";
+
+export const PREVIEW_SET_ZOOM_FACTOR_CHANNEL = "desktop:preview-set-zoom-factor";
+
+export const TAKE_LAUNCHER_ACTIVATION_CHANNEL = "desktop:take-launcher-activation";
+export const COMPLETE_LAUNCHER_ACTIVATION_CHANNEL = "desktop:complete-launcher-activation";
 export const MAC_PERMISSION_HELPER_CHANNEL = "desktop:mac-permission-helper";
 
 export const CHECK_SYSTEM_PERMISSION_CHANNEL = "desktop:check-system-permission";

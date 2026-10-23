@@ -5,21 +5,40 @@ import { codexAuthHandoffUrl, readCodexAuthDelivery } from "@t3tools/shared/code
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, describe, it } from "@effect/vitest";
+import * as DesktopLauncherRuntime from "./DesktopLauncherRuntime.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { beforeEach, vi } from "vite-plus/test";
 
-const { createClerkBridgeMock, requestSingleInstanceLockMock, storageAdapter, storageMock } =
-  vi.hoisted(() => ({
-    createClerkBridgeMock: vi.fn(),
-    requestSingleInstanceLockMock: vi.fn(() => true),
-    storageAdapter: {
-      getItem: vi.fn(),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-    },
-    storageMock: vi.fn(),
-  }));
+const {
+  accessSyncMock,
+  createClerkBridgeMock,
+  requestSingleInstanceLockMock,
+  storageAdapter,
+  storageMock,
+} = vi.hoisted(() => ({
+  accessSyncMock: vi.fn(),
+  createClerkBridgeMock: vi.fn(),
+  requestSingleInstanceLockMock: vi.fn(() => true),
+  storageAdapter: {
+    getItem: vi.fn(),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+  },
+  storageMock: vi.fn(),
+}));
+
+vi.mock("node:fs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:fs")>()),
+  accessSync: accessSyncMock,
+}));
+
+beforeEach(() => {
+  accessSyncMock.mockReset();
+  accessSyncMock.mockImplementation(() => {
+    throw Object.assign(new Error("synthetic path does not exist"), { code: "ENOENT" });
+  });
+});
 
 vi.mock("@clerk/electron", () => ({
   createClerkBridge: createClerkBridgeMock,
@@ -109,6 +128,17 @@ describe("DesktopClerk", () => {
     createClerkBridgeMock.mockReset();
     requestSingleInstanceLockMock.mockReset().mockReturnValue(true);
     storageMock.mockReset();
+  });
+
+  it("derives the Clerk Frontend API hostname used by the desktop CSP", () => {
+    const publishableKey = `pk_test_${btoa("clerk.t3.codes$")}`;
+
+    assert.equal(
+      DesktopClerk.resolveDesktopClerkFrontendApiHostname(publishableKey),
+      "clerk.t3.codes",
+    );
+    assert.equal(DesktopClerk.resolveDesktopClerkFrontendApiHostname(""), undefined);
+    assert.equal(DesktopClerk.resolveDesktopClerkFrontendApiHostname("invalid"), undefined);
   });
 
   it.each([
@@ -281,6 +311,131 @@ describe("DesktopClerk", () => {
   );
 });
 
+describe("standalone singleton host", () => {
+  beforeEach(() => {
+    createClerkBridgeMock.mockReset();
+    accessSyncMock.mockClear();
+  });
+  it("acquires the managed profile and native lock without yielding before ready", () => {
+    const events: string[] = [];
+    const environment = {
+      standaloneServerUrl: Option.some(new URL("https://code.example.test/")),
+      appDataDirectory: "/config/t3code-staging",
+      path: { join: (...parts: string[]) => parts.join("/") },
+    } as unknown as DesktopEnvironment.DesktopEnvironment["Service"];
+    const program = Layer.build(DesktopClerk.layer).pipe(
+      Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
+      Effect.provideService(ElectronApp.ElectronApp, {
+        setPath: (_name: string, value: string) =>
+          Effect.sync(() => {
+            events.push(value);
+          }),
+        requestSingleInstanceLock: Effect.sync(() => {
+          events.push("lock");
+          return true;
+        }),
+        on: () => Effect.void,
+      } as unknown as ElectronApp.ElectronApp["Service"]),
+      Effect.provideService(ElectronShell.ElectronShell, {
+        openExternal: () => Effect.succeed(true),
+        openSystemSettings: () => Effect.succeed(false),
+        copyText: () => Effect.void,
+      }),
+      Effect.provide(
+        Layer.mergeAll(
+          NodePath.layerPosix,
+          FileSystem.layerNoop({
+            exists: () => Effect.die("managed startup must not probe profiles"),
+          }),
+        ),
+      ),
+      Effect.scoped,
+    );
+    // oxlint-disable-next-line t3code/no-manual-effect-runtime-in-tests -- Managed profile selection and native lock must acquire synchronously before Electron ready.
+    Effect.runSync(program);
+    assert.deepEqual(events, ["/config/t3code-staging/t3code", "lock"]);
+    assert.equal(createClerkBridgeMock.mock.calls.length, 0);
+    assert.equal(accessSyncMock.mock.calls.length, 0);
+  });
+
+  it.effect(
+    "sets isolated userData before its native lock and requires authenticated handoff before focus",
+    () =>
+      Effect.gen(function* () {
+        const events: string[] = [];
+        let secondInstance: ((...args: unknown[]) => void) | undefined;
+        let accepted = false;
+        const environment = {
+          standaloneServerUrl: Option.some(new URL("https://code.example.test/")),
+          appDataDirectory: "/config/t3code-production",
+          path: { join: (...parts: string[]) => parts.join("/") },
+        } as unknown as DesktopEnvironment.DesktopEnvironment["Service"];
+        const app = {
+          setPath: (_name: string, value: string) =>
+            Effect.sync(() => {
+              events.push(value);
+            }),
+          requestSingleInstanceLock: Effect.sync(() => {
+            events.push("lock");
+            return true;
+          }),
+          on: (_event: string, listener: (...args: unknown[]) => void) =>
+            Effect.sync(() => {
+              secondInstance = listener;
+            }),
+          quit: Effect.sync(() => {
+            events.push("quit");
+          }),
+        } as unknown as ElectronApp.ElectronApp["Service"];
+        const window = {
+          currentMainOrFirst: Effect.succeedSome({} as never),
+          reveal: () =>
+            Effect.sync(() => {
+              events.push("focus");
+            }),
+        } as unknown as ElectronWindow.ElectronWindow["Service"];
+        const launcher = {
+          acceptSingleInstanceHandoff: () => Effect.sync(() => accepted),
+        } as unknown as DesktopLauncherRuntime.DesktopLauncherRuntime["Service"];
+        yield* Effect.gen(function* () {
+          const clerk = yield* DesktopClerk.DesktopClerk;
+          yield* clerk.configure.pipe(
+            Effect.provideService(DesktopLauncherRuntime.DesktopLauncherRuntime, launcher),
+            Effect.provideService(DesktopWebLinks.DesktopWebLinks, {
+              receive: () =>
+                Effect.die("standalone instance must not receive default-browser links"),
+              setRendererReady: () => Effect.void,
+            }),
+          );
+          assert.deepEqual(events, ["/config/t3code-production/t3code", "lock"]);
+          secondInstance?.({}, ["--t3code-launcher-handoff=test"]);
+          yield* Effect.yieldNow;
+          assert.equal(events.at(-1), "lock");
+          accepted = true;
+          secondInstance?.({}, ["--t3code-launcher-handoff=test"]);
+          yield* Effect.yieldNow;
+          assert.equal(events.at(-1), "focus");
+        }).pipe(
+          Effect.provide(DesktopClerk.layer.pipe(Layer.provide(NodePath.layerPosix))),
+          Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
+          Effect.provideService(ElectronApp.ElectronApp, app),
+          Effect.provideService(ElectronWindow.ElectronWindow, window),
+          Effect.provideService(ElectronShell.ElectronShell, {
+            openExternal: () => Effect.succeed(true),
+            openSystemSettings: () => Effect.succeed(false),
+            copyText: () => Effect.void,
+          }),
+          Effect.provide(
+            FileSystem.layerNoop({ exists: () => Effect.die("must not probe a legacy profile") }),
+          ),
+          Effect.scoped,
+        );
+        assert.equal(events.includes("quit"), false);
+        assert.equal(createClerkBridgeMock.mock.calls.length, 0);
+        assert.equal(accessSyncMock.mock.calls.length, 0);
+      }),
+  );
+});
 it.effect(
   "provider auth deep links navigate and reveal the running desktop without handling Clerk URLs",
   () => {
@@ -297,7 +452,7 @@ it.effect(
         }),
     } as unknown as ElectronApp.ElectronApp["Service"];
     const electronWindow = {
-      currentMainOrFirst: Effect.succeed(Option.some(window)),
+      currentMainOrFirst: Effect.succeedSome(window),
       reveal: () => Effect.sync(() => revealed.resolve()),
     } as unknown as ElectronWindow.ElectronWindow["Service"];
     return Effect.gen(function* () {

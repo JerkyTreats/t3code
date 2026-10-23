@@ -166,6 +166,36 @@ describe("DesktopPreReadyPlatform", () => {
     ).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
   });
 
+  it.effect.each([
+    ["production", "T3 Code", "t3code.desktop", "t3code"],
+    ["staging", "T3 Code (Staging)", "t3code-staging.desktop", "t3code-staging"],
+  ])(
+    "sets the installed %s Wayland identity before Electron is ready",
+    ([channel, displayName, desktopName, wmClass]) => {
+      vi.stubEnv("VITE_DEV_SERVER_URL", "");
+      vi.stubEnv("XDG_DATA_HOME", "/xdg");
+      vi.stubEnv("T3CODE_DESKTOP_CHANNEL", channel);
+      vi.stubEnv("T3CODE_DESKTOP_DISPLAY_NAME", displayName);
+      return DesktopPreReadyPlatform.make.pipe(
+        Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.tap(() =>
+          Effect.sync(() => {
+            assert.deepEqual(setDesktopNameMock.mock.calls, [[desktopName]]);
+            assert.isTrue(
+              appendSwitchMock.mock.calls.some(
+                ([name, value]) => name === "class" && value === wmClass,
+              ),
+            );
+            assert.deepEqual(writeFileSyncMock.mock.calls, []);
+            assert.deepEqual(mkdirSyncMock.mock.calls, []);
+            assert.deepEqual(copyFileSyncMock.mock.calls, []);
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())),
+      );
+    },
+  );
+
   it.effect(
     "acquires a synchronous pre-ready layer before an asynchronous Clerk-shaped layer",
     () =>

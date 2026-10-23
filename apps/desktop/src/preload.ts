@@ -1,3 +1,10 @@
+import { DesktopLauncherActivation } from "@t3tools/contracts/desktopLauncher";
+import {
+  DesktopSystemThemeSchema,
+  DesktopScreenshotCaptureSchema,
+  DesktopPreviewBrowserActionEventSchema,
+} from "@t3tools/contracts/ipc";
+import * as Schema from "effect/Schema";
 import type {
   DesktopBridge,
   DesktopPreviewOpenLinkEvent,
@@ -30,7 +37,8 @@ function isSnapShotEvent(value: unknown): value is DesktopSnapShotEvent {
   );
 }
 
-exposeClerkBridge({ passkeys: true });
+// Hosted standalone documents use ordinary HTTPS auth and never the custom-scheme Clerk bridge.
+if (globalThis.location?.protocol !== "https:") exposeClerkBridge({ passkeys: true });
 
 // Runs before any app script reads localStorage. See DesktopLegacyLocalStorage.
 try {
@@ -74,7 +82,21 @@ function unwrapEnsureSshEnvironmentResult(result: unknown) {
   return result as Awaited<ReturnType<DesktopBridge["ensureSshEnvironment"]>>;
 }
 
-contextBridge.exposeInMainWorld("desktopBridge", {
+const decodeSystemTheme = Schema.decodeUnknownSync(Schema.NullOr(DesktopSystemThemeSchema));
+const decodeScreenshot = Schema.decodeUnknownSync(Schema.NullOr(DesktopScreenshotCaptureSchema));
+const decodePreviewAction = Schema.decodeUnknownSync(DesktopPreviewBrowserActionEventSchema);
+
+function screenshotCaptureAvailable(): boolean {
+  try {
+    return (
+      ipcRenderer.sendSync(IpcChannels.GET_DESKTOP_SCREENSHOT_CAPTURE_AVAILABILITY_CHANNEL) === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+const desktopBridge: DesktopBridge = {
   getAppBranding: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_APP_BRANDING_CHANNEL);
     if (typeof result !== "object" || result === null) {
@@ -103,6 +125,34 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LOCALE_CHANNEL);
     return typeof result === "string" ? result : null;
   },
+  getSystemTheme: () =>
+    ipcRenderer.invoke(IpcChannels.GET_SYSTEM_THEME_CHANNEL, undefined).then(decodeSystemTheme),
+  onSystemTheme: (listener) => {
+    const receive = (_event: Electron.IpcRendererEvent, value: unknown) => {
+      let theme;
+      try {
+        theme = decodeSystemTheme(value);
+      } catch {
+        return;
+      }
+      listener(theme);
+    };
+    ipcRenderer.on(IpcChannels.SYSTEM_THEME_CHANNEL, receive);
+    return () => ipcRenderer.removeListener(IpcChannels.SYSTEM_THEME_CHANNEL, receive);
+  },
+  onPreviewBrowserAction: (listener) => {
+    const receive = (_event: Electron.IpcRendererEvent, value: unknown) => {
+      let action;
+      try {
+        action = decodePreviewAction(value);
+      } catch {
+        return;
+      }
+      listener(action);
+    };
+    ipcRenderer.on(IpcChannels.PREVIEW_BROWSER_ACTION_CHANNEL, receive);
+    return () => ipcRenderer.removeListener(IpcChannels.PREVIEW_BROWSER_ACTION_CHANNEL, receive);
+  },
   getLocalEnvironmentBootstraps: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL);
     if (!Array.isArray(result)) {
@@ -112,6 +162,14 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   getLocalEnvironmentBearerToken: () =>
     ipcRenderer.invoke(IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL),
+  takeLauncherActivation: () =>
+    ipcRenderer
+      .invoke(IpcChannels.TAKE_LAUNCHER_ACTIVATION_CHANNEL, undefined)
+      .then(Schema.decodeUnknownSync(Schema.NullOr(DesktopLauncherActivation))),
+  completeLauncherActivation: (completion) =>
+    ipcRenderer
+      .invoke(IpcChannels.COMPLETE_LAUNCHER_ACTIVATION_CHANNEL, completion)
+      .then(Schema.decodeUnknownSync(Schema.Boolean)),
   getLocalEnvironmentEnabled: () =>
     ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_ENABLED_CHANNEL) !== false,
   setLocalEnvironmentEnabled: (enabled) =>
@@ -441,4 +499,12 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         ipcRenderer.removeListener(IpcChannels.PREVIEW_OPEN_LINK_CHANNEL, wrappedListener);
     },
   },
-} satisfies DesktopBridge);
+};
+
+if (screenshotCaptureAvailable()) {
+  desktopBridge.captureDesktopScreenshot = () =>
+    ipcRenderer
+      .invoke(IpcChannels.CAPTURE_DESKTOP_SCREENSHOT_CHANNEL, undefined)
+      .then(decodeScreenshot);
+}
+contextBridge.exposeInMainWorld("desktopBridge", desktopBridge);

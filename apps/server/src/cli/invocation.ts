@@ -7,29 +7,7 @@ import * as Schema from "effect/Schema";
 import type { ServerInstallation } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { isCommandAvailable } from "@t3tools/shared/shell";
-
-import packageJson from "../../package.json" with { type: "json" };
-
-export type CliRunner = "npx" | "pnpm dlx" | "bunx";
-
-/** Detection is best-effort; callers must fail closed to a plain `t3` command. */
-function detectCliRunner(entryPath: string): CliRunner | null {
-  const path = entryPath.replaceAll("\\", "/");
-  if (path.includes("/_npx/")) {
-    return "npx";
-  }
-  if (
-    path.includes("/pnpm/dlx/") ||
-    path.includes("/.pnpm/dlx/") ||
-    path.includes("/pnpm-cache/dlx/")
-  ) {
-    return "pnpm dlx";
-  }
-  if (path.includes("/.bun/install/cache/") || path.includes("/bunx-")) {
-    return "bunx";
-  }
-  return null;
-}
+import { detectCliRunner, formatCliCommand } from "./officialRuntimeInvocation.ts";
 
 const InstallManifest = Schema.Struct({
   name: Schema.String,
@@ -39,31 +17,10 @@ const InstallManifest = Schema.Struct({
 const decodeInstallManifest = Schema.decodeUnknownEffect(Schema.fromJsonString(InstallManifest));
 
 /**
- * The script this CLI was started through: the `t3` npm launcher that
- * downloaded and ran this executable (it names itself in
- * `T3CODE_NPM_LAUNCHER_PATH`), or the Node entry script of a build run from
- * source. A standalone executable has none and reports its own path.
- *
- * The variable is inherited by everything the server spawns, so a launcher
- * counts only when its package is this exact version: a different `t3` run
- * from an agent's shell must not claim to be the npm install.
+ * The script this CLI was started through: the Node entry script of a build
+ * run from source, or a standalone executable's own path.
  */
 const resolveEntryPath = Effect.gen(function* () {
-  const npmLauncher = (yield* HostProcess.Environment).T3CODE_NPM_LAUNCHER_PATH?.trim();
-  if (npmLauncher) {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const manifest = yield* fs
-      .readFileString(path.join(path.dirname(npmLauncher), "../package.json"))
-      .pipe(Effect.flatMap(decodeInstallManifest), Effect.option);
-    if (
-      Option.isSome(manifest) &&
-      manifest.value.name === "t3" &&
-      manifest.value.version === packageJson.version
-    ) {
-      return npmLauncher;
-    }
-  }
   if (yield* HostProcess.IsExecutable) return yield* HostProcess.ExecutablePath;
   return (yield* HostProcess.Arguments)[1] ?? "";
 });
@@ -100,33 +57,21 @@ export const resolveServerInstallation = Effect.gen(function* () {
   return { kind: "npm-global", prefix } satisfies ServerInstallation;
 }).pipe(Effect.orElseSucceed(() => null));
 
-/**
- * The literal spec the user typed (e.g. `t3@nightly`) is resolved away before
- * our process starts, so re-derive it from the running version: nightly builds
- * re-suggest the nightly channel, anything else suggests the bare package.
- */
-function suggestedPackageSpec(version: string): string {
-  const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
-  return channel === undefined ? "t3" : `t3@${channel}`;
-}
+/** `formatCliCommand` against this process's real executable and entry path. */
+export const resolveCliCommand = Effect.fn("invocation.resolveCliCommand")(function* (
+  subcommand: string,
+) {
+  const processArguments = yield* HostProcess.Arguments;
+  const platform = yield* HostProcess.Platform;
+  return formatCliCommand({
+    subcommand,
+    executablePath: processArguments[0] ?? "",
+    entryPath: processArguments[1] ?? "",
+    platform,
+  });
+});
 
-function formatCliCommand(input: {
-  readonly subcommand: string;
-  readonly entryPath: string;
-  readonly version: string;
-}): string {
-  const runner = detectCliRunner(input.entryPath);
-  if (runner === null) {
-    return `t3 ${input.subcommand}`;
-  }
-  return `${runner} ${suggestedPackageSpec(input.version)} ${input.subcommand}`;
-}
-
-export const resolveCliCommand = (subcommand: string) =>
-  Effect.map(resolveEntryPath, (entryPath) =>
-    formatCliCommand({ subcommand, entryPath, version: packageJson.version }),
-  );
-
+/** Quotes `value` for a POSIX shell when it needs it. */
 const shellWord = (value: string) =>
   /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
 
@@ -165,27 +110,27 @@ const resolveInstallLauncher = Effect.gen(function* () {
 
 /**
  * `t3 <subcommand> <args>` for a person to run on this host: `t3` when it is
- * on PATH, the package runner this process came from, or else the absolute
- * path of the launcher for this install, such as the one the desktop app
- * installs. `args` are quoted for the host's shell: POSIX, or PowerShell on
- * Windows.
+ * on PATH, the current executable and entry, or else the absolute path of the
+ * launcher for this install, such as the one the desktop app installs. `args`
+ * are quoted for the host's shell: POSIX, or PowerShell on Windows.
  */
 export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand")(function* (
   subcommand: string,
   args: ReadonlyArray<string> = [],
 ) {
   const platform = yield* HostProcess.Platform;
+  const [first = "", ...rest] = subcommand.trim().split(/\s+/u);
   const withArgs = (prefix: string) =>
-    [prefix, ...args.map((arg) => hostShellWord(platform, arg))].join(" ");
-  const command = yield* resolveCliCommand(subcommand);
-  if (command !== `t3 ${subcommand}`) return { command: withArgs(command), launcher: false };
+    [prefix, ...[...rest, ...args].map((arg) => hostShellWord(platform, arg))].join(" ");
+  const command = yield* resolveCliCommand(first);
+  if (command !== `t3 ${first}`) return { command: withArgs(command), launcher: false };
   if (yield* isCommandAvailable("t3")) return { command: withArgs(command), launcher: false };
   const launcher = yield* resolveInstallLauncher;
   if (Option.isNone(launcher)) return { command: withArgs(command), launcher: false };
   // PowerShell runs a quoted path only through the call operator.
   const quoted = hostShellWord(platform, launcher.value);
   const call = platform === "win32" ? `& ${quoted}` : quoted;
-  return { command: withArgs(`${call} ${subcommand}`), launcher: true };
+  return { command: withArgs(`${call} ${first}`), launcher: true };
 });
 
 /**

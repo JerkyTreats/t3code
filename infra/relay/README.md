@@ -76,8 +76,8 @@ dependencies represented at their boundary rather than mocking internal behavior
 
 ## Deployment
 
-The relay deploys with the Alchemy CLI (`vp run --filter t3code-relay deploy` is `alchemy deploy`
-in this directory):
+The relay deploys with the Alchemy CLI. `vp run --filter t3code-relay deploy` invokes `alchemy deploy`
+in this directory:
 
 ```sh
 vp run --filter t3code-relay deploy
@@ -103,8 +103,8 @@ vp run --filter t3code-relay deploy -- --env-file .env.local
 
 Alchemy defaults personal deployments to the `dev_$USER` stage. Relay custom domains apply the same
 DNS-safe sanitization as Alchemy physical resource names, so `prod` uses
-`relay.<RELAY_API_ZONE_NAME>` and `dev_julius` uses
-`relay-dev-julius.<RELAY_API_ZONE_NAME>`. Managed environment endpoints are provisioned below
+`relay.<RELAY_API_ZONE_NAME>` and `dev_example` uses
+`relay-dev-example.<RELAY_API_ZONE_NAME>`. Managed environment endpoints are provisioned below
 `RELAY_TUNNEL_ZONE_NAME`, which may be a different Cloudflare zone. Production tunnel hostnames use
 `prod-<digest>.<RELAY_TUNNEL_ZONE_NAME>`; personal stages use
 `<stage>-<digest>.<RELAY_TUNNEL_ZONE_NAME>`. `RELAY_DOMAIN` remains available as an explicit API
@@ -115,55 +115,11 @@ deployed relay URL and tracing configuration into the repository-root `.env`, so
 builds point at the relay that was just deployed without copying values manually. It runs only when
 one of those outputs changed, and `T3CODE_RELAY_CLIENT_CONFIG_ENV` redirects it to another file.
 
-### Deployment CI
+### Fork deployment boundary
 
-The relay is versioned separately from client releases. `.github/workflows/deploy-relay.yml` deploys
-the shared Alchemy `prod` stage on every push to `main`. Stable and nightly release builds both
-resolve their static public config from the same
-`production` GitHub environment. Pull requests do not deploy relay stages. Developers can
-deploy personal non-production stages locally with any stage name other than `prod`.
+This fork does not ship automatic relay deployment or upstream release workflows. The Alchemy CLI remains available for a separately authorized deployment against explicitly configured resources. Local upstream reconciliation does not authorize any relay publication or provisioning.
 
-The repository must define these Actions variables shared by relay deployments:
-
-- `CLOUDFLARE_ACCOUNT_ID`
-- `PLANETSCALE_ORGANIZATION`
-- `AXIOM_ORG_ID`
-
-The repository must define these Actions secrets shared by relay deployments:
-
-- `CLOUDFLARE_API_TOKEN`
-- `PLANETSCALE_API_TOKEN_ID`
-- `PLANETSCALE_API_TOKEN`
-- `AXIOM_TOKEN`
-
-The `production` GitHub environment must define these Actions variables:
-
-- `RELAY_API_ZONE_NAME`
-- `RELAY_TUNNEL_ZONE_NAME`
-- `RELAY_DOMAIN` if overriding the derived production relay domain
-- `RELAY_ALERT_NOTIFIER_ID`, the Axiom notifier that relay alerts page. Without it the deployment
-  creates no monitors or health dashboard. See
-  [Relay alerts](../../docs/operations/relay-observability.md#alerts).
-- `RELAY_WARNING_NOTIFIER_ID`, optional, the Axiom notifier for relay warnings
-- `CLERK_PUBLISHABLE_KEY`
-- `CLERK_JWT_AUDIENCE`
-- `CLERK_JWT_TEMPLATE`
-- `APNS_ENVIRONMENT`
-- `APNS_TEAM_ID`
-- `APNS_KEY_ID`
-- `APNS_BUNDLE_ID`
-
-The `production` GitHub environment must define these Actions secrets:
-
-- `CLERK_SECRET_KEY`
-- `APNS_PRIVATE_KEY`
-- `FCM_SERVICE_ACCOUNT` when Android push is enabled
-
-The account-scoped repository credentials are consumed by Alchemy while provisioning relay stages; they
-are not bound into the relay Worker. The production deployment uses an Axiom personal access token,
-so `AXIOM_ORG_ID` must accompany `AXIOM_TOKEN`. The release workflow reads the production relay's
-derived public URL and Clerk publishable key from the same environment for downstream desktop, CLI,
-and hosted web builds.
+Operator credentials belong in the selected deployment environment. Do not infer credentials, stages or destinations from the upstream repository's CI configuration.
 
 See:
 

@@ -38,6 +38,7 @@ import * as DesktopAppActivation from "./app/DesktopAppActivation.ts";
 import * as DesktopWebLinks from "./app/DesktopWebLinks.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
 import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
+import * as DesktopLauncherRuntime from "./app/DesktopLauncherRuntime.ts";
 import * as DesktopClerk from "./app/DesktopClerk.ts";
 import * as DesktopCliCommand from "./app/DesktopCliCommand.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
@@ -103,6 +104,8 @@ const layerDesktopEnvironment = Layer.unwrap(
   }),
 );
 
+// Packaged desktop requires a compatible preinstalled remote t3 executable.
+// Development may point at an explicit remote source entry.
 const resolveDesktopSshCliRunner = (
   environment: DesktopEnvironment.DesktopEnvironment["Service"],
 ): RemoteT3RunnerOptions => {
@@ -113,7 +116,9 @@ const resolveDesktopSshCliRunner = (
       nodeEngineRange: serverPackageJson.engines.node,
     };
   }
-  return { archiveVersion: environment.appVersion };
+  return {
+    nodeEngineRange: serverPackageJson.engines.node,
+  };
 };
 
 const layerDesktopSshEnvironment = Layer.unwrap(
@@ -132,7 +137,6 @@ const layerElectron = Layer.mergeAll(
   ElectronPowerMonitor.layer,
   ElectronProtocol.layer,
   ElectronSafeStorage.layer,
-  ElectronShell.layer,
   ElectronTheme.layer,
   ElectronUpdater.layer,
   ElectronWindow.layer,
@@ -140,6 +144,7 @@ const layerElectron = Layer.mergeAll(
 );
 
 const layerDesktopFoundation = Layer.mergeAll(
+  DesktopLauncherRuntime.layer,
   MacPermissions.layer,
   DesktopState.layer,
   DesktopShutdown.layer,
@@ -149,6 +154,7 @@ const layerDesktopFoundation = Layer.mergeAll(
   DesktopConnectionCatalogStore.layer.pipe(Layer.provideMerge(DesktopSavedEnvironments.layer)),
   DesktopAssets.layer,
   DesktopObservability.layer,
+  ElectronShell.layer,
   DesktopRendererHistory.layer,
 ).pipe(Layer.provideMerge(layerDesktopEnvironment));
 
@@ -235,6 +241,7 @@ const layerDesktopApplicationRuntime = layerDesktopApplication.pipe(
 
 // Acquire strict pre-ready setup before Clerk. Nothing before the Clerk bridge
 // may yield, or Electron can emit ready before Clerk registers its scheme.
+// Launcher I/O is acquired only by the application runtime after Clerk exists.
 const layerDesktopRuntime = layerDesktopClerk.pipe(
   Layer.flatMap((clerkContext) =>
     layerDesktopApplicationRuntime.pipe(Layer.provideMerge(Layer.succeedContext(clerkContext))),

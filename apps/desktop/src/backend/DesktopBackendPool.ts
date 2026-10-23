@@ -1,3 +1,6 @@
+import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { isStandaloneDesktop } from "../fork/StandaloneDesktopPolicy.ts";
+
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -101,6 +104,17 @@ type UnregisterAction =
 export const layer = Layer.effect(
   DesktopBackendPool,
   Effect.gen(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    // Layer construction must not allocate a backend in standalone mode, including lazy IPC callers.
+    if (isStandaloneDesktop(environment)) {
+      return DesktopBackendPool.of({
+        get: () => Effect.succeedNone,
+        list: Effect.succeed([]),
+        primary: Effect.die("Standalone desktop has no local backend"),
+        register: () => Effect.die("Standalone desktop cannot allocate local backends"),
+        unregister: () => Effect.void,
+      });
+    }
     const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
     const desktopWindow = yield* DesktopWindow.DesktopWindow;
     const electronDialog = yield* ElectronDialog.ElectronDialog;
@@ -180,7 +194,7 @@ export const layer = Layer.effect(
         electronDialog
           .showErrorBox(
             "This T3 home is unavailable",
-            "Another T3 Code server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `t3 update`. If the older launcher cannot update, run `t3 service uninstall` and optionally reinstall with `t3 service install` from a current CLI. Use `npx t3@latest` if `t3` is missing or outdated, and pass `--base-dir` with the service's T3 home to each command. Then reopen T3 Code. You can also set a separate T3CODE_HOME and pair with the running server.",
+            "Another T3 Code server is using this data directory. Stop that server through the deployment that manages it, then reopen T3 Code. You can also set a separate T3CODE_HOME and pair with the running server.",
           )
           .pipe(Effect.andThen(electronApp.quit)),
     });

@@ -11,7 +11,8 @@ Build and verify a standalone non-root server image, then permit publication onl
 
 - The production image contains the current server, bundled web client, and the pinned Codex 0.159.0 provider runtime required by current upstream protocol compatibility.
 - Frozen dependency installation selects the lockfile's platform packages. The image does not globally force native dependencies to compile against unprovided system libraries.
-- The runtime uses Node.js 24 on Debian Bookworm, runs as a non-root user, and exposes explicit data and workspace volumes.
+- The build and runtime stages use the digest-pinned Node.js 26.12.1 Debian Bookworm image that matches the repository engine pin, run as a non-root user, and expose explicit data and workspace volumes.
+- Node 26 ships no Corepack. The build stage installs the pnpm 12.14.0 native Linux executable from a checksum-pinned package tarball and verifies its version before installing dependencies. The image workflow bootstraps scanner dependencies with the same exact pnpm version.
 - The server starts in headless mode as a non-root user and remains compatible with a read-only root filesystem when private temporary, data, and workspace mounts are supplied.
 - Build context recursively excludes repository metadata, private configuration, environment files, package manager configuration, agent directories, runtime state, local plans, ledgers, skills, vendored references, build outputs, and dependency trees at any depth.
 - One locally built image is the exact image that receives runtime smoke coverage and later publication tags.
@@ -71,7 +72,7 @@ Reconnect presentation uses that same owner: only idle desktop-managed runtimes 
 ## Verification
 
 - Workflow tests prove exact repository, ref, namespace, permissions, immutable action revisions, tag, provenance, SBOM, dependency bootstrap, and verification order.
-- Dockerfile tests parse the executable instruction contract and reject unsafe extra build or runtime instructions.
+- Dockerfile tests parse the executable instruction contract, including the exact Node.js 26.12.1 base digest and checksum-pinned pnpm executable, and reject unsafe extra build or runtime instructions.
 - Context tests use the bounded Docker pattern forms accepted by the safety scanner to prove nested environment files, package manager configuration, agent directories, and local T3 state are excluded while representative build inputs remain included, including root `package.json` and `pnpm-workspace.yaml`. They also reject server userdata inclusion, unsupported pattern forms, and every negation rule.
 - Runtime smoke proves HTTP readiness, non-root execution, default provider availability, state creation, writable volumes, read-only root compatibility, and residue-free cleanup.
 - Signal tests prove bounded cleanup after interruption.
@@ -83,7 +84,7 @@ Reconnect presentation uses that same owner: only idle desktop-managed runtimes 
 
 Source tests cover the exact Dockerfile instruction contract, Docker-compatible recursive protected-context matching, required build-input inclusion, exact-origin workflow authority, immutable actions, build-once promotion order, provenance, SBOM, cleanup, mocked runtime command orchestration, desktop-managed-or-null update policy, direct headless update rejection, and non-registry CLI guidance.
 
-The exact-source local image passes actual build, HTTP startup, non-root identity, pinned provider availability, read-only root operation, writable mounts, signal handling and owned cleanup. The intake evidence binds OCI identity, provenance and commands to the tested source and distinguishes reused-byte cleanup probes. No image has been published or deployed.
+The exact-source local image passes actual build, HTTP startup, non-root identity, pinned provider availability, read-only root operation, writable mounts, signal handling and owned cleanup. The intake evidence binds OCI identity, provenance and commands to the tested source and distinguishes reused-byte cleanup probes. No image has been published or deployed. The upstream intake of 2026-10-23 repinned the base to Node.js 26.12.1 and pnpm 12.14.0 with source contract evidence only; the actual image build and runtime smoke must pass again on that base before any publication.
 
 ## Reconciliation Rule
 

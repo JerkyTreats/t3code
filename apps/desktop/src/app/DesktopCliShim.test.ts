@@ -35,7 +35,7 @@ const writeShim = (root: string, target: CliShimTarget) => {
 const run = (shim: string, args: ReadonlyArray<string>, env: NodeJS.ProcessEnv = {}) =>
   NodeChildProcess.spawnSync(shim, args, {
     encoding: "utf8",
-    env: { PATH: process.env.PATH, ...env },
+    env: { PATH: process.env.PATH, TMPDIR: NodeOS.tmpdir(), ...env },
   });
 
 const REPORTER =
@@ -53,6 +53,7 @@ const fakeAppImage = (canMount = true) => {
       `if [ "$1" = --appimage-extract ]; then cp -R '${image}' squashfs-root; exit 0; fi`,
       '[ "$1" = --appimage-mount ] || exit 9',
       '[ -n "$APPIMAGE_EXTRACT_AND_RUN" ] && exit 8',
+      `printf '%s' "$TMPDIR" > '${root}/mount-tempdir'`,
       canMount ? `echo '${image}'` : 'echo "Cannot mount AppImage"; exit 1',
       `trap 'touch "${root}/unmounted"; exit 0' TERM`,
       "while :; do sleep 0.05; done",
