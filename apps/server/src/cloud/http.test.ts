@@ -19,6 +19,7 @@ import { HttpClient, HttpServer } from "effect/http";
 import * as Etag from "effect/http/Etag";
 import * as HttpPlatform from "effect/http/HttpPlatform";
 import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as NetAddress from "effect/net/NetAddress";
@@ -72,8 +73,25 @@ const layerConfig = Layer.effect(
   }),
 ).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-link-proof-test-" })));
 
+// Fork F17 removes embedded pairing issuance over HTTP; this route stands in for the portal.
+const testPairingRoute = HttpRouter.use((router) =>
+  Effect.gen(function* () {
+    const auth = yield* EnvironmentAuth.EnvironmentAuth;
+    yield* router.add(
+      "POST",
+      "/test/pairing-credential",
+      auth
+        .issuePairingCredential({ scopes: ["relay:write"] })
+        .pipe(Effect.map((issued) => HttpServerResponse.jsonUnsafe(issued))),
+    );
+  }),
+);
+
 // Real credential issuance, verification, origin checks and signing; no relay or tunnel is started.
-const layerLinkProofRoutes = HttpApiBuilder.layer(LinkProofTestApi).pipe(
+const layerLinkProofRoutes = Layer.mergeAll(
+  HttpApiBuilder.layer(LinkProofTestApi),
+  testPairingRoute,
+).pipe(
   Layer.provide([AuthHttp.layer, ConnectHttp.layer]),
   Layer.provide(AuthHttp.layerAuthenticatedAuth),
   Layer.provide(CloudLink.layer),
@@ -192,15 +210,13 @@ describe("link proof over a non-loopback desktop transport", () => {
   it("does not pass desktop trust to a paired client or accept client-supplied provenance", () =>
     withLinkProofClient(async ({ post, exchange }) => {
       const desktop = await exchange(DESKTOP_BOOTSTRAP_TOKEN);
-      const paired = await post(
+      const embedded = await post(
         "/api/auth/pairing-token",
-        {
-          scopes: ["relay:write"],
-          label: "desktop-bootstrap",
-          subject: "desktop-bootstrap",
-        },
+        { scopes: ["relay:write"], label: "desktop-bootstrap", subject: "desktop-bootstrap" },
         { authorization: `Bearer ${desktop}` },
       );
+      expect(embedded.status).toBe(401);
+      const paired = await post("/test/pairing-credential", {});
       expect(paired.status).toBe(200);
       const { credential } = (await paired.json()) as { credential: string };
       const token = await exchange(credential);

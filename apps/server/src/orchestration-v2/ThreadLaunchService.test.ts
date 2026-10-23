@@ -1037,7 +1037,8 @@ it.effect("runs a Scratch scheduled task saved with a worktree in its own folder
   }).pipe(Effect.provide(harness.layer));
 });
 
-it.effect.each(["stable", "upstream/release"])(
+// Non-origin bases are refused in GitVcsDriverCore.test.ts (fork F06).
+it.effect.each(["stable", "origin/release"])(
   "launches from %s with the fetched commit and remote PR base",
   (baseRef) =>
     Effect.gen(function* () {
@@ -1056,13 +1057,13 @@ it.effect.each(["stable", "upstream/release"])(
       yield* command(cwd, ["commit", "--allow-empty", "-m", "initial"]);
       const localHead = (yield* command(cwd, ["rev-parse", "HEAD"])).stdout.trim();
       yield* command(cwd, ["init", "--bare", remote]);
-      yield* command(cwd, ["remote", "add", "upstream", remote]);
-      yield* command(cwd, ["push", "-u", "upstream", "stable:release"]);
+      yield* command(cwd, ["remote", "add", "origin", remote]);
+      yield* command(cwd, ["push", "-u", "origin", "stable:release"]);
       yield* command(cwd, ["commit", "--allow-empty", "-m", "remote advance"]);
-      yield* command(cwd, ["push", "upstream", "stable:release"]);
+      yield* command(cwd, ["push", "origin", "stable:release"]);
       const remoteHead = (yield* command(cwd, ["rev-parse", "HEAD"])).stdout.trim();
       yield* command(cwd, ["reset", "--hard", localHead]);
-      yield* command(cwd, ["update-ref", "-d", "refs/remotes/upstream/release"]);
+      yield* command(cwd, ["update-ref", "-d", "refs/remotes/origin/release"]);
 
       const setupStarted = yield* Deferred.make<void>();
       const harness = makeHarness({

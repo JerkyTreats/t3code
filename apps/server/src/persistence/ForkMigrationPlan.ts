@@ -154,7 +154,7 @@ export const migrationEntries = [
   [85, "PublishedResponseActivityIndex", Migration0085],
   [86, "ThreadFailureLookupIndex", UpstreamMigration0062],
   // Upstream 63 through 68 keep their source order after fork 86. 87 must stay
-  // after 83, which still deletes from projection_state before 87 drops it.
+  // after 83, which still deletes from the V1 projection cursor table before 87 drops it.
   [87, "DropUnusedV1Projections", UpstreamMigration0063],
   [88, "CanonicalizeThreadPullRequestLinks", UpstreamMigration0064],
   [89, "CodexUsageNativeTurnIndex", UpstreamMigration0065],
