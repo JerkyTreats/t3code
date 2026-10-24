@@ -84,7 +84,7 @@ Reconnect presentation uses that same owner: only idle desktop-managed runtimes 
 
 Source tests cover the exact Dockerfile instruction contract, Docker-compatible recursive protected-context matching, required build-input inclusion, exact-origin workflow authority, immutable actions, build-once promotion order, provenance, SBOM, cleanup, mocked runtime command orchestration, desktop-managed-or-null update policy, direct headless update rejection, and non-registry CLI guidance.
 
-The exact-source local image passes actual build, HTTP startup, non-root identity, pinned provider availability, read-only root operation, writable mounts, signal handling and owned cleanup. The intake evidence binds OCI identity, provenance and commands to the tested source and distinguishes reused-byte cleanup probes. No image has been published or deployed. The upstream intake of 2026-10-23 repinned the base to Node.js 26.12.1 and pnpm 12.14.0 with source contract evidence only; the actual image build and runtime smoke must pass again on that base before any publication.
+The exact-source local image passes actual build, HTTP startup, non-root identity, pinned provider availability, read-only root operation, writable mounts, signal handling and owned cleanup. The intake evidence binds OCI identity, provenance and commands to the tested source and distinguishes reused-byte cleanup probes. No image has been published or deployed. The upstream intake of 2026-10-23 repinned the base to Node.js 26.12.1 and pnpm 12.14.0 with source contract evidence only; the actual image build and runtime smoke must pass again on that base before any publication (user decision, 2026-10-23).
 
 ## Reconciliation Rule
 

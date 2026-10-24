@@ -10,7 +10,7 @@ Render Mermaid fences predictably across concurrent Markdown surfaces, streaming
 
 ## Decision History
 
-The 2026-10-23 intake accepted upstream's `pele` renderer and dropped the `mermaid` dependency. Pele renders synchronously into a mounted element, loads each diagram type lazily and colors diagrams through CSS variables bound to semantic theme roles. Global Mermaid configuration and render serialization (F22.D3) retired with the library. The semantic SVG cache, palette conversion, document color observer and per-surface host identities retired because pele output no longer depends on resolved colors or asynchronous render admission.
+The 2026-10-23 intake accepted upstream's `pele` renderer and dropped the `mermaid` dependency. Pele renders synchronously into a mounted element, loads each diagram type lazily and colors diagrams through CSS variables bound to semantic theme roles. Global Mermaid configuration and render serialization (F22.D3) retired with the library. The semantic SVG cache, palette conversion, document color observer and per-surface host identities (F22.D4, user decision 2026-10-23) retired because pele output no longer depends on resolved colors or asynchronous render admission.
 
 ## Required Behavior
 

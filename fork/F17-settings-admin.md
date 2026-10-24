@@ -111,7 +111,8 @@ Upstream removed `AuthAdministrativeScopes` and folded `access:read`, `access:wr
 OAuth clients and manage T3 Connect relays like any standard client. Containment is the portal
 lifecycle: revoking an unused pairing code, disabling a device and deleting a device each take
 effect at once and disconnect its live connections. Devices enrolled before this change keep the
-scopes they were issued until they re-enroll.
+scopes they were issued until they re-enroll. Ordinary pairing (CLI pairing, pairing links and T3
+Connect enrollment) also issues the widened standard set; the user accepted that on 2026-10-23.
 
 ## Compatibility Notes
 
