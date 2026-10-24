@@ -21,8 +21,11 @@ or provider-specific execution change is required. Existing provider adapters re
 for completing their ordinary messages.
 
 `presentThreadShell` carries the response stamp into shared client state. Web list sections and
-mobile home and navigation lists consume the same ordering owner. Web drag previews consume that
-order and drops change lifecycle without order-key writes. Mobile arrangement controls are
+mobile home and navigation lists consume the same ordering owner. On web, the sidebar's thread
+partition sorts every section with it, replacing upstream's keyed pinned order, inbox return order,
+send order, wake order and settled order. The next snooze wake is read as the minimum wake time.
+Web drag previews consume that order for pinned, active and settled drops, and drops change
+lifecycle without order-key writes. Mobile arrangement controls are
 unavailable while conversation ordering owns placement. Legacy recency sorting consumes these
 stamps when available.
 

@@ -105,6 +105,14 @@ Source tests cover the portable identity owner, descriptor contract, no-follow r
 
 The current clean AppImages pass extraction, isolated installation, exact packaged identity, launcher readiness and independent-client acceptance. The intake evidence records source and artifact hashes separately from later documentation commits. No installed fixture mutates an existing environment.
 
+## Upstream Intake 2026-10-23
+
+- Upstream desktop release-link configuration (`T3CODE_DESKTOP_UPDATE_REPOSITORY`) falls back to the upstream repository on invalid input. The web adapter does not consume that build input; release history and version links always come from `forkReleaseIdentity.ts`, so no configured or invalid value can select another repository. The desktop build adapter rejects any configured non-origin repository with `InvalidDesktopUpdateRepositoryError`.
+- Upstream aligns bundled versions by rewriting tracked package manifests to the artifact version during the desktop bundle build, then restoring them. F01.D5 keeps tracked manifests at their upstream bases, so the desktop build adapter passes the derived `<base>-<10hex>` version only through `APP_VERSION` and the server's own fork version build input. This prevents a second suffix from being derived from a rewritten manifest.
+- Upstream CI composite actions `setup-apt-mirrors`, `setup-ci-deps` and `ci-changes` are accepted only by exact reviewed `action.yml` digests. Change detection is now upstream's credential-free local Git diff. Every job declares read-only contents permission under empty workflow permissions, and every checkout persists no credential.
+- The dispatch-only mobile showcase workflow remains read-only. Its screenshot artifacts stay workflow-run artifacts, and its pinned simulator helper install is reviewed by exact command.
+- Upstream's `t3` npm launcher, install scripts, release, preview, AUR, mobile store, relay deploy and web preview workflows remain retired. Helpers that only parsed those retired workflows are removed.
+
 ## Reconciliation Rule
 
 Accept upstream product identity, packaging mechanics, SSH transport, Node discovery, readiness, and process supervision. Preserve the portable exact-origin identity owner, descriptor binding, no-registry runtime acquisition owner, isolated artifact smoke, and validation-only workflow.

@@ -4,6 +4,7 @@ import { ServerSelfUpdateError, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
 import * as DesktopAppUpdate from "../desktopUpdate/DesktopAppUpdate.ts";
@@ -241,6 +242,39 @@ it.layer(NodeServices.layer)("server self update", (it) => {
       );
       expect(result).toEqual({ targetVersion: "1.2.0", method: "desktop-app" });
       expect(stages).toEqual(["downloading", "installing"]);
+    }),
+  );
+
+  it.effect("streams desktop-managed progress and the result through the update stream", () =>
+    Effect.gen(function* () {
+      const { selfUpdate } = yield* makeHarness({
+        mode: "desktop",
+        desktopAppUpdate: {
+          available: true,
+          run: (reportProgress) =>
+            reportProgress("downloading").pipe(
+              Effect.as({ targetVersion: "1.2.0", method: "desktop-app" as const }),
+            ),
+          commit: () => Effect.never,
+        },
+      });
+      const events = yield* Stream.runCollect(
+        ServerSelfUpdate.updateProgressStream(selfUpdate, { targetVersion: "1.1.0" }),
+      );
+      expect(Array.from(events)).toEqual([
+        { type: "progress", stage: "downloading" },
+        { type: "complete", result: { targetVersion: "1.2.0", method: "desktop-app" } },
+      ]);
+    }),
+  );
+
+  it.effect("fails the update stream for an operator-managed runtime", () =>
+    Effect.gen(function* () {
+      const { selfUpdate } = yield* makeHarness();
+      const error = yield* Stream.runCollect(
+        ServerSelfUpdate.updateProgressStream(selfUpdate, { targetVersion: "1.1.0" }),
+      ).pipe(Effect.flip);
+      expect(error.reason).toContain("operator-managed deployment");
     }),
   );
 });

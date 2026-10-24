@@ -1,5 +1,6 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { originChangeRequestSelector } from "@t3tools/source-control-core/server/fork/originHostedProviderPolicy";
+import { gitLabRepositorySelector } from "@t3tools/source-control-core/server/fork/GitLabRepositoryTarget";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -246,6 +247,7 @@ export interface GitLabMergeRequestSummary {
   readonly url: string;
   readonly baseRefName: string;
   readonly headRefName: string;
+  readonly headSha?: string;
   readonly state?: "open" | "closed" | "merged";
   readonly isDraft?: boolean;
   readonly closedAt?: string | null;
@@ -467,9 +469,6 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const repositorySelector = (input: { readonly host: string; readonly repository: string }) =>
-    `https://${input.host}/${input.repository}`;
-
   const changeRequestSelector = (input: {
     readonly cwd: string;
     readonly repository: string;
@@ -504,7 +503,7 @@ export const make = Effect.gen(function* () {
           "mr",
           "list",
           "--repo",
-          repositorySelector(input),
+          gitLabRepositorySelector(input),
           "--source-branch",
           sourceRefName(input),
           ...stateArgs(input.state),
@@ -545,11 +544,12 @@ export const make = Effect.gen(function* () {
             args: [
               "mr",
               "view",
-              reference,
-              "--repo",
-              repositorySelector(input),
               "--output",
               "json",
+              "--repo",
+              gitLabRepositorySelector(input),
+              "--",
+              reference,
             ],
           }),
         ),
@@ -722,7 +722,7 @@ export const make = Effect.gen(function* () {
           executeMergeRequest({
             cwd: input.cwd,
             reference: input.reference,
-            args: ["mr", "checkout", reference, "--repo", repositorySelector(input)],
+            args: ["mr", "checkout", "--repo", gitLabRepositorySelector(input), "--", reference],
           }),
         ),
         Effect.asVoid,

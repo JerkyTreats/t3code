@@ -28,6 +28,7 @@ Let an orchestrating thread own ordinary child threads so a manager running many
 - `packages/client-runtime/src/state/fork/threadNesting.ts`
 - `apps/web/src/fork/sidebarThreadNesting.ts`
 - `apps/web/src/fork/SidebarNestedThreads.tsx`
+- `apps/mobile/src/features/threads/thread-list-v2-nested-badge.tsx`
 
 ## Upstream Sensitive Adapters
 
@@ -41,10 +42,13 @@ Let an orchestrating thread own ordinary child threads so a manager running many
 - `packages/client-runtime/src/state/threadShell.ts`
 - `packages/client-runtime/src/operations/commands.ts`
 - `apps/web/src/components/Sidebar.tsx`
+- `apps/web/src/components/sidebar/SidebarThreadRow.tsx`
 - `apps/web/src/components/Sidebar.logic.ts`
-- `apps/web/src/components/CommandPalette.tsx`
+- `apps/web/src/components/CommandPaletteThreadItems.tsx`
+- `apps/web/src/components/CommandPalette.logic.ts`
 - `apps/web/src/components/ThreadNotificationCoordinator.tsx`
 - `apps/web/src/uiStateStore.ts`
+- `apps/web/src/hooks/useThreadActions.ts` and `useThreadActionMenu.ts`
 - `apps/mobile/src/features/threads/threadListV2.ts`
 - `apps/mobile/src/features/threads/thread-list-v2-items.tsx`
 - `apps/mobile/src/features/threads/useThreadListActions.ts`
@@ -73,3 +77,9 @@ Let an orchestrating thread own ordinary child threads so a manager running many
 - Fork tests prove a fork of a nested thread is top-level.
 - Client-runtime owner tests cover grouping, orphans, badge, expansion, attention, traversal, palette label, move eligibility and stable identity.
 - Web and mobile adapter tests cover rows, expansion control, drag exclusion, traversal, palette and move availability.
+- `SidebarNestedThreads.browser.test.tsx` renders the web badge alone and inside nested parent rows: the parent's provider icon leads one size larger, children follow by recency with `+n`, card rows place it after the machine icon in place of the provider history, and slim rows keep it after the title.
+- Mobile `thread-list-v2-nested-badge.test.tsx` covers the parent icon leading one size larger, child order, overflow, and the press toggle with its filled expanded state. The mobile card-row provider slot is a one-line host choice in `thread-list-v2-items.tsx` without a mounted test.
+
+## Current Adapter Contract
+
+Upstream moved sidebar rows into `SidebarThreadRow.tsx` and arranges them from quiet thread shells, so a streaming thread re-renders only its own row. Nesting keeps that boundary. The sidebar groups the quiet shells, and the badge, chevron and indented child row render inside `SidebarThreadRow`. Child rows read their own live shell like sortable rows do, but they are never sortable. A child's approval or question reaches its parent through `pendingSubagentRequestsByThread`. That request map is compared by content before it reaches shells, so a child's streaming ticks never re-render the parent row. The palette label is supplied through `buildThreadActionItems` `resolveTitle` in `CommandPaletteThreadItems.tsx`. The notifier excludes copies bubbled from nested children, so each child notifies once for itself.

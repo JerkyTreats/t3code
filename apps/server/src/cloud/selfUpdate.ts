@@ -1,6 +1,7 @@
 import {
   ServerSelfUpdateError,
   type ServerSelfUpdateInput,
+  type ServerSelfUpdateProgressEvent,
   type ServerSelfUpdateProgressStage,
   type ServerSelfUpdateResult,
   type ThreadId,
@@ -11,6 +12,8 @@ import * as Effect from "effect/Effect";
 import * as HashSet from "effect/HashSet";
 import * as Ref from "effect/Ref";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
 import * as DesktopAppUpdate from "../desktopUpdate/DesktopAppUpdate.ts";
@@ -114,34 +117,33 @@ export const withRunningThreadContinuation = Effect.fn(
 
   return ServerSelfUpdate.of({
     update,
-    commitDesktopUpdate: (requestId) =>
-      Effect.gen(function* () {
-        const shouldContinue = yield* Ref.modify(desktopContinuationTokens, (tokens) => [
-          HashSet.has(tokens, requestId),
-          HashSet.remove(tokens, requestId),
-        ]);
-        let handoffAccepted = false;
-        let continuationThreadIds: ReadonlyArray<ThreadId> = [];
-        return yield* clearOnError(
-          Effect.gen(function* () {
-            continuationThreadIds = shouldContinue ? yield* input.prepare : [];
-            return yield* input.selfUpdate.commitDesktopUpdate(requestId, () =>
-              Effect.sync(() => {
-                handoffAccepted = true;
-              }),
-            );
-          }),
-          () => continuationThreadIds,
-          () => handoffAccepted,
-        ).pipe(
-          Effect.catchCause((cause) =>
-            (shouldContinue && !handoffAccepted
-              ? Ref.update(desktopContinuationTokens, HashSet.add(requestId))
-              : Effect.void
-            ).pipe(Effect.andThen(Effect.failCause(cause))),
-          ),
-        );
-      }),
+    commitDesktopUpdate: Effect.fn("selfUpdate.commitDesktopUpdate")(function* (requestId) {
+      const shouldContinue = yield* Ref.modify(desktopContinuationTokens, (tokens) => [
+        HashSet.has(tokens, requestId),
+        HashSet.remove(tokens, requestId),
+      ]);
+      let handoffAccepted = false;
+      let continuationThreadIds: ReadonlyArray<ThreadId> = [];
+      return yield* clearOnError(
+        Effect.gen(function* () {
+          continuationThreadIds = shouldContinue ? yield* input.prepare : [];
+          return yield* input.selfUpdate.commitDesktopUpdate(requestId, () =>
+            Effect.sync(() => {
+              handoffAccepted = true;
+            }),
+          );
+        }),
+        () => continuationThreadIds,
+        () => handoffAccepted,
+      ).pipe(
+        Effect.catchCause((cause) =>
+          (shouldContinue && !handoffAccepted
+            ? Ref.update(desktopContinuationTokens, HashSet.add(requestId))
+            : Effect.void
+          ).pipe(Effect.andThen(Effect.failCause(cause))),
+        ),
+      );
+    }),
   });
 });
 
@@ -176,3 +178,26 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
 });
 
 export const layer = Layer.effect(ServerSelfUpdate, make());
+
+// The RPC stream used to own this fiber, so a dropped client socket interrupted
+// the download. Offers after the queue shuts down are ignored; the update
+// still finishes, and the in-flight guard stays as it was.
+export const updateProgressStream = (
+  selfUpdate: ServerSelfUpdate["Service"],
+  input: ServerSelfUpdateInput,
+) =>
+  Stream.callback<ServerSelfUpdateProgressEvent, ServerSelfUpdateError>((queue) => {
+    const offer = (event: ServerSelfUpdateProgressEvent) =>
+      Queue.offer(queue, event).pipe(Effect.ignore);
+
+    return selfUpdate
+      .update(input, (stage) => offer({ type: "progress", stage }))
+      .pipe(
+        Effect.flatMap((result) => offer({ type: "complete", result })),
+        Effect.catchTags({
+          ServerSelfUpdateError: (error) => Queue.fail(queue, error).pipe(Effect.ignore),
+        }),
+        Effect.andThen(Queue.end(queue).pipe(Effect.ignore)),
+        Effect.forkDetach,
+      );
+  });

@@ -1,0 +1,22 @@
+# Fork F06: the pull request a review thread hangs on, read beside the origin pull request, so a
+# thread outside that pull request is refused before a reply or resolution reaches it.
+query OriginReviewThreadPullRequest(
+  $owner: String!
+  $name: String!
+  $number: Int!
+  $threadId: ID!
+) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      id
+    }
+  }
+  node(id: $threadId) {
+    id
+    ... on PullRequestReviewThread {
+      pullRequest {
+        id
+      }
+    }
+  }
+}

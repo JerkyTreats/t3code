@@ -1,36 +1,15 @@
-import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/client/originRepositoryPolicy";
-/**
- * Forgejo's client definition, which covers Gitea as well. Browser- and React Native-safe.
- *
- * @module source-control-forgejo/client/definition
- */
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import {
-  type ChangeRequestProjectIdentity,
   defineSourceControlClient,
-  isChangeRequestAuthorityOfProject,
   isChangeRequestPath,
 } from "@t3tools/source-control-core/client/definition";
+import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/client/originRepositoryPolicy";
 
 const CHECKOUT_COMMAND = /^tea\s+(?:pr|pulls)\s+checkout\s+(.+)$/i;
 const CHANGE_REQUEST_REFERENCE =
   /^https?:\/\/[^/\s]+\/(?:[^/\s]+\/)+[^/\s]+\/pulls\/(\d+)(?:[/?#].*)?$/i;
 
 const KIND = SourceControlProviderKind.make("forgejo");
-
-/**
- * The repository's browser URL the server resolved from the signed-in account, which is the
- * only place a Forgejo mounted below a path says so.
- */
-function resolvedWebUrl(identity: ChangeRequestProjectIdentity): URL | null {
-  if (!identity.webUrl) return null;
-  try {
-    const url = new URL(identity.webUrl);
-    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
-  } catch {
-    return null;
-  }
-}
 
 export const definition = defineSourceControlClient({
   kind: KIND,
@@ -58,9 +37,7 @@ export const definition = defineSourceControlClient({
       ) {
         return `${remote.origin}/${repository}/pulls/${number}`;
       }
-    } catch {
-      // Not an HTTP remote.
-    }
+    } catch {}
     return `https://${host}/${repository}/pulls/${number}`;
   },
   changeRequestActions: new Set(["merge", "close", "reopen", "update-branch"] as const),
@@ -75,9 +52,9 @@ export const definition = defineSourceControlClient({
   reviewSummaryRequired: (verdict) => verdict === "request-changes",
   checkoutCommandArgument: (input) => CHECKOUT_COMMAND.exec(input)?.[1]?.trim() ?? null,
   isChangeRequestReference: (url) => CHANGE_REQUEST_REFERENCE.test(url),
-  // Forgejo servers are addressed with their port, so two on one hostname stay apart.
   changeRequestUrlHost: (url) => url.host,
   checkoutChangeRequestHost: () => null,
+  // Fork F06: membership admission requires the exact origin locator.
   isChangeRequestInRepository: exactOriginContainsChangeRequest,
   canReadChangeRequestOnHost: exactOriginContainsChangeRequest,
   isChangeRequestUrl: (url) => isChangeRequestPath(url, "/pulls/"),

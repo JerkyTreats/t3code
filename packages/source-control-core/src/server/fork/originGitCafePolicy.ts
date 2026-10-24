@@ -54,7 +54,8 @@ export function gitCafeOriginPullNumber(target: GitCafeTarget, reference: string
   if (numeric) return numeric[1]!;
   try {
     const url = new URL(reference);
-    const match = /^\/(.+)\/pulls\/([1-9]\d*)\/?$/u.exec(url.pathname);
+    // GitCafe serves `/pull/<n>` and redirects the older `/pulls/<n>` there.
+    const match = /^\/(.+)\/pulls?\/([1-9]\d*)\/?$/u.exec(url.pathname);
     return url.protocol === "https:" &&
       !url.username &&
       !url.password &&

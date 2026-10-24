@@ -105,9 +105,9 @@ that Nightly protocol. This describes the upstream distribution channel, not val
 of a store or beta build against this fork. Nightly clients also show beta links as QR
 codes in **Settings → General → Mobile app**.
 
-- **iPhone and iPad:** join the [TestFlight beta](https://testflight.apple.com/join/XgaxaRtd).
-- **Android:** download and install the APK from the
-  [Android beta release](https://github.com/pingdotgg/t3code/releases/tag/android-nightly).
+- **iPhone and iPad:** TestFlight is invite-only.
+- **Android:** download an APK from the
+  [Android beta releases](https://github.com/pingdotgg/t3code/releases?q=android-beta-).
 
 If the mobile app crashes during launch, open **Settings → Diagnostics** on the next
 successful launch. It lists startup crashes from the last seven days, including the

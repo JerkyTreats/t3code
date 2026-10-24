@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:24-bookworm-slim@sha256:65932751ed4073ed02f5c04e494e4b2572a891b7dbea0568a863dc80341bf848 AS build
+FROM node:26.12.1-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe AS build
 
 ARG T3CODE_BUILD_COMMIT
 
@@ -8,6 +8,9 @@ ENV PNPM_HOME=/pnpm
 ENV PATH="${PNPM_HOME}:${PATH}"
 
 WORKDIR /app
+
+# Node 26 ships no Corepack. pnpm 12 runs as its checksum-pinned native executable.
+ADD --checksum=sha256:1de98ed2e9621113b0887b06322b461efb9df73d913fc1d151039b10b7117a41 https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.14.0.tgz /tmp/pnpm.tgz
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -17,7 +20,9 @@ RUN apt-get update \
     make=4.3-4.1 \
     python3=3.11.2-1+b1 \
   && rm -rf /var/lib/apt/lists/* \
-  && corepack enable
+  && tar -xzf /tmp/pnpm.tgz --strip-components=1 -C /usr/local/bin package/pnpm \
+  && rm /tmp/pnpm.tgz \
+  && test "$(pnpm --version)" = "12.14.0"
 
 COPY . .
 
@@ -29,7 +34,7 @@ RUN test -n "$T3CODE_BUILD_COMMIT" && pnpm exec vp run --filter t3 build
 RUN pnpm deploy --filter t3 --prod --legacy /out \
   && cp -R apps/server/dist /out/dist
 
-FROM node:24-bookworm-slim@sha256:65932751ed4073ed02f5c04e494e4b2572a891b7dbea0568a863dc80341bf848 AS runtime
+FROM node:26.12.1-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe AS runtime
 
 ENV NODE_ENV=production
 ENV T3CODE_HOST=0.0.0.0

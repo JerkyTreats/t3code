@@ -30,12 +30,15 @@ interface RegisteredTool {
 }
 
 type AgentStartHook = (
-  event: { systemPrompt: string },
+  event: {
+    systemPrompt: string;
+    systemPromptOptions?: { sections?: Record<string, string> | null; forceSystemPrompt?: string };
+  },
   ctx: {
     model?: { api: string };
     ui: { notify: (message: string, severity: string) => void };
   },
-) => Promise<{ systemPrompt: string }>;
+) => Promise<{ systemPrompt: string } | undefined>;
 
 export async function loadMcpBridge(
   options: {
@@ -45,6 +48,7 @@ export async function loadMcpBridge(
     readonly toolSearchDisabled?: boolean;
     readonly allowsTool?: (name: string) => boolean;
     readonly runtimeMode?: string;
+    readonly inputSchema?: Record<string, unknown>;
     readonly servers?: ReadonlyArray<{
       readonly name: string;
       readonly endpoint: string;
@@ -96,7 +100,7 @@ export async function loadMcpBridge(
     { name: "preview_snapshot", description: "Inspect the collaborative browser." },
   ].map((tool) => ({
     ...tool,
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: options.inputSchema ?? { type: "object", properties: {} },
     outputSchema: { type: "object", properties: { count: { type: "number" } } },
   }));
   const source = NodeModule.stripTypeScriptTypes(

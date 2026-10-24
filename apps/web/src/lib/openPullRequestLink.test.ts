@@ -69,6 +69,7 @@ describe("gitHubPullRequestBrowserUrl", () => {
     );
   });
 
+  // regression: #8507 the browser fallback must not open a bogus URL
   it("returns null for missing or invalid GitHub data", () => {
     expect(gitHubPullRequestBrowserUrl(null, "acme/repository", 1)).toBeNull();
     expect(
@@ -101,6 +102,7 @@ describe("gitHubPullRequestBrowserUrl", () => {
     ).toBeNull();
   });
 
+  // regression: #8507 the browser fallback for failed PR loads must only target GitHub
   it.each(["gitlab", "bitbucket", "azure-devops", "unknown"])(
     "does not build a fallback for %s",
     (provider) => {

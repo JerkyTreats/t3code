@@ -34,6 +34,14 @@ describe("GitCafe exact origin admission", () => {
       gitCafeOriginPullNumber(target, "https://staging.git.cafe/team/repository/pulls/7"),
     ).toBe("7");
     expect(gitCafeOriginPullNumber(target, "https://git.cafe/team/repository/pulls/7")).toBeNull();
+    // Both current `/pull/` and legacy `/pulls/` routes stay bound to origin.
+    expect(gitCafeOriginPullNumber(target, "https://staging.git.cafe/team/repository/pull/7")).toBe(
+      "7",
+    );
+    expect(gitCafeOriginPullNumber(target, "https://git.cafe/team/repository/pull/7")).toBeNull();
+    expect(
+      gitCafeOriginPullNumber(target, "https://staging.git.cafe/other/repository/pull/7"),
+    ).toBeNull();
     expect(
       gitCafeOriginPullNumber(target, "https://staging.git.cafe/other/repository/pulls/7"),
     ).toBeNull();

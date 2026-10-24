@@ -6,7 +6,7 @@ import {
   EnvironmentId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
 
 import type { ConnectionAttemptError } from "../connection/model.ts";
@@ -41,6 +41,17 @@ export class RelayDeviceIdentity extends Context.Service<
   }
 >()("@t3tools/client-runtime/platform/capabilities/RelayDeviceIdentity") {}
 
+/**
+ * A random id this client keeps across launches. Environments it connects to
+ * record its hash, so two environments opened from one device share an owner
+ * in analytics even when nobody is signed in.
+ */
+export class AnalyticsDevice extends Context.Reference<{
+  readonly id: Effect.Effect<Option.Option<string>>;
+}>("@t3tools/client-runtime/platform/capabilities/AnalyticsDevice", {
+  defaultValue: () => ({ id: Effect.succeedNone }),
+}) {}
+
 export class ClientPresentation extends Context.Service<
   ClientPresentation,
   {
@@ -52,6 +63,7 @@ export class PrimaryEnvironmentAuth extends Context.Service<
   PrimaryEnvironmentAuth,
   {
     readonly bearerToken: Effect.Effect<Option.Option<string>, ConnectionAttemptError>;
+    /** Fork F27: protected Thread clients connect with a fresh one-use WebSocket ticket. */
     readonly webSocketTicket?: (target: {
       readonly httpBaseUrl: string;
       readonly wsBaseUrl: string;
@@ -63,18 +75,24 @@ export class SshEnvironmentGateway extends Context.Service<
   SshEnvironmentGateway,
   {
     /**
-     * Starts or reuses the remote server and pairs with it. With
-     * `expectedEnvironmentId`, a server that is a different machine fails
+     * With `expectedEnvironmentId`, a server that is a different machine fails
      * before its one-time pairing credential is spent.
      */
     readonly provision: (
       target: DesktopSshEnvironmentTarget,
       expectedEnvironmentId?: EnvironmentId,
     ) => Effect.Effect<ProvisionedSshEnvironment, ConnectionAttemptError>;
+    /**
+     * Starts or reuses the remote server for a saved connection. Returns
+     * `bearerToken`, the token this client saved from an earlier pairing, while
+     * the host still accepts it with the standard scopes, and pairs again only
+     * when it does not, so a reconnect adds no session on the host.
+     */
     readonly prepare: (input: {
       readonly connectionId: string;
       readonly expectedEnvironmentId: EnvironmentId;
       readonly target: DesktopSshEnvironmentTarget;
+      readonly bearerToken?: string;
     }) => Effect.Effect<PreparedSshEnvironment, ConnectionAttemptError>;
     readonly disconnect: (
       target: DesktopSshEnvironmentTarget,

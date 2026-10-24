@@ -3,20 +3,12 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 
-export function fileMarkdownSurfaceId(threadRef: ScopedThreadRef, relativePath: string): string {
-  return JSON.stringify([
-    "file-markdown",
-    threadRef.environmentId,
-    threadRef.threadId,
-    relativePath,
-  ]);
-}
-
 export function FileMarkdownPreview(props: {
   readonly cwd: string;
   readonly relativePath: string;
   readonly text: string;
   readonly threadRef: ScopedThreadRef;
+  readonly workspaceMutationId: string | null;
   readonly onTaskListChange?:
     | ((input: { readonly markerOffset: number; readonly checked: boolean }) => void)
     | undefined;
@@ -32,11 +24,11 @@ export function FileMarkdownPreview(props: {
 
   return (
     <ChatMarkdown
-      surfaceId={fileMarkdownSurfaceId(props.threadRef, props.relativePath)}
       text={props.text}
       cwd={props.cwd}
       imageBaseDir={imageBaseDir}
       threadRef={props.threadRef}
+      workspaceMutationId={props.workspaceMutationId}
       className="mx-auto max-w-4xl px-6 py-5"
       onTaskListChange={props.onTaskListChange}
     />

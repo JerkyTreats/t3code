@@ -184,21 +184,22 @@ export const layer = Layer.effect(
     const stateMutex = yield* Semaphore.make(1);
     const activationMutex = yield* Semaphore.make(1);
 
-    const readProcessIdentity = (pid: number) =>
-      Effect.gen(function* () {
-        const bootId = (yield* fileSystem.readFileString("/proc/sys/kernel/random/boot_id"))
-          .trim()
-          .toLowerCase();
-        const processStartTicks = parseLinuxProcessStartTicks(
-          yield* fileSystem.readFileString(`/proc/${pid}/stat`),
-        );
-        if (!BOOT_ID_PATTERN.test(bootId) || processStartTicks === undefined) {
-          return yield* new DesktopLauncherProcessIdentityError({
-            reason: "Linux process identity metadata is invalid.",
-          });
-        }
-        return { bootId, processStartTicks } as const;
-      });
+    const readProcessIdentity = Effect.fn("desktop.launcher.readProcessIdentity")(function* (
+      pid: number,
+    ) {
+      const bootId = (yield* fileSystem.readFileString("/proc/sys/kernel/random/boot_id"))
+        .trim()
+        .toLowerCase();
+      const processStartTicks = parseLinuxProcessStartTicks(
+        yield* fileSystem.readFileString(`/proc/${pid}/stat`),
+      );
+      if (!BOOT_ID_PATTERN.test(bootId) || processStartTicks === undefined) {
+        return yield* new DesktopLauncherProcessIdentityError({
+          reason: "Linux process identity metadata is invalid.",
+        });
+      }
+      return { bootId, processStartTicks } as const;
+    });
 
     const readAuthenticatedHandoffRequest = Effect.fn(
       "desktop.launcher.readAuthenticatedHandoffRequest",

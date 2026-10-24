@@ -20,6 +20,8 @@ import {
   useRightPanelStore,
   type RightPanelSurface,
 } from "~/rightPanelStore";
+import { useComposerDraftStore } from "~/composerDraftStore";
+import { resolveThreadRouteTarget } from "~/threadRoutes";
 import { closePreviewSession } from "./closePreviewSession";
 import { agentControlledBrowserCloseConfirmation } from "../ChatView.logic";
 import {
@@ -27,6 +29,18 @@ import {
   subscribePreviewAction,
   type PreviewAction,
 } from "./previewActionBus";
+
+/** Whether the live route still shows the chat host for `threadRef`, read at action time. */
+export function isPreviewHostRouteCurrent(
+  threadRef: ScopedThreadRef | null,
+  params: Partial<Record<"environmentId" | "threadId" | "draftId", string | undefined>>,
+): boolean {
+  const current = resolveThreadRouteTarget(params);
+  if (!threadRef || !current) return false;
+  return current.kind === "server"
+    ? scopedThreadKey(current.threadRef) === scopedThreadKey(threadRef)
+    : useComposerDraftStore.getState().getDraftIdByRef(threadRef) === current.draftId;
+}
 
 export function readFocusedPreviewHost(threadRef: ScopedThreadRef | null) {
   if (!threadRef || !isPreviewFocused()) return null;

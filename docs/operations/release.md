@@ -108,7 +108,7 @@ or a manual dispatch.
 
 The workflow:
 
-1. Installs only the scanner dependency set without lifecycle scripts.
+1. Installs the checksum-verified pnpm executable, then only the scanner dependency set without lifecycle scripts.
 2. Runs the global release-authority and server-image policy scanners.
 3. Builds and smokes one OCI archive from the pinned Dockerfile inputs.
 4. Logs in only to GHCR with the repository workflow token.

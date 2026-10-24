@@ -71,6 +71,12 @@ import UpstreamMigration0059 from "./Migrations/059_McpAppModelContext.ts";
 import UpstreamMigration0060 from "./Migrations/060_ThreadSnapshotWindowIndexes.ts";
 import UpstreamMigration0061 from "./Migrations/061_PullRequestReviewGuides.ts";
 import UpstreamMigration0062 from "./Migrations/062_ThreadFailureLookupIndex.ts";
+import UpstreamMigration0063 from "./Migrations/063_DropUnusedV1Projections.ts";
+import UpstreamMigration0064 from "./Migrations/064_CanonicalizeThreadPullRequestLinks.ts";
+import UpstreamMigration0065 from "./Migrations/065_CodexUsageNativeTurnIndex.ts";
+import UpstreamMigration0066 from "./Migrations/066_RepairClientSettlementTimestamps.ts";
+import UpstreamMigration0067 from "./Migrations/067_WebhookDedupe.ts";
+import UpstreamMigration0068 from "./Migrations/068_ShellStopRequestIndex.ts";
 
 import Migration0083 from "./Migrations/083_RetireBoardAndCollective.ts";
 import Migration0085 from "./Migrations/085_PublishedResponseActivityIndex.ts";
@@ -147,6 +153,14 @@ export const migrationEntries = [
   [84, "PullRequestReviewGuides", UpstreamMigration0061],
   [85, "PublishedResponseActivityIndex", Migration0085],
   [86, "ThreadFailureLookupIndex", UpstreamMigration0062],
+  // Upstream 63 through 68 keep their source order after fork 86. 87 must stay
+  // after 83, which still deletes from the V1 projection cursor table before 87 drops it.
+  [87, "DropUnusedV1Projections", UpstreamMigration0063],
+  [88, "CanonicalizeThreadPullRequestLinks", UpstreamMigration0064],
+  [89, "CodexUsageNativeTurnIndex", UpstreamMigration0065],
+  [90, "RepairClientSettlementTimestamps", UpstreamMigration0066],
+  [91, "WebhookDedupe", UpstreamMigration0067],
+  [92, "ShellStopRequestIndex", UpstreamMigration0068],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
@@ -193,102 +207,102 @@ const historicalNames = new Map<number, string>([
 const currentNames = new Map<number, string>(migrationManifest);
 
 /** Selects the single fork lineage before the upstream runner admits any writes. */
-export const makeMigrationLoader = (throughId?: number): Migrator.Loader<SqlClient.SqlClient> =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const tables = yield* sql<{ readonly name: string }>`
+export const makeMigrationLoader = Effect.fn("ForkMigrationPlan.makeMigrationLoader")(function* (
+  throughId?: number,
+) {
+  const sql = yield* SqlClient.SqlClient;
+  const tables = yield* sql<{ readonly name: string }>`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
     `.pipe(
-      Effect.mapError(
-        (cause) =>
-          new Migrator.MigrationError({
-            cause,
-            kind: "Failed",
-            message: "Could not inspect the fork migration journal",
-          }),
-      ),
-    );
-    const hasJournal = tables.some(({ name }) => name === "effect_sql_migrations");
-    if (!hasJournal && tables.length > 0) {
-      return yield* new Migrator.MigrationError({
-        kind: "Failed",
-        message:
-          "Unsupported fork migration lineage: populated database without a migration journal",
-      });
-    }
-    const journal = !hasJournal
-      ? []
-      : yield* sql<{ readonly migrationId: number; readonly name: string }>`
+    Effect.mapError(
+      (cause) =>
+        new Migrator.MigrationError({
+          cause,
+          kind: "Failed",
+          message: "Could not inspect the fork migration journal",
+        }),
+    ),
+  );
+  const hasJournal = tables.some(({ name }) => name === "effect_sql_migrations");
+  if (!hasJournal && tables.length > 0) {
+    return yield* new Migrator.MigrationError({
+      kind: "Failed",
+      message: "Unsupported fork migration lineage: populated database without a migration journal",
+    });
+  }
+  const journal = !hasJournal
+    ? []
+    : yield* sql<{ readonly migrationId: number; readonly name: string }>`
       SELECT migration_id AS "migrationId", name FROM effect_sql_migrations
       ORDER BY migration_id ASC
     `.pipe(
-          Effect.mapError(
-            (cause) =>
-              new Migrator.MigrationError({
-                cause,
-                kind: "Failed",
-                message: "Could not inspect the fork migration journal",
-              }),
-          ),
-        );
-    for (const row of journal) {
-      if (
-        currentNames.get(row.migrationId) !== row.name &&
-        historicalNames.get(row.migrationId) !== row.name
-      ) {
-        return yield* new Migrator.MigrationError({
-          kind: "Failed",
-          message: `Unsupported fork migration identity at ${row.migrationId}: ${row.name}`,
-        });
-      }
-    }
-    // Released upgrades may retain a historical prefix before the canonical
-    // suffix. A historical identity cannot restart after that suffix begins.
-    let canonicalSuffixStarted = false;
-    for (const row of journal) {
-      if (row.migrationId < 31 || row.migrationId > 41) continue;
-      if (row.name === currentNames.get(row.migrationId)) {
-        canonicalSuffixStarted = true;
-      } else if (canonicalSuffixStarted) {
-        return yield* new Migrator.MigrationError({
-          kind: "Failed",
-          message: `Unsupported fork migration lineage at ${row.migrationId}: historical identity after canonical suffix`,
-        });
-      }
-    }
-    const retiredEntries = journal.filter(
-      ({ migrationId }) => migrationId >= 46 && migrationId <= 49,
-    );
-    if (retiredEntries.length !== 0 && retiredEntries.length !== 4) {
+        Effect.mapError(
+          (cause) =>
+            new Migrator.MigrationError({
+              cause,
+              kind: "Failed",
+              message: "Could not inspect the fork migration journal",
+            }),
+        ),
+      );
+  for (const row of journal) {
+    if (
+      currentNames.get(row.migrationId) !== row.name &&
+      historicalNames.get(row.migrationId) !== row.name
+    ) {
       return yield* new Migrator.MigrationError({
         kind: "Failed",
-        message: "Unsupported fork migration lineage: incomplete retired 46 through 49 group",
+        message: `Unsupported fork migration identity at ${row.migrationId}: ${row.name}`,
       });
     }
-    const latest = journal.at(-1)?.migrationId ?? 0;
-    const applied = new Set(journal.map((row) => row.migrationId));
-    const reconciledV0028History = reconciledV0028HistoricalNames.every(([migrationId, name]) =>
-      journal.some((row) => row.migrationId === migrationId && row.name === name),
-    );
-    for (const [id] of migrationManifest) {
-      if (id === 35 && reconciledV0028History) continue;
-      if (id <= latest && !applied.has(id)) {
-        return yield* new Migrator.MigrationError({
-          kind: "Failed",
-          message: `Incomplete fork migration history: missing ${id}`,
-        });
-      }
+  }
+  // Released upgrades may retain a historical prefix before the canonical
+  // suffix. A historical identity cannot restart after that suffix begins.
+  let canonicalSuffixStarted = false;
+  for (const row of journal) {
+    if (row.migrationId < 31 || row.migrationId > 41) continue;
+    if (row.name === currentNames.get(row.migrationId)) {
+      canonicalSuffixStarted = true;
+    } else if (canonicalSuffixStarted) {
+      return yield* new Migrator.MigrationError({
+        kind: "Failed",
+        message: `Unsupported fork migration lineage at ${row.migrationId}: historical identity after canonical suffix`,
+      });
     }
-    const fresh = journal.length === 0;
-    return yield* Migrator.fromRecord(
-      Object.fromEntries(
-        migrationEntries
-          .filter(([id]) => throughId === undefined || id <= throughId)
-          .map(([id, name, migration]) => [
-            `${id}_${name}`,
-            // Preserve the deployed 50 identity without rebuilding retired state on a fresh install.
-            fresh && id === 50 ? Effect.void : migration,
-          ]),
-      ),
-    );
-  });
+  }
+  const retiredEntries = journal.filter(
+    ({ migrationId }) => migrationId >= 46 && migrationId <= 49,
+  );
+  if (retiredEntries.length !== 0 && retiredEntries.length !== 4) {
+    return yield* new Migrator.MigrationError({
+      kind: "Failed",
+      message: "Unsupported fork migration lineage: incomplete retired 46 through 49 group",
+    });
+  }
+  const latest = journal.at(-1)?.migrationId ?? 0;
+  const applied = new Set(journal.map((row) => row.migrationId));
+  const reconciledV0028History = reconciledV0028HistoricalNames.every(([migrationId, name]) =>
+    journal.some((row) => row.migrationId === migrationId && row.name === name),
+  );
+  for (const [id] of migrationManifest) {
+    if (id === 35 && reconciledV0028History) continue;
+    if (id <= latest && !applied.has(id)) {
+      return yield* new Migrator.MigrationError({
+        kind: "Failed",
+        message: `Incomplete fork migration history: missing ${id}`,
+      });
+    }
+  }
+  const fresh = journal.length === 0;
+  return yield* Migrator.fromRecord(
+    Object.fromEntries(
+      migrationEntries
+        .filter(([id]) => throughId === undefined || id <= throughId)
+        .map(([id, name, migration]) => [
+          `${id}_${name}`,
+          // Preserve the deployed 50 identity without rebuilding retired state on a fresh install.
+          fresh && id === 50 ? Effect.void : migration,
+        ]),
+    ),
+  );
+});

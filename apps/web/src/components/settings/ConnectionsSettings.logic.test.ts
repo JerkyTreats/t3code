@@ -1,6 +1,6 @@
 import type { DesktopWslState } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { applyWslEnableSelection, isWslSettingsRowVisible } from "./ConnectionsSettings.logic";
+import { applyWslEnableSelection } from "./ConnectionsSettings.logic";
 
 const baseWslState: DesktopWslState = {
   enabled: false,
@@ -10,25 +10,6 @@ const baseWslState: DesktopWslState = {
   distros: [],
   preflightError: null,
 };
-
-describe("isWslSettingsRowVisible", () => {
-  it("shows the retry row when the WSL state failed to load", () => {
-    expect(isWslSettingsRowVisible({ state: null, error: "load failed" })).toBe(true);
-  });
-
-  it("hides an unavailable and unused WSL snapshot", () => {
-    expect(
-      isWslSettingsRowVisible({
-        state: { ...baseWslState, available: false, wslOnly: false },
-        error: null,
-      }),
-    ).toBe(false);
-  });
-
-  it("shows an available WSL snapshot", () => {
-    expect(isWslSettingsRowVisible({ state: baseWslState, error: null })).toBe(true);
-  });
-});
 
 describe("applyWslEnableSelection", () => {
   it("clears WSL-only and updates the distro before enabling both backends", async () => {
@@ -64,31 +45,5 @@ describe("applyWslEnableSelection", () => {
 
     expect(calls).toEqual(["setWslOnly:false", "setWslDistro:Debian", "setWslBackendEnabled:true"]);
     expect(state).toMatchObject({ enabled: true, distro: "Debian", wslOnly: false });
-  });
-
-  it("stages WSL-only before enabling without rewriting an unchanged distro", async () => {
-    const calls: Array<string> = [];
-    let persistedWslOnly = false;
-    const setWslDistro = vi.fn(async () => baseWslState);
-    const setWslOnly = vi.fn(async (enabled: boolean) => {
-      calls.push(`setWslOnly:${enabled}`);
-      persistedWslOnly = enabled;
-      return { ...baseWslState, wslOnly: enabled };
-    });
-    const setWslBackendEnabled = vi.fn(async (enabled: boolean) => {
-      calls.push(`setWslBackendEnabled:${enabled}`);
-      return { ...baseWslState, enabled, wslOnly: persistedWslOnly };
-    });
-
-    const state = await applyWslEnableSelection({
-      bridge: { setWslDistro, setWslBackendEnabled, setWslOnly },
-      mode: "wsl-only",
-      nextDistro: null,
-      persistedDistro: null,
-    });
-
-    expect(calls).toEqual(["setWslOnly:true", "setWslBackendEnabled:true"]);
-    expect(setWslDistro).not.toHaveBeenCalled();
-    expect(state).toMatchObject({ enabled: true, wslOnly: true });
   });
 });

@@ -12,6 +12,7 @@ import {
   originStatusTracking,
   selectOriginUpstream,
   originSameNameUpstream,
+  isOriginComparisonRef,
 } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 
 describe("originOnlySourceControlPolicy", () => {
@@ -63,5 +64,14 @@ describe("originOnlySourceControlPolicy", () => {
       upstreamRef: "origin/feature",
       branchName: "feature",
     });
+  });
+
+  it("admits only local or origin comparison refs as automatic bases", () => {
+    expect(isOriginComparisonRef("refs/heads/main", null)).toBe(true);
+    expect(isOriginComparisonRef("refs/remotes/origin/main", "origin")).toBe(true);
+    expect(isOriginComparisonRef("refs/remotes/upstream/main", "upstream")).toBe(false);
+    expect(isOriginComparisonRef("refs/remotes/origin/evil/main", "origin/evil")).toBe(false);
+    expect(isOriginComparisonRef("refs/remotes/origin/main", null)).toBe(false);
+    expect(isOriginComparisonRef("refs/tags/v1", null)).toBe(false);
   });
 });

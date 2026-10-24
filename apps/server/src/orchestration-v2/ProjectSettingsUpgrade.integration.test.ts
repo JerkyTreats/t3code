@@ -93,7 +93,6 @@ const seedV1Database = Effect.gen(function* () {
       )
     `;
   }
-  // The V1 projector had applied both events before the upgrade.
   yield* sql`
     INSERT INTO projection_projects (
       project_id, title, workspace_root, default_model_selection_json, default_thread_env_mode,
@@ -116,7 +115,6 @@ const unusedEnrichment = {
   repositoryIdentityResolved: false,
 };
 
-/** The production V2 runtime and project service against one file-backed database. */
 const layerRuntime = (dbPath: string) => {
   const layerPlatform = Layer.merge(
     NodeServices.layer,
@@ -199,6 +197,12 @@ it.live("keeps project settings through the V2 migrations and the first V2 boot"
           [84, "PullRequestReviewGuides"],
           [85, "PublishedResponseActivityIndex"],
           [86, "ThreadFailureLookupIndex"],
+          [87, "DropUnusedV1Projections"],
+          [88, "CanonicalizeThreadPullRequestLinks"],
+          [89, "CodexUsageNativeTurnIndex"],
+          [90, "RepairClientSettlementTimestamps"],
+          [91, "WebhookDedupe"],
+          [92, "ShellStopRequestIndex"],
         ]);
         assert.deepEqual(yield* readSettings, expectedSettings);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));

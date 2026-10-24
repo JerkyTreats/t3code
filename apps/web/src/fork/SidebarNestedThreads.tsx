@@ -7,6 +7,12 @@ import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { cn } from "../lib/utils";
 import type { ProviderInstanceEntry } from "../providerInstances";
 
+/** The provider fields the badge draws; sidebar rows pass their trimmed entries. */
+type NestedBadgeProviderEntry = Pick<
+  ProviderInstanceEntry,
+  "driverKind" | "displayName" | "accentColor" | "acpRegistryAgentId" | "acpRegistryIconUrl"
+>;
+
 /** Children may share a provider, so each repeat gets its own key. */
 function badgeIconKeys(instanceIds: ReadonlyArray<ProviderInstanceId>) {
   const seen = new Map<ProviderInstanceId, number>();
@@ -25,7 +31,7 @@ function badgeIconKeys(instanceIds: ReadonlyArray<ProviderInstanceId>) {
 export const SidebarNestedThreadBadge = memo(function SidebarNestedThreadBadge(props: {
   badge: NestedThreadBadge<ProviderInstanceId>;
   parentProviderInstanceId: ProviderInstanceId;
-  providerEntryByInstanceId: ReadonlyMap<string, ProviderInstanceEntry>;
+  providerEntryByInstanceId: ReadonlyMap<string, NestedBadgeProviderEntry>;
 }) {
   const { badge } = props;
   const count = badge.providerInstanceIds.length + badge.overflow;

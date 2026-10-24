@@ -10,16 +10,6 @@ export const chatComposerPresentation = {
     "size-8 min-w-8 rounded-full border border-border/60 bg-background p-0 shadow-sm justify-center [&_[data-slot=select-icon]]:hidden",
 };
 
-export function restingComposerActionPadding(input: {
-  hasContextMeter: boolean;
-  hasAttachmentPicker: boolean;
-  hasScreenshot: boolean;
-}): string {
-  if (input.hasScreenshot)
-    return input.hasContextMeter ? "pr-36" : input.hasAttachmentPicker ? "pr-28" : "pr-20";
-  return input.hasContextMeter ? "pr-28" : input.hasAttachmentPicker ? "pr-20" : "pr-12";
-}
-
 export function shouldFloatComposerRuntimeControl(input: {
   isMobileViewport: boolean;
   isResting: boolean;

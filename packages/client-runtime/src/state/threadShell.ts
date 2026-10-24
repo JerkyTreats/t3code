@@ -1,17 +1,17 @@
 import type {
   EnvironmentId,
   OrchestrationV2ShellSnapshot,
-  OrchestrationV2ThreadShell,
   ProjectId,
   ScopedProjectRef,
   ScopedThreadRef,
   ThreadId,
 } from "@t3tools/contracts";
-import { isProviderNativeSubagentThread } from "@t3tools/contracts";
+import { isProviderNativeSubagentThread, OrchestrationV2ThreadShell } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 
 import type { EnvironmentThreadShell, PendingSubagentRequest } from "./models.ts";
-import { presentThreadShell } from "./models.ts";
+import { presentThreadShell, threadRuntimeIsActive } from "./models.ts";
 import { isNestedUnder } from "./fork/threadNesting.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 import {
@@ -46,7 +46,7 @@ const isChildRunLive = (
       thread.status === "running" ||
       thread.status === "waiting";
 
-/** What a subagent's live run waits on the user for. Provider-native
+/** Provider-native
     subagents ask on their parent, so they are skipped. */
 function subagentRequest(thread: OrchestrationV2ThreadShell): PendingSubagentRequest | null {
   const kind = thread.pendingRuntimeRequest?.kind;
@@ -74,7 +74,8 @@ function nestedChildRequest(thread: OrchestrationV2ThreadShell): PendingSubagent
  * thread up to the visible one carries a subagent's request, because subagent
  * rows are hidden. A nested child's request, its own or one bubbled up from
  * its subagents, also surfaces on its parent, which may be collapsed. An
- * approval outranks a question.
+ * approval outranks a question. The map is compared by content before it
+ * reaches shells, so child streaming ticks never re-render a parent row.
  */
 export function pendingSubagentRequestsByThread(
   threads: ReadonlyArray<OrchestrationV2ThreadShell>,
@@ -121,6 +122,41 @@ export function childThreadInputsTitle(
   return children.length === 1
     ? `${subagents ? "Subagent" : "Thread"} needs ${need}`
     : `${children.length} ${noun}s need ${need}`;
+}
+
+const sameWireThreadShell = Schema.toEquivalence(OrchestrationV2ThreadShell);
+
+// While a run streams, the server bumps the shell's timestamps, item counts and
+// latest message several times a second. Only the zero crossing of the counts
+// says anything (whether the thread has started). Once the run stops every
+// field counts again, so snooze wakes and failure times read the current value.
+function sameApartFromStreaming(
+  previous: EnvironmentThreadShell,
+  next: EnvironmentThreadShell,
+): boolean {
+  if (
+    previous.environmentId !== next.environmentId ||
+    previous.pendingSubagentRequest !== next.pendingSubagentRequest ||
+    !threadRuntimeIsActive(next.runtime)
+  ) {
+    return false;
+  }
+  const before = previous.source;
+  const after = next.source;
+  return (
+    before.itemCount > 0 === after.itemCount > 0 &&
+    before.visibleItemCount > 0 === after.visibleItemCount > 0 &&
+    sameWireThreadShell(
+      {
+        ...before,
+        updatedAt: after.updatedAt,
+        itemCount: after.itemCount,
+        visibleItemCount: after.visibleItemCount,
+        latestVisibleMessage: after.latestVisibleMessage,
+      },
+      after,
+    )
+  );
 }
 
 export function createEnvironmentThreadShellAtoms(input: {
@@ -259,6 +295,21 @@ export function createEnvironmentThreadShellAtoms(input: {
     }).pipe(Atom.withLabel(`environment-thread-shell:${key}`));
   });
 
+  // Keeps the previous shell while only streaming ticks changed. During a run,
+  // its timestamps, item counts and latest message are as of the last kept
+  // change; anything that needs them current reads threadShellAtom.
+  const quietThreadShellAtomFamily = Atom.family((key: string) => {
+    let previous: EnvironmentThreadShell | null = null;
+    return Atom.make((get) => {
+      const next = get(threadShellAtomFamily(key));
+      if (previous !== null && next !== null && sameApartFromStreaming(previous, next)) {
+        return previous;
+      }
+      previous = next;
+      return next;
+    }).pipe(Atom.withLabel(`environment-quiet-thread-shell:${key}`));
+  });
+
   // Subagent approvals and questions are hidden with their sidebar rows, and
   // nested children may sit under a collapsed parent. Read their shell
   // summaries, without subscribing to every child transcript.
@@ -380,6 +431,20 @@ export function createEnvironmentThreadShellAtoms(input: {
     return previousThreadShells;
   }).pipe(Atom.withLabel("environment-thread-shell-list"));
 
+  // Lists that arrange threads read this, so a running thread's streaming
+  // ticks reach only what reads its live shell.
+  let previousQuietThreadShells: ReadonlyArray<EnvironmentThreadShell> = [];
+  const quietThreadShellsAtom = Atom.make((get) => {
+    const next: EnvironmentThreadShell[] = [];
+    for (const ref of get(threadRefsAtom)) {
+      const shell = get(quietThreadShellAtomFamily(threadKey(ref)));
+      if (shell !== null) next.push(shell);
+    }
+    if (arrayElementsEqual(previousQuietThreadShells, next)) return previousQuietThreadShells;
+    previousQuietThreadShells = next;
+    return next;
+  }).pipe(Atom.withLabel("environment-quiet-thread-shell-list"));
+
   let previousNavigationShells: ReadonlyArray<EnvironmentThreadShell> = [];
   const navigationThreadShellsAtom = Atom.make((get) => {
     const next: EnvironmentThreadShell[] = [];
@@ -403,10 +468,12 @@ export function createEnvironmentThreadShellAtoms(input: {
     environmentThreadRefsByProjectAtom,
     threadRefsAtom,
     threadShellsAtom,
+    quietThreadShellsAtom,
     navigationThreadShellsAtom,
     threadShellsForProjectRefsAtom: (refs: ReadonlyArray<ScopedProjectRef>) =>
       threadShellsForProjectRefsAtomFamily(projectRefCollectionKey(refs)),
     threadShellAtom: (ref: ScopedThreadRef) => threadShellAtomFamily(threadKey(ref)),
+    quietThreadShellAtom: (ref: ScopedThreadRef) => quietThreadShellAtomFamily(threadKey(ref)),
     childThreadInputsAtom: (ref: ScopedThreadRef) => childThreadInputsAtomFamily(threadKey(ref)),
   };
 }

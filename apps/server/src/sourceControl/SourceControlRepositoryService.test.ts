@@ -10,7 +10,11 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/process";
 
-import { GitCommandError, SourceControlProviderError } from "@t3tools/contracts";
+import {
+  GitCommandError,
+  SourceControlProviderError,
+  type SourceControlCloneRepositoryInput,
+} from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -320,13 +324,14 @@ it.effect("keeps arbitrary Bitbucket request failures out of the repository mess
   }),
 );
 
-it.effect("clones a looked-up repository into the requested destination", () =>
+it.effect("clones a looked-up repository after creating missing parent directories", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const parent = yield* fs.makeTempDirectoryScoped({
+    const temporaryDirectory = yield* fs.makeTempDirectoryScoped({
       prefix: "t3-source-control-clone-parent-",
     });
+    const parent = path.join(temporaryDirectory, "missing", "nested");
     const destinationPath = path.join(parent, "t3code");
     const cloneCalls: Array<{ cwd: string; args: ReadonlyArray<string> }> = [];
 
@@ -356,7 +361,8 @@ it.effect("clones a looked-up repository into the requested destination", () =>
         layer({
           git: {
             execute: (input) =>
-              Effect.sync(() => {
+              Effect.gen(function* () {
+                assert.isTrue(yield* fs.exists(parent).pipe(Effect.orDie));
                 cloneCalls.push({ cwd: input.cwd, args: input.args });
                 return processOutput();
               }),
@@ -463,6 +469,127 @@ it.effect("reports clone progress from git's stderr and keeps its error text on 
       "fatal: early EOF fatal: unable to access 'https://github.com/octocat/t3code.git/': could not resolve host",
     );
   }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+function rejectingSsh(
+  urls: Array<string>,
+  httpsFails: boolean,
+  reason: GitCommandError["reason"] = "authentication_failed",
+) {
+  return {
+    execute: (input: GitVcsDriver.ExecuteGitInput) =>
+      Effect.gen(function* () {
+        const url = input.args.at(-2)!;
+        urls.push(url);
+        if (url.startsWith("https://") && !httpsFails) return processOutput();
+        yield* (
+          input.progress?.onStderrLine?.(
+            url.startsWith("https://")
+              ? "fatal: could not read Username for 'https://github.com': terminal prompts disabled"
+              : "git@github.com: Permission denied (publickey).",
+          ) ?? Effect.void
+        );
+        return yield* new GitCommandError({
+          operation: input.operation,
+          command: "git",
+          cwd: input.cwd,
+          reason,
+          detail: "Git command exited with a non-zero status.",
+        });
+      }),
+  } satisfies Partial<GitVcsDriver.GitVcsDriver["Service"]>;
+}
+
+const cloneInTemporaryDirectory = (
+  git: Partial<GitVcsDriver.GitVcsDriver["Service"]>,
+  input: Omit<SourceControlCloneRepositoryInput, "destinationPath">,
+) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const parent = yield* fs
+      .makeTempDirectoryScoped({ prefix: "t3-clone-fallback-" })
+      .pipe(Effect.orDie);
+    return yield* Effect.gen(function* () {
+      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+      return yield* service.cloneRepository({
+        ...input,
+        destinationPath: path.join(parent, "t3code"),
+      });
+    }).pipe(Effect.provide(layer({ git }).pipe(Layer.orDie)));
+  }).pipe(Effect.provide(NodeServices.layer));
+
+it.effect("retries a clone over HTTPS when the SSH login is refused", () =>
+  Effect.gen(function* () {
+    const urls: Array<string> = [];
+    const result = yield* cloneInTemporaryDirectory(rejectingSsh(urls, false), {
+      remoteUrl: CLONE_URLS.sshUrl,
+    });
+
+    assert.deepStrictEqual(urls, [CLONE_URLS.sshUrl, "https://github.com/octocat/t3code.git"]);
+    assert.strictEqual(result.remoteUrl, "https://github.com/octocat/t3code.git");
+  }),
+);
+
+it.effect("reports both failures when the HTTPS retry fails too", () =>
+  Effect.gen(function* () {
+    const urls: Array<string> = [];
+    const error = yield* Effect.flip(
+      cloneInTemporaryDirectory(rejectingSsh(urls, true), { remoteUrl: CLONE_URLS.sshUrl }),
+    );
+
+    assert.strictEqual(urls.length, 2);
+    assert.strictEqual(
+      error.detail,
+      "git@github.com: Permission denied (publickey). Cloning over HTTPS instead also failed: fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+    );
+  }),
+);
+
+it.effect.each([
+  ["the caller asked for SSH", "ssh", "authentication_failed"],
+  ["git failed for another reason", undefined, "remote_unreachable"],
+] as const)("does not retry over HTTPS when %s", ([, protocol, reason]) =>
+  Effect.gen(function* () {
+    const urls: Array<string> = [];
+    yield* Effect.flip(
+      cloneInTemporaryDirectory(rejectingSsh(urls, false, reason), {
+        remoteUrl: CLONE_URLS.sshUrl,
+        ...(protocol === undefined ? {} : { protocol }),
+      }),
+    );
+
+    assert.deepStrictEqual(urls, [CLONE_URLS.sshUrl]);
+  }),
+);
+
+// Fork F06: the HTTPS retry stays on the validated repository target.
+it.effect("retries a looked-up repository over its validated HTTPS clone URL", () =>
+  Effect.gen(function* () {
+    const urls: Array<string> = [];
+    const result = yield* cloneInTemporaryDirectory(rejectingSsh(urls, false), {
+      provider: SourceControlProviderKind.make("github"),
+      providerBaseUrl: "https://github.com",
+      repository: "octocat/t3code",
+    });
+
+    assert.deepStrictEqual(urls, [CLONE_URLS.sshUrl, CLONE_URLS.url]);
+    assert.strictEqual(result.remoteUrl, CLONE_URLS.url);
+  }),
+);
+
+it.effect("does not retry over HTTPS when the rewritten URL leaves the clone target", () =>
+  Effect.gen(function* () {
+    const urls: Array<string> = [];
+    yield* Effect.flip(
+      cloneInTemporaryDirectory(rejectingSsh(urls, false), {
+        provider: SourceControlProviderKind.make("azure-devops"),
+        remoteUrl: "git@ssh.dev.azure.com:v3/org/project/repo",
+      }),
+    );
+
+    assert.deepStrictEqual(urls, ["git@ssh.dev.azure.com:v3/org/project/repo"]);
+  }),
 );
 
 it.effect("strips embedded credentials from the remote URL it reports", () =>
@@ -720,6 +847,66 @@ it.effect("publishes by creating the repository, adding a remote, and pushing up
     ),
   );
 });
+
+function failingPush(reason?: GitCommandError["reason"]) {
+  return {
+    pushCurrentBranch: (cwd: string) =>
+      Effect.fail(
+        new GitCommandError({
+          operation: "GitVcsDriver.pushCurrentBranch.pushWithRequestedRemote",
+          command: "git",
+          cwd,
+          ...(reason === undefined ? {} : { reason }),
+          detail: "Git command exited with a non-zero status.",
+        }),
+      ),
+  } satisfies Partial<GitVcsDriver.GitVcsDriver["Service"]>;
+}
+
+it.effect("explains a rejected SSH push after creating the repository", () =>
+  Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* Effect.flip(
+      service.publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.com",
+        repository: "octocat/t3code",
+        visibility: "private",
+        protocol: "ssh",
+      }),
+    );
+
+    assert.strictEqual(error.operation, "publishRepository");
+    assert.strictEqual(
+      error.detail,
+      'Created octocat/t3code and added it as remote "origin", but the push failed because SSH authentication was rejected. Add an SSH key to your account, or switch the remote to HTTPS with "git remote set-url origin https://github.com/octocat/t3code", then push again.',
+    );
+    assert.instanceOf(error.cause, GitCommandError);
+  }).pipe(Effect.provide(layer({ git: failingPush("authentication_failed") }))),
+);
+
+// regression: #19219 publishing did not explain why the first push failed
+it.effect("says the repository exists when an unclassified publish push fails", () =>
+  Effect.gen(function* () {
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const error = yield* Effect.flip(
+      service.publishRepository({
+        cwd: "/workspace",
+        provider: SourceControlProviderKind.make("github"),
+        providerBaseUrl: "https://github.com",
+        repository: "octocat/t3code",
+        visibility: "private",
+        protocol: "https",
+      }),
+    );
+
+    assert.strictEqual(
+      error.detail,
+      'Created octocat/t3code and added it as remote "origin", but the push failed. Fix the problem, then push again.',
+    );
+  }).pipe(Effect.provide(layer({ git: failingPush() }))),
+);
 
 it.effect("rejects an unusable occupied origin before external repository creation", () => {
   let createCalls = 0;
