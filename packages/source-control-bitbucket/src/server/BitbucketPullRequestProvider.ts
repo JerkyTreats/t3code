@@ -39,18 +39,9 @@ const CAPABILITIES: PullRequestCapabilities = {
 };
 
 /**
- * What the configured account may do here, from the one thing Bitbucket states per viewer: the
- * repository permission. Merging needs `write` or `admin`, so that is what narrows.
- *
- * Declining stays offered whatever the permission. Bitbucket lets the author of a pull request
- * decline their own with no more than read access, and the permission response says nothing about
- * who opened this one — so withholding the control from the one person entitled to it is the
- * worse of the two mistakes. Commenting and reviewing are not narrowed either: read access is
- * enough to say something, to approve and to ask for changes.
- *
- * Asking for a review is left open for the same reason: Bitbucket takes a reviewer set from the
- * author of a pull request as well as from whoever can write, and says nothing here about which
- * of the two this account is.
+ * Bitbucket lets the author of a pull request decline their own with no more than read access,
+ * and the permission response says nothing about who opened this one — so withholding the
+ * control from the one person entitled to it is the worse of the two mistakes.
  */
 export function bitbucketViewerPermissions(input: {
   readonly canWrite: boolean;
@@ -64,14 +55,14 @@ export function bitbucketViewerPermissions(input: {
   };
 }
 
-/** The failures that mean the credentials are the problem, rather than one request. */
 export function bitbucketProviderFailure(
   error: BitbucketPullRequestApi.BitbucketPullRequestApiError,
 ): PullRequestProviderFailure {
-  // Bitbucket is read over HTTP with credentials from the environment, so there is no tool to be
-  // missing: unusable always means the credentials are absent or refused.
   if (error._tag === "BitbucketResponseError" && error.status === 401) {
     return { reason: "unauthenticated" };
+  }
+  if (error._tag === "SourceControlRateLimitPausedError") {
+    return { reason: "rate-limited", retryAt: error.retryAt };
   }
   if (
     (error._tag === "BitbucketResponseError" || error._tag === "BitbucketResponseBodyReadError") &&
@@ -106,13 +97,11 @@ function toChangeRequest(pullRequest: BitbucketPullRequest): ProviderChangeReque
     state: pullRequest.state,
     isDraft: pullRequest.isDraft,
     mergeability: pullRequest.mergeability,
-    // Line counts are a separate read, which only the detail is worth spending on.
     additions: 0,
     deletions: 0,
     createdAt: pullRequest.createdAt,
     updatedAt: pullRequest.updatedAt,
     reviewRequestLogins: pullRequest.reviewRequestLogins,
-    // Bitbucket has no labels on a pull request.
     labels: [],
   };
 }
@@ -126,8 +115,6 @@ export const make = Effect.gen(function* () {
         provider: SourceControlProviderKind.make("bitbucket"),
         operation,
         ...bitbucketProviderFailure(error),
-        // Every Bitbucket failure states its own fact; this names the operation around it, so
-        // the two do not stack into "failed in x: failed in y: ...".
         detail: error.detail,
         cause: error,
       });
@@ -161,16 +148,14 @@ export const make = Effect.gen(function* () {
     kind: SourceControlProviderKind.make("bitbucket"),
     capabilities: CAPABILITIES,
 
-    // Bitbucket credentials come from the server's environment rather than a checkout, so the
-    // account is the same whichever workspace asks.
     getViewer: (input) =>
-      api.getViewer({ originHost: input.host }).pipe(Effect.mapError(fail("getViewer"))),
+      api.getViewer({ host: input.host }).pipe(Effect.mapError(fail("getViewer"))),
 
     listChangeRequests: (input) =>
       api
         .listPullRequests({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           state: input.state,
           limit: input.limit,
           query: input.query,
@@ -181,8 +166,6 @@ export const make = Effect.gen(function* () {
           Effect.map((batch) => ({
             items: batch.items.map(toChangeRequest),
             truncated: batch.truncated,
-            // Bitbucket is asked for `-updated_on` whether or not it is being carried on from,
-            // so every page it answers is one a cursor can continue.
             continues: true,
           })),
         ),
@@ -194,20 +177,13 @@ export const make = Effect.gen(function* () {
       ),
 
     getChangeRequest: (input) => {
-      const target = {
-        originHost: input.host,
-        repository: input.repository,
-        number: input.number,
-      };
+      const target = { repository: input.repository, origin: input.origin, number: input.number };
       return Effect.all(
         [
           api.getPullRequest(target),
           api.getDiffStat(target),
           recoverRead(api.getMergeability(target), "unknown" as const),
           recoverRead(api.listChecks(target), []),
-          // A permission that could not be read is an unknown one, which is granted: a hidden
-          // Merge leaves someone entitled to it with no way through, and one Bitbucket refuses
-          // at least says why.
           recoverRead(api.getRepositoryPermission(target), true),
         ],
         { concurrency: 5 },
@@ -227,8 +203,8 @@ export const make = Effect.gen(function* () {
             deletions: diffStat.deletions,
             changedFiles: diffStat.changedFiles,
             body: pullRequest.body,
-            mergedAt: null,
-            closedAt: null,
+            mergedAt: pullRequest.state === "merged" ? pullRequest.closedAt : null,
+            closedAt: pullRequest.state === "closed" ? pullRequest.closedAt : null,
             reviewers: pullRequest.reviewers,
             checks,
             // Bitbucket publishes no per-repository list of allowed strategies, so the ones it
@@ -241,15 +217,9 @@ export const make = Effect.gen(function* () {
     },
 
     getChangeRequestActivity: (input) => {
-      const target = {
-        originHost: input.host,
-        repository: input.repository,
-        number: input.number,
-      };
+      const target = { repository: input.repository, origin: input.origin, number: input.number };
       return Effect.all(
         [
-          // Reviews ride on the pull request itself, so this inexpensive core read is repeated
-          // here rather than making the core response wait for the conversation endpoints.
           api.getPullRequest(target),
           recoverRead(api.listComments(target), { comments: [], threads: [], truncated: true }),
           recoverRead(api.listCommits(target), []),
@@ -270,22 +240,17 @@ export const make = Effect.gen(function* () {
     },
 
     getViewerPermissions: (input) =>
-      api
-        .getRepositoryPermission({
-          originHost: input.host,
-          repository: input.repository,
-        })
-        .pipe(
-          Effect.mapError(fail("getViewerPermissions")),
-          Effect.map((canWrite) => bitbucketViewerPermissions({ canWrite })),
-        ),
+      api.getRepositoryPermission({ repository: input.repository, origin: input.origin }).pipe(
+        Effect.mapError(fail("getViewerPermissions")),
+        Effect.map((canWrite) => bitbucketViewerPermissions({ canWrite })),
+      ),
 
     // `/diff` answers with the whole patch and pages nothing, so the first slice is the last.
     getDiff: (input) =>
       api
         .getPullRequestDiff({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           ...(input.commit === undefined ? {} : { commit: input.commit }),
         })
@@ -297,8 +262,8 @@ export const make = Effect.gen(function* () {
     getFileRevisions: (input) =>
       api
         .getFileRevisions({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           paths: input.paths,
         })
@@ -309,8 +274,8 @@ export const make = Effect.gen(function* () {
     listReviewerCandidates: (input) =>
       api
         .listReviewerCandidates({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
         })
         .pipe(Effect.mapError(fail("listReviewerCandidates"))),
@@ -318,8 +283,8 @@ export const make = Effect.gen(function* () {
     setReviewerRequest: (input) =>
       api
         .setReviewerRequest({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           reviewers: input.reviewers,
           requested: input.requested,
@@ -329,8 +294,8 @@ export const make = Effect.gen(function* () {
     runAction: (input) =>
       api
         .runAction({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           action: input.action,
           ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
@@ -340,8 +305,8 @@ export const make = Effect.gen(function* () {
     updateChangeRequest: (input) =>
       api
         .updateChangeRequest({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           title: input.title,
           body: input.body,
@@ -351,8 +316,8 @@ export const make = Effect.gen(function* () {
     comment: (input) =>
       api
         .comment({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           body: input.body,
         })
@@ -361,8 +326,8 @@ export const make = Effect.gen(function* () {
     updateComment: (input) =>
       api
         .updateComment({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           commentId: input.commentId,
           body: input.body,
@@ -372,8 +337,8 @@ export const make = Effect.gen(function* () {
     submitReview: (input) =>
       api
         .submitReview({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           verdict: input.verdict,
           body: input.body,
@@ -384,15 +349,14 @@ export const make = Effect.gen(function* () {
     replyToThread: (input) =>
       api
         .replyToComment({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           commentId: input.threadId,
           body: input.body,
         })
         .pipe(Effect.mapError(fail("replyToThread"))),
 
-    // Never called: `capabilities.reactions` is false, and the service refuses without it.
     setReaction: () =>
       Effect.fail(
         new PullRequestProviderError({
@@ -406,8 +370,8 @@ export const make = Effect.gen(function* () {
     setThreadResolution: (input) =>
       api
         .setCommentResolution({
-          originHost: input.host,
           repository: input.repository,
+          origin: input.origin,
           number: input.number,
           commentId: input.threadId,
           resolved: input.resolved,

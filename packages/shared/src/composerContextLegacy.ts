@@ -11,10 +11,6 @@ import * as Schema from "effect/Schema";
 import { formatComposerContextReference } from "./composerContextReferences.ts";
 
 /**
- * Upgrades a message written before inline context references: trailing
- * `<terminal_context>`, `<element_context>` and `<preview_annotation>` blocks, inline or
- * trailing `<review_comment>` blocks, and U+FFFC terminal placeholders. Produces canonical
- * reference links plus records so old messages render and copy through the new path.
  * Event history is never rewritten; this runs in memory on read.
  */
 
@@ -24,10 +20,12 @@ export interface UpgradedLegacyContext {
 }
 
 const PLACEHOLDER = "￼";
+// A generated block opens on its own line and its body never crosses another line-start opener,
+// so authored marker-like text before the final block stays text.
 const TRAILING_TERMINAL =
-  /\n*<terminal_context>\n((?:(?!\n<\/terminal_context>)[\s\S])*)\n<\/terminal_context>\s*$/;
+  /(?:^|\n)\n*<terminal_context>\n((?:(?!\n<\/terminal_context>|\n<terminal_context>\n)[\s\S])*)\n<\/terminal_context>\s*$/;
 const TRAILING_ELEMENT =
-  /\n*<element_context>\n((?:(?!\n<\/element_context>)[\s\S])*)\n<\/element_context>\s*$/;
+  /(?:^|\n)\n*<element_context>\n((?:(?!\n<\/element_context>|\n<element_context>\n)[\s\S])*)\n<\/element_context>\s*$/;
 const TRAILING_PREVIEW =
   /\n*<preview_annotation>\n((?:(?!\n<\/preview_annotation>)[\s\S])*)\n<\/preview_annotation>\s*$/;
 const REVIEW_OR_CONTEXT_BLOCK =
@@ -70,7 +68,6 @@ function parseEntries(block: string): ParsedEntry[] | null {
   return entries;
 }
 
-/** The inline label the old send path wrote for a terminal excerpt: `@terminal-1:509-514`. */
 function inlineTerminalLabel(record: TerminalContextRecord): string {
   const slug = record.terminalLabel.trim().toLowerCase().replace(/\s+/g, "-");
   const range =
@@ -333,11 +330,8 @@ export function upgradeLegacyContextMessage(text: string): UpgradedLegacyContext
   const reviewTokenPattern = new RegExp(`${reviewToken}(\\d+)${reviewToken}`, "g");
   const trailingReviewTokenPattern = new RegExp(`(?:\\s*${reviewToken}\\d+${reviewToken})+\\s*$`);
 
-  // Review blocks become tokens in place first so they neither hide the trailing blocks
-  // behind them nor lose their position. Unparseable blocks stay as text.
   let rest = replaceReviewBlocks(text, (whole, attributes, rawBody) => {
     const record = reviewRecord(attributes, rawBody, reviews.length + 1);
-    // Keep the original prose if converting it would produce a record the wire drops.
     if (!record || !isReviewCommentContextRecord(record)) return whole;
     reviews.push(record);
     return `${reviewToken}${reviews.length - 1}${reviewToken}`;
@@ -408,7 +402,6 @@ export function upgradeLegacyContextMessage(text: string): UpgradedLegacyContext
     formatComposerContextReference(reviews[Number(index)]!),
   );
 
-  // Placeholders bind to terminal entries in order, like the old materialize step did.
   let placeholderIndex = 0;
   let converted = "";
   let consumed = 0;
@@ -419,19 +412,21 @@ export function upgradeLegacyContextMessage(text: string): UpgradedLegacyContext
     // An orphan placeholder is generated context, so remove its one adjoining separator too.
     if (!record && before.endsWith(" ")) before = before.slice(0, -1);
     converted += before + (record ? formatComposerContextReference(record) : "");
-    consumed = match.index! + match[0].length;
+    consumed = match.index + match[0].length;
   }
   body = converted + body.slice(consumed);
-  // Sent messages carry the materialized `@terminal-1:509-514` label instead of the
-  // placeholder; each such label becomes the chip in place.
+
   const placedTerminals = new Set(terminals.slice(0, placeholderIndex));
   for (const record of terminals) {
     if (placedTerminals.has(record)) continue;
     const label = inlineTerminalLabel(record);
     let at = body.indexOf(label);
+    // Alternation instead of a character class: on Electron 44's V8 (15.2) a class
+    // directly before `$` with the `u` flag never matches a code point outside the
+    // BMP, so `𐐀@build:7` would become a chip (#18272).
     while (
       at !== -1 &&
-      (/[\p{L}\p{N}\p{M}_@.-]$/u.test(body.slice(0, at)) ||
+      (/(?:\p{L}|\p{N}|\p{M}|[_@.-])$/u.test(body.slice(0, at)) ||
         /^(?:[\p{L}\p{N}\p{M}_-]|[.@]+[\p{L}\p{N}\p{M}_-])/u.test(body.slice(at + label.length)))
     ) {
       at = body.indexOf(label, at + 1);
@@ -440,6 +435,7 @@ export function upgradeLegacyContextMessage(text: string): UpgradedLegacyContext
     body = `${body.slice(0, at)}${formatComposerContextReference(record)}${body.slice(at + label.length)}`;
     placedTerminals.add(record);
   }
+
   const appended = [
     ...terminals.filter((record) => !placedTerminals.has(record)),
     ...elements,

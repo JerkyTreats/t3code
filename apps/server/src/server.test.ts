@@ -64,11 +64,13 @@ import {
   failEnvironmentAuthInvalid,
 } from "./auth/http.ts";
 import { layerFromPath } from "./persistence/Sqlite.ts";
+import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { deviceAdministratorBoundaryLayer } from "./server.ts";
 import { assetFileResponse } from "./http.ts";
 import {
   authorizeClientRpc,
   withAdmittedWebSocketConnection,
+  serveAdmittedWebSocketConnection,
   readClientConnectionOrigin,
   makeImportedAcpThreadLaunchInput,
 } from "./ws.ts";
@@ -583,6 +585,44 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
           assert.isTrue(yield* host.sessions.revoke(peer.sessionId));
           yield* Fiber.join(peerConnection);
         }).pipe(Effect.provide(AuthorityHttpServerLive)),
+    );
+
+    it.effect("records client.connected only once, and only after WebSocket admission", () =>
+      Effect.gen(function* () {
+        const host = yield* buildAuthorityHost;
+        const recorded: Array<string> = [];
+        const analytics = AnalyticsService.AnalyticsService.of({
+          record: (event) => Effect.sync(() => void recorded.push(event)),
+          flush: Effect.void,
+          recordOwners: (_owners, observedBy) =>
+            Effect.sync(() => void recorded.push(`owners:${observedBy}`)),
+        });
+        const serve = (session: SessionStore.VerifiedSession) =>
+          serveAdmittedWebSocketConnection(
+            {
+              connections: host.connections,
+              sessions: host.sessions,
+              session,
+              clientOrigin: { surface: "web" },
+              analytics,
+              clientAnalyticsProps: { surface: "web" },
+              clientOwners: [],
+            },
+            Effect.succeed(HttpServerResponse.empty()),
+          );
+
+        const refusedIssued = yield* host.sessions.issue({});
+        const refused = yield* host.sessions.verify(refusedIssued.token);
+        yield* host.sessions.revoke(refused.sessionId);
+        const refusal = yield* serve(refused).pipe(Effect.flip);
+        assert.equal(refusal._tag, "EnvironmentAuthInvalidError");
+        assert.deepEqual(recorded, []);
+
+        const admittedIssued = yield* host.sessions.issue({});
+        const admitted = yield* host.sessions.verify(admittedIssued.token);
+        yield* serve(admitted);
+        assert.deepEqual(recorded, ["client.connected", "owners:client"]);
+      }).pipe(Effect.provide(AuthorityHttpServerLive)),
     );
 
     it.effect(

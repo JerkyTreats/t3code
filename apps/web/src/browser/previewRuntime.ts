@@ -12,13 +12,6 @@ import {
   useEnvironmentSupportsServerBrowser,
 } from "~/state/entities";
 
-/**
- * Where a tab the user opens should run. The desktop app draws its own
- * server's tabs natively, so those stay agent-drivable at no cost. A remote
- * environment's tabs would stream, so the desktop opens them in its own
- * browser instead: no latency, and it reaches what this computer reaches. The
- * user can move a tab to the environment when only it can reach the page.
- */
 export function previewRuntimeFor(environmentId: EnvironmentId): PreviewRuntime | undefined {
   if (!readEnvironmentSupportsServerBrowser(environmentId)) return undefined;
   if (
@@ -30,10 +23,6 @@ export function previewRuntimeFor(environmentId: EnvironmentId): PreviewRuntime 
   return "server";
 }
 
-/**
- * The other browser a tab can move to, or null when it has none: a desktop
- * tab of a remote environment can move to that environment's browser, and back.
- */
 export function alternatePreviewRuntime(
   environmentId: EnvironmentId,
   primaryEnvironmentId: EnvironmentId | null,
@@ -45,7 +34,6 @@ export function alternatePreviewRuntime(
   return snapshot.runtime === "server" ? "desktop" : "server";
 }
 
-/** Electron hosts its own browser tabs; other clients need the environment to host them. */
 export function isPreviewAvailableFor(environmentId: EnvironmentId): boolean {
   return isPreviewSupportedInRuntime() || readEnvironmentSupportsServerBrowser(environmentId);
 }
@@ -55,13 +43,7 @@ export function usePreviewAvailable(environmentId: EnvironmentId | null): boolea
   return isPreviewSupportedInRuntime() || serverBrowser;
 }
 
-/**
- * Whether this client draws a server tab with its own `<webview>`. The desktop
- * app renders tabs of the server it launched, which drives them over the
- * desktop browser channel; every other client and environment streams them.
- * A primary without the channel (a WSL-only backend) streams too: its server
- * never sees navigation in a local `<webview>`.
- */
+/** A primary without the desktop browser channel streams its server tabs like any other environment. */
 export function rendersServerTabNatively(
   environmentId: EnvironmentId,
   primaryEnvironmentId: EnvironmentId | null,

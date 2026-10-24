@@ -11,6 +11,20 @@ PERSIST.D3. The fork loader keeps sole lineage authority. Upstream's V2-id
 skip guard assumes upstream numbering, so the fork does not adopt it; unknown
 journal identities are already rejected before continuation writes.
 
+Migrations 87 through 92 append upstream migrations 63 through 68 under PERSIST.D3
+in upstream source order: `DropUnusedV1Projections`, `CanonicalizeThreadPullRequestLinks`,
+`CodexUsageNativeTurnIndex`, `RepairClientSettlementTimestamps`, `WebhookDedupe` and
+`ShellStopRequestIndex`. Upstream numbering collides with fork identities 63 through 68, so
+those upstream identities fail before continuation writes like every other unknown name.
+Migration 87 drops unused V1 projection tables, including `projection_state`, and must stay
+after fork 83, which still deletes from that table. Transcript import sources stay.
+
+Migration 90 keeps upstream's repair predicate: dense client sweeps reported as plain
+`0.0.35` through `0.0.38` before 2026-09-05. Fork builds reported plain upstream versions until
+2026-09-26, so affected fork-built histories match exactly as upstream builds do. Fork builds
+0.0.39 through 0.0.45 and every `<base>-<10 hex>` build fall outside it. The repair is accepted
+without a fork guard.
+
 This contract owns the stored history shared by retained Admin and Thread outcomes. It does not claim those runtime features have completed intake.
 
 ## Protected decisions
@@ -43,6 +57,8 @@ Upstream preview renumbering is not part of fork startup: `Migrations.ts` delega
 
 Supported history is the frozen accepted fork lineage, including the characterized reconciled v0.0.28 identities from 14 through 26 and historical prefixes from 31 through 41 followed by canonical suffixes. The missing migration 35 row is accepted only when the complete released prefix and migration 36 reconciliation marker are present. Historical identities cannot restart after the canonical suffix begins. Retired entries retain only their characterized journal meaning; fresh databases do not execute those feature migrations. Arbitrary upstream database import, unknown forks, live database inspection and a second migration engine are outside this contract. F17 owns the integrated private pre-42 backup and runtime authority boundary. Its append-only migration 58 adds explicit pairing enrollment class without changing historical migration 42. Historical acceptance and provenance limits remain in the intake evidence. Current tests identify source verification boundaries; this contract does not declare final joined gates, deployment, browser, or installed acceptance for the v2 intake.
 
+`ForkMigrationUpstream63To68.test.ts` continues a populated fork 86 file database through 87 to 92 with retained thread, attachment and authority rows. It reopens through the production initializer without new migrations, repeats the continuation through an independent runner, rejects an upstream-numbered 63 journal before writes, and proves the migration 90 predicate against synthetic fork-built version histories. The upstream 63, 64 and 66 migration tests run at their fork identities.
+
 `ForkMigrationReviewGuides.test.ts` exercises the 83-to-84 continuation through an independent runner, verifies retained thread, attachment and authority data, uses the production review-guide repository, and checks transactional rollback, retry and reopen. These synthetic source proofs do not establish live database or deployment acceptance.
 
 The isolated development snapshot helper uses the same migration runner and lineage owner before replacing its destination. It has no independent journal-name validator. Its synthetic integration proof retains a supported historical prefix, rejects unknown identity without replacing existing data, and removes clients, sessions and pairing grants from the resulting development database.
@@ -68,6 +84,14 @@ Stop v1 before the first v2 launch against the same environment data directory. 
 runtime active. SQLite snapshot consistency does not make concurrent old and new servers safe:
 authentication and authorization are copied once, while later grants and revocations are not
 synchronized. Settings, attachment files, and workspace files may remain shared.
+
+`state.sqlite` remains the rollback source. `t3 doctor` reports its size and never deletes
+it; the upstream legacy-database removal is absent from the fork. Doctor compaction takes an
+exclusive lock and fails while a server holds the database.
+
+A runtime built before migration 87 rejects the 87 through 92 journal identities on reopen.
+Binary rollback across this intake therefore needs the matching pre-upgrade `statev2.sqlite`
+copy or the retained `state.sqlite` reconciliation path below.
 
 Before rollback, stop v2 and preserve its database and compatible artifacts. Reconcile grants and
 revocations in the database selected by the older runtime before admitting clients, so an old

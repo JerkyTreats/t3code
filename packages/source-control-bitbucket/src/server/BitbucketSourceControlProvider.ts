@@ -16,6 +16,7 @@ function toChangeRequest(summary: NormalizedBitbucketPullRequestRecord): ChangeR
     url: summary.url,
     baseRefName: summary.baseRefName,
     headRefName: summary.headRefName,
+    ...(summary.headSha !== undefined ? { headSha: summary.headSha } : {}),
     state: summary.state,
     ...(summary.isDraft === true ? { isDraft: true } : {}),
     updatedAt: summary.updatedAt ?? Option.none(),
@@ -111,6 +112,7 @@ export const make = Effect.gen(function* () {
         );
     },
     getRepositoryCloneUrls: (input) => {
+      // Fork F06: an explicit lookup endpoint binds the API host like an origin context does.
       const context =
         input.context ??
         (input.providerBaseUrl

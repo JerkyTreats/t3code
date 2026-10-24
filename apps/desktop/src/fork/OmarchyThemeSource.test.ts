@@ -395,7 +395,6 @@ describe("OmarchyThemeSource", () => {
         await import("./OmarchyThemeSource.js");
       const homeDirectory = await writeTheme();
       const currentDirectory = NodePath.join(homeDirectory, ".config", "omarchy", "current");
-      let timeout: ReturnType<typeof setTimeout> | null = null;
       let cleanup = (): void => undefined;
       const notification = new Promise<void>((resolve) => {
         cleanup = watchRealDesktopSystemTheme(
@@ -405,21 +404,14 @@ describe("OmarchyThemeSource", () => {
           { platform: "linux", homeDirectory },
         );
       });
-      const timedOut = new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(
-          () => reject(new Error("Real filesystem theme name notification timed out.")),
-          2_000,
-        );
-      });
 
       try {
         const replacementPath = NodePath.join(currentDirectory, "theme.name.next");
         await NodeFSP.writeFile(replacementPath, "Catppuccin\n");
         await NodeFSP.rename(replacementPath, NodePath.join(currentDirectory, "theme.name"));
-        await Promise.race([notification, timedOut]);
+        await notification;
       } finally {
         cleanup();
-        if (timeout) clearTimeout(timeout);
       }
     },
   );

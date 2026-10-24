@@ -1,17 +1,15 @@
-import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/client/originRepositoryPolicy";
-import { SourceControlProviderKind } from "@t3tools/contracts";
-/**
- * Bitbucket's client definition. Browser- and React Native-safe.
- *
- * @module source-control-bitbucket/client/definition
- */
-import { makeProviderSettingsSchema, TrimmedString } from "@t3tools/contracts";
+import {
+  makeProviderSettingsSchema,
+  SourceControlProviderKind,
+  TrimmedString,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
   defineSourceControlClient,
   isChangeRequestPath,
 } from "@t3tools/source-control-core/client/definition";
+import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/client/originRepositoryPolicy";
 
 const safeShellArgument = /^[A-Za-z0-9._/@+=,-]+$/;
 const repositoryName = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
@@ -24,11 +22,6 @@ const text = (annotations: Schema.Annotations.Key<string>) =>
     Schema.annotateKey(annotations),
   );
 
-/**
- * Bitbucket API credentials, used before the `T3CODE_BITBUCKET_*` environment variables: an
- * access token, or an Atlassian account email with an API token. The access token wins when both
- * are saved.
- */
 export const settings = makeProviderSettingsSchema(
   {
     accessToken: text({
@@ -83,11 +76,11 @@ export const definition = defineSourceControlClient({
   authorProfileUrl: () => null,
   referenceAutolinkRepositoryUrl: () => null,
   reviewSummaryRequired: () => false,
-  // No checkout CLI, and the reference field never accepted Bitbucket URLs.
   checkoutCommandArgument: () => null,
   isChangeRequestReference: () => false,
   changeRequestUrlHost: (url) => url.hostname,
   checkoutChangeRequestHost: () => null,
+  // Fork F06: membership admission requires the exact origin locator.
   isChangeRequestInRepository: exactOriginContainsChangeRequest,
   canReadChangeRequestOnHost: exactOriginContainsChangeRequest,
   isChangeRequestUrl: (url) => isChangeRequestPath(url, "/pull-requests/"),

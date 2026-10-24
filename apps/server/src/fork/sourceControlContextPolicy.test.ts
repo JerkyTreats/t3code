@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import { OriginRepositoryMutationAuthorityError } from "./OriginRepositoryMutationAuthority.ts";
 import {
+  originAdmitsThreadPullRequest,
   pickOriginSourceControlContext,
   bindOriginProviderContext,
 } from "./sourceControlContextPolicy.ts";
@@ -127,3 +128,61 @@ it.effect(
       expect(providerCalls).toBe(1);
     }),
 );
+
+describe("originAdmitsThreadPullRequest", () => {
+  const identity = (remoteUrl: string, provider: string) => ({
+    canonicalKey: "synthetic",
+    locator: { source: "git-remote" as const, remoteName: "origin", remoteUrl },
+    provider: SourceControlProviderKind.make(provider),
+  });
+
+  it("admits only the exact origin repository, port and number", () => {
+    const github = identity("git@github.com:team/repo.git", "github");
+    expect(
+      originAdmitsThreadPullRequest(github, {
+        url: "https://github.com/team/repo/pull/12",
+        number: 12,
+      }),
+    ).toBe(true);
+    for (const target of [
+      { url: "https://github.com/other/repo/pull/12", number: 12 },
+      { url: "https://github.com/team/repo/pull/12", number: 13 },
+      { url: "https://github.example.test/team/repo/pull/12", number: 12 },
+      { url: "https://git.cafe/team/repo/pull/12", number: 12 },
+      { url: "not a url", number: 12 },
+    ]) {
+      expect(originAdmitsThreadPullRequest(github, target)).toBe(false);
+    }
+    const ported = identity("https://gitlab.example.test:8443/team/repo.git", "gitlab");
+    expect(
+      originAdmitsThreadPullRequest(ported, {
+        url: "https://gitlab.example.test:8443/team/repo/-/merge_requests/3",
+        number: 3,
+      }),
+    ).toBe(true);
+    expect(
+      originAdmitsThreadPullRequest(ported, {
+        url: "https://gitlab.example.test:9443/team/repo/-/merge_requests/3",
+        number: 3,
+      }),
+    ).toBe(false);
+  });
+
+  it("refuses every target without an exact origin identity", () => {
+    const target = { url: "https://github.com/team/repo/pull/12", number: 12 };
+    expect(originAdmitsThreadPullRequest(null, target)).toBe(false);
+    expect(
+      originAdmitsThreadPullRequest(
+        {
+          ...identity("git@github.com:team/repo.git", "github"),
+          locator: {
+            source: "git-remote",
+            remoteName: "upstream",
+            remoteUrl: "git@github.com:team/repo.git",
+          },
+        },
+        target,
+      ),
+    ).toBe(false);
+  });
+});

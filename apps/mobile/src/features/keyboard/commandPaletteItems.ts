@@ -13,7 +13,6 @@ export interface CommandPaletteItem {
   readonly run: () => void;
 }
 
-/** `>` narrows to actions, matching the desktop palette. Stable ties retain recent-thread order. */
 export function filterCommandPaletteItems(
   items: ReadonlyArray<CommandPaletteItem>,
   query: string,

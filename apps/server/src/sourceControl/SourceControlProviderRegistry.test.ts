@@ -2,12 +2,23 @@ import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as PlatformError from "effect/PlatformError";
+import * as PubSub from "effect/PubSub";
 import * as Redacted from "effect/Redacted";
+import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
+import { HttpClient } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
-import { VcsRepositoryDetectionError } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  VcsProcessSpawnError,
+  VcsProcessTimeoutError,
+} from "@t3tools/contracts";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as ServerConfig from "../config.ts";
@@ -19,7 +30,8 @@ import * as AzureDevOpsPullRequestCli from "@t3tools/source-control-azure-devops
 import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
 import * as BitbucketPullRequestApi from "@t3tools/source-control-bitbucket/server/BitbucketPullRequestApi";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import * as GitHubApi from "@t3tools/source-control-github/server/GitHubApi";
+import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+import * as GitHubRequestPolicy from "@t3tools/source-control-github/server/GitHubRequestPolicy";
 import * as GitHubPullRequestApi from "@t3tools/source-control-github/server/GitHubPullRequestApi";
 import * as GitHubCredentials from "@t3tools/source-control-github/server/GitHubCredentials";
 import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
@@ -54,15 +66,23 @@ function makeRegistry(input: {
     readonly pushUrls?: ReadonlyArray<string>;
   }>;
   readonly process?: Partial<VcsProcess.VcsProcess["Service"]>;
-  readonly forgejo?: Partial<ForgejoCli.ForgejoCli["Service"]>;
-  readonly githubApi?: Partial<GitHubApi.GitHubApi["Service"]>;
+  readonly githubApi?: Partial<GitHubRest.GitHubRest["Service"]>;
   readonly gitlab?: Partial<GitLabCli.GitLabCli["Service"]>;
+  readonly forgejo?: Partial<ForgejoCli.ForgejoCli["Service"]>;
+  readonly settings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
   readonly resolve?: VcsDriverRegistry.VcsDriverRegistry["Service"]["resolve"];
+  /** Per-checkout remotes; F06 rebinds every caller hint to the live origin of its cwd. */
+  readonly remotesFor?: (cwd: string) => ReadonlyArray<{
+    readonly name: string;
+    readonly url: string;
+    readonly pushUrl?: string;
+    readonly pushUrls?: ReadonlyArray<string>;
+  }>;
 }) {
   const driver = {
-    listRemotes: () =>
+    listRemotes: (cwd: string) =>
       Effect.succeed({
-        remotes: input.remotes.map((remote) => ({
+        remotes: (input.remotesFor?.(cwd) ?? input.remotes).map((remote) => ({
           ...remote,
           pushUrl:
             remote.pushUrl || remote.pushUrls?.at(-1)
@@ -99,6 +119,7 @@ function makeRegistry(input: {
         })),
   });
 
+  // Answers origin URL inspection for the F06 mutation authority.
   const layerProcess = Layer.mock(VcsProcess.VcsProcess)({
     run: (request) => {
       const origin = input.remotes.find((remote) => remote.name === "origin");
@@ -144,9 +165,17 @@ function makeRegistry(input: {
         Layer.mock(AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli)({}),
         Layer.mock(BitbucketApi.BitbucketApi)({}),
         Layer.mock(BitbucketPullRequestApi.BitbucketPullRequestApi)({}),
-        ServerSettings.ServerSettingsService.layerTest(),
+        input.settings
+          ? Layer.mock(ServerSettings.ServerSettingsService)(input.settings)
+          : ServerSettings.ServerSettingsService.layerTest(),
         Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({}),
-        Layer.mock(GitHubApi.GitHubApi)({
+        // The GitHub provider's GraphQL reads go through these; no test here makes one.
+        Layer.mock(GitHubRequestPolicy.GitHubRequestPolicy)({}),
+        Layer.succeed(
+          HttpClient.HttpClient,
+          HttpClient.make(() => Effect.die(new Error("Unexpected GitHub GraphQL read"))),
+        ),
+        Layer.mock(GitHubRest.GitHubRest)({
           // No GitHub credential unless a test supplies one, so custom hosts stay unclaimed.
           credential: (host) => Effect.fail(new GitHubCredentials.GitHubNotSignedInError({ host })),
           ...input.githubApi,
@@ -154,11 +183,13 @@ function makeRegistry(input: {
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         Layer.mock(GitLabCli.GitLabCli)(input.gitlab ?? {}),
         Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({}),
-        Layer.mock(GitCafeApi.GitCafeApi)({}),
-        Layer.mock(GitCafeCredentials.GitCafeCredentials)({ cliEnv: () => Effect.succeed({}) }),
         Layer.mock(ForgejoCli.ForgejoCli)({
           listLogins: () => Effect.succeed([]),
           ...input.forgejo,
+        }),
+        Layer.mock(GitCafeApi.GitCafeApi)({}),
+        Layer.mock(GitCafeCredentials.GitCafeCredentials)({
+          cliEnv: () => Effect.succeed({}),
         }),
         ServerConfig.layerTest(process.cwd(), {
           prefix: "t3-source-control-registry-test-",
@@ -167,346 +198,6 @@ function makeRegistry(input: {
     ),
   );
 }
-
-it.effect("routes GitHub remotes to the GitHub provider", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [{ name: "origin", url: "git@github.com:pingdotgg/t3code.git" }],
-    });
-
-    const provider = yield* registry.resolve({ cwd: "/repo" });
-
-    assert.strictEqual(provider.kind, "github");
-  }),
-);
-
-it.effect("pins change request operations to the exact origin remote", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [
-        { name: "origin", url: "git@github.com:fork/project.git" },
-        { name: "upstream", url: "git@github.com:upstream/project.git" },
-      ],
-    });
-
-    const handle = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" });
-
-    assert.strictEqual(handle.provider.kind, "github");
-    assert.strictEqual(handle.context?.remoteName, "origin");
-    assert.strictEqual(handle.context?.remoteUrl, "git@github.com:fork/project.git");
-  }),
-);
-
-it.effect("reauthorizes a change request immediately before provider mutation", () =>
-  Effect.gen(function* () {
-    const pushUrls = ["git@github.com:fork/project.git"];
-    const registry = yield* makeRegistry({
-      remotes: [
-        {
-          name: "origin",
-          url: "git@github.com:fork/project.git",
-          pushUrls,
-        },
-      ],
-    });
-    const handle = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" });
-    pushUrls.unshift("git@github.com:upstream/project.git");
-
-    const error = yield* handle.provider
-      .createChangeRequest({
-        cwd: "/repo",
-        baseRefName: "main",
-        headSelector: "feature/exact-origin",
-        title: "Exact origin",
-        bodyFile: "/tmp/body.md",
-      })
-      .pipe(Effect.flip);
-
-    assert.strictEqual(error.operation, "createChangeRequest");
-    assert.include(error.detail, "push repository identities disagree");
-  }),
-);
-
-it.effect("keeps general resolved providers from bypassing live mutation authority", () =>
-  Effect.gen(function* () {
-    const pushUrls = ["git@github.com:fork/project.git"];
-    const registry = yield* makeRegistry({
-      remotes: [
-        {
-          name: "origin",
-          url: "git@github.com:fork/project.git",
-          pushUrls,
-        },
-      ],
-    });
-    const provider = yield* registry.resolve({ cwd: "/repo" });
-    pushUrls.unshift("git@github.com:upstream/project.git");
-
-    const error = yield* provider
-      .createChangeRequest({
-        cwd: "/repo",
-        baseRefName: "main",
-        headSelector: "feature/exact-origin",
-        title: "Exact origin",
-        bodyFile: "/tmp/body.md",
-      })
-      .pipe(Effect.flip);
-
-    assert.strictEqual(error.operation, "createChangeRequest");
-    assert.include(error.detail, "push repository identities disagree");
-  }),
-);
-
-it.effect("keeps direct provider lookup from exposing an unscoped change request mutation", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [{ name: "origin", url: "git@github.com:fork/project.git" }],
-    });
-    const provider = yield* registry.get(SourceControlProviderKind.make("github"));
-
-    const error = yield* provider
-      .createChangeRequest({
-        cwd: "/repo",
-        baseRefName: "main",
-        headSelector: "feature/exact-origin",
-        title: "Exact origin",
-        bodyFile: "/tmp/body.md",
-      })
-      .pipe(Effect.flip);
-
-    assert.strictEqual(error.operation, "createChangeRequest");
-    assert.include(error.detail, "requires an origin source-control context");
-  }),
-);
-
-it.effect("rejects change request operations when exact origin is absent", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [{ name: "upstream", url: "git@github.com:upstream/project.git" }],
-    });
-
-    const error = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" }).pipe(Effect.flip);
-    assert.strictEqual(error.operation, "resolveChangeRequestHandle");
-    assert.include(error.detail, "requires an origin remote");
-  }),
-);
-
-it.effect("rejects change request operations when origin fetch and push identities differ", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [
-        {
-          name: "origin",
-          url: "git@github.com:fork/project.git",
-          pushUrl: "git@github.com:upstream/project.git",
-        },
-      ],
-    });
-
-    const error = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" }).pipe(Effect.flip);
-    assert.include(error.detail, "push repository identities disagree");
-  }),
-);
-
-it.effect("rejects an unsafe first origin push URL even when the summarized URL is safe", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [
-        {
-          name: "origin",
-          url: "git@github.com:fork/project.git",
-          pushUrls: ["git@github.com:upstream/project.git", "git@github.com:fork/project.git"],
-        },
-      ],
-    });
-
-    const error = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" }).pipe(Effect.flip);
-
-    assert.include(error.detail, "push repository identities disagree");
-  }),
-);
-
-it.effect("routes directly by provider kind for remote-first workflows", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [],
-    });
-
-    const provider = yield* registry.get(SourceControlProviderKind.make("github"));
-
-    assert.strictEqual(provider.kind, "github");
-  }),
-);
-
-it.effect("includes the request cwd when an unregistered provider is used", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({ remotes: [] });
-    const provider = yield* registry.get(SourceControlProviderKind.make("unknown"));
-
-    const error = yield* provider
-      .getChangeRequest({ cwd: "/repo", reference: "#42" })
-      .pipe(Effect.flip);
-
-    assert.strictEqual(error.provider, "unknown");
-    assert.strictEqual(error.operation, "getChangeRequest");
-    assert.strictEqual(error.cwd, "/repo");
-    assert.strictEqual(error.reference, "#42");
-  }),
-);
-
-it.effect("retains VCS detection failures with structured cwd context", () =>
-  Effect.gen(function* () {
-    const cause = new VcsRepositoryDetectionError({
-      operation: "resolve",
-      cwd: "/repo",
-      detail: "raw VCS detection failure",
-      cause: new Error("raw nested failure"),
-    });
-    const registry = yield* makeRegistry({
-      remotes: [],
-      resolve: () => Effect.fail(cause),
-    });
-
-    const error = yield* registry.resolve({ cwd: "/repo" }).pipe(Effect.flip);
-
-    assert.strictEqual(error.provider, "unknown");
-    assert.strictEqual(error.operation, "detectProvider");
-    assert.strictEqual(error.cwd, "/repo");
-    assert.strictEqual(error.detail, "Failed to detect source control provider.");
-    assert.strictEqual(error.cause, cause);
-    assert.equal(error.message.includes(cause.message), false);
-  }),
-);
-
-it.effect("routes GitLab remotes to the GitLab provider", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [{ name: "origin", url: "git@gitlab.com:group/project.git" }],
-    });
-
-    const provider = yield* registry.resolve({ cwd: "/repo" });
-
-    assert.strictEqual(provider.kind, "gitlab");
-  }),
-);
-
-it.effect("routes authenticated self-hosted GitLab remotes without relying on host naming", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [{ name: "origin", url: "https://self-hosted.example.test/group/project.git" }],
-      process: {
-        run: () =>
-          Effect.succeed(
-            processOutput(
-              `gitlab.com
-  x gitlab.com: API call failed: 401 Unauthorized
-  ! No token found
-self-hosted.example.test
-  ✓ Logged in to self-hosted.example.test as gitlab-user
-  ✓ Token found: ******
-`,
-              { exitCode: ChildProcessSpawner.ExitCode(1) },
-            ),
-          ),
-      },
-    });
-
-    const provider = yield* registry.resolve({ cwd: "/repo" });
-
-    assert.strictEqual(provider.kind, "gitlab");
-  }),
-);
-
-it.effect("does not let a caller-selected context override exact origin", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [{ name: "origin", url: "git@github.com:fork/project.git" }],
-      process: {
-        run: () =>
-          Effect.succeed(
-            processOutput(`self-hosted.example.test
-  ✓ Logged in to self-hosted.example.test as gitlab-user
-`),
-          ),
-      },
-    });
-
-    const handle = yield* registry.resolveHandle({
-      cwd: "/repo",
-      context: {
-        provider: {
-          kind: SourceControlProviderKind.make("unknown"),
-          name: "self-hosted.example.test",
-          baseUrl: "https://self-hosted.example.test",
-        },
-        remoteName: "upstream",
-        remoteUrl: "https://self-hosted.example.test/group/project.git",
-      },
-    });
-
-    assert.strictEqual(handle.context?.provider.kind, "github");
-    assert.strictEqual(handle.context?.remoteName, "origin");
-  }),
-);
-
-it.effect("routes authenticated self-hosted GitLab remotes on non-standard ports", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [{ name: "origin", url: "https://self-hosted.example.test:8443/group/project.git" }],
-      process: {
-        run: () =>
-          Effect.succeed(
-            processOutput(
-              `self-hosted.example.test:8443
-  ✓ Logged in to self-hosted.example.test:8443 as gitlab-user
-  ✓ Token found: ******
-`,
-            ),
-          ),
-      },
-    });
-
-    const provider = yield* registry.resolve({ cwd: "/repo" });
-
-    assert.strictEqual(provider.kind, "gitlab");
-  }),
-);
-
-it.effect("routes Bitbucket remotes to the Bitbucket provider", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [{ name: "origin", url: "git@bitbucket.org:pingdotgg/t3code.git" }],
-    });
-
-    const provider = yield* registry.resolve({ cwd: "/repo" });
-
-    assert.strictEqual(provider.kind, "bitbucket");
-  }),
-);
-
-it.effect("routes Azure DevOps remotes to the Azure DevOps provider", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [{ name: "origin", url: "https://dev.azure.com/acme/project/_git/repo" }],
-    });
-
-    const provider = yield* registry.resolve({ cwd: "/repo" });
-
-    assert.strictEqual(provider.kind, "azure-devops");
-  }),
-);
-
-it.effect("fails closed when origin is not configured", () =>
-  Effect.gen(function* () {
-    const registry = yield* makeRegistry({
-      remotes: [{ name: "upstream", url: "https://dev.azure.com/acme/project/_git/repo" }],
-    });
-
-    const provider = yield* registry.resolve({ cwd: "/repo" });
-
-    assert.strictEqual(provider.kind, "unknown");
-  }),
-);
 
 it.effect("routes linked subjects only within the exact origin repository", () =>
   Effect.gen(function* () {
@@ -635,7 +326,6 @@ it.effect(
 
 it.effect.each([
   { name: "a credential", credential: "found", expected: "github" },
-  // Claimed so the error says the host is turned off, not that it is unsupported.
   { name: "a host turned off in Settings", credential: "disabled", expected: "github" },
   { name: "no credential", credential: "missing", expected: "unknown" },
 ] as const)("resolves custom-host remotes with $name", (scenario) =>
@@ -665,8 +355,370 @@ it.effect.each([
     assert.strictEqual(handle.provider.kind, SourceControlProviderKind.make(scenario.expected));
     assert.strictEqual(handle.context?.provider.baseUrl, "https://code.example.test");
     assert.deepStrictEqual(hosts, ["code.example.test"]);
-    // Recognition goes through the credential layer; gh is only one of its sources.
     assert.notInclude(commands, "gh");
+  }),
+);
+
+const notFound = (command: string, cwd: string) =>
+  new VcsProcessSpawnError({
+    operation: "test",
+    command,
+    cwd,
+    cause: PlatformError.systemError({ _tag: "NotFound", module: "ChildProcess", method: "spawn" }),
+  });
+
+const resolveUnknown = (
+  registry: SourceControlProviderRegistry.SourceControlProviderRegistry["Service"],
+  repository: string,
+) =>
+  registry.resolveHandle({
+    cwd: `/${repository}`,
+    context: {
+      provider: {
+        kind: SourceControlProviderKind.make("unknown"),
+        name: "git.example.internal",
+        baseUrl: "https://git.example.internal",
+      },
+      remoteName: "origin",
+      remoteUrl: `git@Git.Example.Internal:team/${repository}.git`,
+    },
+  });
+
+/** The live origin each `resolveUnknown` checkout reports. */
+const unknownServerOrigins = (cwd: string) => [
+  { name: "origin", url: `git@Git.Example.Internal:team${cwd}.git` },
+];
+
+it.effect("asks once for every checkout of a server no integration claims", () =>
+  Effect.gen(function* () {
+    const asked: Array<string> = [];
+    const release = yield* Deferred.make<void>();
+    const registry = yield* makeRegistry({
+      remotes: [],
+      remotesFor: unknownServerOrigins,
+      process: {
+        run: ({ command, args, cwd }) => {
+          asked.push([command, ...args].join(" "));
+          return Deferred.await(release).pipe(Effect.andThen(Effect.fail(notFound(command, cwd))));
+        },
+      },
+      githubApi: {
+        credential: (host) => {
+          asked.push(`credential ${host}`);
+          return Effect.fail(new GitHubCredentials.GitHubNotSignedInError({ host }));
+        },
+      },
+      forgejo: {
+        listLogins: ({ command = "tea", cwd }) => {
+          asked.push(command);
+          const cause = notFound(command, cwd);
+          return Effect.fail(new ForgejoCli.ForgejoCliError({ command, cwd, detail: "", cause }));
+        },
+      },
+    });
+
+    const started = yield* Effect.forEach(["a", "b", "c"], () => Deferred.make<void>());
+    const callers = yield* Effect.forEach(
+      ["a", "b", "c"],
+      (repository, index) =>
+        Deferred.succeed(started[index]!, undefined).pipe(
+          Effect.andThen(resolveUnknown(registry, repository)),
+        ),
+      { concurrency: "unbounded" },
+    ).pipe(Effect.forkChild);
+    yield* Effect.forEach(started, Deferred.await);
+    yield* Deferred.succeed(release, undefined);
+    const handles = yield* Fiber.join(callers);
+    yield* resolveUnknown(registry, "d");
+    assert.deepStrictEqual(
+      handles.map((handle) => handle.provider.kind),
+      ["unknown", "unknown", "unknown"],
+    );
+    const once = asked.slice();
+    assert.sameMembers(once, [
+      "credential git.example.internal",
+      "glab auth status --hostname Git.Example.Internal",
+      "fj",
+      "tea",
+    ]);
+
+    yield* TestClock.adjust("5 minutes");
+    yield* resolveUnknown(registry, "a");
+    assert.deepStrictEqual(asked, [...once, ...once]);
+  }),
+);
+
+it.effect("asks again after a check that could not answer", () =>
+  Effect.gen(function* () {
+    let asks = 0;
+    const registry = yield* makeRegistry({
+      remotes: [],
+      remotesFor: unknownServerOrigins,
+      process: {
+        run: ({ command, cwd }) => {
+          asks += 1;
+          return Effect.fail(
+            new VcsProcessTimeoutError({ operation: "test", command, cwd, timeoutMs: 1 }),
+          );
+        },
+      },
+    });
+    yield* resolveUnknown(registry, "a");
+    yield* resolveUnknown(registry, "b");
+    assert.strictEqual(asks, 2);
+  }),
+);
+
+it.effect("asks again once Settings change", () =>
+  Effect.gen(function* () {
+    const changes = yield* PubSub.unbounded<typeof DEFAULT_SERVER_SETTINGS>();
+    const handled = yield* Deferred.make<void>();
+    let signedIn = false;
+    const registry = yield* makeRegistry({
+      remotes: [],
+      remotesFor: unknownServerOrigins,
+      settings: {
+        subscribeChanges: PubSub.subscribe(changes).pipe(
+          Effect.map((subscription) =>
+            Stream.fromSubscription(subscription).pipe(
+              Stream.flatMap((settings) =>
+                Stream.concat(
+                  Stream.make(settings),
+                  Stream.fromEffectDrain(Deferred.succeed(handled, undefined)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      },
+      process: { run: ({ command, cwd }) => Effect.fail(notFound(command, cwd)) },
+      githubApi: {
+        credential: (host) =>
+          signedIn
+            ? Effect.succeed({ token: Redacted.make("token"), fingerprint: `${host}:fingerprint` })
+            : Effect.fail(new GitHubCredentials.GitHubNotSignedInError({ host })),
+      },
+    });
+    assert.strictEqual((yield* resolveUnknown(registry, "a")).provider.kind, "unknown");
+    signedIn = true;
+    assert.strictEqual((yield* resolveUnknown(registry, "b")).provider.kind, "unknown");
+
+    yield* PubSub.publish(changes, DEFAULT_SERVER_SETTINGS);
+    yield* Deferred.await(handled);
+    assert.strictEqual((yield* resolveUnknown(registry, "c")).provider.kind, "github");
+  }),
+);
+
+// Fork F06: exact-origin change request authority.
+it.effect("pins change request operations to the exact origin remote", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [
+        { name: "origin", url: "git@github.com:fork/project.git" },
+        { name: "upstream", url: "git@github.com:upstream/project.git" },
+      ],
+    });
+
+    const handle = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" });
+
+    assert.strictEqual(handle.provider.kind, "github");
+    assert.strictEqual(handle.context?.remoteName, "origin");
+    assert.strictEqual(handle.context?.remoteUrl, "git@github.com:fork/project.git");
+  }),
+);
+
+it.effect("reauthorizes a change request immediately before provider mutation", () =>
+  Effect.gen(function* () {
+    const pushUrls = ["git@github.com:fork/project.git"];
+    const registry = yield* makeRegistry({
+      remotes: [
+        {
+          name: "origin",
+          url: "git@github.com:fork/project.git",
+          pushUrls,
+        },
+      ],
+    });
+    const handle = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" });
+    pushUrls.unshift("git@github.com:upstream/project.git");
+
+    const error = yield* handle.provider
+      .createChangeRequest({
+        cwd: "/repo",
+        baseRefName: "main",
+        headSelector: "feature/exact-origin",
+        title: "Exact origin",
+        bodyFile: "/tmp/body.md",
+      })
+      .pipe(Effect.flip);
+
+    assert.strictEqual(error.operation, "createChangeRequest");
+    assert.include(error.detail, "push repository identities disagree");
+  }),
+);
+
+it.effect("keeps general resolved providers from bypassing live mutation authority", () =>
+  Effect.gen(function* () {
+    const pushUrls = ["git@github.com:fork/project.git"];
+    const registry = yield* makeRegistry({
+      remotes: [
+        {
+          name: "origin",
+          url: "git@github.com:fork/project.git",
+          pushUrls,
+        },
+      ],
+    });
+    const provider = yield* registry.resolve({ cwd: "/repo" });
+    pushUrls.unshift("git@github.com:upstream/project.git");
+
+    const error = yield* provider
+      .createChangeRequest({
+        cwd: "/repo",
+        baseRefName: "main",
+        headSelector: "feature/exact-origin",
+        title: "Exact origin",
+        bodyFile: "/tmp/body.md",
+      })
+      .pipe(Effect.flip);
+
+    assert.strictEqual(error.operation, "createChangeRequest");
+    assert.include(error.detail, "push repository identities disagree");
+  }),
+);
+
+it.effect("keeps direct provider lookup from exposing an unscoped change request mutation", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "git@github.com:fork/project.git" }],
+    });
+    const provider = yield* registry.get(SourceControlProviderKind.make("github"));
+
+    const error = yield* provider
+      .createChangeRequest({
+        cwd: "/repo",
+        baseRefName: "main",
+        headSelector: "feature/exact-origin",
+        title: "Exact origin",
+        bodyFile: "/tmp/body.md",
+      })
+      .pipe(Effect.flip);
+
+    assert.strictEqual(error.operation, "createChangeRequest");
+    assert.include(error.detail, "requires an origin source-control context");
+  }),
+);
+
+it.effect("fails closed when origin is not configured", () =>
+  Effect.gen(function* () {
+    let linkReads = 0;
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "upstream", url: "https://github.com/team/project.git" }],
+      githubApi: {
+        rest: () => {
+          linkReads += 1;
+          return Effect.succeed({
+            status: 200,
+            headers: {},
+            body: JSON.stringify({ title: "Upstream issue", body: null }),
+            truncated: false,
+            invalidUtf8: false,
+          });
+        },
+      },
+    });
+
+    const provider = yield* registry.resolve({ cwd: "/repo" });
+    assert.strictEqual(provider.kind, "unknown");
+
+    // A linked subject in the non-origin remote's repository is never read.
+    const lookup = registry.resolveLink({
+      cwd: "/repo",
+      url: new URL("https://github.com/team/project/issues/1"),
+    });
+    assert.ok(lookup);
+    const error = yield* lookup.pipe(Effect.flip);
+    assert.strictEqual(error.operation, "resolveLink");
+    assert.strictEqual(linkReads, 0);
+  }),
+);
+
+it.effect("does not let a caller-selected context override exact origin", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "git@github.com:fork/project.git" }],
+      process: {
+        run: () =>
+          Effect.succeed(
+            processOutput(`self-hosted.example.test
+  ✓ Logged in to self-hosted.example.test as gitlab-user
+`),
+          ),
+      },
+    });
+
+    const handle = yield* registry.resolveHandle({
+      cwd: "/repo",
+      context: {
+        provider: {
+          kind: SourceControlProviderKind.make("unknown"),
+          name: "self-hosted.example.test",
+          baseUrl: "https://self-hosted.example.test",
+        },
+        remoteName: "upstream",
+        remoteUrl: "https://self-hosted.example.test/group/project.git",
+      },
+    });
+
+    assert.strictEqual(handle.context?.provider.kind, "github");
+    assert.strictEqual(handle.context?.remoteName, "origin");
+  }),
+);
+
+it.effect("rejects change request operations when exact origin is absent", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "upstream", url: "git@github.com:upstream/project.git" }],
+    });
+
+    const error = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" }).pipe(Effect.flip);
+    assert.strictEqual(error.operation, "resolveChangeRequestHandle");
+    assert.include(error.detail, "requires an origin remote");
+  }),
+);
+
+it.effect("rejects change request operations when origin fetch and push identities differ", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [
+        {
+          name: "origin",
+          url: "git@github.com:fork/project.git",
+          pushUrl: "git@github.com:upstream/project.git",
+        },
+      ],
+    });
+
+    const error = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" }).pipe(Effect.flip);
+    assert.include(error.detail, "push repository identities disagree");
+  }),
+);
+
+it.effect("rejects an unsafe first origin push URL even when the summarized URL is safe", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [
+        {
+          name: "origin",
+          url: "git@github.com:fork/project.git",
+          pushUrls: ["git@github.com:upstream/project.git", "git@github.com:fork/project.git"],
+        },
+      ],
+    });
+
+    const error = yield* registry.resolveChangeRequestHandle({ cwd: "/repo" }).pipe(Effect.flip);
+
+    assert.include(error.detail, "push repository identities disagree");
   }),
 );
 
@@ -702,9 +754,7 @@ it.effect("rebinds an empty caller provider hint to live origin", () =>
       resolved.context?.provider.baseUrl,
       "https://githubenterprise.dev.example.com",
     );
-    assert.deepStrictEqual(hosts, [
-      "githubenterprise.dev.example.com",
-      "githubenterprise.dev.example.com",
-    ]);
+    // The upstream unknown-remote cache answers the second lookup.
+    assert.deepStrictEqual(hosts, ["githubenterprise.dev.example.com"]);
   }),
 );

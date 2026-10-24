@@ -61,10 +61,12 @@ export function potetoModeSubmissionError(input: {
   unavailableReason: string | null;
   text: string;
   answeringPendingInput: boolean;
+  answeringApproval: boolean;
   editingQueuedMessage: boolean;
 }): string | null {
   return input.selection &&
     !input.answeringPendingInput &&
+    !input.answeringApproval &&
     !input.editingQueuedMessage &&
     !isPotetoModeCommand(input.text)
     ? input.unavailableReason

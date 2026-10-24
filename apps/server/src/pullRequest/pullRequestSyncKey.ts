@@ -1,14 +1,13 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
 import {
   pullRequestHostOf,
   type PullRequestRef,
   type RepositoryIdentity,
+  SourceControlProviderKind,
   type ThreadPullRequestKey,
 } from "@t3tools/contracts";
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 import { normalizeThreadPullRequestKey } from "@t3tools/shared/threadPullRequests";
 
-/** Convert checkout-scoped references to the host-level identity used by linked threads. */
 export function pullRequestSyncKey(
   reference: PullRequestRef,
   identity?: RepositoryIdentity | null,

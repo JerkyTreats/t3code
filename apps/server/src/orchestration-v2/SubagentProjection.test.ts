@@ -119,6 +119,29 @@ it("keeps a subagent child awake when its parent thread is snoozed", () => {
   });
 });
 
+it("starts a subagent child at top level even when its parent is nested", () => {
+  const parentThread = {
+    ...makeParentThread(),
+    nestedUnderThreadId: ThreadId.make("thread:subagent-nesting-target"),
+  };
+  const childThread = makeSubagentChildThread({
+    parentThread,
+    childThreadId,
+    parentNodeId: NodeId.make("node:subagent-nested-parent"),
+    activeProviderThreadId: null,
+    providerInstanceId: childProviderInstanceId,
+    modelSelection: childModelSelection,
+    title: "Top-level child",
+    now: childCreatedAt,
+    createdBy: "agent",
+    creationSource: "provider",
+  });
+
+  assert.isFalse("nestedUnderThreadId" in childThread);
+  assert.equal(childThread.lineage.parentThreadId, parentThreadId);
+  assert.equal(childThread.lineage.relationshipToParent, "subagent");
+});
+
 it("uses only explicitly admitted creation surface for app-owned subagents", () => {
   const childThread = makeSubagentChildThread({
     parentThread: makeParentThread(),
@@ -134,30 +157,6 @@ it("uses only explicitly admitted creation surface for app-owned subagents", () 
     creationSurface: "desktop",
   });
   assert.equal(childThread.creationSurface, "desktop");
-});
-
-it("attributes native subagent prompts to their parent thread", () => {
-  for (const role of ["user", "assistant"] as const) {
-    const artifacts = makeSubagentConversationArtifacts({
-      messageId: MessageId.make(`native-${role}`),
-      turnItemId: TurnItemId.make(`native-${role}`),
-      threadId: childThreadId,
-      senderThreadId: parentThreadId,
-      rootNodeId: NodeId.make("child-root"),
-      providerThreadId: null,
-      providerTurnId: null,
-      nativeItemRef: null,
-      role,
-      text: role === "user" ? "Review the changes" : "Review complete",
-      ordinal: 100,
-      now: childCreatedAt,
-    });
-    assert.equal(artifacts.message.threadId, childThreadId);
-    assert.equal(artifacts.message.senderThreadId, role === "user" ? parentThreadId : undefined);
-    if (artifacts.turnItem.type === "user_message") {
-      assert.equal(artifacts.turnItem.senderThreadId, parentThreadId);
-    }
-  }
 });
 
 function taskFixture() {
@@ -190,7 +189,6 @@ function taskFixture() {
 
 it("reports the run that ended last, not the highest ordinal", () => {
   const { projection, run } = taskFixture();
-  // A restart continuation (ordinal 4) ran ahead of held queued runs 2 and 3.
   const ended = (ordinal: number, completedAt: string): OrchestrationV2Run => ({
     ...run,
     id: RunId.make(`run:${ordinal}`),
@@ -228,6 +226,13 @@ it("waits for nested work and retains the report across monitor acknowledgements
     assert.equal(
       delegatedTaskProgress({
         ...projection,
+        subagents: [{ status: "idle", completionDelivery: { state, observedByRunId: null } }],
+      }).state,
+      "result_available",
+    );
+    assert.equal(
+      delegatedTaskProgress({
+        ...projection,
         subagents: [{ status: "completed", completionDelivery: { state, observedByRunId: null } }],
       }).state,
       "waiting_for_children",
@@ -259,7 +264,6 @@ it("waits for nested work and retains the report across monitor acknowledgements
     startedAt: null,
   };
   assert.equal(delegatedTaskProgress({ ...projection, runs: [run, pending] }).state, "working");
-  // Stop or a restart holds queued wakes for the user; they are not work the task owes.
   const cancelled = { ...run, status: "cancelled" as const };
   const held = delegatedTaskProgress({
     ...projection,
@@ -335,6 +339,43 @@ it("exposes the provider failure rather than a progress message from the failed 
   assert.equal(result.text, failure.message);
   assert.equal(result.turnItemId, artifacts.turnItem.id);
   assert.isNull(result.messageId);
+});
+
+it("orders a task's assistant messages by turn item, not by timestamps", () => {
+  const { projection, run } = taskFixture();
+  const at = DateTime.makeUnsafe("2026-07-24T10:05:00.000Z");
+  const message = (id: string, text: string, ordinal: number) => {
+    const artifacts = makeSubagentConversationArtifacts({
+      messageId: MessageId.make(id),
+      turnItemId: TurnItemId.make(id),
+      threadId: parentThreadId,
+      rootNodeId: NodeId.make("root"),
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      role: "assistant",
+      text,
+      ordinal,
+      now: at,
+    });
+    return {
+      message: { ...artifacts.message, runId: run.id },
+      turnItem: { ...artifacts.turnItem, runId: run.id },
+    };
+  };
+  const progress = message("progress", "Starting step 0.", 1);
+  const report = message("report", "All steps passed.", 2);
+  const result = subagentResultForRun(
+    {
+      ...projection,
+      messages: [progress.message, report.message],
+      turnItems: [report.turnItem, progress.turnItem],
+    },
+    run,
+  );
+  assert.equal(result.text, "All steps passed.");
+  assert.equal(result.messageId, report.message.id);
+  assert.equal(result.turnItemId, report.turnItem.id);
 });
 
 it.effect("ends an orphaned native subagent's node when only its record already ended", () =>

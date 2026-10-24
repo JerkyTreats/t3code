@@ -1,4 +1,5 @@
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as PreviewManager from "../../../preview/Manager.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../../../orchestration-v2/ProjectionStore.ts";
@@ -8,6 +9,7 @@ import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -38,6 +40,7 @@ import * as PreviewBrowser from "../../../preview/PreviewBrowser.ts";
 
 const layerStubServices = Layer.mergeAll(
   IdAllocator.layer,
+  McpProviderSessions.layer,
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(Orchestrator.OrchestratorV2)({}),
   Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
@@ -85,7 +88,15 @@ const decodeToolsListPayload = Schema.decodeUnknownEffect(ToolsListPayload);
 it.effect("production mcp layer lists worktree tools over http", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const layerRoutes = McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer));
+      const layerEnvironment = Layer.mock(ServerEnvironment.ServerEnvironment)({
+        getEnvironmentId: Effect.succeed("environment-scratch" as never),
+      });
+      const registryContext = yield* Layer.build(
+        McpSessionRegistry.layer.pipe(Layer.provide(layerEnvironment)),
+      );
+      const layerRoutes = McpHttpServer.layer.pipe(
+        Layer.provide(Layer.succeedContext(registryContext)),
+      );
       yield* HttpRouter.serve(layerRoutes, {
         disableListenLog: true,
         disableLogger: true,
@@ -101,11 +112,13 @@ it.effect("production mcp layer lists worktree tools over http", () =>
         Layer.build,
       );
 
-      const registry = McpSessionRegistry.issueActiveMcpCredential({
+      const credential = yield* Context.get(
+        registryContext,
+        McpSessionRegistry.McpSessionRegistry,
+      ).issue({
         threadId: ThreadId.make("thread-scratch"),
         providerInstanceId: ProviderInstanceId.make("claudeAgent"),
       });
-      const credential = yield* registry;
       expect(credential).toBeDefined();
 
       const httpClient = yield* HttpClient.HttpClient;

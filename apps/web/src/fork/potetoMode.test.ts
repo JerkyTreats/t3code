@@ -36,10 +36,12 @@ describe("F30 composer Poteto Mode owner", () => {
       unavailableReason: "Unavailable",
       text: "continue",
       answeringPendingInput: false,
+      answeringApproval: false,
       editingQueuedMessage: false,
     };
     expect(potetoModeSubmissionError(submission)).toBe("Unavailable");
     expect(potetoModeSubmissionError({ ...submission, answeringPendingInput: true })).toBeNull();
+    expect(potetoModeSubmissionError({ ...submission, answeringApproval: true })).toBeNull();
     expect(potetoModeSubmissionError({ ...submission, editingQueuedMessage: true })).toBeNull();
     expect(potetoModeSubmissionError({ ...submission, text: " /compact" })).toBeNull();
     expect(potetoModeSubmissionError({ ...submission, selection: null })).toBeNull();

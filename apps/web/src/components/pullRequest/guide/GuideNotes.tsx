@@ -4,7 +4,6 @@ import { cn } from "~/lib/utils";
 
 import { GuideProse } from "./GuideProse";
 
-/** The letter that ties a note to its line in an excerpt. */
 export function GuideNoteMarker({ marker }: { marker: string }) {
   return (
     <span
@@ -16,14 +15,11 @@ export function GuideNoteMarker({ marker }: { marker: string }) {
   );
 }
 
-/** A stop's notes, lettered in the order the excerpts mark them. */
 export function GuideNotes({
   notes,
-  surfaceKey,
   className,
 }: {
   notes: ReadonlyArray<{ readonly marker: string; readonly note: PullRequestReviewGuideNote }>;
-  surfaceKey: string;
   className?: string;
 }) {
   if (notes.length === 0) return null;
@@ -48,7 +44,7 @@ export function GuideNotes({
               </p>
               {note.body.trim() !== "" ? (
                 <div className="text-xs text-muted-foreground">
-                  <GuideProse surfaceKey={`${surfaceKey}:${marker}`} text={note.body} />
+                  <GuideProse text={note.body} />
                 </div>
               ) : null}
             </div>

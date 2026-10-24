@@ -1,14 +1,9 @@
-import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/client/originRepositoryPolicy";
-/**
- * GitLab's client definition. Browser- and React Native-safe.
- *
- * @module source-control-gitlab/client/definition
- */
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import {
   defineSourceControlClient,
   isChangeRequestPath,
 } from "@t3tools/source-control-core/client/definition";
+import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/client/originRepositoryPolicy";
 
 const CHECKOUT_COMMAND = /^glab\s+mr\s+checkout\s+(.+)$/i;
 const CHANGE_REQUEST_REFERENCE =
@@ -48,6 +43,7 @@ export const definition = defineSourceControlClient({
   isChangeRequestReference: (url) => CHANGE_REQUEST_REFERENCE.test(url),
   changeRequestUrlHost: (url) => url.hostname,
   checkoutChangeRequestHost: () => null,
+  // Fork F06: membership admission requires the exact origin locator.
   isChangeRequestInRepository: exactOriginContainsChangeRequest,
   canReadChangeRequestOnHost: exactOriginContainsChangeRequest,
   isChangeRequestUrl: (url) => isChangeRequestPath(url, "/-/merge_requests/"),

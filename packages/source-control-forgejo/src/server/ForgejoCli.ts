@@ -63,7 +63,6 @@ export const ForgejoKeysSchema = Schema.Struct({
 
 const parseForgejoKeys = decodeJsonResult(ForgejoKeysSchema);
 
-/** Matches fj's directories::ProjectDirs, including its pre-0.6 organization name. */
 function forgejoKeysPaths(input: {
   readonly platform: string;
   readonly home: string;
@@ -484,6 +483,7 @@ export const make = Effect.gen(function* () {
     input: ForgejoRepositoryInput,
     hostOnly = false,
   ) {
+    // Fork F06: a bound context must be literal origin, and it outranks reference and repository hints.
     if (input.context && input.context.remoteName !== "origin") {
       return yield* new ForgejoCliError({
         command: "tea",
@@ -499,8 +499,7 @@ export const make = Effect.gen(function* () {
     let remote =
       (input.context ? parseForgejoRemote(input.context.remoteUrl) : null) ??
       referenceRemote ??
-      (input.repository ? parseForgejoRemote(input.repository) : null) ??
-      null;
+      (input.repository ? parseForgejoRemote(input.repository) : null);
     if (!remote && (!input.repository || input.host)) {
       const result = yield* process
         .run({
@@ -525,7 +524,10 @@ export const make = Effect.gen(function* () {
         const matchingUrls = [
           ...new Set(
             result.stdout.split("\n").flatMap((line) => {
-              const url = /^\S+\s+(https?:\/\/\S+)\s+\(fetch\)$/.exec(line.trim())?.[1];
+              // Partial clones append the promisor filter, e.g. `(fetch) [blob:none]`.
+              const url = /^\S+\s+(https?:\/\/\S+)\s+\(fetch\)(?:\s+\[[^\]]+\])?$/.exec(
+                line.trim(),
+              )?.[1];
               return url && parseForgejoRemote(url)?.host === input.host?.toLowerCase()
                 ? [url]
                 : [];

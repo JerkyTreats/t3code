@@ -3,6 +3,7 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { ChildProcessSpawner } from "effect/process";
 import {
+  originCloneRetryUrl,
   publicationRepositoryTarget,
   preflightPublication,
   validateRepositoryCloneUrls,
@@ -104,3 +105,48 @@ it.effect("replacement publication host validates both returned clone transports
     assert.include(error.detail, "do not match");
   }),
 );
+
+it("admits an HTTPS clone retry only on the original and validated repository target", () => {
+  const github = SourceControlProviderKind.make("github");
+  const ssh = "git@github.com:octocat/t3code.git";
+  const https = "https://github.com/octocat/t3code";
+  assert.strictEqual(
+    originCloneRetryUrl({
+      provider: github,
+      cloneUrl: ssh,
+      retryUrl: https,
+      validatedHttpsUrl: null,
+    }),
+    https,
+  );
+  assert.strictEqual(
+    originCloneRetryUrl({
+      provider: github,
+      cloneUrl: ssh,
+      retryUrl: https,
+      validatedHttpsUrl: https,
+    }),
+    https,
+  );
+  for (const [retryUrl, validatedHttpsUrl] of [
+    ["https://github.com/other/t3code", null],
+    ["https://github.example.test/octocat/t3code", null],
+    ["https://github.example.test:8443/octocat/t3code", null],
+    [https, "https://github.example.test/octocat/t3code"],
+    [null, null],
+  ] as const) {
+    assert.strictEqual(
+      originCloneRetryUrl({ provider: github, cloneUrl: ssh, retryUrl, validatedHttpsUrl }),
+      null,
+    );
+  }
+  assert.strictEqual(
+    originCloneRetryUrl({
+      provider: SourceControlProviderKind.make("azure-devops"),
+      cloneUrl: "git@ssh.dev.azure.com:v3/org/project/repo",
+      retryUrl: "https://ssh.dev.azure.com/v3/org/project/repo",
+      validatedHttpsUrl: null,
+    }),
+    null,
+  );
+});

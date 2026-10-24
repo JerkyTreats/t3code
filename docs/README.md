@@ -19,6 +19,7 @@
 - [Usage and limits](./user/usage.md)
 - [Product usage data](./user/telemetry.md)
 - [Remote access](./user/remote-access.md)
+- [T3 Connect troubleshooting](./user/t3-connect-troubleshooting.md)
 - [Outside agents through MCP](./user/outside-agents.md)
 - [Keeping a host available](./user/background-service.md)
 - [Updating exact-origin installations](./user/updating.md)

@@ -206,7 +206,7 @@ it.layer(NodeServices.layer)("persisted external device authority", (it) => {
   );
 
   it.effect(
-    "uses atomic digest consumption, fixed scopes, revision checks, expiry and grant eligibility",
+    "uses atomic digest consumption, standard scopes, revision checks, expiry and grant eligibility",
     () =>
       Effect.gen(function* () {
         const admin = yield* AdminAccess.AdminAccess;

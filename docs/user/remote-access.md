@@ -20,9 +20,11 @@ Follow the sign-in instructions, then keep the server running. Saving your
 sign-in alone does not make the machine reachable.
 
 On your other device, sign in to the same T3 Connect account and choose the
-environment. Over SSH, the CLI prints a browser link and a short code. Open the
-link on any device, confirm the code matches, and approve. The CLI continues on
-its own, so you do not need to forward an OAuth callback port.
+environment. On the app.t3.codes home page with no computer added yet, signing
+in adds compatible computers linked to your account. Over SSH, the CLI prints a
+browser link and a short code. Open the link on any device, confirm the code
+matches, and approve. The CLI continues on its own, so you do not need to forward
+an OAuth callback port.
 
 T3 Connect renews access credentials when needed without disconnecting a
 healthy connection. Pull request diffs and provider settings keep working after
@@ -186,6 +188,12 @@ on the remote host through its exact-origin installation method, then retry the
 launch. Removing the connection stops a server that T3 Code launched. A server
 that was already running is left alone.
 
+Each desktop app keeps one session on the host for its SSH connection and reuses
+it when it reconnects. Revoke sessions you no longer use in **Settings →
+Connections** on the host, or on a headless host with `t3 auth session list` and
+`t3 auth session revoke <id>`. A desktop that can still sign in over SSH pairs
+again on its next connect.
+
 For Antigravity's Google callback on a remote host, see
 [remote sign-in](./providers-antigravity.md#sign-in-from-a-remote-device).
 
@@ -263,6 +271,13 @@ Electron devices. It can create one-time standard-device enrollment links and
 enable, disable, or delete eligible devices. Headless operators and devices not
 enrolled through a portal-created grant stay outside that inventory.
 
+A device enrolled through the portal receives the standard permissions, which
+include access management and T3 Connect management. It can approve outside
+agent sign-ins and manage T3 Connect like any other standard device. The portal
+is how you contain it: revoking an unused enrollment link, disabling a device,
+or deleting it takes effect at once and disconnects the device. A device
+enrolled earlier keeps the permissions it was issued until it pairs again.
+
 The portal receives its short-lived high-value authority from an explicit host
 operator command. Choose a bounded lifetime no longer than seven days:
 
@@ -281,9 +296,8 @@ t3 pair --scope orchestration:read --scope relay:read
 
 The selected scopes replace the default permissions. The same option works with
 `t3 auth pairing create` and `t3 auth session issue`; each command's
-`--help` lists the available scopes. Without `--scope`, pairing tokens retain
-standard client permissions and issued bearer sessions retain administrative
-permissions.
+`--help` lists the available scopes. Without `--scope`, pairing tokens and
+issued bearer sessions both receive the standard permissions.
 
 To change an existing client's permissions, create a fresh pairing link with the
 scopes it needs. In a browser opened directly on the environment, open that link
@@ -302,12 +316,13 @@ worktrees. It does not restrict what a task does. Starting a task in a new
 worktree still creates that branch and worktree with `orchestration:operate`,
 and the agent it runs can use Git however the environment allows.
 
-Settings changes, provider management, and environment maintenance can be granted
-separately from access administration. New standard pairings include these
-permissions. Existing clients can stay connected after an update, but newly separated
-features may require pairing again with the permissions they need. Older clients
-may show controls that the server denies. Create a fresh pairing link to change
-a client's permissions.
+Settings changes, provider management, environment maintenance, access
+management, and T3 Connect management can each be granted separately. New
+pairings without `--scope` include all of them. Existing clients keep the
+permissions they paired with and can stay connected after an update, but newly
+separated features may require pairing again with the permissions they need.
+Older clients may show controls that the server denies. Create a fresh pairing
+link to change a client's permissions.
 
 `filesystem:read` allows browsing host files, opening workspace files, and viewing
 local changes. Add `filesystem:write` to allow editing files or saving plans to
@@ -345,6 +360,17 @@ screenshots, logs, or bug reports.
 
 ## T3 Connect troubleshooting
 
+When a T3 Connect connection fails, see
+[T3 Connect troubleshooting](./t3-connect-troubleshooting.md). It explains each
+error, where the problem is, and how to fix it.
+
+## Using the Desktop App as a Remote Only
+
+If a computer should only drive work running elsewhere, turn off its local environment. In the
+desktop app, open **Settings → Connections** and switch off **Local
+environment**. T3 Code restarts without a local server: no local agents or terminals run, WSL
+backends stay off, and other devices can no longer connect to this computer. Your projects,
+history, and saved connections are kept, and you keep working through pairing, T3 Connect, or SSH.
 Run `t3 connect status` on the host to inspect saved authorization and link
 configuration. It is not a live reachability check. If the environment appears
 offline, inspect the desktop host or your operator-managed process. If it

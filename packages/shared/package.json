@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./changedFileKind": {
+      "types": "./src/changedFileKind.ts",
+      "import": "./src/changedFileKind.ts"
+    },
     "./githubMarkdownLinks": {
       "types": "./src/githubMarkdownLinks.ts",
       "import": "./src/githubMarkdownLinks.ts"
@@ -14,10 +18,6 @@
     "./orchestrationV2ThreadError": {
       "types": "./src/orchestrationV2ThreadError.ts",
       "import": "./src/orchestrationV2ThreadError.ts"
-    },
-    "./legacyCliLauncher": {
-      "types": "./src/legacyCliLauncher.ts",
-      "import": "./src/legacyCliLauncher.ts"
     },
     "./delimitedPreview": {
       "types": "./src/delimitedPreview.ts",
@@ -55,6 +55,10 @@
       "types": "./src/git.ts",
       "import": "./src/git.ts"
     },
+    "./githubMedia": {
+      "types": "./src/githubMedia.ts",
+      "import": "./src/githubMedia.ts"
+    },
     "./sourceControl": {
       "types": "./src/sourceControl.ts",
       "import": "./src/sourceControl.ts"
@@ -67,9 +71,17 @@
       "types": "./src/observability.ts",
       "import": "./src/observability.ts"
     },
+    "./otelEnvironment": {
+      "types": "./src/otelEnvironment.ts",
+      "import": "./src/otelEnvironment.ts"
+    },
     "./httpObservability": {
       "types": "./src/httpObservability.ts",
       "import": "./src/httpObservability.ts"
+    },
+    "./editor": {
+      "types": "./src/editor.ts",
+      "import": "./src/editor.ts"
     },
     "./shell": {
       "types": "./src/shell.ts",
@@ -107,6 +119,10 @@
       "types": "./src/toolActivity.ts",
       "import": "./src/toolActivity.ts"
     },
+    "./terminalOutput": {
+      "types": "./src/terminalOutput.ts",
+      "import": "./src/terminalOutput.ts"
+    },
     "./toolOutput": {
       "types": "./src/toolOutput.ts",
       "import": "./src/toolOutput.ts"
@@ -139,6 +155,10 @@
       "types": "./src/projectScripts.ts",
       "import": "./src/projectScripts.ts"
     },
+    "./projectSettings": {
+      "types": "./src/projectSettings.ts",
+      "import": "./src/projectSettings.ts"
+    },
     "./t3ProjectFile": {
       "types": "./src/t3ProjectFile.ts",
       "import": "./src/t3ProjectFile.ts"
@@ -166,6 +186,10 @@
     "./dpopCommon": {
       "types": "./src/dpopCommon.ts",
       "import": "./src/dpopCommon.ts"
+    },
+    "./telemetryId": {
+      "types": "./src/telemetryId.ts",
+      "import": "./src/telemetryId.ts"
     },
     "./relayAuth": {
       "types": "./src/relayAuth.ts",
@@ -218,6 +242,14 @@
     "./threadReference": {
       "types": "./src/threadReference.ts",
       "import": "./src/threadReference.ts"
+    },
+    "./threadPullRequests": {
+      "types": "./src/threadPullRequests.ts",
+      "import": "./src/threadPullRequests.ts"
+    },
+    "./changeRequestUrl": {
+      "types": "./src/changeRequestUrl.ts",
+      "import": "./src/changeRequestUrl.ts"
     },
     "./composerTrigger": {
       "types": "./src/composerTrigger.ts",
@@ -279,9 +311,17 @@
       "types": "./src/filePreview.ts",
       "import": "./src/filePreview.ts"
     },
+    "./imageDimensions": {
+      "types": "./src/imageDimensions.ts",
+      "import": "./src/imageDimensions.ts"
+    },
     "./video": {
       "types": "./src/video.ts",
       "import": "./src/video.ts"
+    },
+    "./image": {
+      "types": "./src/image.ts",
+      "import": "./src/image.ts"
     },
     "./chatList": {
       "types": "./src/chatList.ts",
@@ -335,6 +375,10 @@
       "types": "./src/desktopAppControl.ts",
       "import": "./src/desktopAppControl.ts"
     },
+    "./thirdPartyLicenses": {
+      "types": "./src/thirdPartyLicenses.ts",
+      "import": "./src/thirdPartyLicenses.ts"
+    },
     "./claudeCompaction": {
       "types": "./src/claudeCompaction.ts",
       "import": "./src/claudeCompaction.ts"
@@ -366,51 +410,6 @@
     "./hostClassification": {
       "types": "./src/hostClassification.ts",
       "import": "./src/hostClassification.ts"
-    },
-    "./dateTime": {
-      "types": "./src/dateTime.ts",
-      "import": "./src/dateTime.ts"
-    },
-    "./forkReleaseIdentity": "./src/forkReleaseIdentity.ts",
-    "./threadAppActivation": {
-      "types": "./src/threadAppActivation.ts",
-      "import": "./src/threadAppActivation.ts"
-    },
-    "./githubMedia": {
-      "types": "./src/githubMedia.ts",
-      "import": "./src/githubMedia.ts"
-    },
-    "./otelEnvironment": {
-      "types": "./src/otelEnvironment.ts",
-      "import": "./src/otelEnvironment.ts"
-    },
-    "./editor": {
-      "types": "./src/editor.ts",
-      "import": "./src/editor.ts"
-    },
-    "./projectSettings": {
-      "types": "./src/projectSettings.ts",
-      "import": "./src/projectSettings.ts"
-    },
-    "./threadPullRequests": {
-      "types": "./src/threadPullRequests.ts",
-      "import": "./src/threadPullRequests.ts"
-    },
-    "./changeRequestUrl": {
-      "types": "./src/changeRequestUrl.ts",
-      "import": "./src/changeRequestUrl.ts"
-    },
-    "./imageDimensions": {
-      "types": "./src/imageDimensions.ts",
-      "import": "./src/imageDimensions.ts"
-    },
-    "./image": {
-      "types": "./src/image.ts",
-      "import": "./src/image.ts"
-    },
-    "./thirdPartyLicenses": {
-      "types": "./src/thirdPartyLicenses.ts",
-      "import": "./src/thirdPartyLicenses.ts"
     },
     "./cliRelease": {
       "types": "./src/cliRelease.ts",
@@ -496,6 +495,22 @@
       "types": "./src/PtyAdapter.ts",
       "import": "./src/PtyAdapter.ts"
     },
+    "./markdownMath": {
+      "types": "./src/markdownMath.ts",
+      "import": "./src/markdownMath.ts"
+    },
+    "./cloneUrl": {
+      "types": "./src/cloneUrl.ts",
+      "import": "./src/cloneUrl.ts"
+    },
+    "./forkReleaseIdentity": {
+      "types": "./src/forkReleaseIdentity.ts",
+      "import": "./src/forkReleaseIdentity.ts"
+    },
+    "./threadAppActivation": {
+      "types": "./src/threadAppActivation.ts",
+      "import": "./src/threadAppActivation.ts"
+    },
     "./omarchySystemThemeSource": {
       "types": "./src/omarchySystemThemeSource.ts",
       "import": "./src/omarchySystemThemeSource.ts"
@@ -506,7 +521,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc-rs --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
@@ -516,12 +531,14 @@
     "effect": "catalog:",
     "jose": "catalog:",
     "mdast-util-directive": "catalog:",
+    "mdast-util-to-hast": "^13.2.1",
     "micromark-extension-directive": "catalog:",
     "micromark-util-character": "catalog:",
     "rehype-raw": "catalog:",
     "rehype-sanitize": "catalog:",
     "remark-breaks": "catalog:",
     "remark-gfm": "catalog:",
+    "remark-math": "6.0.0",
     "remark-parse": "catalog:",
     "remark-rehype": "catalog:",
     "unified": "catalog:",
@@ -530,6 +547,7 @@
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
+    "@types/mdast": "^4.0.4",
     "@types/node": "catalog:",
     "micromark-util-types": "catalog:",
     "vite-plus": "catalog:"

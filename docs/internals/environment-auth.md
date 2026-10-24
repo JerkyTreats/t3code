@@ -7,13 +7,17 @@ identity and relay credentials belong to a separate trust boundary, described in
 ## Authority survives transport changes
 
 Pairing delegates a set of scopes. Exchanging a bootstrap credential can narrow
-that grant but cannot widen it. Ordinary pairing does not grant access-management
-or relay-management authority. Creating another pairing link requires both
-`access:write` and every scope being delegated. The
+that grant but cannot widen it. The default grant includes access and relay
+management: `terminal:operate` is a shell as the server's user and
+`orchestration:operate` can start a full-access agent, and either can mint a
+session with every scope through `t3 auth session issue`, so withholding
+management from the default would not be a boundary. A narrower client gets
+explicit scopes. Creating another pairing link requires both `access:write` and
+every scope being delegated. The
 [auth handlers](../../apps/server/src/auth/http.ts) enforce this at issuance;
 client labels and device metadata have no authorization role.
 
-The external Admin portal manages explicitly enrolled browser and Electron devices through its six-route server-to-server API. Its signed and persisted authority class remains separate from generic scopes. Portal inventory and operator pairing metadata never return recoverable pairing secrets. Only issuance returns a raw credential. The embedded access inventory and its mutation UI remain absent.
+The external Admin portal manages explicitly enrolled browser and Electron devices through its six-route server-to-server API. Its signed and persisted authority class remains separate from generic scopes. Portal-issued pairing grants the standard client set, `AuthStandardClientScopes` in [auth contracts](../../packages/contracts/src/auth.ts), including access and relay management, so a portal-enrolled device can approve MCP sign-ins and manage T3 Connect like any standard client. Containment is the portal lifecycle in [AdminAccess](../../apps/server/src/auth/AdminAccess.ts): revoking an unused pairing credential, disabling a device or deleting it takes effect at once and disconnects its live connections. Portal inventory and operator pairing metadata never return recoverable pairing secrets. Only issuance returns a raw credential. The embedded access inventory and its mutation UI remain absent.
 
 Browser cookies, bearer tokens, and DPoP tokens adapt the same scoped session
 model. DPoP binds a token to a client's proof key; an invalid proof must fail
@@ -59,7 +63,7 @@ group's `RpcScopeAuthorization` middleware checks it before any handler runs.
 Scope changes must not prevent older clients from connecting. Token exchange
 intersects recognized requests with the pairing grant; retired and unknown names
 are dropped. A request with no granted scopes fails before consuming the link.
-Stored credentials are never expanded when scopes split. After cutover, clients that need the new standard permissions re-enroll with fresh portal-issued one-time grants. Signed and persisted scope bytes remain unchanged.
+Stored credentials are never expanded when scopes split or the standard set grows. Already-paired devices keep the scopes they were issued until they re-pair; clients that need the current standard permissions re-enroll with a fresh portal-issued one-time grant. Signed and persisted scope bytes remain unchanged.
 
 Auth responses keep `scopes` within the original wire vocabulary and include
 `permissions` for the exact grant. New clients use `permissions` when present,

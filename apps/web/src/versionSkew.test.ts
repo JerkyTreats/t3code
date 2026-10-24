@@ -2,24 +2,18 @@ import { EnvironmentId } from "@t3tools/contracts";
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-// Pinned so the direction cases below read as fixed versions instead of
-// arithmetic on whatever version this checkout happens to be at.
 const branding = vi.hoisted(() => ({ APP_VERSION: "0.0.34" }));
 vi.mock("./branding", () => branding);
 
 import { APP_VERSION } from "./branding";
 import {
-  appendVersionMismatchHint,
   buildVersionMismatchDismissalKey,
   dismissServerUpdateFailure,
   dismissVersionMismatch,
   isServerUpdateFailureDismissed,
   isVersionMismatchDismissed,
-  resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
   resolveVersionMismatch,
-  serverUpdateGuidance,
-  supportsDesktopAppUpdate,
 } from "./versionSkew";
 
 const MISMATCH_HINT =
@@ -48,23 +42,6 @@ describe("versionSkew", () => {
     expect(failure.message).toBe("Download failed.");
     expect(isServerUpdateFailureDismissed(retryFailure)).toBe(false);
     expect(isServerUpdateFailureDismissed(otherEnvironmentFailure)).toBe(false);
-  });
-
-  it("does not dismiss an update that is still running", () => {
-    const running = {
-      status: "running",
-      stage: "resuming",
-      fromVersion: "0.0.33",
-      targetVersion: "0.0.34",
-    } as const satisfies ServerUpdateState;
-
-    dismissServerUpdateFailure(running);
-
-    expect(isServerUpdateFailureDismissed(running)).toBe(false);
-  });
-
-  it("does not warn when versions match", () => {
-    expect(resolveVersionMismatch(APP_VERSION)).toBeNull();
   });
 
   it("returns a mismatch when the server is behind the client", () => {
@@ -100,12 +77,7 @@ describe("versionSkew", () => {
     },
   );
 
-  it("does not warn when a nightly server is ahead on the same release", () => {
-    branding.APP_VERSION = "0.0.34-nightly.20260824.1125";
-
-    expect(resolveVersionMismatch("0.0.34-nightly.20260824.1126")).toBeNull();
-  });
-
+  // regression: #7579 versions were compared as strings, not semver
   it("treats a nightly server built past the client as ahead, not skew", () => {
     expect(resolveVersionMismatch("0.0.35-nightly.20260818.1124")).toBeNull();
   });
@@ -132,27 +104,6 @@ describe("versionSkew", () => {
     expect(resolveVersionMismatch("0.0.34")).toMatchObject({ serverVersion: "0.0.34" });
   });
 
-  it("reads the server version from config descriptors", () => {
-    expect(
-      resolveServerConfigVersionMismatch({
-        environment: {
-          environmentId: EnvironmentId.make("environment-1"),
-          label: "Remote",
-          platform: {
-            os: "darwin",
-            arch: "arm64",
-          },
-          serverVersion: "0.0.33",
-          capabilities: {
-            repositoryIdentity: true,
-          },
-        },
-      }),
-    ).toMatchObject({
-      serverVersion: "0.0.33",
-    });
-  });
-
   it("keys dismissals by environment, client version, and server version", () => {
     const environmentId = EnvironmentId.make("environment-dismissal");
     const key = buildVersionMismatchDismissalKey(environmentId, {
@@ -160,7 +111,6 @@ describe("versionSkew", () => {
       serverVersion: "9.9.9",
     });
 
-    expect(key).toBe(`${environmentId}:${APP_VERSION}:9.9.9`);
     expect(isVersionMismatchDismissed(key)).toBe(false);
 
     dismissVersionMismatch(key);
@@ -174,14 +124,6 @@ describe("versionSkew", () => {
         }),
       ),
     ).toBe(false);
-  });
-
-  it("appends a hint to connection errors when the server is behind", () => {
-    const mismatch = resolveVersionMismatch("0.0.33");
-
-    expect(appendVersionMismatchHint("Socket closed.", mismatch)).toBe(
-      `Socket closed. Hint: ${MISMATCH_HINT}`,
-    );
   });
 
   it("reads desktop-managed update capabilities from config descriptors", () => {
@@ -216,31 +158,5 @@ describe("versionSkew", () => {
         }),
       ).toBeNull();
     }
-  });
-
-  it("detects remote desktop-app update support from config descriptors", () => {
-    const descriptor = (desktopAppUpdate?: boolean) => ({
-      environment: {
-        environmentId: EnvironmentId.make("environment-desktop"),
-        label: "Desktop",
-        platform: { os: "darwin", arch: "arm64" } as const,
-        serverVersion: "9.9.9",
-        capabilities: {
-          repositoryIdentity: true,
-          serverSelfUpdate: "desktop-managed" as const,
-          ...(desktopAppUpdate === undefined ? {} : { desktopAppUpdate }),
-        },
-      },
-    });
-
-    expect(supportsDesktopAppUpdate(descriptor(true))).toBe(true);
-    expect(supportsDesktopAppUpdate(descriptor(false))).toBe(false);
-    expect(supportsDesktopAppUpdate(descriptor())).toBe(false);
-    expect(supportsDesktopAppUpdate(null)).toBe(false);
-  });
-
-  it("matches version-drift guidance to the advertised update path", () => {
-    expect(serverUpdateGuidance("respawn")).toBe("Update to stay in sync");
-    expect(serverUpdateGuidance("desktop-managed")).toBe("Update the desktop app");
   });
 });

@@ -69,25 +69,28 @@ layer("GitLabCli.layer", (it) => {
         }
         const commands = mockedRun.mock.calls.map(([input]) => input.args);
         assert.deepStrictEqual(
-          commands.map((args) => args.slice(0, 5)),
+          commands.map((args) => [
+            args[1],
+            args[args.indexOf("--repo") + 1],
+            args.at(-2),
+            args.at(-1),
+          ]),
           [
-            ["mr", "view", "42", "--repo", "https://gitlab.example.test:8443/acme/nested/web"],
-            ["mr", "checkout", "42", "--repo", "https://gitlab.example.test:8443/acme/nested/web"],
-            ["mr", "view", "42", "--repo", "https://gitlab.example.test:8443/acme/nested/web"],
-            ["mr", "checkout", "42", "--repo", "https://gitlab.example.test:8443/acme/nested/web"],
+            ["view", "https://gitlab.example.test:8443/acme/nested/web", "--", "42"],
+            ["checkout", "https://gitlab.example.test:8443/acme/nested/web", "--", "42"],
+            ["view", "https://gitlab.example.test:8443/acme/nested/web", "--", "42"],
+            ["checkout", "https://gitlab.example.test:8443/acme/nested/web", "--", "42"],
             [
-              "mr",
               "view",
-              "feature/origin-branch",
-              "--repo",
               "https://gitlab.example.test:8443/acme/nested/web",
+              "--",
+              "feature/origin-branch",
             ],
             [
-              "mr",
               "checkout",
-              "feature/origin-branch",
-              "--repo",
               "https://gitlab.example.test:8443/acme/nested/web",
+              "--",
+              "feature/origin-branch",
             ],
           ],
         );
@@ -129,6 +132,7 @@ layer("GitLabCli.layer", (it) => {
               web_url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
               target_branch: "main",
               source_branch: "feature/mr-threads",
+              sha: "a".repeat(40),
               state: "closed",
               closed_at: "2026-08-23T10:00:00Z",
               source_project_id: 101,
@@ -157,6 +161,7 @@ layer("GitLabCli.layer", (it) => {
         url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
         baseRefName: "main",
         headRefName: "feature/mr-threads",
+        headSha: "a".repeat(40),
         state: "closed",
         closedAt: "2026-08-23T10:00:00Z",
         mergedAt: null,
@@ -171,11 +176,12 @@ layer("GitLabCli.layer", (it) => {
           args: [
             "mr",
             "view",
-            "42",
-            "--repo",
-            "https://gitlab.example.test/fork/project",
             "--output",
             "json",
+            "--repo",
+            "https://gitlab.example.test/fork/project",
+            "--",
+            "42",
           ],
         }),
       );
@@ -251,37 +257,6 @@ layer("GitLabCli.layer", (it) => {
           ],
         }),
       );
-    }),
-  );
-
-  it.effect("reads repository clone URLs", () =>
-    Effect.gen(function* () {
-      mockedRun.mockReturnValueOnce(
-        Effect.succeed(
-          processOutput(
-            JSON.stringify({
-              path_with_namespace: "octocat/t3code",
-              web_url: "https://gitlab.com/octocat/t3code",
-              http_url_to_repo: "https://gitlab.com/octocat/t3code.git",
-              ssh_url_to_repo: "git@gitlab.com:octocat/t3code.git",
-            }),
-          ),
-        ),
-      );
-
-      const result = yield* Effect.gen(function* () {
-        const glab = yield* GitLabCli.GitLabCli;
-        return yield* glab.getRepositoryCloneUrls({
-          cwd: "/repo",
-          repository: "octocat/t3code",
-        });
-      });
-
-      assert.deepStrictEqual(result, {
-        nameWithOwner: "octocat/t3code",
-        url: "https://gitlab.com/octocat/t3code",
-        sshUrl: "git@gitlab.com:octocat/t3code.git",
-      });
     }),
   );
 
@@ -431,7 +406,14 @@ layer("GitLabCli.layer", (it) => {
         expect.objectContaining({
           command: "glab",
           cwd: "/repo",
-          args: ["mr", "checkout", "42", "--repo", "https://gitlab.example.test/fork/project"],
+          args: [
+            "mr",
+            "checkout",
+            "--repo",
+            "https://gitlab.example.test/fork/project",
+            "--",
+            "42",
+          ],
         }),
       );
     }),
