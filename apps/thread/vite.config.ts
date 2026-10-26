@@ -7,6 +7,7 @@ export default defineConfig({
   pack: [
     {
       clean: true,
+      dts: false,
       deps: {
         alwaysBundle: (id) => id.startsWith("@t3tools/"),
         neverBundle: (id) => id === "electron",
@@ -19,6 +20,7 @@ export default defineConfig({
     },
     {
       clean: false,
+      dts: false,
       deps: {
         alwaysBundle: (id) => id.startsWith("@t3tools/"),
         neverBundle: (id) => id === "electron",
