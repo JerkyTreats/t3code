@@ -49,13 +49,18 @@ const providerEntryByInstanceId = new Map(
 );
 const badge = { providerInstanceIds: [RECENT_CHILD, OLDER_CHILD], overflow: 1 };
 
-/** The badge's provider icons in order, as accent color and icon size class. */
+/** The badge's provider icons in order, as accent color, icon size and dimming classes. */
 function badgeIcons(container: Element) {
   const element = container.querySelector("[data-testid=sidebar-nested-thread-badge]");
-  return Array.from(element?.querySelectorAll("[data-provider-accent-color]") ?? [], (icon) => ({
-    accent: icon.getAttribute("data-provider-accent-color"),
-    size: /\bsize-3(?:\.5)?\b/.exec(icon.firstElementChild?.getAttribute("class") ?? "")?.[0],
-  }));
+  return Array.from(element?.querySelectorAll("[data-provider-accent-color]") ?? [], (icon) => {
+    const classes = icon.firstElementChild?.getAttribute("class") ?? "";
+    return {
+      accent: icon.getAttribute("data-provider-accent-color"),
+      size: /\bsize-3(?:\.5)?\b/.exec(classes)?.[0],
+      dimming: /\bopacity-\d+\b/.exec(classes)?.[0],
+      grayscale: /\bgrayscale\b/.test(classes),
+    };
+  });
 }
 
 const LOCAL_ENVIRONMENT = EnvironmentId.make("environment-local");
@@ -113,10 +118,11 @@ function rowProps(variant: "card" | "slim"): ComponentProps<typeof NestedThreadR
   };
 }
 
+// The parent icon matches the provider stack's current icon; children match its history icons.
 const EXPECTED_ICONS = [
-  { accent: ACCENTS[PARENT], size: "size-3.5" },
-  { accent: ACCENTS[RECENT_CHILD], size: "size-3" },
-  { accent: ACCENTS[OLDER_CHILD], size: "size-3" },
+  { accent: ACCENTS[PARENT], size: "size-3.5", dimming: "opacity-60", grayscale: false },
+  { accent: ACCENTS[RECENT_CHILD], size: "size-3", dimming: "opacity-35", grayscale: true },
+  { accent: ACCENTS[OLDER_CHILD], size: "size-3", dimming: "opacity-35", grayscale: true },
 ];
 
 describe("SidebarNestedThreadBadge", () => {
@@ -152,6 +158,23 @@ describe("nested parent rows", () => {
     expect(slot?.querySelectorAll("[data-provider-accent-color]")).toHaveLength(3);
     // The title line holds the chevron, not the badge.
     expect(screen.container.querySelector("[data-sidebar-nested-toggle]")).not.toBeNull();
+  });
+
+  it("follows the title when a local card row drops its empty meta line", async () => {
+    await using screen = await render(
+      <NestedThreadRow
+        {...rowProps("card")}
+        thread={makeThreadFixture({ environmentId: LOCAL_ENVIRONMENT, title: "Parent thread" })}
+      />,
+    );
+    const element = screen.container.querySelector("[data-testid=sidebar-nested-thread-badge]");
+
+    expect(badgeIcons(screen.container)).toEqual(EXPECTED_ICONS);
+    // The badge shares the title line with the chevron instead of the provider history.
+    expect(element?.parentElement?.querySelector("[data-sidebar-nested-toggle]")).not.toBeNull();
+    expect(
+      screen.container.querySelectorAll("[data-testid=sidebar-nested-thread-badge]"),
+    ).toHaveLength(1);
   });
 
   it("draws the same badge after the title on slim rows", async () => {

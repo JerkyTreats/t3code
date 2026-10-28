@@ -8,6 +8,7 @@ import { usePreserveScrollOnMermaidResize } from "./mermaidScrollStability";
 function useVisibleOnce(elementRef: RefObject<HTMLElement | null>): boolean {
   const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined");
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes the fence with an IntersectionObserver until it first enters the viewport
   useEffect(() => {
     if (visible) return;
     const element = elementRef.current;
@@ -43,6 +44,7 @@ export function MermaidVisibleDiagram({
   const [reservedHeight] = useState(() => readMermaidDiagramHeight(source));
   usePreserveScrollOnMermaidResize(containerRef);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes the rendered diagram's size and records it in the module height cache for remounts
   useEffect(() => {
     if (!visible) return;
     const container = containerRef.current;

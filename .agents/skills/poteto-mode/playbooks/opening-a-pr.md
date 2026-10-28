@@ -9,4 +9,4 @@ Publication is a separate user-authorized action. A completed implementation rem
 5. Push only the authorized branch to the authorized remote and create the PR through the available approved forge path.
 6. Immediately register the full PR URL with T3's link_pull_request, then verify its actual state and report the reviewable result.
 
-Use the available pr skill when writing the body. Draft versus ready follows the user's request and repository conventions. No blanket rebase, hard reset, force push, auto-merge or mandatory ready PR is implied. Opening a PR does not start babysitting; watch only on an applicable request. Before finishing PR work, reconcile list_thread_pull_requests and link any missing PR from this task.
+Use the available pr skill when writing the body. Draft versus ready follows the user's request and repository conventions. No blanket rebase, hard reset, force push, auto-merge or mandatory ready PR is implied. Opening a PR does not start babysitting; watch only on an applicable request.

@@ -394,3 +394,32 @@ export function isOriginHeadRepository(input: {
 export function offersOriginSourceBranchDeletion(isCrossRepository: boolean | undefined): boolean {
   return isCrossRepository === false;
 }
+
+const GITHUB_WEB_HOSTS = new Set(["github.com", "www.github.com"]);
+
+/**
+ * Fork F06: whether a GitHub media URL, or a redirect hop, may carry the github.com credential.
+ * Repository-scoped media is admitted only for the exact github.com origin repository. Account
+ * scoped `/user-attachments/` uploads name no repository and stay admitted as upstream has them.
+ */
+export function originAdmitsGitHubMedia(
+  origin: SourceControlProvider.SourceControlProviderContext | null | undefined,
+  url: URL,
+): boolean {
+  if (url.protocol !== "https:" || url.port || url.username || url.password) return false;
+  if (/%2f|%5c/iu.test(url.pathname)) return false;
+  const host = url.hostname.toLowerCase();
+  const segments = url.pathname.split("/").filter((segment) => segment.length > 0);
+  if (GITHUB_WEB_HOSTS.has(host) && segments[0] === "user-attachments") return true;
+  const repository =
+    host === "media.githubusercontent.com"
+      ? segments[0] === "media"
+        ? segments.slice(1, 3)
+        : []
+      : GITHUB_WEB_HOSTS.has(host) || host === "raw.githubusercontent.com"
+        ? segments.slice(0, 2)
+        : [];
+  if (repository.length < 2) return false;
+  const expected = repositoryFromContext(origin ?? undefined);
+  return expected !== null && expected === `github.com/${repository.join("/")}`.toLowerCase();
+}

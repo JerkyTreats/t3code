@@ -75,28 +75,17 @@ export const resolveCliCommand = Effect.fn("invocation.resolveCliCommand")(funct
 const shellWord = (value: string) =>
   /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
 
-/**
- * Quotes `value` for PowerShell, the default Windows terminal. Always quoted,
- * so a path reads the same whether or not it holds a space. Inside double
- * quotes `"` and its typographic forms (which also end the string) double,
- * and `$` and the backtick are escaped so nothing expands.
- */
+/** PowerShell also treats typographic quotes as delimiters; escape them and suppress expansion. */
 const powershellWord = (value: string) =>
   `"${value
     .replaceAll("`", "``")
     .replaceAll("$", "`$")
     .replace(/["\u201C\u201D\u201E]/g, "$&$&")}"`;
 
-/** Quotes a word for the host's shell: POSIX, or PowerShell on Windows. */
 const hostShellWord = (platform: NodeJS.Platform, value: string) =>
   platform === "win32" ? powershellWord(value) : shellWord(value);
 
-/**
- * The launcher a person can type to run this install when `t3` is not on
- * PATH: the desktop app's `t3` shim, which the app and the shim itself name in
- * `T3CODE_CLI_PATH`, or a standalone binary's own path. Script installs (a
- * repo checkout) have no single launcher and keep plain `t3`.
- */
+/** Script installs have no single launcher; desktop shims and standalone binaries do. */
 const resolveInstallLauncher = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const shim = (yield* HostProcess.Environment).T3CODE_CLI_PATH?.trim();

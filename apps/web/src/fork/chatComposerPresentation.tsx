@@ -1,11 +1,8 @@
 import type { ReactNode } from "react";
 
 export const chatComposerPresentation = {
-  mainClassName: "rounded-[24px]",
-  surfaceClassName: "rounded-[23px] transition-[background-color] duration-200",
-  shellClassName:
-    "fork-chat-composer-shell [--chat-composer-drawer-inset:0px] before:rounded-[24px]",
-  hostClassName: "rounded-[24px]",
+  /** Full-width checkout strip; the composer keeps upstream's radius. */
+  shellClassName: "fork-chat-composer-shell [--chat-composer-drawer-inset:0px]",
   runtimeTriggerClassName:
     "size-8 min-w-8 rounded-full border border-border/60 bg-background p-0 shadow-sm justify-center [&_[data-slot=select-icon]]:hidden",
 };

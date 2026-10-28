@@ -98,10 +98,6 @@ export function supportsServerUpdateThreadContinuation(
   return serverConfig?.environment.capabilities.serverUpdateThreadContinuation === true;
 }
 
-export function serverUpdateGuidance(capability: ServerSelfUpdateCapability): string {
-  return capability === "desktop-managed" ? "Update the desktop app" : "Update to stay in sync";
-}
-
 export function buildVersionMismatchDismissalKey(
   environmentId: EnvironmentId,
   mismatch: Pick<VersionMismatch, "clientVersion" | "serverVersion">,

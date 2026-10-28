@@ -72,7 +72,7 @@ The startup harness reuses the real launcher and AppImage instead of creating a 
 
 Thread presentation is headerless. `ThreadClientStatus.tsx` owns composer-adjacent connection and working feedback, including elapsed work and the running thread model. Ready idle state has no status row or animation. `fork/threadComposerPresentation.ts` owns identifier labels and icon-only access presentation; ChatView and ChatComposer mechanically connect these decisions to the shared picker and permission controls. The picker exposes the selected model identifier in text and its accessible name rather than hiding it at narrow widths. Existing model selection, permission changes, draft state, approvals and dispatch remain shared substrate. Ordinary clients retain display labels and responsive compaction. Focused status, presentation and picker tests exercise these outcomes independently of ChatView. Native geometry and startup readiness are unchanged.
 
-The hosted Thread publishes its current title and working, done or idle state in the native window title. `fork/threadWindowTitle.ts` owns the bounded title format; ChatView supplies current thread state, and Electron accepts only that format for its window. The desktop footer can observe it through the compositor without accessing Thread credentials or server state.
+The hosted Thread publishes its current title and working, done or idle state in the native window title. `fork/threadWindowTitle.ts` owns the bounded title format; ChatView supplies current thread state, and Electron accepts only that format for its window. The desktop footer can observe it through the compositor without accessing Thread credentials or server state. Upstream moved the ordinary document title to app start; `appInit.tsx` skips it on the compact surface so it never overwrites the Thread title.
 
 V1 activation also accepts an optional absolute POSIX `workingDirectory` of at most 4096 UTF-8 bytes without NUL. The external launcher preserves an explicit directory and supplies home when it is absent. A staging entry can set `T3_THREAD_WORKING_DIRECTORY` as the fresh-launch default; an explicit payload directory wins. Historical internal V1 payloads without scope remain accepted. Readiness and completion retain their identity-only shapes.
 
@@ -97,7 +97,7 @@ from that field rather than inferring it from titles or paths. `threadWindowTitl
 current `latestRunStatus` for title state; it does not restore v1 turn ownership. These are source
 integration boundaries and do not establish new installed or browser acceptance.
 
-Current shared HTTP and connection layer adapters consume the protected Thread transport through upstream layer composition. Thread pairing resumes the primary connection without reloading the document; ordinary upstream pairing retains its reload behavior. The separate T3 Threads view filters the current inbox and search presentation using trusted creation surface.
+Current shared HTTP and connection layer adapters consume the protected Thread transport through upstream layer composition. Thread pairing resumes the primary connection without reloading the document; ordinary upstream pairing retains its reload behavior. The separate T3 Threads view filters the current inbox and search presentation using trusted creation surface. Unloaded older settled counts come from the server without creation surface, so the T3 Threads Settled shelf counts only its listed rows.
 
 ## Local Theme Observation
 

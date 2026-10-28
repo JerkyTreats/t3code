@@ -19,6 +19,12 @@ those upstream identities fail before continuation writes like every other unkno
 Migration 87 drops unused V1 projection tables, including `projection_state`, and must stay
 after fork 83, which still deletes from that table. Transcript import sources stay.
 
+Migrations 93 through 96 append upstream migrations 69 through 72 under PERSIST.D3 in upstream
+source order: `ThreadMessageSearch`, `PeerLinks`, `PeerLinkFence` and `WaitingLinkRequestIndex`.
+Upstream-numbered 69 through 72 rows collide with fork identities or are unknown names, so they fail
+before continuation writes. Migration 93 creates the contentless message search index that
+`t3 doctor` rebuilds after VACUUM.
+
 Migration 90 keeps upstream's repair predicate: dense client sweeps reported as plain
 `0.0.35` through `0.0.38` before 2026-09-05. Fork builds reported plain upstream versions until
 2026-09-26, so affected fork-built histories match exactly as upstream builds do. Fork builds
@@ -59,6 +65,10 @@ Supported history is the frozen accepted fork lineage, including the characteriz
 
 `ForkMigrationUpstream63To68.test.ts` continues a populated fork 86 file database through 87 to 92 with retained thread, attachment and authority rows. It reopens through the production initializer without new migrations, repeats the continuation through an independent runner, rejects an upstream-numbered 63 journal before writes, and proves the migration 90 predicate against synthetic fork-built version histories. The upstream 63, 64 and 66 migration tests run at their fork identities.
 
+`ForkMigrationUpstream69To72.test.ts` continues a populated fork 92 file database through 93 to 96
+with retained project and authority rows, reopens without new migrations, repeats the continuation
+through an independent runner and rejects an upstream-numbered 70 journal before writes.
+
 `ForkMigrationReviewGuides.test.ts` exercises the 83-to-84 continuation through an independent runner, verifies retained thread, attachment and authority data, uses the production review-guide repository, and checks transactional rollback, retry and reopen. These synthetic source proofs do not establish live database or deployment acceptance.
 
 The isolated development snapshot helper uses the same migration runner and lineage owner before replacing its destination. It has no independent journal-name validator. Its synthetic integration proof retains a supported historical prefix, rejects unknown identity without replacing existing data, and removes clients, sessions and pairing grants from the resulting development database.
@@ -87,9 +97,16 @@ synchronized. Settings, attachment files, and workspace files may remain shared.
 
 `state.sqlite` remains the rollback source. `t3 doctor` reports its size and never deletes
 it; the upstream legacy-database removal is absent from the fork. Doctor compaction takes an
-exclusive lock and fails while a server holds the database.
+exclusive lock and fails while a server holds the database. `DatabaseMaintenance.compact` rebuilds
+the contentless message search index after its VACUUM, as upstream migration 069 requires.
 
-A runtime built before migration 87 rejects the 87 through 92 journal identities on reopen.
+Event-store compaction (`ProjectionMaintenance.compactEventStore`, background and doctor) keeps
+every legacy v1 event and command receipt, including those of fully imported threads; upstream's
+receipt scan and imported-thread deletion are absent. Thread deletion keeps attachment files
+still referenced by the legacy transcript (`ResourceCleanupService.cleanupUnretainedAttachments`).
+
+A runtime built before migration 87 rejects the 87 through 92 journal identities on reopen, and a
+runtime built before migration 93 rejects 93 through 96.
 Binary rollback across this intake therefore needs the matching pre-upgrade `statev2.sqlite`
 copy or the retained `state.sqlite` reconciliation path below.
 

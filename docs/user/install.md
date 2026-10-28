@@ -60,7 +60,7 @@ user service together. Source checks and installed acceptance are recorded again
 ### The `t3` command
 
 The desktop app includes the `t3` command-line tool. To run it from any
-terminal, open **Settings → General → About** and choose **Install** next to
+terminal, open **Settings → About** and choose **Install** next to
 **t3 command**. On macOS and Linux it adds a `t3` link to a folder on your
 `PATH`; on Windows it adds the app's command folder to your `PATH`. Open a new
 terminal afterwards. **Remove** takes it off again. If you already have `t3`
@@ -68,7 +68,7 @@ from npm, it stays as it is.
 
 ### Windows Subsystem for Linux
 
-Choose a WSL distro in **Settings → Connections** to run agents and projects
+Choose a WSL distro in **Settings → Sharing & access** to run agents and projects
 there. Install Node.js and provider CLIs inside that distro. T3 Code uses the
 matching server runtime packaged with the desktop app. The first launch after an
 app update can take longer while that runtime is prepared.
@@ -103,7 +103,7 @@ URL.
 Upstream Nightly builds require the beta mobile app; store releases cannot connect to
 that Nightly protocol. This describes the upstream distribution channel, not validation
 of a store or beta build against this fork. Nightly clients also show beta links as QR
-codes in **Settings → General → Mobile app**.
+codes in **Settings → About → Mobile app**.
 
 - **iPhone and iPad:** TestFlight is invite-only.
 - **Android:** download an APK from the
@@ -132,6 +132,7 @@ computer.
 | Antigravity | Install and sign in with Google from T3 Code's provider settings.                                                                                         |
 | Pi          | Install [Pi](./providers-pi.md#set-up-pi) with Node.js 22.19 or newer, then run `pi` and `/login`.                                                        |
 | Muse Code   | Install [Muse Code](https://dev.meta.ai/docs/muse-code) on the server, run `muse login`, then enable it in Settings → Providers.                          |
+| fx          | Install [fx](https://fx.sh) with `curl -fsSL https://fx.sh/setup.sh \| bash`, then run `fx login`.                                                        |
 
 Provider CLIs must be on the server's `PATH`. If T3 Code cannot find one, set its
 **Binary path** in provider settings, especially when using a version manager.
@@ -161,8 +162,8 @@ original values after saving.
 
 For provider-specific setup and accounts, see [Codex](./providers-codex.md),
 [Claude](./providers-claude.md), [OpenCode](./providers-opencode.md),
-[Antigravity](./providers-antigravity.md), [Pi](./providers-pi.md), and
-[Muse Code](./providers-muse.md).
+[Antigravity](./providers-antigravity.md), [Pi](./providers-pi.md),
+[Muse Code](./providers-muse.md), and [fx](./providers-fx.md).
 
 ## Next steps
 

@@ -426,6 +426,10 @@ layer("fork migration continuation", (it) => {
           [90, "RepairClientSettlementTimestamps"],
           [91, "WebhookDedupe"],
           [92, "ShellStopRequestIndex"],
+          [93, "ThreadMessageSearch"],
+          [94, "PeerLinks"],
+          [95, "PeerLinkFence"],
+          [96, "WaitingLinkRequestIndex"],
         ],
       );
 

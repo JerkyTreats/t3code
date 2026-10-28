@@ -373,6 +373,8 @@ export const layer = Layer.effect(
           );
         return true;
       },
+      // Any handoff failure rejects the wakeup: no ack, no focus.
+      Effect.catchCause(() => Effect.succeed(false)),
     );
 
     const takeLauncherActivation = activationMutex.withPermits(1)(
@@ -417,10 +419,7 @@ export const layer = Layer.effect(
       markBackendNotReady: transition(backendReady, false),
       markRendererReady: transition(rendererReady, true),
       markRendererNotReady: transition(rendererReady, false),
-      acceptSingleInstanceHandoff: (commandLine) =>
-        acceptSingleInstanceHandoff(commandLine).pipe(
-          Effect.catchCause(() => Effect.succeed(false)),
-        ),
+      acceptSingleInstanceHandoff,
       takeLauncherActivation,
       completeLauncherActivation,
     });

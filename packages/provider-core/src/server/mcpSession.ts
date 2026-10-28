@@ -19,11 +19,7 @@ export interface McpProviderServerAttachment {
   readonly name: "t3-code" | "t3-code-preview" | "t3-code-device" | "t3-code-pull-requests";
   readonly endpoint: string;
   readonly authorizationHeader: string;
-  /**
-   * Adapters read it to keep developer instructions truthful: when the user
-   * withholds agent browser access, the prompt must not advertise `preview_*`
-   * tools that every call would reject.
-   */
+  /** Omit preview_* instructions when the user withholds agent browser access. */
   readonly browserToolsAvailable: boolean;
   /** Explicit server-issued toolkit grants. */
   readonly capabilities?: ReadonlySet<string>;

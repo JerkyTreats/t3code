@@ -2,8 +2,9 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/process";
-import type { RepositoryIdentity } from "@t3tools/contracts";
+import { SourceControlProviderKind, type RepositoryIdentity } from "@t3tools/contracts";
 
+import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as OriginRepositoryMutationAuthority from "./OriginRepositoryMutationAuthority.ts";
 
@@ -14,7 +15,7 @@ const expectedIdentity: RepositoryIdentity = {
     remoteName: "origin",
     remoteUrl: "https://github.com/acme/web.git",
   },
-  provider: "github",
+  provider: SourceControlProviderKind.make("github"),
   displayName: "acme/web",
 };
 
@@ -65,6 +66,24 @@ it.effect("authorizes equivalent live origin fetch and push URLs", () =>
       ["remote", "get-url", "--all", "origin"],
       ["remote", "get-url", "--push", "--all", "origin"],
     ]);
+  }),
+);
+
+it.effect("authorizes an Azure SSH origin whose projected key uses the web spelling", () =>
+  Effect.gen(function* () {
+    const remoteUrl = "git@ssh.dev.azure.com:v3/acme/platform/web";
+    const authority = yield* makeAuthority(() => Effect.succeed(output(`${remoteUrl}\n`)));
+    const canonicalKey = sourceControlDefinitions.repositoryKeyFromRemote(remoteUrl);
+    assert.strictEqual(canonicalKey, "dev.azure.com/acme/platform/_git/web");
+
+    yield* authority.authorize({
+      cwd: "/workspace",
+      expectedIdentity: {
+        canonicalKey,
+        locator: { source: "git-remote", remoteName: "origin", remoteUrl },
+        provider: SourceControlProviderKind.make("azure-devops"),
+      },
+    });
   }),
 );
 

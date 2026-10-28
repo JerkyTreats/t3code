@@ -4,6 +4,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as DesktopApp from "./DesktopApp.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopLegacyLocalStorage from "./DesktopLegacyLocalStorage.ts";
@@ -51,6 +52,9 @@ const hostContext = Effect.fn("test.hostContext")(function* (
   return Context.make(DesktopState.DesktopState, {
     backendReady: yield* Ref.make(false),
     quitting: yield* Ref.make(quitting),
+    primaryBackendStartup: yield* SubscriptionRef.make<DesktopState.PrimaryBackendStartup>({
+      _tag: "Starting",
+    }),
   }).pipe(
     Context.add(DesktopEnvironment.DesktopEnvironment, environment),
     Context.add(DesktopWindow.DesktopWindow, {

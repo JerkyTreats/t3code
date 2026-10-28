@@ -35,7 +35,7 @@ not disconnect an otherwise healthy conversation.
 
 Use direct pairing when the other device can reach the host's network address.
 
-On a desktop host, open **Settings → Connections** and enable **Network access**.
+On a desktop host, open **Settings → Sharing & access** and enable **Network access**.
 Changing network access restarts the desktop app. You can turn it off in the
 same place. Generate a pairing link with the installed command-line runtime on
 the host, as described below.
@@ -58,9 +58,13 @@ Use the same server data location as the running host. If it uses a custom
 location, select it with `--base-dir`; see `t3 pair --help`.
 
 Scan the QR code on your phone or paste the pairing URL into **Add environment**
-in the receiving app. Connection settings are under **Settings → Connections**
+in the receiving app. Connection settings are under **Settings → Environments**
 on web and desktop and **Settings → Environments** on mobile. A loopback address
 such as `127.0.0.1` reaches only the device opening the link.
+
+On a computer with the desktop app, you can open the printed `t3code://pair`
+app link instead. The desktop app asks you to confirm the server address, then
+adds it.
 
 Pairing authorizes that device for future connections. Use a fresh one-time link
 for each new device. You do not need the original token to reconnect. If a link
@@ -82,7 +86,8 @@ machine's current LAN and Tailscale addresses and adds them as routes, so
 pairing once through T3 Connect is enough to use the LAN at home. When the
 machine's LAN address changes, for example after it joins another Wi-Fi network,
 the learned route follows it. The machine must allow network access for its LAN
-address to be learned. You can reorder a learned route, but not remove it; it
+address to be learned. The [background service](./background-service.md#local-network-access)
+allows it on private networks by default. You can reorder a learned route, but not remove it; it
 goes away with the route it was learned through, or when the machine stops
 reporting that address.
 
@@ -93,7 +98,7 @@ later route, T3 Code checks the earlier ones when your network changes, when you
 return to the app, and every minute, and moves back as soon as one works.
 
 On web and desktop, select the route count under the machine's name in
-**Settings → Connections** to see its routes. Drag a route to change the order,
+**Settings → Environments** to see its routes. Drag a route to change the order,
 or remove it. On mobile, open the machine under **Settings → Environments** and
 choose **Edit**. Signing out of T3 Connect removes only that route; a machine
 you can still reach another way stays saved.
@@ -108,7 +113,7 @@ different permissions.
 ### Balance new threads across machines
 
 Auto balance is off by default. On web and desktop, enable it in
-**Settings → Connections → Load balancing** to automatically choose a machine for
+**Settings → Environments → Load balancing** to automatically choose a machine for
 new threads in projects grouped across connected environments. The section
 appears once two or more machines are switched on.
 Each machine starts at **Normal**. Choose **Prefer** to favor it when it has CPU and
@@ -126,7 +131,7 @@ Mobile keeps its manual environment selection.
 ### Tailscale HTTPS
 
 Join both devices to the same tailnet. In the desktop app, enable **Tailscale
-HTTPS** in **Settings → Connections**. Turn it off there to remove that route.
+HTTPS** in **Settings → Sharing & access**. Turn it off there to remove that route.
 
 To start a command-line server with Tailscale HTTPS:
 
@@ -164,7 +169,7 @@ a scheme uses HTTP, so include `https://` when your server uses HTTPS.
 
 ## Desktop-managed SSH
 
-In the desktop app, open **Settings → Connections → Add environment**, choose
+In the desktop app, open **Settings → Environments → Add environment**, choose
 **SSH**, and enter a host or SSH alias such as `user@example.test`. T3 Code
 starts or reuses a server there and opens the port forward for you. Projects,
 provider credentials, and agent work stay on the remote machine.
@@ -190,7 +195,7 @@ that was already running is left alone.
 
 Each desktop app keeps one session on the host for its SSH connection and reuses
 it when it reconnects. Revoke sessions you no longer use in **Settings →
-Connections** on the host, or on a headless host with `t3 auth session list` and
+Sharing & access** on the host, or on a headless host with `t3 auth session list` and
 `t3 auth session revoke <id>`. A desktop that can still sign in over SSH pairs
 again on its next connect.
 
@@ -251,11 +256,54 @@ threads through the environment's MCP server. See [outside agents](./outside-age
 for setup and approval. This does not give an outside agent external Admin authority
 or access to the locally managed agents' preview or device endpoints.
 
+## Link another environment
+
+Link two machines, such as your laptop and a VPS, and agents on one can work on
+the other: launch, message, wait on and stop its threads, answer their
+questions, and manage its queues, projects and scheduled tasks.
+
+Linked environments is a beta. Turn it on for both machines in **Settings →
+Labs**; on mobile, **Settings → Labs** lists each connected machine. While it is
+off on either machine, agents start nothing over a link between them. A task
+already running on the other machine still finishes, and if that machine has it
+off, its result arrives once it is back on.
+
+On the machine you will work from, open **Settings → Environments → Linked environments**,
+choose **Link**, and pick the other machine or enter its address. The list
+holds the machines this app knows and those on your T3 Connect account. If this
+app is connected to that machine with a session that manages access there, it
+makes the pairing code itself; otherwise ask that machine's operator for a code
+from `t3 auth pairing create`. From a terminal, use
+`t3 environment link <address> --pairing-code <code> --access <mode>`.
+
+You can also ask an agent to link a machine by name, such as "delegate this to
+my vps". It shows a card in the thread where you pick the machine the same way
+and the access, then approve.
+
+- The access you pick is the most agents from this machine may do there. An
+  agent also never gets more there than its own mode here.
+- Threads a link starts are marked **From** and this machine's name there.
+- A full-access link works there like that machine's own agents. Below full
+  access, the link's agents can change only threads it started, not that
+  machine's own threads, projects or settings, and they skip its project setup
+  scripts.
+- On that machine the link is an outside agent session. Its operator revokes it
+  through the operator auth controls. **Forget** on this machine only removes it
+  here.
+- Links last 30 days. Link again with a new pairing code to renew one.
+
+An agent can also hand a task to a linked machine with `delegate_task`: it runs
+there as an ordinary thread, in the project with the same repository (or the
+one `target.projectId` names), and this thread wakes with its result when it
+ends, as for any delegated task. It keeps following the task across restarts.
+If the other machine revokes the link, or the link is removed here, the task
+fails with that reason.
+
 ## Manage pairing and device access
 
-**Settings → Connections** configures environments, network reachability,
-Tailscale, SSH, and T3 Connect. It is not an embedded Admin product and does not
-own managed-device lifecycle.
+**Settings → Environments** and **Settings → Sharing & access** configure
+environments, network reachability, Tailscale, SSH, and T3 Connect. They are not
+an embedded Admin product and do not own managed-device lifecycle.
 
 Use `t3 pair` for an ordinary one-time pairing link. A headless operator can
 inspect or revoke pending ordinary pairing credentials without revealing their
@@ -333,7 +381,7 @@ page, or **Settings → T3 Connect** on mobile, and choose **Deregister**. This
 revokes its cloud access and frees its host space even when the environment is
 offline or has been wiped. When T3 Connect rejects a host's link, the host
 shows that it was removed from T3 Connect. To link it again, turn on
-**T3 Connect** in **Settings → Connections** on a desktop host, or run
+**T3 Connect** in **Settings → Sharing & access** on a desktop host, or run
 `t3 connect link` on a command-line host and then restart T3 Code there. A
 command-line host that released its tunnel when it last stopped may link itself
 again on its next start; run `t3 connect unlink` on that host to keep it off.
@@ -367,7 +415,7 @@ error, where the problem is, and how to fix it.
 ## Using the Desktop App as a Remote Only
 
 If a computer should only drive work running elsewhere, turn off its local environment. In the
-desktop app, open **Settings → Connections** and switch off **Local
+desktop app, open **Settings → Environments** and switch off **Local
 environment**. T3 Code restarts without a local server: no local agents or terminals run, WSL
 backends stay off, and other devices can no longer connect to this computer. Your projects,
 history, and saved connections are kept, and you keep working through pairing, T3 Connect, or SSH.

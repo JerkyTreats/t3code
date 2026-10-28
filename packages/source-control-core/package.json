@@ -3,9 +3,13 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./client/definition": {
-      "types": "./src/client/definition.ts",
-      "import": "./src/client/definition.ts"
+    "./shared/definition": {
+      "types": "./src/shared/definition.ts",
+      "import": "./src/shared/definition.ts"
+    },
+    "./shared/threadPullRequests": {
+      "types": "./src/shared/threadPullRequests.ts",
+      "import": "./src/shared/threadPullRequests.ts"
     },
     "./server/diffFileRevisions": {
       "types": "./src/server/diffFileRevisions.ts",
@@ -63,9 +67,9 @@
       "types": "./src/server/fork/GitLabRepositoryTarget.ts",
       "import": "./src/server/fork/GitLabRepositoryTarget.ts"
     },
-    "./client/originRepositoryPolicy": {
-      "types": "./src/client/originRepositoryPolicy.ts",
-      "import": "./src/client/originRepositoryPolicy.ts"
+    "./shared/fork/originRepositoryPolicy": {
+      "types": "./src/shared/fork/originRepositoryPolicy.ts",
+      "import": "./src/shared/fork/originRepositoryPolicy.ts"
     },
     "./server/fork/originGitCafePolicy": {
       "types": "./src/server/fork/originGitCafePolicy.ts",

@@ -23,10 +23,12 @@ for completing their ordinary messages.
 `presentThreadShell` carries the response stamp into shared client state. Web list sections and
 mobile home and navigation lists consume the same ordering owner. On web, the sidebar's thread
 partition sorts every section with it, replacing upstream's keyed pinned order, inbox return order,
-send order, wake order and settled order. The next snooze wake is read as the minimum wake time.
+send order, wake order and settled order. Upstream's inbox tracker still decides Working shelf membership and its exit grace, and its snooze wake clock reads thread wake times directly; neither orders rows.
 Web drag previews consume that order for pinned, active and settled drops, and drops change
 lifecycle without order-key writes. Mobile arrangement controls are
-unavailable while conversation ordering owns placement. Legacy recency sorting consumes these
+unavailable while conversation ordering owns placement: the fork empties Move up/down inside
+upstream's shared `useThreadListV2` list hook (an upstream-sensitive adapter), and Home and the
+sidebar never offer reordering. Legacy recency sorting consumes these
 stamps when available.
 
 ## Compatibility and proof

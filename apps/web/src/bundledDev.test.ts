@@ -45,7 +45,13 @@ export const startup = Promise.resolve().then(() => globalThis.onStarted(Shared(
       publicDir: NodeURL.fileURLToPath(new URL("../public", import.meta.url)),
       logLevel: "silent",
       resolve: {
-        alias: { react: NodePath.dirname(NodeURL.fileURLToPath(import.meta.resolve("react"))) },
+        alias: {
+          react: NodePath.dirname(NodeURL.fileURLToPath(import.meta.resolve("react"))),
+          // The copied boot error screen takes its release links from the fork owner (F01).
+          "@t3tools/shared/forkReleaseIdentity": NodeURL.fileURLToPath(
+            import.meta.resolve("@t3tools/shared/forkReleaseIdentity"),
+          ),
+        },
       },
       experimental: { bundledDev: true },
       plugins: [

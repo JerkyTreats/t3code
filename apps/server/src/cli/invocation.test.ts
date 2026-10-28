@@ -43,7 +43,6 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       expect(yield* rootCommand({ node: "/usr/bin/node", entry: npx })).toBe(
         `sudo /usr/bin/node ${npx} browser setup`,
       );
-      // nvm, fnm, and tarball installs are dropped by sudo's PATH reset.
       expect(
         yield* rootCommand({ node: "/home/example/.nvm/versions/node/v24/bin/node", entry: npx }),
       ).toBe(
@@ -113,16 +112,12 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
           Effect.provideService(HostProcess.Platform, platform),
           Effect.provideService(HostProcess.Environment, { PATH: "", ...env }),
         );
-      // The desktop shim is called through `&`, and each argument is quoted
-      // the PowerShell way: no POSIX single quotes anywhere.
       expect((yield* hostCommand("win32", { T3CODE_CLI_PATH: shim })).command).toBe(
         `& "${shim}" doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"`,
       );
-      // Without a launcher, plain `t3` with PowerShell-quoted arguments.
       expect((yield* hostCommand("win32", {})).command).toBe(
         't3 doctor "--base-dir" "C:\\Users\\Jane Doe\\.t3"',
       );
-      // Typographic quotes also delimit PowerShell strings; doubling keeps them.
       expect(
         (yield* resolveHostCliCommand("doctor", ["--base-dir", "C:\\T3\\\u201CArchive\u201D"]).pipe(
           Effect.provideService(HostProcess.Platform, "win32"),
@@ -132,8 +127,6 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
           Effect.provideService(HostProcess.IsExecutable, false),
         )).command,
       ).toBe('t3 doctor "--base-dir" "C:\\T3\\\u201C\u201CArchive\u201D\u201D"');
-      // POSIX hosts keep single quotes for the same input. The shim prefix is
-      // a host path, so only the arguments are asserted.
       expect((yield* hostCommand("linux", { T3CODE_CLI_PATH: shim })).command).toMatch(
         / doctor --base-dir 'C:\\Users\\Jane Doe\\\.t3'$/,
       );

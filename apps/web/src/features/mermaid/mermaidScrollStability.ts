@@ -30,6 +30,7 @@ function findVerticalScrollContainer(element: HTMLElement): HTMLElement | null {
 }
 
 export function usePreserveScrollOnMermaidResize(elementRef: RefObject<HTMLElement | null>): void {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes the diagram's size and adjusts the scroll container so resizes above the viewport keep the reading position
   useEffect(() => {
     const element = elementRef.current;
     if (!element) return;

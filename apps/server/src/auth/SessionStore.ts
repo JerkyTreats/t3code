@@ -6,6 +6,7 @@ import {
   AuthEnvironmentScopes,
   type AuthClientMetadata,
   type AuthEnvironmentScope,
+  AuthWebSocketTicketUse,
   type ClientSurface,
   RuntimeMode,
   type ServerAuthSessionMethod,
@@ -98,6 +99,12 @@ export interface VerifiedSession {
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
   readonly proofKeyThumbprint?: string;
   readonly runtimeModeCeiling?: RuntimeMode;
+  /** An MCP client that is another T3 Code environment's peer link. */
+  readonly peerLink?: true;
+}
+
+export interface VerifiedWebSocketTicket extends VerifiedSession {
+  readonly audience?: AuthWebSocketTicketUse;
 }
 
 export interface ActiveClientSession {
@@ -339,6 +346,7 @@ export class SessionStore extends Context.Service<
       readonly client?: AuthClientMetadata;
       readonly proofKeyThumbprint?: string;
       readonly runtimeModeCeiling?: RuntimeMode;
+      readonly peerLink?: boolean;
       readonly replaceActiveForSubjectAndMethod?: boolean;
       readonly replaceSessionId?: AuthSessionId;
     }) => Effect.Effect<IssuedSession, SessionCredentialInternalError>;
@@ -353,6 +361,8 @@ export class SessionStore extends Context.Service<
       sessionId: AuthSessionId,
       input?: {
         readonly ttl?: Duration.Duration;
+        readonly audience?: AuthWebSocketTicketUse;
+        readonly proofKeyThumbprint?: string;
       },
     ) => Effect.Effect<
       {
@@ -363,7 +373,7 @@ export class SessionStore extends Context.Service<
     >;
     readonly verifyWebSocketToken: (
       token: string,
-    ) => Effect.Effect<VerifiedSession, SessionCredentialError>;
+    ) => Effect.Effect<VerifiedWebSocketTicket, SessionCredentialError>;
     readonly listActive: () => Effect.Effect<
       ReadonlyArray<ActiveClientSession>,
       SessionCredentialInternalError
@@ -407,6 +417,8 @@ const SessionClaims = Schema.Struct({
   authorityClass: Schema.optionalKey(AuthSessionAuthorityClass),
   jkt: Schema.optionalKey(Schema.String),
   rtc: Schema.optionalKey(RuntimeMode),
+  /** Signed, so a client cannot shed its peer link's limits. */
+  plk: Schema.optionalKey(Schema.Literal(1)),
   iat: Schema.Number,
   exp: Schema.Number,
 });
@@ -417,6 +429,8 @@ const WebSocketClaims = Schema.Struct({
   kind: Schema.Literal("websocket"),
   sid: AuthSessionId,
   nonce: Schema.String.check(Schema.isUUID(4)),
+  aud: Schema.optionalKey(AuthWebSocketTicketUse),
+  jkt: Schema.optionalKey(Schema.String),
   iat: Schema.Number,
   exp: Schema.Number,
 });
@@ -662,6 +676,7 @@ export const make = Effect.gen(function* () {
         authorityClass,
         ...(input?.proofKeyThumbprint ? { jkt: input.proofKeyThumbprint } : {}),
         ...(input?.runtimeModeCeiling ? { rtc: input.runtimeModeCeiling } : {}),
+        ...(input?.peerLink === true ? { plk: 1 as const } : {}),
         iat: issuedAt.epochMilliseconds,
         exp: expiresAt.epochMilliseconds,
       };
@@ -837,6 +852,7 @@ export const make = Effect.gen(function* () {
         scopes: claims.scopes,
         ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),
         ...(claims.rtc ? { runtimeModeCeiling: claims.rtc } : {}),
+        ...(claims.plk === 1 ? { peerLink: true as const } : {}),
       } satisfies VerifiedSession;
     },
   );
@@ -882,6 +898,8 @@ export const make = Effect.gen(function* () {
       kind: "websocket",
       sid: sessionId,
       nonce,
+      ...(input?.audience ? { aud: input.audience } : {}),
+      ...(input?.proofKeyThumbprint ? { jkt: input.proofKeyThumbprint } : {}),
       iat: issuedAt.epochMilliseconds,
       exp: expiresAt.epochMilliseconds,
     };
@@ -971,7 +989,9 @@ export const make = Effect.gen(function* () {
       expiresAt: state.expiresAt,
       subject: state.subject,
       scopes: state.scopes,
-    } satisfies VerifiedSession;
+      ...(claims.aud ? { audience: claims.aud } : {}),
+      ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),
+    } satisfies VerifiedWebSocketTicket;
   });
 
   const listActive: SessionStore["Service"]["listActive"] = Effect.fn("SessionStore.listActive")(
@@ -1091,10 +1111,11 @@ export const make = Effect.gen(function* () {
     issue,
     verify,
     assertClientAdmission,
-    identifySignedAuthority: (token) =>
-      readSessionClaims(token).pipe(
+    identifySignedAuthority: Effect.fn("SessionStore.identifySignedAuthority")(function (token) {
+      return readSessionClaims(token).pipe(
         Effect.map((claims) => SessionAuthorityPolicy.normalizeAuthority(claims.authorityClass)),
-      ),
+      );
+    }),
     issueWebSocketToken,
     verifyWebSocketToken,
     listActive,

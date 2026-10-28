@@ -103,8 +103,8 @@
       "bytes": 1314
     },
     "playbooks/opening-a-pr.md": {
-      "sha256": "d4585782f6abb84d109df1cdfdf32988bbe0bd202d916ab01b1405dab639b5c9",
-      "bytes": 1277
+      "sha256": "30f2b882c00229ed671e150e175bc7c07f15e47e7b25e0ab08ea7788e9e2960d",
+      "bytes": 1175
     },
     "playbooks/orchestrate.md": {
       "sha256": "090283597858cdfb5b5917ca027c0e8489390ed8a48b4fe0dff08016a2637fa5",
@@ -163,8 +163,8 @@
       "bytes": 4577
     },
     "references/t3-runtime.md": {
-      "sha256": "1acce62adc318876f0d13607055ed165d41af0c4cc840b5bf445fbadadf211d3",
-      "bytes": 6476
+      "sha256": "9b8a17f5d9ec1ca55e9548a6c6eef6755a8f8c95a7943a0c6a26ef1b427fcda6",
+      "bytes": 6463
     }
   },
   "source_files": {

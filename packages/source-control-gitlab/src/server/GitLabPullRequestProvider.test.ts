@@ -72,6 +72,36 @@ describe("getChangeRequest base freshness", () => {
     reviewerIds: [],
   };
 
+  it.effect.each(["getChangeRequestPreview", "getChangeRequestSummary"] as const)(
+    "%s preserves merge request fields without fetching project settings",
+    (operation) =>
+      Effect.gen(function* () {
+        const getMergeRequestDetail = vi.fn(
+          (input: { readonly host: string; readonly repository: string }) =>
+            Effect.succeed({ ...detail, ...input }),
+        );
+        const provider = yield* make.pipe(
+          Effect.provide(
+            Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({ getMergeRequestDetail }),
+          ),
+        );
+        const read = provider[operation];
+        assert.isDefined(read);
+        const input = { cwd: "/w", repository: "acme/web", host: "gitlab.com", number: 7 };
+        // Fork F06: the read targets the exact origin host and repository.
+        expect(yield* read({ ...input, ...exactOrigin })).toMatchObject({
+          ...detail,
+          host: "gitlab.internal.test:2222",
+          repository: "acme/web",
+        });
+        expect(yield* Effect.result<unknown, unknown, never>(read(input))).toMatchObject({
+          _tag: "Failure",
+          failure: { detail: expect.stringContaining("exact GitLab origin repository") },
+        });
+        expect(getMergeRequestDetail).toHaveBeenCalledTimes(1);
+      }),
+  );
+
   const readWith = (divergence: { readonly divergedCommits?: number }) =>
     Effect.gen(function* () {
       const provider = yield* make;

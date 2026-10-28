@@ -107,6 +107,7 @@ export function ThreadClientActivationHost(props: ThreadClientActivationHostProp
   } = props;
   const activationState = useActivationState(owner);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to T3 Thread activations from the desktop bridge while mounted
   useEffect(() => {
     if (!bridge) return;
     return bridge.subscribe((activation) => {
@@ -114,6 +115,7 @@ export function ThreadClientActivationHost(props: ThreadClientActivationHostProp
     });
   }, [bridge, owner]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives the waiting activation through the owner and the desktop bridge once the primary shell and target project are ready
   useEffect(() => {
     if (activationState.phase !== "waiting" || !shellLive || primaryEnvironmentId === null) return;
     const workingDirectory = activationState.activation.workingDirectory;

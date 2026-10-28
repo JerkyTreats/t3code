@@ -22,6 +22,7 @@ import {
   isNestedThreadParentExpanded,
   nestedThreadAttention,
   nestedThreadBadge,
+  nestedThreadBadgeIconKeys,
   nestedParentKeepsRoute,
   nestedParentLiftsToActive,
   nestedThreadPaletteLabel,
@@ -197,6 +198,14 @@ describe("nestedThreadBadge", () => {
       providerInstanceIds: ["codex", "codex"],
       overflow: 0,
     });
+  });
+
+  it("keys repeated provider icons distinctly and stably", () => {
+    expect(nestedThreadBadgeIconKeys(["codex", "claude", "codex"])).toEqual([
+      { instanceId: "codex", key: "codex:0" },
+      { instanceId: "claude", key: "claude:0" },
+      { instanceId: "codex", key: "codex:1" },
+    ]);
   });
 });
 

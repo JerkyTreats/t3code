@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { tickTextContent } from "~/lib/tickTextContent";
 
 export function formatElapsedTime(startedAt: string, nowMs: number): string | null {
   const startedAtMs = Date.parse(startedAt);
@@ -17,36 +17,15 @@ export function formatElapsedTime(startedAt: string, nowMs: number): string | nu
 
 function ElapsedTime({
   label = "Working for",
-  nowMs,
   startedAt,
 }: {
   readonly label?: string;
-  readonly nowMs?: number;
   readonly startedAt: string;
 }) {
-  const textRef = useRef<HTMLSpanElement>(null);
-  const initialNow = nowMs ?? Date.now();
-  const initialText = formatElapsedTime(startedAt, initialNow) ?? "0s";
-
-  useEffect(() => {
-    if (nowMs !== undefined) return;
-
-    const update = () => {
-      if (!textRef.current) return;
-      const next = formatElapsedTime(startedAt, Date.now()) ?? "0s";
-      textRef.current.textContent = next;
-      textRef.current.setAttribute("aria-label", `${label} ${next}`);
-    };
-    const interval = setInterval(update, 1_000);
-    return () => clearInterval(interval);
-  }, [label, nowMs, startedAt]);
-
   return (
     <span className="inline-flex gap-1 tabular-nums">
       <span>{label} </span>
-      <span aria-label={`${label} ${initialText}`} ref={textRef}>
-        {initialText}
-      </span>
+      <span ref={tickTextContent((nowMs) => formatElapsedTime(startedAt, nowMs) ?? "0s", true)} />
     </span>
   );
 }

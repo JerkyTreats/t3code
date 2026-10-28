@@ -44,6 +44,7 @@ function ReadyDesktopLauncherActivationCoordinator(props: {
     });
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- takes the pending launcher activation over the desktop bridge once the primary shell is live
   useEffect(() => {
     const bridge = window.desktopBridge;
     if (shellState.status !== "live" || !bridge?.takeLauncherActivation) return;
@@ -115,6 +116,7 @@ export function useDesktopLauncherSubmitAdmission(
   owner: DesktopLauncherActivationOwner = desktopLauncherActivationOwner,
 ): () => void {
   const hostRef = useRef({ draftId, onSend, readComposerState });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the committed draft, send handler and composer reader to the ref the launcher owner's submitter reads
   useLayoutEffect(() => {
     hostRef.current = { draftId, onSend, readComposerState };
   });
@@ -123,6 +125,7 @@ export function useDesktopLauncherSubmitAdmission(
     if (draftId) owner.refreshSubmitter(draftId);
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds this draft's submitter registration in the launcher activation owner until the draft changes or unmounts
   useEffect(() => {
     if (!draftId) return;
     return owner.registerSubmitter(
@@ -141,7 +144,7 @@ export function useDesktopLauncherSubmitAdmission(
     );
   }, [draftId, owner]);
 
-  // Parent readiness changes and the child's post-ref-sync notification share the same owner guard.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells the launcher owner after each commit to re-check admission against the committed composer; parent and child notifications share its guard
   useEffect(refresh);
   return refresh;
 }

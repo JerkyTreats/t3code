@@ -1,4 +1,3 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
 import {
   CommandId,
   ProjectId,
@@ -7,6 +6,7 @@ import {
   type GitRunStackedActionResult,
   type OrchestrationV2ServerCommand as OrchestrationCommand,
   type OrchestrationProjectShell,
+  SourceControlProviderKind,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";

@@ -4,7 +4,6 @@ import { expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
 import {
   DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS,
@@ -59,7 +58,7 @@ const layerPairingGrantStoreTest = (
           listActive: () => Effect.succeed([]),
           revoke: () => Effect.succeed(false),
           revokeAtRevision: () => Effect.succeed({ _tag: "not-found" }),
-          getByCredentialDigest: () => Effect.succeed(Option.none()),
+          getByCredentialDigest: () => Effect.succeedNone,
           ...overrides,
         }),
       ),

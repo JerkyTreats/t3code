@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { originPushRedirectError } from "./originGitPolicy.ts";
 import { isOriginRemoteName } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
@@ -161,7 +162,9 @@ export const make = Effect.gen(function* () {
       !isOriginRemoteName(input.expectedIdentity.locator.remoteName) ||
       expectedRemoteUrl.length === 0 ||
       expectedCanonicalKey.length === 0 ||
-      normalizeGitRemoteUrl(expectedRemoteUrl) !== expectedCanonicalKey ||
+      // Same key the identity resolver projects, which folds Azure SSH aliases into the web spelling.
+      normalizeGitRemoteUrl(sourceControlDefinitions.repositoryKeyFromRemote(expectedRemoteUrl)) !==
+        expectedCanonicalKey ||
       expectedMutationTarget.length === 0
     ) {
       return yield* failure(

@@ -87,13 +87,9 @@ export interface NestedThreadGroups<T> {
 const EMPTY_CHILDREN: ReadonlyMap<string, ReadonlyArray<never>> = new Map<string, never[]>();
 
 /**
- * Splits the visible threads into rows and children. Only parents inside
- * `visible` adopt children, so a child whose parent sits in another sidebar
- * view stays top level. Group the whole visible set before sectioning: children
- * do not take part in sections.
- *
- * Pass the previous result to keep unchanged arrays, and the whole result,
- * when an unrelated thread updates.
+ * Splits the visible threads into rows and children. Only parents inside `visible` adopt
+ * children, so group the whole visible set before sectioning. Pass the previous result to
+ * keep unchanged arrays when an unrelated thread updates.
  */
 export function groupNestedThreads<T extends ScopedNestableThread & ThreadConversationActivity>(
   visible: ReadonlyArray<T>,
@@ -162,6 +158,16 @@ export interface NestedThreadBadge<P> {
 }
 
 const badges = new WeakMap<ReadonlyArray<object>, NestedThreadBadge<unknown>>();
+
+/** Render keys for the badge's child icons. Children may share a provider, so repeats count up. */
+export function nestedThreadBadgeIconKeys<P extends string>(instanceIds: ReadonlyArray<P>) {
+  const seen = new Map<P, number>();
+  return instanceIds.map((instanceId) => {
+    const repeat = seen.get(instanceId) ?? 0;
+    seen.set(instanceId, repeat + 1);
+    return { instanceId, key: `${instanceId}:${repeat}` };
+  });
+}
 
 /** The parent row's badge. The same children array returns the same badge. */
 export function nestedThreadBadge<

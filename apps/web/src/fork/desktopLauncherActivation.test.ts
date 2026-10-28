@@ -59,6 +59,7 @@ function investedDraft(): ComposerThreadDraftState {
     previewAnnotations: [],
     reviewComments: [],
     threadContexts: [],
+    environmentContexts: [],
     modelSelectionByProvider: {},
     activeProvider: null,
     runtimeMode: null,

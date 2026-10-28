@@ -6,13 +6,22 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
+import { useEffect } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { act, render } from "../../../test/render";
 
 const mocks = vi.hoisted(() => ({
   router: {
-    state: { matches: [{ params: { environmentId: "host-env", threadId: "host-thread" } }] },
+    state: {
+      matches: [
+        {
+          routeId: "/_chat",
+          pathname: "/host-env/host-thread",
+          params: { environmentId: "host-env", threadId: "host-thread" },
+        },
+      ],
+    },
   },
   command: "preview.new",
   canOperate: true,
@@ -75,7 +84,7 @@ vi.mock(import("~/lib/terminalFocus"), async (original) => ({
   isTerminalFocused: () => false,
 }));
 
-import { ChatRouteGlobalShortcuts } from "~/routes/_chat";
+import { installChatRouteCommands } from "~/shortcuts/chatRouteCommands";
 import { subscribePreviewAction } from "./previewActionBus";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import {
@@ -196,9 +205,13 @@ function setDesktopBridge(bridge: unknown) {
     value: bridge,
   });
 }
+function ChatRouteCommands() {
+  useEffect(() => installChatRouteCommands(mocks.router as never), []);
+  return null;
+}
 const hosts = () => (
   <>
-    <ChatRouteGlobalShortcuts />
+    <ChatRouteCommands />
     <Host />
   </>
 );

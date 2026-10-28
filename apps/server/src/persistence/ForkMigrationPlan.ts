@@ -77,6 +77,10 @@ import UpstreamMigration0065 from "./Migrations/065_CodexUsageNativeTurnIndex.ts
 import UpstreamMigration0066 from "./Migrations/066_RepairClientSettlementTimestamps.ts";
 import UpstreamMigration0067 from "./Migrations/067_WebhookDedupe.ts";
 import UpstreamMigration0068 from "./Migrations/068_ShellStopRequestIndex.ts";
+import UpstreamMigration0069 from "./Migrations/069_ThreadMessageSearch.ts";
+import UpstreamMigration0070 from "./Migrations/070_PeerLinks.ts";
+import UpstreamMigration0071 from "./Migrations/071_PeerLinkFence.ts";
+import UpstreamMigration0072 from "./Migrations/072_WaitingLinkRequestIndex.ts";
 
 import Migration0083 from "./Migrations/083_RetireBoardAndCollective.ts";
 import Migration0085 from "./Migrations/085_PublishedResponseActivityIndex.ts";
@@ -161,6 +165,11 @@ export const migrationEntries = [
   [90, "RepairClientSettlementTimestamps", UpstreamMigration0066],
   [91, "WebhookDedupe", UpstreamMigration0067],
   [92, "ShellStopRequestIndex", UpstreamMigration0068],
+  // Upstream 69 through 72 keep their source order after fork 92.
+  [93, "ThreadMessageSearch", UpstreamMigration0069],
+  [94, "PeerLinks", UpstreamMigration0070],
+  [95, "PeerLinkFence", UpstreamMigration0071],
+  [96, "WaitingLinkRequestIndex", UpstreamMigration0072],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

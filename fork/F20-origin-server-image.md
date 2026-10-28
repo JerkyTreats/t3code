@@ -86,6 +86,8 @@ Source tests cover the exact Dockerfile instruction contract, Docker-compatible 
 
 The exact-source local image passes actual build, HTTP startup, non-root identity, pinned provider availability, read-only root operation, writable mounts, signal handling and owned cleanup. The intake evidence binds OCI identity, provenance and commands to the tested source and distinguishes reused-byte cleanup probes. No image has been published or deployed. The upstream intake of 2026-10-23 repinned the base to Node.js 26.12.1 and pnpm 12.14.0 with source contract evidence only; the actual image build and runtime smoke must pass again on that base before any publication (user decision, 2026-10-23).
 
+Upstream intake 2026-10-27 made a service-launcher-managed web server listen on private networks by default. The fork has no service launcher, so `t3 serve` keeps its unset default bind address unless an explicit host is configured, and the dependent test setup no longer reads launcher variables.
+
 ## Reconciliation Rule
 
 Accept upstream server and web build inputs. Preserve the exact-origin publication boundary, build-once promotion, non-root runtime, provider availability, private build context, and local smoke.

@@ -6,7 +6,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { normalizeGitRemoteMutationTarget } from "@t3tools/shared/git";
-import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
+import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import {
   isOriginRemoteName,
   ORIGIN_REMOTE_NAME,
@@ -39,7 +39,7 @@ export function validateProviderEndpoint(input: {
   readonly provider: SourceControlProviderKind;
   readonly providerBaseUrl: string;
 }): Effect.Effect<
-  NonNullable<ReturnType<typeof detectSourceControlProviderFromRemoteUrl>>,
+  NonNullable<ReturnType<typeof sourceControlDefinitions.recognizeRemote>>,
   SourceControlRepositoryError
 > {
   const providerBaseUrl = input.providerBaseUrl.trim();
@@ -74,7 +74,7 @@ export function validateProviderEndpoint(input: {
     );
   }
 
-  const detected = detectSourceControlProviderFromRemoteUrl(providerBaseUrl);
+  const detected = sourceControlDefinitions.recognizeRemote(providerBaseUrl);
   if (detected === null || (detected.kind !== "unknown" && detected.kind !== input.provider)) {
     return Effect.fail(
       new SourceControlRepositoryError({
@@ -270,7 +270,7 @@ function providerContextFromOrigin(input: {
   readonly provider: SourceControlProviderKind;
   readonly originUrl: string;
 }): SourceControlProvider.SourceControlProviderContext | null {
-  const detected = detectSourceControlProviderFromRemoteUrl(input.originUrl);
+  const detected = sourceControlDefinitions.recognizeRemote(input.originUrl);
   if (detected === null || (detected.kind !== "unknown" && detected.kind !== input.provider)) {
     return null;
   }

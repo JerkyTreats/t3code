@@ -12,6 +12,7 @@ import {
 } from "../components/preview/previewHostActions";
 import { useThreadTerminalActions } from "../components/terminal/useThreadTerminalActions";
 import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
+import { focusPanelTerminalAfterClose } from "../lib/terminalFocus";
 import { readLocalApi } from "../localApi";
 import { previewStateLifetimeIsCurrent, setActivePreviewTab } from "../previewStateStore";
 import {
@@ -27,10 +28,9 @@ import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useStableCallback } from "./useStableCallback";
 
 /**
- * Closes right panel surfaces for a thread. A surface's live resources go with
- * it: a browser's preview session and a terminal tab's sessions. Closing a
- * browser an agent is driving, or a terminal tab, asks first. Each close resolves
- * whether every requested surface closed; F23 closed-tab history records only those.
+ * Closing releases preview and terminal sessions. Agent-driven browsers and terminal tabs
+ * require confirmation. Each close resolves whether every requested surface closed; F23
+ * closed-tab history records only those.
  */
 export function useRightPanelSurfaceClose(input: {
   readonly threadRef: ScopedThreadRef | null;
@@ -55,9 +55,7 @@ export function useRightPanelSurfaceClose(input: {
     ref: ScopedThreadRef,
     surface: RightPanelSurface,
   ): Promise<boolean> => {
-    // Without preview access only the local surface goes away. The
-    // server record is in-memory bookkeeping, not a live view, and stays
-    // listed until a client with the scope closes it or the server restarts.
+    // Without preview access, server state remains until an authorized close or restart.
     if (canOperatePreview && surface.kind === "preview") {
       return closeConfirmedPreviewHostSurface({ threadRef: ref, surface, closePreview });
     }
@@ -112,6 +110,7 @@ export function useRightPanelSurfaceClose(input: {
     if (nextActiveSurface?.kind === "preview" && nextActiveSurface.resourceId) {
       setActivePreviewTab(threadRef, nextActiveSurface.resourceId);
     }
+    focusPanelTerminalAfterClose(threadRef, activeId);
     return released.every(Boolean);
   };
   const labelFor = (terminalId: string) =>
