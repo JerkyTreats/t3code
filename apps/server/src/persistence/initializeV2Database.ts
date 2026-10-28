@@ -48,13 +48,12 @@ export const initializeV2Database = Effect.fn("initializeV2Database")(function* 
       Effect.provide(NodeSqliteClient.layer({ filename: snapshotPath, readonly: true })),
     );
     // Publish only a complete snapshot, without replacing an existing V2 database.
-    yield* fs
-      .link(snapshotPath, destinationPath)
-      .pipe(
-        Effect.catch((error) =>
-          error.reason._tag === "AlreadyExists" ? Effect.void : Effect.fail(error),
-        ),
-      );
+    yield* fs.link(snapshotPath, destinationPath).pipe(
+      Effect.catchIf(
+        (error) => error.reason._tag === "AlreadyExists",
+        (_error) => Effect.void,
+      ),
+    );
   }).pipe(
     Effect.scoped,
     Effect.mapError((cause) => new V2DatabaseImportError({ sourcePath, destinationPath, cause })),

@@ -100,6 +100,12 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
           created_at, updated_at, last_run_status, run_count)
         VALUES ('task-1', 'Nightly', 'Run it', 1, '{}', 'project-kept', '{}', '{}',
           'full-access', 'default', 'user', 'user', '2026-08-01', '2026-08-01', 'never', 0)`;
+      yield* sql`INSERT INTO scheduled_task_webhook_replay_keys
+        (task_id, replay_key, delivery_id, expires_at)
+        VALUES ('task-1', 'replay-1', 'delivery-1', 1900000000000)`;
+      yield* sql`INSERT INTO scheduled_task_webhook_pending
+        (delivery_id, task_id, coalesce_key, due_at, task_json, request_json, delivery_ids_json)
+        VALUES ('delivery-1', 'task-1', 'key-1', 1900000000000, '{}', '{}', '[]')`;
     }),
   );
   return databasePath;
@@ -135,6 +141,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             clients: number;
             pairing: number;
             tasks: number;
+            webhooks: number;
             transfers: number;
           }>`
             SELECT
@@ -142,6 +149,8 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
               (SELECT COUNT(*) FROM auth_clients) AS clients,
               (SELECT COUNT(*) FROM auth_pairing_links) AS pairing,
               (SELECT COUNT(*) FROM scheduled_tasks) AS tasks,
+              (SELECT COUNT(*) FROM scheduled_task_webhook_replay_keys) +
+                (SELECT COUNT(*) FROM scheduled_task_webhook_pending) AS webhooks,
               (SELECT COUNT(*) FROM orchestration_v2_projection_context_transfers) AS transfers`;
           return { threads, events, sessions, leftovers };
         }),
@@ -163,6 +172,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         clients: 0,
         pairing: 0,
         tasks: 0,
+        webhooks: 0,
         transfers: 0,
       });
     }),

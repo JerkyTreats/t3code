@@ -40,7 +40,7 @@ Expose a bounded Linux desktop screenshot capture through an optional capability
 - `apps/desktop/src/preload.ts`
 - `apps/desktop/vite.config.ts`
 - `apps/web/src/components/chat/ChatComposer.tsx` creates the scoped admission owner and exposes the capture button through `apps/web/src/fork/ComposerScreenshotButton.tsx`.
-- `apps/web/src/components/chat/useComposerAttachmentIntake.ts` runs capture and ordinary image preparation through one reservation path; `useComposerContextImport.ts` counts its pending slots.
+- `apps/web/src/components/chat/useComposerAttachmentIntake.ts` admits the captured PNG through ordinary image intake, where the capture reservation hands its slot to upstream's preparing placeholder (`preparingComposerImages.ts`) in the same tick; `useComposerContextImport.ts` counts capture reservations beside preparing placeholders.
 - `packages/contracts/src/ipc.ts`
 
 ## Upstream Substrate
@@ -61,12 +61,14 @@ Expose a bounded Linux desktop screenshot capture through an optional capability
 - PNG tests cover signature, header, terminal marker, incomplete state, invalid state, and the exact image ceiling.
 - Capture tests cover delayed output, changed clipboard, cancellation, fallback, child termination, timeout, and cleanup.
 - IPC and preload tests cover capability absence, valid capture, malformed payload rejection, and distinct top-level capture and unchanged nested preview capture. Packaged output remains part of later installed acceptance.
-- Owner tests (`composerAttachmentAdmission.test.ts`, `composerScreenshot.test.ts`) cover capability absence, exact PNG conversion, shared budget, transfer without double counting, scoped destination invalidation, cancellation and single flight. `ChatComposer.screenshot.browser.test.tsx` mounts the composer to cover submission and compact gating through capture and preparation, shared paste capacity, last-slot refusal, failure release, environment and draft retarget drops, unmount cleanup, focus retention and question-image admission.
+- Owner tests (`composerAttachmentAdmission.test.ts`, `composerScreenshot.test.ts`) cover capability absence, exact PNG conversion, shared budget, transfer without double counting, scoped destination invalidation, cancellation and single flight. `ChatComposer.screenshot.browser.test.tsx` mounts the composer to cover submission and compact gating through capture and preparation, shared paste capacity, last-slot refusal, failure release, capture-time environment and draft retarget drops, ordinary preparation staying with its original draft or question, unmount cleanup, focus retention and question-image admission.
 
 ## Reconciliation Rule
 
 Keep desktop capture isolated behind the optional upstream bridge and route composer attachment only through the upstream image admission owner.
 
 ## Current Capability Contract
+
+Ordinary image preparation follows upstream's preparing placeholders, which hold their slots in the target they were added to; the admission owner holds only native capture reservations, and send, compact and capacity checks count both. A capture is checked against its scoped destination when the image arrives; after its placeholder takes the slot, it follows ordinary upstream preparation.
 
 Only a strict successful availability probe exposes the optional top-level method. A missing, throwing or malformed probe leaves the capability absent. `preview.captureScreenshot` continues to mean preview-page capture. Main process validates complete PNG structure and the shared ten MiB ceiling; preload validates the bounded signature envelope before the composer converts one artifact to one ordinary image. No screenshot-specific storage or send queue is introduced.

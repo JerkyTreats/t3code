@@ -1,3 +1,5 @@
+import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import { createInboxReturnTracker } from "@t3tools/client-runtime/state/thread-inbox";
 import { presentThreadShell } from "@t3tools/client-runtime/state/models";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
@@ -33,6 +35,7 @@ import {
   buildThreadListV2ListItems,
   getThreadListV2OrderedSection,
   resolveThreadListV2SnoozeMenuSelection,
+  resolveThreadListV2SnoozePresets,
   resolveThreadListV2Status,
   resolveThreadListV2WokeAt,
   sortThreadsForListV2,
@@ -152,6 +155,22 @@ describe("resolveThreadListV2SnoozeMenuSelection", () => {
   });
 });
 
+describe("resolveThreadListV2SnoozePresets", () => {
+  it("reads preset times from the list minute, not the clock at first render", () => {
+    using _timers = { [Symbol.dispose]: () => vi.useRealTimers() };
+    vi.useFakeTimers({ now: new Date(2026, 4, 8, 10) });
+    const laterMinute = new Date(2026, 4, 8, 19, 15).toISOString();
+
+    const presets = resolveThreadListV2SnoozePresets({ secondary: "snooze", now: laterMinute });
+
+    expect(presets.find((preset) => preset.id === "hour")?.snoozedUntil).toBe(
+      new Date(2026, 4, 8, 20, 15).toISOString(),
+    );
+    // The evening preset is gone by 19:15; a reading from 10:00 would still offer it.
+    expect(presets.map((preset) => preset.id)).not.toContain("evening");
+  });
+});
+
 describe("resolveThreadListV2Status", () => {
   it("presents decoded thread waits as Waiting while preserving requests and older servers", () => {
     const raw = makeRawThreadShell({
@@ -177,12 +196,25 @@ describe("resolveThreadListV2Status", () => {
     );
   });
 
+  it("shows a waiting guest message as Request, after the agent's own requests", () => {
+    const thread = presentThreadShell(
+      environmentId,
+      decodeThreadShell(makeRawThreadShell({ status: "running" })),
+    );
+    const guest = { ...thread, pendingGuestMessageCount: 1 };
+
+    expect(resolveThreadListV2Status(guest)).toBe("request");
+    expect(resolveThreadListV2Status({ ...guest, hasPendingUserInput: true })).toBe("input");
+    expect(resolveThreadListV2Status({ ...guest, hasPendingApprovals: true })).toBe("approval");
+  });
+
   it.each([
-    { kind: "command", status: "ready" },
-    { kind: "monitor", status: "waiting" },
+    { roster: "dev server", task: { kind: "command" }, status: "ready" },
+    { roster: "dev server watchdog", task: { kind: "monitor" }, status: "ready" },
+    { roster: "awaited command", task: { kind: "command", awaited: true }, status: "waiting" },
   ] as const)(
-    "presents an unseen completion with a $kind roster as $status",
-    ({ kind, status }) => {
+    "presents an unseen completion with a $roster roster as $status",
+    ({ task, status }) => {
       const thread = presentThreadShell(
         environmentId,
         makeRawThreadShell({
@@ -190,7 +222,7 @@ describe("resolveThreadListV2Status", () => {
           status: "completed",
           latestRunCompletedAt: DateTime.makeUnsafe(NOW),
           lastVisitedAt: DateTime.makeUnsafe("2026-06-01T23:59:00.000Z"),
-          pendingBackgroundTasks: [{ taskId: "background-work", kind }],
+          pendingBackgroundTasks: [{ taskId: "background-work", ...task }],
         }),
       );
 
@@ -226,6 +258,33 @@ describe("queued messages keep a settled thread active", () => {
       ["settled", "slim"],
     ]);
     expect(layout.settledCount).toBe(1);
+  });
+});
+
+describe("search lists ranked matches", () => {
+  const matchKey = (id: string) =>
+    threadSearchMatchKey({ environmentId, threadId: ThreadId.make(id) });
+
+  it("lists matches by rank across shelves, then threads listed for their messages", () => {
+    const layout = buildThreadListV2Items({
+      threads: [
+        makeThread({ id: ThreadId.make("notes"), title: "Deploy notes" }),
+        makeThread({ id: ThreadId.make("mentioned"), title: "Weekly notes" }),
+        makeThread({ id: ThreadId.make("exact"), title: "Deploy", settledOverride: "settled" }),
+      ],
+      environmentId: null,
+      searchQuery: "deploy",
+      matchedThreadKeys: new Set([matchKey("mentioned"), matchKey("notes")]),
+      settledShelfExpanded: false,
+      now: NOW,
+    });
+    // The exact title leads even from a collapsed Settled shelf, and keeps its look.
+    expect(layout.items.map((item) => [item.thread.id, item.variant])).toEqual([
+      ["exact", "slim"],
+      ["notes", "card"],
+      ["mentioned", "card"],
+    ]);
+    expect([...layout.contentOnlyThreadKeys]).toEqual([matchKey("mentioned")]);
   });
 });
 
@@ -555,6 +614,20 @@ describe("buildThreadListV2Items", () => {
     ]);
   });
 
+  it("forgives a typo even when a hidden thread matches the query exactly", () => {
+    const { items } = buildThreadListV2Items({
+      threads: [
+        makeThread({ id: ThreadId.make("visible"), title: "Restore drag handles" }),
+        makeThread({ id: ThreadId.make("archived"), title: "Drga notes", archivedAt: NOW }),
+      ],
+      environmentId: null,
+      searchQuery: "drga",
+      now: NOW,
+    });
+
+    expect(items.map((item) => item.thread.id)).toEqual(["visible"]);
+  });
+
   it("scopes the flat list to every environment member of a logical project", () => {
     const remoteEnvironmentId = EnvironmentId.make("environment-remote");
     const projectId = ProjectId.make("project-1");
@@ -619,6 +692,49 @@ describe("buildThreadListV2Items settled paging", () => {
       "settled-3",
       "settled-2",
     ]);
+  });
+
+  it("lists only loaded settled rows and counts the threads the shell left out", () => {
+    const settled = (index: number) =>
+      makeThread({
+        id: ThreadId.make(`settled-${index}`),
+        title: `Settled ${index}`,
+        // Conversation order: empty conversations rank by creation time.
+        createdAt: `2026-06-0${index}T00:00:00.000Z`,
+        settledOverride: "settled",
+        settledAt: `2026-06-0${index}T00:00:00.000Z`,
+      });
+    const threads = [settled(1), settled(2), settled(3)];
+    const layout = buildThreadListV2Items({
+      threads,
+      environmentId: null,
+      searchQuery: "",
+      settledLimit: 10,
+      now: NOW,
+      // settled-1 came back mid-session, below the loaded range; the route keeps it visible.
+      isListedSettled: (thread) => thread.id !== "settled-1",
+      unloadedSettledCount: 40,
+      selectedThreadKey: `${threads[0]!.environmentId}:settled-1`,
+    });
+    expect(layout.items.map((item) => item.thread.id)).toEqual([
+      "settled-3",
+      "settled-2",
+      "settled-1",
+    ]);
+    expect(layout.settledCount).toBe(43);
+    expect(layout.hiddenSettledCount).toBe(40);
+
+    // A scope whose settled threads are all older still shows its Settled header.
+    const unloadedOnly = buildThreadListV2Items({
+      threads: [],
+      environmentId: null,
+      searchQuery: "",
+      settledLimit: 10,
+      now: NOW,
+      unloadedSettledCount: 5,
+    });
+    expect(unloadedOnly.settledCount).toBe(5);
+    expect(unloadedOnly.settledShelfHeaderIndex).toBe(0);
   });
 });
 
@@ -802,7 +918,6 @@ describe("buildThreadListV2ListItems", () => {
           projectId: ProjectId.make("project-1"),
           projectTitle: undefined,
           projectCwd: undefined,
-          branch: null,
           title: "unsent",
           createdAt: NOW,
           draftKey: "new-task:unsent",
@@ -1691,6 +1806,34 @@ describe("Working section beta", () => {
       variant: "card",
     });
     expect(ids(build({ selectedThreadKey: `${environmentId}:working` })).at(-1)).toBe("working");
+  });
+
+  it("keeps an inactive row in Working during the shared grace and returns it on expiry", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW));
+    const tracker = createInboxReturnTracker();
+    const working = makeThread({ id: ThreadId.make("grace"), title: "grace", runtime: running });
+    const inactive = { ...working, runtime: null };
+    const render = () =>
+      build({
+        threads: [inactive],
+        workingShelfExpanded: true,
+        isWorking: tracker.isWorking,
+        inboxReturnAt: tracker.returnedAt,
+      });
+    try {
+      tracker.observe([working]);
+      tracker.observe([inactive]);
+      expect(render().workingCount).toBe(1);
+      expect(render().items[0]?.thread.runtime).toBeNull();
+      vi.advanceTimersByTime(2_000);
+      expect(render().workingCount).toBe(0);
+      expect(ids(render())).toEqual(["grace"]);
+      expect(tracker.returnedAt(inactive)).toBe(Date.parse(NOW) + 2_000);
+    } finally {
+      tracker.observe(null);
+      vi.useRealTimers();
+    }
   });
 
   it("ignores device-observed return timestamps when ordering the inbox", () => {

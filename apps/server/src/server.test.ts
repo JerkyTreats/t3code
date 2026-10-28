@@ -175,7 +175,7 @@ const buildAuthorityHost = Effect.gen(function* () {
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
       const session = yield* auth
-        .authenticateWebSocketUpgrade(request)
+        .authenticateWebSocketUpgrade(request, "rpc")
         .pipe(
           Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, () =>
             failEnvironmentAuthInvalid("invalid_credential"),
@@ -587,7 +587,7 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
         }).pipe(Effect.provide(AuthorityHttpServerLive)),
     );
 
-    it.effect("records client.connected only once, and only after WebSocket admission", () =>
+    it.effect("records client owners only once, and only after WebSocket admission", () =>
       Effect.gen(function* () {
         const host = yield* buildAuthorityHost;
         const recorded: Array<string> = [];
@@ -605,7 +605,6 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
               session,
               clientOrigin: { surface: "web" },
               analytics,
-              clientAnalyticsProps: { surface: "web" },
               clientOwners: [],
             },
             Effect.succeed(HttpServerResponse.empty()),
@@ -621,7 +620,7 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
         const admittedIssued = yield* host.sessions.issue({});
         const admitted = yield* host.sessions.verify(admittedIssued.token);
         yield* serve(admitted);
-        assert.deepEqual(recorded, ["client.connected", "owners:client"]);
+        assert.deepEqual(recorded, ["owners:client"]);
       }).pipe(Effect.provide(AuthorityHttpServerLive)),
     );
 

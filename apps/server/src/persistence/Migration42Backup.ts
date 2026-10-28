@@ -158,12 +158,9 @@ const assertSqliteIntegrity = Effect.fn("Migration42Backup.assertSqliteIntegrity
 });
 
 /**
- * Preserve a consistent pre-migration database exactly once while migration 42 is pending.
- *
- * SQLite creates the snapshot under its own consistency boundary. Operators may
- * remove the retained directory after accepting migration 42. Later starts inspect
- * the migration journal and do not recreate a post-migration snapshot. Migration
- * 41 remains pending regardless of its historically colliding journal name.
+ * Snapshot the database once, under SQLite's consistency boundary, while migration 42 is pending.
+ * Later starts read the journal and never snapshot after migration 42. Migration 41 stays
+ * pending regardless of its colliding journal name.
  */
 export const backupDatabaseBeforeMigration42 = Effect.fn(
   "Migration42Backup.backupDatabaseBeforeMigration42",

@@ -123,7 +123,7 @@ describe("ChatComposer floating runtime control", () => {
     expect(floating.className).toContain("-top-4");
     expect(
       screen.container.querySelector("[data-chat-composer-main-surface='true']")?.className ?? "",
-    ).toContain("rounded-[24px]");
+    ).toContain("rounded-2xl");
     const trigger = screen.getByRole("combobox", { name: "Runtime mode" });
     expect(floating.contains(trigger.element())).toBe(true);
     await trigger.click();

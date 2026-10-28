@@ -4,25 +4,21 @@ import {
   PullRequestUnavailableError,
   type PullRequestRef,
 } from "@t3tools/contracts";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
-import { canonicalRepositoryKey } from "@t3tools/shared/sourceControl";
 import {
   azureDevOpsRepositoryTargetFromOrigin,
   azureDevOpsRepositoryTargetFromRemoteUrl,
 } from "@t3tools/source-control-core/server/fork/AzureDevOpsRepositoryTarget";
 import type { RepositoryIdentity } from "@t3tools/contracts";
 import { gitLabRepositoryTargetFromOrigin } from "@t3tools/source-control-core/server/fork/GitLabRepositoryTarget";
-import { SourceControlProviderError, pullRequestHostOf } from "@t3tools/contracts";
-import { normalizeGitRemoteMutationTarget, normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import { SourceControlProviderError } from "@t3tools/contracts";
+import { normalizeGitRemoteMutationTarget } from "@t3tools/shared/git";
 import * as Effect from "effect/Effect";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import type * as OriginRepositoryMutationAuthority from "./OriginRepositoryMutationAuthority.ts";
 import { isOriginRemoteName } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 import type { SourceControlProviderInfo } from "@t3tools/contracts";
-import {
-  isSshRemoteUrl,
-  detectSourceControlProviderFromRemoteUrl,
-} from "@t3tools/shared/sourceControl";
+import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
+import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 
 import { selectOriginRemote } from "@t3tools/source-control-core/server/fork/originOnlySourceControlPolicy";
 
@@ -85,7 +81,7 @@ export function requireOriginCreationRepository(
     ? Effect.succeed({
         origin,
         expectedIdentity: {
-          canonicalKey: normalizeGitRemoteUrl(origin.url),
+          canonicalKey: sourceControlDefinitions.repositoryKeyFromRemote(origin.url),
           locator: { source: "git-remote", remoteName: origin.name, remoteUrl: origin.url },
         },
       })
@@ -122,13 +118,24 @@ export function pickOriginSourceControlContext(
   const origin = selectOriginRemote(remotes);
   if (!origin) return null;
 
-  const provider = detectSourceControlProviderFromRemoteUrl(origin.url);
+  const provider = sourceControlDefinitions.recognizeRemote(origin.url);
   return provider
     ? {
         provider,
         remoteName: origin.name,
         remoteUrl: origin.url,
       }
+    : null;
+}
+
+/** The provider context of a projected exact origin identity, or null when it names no origin. */
+export function originContextOfIdentity(
+  identity: RepositoryIdentity | null | undefined,
+): SourceControlProvider.SourceControlProviderContext | null {
+  return identity != null && isOriginRemoteName(identity.locator.remoteName)
+    ? pickOriginSourceControlContext([
+        { name: identity.locator.remoteName, url: identity.locator.remoteUrl },
+      ])
     : null;
 }
 
@@ -204,7 +211,7 @@ export function bindOriginProviderContext(
       .authorize({
         cwd: input.cwd,
         expectedIdentity: {
-          canonicalKey: normalizeGitRemoteUrl(context.remoteUrl),
+          canonicalKey: sourceControlDefinitions.repositoryKeyFromRemote(context.remoteUrl),
           locator: {
             source: "git-remote",
             remoteName: context.remoteName,
@@ -235,18 +242,32 @@ export function bindOriginProviderContext(
     ...provider,
     kind: provider.kind,
     ...(provider.resolveLink === undefined ? {} : { resolveLink: provider.resolveLink }),
-    listChangeRequests: (input) => provider.listChangeRequests(withContext(input)),
-    getChangeRequest: (input) => provider.getChangeRequest(withContext(input)),
-    createChangeRequest: (input) =>
-      authorizeOriginMutation({ cwd: input.cwd, reference: input.headSelector }).pipe(
-        Effect.flatMap((mutationContext) =>
-          provider.createChangeRequest({ ...input, context: mutationContext }),
-        ),
-      ),
-    getRepositoryCloneUrls: (input) => provider.getRepositoryCloneUrls(withContext(input)),
-    createRepository: (input) => provider.createRepository(input),
-    getDefaultBranch: (input) => provider.getDefaultBranch(withContext(input)),
-    checkoutChangeRequest: (input) => provider.checkoutChangeRequest(withContext(input)),
+    // Binding context does not create a second provider-operation span.
+    listChangeRequests: Effect.fnUntraced(function* (input) {
+      return yield* provider.listChangeRequests(withContext(input));
+    }),
+    getChangeRequest: Effect.fnUntraced(function* (input) {
+      return yield* provider.getChangeRequest(withContext(input));
+    }),
+    createChangeRequest: Effect.fnUntraced(function* (input) {
+      const mutationContext = yield* authorizeOriginMutation({
+        cwd: input.cwd,
+        reference: input.headSelector,
+      });
+      return yield* provider.createChangeRequest({ ...input, context: mutationContext });
+    }),
+    getRepositoryCloneUrls: Effect.fnUntraced(function* (input) {
+      return yield* provider.getRepositoryCloneUrls(withContext(input));
+    }),
+    createRepository: Effect.fnUntraced(function* (input) {
+      return yield* provider.createRepository(input);
+    }),
+    getDefaultBranch: Effect.fnUntraced(function* (input) {
+      return yield* provider.getDefaultBranch(withContext(input));
+    }),
+    checkoutChangeRequest: Effect.fnUntraced(function* (input) {
+      return yield* provider.checkoutChangeRequest(withContext(input));
+    }),
   });
 }
 
@@ -272,7 +293,7 @@ export function originCreatedPullRequestKey(
   readonly number: number;
   readonly url: string;
 } | null {
-  const parsed = parseChangeRequestUrl(url);
+  const parsed = sourceControlDefinitions.parseChangeRequestUrl(url)?.link;
   const repository = originPullRequestRepository(identity);
   if (!identity || !parsed || parsed.number !== number || repository === null) return null;
   if (identity.provider === "azure-devops") {
@@ -280,7 +301,7 @@ export function originCreatedPullRequestKey(
     const actual = azureDevOpsRepositoryTargetFromRemoteUrl(url);
     if (!expected || !actual) return null;
     const key = (target: typeof expected) =>
-      canonicalRepositoryKey(
+      sourceControlDefinitions.canonicalRepositoryKey(
         normalizeGitRemoteMutationTarget(
           `${target.organization}/${target.project}/_git/${target.repository}`,
         ),
@@ -291,8 +312,10 @@ export function originCreatedPullRequestKey(
     normalizeGitRemoteMutationTarget(identity.locator.remoteUrl)
   )
     return null;
+  const host = sourceControlDefinitions.changeRequestHost(identity, identity.provider);
+  if (host === undefined) return null;
   return {
-    host: pullRequestHostOf(identity, identity.provider as SourceControlProviderKind),
+    host,
     repository: repository.toLowerCase(),
     number,
     url,

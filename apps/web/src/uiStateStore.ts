@@ -31,6 +31,7 @@ export interface PersistedUiState {
   defaultAdvertisedEndpointKey?: string | null;
   sidebarProjectScopeKey?: string | null;
   sidebarView?: SidebarView;
+  sidebarProjectScopeKeys?: string[];
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   nestedThreadExpandedByKey?: Record<string, boolean>;
@@ -40,7 +41,7 @@ export interface PersistedUiState {
 export interface UiProjectState {
   projectExpandedById: Record<string, boolean>;
   projectOrder: string[];
-  sidebarProjectScopeKey: string | null;
+  sidebarProjectScopeKeys: string[];
   sidebarView: SidebarView;
 }
 
@@ -66,7 +67,7 @@ export interface UiState
 const initialState: UiState = {
   projectExpandedById: {},
   projectOrder: [],
-  sidebarProjectScopeKey: null,
+  sidebarProjectScopeKeys: [],
   sidebarView: "projects",
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
@@ -162,7 +163,9 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
         : {},
     nestedThreadExpandedByKey: sanitizeBooleanRecord(parsed.nestedThreadExpandedByKey),
     defaultAdvertisedEndpointKey: sanitizeOptionalKey(parsed.defaultAdvertisedEndpointKey),
-    sidebarProjectScopeKey: sanitizeOptionalKey(parsed.sidebarProjectScopeKey),
+    sidebarProjectScopeKeys: sanitizeStringArray(
+      parsed.sidebarProjectScopeKeys ?? [parsed.sidebarProjectScopeKey],
+    ),
     sidebarView: parsed.sidebarView === "threads" ? "threads" : "projects",
     pullRequestMergeMethod: isPullRequestMergeMethod(parsed.pullRequestMergeMethod)
       ? parsed.pullRequestMergeMethod
@@ -237,7 +240,12 @@ export function persistState(state: UiState): void {
         projectOrder: state.projectOrder,
         threadLastVisitedAtById: state.threadLastVisitedAtById,
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
-        sidebarProjectScopeKey: state.sidebarProjectScopeKey,
+        sidebarProjectScopeKeys: state.sidebarProjectScopeKeys,
+        // Older clients read only this field.
+        sidebarProjectScopeKey:
+          state.sidebarProjectScopeKeys.length === 1
+            ? (state.sidebarProjectScopeKeys[0] ?? null)
+            : null,
         sidebarView: state.sidebarView,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
@@ -367,14 +375,17 @@ function setDefaultAdvertisedEndpointKey(state: UiState, key: string | null): Ui
   };
 }
 
-function setSidebarProjectScopeKey(state: UiState, projectKey: string | null): UiState {
-  const nextKey = sanitizeOptionalKey(projectKey);
-  if (state.sidebarProjectScopeKey === nextKey) {
+function setSidebarProjectScopeKeys(state: UiState, projectKeys: readonly string[]): UiState {
+  const nextKeys = sanitizeStringArray(projectKeys);
+  if (
+    nextKeys.length === state.sidebarProjectScopeKeys.length &&
+    nextKeys.every((key, index) => key === state.sidebarProjectScopeKeys[index])
+  ) {
     return state;
   }
   return {
     ...state,
-    sidebarProjectScopeKey: nextKey,
+    sidebarProjectScopeKeys: nextKeys,
   };
 }
 
@@ -475,7 +486,7 @@ interface UiStateStore extends UiState {
     threads?: Parameters<typeof setNestedThreadExpanded>[3],
   ) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
-  setSidebarProjectScopeKey: (projectKey: string | null) => void;
+  setSidebarProjectScopeKeys: (projectKeys: readonly string[]) => void;
   setSidebarView: (view: UiProjectState["sidebarView"]) => void;
   setPullRequestMergeMethod: (method: PullRequestMergeMethod) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
@@ -498,8 +509,8 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setNestedThreadExpanded(state, threadKey, expanded, threads)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
-  setSidebarProjectScopeKey: (projectKey) =>
-    set((state) => setSidebarProjectScopeKey(state, projectKey)),
+  setSidebarProjectScopeKeys: (projectKeys) =>
+    set((state) => setSidebarProjectScopeKeys(state, projectKeys)),
   setSidebarView: (view) => set((state) => setSidebarView(state, view)),
   setPullRequestMergeMethod: (method) => set((state) => setPullRequestMergeMethod(state, method)),
   setProjectExpanded: (projectIds, expanded) =>

@@ -80,3 +80,16 @@ export function gitCafeCloneLookupTarget(input: {
   }
   return gitCafePublicationTarget(input.providerBaseUrl ?? "", input.repository);
 }
+
+const API_REPOSITORY_PREFIX = /^\/api\/repos\/[^/]+\/[^/]+(?=\/|$)/u;
+
+/**
+ * Fork F06: a redirect GitCafe answers keeps the repository scope of the request it answers. A
+ * renumbered pull request moves within its repository; a target in another repository on the
+ * same host, or a host-wide request moved into a repository, is refused before it is sent.
+ */
+export function gitCafeRedirectKeepsRepository(from: string, to: URL): boolean {
+  if (/%2f|%5c/iu.test(to.pathname)) return false;
+  const scope = (pathname: string) => API_REPOSITORY_PREFIX.exec(pathname)?.[0] ?? null;
+  return scope(new URL(from).pathname) === scope(to.pathname);
+}

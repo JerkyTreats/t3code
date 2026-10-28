@@ -11,13 +11,7 @@ import {
   type NestedThreadGroups,
   type NestedThreadRowPresentation,
 } from "@t3tools/client-runtime/state/thread-nesting";
-import { pendingSubagentRequestsByThread } from "@t3tools/client-runtime/state/threads";
-import type {
-  EnvironmentId,
-  OrchestrationV2ThreadShell,
-  ScopedThreadRef,
-  ThreadId,
-} from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 
 import type { SidebarSection } from "../components/Sidebar.logic";
 
@@ -156,22 +150,4 @@ export function nestedThreadPaletteTitle<
 >(thread: T, threadsByKey: ReadonlyMap<string, T>): string {
   const parent = resolveNestedThreadParent(thread, threadsByKey);
   return parent === null ? thread.title : nestedThreadPaletteLabel(parent.title, thread.title);
-}
-
-/**
- * Requests the notifier reads per thread: those bubbled up from subagents
- * only. A nested child notifies for itself, so the copy of its request on its
- * parent must not notify a second time.
- */
-export function notificationSubagentRequests(
-  threads: ReadonlyArray<OrchestrationV2ThreadShell>,
-): ReturnType<typeof pendingSubagentRequestsByThread> {
-  if (!threads.some((thread) => thread.nestedUnderThreadId != null)) {
-    return pendingSubagentRequestsByThread(threads);
-  }
-  return pendingSubagentRequestsByThread(
-    threads.map((thread) =>
-      thread.nestedUnderThreadId == null ? thread : { ...thread, nestedUnderThreadId: null },
-    ),
-  );
 }

@@ -10,7 +10,6 @@ import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 
 import { PrimaryEnvironmentHttpClient, layer as primaryClientLayer } from "./httpClient";
 import { layer as primaryEnvironmentHttpLayer } from "./httpLayer";
@@ -28,6 +27,7 @@ export function makeThreadPrimaryAuth():
   const applicationOrigin = new URL(initial.httpBaseUrl).origin;
   const clientLayer = primaryClientLayer.pipe(Layer.provide(primaryEnvironmentHttpLayer));
 
+  // Providing the client inside each attempt preserves its interruption and abort signal.
   const webSocketTicket = Effect.fn("web.threadAuth.webSocketTicket")(function* (
     target: ThreadPrimaryTarget,
   ) {
@@ -60,12 +60,11 @@ export function makeThreadPrimaryAuth():
       });
     }
     return result;
-  });
+  }, Effect.provide(clientLayer));
 
   return ClientCapabilities.PrimaryEnvironmentAuth.of({
     bearerToken: Effect.succeedNone,
-    // Providing the client inside the attempt preserves its interruption and abort signal.
-    webSocketTicket: (target) => webSocketTicket(target).pipe(Effect.provide(clientLayer)),
+    webSocketTicket,
   });
 }
 

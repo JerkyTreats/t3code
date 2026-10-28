@@ -6,7 +6,7 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { memo, useEffect, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -14,11 +14,7 @@ import { cn } from "~/lib/utils";
 import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
-import {
-  ModelEsque,
-  getTriggerDisplayModelLabel,
-  getTriggerDisplayModelName,
-} from "./providerIconUtils";
+import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
 import {
   ComposerControl,
@@ -27,6 +23,52 @@ import {
 } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
+
+/** Holds the page still behind the open picker; its lifetime is the popup element's. */
+function lockBackgroundScroll(popup: HTMLElement | null) {
+  if (!popup) return;
+  const { documentElement, body } = document;
+  const previousDocumentOverscrollBehavior = documentElement.style.overscrollBehavior;
+  const previousBodyOverflow = body.style.overflow;
+  const previousBodyPaddingRight = body.style.paddingRight;
+  const scrollbarWidth = window.innerWidth - documentElement.clientWidth;
+
+  documentElement.style.overscrollBehavior = "contain";
+  body.style.overflow = "hidden";
+  if (scrollbarWidth > 0) {
+    body.style.paddingRight = `${scrollbarWidth}px`;
+  }
+
+  const shouldAllowOverlayScroll = (target: EventTarget | null) => {
+    return target instanceof Element && target.closest("[data-model-picker-content]");
+  };
+  const preventBackgroundWheel = (event: WheelEvent) => {
+    if (shouldAllowOverlayScroll(event.target)) {
+      return;
+    }
+    event.preventDefault();
+  };
+  const preventBackgroundTouchMove = (event: TouchEvent) => {
+    if (shouldAllowOverlayScroll(event.target)) {
+      return;
+    }
+    event.preventDefault();
+  };
+
+  document.addEventListener("wheel", preventBackgroundWheel, { capture: true, passive: false });
+  document.addEventListener("touchmove", preventBackgroundTouchMove, {
+    capture: true,
+    passive: false,
+  });
+
+  return () => {
+    document.removeEventListener("wheel", preventBackgroundWheel, { capture: true });
+    document.removeEventListener("touchmove", preventBackgroundTouchMove, { capture: true });
+    documentElement.style.overscrollBehavior = previousDocumentOverscrollBehavior;
+    body.style.overflow = previousBodyOverflow;
+    body.style.paddingRight = previousBodyPaddingRight;
+  };
+}
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
@@ -59,6 +101,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const composerFloatingLayerProps = useComposerMenuProps();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const size = props.size ?? "sm";
 
   const activeEntry =
@@ -83,14 +126,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const triggerTitle =
     threadLabel?.title ??
     (selectedModel
-      ? getTriggerDisplayModelName(selectedModel)
+      ? getTriggerDisplayModelName(selectedModel, activeEntry?.driverKind)
       : props.model === ANTIGRAVITY_DEFAULT_MODEL
         ? "Choose model"
         : props.model || "Choose model");
   const triggerLabel =
     threadLabel?.label ??
     (selectedModel
-      ? `${getTriggerDisplayModelLabel(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
+      ? `${getDisplayModelName(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
       : triggerTitle);
   const showInstanceBadge =
     activeEntry !== null && shouldShowInstanceBadge(activeEntry, props.instanceEntries);
@@ -101,54 +144,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       setUncontrolledIsMenuOpen(open);
     }
   };
-
-  useEffect(() => {
-    if (!isMenuOpen) {
-      return;
-    }
-
-    const { documentElement, body } = document;
-    const previousDocumentOverscrollBehavior = documentElement.style.overscrollBehavior;
-    const previousBodyOverflow = body.style.overflow;
-    const previousBodyPaddingRight = body.style.paddingRight;
-    const scrollbarWidth = window.innerWidth - documentElement.clientWidth;
-
-    documentElement.style.overscrollBehavior = "contain";
-    body.style.overflow = "hidden";
-    if (scrollbarWidth > 0) {
-      body.style.paddingRight = `${scrollbarWidth}px`;
-    }
-
-    const shouldAllowOverlayScroll = (target: EventTarget | null) => {
-      return target instanceof Element && target.closest("[data-model-picker-content]");
-    };
-    const preventBackgroundWheel = (event: WheelEvent) => {
-      if (shouldAllowOverlayScroll(event.target)) {
-        return;
-      }
-      event.preventDefault();
-    };
-    const preventBackgroundTouchMove = (event: TouchEvent) => {
-      if (shouldAllowOverlayScroll(event.target)) {
-        return;
-      }
-      event.preventDefault();
-    };
-
-    document.addEventListener("wheel", preventBackgroundWheel, { capture: true, passive: false });
-    document.addEventListener("touchmove", preventBackgroundTouchMove, {
-      capture: true,
-      passive: false,
-    });
-
-    return () => {
-      document.removeEventListener("wheel", preventBackgroundWheel, { capture: true });
-      document.removeEventListener("touchmove", preventBackgroundTouchMove, { capture: true });
-      documentElement.style.overscrollBehavior = previousDocumentOverscrollBehavior;
-      body.style.overflow = previousBodyOverflow;
-      body.style.paddingRight = previousBodyPaddingRight;
-    };
-  }, [isMenuOpen]);
 
   const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
     if (props.disabled) return;
@@ -168,12 +163,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       model: selection.model,
       options: props.modelOptionsByInstance.get(selection.instanceId) ?? [],
     });
+    const unavailable = model?.isUnavailable ? " (Unavailable)" : "";
     return {
       ...selection,
       entry,
       label: model
-        ? `${getTriggerDisplayModelName(model)}${model.isUnavailable ? " (Unavailable)" : ""}`
+        ? `${getTriggerDisplayModelName(model, entry?.driverKind)}${unavailable}`
         : selection.model,
+      fullLabel: model ? `${getDisplayModelName(model)}${unavailable}` : selection.model,
     };
   });
   const multipleLabel = selectedEntries
@@ -185,7 +182,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           .join(", ")}${selectedEntries.length > 2 ? `, ${selectedEntries.length - 2} more` : ""}`
     : undefined;
   const allModelNames = selectedEntries
-    ? selectedEntries.map((selection) => selection.label).join(", ") || "Choose models"
+    ? selectedEntries.map((selection) => selection.fullLabel).join(", ") || "Choose models"
     : undefined;
   const triggerTooltipContent = shortcutLabel
     ? `${props.triggerLabel ?? allModelNames ?? triggerLabel} · ${shortcutLabel}`
@@ -205,7 +202,13 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       <PopoverTrigger
         render={
           <ComposerControl
-            aria-label={props.triggerAriaLabel ?? threadLabel?.ariaLabel ?? allModelNames}
+            aria-label={
+              props.triggerAriaLabel ??
+              props.triggerLabel ??
+              threadLabel?.ariaLabel ??
+              allModelNames ??
+              triggerLabel
+            }
             size={size}
             data-chat-provider-model-picker="true"
             className={cn(
@@ -286,12 +289,15 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       </PopoverTrigger>
       <PopoverPopup
         {...(props.isComposerOwned ? composerFloatingLayerProps : {})}
+        ref={lockBackgroundScroll}
+        initialFocus={searchInputRef}
         align="start"
         className="before:hidden"
         padding="none"
         touchBackdrop
       >
         <ModelPickerContent
+          searchInputRef={searchInputRef}
           environmentId={props.environmentId}
           activeInstanceId={activeInstanceId}
           model={props.model}
@@ -311,9 +317,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           terminalOpen={props.terminalOpen ?? false}
           onRequestClose={() => setIsMenuOpen(false)}
           {...(props.onOpenProviderSetup ? { onOpenProviderSetup: props.onOpenProviderSetup } : {})}
-          {...(props.getModelDisabledReason
-            ? { getModelDisabledReason: props.getModelDisabledReason }
-            : {})}
+          getModelDisabledReason={(instanceId, model) =>
+            props.disabled
+              ? "Model picker is disabled"
+              : (props.getModelDisabledReason?.(instanceId, model) ?? null)
+          }
           onInstanceModelChange={handleInstanceModelChange}
         />
         {props.selectedModels === undefined ? (

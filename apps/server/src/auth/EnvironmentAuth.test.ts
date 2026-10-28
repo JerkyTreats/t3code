@@ -1,6 +1,15 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no generateKeyPairSync or sign.
+import * as NodeCrypto from "node:crypto";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { authScopeResponse, AuthStandardClientScopes } from "@t3tools/contracts";
+import {
+  computeDpopAccessTokenHash,
+  computeDpopJwkThumbprint,
+  type DpopPublicJwk,
+} from "@t3tools/shared/dpop";
 import { expect, it } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
@@ -69,6 +78,36 @@ const requestMetadata = {
   ipAddress: "192.168.1.23",
 };
 
+const makeDpopKey = () => {
+  const { privateKey, publicKey } = NodeCrypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const publicJwk = publicKey.export({ format: "jwk" }) as DpopPublicJwk;
+  let proofCount = 0;
+  return {
+    thumbprint: computeDpopJwkThumbprint(publicJwk),
+    sign: (input: {
+      readonly method: string;
+      readonly url: string;
+      readonly token: string;
+      readonly iat: number;
+    }) => {
+      const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+      const header = encode({ typ: "dpop+jwt", alg: "ES256", jwk: publicJwk });
+      const payload = encode({
+        htm: input.method,
+        htu: input.url,
+        jti: `proof-${++proofCount}`,
+        iat: input.iat,
+        ath: computeDpopAccessTokenHash(input.token),
+      });
+      const signature = NodeCrypto.sign("sha256", Buffer.from(`${header}.${payload}`), {
+        key: privateKey,
+        dsaEncoding: "ieee-p1363",
+      }).toString("base64url");
+      return `${header}.${payload}.${signature}`;
+    },
+  };
+};
+
 it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
   it.effect.each(["bearer", "cookie"] as const)(
     "rejects websocket ticket replay despite a valid fallback %s credential",
@@ -90,12 +129,12 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         const upgrade = HttpServerRequest.fromWeb(
           new Request(`${baseUrl}?wsTicket=${encodeURIComponent(ticket.ticket)}`, { headers }),
         );
-        expect((yield* auth.authenticateWebSocketUpgrade(upgrade)).sessionId).toBe(
+        expect((yield* auth.authenticateWebSocketUpgrade(upgrade, "rpc")).sessionId).toBe(
           session.sessionId,
         );
-        expect((yield* auth.authenticateWebSocketUpgrade(upgrade).pipe(Effect.flip))._tag).toBe(
-          "ServerAuthInvalidCredentialError",
-        );
+        expect(
+          (yield* auth.authenticateWebSocketUpgrade(upgrade, "rpc").pipe(Effect.flip))._tag,
+        ).toBe("ServerAuthInvalidCredentialError");
         expect((yield* auth.authenticateHttpRequest(fallbackRequest)).sessionId).toBe(
           session.sessionId,
         );
@@ -105,6 +144,7 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
             HttpServerRequest.fromWeb(
               new Request(`${baseUrl}?wsTicket=${encodeURIComponent(fresh.ticket)}`),
             ),
+            "rpc",
           )).sessionId,
         ).toBe(session.sessionId);
       }).pipe(Effect.provide(layerEnvironmentAuth())),
@@ -556,11 +596,14 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
       const pairing = yield* serverAuth.issuePairingCredential();
       const exchanged = yield* serverAuth.createBrowserSession(pairing.credential, requestMetadata);
       const upgrade = (headers: Record<string, string>) =>
-        serverAuth.authenticateWebSocketUpgrade({
-          url: "/ws",
-          cookies: { [sessions.cookieName]: exchanged.sessionToken },
-          headers: { host: "192.168.1.50:3773", ...headers },
-        } as never);
+        serverAuth.authenticateWebSocketUpgrade(
+          {
+            url: "/ws",
+            cookies: { [sessions.cookieName]: exchanged.sessionToken },
+            headers: { host: "192.168.1.50:3773", ...headers },
+          } as never,
+          "rpc",
+        );
 
       yield* upgrade({ origin: "http://192.168.1.50:3773" });
       yield* upgrade({
@@ -617,16 +660,128 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
     Effect.gen(function* () {
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
       const bearer = yield* serverAuth.issueSession();
-      const verified = yield* serverAuth.authenticateWebSocketUpgrade({
-        url: "/ws",
-        cookies: {},
-        headers: {
-          host: "192.168.1.50:3773",
-          origin: "http://192.168.1.50:8080",
-          authorization: `Bearer ${bearer.token}`,
-        },
-      } as never);
+      const verified = yield* serverAuth.authenticateWebSocketUpgrade(
+        {
+          url: "/ws",
+          cookies: {},
+          headers: {
+            host: "192.168.1.50:3773",
+            origin: "http://192.168.1.50:8080",
+            authorization: `Bearer ${bearer.token}`,
+          },
+        } as never,
+        "rpc",
+      );
       expect(verified.sessionId).toBe(bearer.sessionId);
     }).pipe(Effect.provide(layerEnvironmentAuth({ mode: "web", host: "192.168.1.50" }))),
+  );
+
+  it.effect("binds a DPoP session's RPC socket ticket to its proof key", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const key = makeDpopKey();
+      const other = makeDpopKey();
+      const exchanged = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+        "desktop-bootstrap-token",
+        ["orchestration:read"],
+        requestMetadata,
+        { proofKeyThumbprint: key.thumbprint },
+      );
+      const session = yield* sessions.verify(exchanged.access_token);
+      const host = "192.168.1.50:3773";
+      const socketUrl = `http://${host}/ws`;
+      const iat = Math.floor((yield* DateTime.now).epochMilliseconds / 1_000);
+      const upgrade = (ticket: string, use: "rpc" | "media", proof?: string) =>
+        serverAuth.authenticateWebSocketUpgrade(
+          {
+            method: "GET",
+            url: `/ws?orchestrationProtocol=2&wsTicket=${ticket}${proof ? `&dpop=${proof}` : ""}`,
+            cookies: {},
+            headers: { host },
+          } as never,
+          use,
+        );
+
+      // Each ticket admits one attempt, so every attempt below mints its own.
+      const rpcTicket = () =>
+        serverAuth.issueWebSocketTicket(session, { use: "rpc" }).pipe(Effect.map((t) => t.ticket));
+      const sign = (signer: ReturnType<typeof makeDpopKey>, ticket: string) =>
+        signer.sign({ method: "GET", url: socketUrl, token: ticket, iat });
+
+      const unsigned = yield* rpcTicket();
+      const bare = yield* Effect.flip(upgrade(unsigned, "rpc"));
+      expect(bare._tag).toBe("ServerAuthInvalidCredentialError");
+      const bound = yield* rpcTicket();
+      const signed = yield* upgrade(bound, "rpc", sign(key, bound));
+      expect(signed.sessionId).toBe(session.sessionId);
+
+      const foreign = yield* rpcTicket();
+      const wrongKey = yield* Effect.flip(upgrade(foreign, "rpc", sign(other, foreign)));
+      expect(wrongKey._tag).toBe("ServerAuthInvalidCredentialError");
+      const misrouted = yield* rpcTicket();
+      const onMedia = yield* Effect.flip(upgrade(misrouted, "media", sign(key, misrouted)));
+      expect(onMedia._tag).toBe("ServerAuthInvalidCredentialError");
+
+      const media = yield* serverAuth.issueWebSocketTicket(session, { use: "media" });
+      expect((yield* upgrade(media.ticket, "media")).sessionId).toBe(session.sessionId);
+      const mediaOnRpc = yield* Effect.flip(upgrade(media.ticket, "rpc"));
+      expect(mediaOnRpc._tag).toBe("ServerAuthInvalidCredentialError");
+
+      // Clients that predate ticket binding still connect with the unbound ticket they mint.
+      const legacy = yield* serverAuth.issueWebSocketTicket(session);
+      expect((yield* upgrade(legacy.ticket, "rpc")).sessionId).toBe(session.sessionId);
+    }).pipe(
+      Effect.provide(layerEnvironmentAuth({ desktopBootstrapToken: "desktop-bootstrap-token" })),
+    ),
+  );
+
+  it.effect("rejects a replayed proof on a bound RPC socket ticket", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const key = makeDpopKey();
+      const exchanged = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+        "desktop-bootstrap-token",
+        ["orchestration:read"],
+        requestMetadata,
+        { proofKeyThumbprint: key.thumbprint },
+      );
+      const session = yield* sessions.verify(exchanged.access_token);
+      const host = "192.168.1.50:3773";
+      const iat = Math.floor((yield* DateTime.now).epochMilliseconds / 1_000);
+      const sign = (ticket: string) =>
+        key.sign({ method: "GET", url: `http://${host}/ws`, token: ticket, iat });
+      const upgrade = (ticket: string, proof: string) =>
+        serverAuth.authenticateWebSocketUpgrade(
+          {
+            method: "GET",
+            url: `/ws?wsTicket=${ticket}&dpop=${proof}`,
+            cookies: {},
+            headers: { host },
+          } as never,
+          "rpc",
+        );
+      const rpc = yield* serverAuth.issueWebSocketTicket(session, { use: "rpc" });
+      const proof = sign(rpc.ticket);
+
+      yield* upgrade(rpc.ticket, proof);
+      // The spent ticket nonce rejects the replay before its proof is checked.
+      const replayed = yield* Effect.flip(upgrade(rpc.ticket, proof));
+      expect(replayed._tag).toBe("ServerAuthInvalidCredentialError");
+      if (replayed._tag === "ServerAuthInvalidCredentialError") {
+        expect(replayed.dpopFailureReason).toBeUndefined();
+        expect(replayed.cause).toMatchObject({ _tag: "UnavailableWebSocketTicketError" });
+      }
+      // The captured proof hashes its own ticket, so it cannot ride a fresh one.
+      const fresh = yield* serverAuth.issueWebSocketTicket(session, { use: "rpc" });
+      const moved = yield* Effect.flip(upgrade(fresh.ticket, proof));
+      expect(moved._tag).toBe("ServerAuthInvalidCredentialError");
+      if (moved._tag === "ServerAuthInvalidCredentialError") {
+        expect(moved.dpopFailureReason).toBe("token_mismatch");
+      }
+    }).pipe(
+      Effect.provide(layerEnvironmentAuth({ desktopBootstrapToken: "desktop-bootstrap-token" })),
+    ),
   );
 });

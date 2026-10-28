@@ -218,9 +218,12 @@ it.layer(layerTest)("thread nesting", (it) => {
   );
 });
 
+const { nestedUnderThreadId: _nesting, ...preNestingFields } = OrchestrationV2ThreadShell.fields;
+const encodeThreadShell = Schema.encodeSync(OrchestrationV2ThreadShell);
+const decodePreNestingShell = Schema.decodeSync(Schema.Struct(preNestingFields));
+const decodeDomainEventJson = Schema.decodeSync(OrchestrationV2DomainEventJson);
+
 it("decodes a nested shell under a schema that predates nesting", () => {
-  const { nestedUnderThreadId: _nesting, ...preNestingFields } = OrchestrationV2ThreadShell.fields;
-  const PreNestingShell = Schema.Struct(preNestingFields);
   const now = DateTime.makeUnsafe("2026-10-15T00:00:00.000Z");
   const threadId = ThreadId.make("thread:compat-shell");
   const shell = ProjectionStore.threadShellFromProjection(
@@ -255,15 +258,15 @@ it("decodes a nested shell under a schema that predates nesting", () => {
       },
     }),
   );
-  const encoded = Schema.encodeSync(OrchestrationV2ThreadShell)(shell);
+  const encoded = encodeThreadShell(shell);
   assert.equal(encoded.nestedUnderThreadId, "thread:compat-parent");
-  const decoded = Schema.decodeSync(PreNestingShell)(encoded);
+  const decoded = decodePreNestingShell(encoded);
   assert.equal(decoded.id, threadId);
   assert.notProperty(decoded, "nestedUnderThreadId");
 });
 
 it("decodes a stored thread event written before nesting existed", () => {
-  const decoded = Schema.decodeSync(OrchestrationV2DomainEventJson)({
+  const decoded = decodeDomainEventJson({
     id: "event:pre-nesting",
     type: "thread.created",
     threadId: "thread:pre-nesting",

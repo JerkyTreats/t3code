@@ -29,8 +29,8 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
       `Legacy database: ${formatBytes(status.legacyDatabaseBytes)}, kept as the rollback source.`,
     );
   }
-  const repairs = [
-    ...(status.incrementalVacuumEnabled && status.reclaimableBytes === 0
+  const repairs =
+    status.incrementalVacuumEnabled && status.reclaimableBytes === 0
       ? []
       : [
           {
@@ -45,8 +45,7 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
               !status.incrementalVacuumEnabled ||
               status.reclaimableBytes >= DATABASE_COMPACTION_RECOMMENDED_BYTES,
           },
-        ]),
-  ];
+        ];
   if (repairs.length === 0) {
     yield* Console.log("Nothing to repair.");
     return;

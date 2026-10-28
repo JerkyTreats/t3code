@@ -102,6 +102,8 @@ The early managed identity owner selects the production or staging desktop entry
 
 Focused tests execute standalone selection before backend acquisition, current DesktopApp composition, Clerk and window lifecycle, preload and IPC, primary cookie transport, renderer launcher coordination and exact send completion. Installer and topology tests execute verified bytes, ownership drift, idempotency and transactional rollback. The clean current AppImages also pass isolated installation and all six client close/crash cases. Native Wayland focus passed two actual launcher focus calls on unchanged Code main and preload bytes, with simulated service status. That bounded bridge does not claim live default service activation or an identical whole AppImage. The intake evidence records both identities and limits.
 
+Upstream intake 2026-10-27 queues early `open-url` deliveries, such as `t3code://pair` links, before Clerk configuration. Only ordinary desktop registers that queue; the managed standalone branch returns first, so installer-owned URL handling and the authenticated second-instance handoff are unchanged. Upstream's startup recovery listener runs for both, and runtime URL-handler registration still follows the standalone registration plan.
+
 ## Compatibility
 
 F01 remains the Code descriptor and exact-origin updater authority. F27 owns the separately packaged Thread client and its enrollment. Client startup and shutdown do not control the production server process or migrate its data. Keep prior release artifacts and browser profiles for deliberate downgrade. Resolve old pending fork outbox work in the old client before cutover; these tools do not migrate or resend it.

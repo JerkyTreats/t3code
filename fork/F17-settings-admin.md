@@ -188,17 +188,32 @@ read-only connection. Reads inside an open write transaction keep the writer, an
 every committed revocation, so persisted admission through `getById` still observes
 writer-committed state. Fork digest and client-row reads stay on the writer. The independent-runtime revocation proof passes after this
 routing. The upstream startup gate rejects every request with 503 before routes exist, and the
-global Admin boundary wraps every route, including new upstream routes, before dispatch. WebSocket
-`client.connected` analytics carry only surface, version, platform and hashed owner fields. They,
-the client owner record, and session connection metadata are recorded once, inside the exact guards
-after admission, so a refused upgrade records nothing.
+global Admin boundary wraps every route, including new upstream routes, before dispatch. Upstream
+no longer records a `client.connected` event, so reconnects are not counted. The hashed client owner
+record and session connection metadata are recorded once, inside the exact guards after admission,
+so a refused upgrade records nothing.
+
+Upstream WebSocket tickets now carry an optional route audience and DPoP proof-key binding. The fork
+one-use ticket nonce is consumed when the ticket is verified, before the audience and proof checks,
+so a ticket that fails either check is spent. Proof replay is therefore refused as an unavailable
+ticket rather than as a DPoP `replay` reason. Known limit, unchanged from accepted origin: upstream
+media routes reuse one `media` ticket across requests, and the nonce is spent on the first.
+
+Upstream guest thread sharing uses its own share-scoped cookie and guest routes. Guests are not
+auth sessions or clients, never appear in the device inventory, and cannot satisfy the portal
+authority class, so the six-route boundary and lifecycle teardown are unchanged. A share is not bound to the
+device that created it: disabling that device leaves its guest links active until they expire after
+24 hours or are closed. Linked
+environments connect as MCP OAuth clients. Approval still requires a browser session holding
+`access:write`, and the issued MCP client scopes never include access, relay or portal authority.
+`T3-Mode-Limit` only narrows the approved mode ceiling.
 
 `@t3tools/shared/nodeSqliteClient`, upstream environment identity, OAuth and DPoP machinery remain
 upstream substrate. They do not select portal authority. Legacy access HTTP inventory, RPC streams,
 and pairing-change streams remain absent. Private operator CLI listing and internal session
 revocation events remain generic auth substrate.
 
-The current MCP composition retains separate ordinary, preview, device and pull-request endpoints. Each endpoint admits its own session capabilities and canonical tool namespace. The endpoint factory carries the current upstream session-termination setting; DELETE cannot bypass endpoint admission or terminate another endpoint's session. Runtime discovery includes ordinary workflow and review-guide tools without restoring embedded access inventory. These are accepted transport and capability mechanics around the shared authority owner, rather than new portal-authority decisions.
+The current MCP composition retains separate ordinary, preview, device and pull-request endpoints. Each endpoint admits its own session capabilities and canonical tool namespace. The endpoint factory carries the current upstream session-termination setting; DELETE cannot bypass endpoint admission or terminate another endpoint's session. Runtime discovery includes ordinary workflow and review-guide tools without restoring embedded access inventory. Endpoint admission runs first; upstream's `T3-Mode-Limit` narrowing and the Linked environments switch apply after it, on every endpoint. `McpHttpServer.layerTools` merges the same toolkits without a transport for context-budget measurement. Peer forwarding to a linked environment calls only its `/mcp` endpoint, so a forwarded pull request tool reaching a fork peer fails closed instead of reaching `/mcp/pull-requests`. These are accepted transport and capability mechanics around the shared authority owner, rather than new portal-authority decisions.
 
 These focused tests prove owner behavior and replacement-host admission. The broad server
 integration and full repository gates remain separate required evidence before acceptance.

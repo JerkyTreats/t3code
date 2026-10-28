@@ -1,3 +1,10 @@
+import {
+  ConnectionBlockedError,
+  ConnectionTransientError,
+} from "@t3tools/client-runtime/connection";
+import { EnvironmentRpcUnavailableError } from "@t3tools/client-runtime/rpc";
+import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 import type { RefObject } from "react";
 import type { ChatComposerProps } from "./ChatComposer";
 import {
@@ -47,6 +54,11 @@ import {
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { countPreparingComposerImages } from "./preparingComposerImages";
+
+const isUnreachable = Schema.is(
+  Schema.Union([ConnectionTransientError, ConnectionBlockedError, EnvironmentRpcUnavailableError]),
+);
 
 async function downloadAttachmentBlob(url: string): Promise<Blob | null> {
   try {
@@ -74,6 +86,7 @@ export function useComposerContextImport(input: {
   readonly composerContextRecords: ComposerDraftContextRecords;
   readonly composerImages: ReadonlyArray<ComposerImageAttachment>;
   readonly composerFilesRef: ChatComposerProps["composerFilesRef"];
+  /** Native capture reservations held outside the preparing-image strip. */
   readonly readPendingAttachmentCount: () => number;
   readonly pendingThreadImportsRef: RefObject<Map<string, number>>;
   readonly addComposerFilesToDraft: (files: ComposerFileAttachment[]) => string[];
@@ -105,6 +118,9 @@ export function useComposerContextImport(input: {
     (store) => store.addPreviewAnnotation,
   );
   const addComposerDraftThreadContexts = useComposerDraftStore((store) => store.addThreadContexts);
+  const addComposerDraftEnvironmentContexts = useComposerDraftStore(
+    (store) => store.addEnvironmentContexts,
+  );
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, { reportFailure: false });
   const loadThreadTranscript = useAtomCommand(orchestrationEnvironment.threadTranscript, {
     reportFailure: false,
@@ -128,6 +144,7 @@ export function useComposerContextImport(input: {
     return (
       (draft?.images.length ?? 0) +
       (draft?.files.length ?? 0) +
+      countPreparingComposerImages(attachmentTargetKey) +
       readPendingAttachmentCount() +
       (pendingThreadImportsRef.current.get(attachmentTargetKey) ?? 0) +
       countQuestionAttachments(otherQuestionKeys)
@@ -163,7 +180,12 @@ export function useComposerContextImport(input: {
           ? resolveAssetUrl(sourceConnection.httpBaseUrl, result.value.relativeUrl)
           : null;
       if (!url) {
-        fail("The original attachment is no longer available.");
+        const cause = result._tag === "Failure" ? Cause.squash(result.cause) : null;
+        fail(
+          isUnreachable(cause)
+            ? "The environment it came from is not reachable right now."
+            : "The original attachment is no longer available.",
+        );
         return;
       }
       const blob = await downloadAttachmentBlob(url);
@@ -300,7 +322,7 @@ export function useComposerContextImport(input: {
                     ? existing.record.id
                     : undefined,
                 })
-              : existing?.kind === "thread"
+              : existing?.kind === "thread" || existing?.kind === "environment"
                 ? existing.record
                 : existing
                   ? (uploadedContextRecordFromDraft(existing) ?? undefined)
@@ -357,6 +379,16 @@ export function useComposerContextImport(input: {
           // The agent can only read threads on its own server; a pasted foreign one is dropped.
           if (record.environmentId !== environmentId) break;
           addComposerDraftThreadContexts(threadDraftTarget, [record], {
+            appendReference: false,
+          });
+          rewritten.set(record.contextId, record.contextId);
+          break;
+        }
+        case "environment": {
+          // A machine means the same machine from any thread, so a pasted one is kept,
+          // but not in an answer to an agent's question, which carries no machines.
+          if (questionAttachmentTarget !== null) break;
+          addComposerDraftEnvironmentContexts(composerDraftTarget, [record], {
             appendReference: false,
           });
           rewritten.set(record.contextId, record.contextId);

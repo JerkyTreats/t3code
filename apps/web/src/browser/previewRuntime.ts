@@ -48,11 +48,12 @@ export function rendersServerTabNatively(
   environmentId: EnvironmentId,
   primaryEnvironmentId: EnvironmentId | null,
   primaryHasDesktopBrowser: boolean,
-  snapshot: Pick<PreviewSessionSnapshot, "runtime"> | null | undefined,
+  snapshot: Pick<PreviewSessionSnapshot, "runtime" | "headless"> | null | undefined,
 ): boolean {
   return (
     isElectron &&
     snapshot?.runtime === "server" &&
+    !snapshot.headless &&
     primaryEnvironmentId !== null &&
     environmentId === primaryEnvironmentId &&
     primaryHasDesktopBrowser
@@ -61,7 +62,7 @@ export function rendersServerTabNatively(
 
 export function useRendersServerTabNatively(
   environmentId: EnvironmentId,
-  snapshot: Pick<PreviewSessionSnapshot, "runtime"> | null | undefined,
+  snapshot: Pick<PreviewSessionSnapshot, "runtime" | "headless"> | null | undefined,
 ): boolean {
   const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   const primaryHasDesktopBrowser = useEnvironmentHasDesktopBrowser(primaryEnvironmentId);
@@ -76,12 +77,13 @@ export function useRendersServerTabNatively(
 /** Whether the current client owns an Electron guest for this preview session. */
 export function rendersPreviewTabNatively(
   environmentId: EnvironmentId,
-  snapshot: Pick<PreviewSessionSnapshot, "runtime"> | null | undefined,
+  snapshot: Pick<PreviewSessionSnapshot, "runtime" | "headless"> | null | undefined,
 ): boolean {
   return (
     isPreviewSupportedInRuntime() &&
     (snapshot?.runtime !== "server" ||
-      (environmentId === appAtomRegistry.get(primaryEnvironmentIdAtom) &&
+      (!snapshot.headless &&
+        environmentId === appAtomRegistry.get(primaryEnvironmentIdAtom) &&
         readEnvironmentHasDesktopBrowser(environmentId)))
   );
 }

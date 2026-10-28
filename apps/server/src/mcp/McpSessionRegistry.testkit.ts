@@ -22,6 +22,7 @@ export const layer = Layer.succeed(
           pullRequestsEndpoint: "http://127.0.0.1/mcp/pull-requests",
         },
       }),
+    // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
     resolve: () => Effect.succeed(undefined),
     touch: () => Effect.void,
     revokeProviderSession: () => Effect.void,

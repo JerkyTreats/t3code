@@ -10,11 +10,9 @@ import * as ServerConfig from "../config.ts";
 // The desktop app stops its backends within seconds of writing the marker.
 const DESKTOP_UPDATE_RESTART_MARKER_TTL = Duration.minutes(1);
 
-// The desktop app writes its marker right before it stops this server to
-// install an update, whether a remote client or the local app started it.
-// Reading consumes it, so shutdown checks it first. Only a fresh marker counts,
-// so a marker the server never read (a hard kill) cannot keep the tunnel on a
-// later quit.
+// The desktop app writes this marker right before it stops this server to install an update.
+// Reading consumes it, so shutdown checks it first. Only a fresh marker counts, so an unread
+// marker left by a hard kill cannot keep the tunnel on a later quit.
 export const desktopUpdateRestartPending = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;

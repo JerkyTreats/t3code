@@ -142,13 +142,15 @@ export async function closeConfirmedPreviewHostSurface<E>(input: {
     closePanelSurface();
     return true;
   }
+  const snapshot = readThreadPreviewState(threadRef).sessions[tabId] ?? null;
+  // Releasing the session prunes its tab; closing the surface first keeps it a user close.
+  closePanelSurface();
   const closing = closePreviewSession({
     threadRef,
     tabId,
-    snapshot: readThreadPreviewState(threadRef).sessions[tabId] ?? null,
+    snapshot,
     closePreview: input.closePreview,
   });
-  closePanelSurface();
   const restoreSurface = () => {
     if (sameLifetime() && readThreadPreviewState(threadRef).sessions[tabId])
       useRightPanelStore.getState().openBrowser(threadRef, tabId);
@@ -209,5 +211,6 @@ export function usePreviewHostActions(input: {
         return;
     }
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the preview action bus while the chat host is mounted
   useEffect(() => subscribePreviewAction(handle), []);
 }

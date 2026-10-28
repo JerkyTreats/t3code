@@ -81,5 +81,19 @@ describe("rendersServerTabNatively", () => {
     expect(rendersServerTabNatively(local, local, false, { runtime: "server" })).toBe(false);
     expect(rendersServerTabNatively(remote, local, true, { runtime: "server" })).toBe(false);
     expect(rendersServerTabNatively(local, local, true, {})).toBe(false);
+    // Headless server tabs stream to every client, including the desktop that hosts the server.
+    expect(
+      rendersServerTabNatively(local, local, true, { runtime: "server", headless: true }),
+    ).toBe(false);
+  });
+});
+
+describe("headless server tabs", () => {
+  it("are never owned by a local Electron guest", () => {
+    state.desktop = true;
+    state.primary = local;
+    state.desktopBrowser = new Set([local]);
+    expect(rendersPreviewTabNatively(local, { runtime: "server", headless: true })).toBe(false);
+    expect(rendersPreviewTabNatively(local, { runtime: "server", headless: false })).toBe(true);
   });
 });

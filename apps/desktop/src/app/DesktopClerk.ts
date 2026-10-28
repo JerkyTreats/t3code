@@ -19,6 +19,7 @@ import { receiveCodexAuthCallback, CodexAuthCallbackError } from "./CodexAuthCal
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import { providerAuthReturnUrl } from "@t3tools/shared/providerAuthReturnUrl";
 import { promptLinkAppPath } from "@t3tools/shared/promptLinks";
+import { readPairingAppLink } from "@t3tools/shared/remote";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import * as ElectronApp from "../electron/ElectronApp.ts";
@@ -101,7 +102,7 @@ function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean) {
   });
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const electronApp = yield* ElectronApp.ElectronApp;
@@ -114,14 +115,12 @@ export const make = Effect.gen(function* () {
   });
   yield* electronApp.setPath("userData", userDataPath);
 
-  // T3 owns the profile-scoped lock on every platform; Clerk skips it on macOS.
-  // Quit is asynchronous, so interrupt before the application runtime is built.
+  // Clerk skips the profile lock on macOS. Interrupt before runtime construction because quit is asynchronous.
   if (!(yield* electronApp.requestSingleInstanceLock)) {
     yield* electronApp.quit;
     return yield* Effect.interrupt;
   }
 
-  // Retain launch arguments while asynchronous startup builds the application runtime.
   const pendingSecondInstances: Array<readonly string[]> = [];
   let handleSecondInstance = (argv: readonly string[]) => {
     pendingSecondInstances.push(argv);
@@ -129,7 +128,6 @@ export const make = Effect.gen(function* () {
   yield* electronApp.on("second-instance", (_event: unknown, argv: readonly string[]) => {
     handleSecondInstance(argv);
   });
-
   // Standalone HTTPS clients register no custom-scheme Clerk bridge.
   if (isStandaloneDesktop(environment)) {
     return DesktopClerk.of({
@@ -158,6 +156,16 @@ export const make = Effect.gen(function* () {
       }).pipe(Effect.withSpan("desktop.clerk.configure")),
     });
   }
+
+  // macOS hands a launch link to open-url, which can fire before configure runs.
+  const pendingOpenUrls: Array<string> = [];
+  let handleOpenUrl = (url: string) => {
+    pendingOpenUrls.push(url);
+    return true;
+  };
+  yield* electronApp.on("open-url", (event: { preventDefault: () => void }, url: string) => {
+    if (handleOpenUrl(url)) event.preventDefault();
+  });
 
   yield* Effect.acquireRelease(
     Effect.try({
@@ -237,7 +245,8 @@ export const make = Effect.gen(function* () {
         return true;
       };
       const openAppLink = (value: string | undefined) => {
-        if (!value || promptLinkAppPath(value) === null) return false;
+        if (!value || (promptLinkAppPath(value) === null && readPairingAppLink(value) === null))
+          return false;
         void runPromise(webLinks.receive(value));
         return true;
       };
@@ -248,15 +257,12 @@ export const make = Effect.gen(function* () {
         void runPromise(webLinks.receive(url));
         return true;
       };
-      yield* electronApp.on("open-url", (event: { preventDefault: () => void }, url: string) => {
-        if (
-          startProviderAuthHandoff(url) ||
-          resumeProviderAuth(url) ||
-          openWebLink(url) ||
-          openAppLink(url)
-        )
-          event.preventDefault();
-      });
+      handleOpenUrl = (url) =>
+        startProviderAuthHandoff(url) ||
+        resumeProviderAuth(url) ||
+        openWebLink(url) ||
+        openAppLink(url);
+      for (const url of pendingOpenUrls.splice(0)) handleOpenUrl(url);
       yield* electronApp.on("open-file", (event: { preventDefault: () => void }, path: string) => {
         if (!DesktopWebLinks.isWebPageFile(path)) return;
         event.preventDefault();

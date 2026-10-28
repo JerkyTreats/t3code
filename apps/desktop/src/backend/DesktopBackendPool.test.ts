@@ -12,6 +12,7 @@ import { ChildProcessSpawner } from "effect/process";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
 import * as DesktopObservability from "../app/DesktopObservability.ts";
+import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
@@ -68,6 +69,7 @@ function layerPool(labelRef: Ref.Ref<string>): Layer.Layer<DesktopBackendPool.De
           currentBootstrapToken: Effect.die("unexpected bootstrap token read"),
         } satisfies DesktopBackendConfiguration.DesktopBackendConfiguration["Service"]),
         DesktopAppSettings.layerTest(),
+        DesktopState.layer,
         DesktopWslEnvironment.layerTest(),
         ElectronDialog.layer,
         ElectronApp.layer,
@@ -102,8 +104,6 @@ describe("DesktopBackendPool", () => {
         const instance = yield* pool.register({
           id,
           label: Effect.succeed("WSL (Ubuntu)"),
-          // A transient preflight failure leaves a restart fiber scheduled
-          // without needing a real child process.
           configResolve: Effect.succeed({
             executablePath: "/electron",
             args: [],

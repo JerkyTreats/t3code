@@ -20,7 +20,11 @@ export const Route = createFileRoute("/pair")({
       };
     }
 
-    if (authGateState.status === "authenticated" || authGateState.status === "hosted-static") {
+    if (
+      authGateState.status === "authenticated" ||
+      authGateState.status === "hosted-static" ||
+      authGateState.status === "guest"
+    ) {
       throw redirect({ to: "/", replace: true });
     }
     return {
@@ -50,6 +54,7 @@ function PairRouteView() {
       auth={authGateState.auth}
       onAuthenticated={async () => {
         if (!window.t3ThreadBridge) {
+          // Recreate the connection so WebSocket and cached scopes use the new pairing cookie.
           router.history.replace("/");
           router.history.flush();
           window.location.reload();

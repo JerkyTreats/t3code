@@ -21,6 +21,7 @@ import * as ProviderHostLive from "./ProviderHostLive.ts";
 import type * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import type * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import type * as ServerConfig from "../config.ts";
+import type * as PortScanner from "../preview/PortScanner.ts";
 
 type ProviderInstanceRegistryHydrationEnv =
   | Exclude<
@@ -31,7 +32,9 @@ type ProviderInstanceRegistryHydrationEnv =
     >
   | Settings.ServerSettingsService
   | BackgroundPolicy.BackgroundPolicy
-  | ServerConfig.ServerConfig;
+  | ServerConfig.ServerConfig
+  // The Claude runner counts its CLIs as running agents for port discovery.
+  | PortScanner.PortDiscovery;
 
 export const deriveProviderInstanceConfigMap = (
   settings: ServerSettings,
@@ -45,9 +48,7 @@ export const deriveProviderInstanceConfigMap = (
     merged[instanceId] = { driver: driver.driverKind };
   }
 
-  // A project that turns an instance on needs it alive and probed even when the machine itself
-  // has it off, or a thread in that project would route to an instance nobody ever checked in
-  // on.
+  // Probe project-enabled instances even if disabled machine-wide; project threads can still route to them.
   for (const overrides of Object.values(settings.projectSettingsOverrides)) {
     for (const [rawInstanceId, projectOverride] of Object.entries(
       overrides?.providerInstances ?? {},

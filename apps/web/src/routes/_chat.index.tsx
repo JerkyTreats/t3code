@@ -39,8 +39,7 @@ function IndexDraftLanding() {
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
   const router = useRouter();
-  // Read at effect time: this page stays mounted while a navigation away from
-  // "/" is still loading, but the router already points at the new location.
+  // Read at effect time; this page can stay mounted while the router is already navigating away.
   const isStillOnIndex = useEffectEvent(() => router.state.location.pathname === "/");
   const startedAttemptRef = useRef<number | null>(null);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
@@ -49,6 +48,7 @@ function IndexDraftLanding() {
     sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null;
   const attempt = startState.retryRequest;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts a draft thread in the most recent project and navigates to it while still on the index
   useEffect(() => {
     // Starting a draft after the user has left would replace the page they picked.
     if (mostRecentProject === null || startedAttemptRef.current === attempt || !isStillOnIndex()) {

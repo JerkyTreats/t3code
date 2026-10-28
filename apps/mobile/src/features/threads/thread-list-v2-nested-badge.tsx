@@ -1,3 +1,4 @@
+import { nestedThreadBadgeIconKeys } from "@t3tools/client-runtime/state/thread-nesting";
 import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -8,11 +9,9 @@ import type { ThreadRowProviderInstance } from "./thread-provider-instance";
 import type { ThreadListV2NestedSummary } from "./threadListV2";
 
 /**
- * A parent row's nested-thread badge (F31): the parent's own provider icon one
- * step larger, then one icon per shown child, most recently active first, plus
- * `+n`. On card rows it stands in for the row's provider history. With
- * `onToggle`, pressing it expands or collapses the nested threads without
- * opening the parent, and it is filled while expanded.
+ * A parent row's nested-thread badge (F31): the parent's provider icon one step larger,
+ * then one icon per shown child, then `+n`. With `onToggle`, pressing it expands or
+ * collapses the nested threads without opening the parent; it is filled while expanded.
  */
 export function ThreadListV2NestedBadge(props: {
   readonly summary: ThreadListV2NestedSummary;
@@ -45,11 +44,11 @@ export function ThreadListV2NestedBadge(props: {
           surfaceColor={parent.surfaceColor}
         />
       ) : null}
-      {providerInstanceIds.map((instanceId, index) => {
+      {nestedThreadBadgeIconKeys(providerInstanceIds).map(({ instanceId, key }) => {
         const provider = props.providers?.find((candidate) => candidate.instanceId === instanceId);
         return (
           <ProviderIcon
-            key={`${instanceId}:${index}`}
+            key={key}
             iconUrl={provider?.iconUrl}
             provider={provider?.driver ?? instanceId}
             size={12}

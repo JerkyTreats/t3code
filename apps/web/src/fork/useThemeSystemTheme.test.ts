@@ -70,7 +70,9 @@ function installSyntheticThemeHost(initialTheme: DesktopSystemTheme | null) {
   const setDesktopTheme = vi.fn().mockResolvedValue(undefined);
   const subscriptionCleanups: Array<() => void> = [];
 
-  vi.doMock("react", () => ({
+  // Spread the real module: the hook's import graph now creates contexts at load.
+  vi.doMock("react", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("react")>()),
     useCallback: <A>(callback: A) => callback,
     useEffect: () => undefined,
     useSyncExternalStore: (
@@ -126,6 +128,18 @@ function installSyntheticThemeHost(initialTheme: DesktopSystemTheme | null) {
     windowAddEventListener,
     windowRemoveEventListener,
   };
+}
+
+// Other modules in the hook's import graph may listen on window; the hook owns only "storage".
+function storageListenerCalls(listener: {
+  mock: { calls: ReadonlyArray<ReadonlyArray<unknown>> };
+}) {
+  return listener.mock.calls.filter(([type]) => type === "storage");
+}
+
+// The reset path repaints context chips for the standard palette; only semantic roles must clear.
+function themeRoleVariables(styleValues: ReadonlyMap<string, string>): string[] {
+  return [...styleValues.keys()].filter((name) => name.startsWith("--app-theme-"));
 }
 
 async function flushThemeSource(): Promise<void> {
@@ -185,7 +199,7 @@ describe("desktop system theme host", () => {
 
     host.pushSystemTheme(null);
     expect(host.root.dataset.themeId).toBeUndefined();
-    expect(host.styleValues.size).toBe(0);
+    expect(themeRoleVariables(host.styleValues)).toEqual([]);
     expect(host.storageSetItem).not.toHaveBeenCalled();
     expect(host.storageRemoveItem).not.toHaveBeenCalled();
   });
@@ -201,7 +215,7 @@ describe("desktop system theme host", () => {
     expect(host.onSystemTheme).toHaveBeenCalledTimes(1);
     expect(host.getSystemTheme).toHaveBeenCalledTimes(1);
     expect(host.mediaAddEventListener).toHaveBeenCalledTimes(1);
-    expect(host.windowAddEventListener).toHaveBeenCalledTimes(1);
+    expect(storageListenerCalls(host.windowAddEventListener)).toHaveLength(1);
     expect(host.root.dataset.themeId).toBe("omarchy-system");
 
     host.subscriptionCleanups[0]?.();
@@ -211,9 +225,9 @@ describe("desktop system theme host", () => {
     host.subscriptionCleanups[1]?.();
     expect(host.stopSystemTheme).toHaveBeenCalledTimes(1);
     expect(host.mediaRemoveEventListener).toHaveBeenCalledTimes(1);
-    expect(host.windowRemoveEventListener).toHaveBeenCalledTimes(1);
+    expect(storageListenerCalls(host.windowRemoveEventListener)).toHaveLength(1);
     expect(host.root.dataset.themeId).toBeUndefined();
-    expect(host.styleValues.size).toBe(0);
+    expect(themeRoleVariables(host.styleValues)).toEqual([]);
   });
 
   it("keeps an explicit theme selected while later source colors remain transient", async () => {

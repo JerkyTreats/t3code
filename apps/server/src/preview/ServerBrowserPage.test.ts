@@ -81,7 +81,10 @@ describe("server browser element refs", () => {
     ]);
   });
 
-  it("waits for a render opportunity before the first viewport capture", async () => {
+  const screenshotCalls = (send: { mock: { calls: ReadonlyArray<ReadonlyArray<unknown>> } }) =>
+    send.mock.calls.filter(([method]) => method === "Page.captureScreenshot").length;
+
+  it("waits for a render opportunity before the snapshot screenshot", async () => {
     await page.setContent(`<style>body { background: #2478ce; }</style><p>first frame</p>`);
     await page.evaluate(`(() => {
       const nativeFrame = requestAnimationFrame;
@@ -94,48 +97,28 @@ describe("server browser element refs", () => {
       }));
     })()`);
     const send = vi.spyOn(cdp, "send");
-    const pending = ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale: 1 });
-    // Observe early rejection too: the old immediate capture must not become an unhandled error.
+    const pending = takeSnapshot();
+    // Observe early rejection too: an immediate capture must not become an unhandled error.
     void pending.catch(() => undefined);
     try {
       await expect.poll(() => page.evaluate("pendingCaptureFrames()")).toBe(1);
-      expect(send.mock.calls.some(([method]) => method === "Page.captureScreenshot")).toBe(false);
+      expect(screenshotCalls(send)).toBe(0);
       await page.evaluate("releaseCaptureFrame()");
       await expect.poll(() => page.evaluate("pendingCaptureFrames()")).toBe(1);
-      expect(send.mock.calls.some(([method]) => method === "Page.captureScreenshot")).toBe(false);
+      expect(screenshotCalls(send)).toBe(0);
       await page.evaluate("releaseCaptureFrame()");
-      const png = Buffer.from(await pending, "base64");
-      expect(png.subarray(1, 4).toString()).toBe("PNG");
-      expect(png.readUInt32BE(16)).toBe(page.viewportSize()!.width);
-      expect(png.readUInt32BE(20)).toBe(page.viewportSize()!.height);
-      expect(
-        send.mock.calls.filter(([method]) => method === "Page.captureScreenshot"),
-      ).toHaveLength(1);
+      const { screenshot } = await pending;
+      expect([screenshot.width, screenshot.height]).toEqual([
+        page.viewportSize()!.width,
+        page.viewportSize()!.height,
+      ]);
+      expect(screenshotCalls(send)).toBe(1);
     } finally {
       send.mockRestore();
     }
   });
 
-  it.each([1, 0.5])(
-    "captures an inactive tab at scale %s with another page open",
-    async (scale) => {
-      await page.setContent(
-        "<style>body { height: 2000px; background: #2478ce }</style><p>background</p>",
-      );
-      await page.evaluate("scrollTo(0, 120)");
-      const other = await context.newPage();
-      await other.setContent("<p>other tab</p>");
-      const png = Buffer.from(
-        await ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale }),
-        "base64",
-      );
-      expect(png.readUInt32BE(16)).toBe(page.viewportSize()!.width * scale);
-      expect(png.readUInt32BE(20)).toBe(page.viewportSize()!.height * scale);
-      expect(await page.evaluate("scrollY")).toBe(120);
-    },
-  );
-
-  it("captures a document reporting hidden without requesting an animation frame", async () => {
+  it("skips the animation frame for a document reporting hidden", async () => {
     await page.setContent("<p>hidden guest</p>");
     // Playwright forces focus emulation on its own CDP session, even with another
     // tab open. Model the hidden-guest API boundary, without claiming native UI proof.
@@ -143,11 +126,7 @@ describe("server browser element refs", () => {
       Object.defineProperty(document, "visibilityState", { get: () => "hidden" });
       window.requestAnimationFrame = () => { throw new Error("Hidden document requested a frame"); };
     })()`);
-    const png = Buffer.from(
-      await ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale: 1 }),
-      "base64",
-    );
-    expect(png.readUInt32BE(16)).toBe(page.viewportSize()!.width);
+    await expect(ServerBrowserPage.waitForCaptureReady(page)).resolves.toBeUndefined();
   });
 
   it("releases a rendering wait when the document becomes hidden", async () => {
@@ -156,41 +135,47 @@ describe("server browser element refs", () => {
       window.requestedCaptureFrame = false;
       window.requestAnimationFrame = () => { window.requestedCaptureFrame = true; return 1; };
     })()`);
-    const pending = ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale: 1 });
+    const pending = ServerBrowserPage.waitForCaptureReady(page);
     void pending.catch(() => undefined);
     await expect.poll(() => page.evaluate("requestedCaptureFrame")).toBe(true);
     await page.evaluate(`(() => {
       Object.defineProperty(document, "visibilityState", { get: () => "hidden" });
       document.dispatchEvent(new Event("visibilitychange"));
     })()`);
-    const png = Buffer.from(await pending, "base64");
-    expect(png.readUInt32BE(16)).toBe(page.viewportSize()!.width);
+    await expect(pending).resolves.toBeUndefined();
   });
 
   it("propagates the original capture error once readiness completes without retrying", async () => {
     await page.setContent("<p>ready</p>");
     const failure = new Error("capture failed");
-    const send = vi.spyOn(cdp, "send").mockRejectedValue(failure);
+    const send = cdp.send.bind(cdp);
+    const sent = vi
+      .spyOn(cdp, "send")
+      .mockImplementation(((method: string, params?: object) =>
+        method === "Page.captureScreenshot"
+          ? Promise.reject(failure)
+          : send(method as never, params as never)) as typeof cdp.send);
+    const wait = vi.spyOn(page, "waitForFunction");
     try {
-      await expect(
-        ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale: 1 }),
-      ).rejects.toBe(failure);
-      expect(send).toHaveBeenCalledExactlyOnceWith("Page.captureScreenshot", { format: "png" });
+      await expect(takeSnapshot()).rejects.toBe(failure);
+      // One capture per completed readiness wait: readiness never retries a failed capture.
+      expect(wait).toHaveBeenCalled();
+      expect(screenshotCalls(sent)).toBe(wait.mock.calls.length);
     } finally {
-      send.mockRestore();
+      wait.mockRestore();
+      sent.mockRestore();
     }
   });
 
   it("does not capture when the bounded rendering wait fails", async () => {
+    await page.setContent("<p>never ready</p>");
     const failure = new Error("rendering deadline expired");
     const wait = vi.spyOn(page, "waitForFunction").mockRejectedValue(failure);
     const send = vi.spyOn(cdp, "send");
     try {
-      await expect(
-        ServerBrowserPage.captureViewport(page, cdp, { format: "png", scale: 1 }),
-      ).rejects.toBe(failure);
+      await expect(takeSnapshot()).rejects.toBe(failure);
       expect(wait.mock.calls[0]?.[2]).toEqual({ timeout: 15_000 });
-      expect(send).not.toHaveBeenCalled();
+      expect(screenshotCalls(send)).toBe(0);
     } finally {
       wait.mockRestore();
       send.mockRestore();
@@ -274,7 +259,6 @@ describe("server browser element refs", () => {
       /typed-pass|saved-pass|role-pass|styled-pass|editable-pass|frame-pass|blank-pass/,
     );
     expect(result.visibleText).not.toContain("editable-pass");
-    // Page text masks the same values, so it can't be compared against the tree.
     expect(result.visibleText).toContain("Order ••••••••-2");
     expect(tree).toMatch(/row "password: •+"/);
     expect(tree).toMatch(/textbox "Username" [^\n]*: maria$/m);
@@ -298,7 +282,6 @@ describe("server browser element refs", () => {
       <input type="password" aria-label="Long" value="long-secret">`);
     const cut = (await takeSnapshot()).visibleText;
     expect(cut.length).toBe(20_000);
-    // Masked before the cut, so no prefix of the value is left.
     expect(cut.slice(-8)).toBe("xxx•••••");
   });
 
@@ -369,6 +352,109 @@ describe("server browser element refs", () => {
     );
     await ServerBrowserPage.click(page, { selector: 'button[data-example=" >> aria-ref=e1"]' });
     expect(await page.locator("button").textContent()).toBe("saved");
+  });
+});
+
+describe("server browser snapshot screenshot", () => {
+  let browser: Browser;
+  let context: BrowserContext;
+
+  beforeAll(async () => {
+    // ServerBrowserContexts launches with these, and the capture scale depends on them.
+    browser = await chromium.launch({
+      headless: true,
+      args: ["--disable-gpu", "--force-device-scale-factor=2"],
+    });
+  });
+  afterAll(async () => {
+    await browser?.close();
+  });
+  beforeEach(async () => {
+    context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      deviceScaleFactor: 2,
+    });
+  });
+  afterEach(async () => {
+    await context.close();
+  });
+
+  // Blue on the left half and red on the right, so a mirrored left half shows up on the right.
+  const halves = (overlay: string) => `
+    <style>
+      body { margin: 0; background: white; }
+      .half { position: absolute; top: 0; width: 640px; height: 800px; }
+      .overlay { position: fixed; inset: 0; ${overlay} }
+    </style>
+    <div class="half" style="left: 0; background: #2563eb"></div>
+    <div class="half" style="left: 640px; background: #ef4444"></div>
+    <div class="overlay"></div>`;
+
+  const screenshotOf = async (html: string) => {
+    const page = await context.newPage();
+    await page.setContent(html);
+    const { screenshot } = await ServerBrowserPage.snapshot({
+      page,
+      cdp: await context.newCDPSession(page),
+      renderScale: 2,
+      consoleEntries: [],
+      networkEntries: [],
+      actionTimeline: [],
+    });
+    // The server has no DOM types, so the decoder runs as page source.
+    const points = [
+      [0.15, 0.75],
+      [0.85, 0.25],
+      [0.85, 0.75],
+    ];
+    const pixels = (await page.evaluate(`(async () => {
+      const bytes = Uint8Array.from(atob(${JSON.stringify(screenshot.data)}), (char) => char.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext("2d");
+      context.drawImage(bitmap, 0, 0);
+      return ${JSON.stringify(points)}.map(([x, y]) =>
+        Array.from(context.getImageData(x * bitmap.width, y * bitmap.height, 1, 1).data),
+      );
+    })()`)) as Array<[number, number, number, number]>;
+    return { screenshot, pixels };
+  };
+  const colorOf = ([red, green, blue]: readonly [number, number, number, number]) =>
+    blue - red > 100 ? "blue" : red - blue > 100 ? "red" : `rgb(${red}, ${green}, ${blue})`;
+
+  it("captures a blurred backdrop-filter page as rendered, not mirrored", async () => {
+    const { screenshot, pixels } = await screenshotOf(halves("backdrop-filter: blur(4px);"));
+
+    expect({
+      size: [screenshot.width, screenshot.height],
+      colors: pixels.map(colorOf),
+    }).toEqual({ size: [1280, 800], colors: ["blue", "red", "red"] });
+  });
+
+  it("captures a plain page at the shrunk size with its content in place", async () => {
+    const { screenshot, pixels } = await screenshotOf(halves(""));
+
+    expect({
+      size: [screenshot.width, screenshot.height],
+      colors: pixels.map(colorOf),
+    }).toEqual({ size: [1280, 800], colors: ["blue", "red", "red"] });
+  });
+
+  it("shrinks the screenshot of an XML document, whose createElement makes no canvas", async () => {
+    const page = await context.newPage();
+    await page.goto("data:text/xml,<a/>");
+    const { screenshot } = await ServerBrowserPage.snapshot({
+      page,
+      cdp: await context.newCDPSession(page),
+      renderScale: 2,
+      consoleEntries: [],
+      networkEntries: [],
+      actionTimeline: [],
+    });
+
+    expect([screenshot.width, screenshot.height]).toEqual([1280, 800]);
   });
 });
 

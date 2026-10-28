@@ -4,12 +4,7 @@ import {
   groupNestedThreads,
   indexThreadsByNestingKey,
 } from "@t3tools/client-runtime/state/thread-nesting";
-import {
-  EnvironmentId,
-  ProjectId,
-  ThreadId,
-  type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { isSidebarNestedLinkClick } from "../components/Sidebar.logic";
@@ -20,7 +15,6 @@ import {
   nestedParentKey,
   nestedParentKeyOfRoute,
   nestedThreadPaletteTitle,
-  notificationSubagentRequests,
   resolveNestedParentRows,
   resolveNestedParentSection,
 } from "./sidebarThreadNesting";
@@ -263,50 +257,5 @@ describe("Move to top level availability", () => {
       buildThreadActionMenuItems({ ...menuState, canMoveToTopLevel }).map((item) => item.id);
     expect(ids(true)).toContain("move-to-top-level");
     expect(ids(false)).not.toContain("move-to-top-level");
-  });
-});
-
-describe("notificationSubagentRequests", () => {
-  // Only the fields the request walk reads; the rest of the shell is irrelevant here.
-  function shell(
-    id: string,
-    overrides: {
-      nestedUnderThreadId?: ThreadId | null;
-      parentThreadId?: ThreadId | null;
-      subagent?: boolean;
-      waiting?: boolean;
-    } = {},
-  ): OrchestrationV2ThreadShell {
-    const thread = {
-      id: ThreadId.make(id),
-      projectId,
-      archivedAt: null,
-      status: "running",
-      nestedUnderThreadId: overrides.nestedUnderThreadId ?? null,
-      lineage: {
-        rootThreadId: ThreadId.make(id),
-        parentThreadId: overrides.parentThreadId ?? null,
-        relationshipToParent: overrides.subagent === true ? "subagent" : null,
-      },
-      pendingRuntimeRequest:
-        overrides.waiting === true ? { id: "request", kind: "user_input" } : null,
-    };
-    return thread as unknown as OrchestrationV2ThreadShell;
-  }
-
-  it("does not bubble a nested child's request to its parent, so only the child notifies", () => {
-    const threads = [
-      shell("parent"),
-      shell("child", { nestedUnderThreadId: ThreadId.make("parent"), waiting: true }),
-    ];
-    expect(notificationSubagentRequests(threads).has(ThreadId.make("parent"))).toBe(false);
-  });
-
-  it("still bubbles subagent requests to the visible thread", () => {
-    const threads = [
-      shell("parent"),
-      shell("helper", { parentThreadId: ThreadId.make("parent"), subagent: true, waiting: true }),
-    ];
-    expect(notificationSubagentRequests(threads).get(ThreadId.make("parent"))).toBe("user_input");
   });
 });

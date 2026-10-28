@@ -47,7 +47,7 @@ Give a focused Electron preview pane normal browser tab controls without allowin
 - `apps/desktop/src/preload.ts`
 - `apps/desktop/src/ipc/channels.ts`
 - `apps/desktop/src/ipc/methods/preview.ts`
-- `apps/web/src/routes/_chat.tsx`
+- `apps/web/src/shortcuts/chatRouteCommands.ts` registers focused new, close and reopen with the `nativePreviewFocus` context and admits guest typed actions while a chat route shows
 - `apps/web/src/components/chat/useRightPanelActions.ts` hosts focused new, close and reopen through `usePreviewHostActions`
 - `apps/web/src/hooks/useRightPanelSurfaceClose.ts` routes confirmed preview closes through the closed-history owner
 - `apps/web/src/components/ReopenClosedViewShortcut.tsx`

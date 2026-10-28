@@ -19,6 +19,12 @@ and mode selections, unless the destination project has its own model default.
 Its branch and workspace mode come from your configured defaults. To continue in
 an existing worktree, use **New thread in this worktree** from the branch toolbar.
 
+On mobile, **New thread** starts in the current thread's project, or else in the
+last project you opened or chose on that device. If neither is available, the
+project picker opens. Turn off **Settings → General → Use last project** to
+choose a project every time. When you pick a project that is on more than one
+machine, the thread starts on a connected one if any is connected.
+
 When you change a new thread's project, T3 Code stays in the current environment
 if that project exists there. Otherwise it selects an environment that has it.
 
@@ -110,8 +116,8 @@ To generate a fresh title from the conversation, open a thread's menu and choose
 **Regenerate title**. The action is unavailable while title generation is in progress
 or when the connected environment needs a server update.
 
-To change how titles are written, add **Thread title instructions** in **Settings → General →
-Text generation**, such as a length limit or an identifier to put first. They apply to new and
+To change how titles are written, add **Thread title instructions** in **Settings → Threads →
+Text generation**, under Advanced, such as a length limit or an identifier to put first. They apply to new and
 regenerated titles. Select a project to give it its own instructions.
 
 Agents connected through T3 Code can use the same server-owned metadata workflow to
@@ -121,12 +127,17 @@ open.
 
 ### Fold working threads (beta)
 
-Turn on **Settings → General → Working section (beta)** on web and desktop, or **Settings →
-Thread behavior → Working section** on iOS and Android, to move threads that are working or
-monitoring into a collapsed **Working** section below the active list. A thread returns to
-the active list when it finishes, fails, or needs an approval or answer. Both sections use the
-latest prompt or completed assistant message. Pinned threads stay in the pinned section. Each
-device keeps its own choice.
+Threads that are working or waiting on work they will resume from move into a collapsed
+**Working** section below the active list.
+That includes subagents, watched pull requests, and background commands or monitors the agent
+says it is waiting on. A dev server or other process an agent leaves running does not keep a thread
+there. A thread returns to the active list when it finishes, fails, or needs an approval or answer.
+Both sections use the latest prompt or completed assistant message. Pinned threads stay in the
+pinned section.
+
+This is on by default. Turn it off with **Settings → General → Working section** on web and desktop,
+or **Settings → General → Working section** on iOS and Android. Each device keeps its own
+choice.
 
 Turning this off puts working threads back into the active list with the same conversation order.
 
@@ -170,9 +181,9 @@ Press `Escape` while dragging to cancel.
 By default, environments settle inactive threads after three days and settle
 threads whose pull request merged. A closed pull request can also settle an idle
 thread. An empty thread's inactivity counts from when it was created.
-Work in progress, pending questions or approvals, and live background work
-prevent automatic settlement. An open pull request does not prevent inactivity
-settlement unless you turn on **Keep threads with a PR** in **Settings → General**,
+Work in progress, pending questions or approvals, and background work the agent
+is waiting on prevent automatic settlement. An open pull request does not prevent inactivity
+settlement unless you turn on **Keep threads with a PR** in **Settings → Threads**,
 but an old closed or merged pull request does not settle work you
 resumed after it closed. Only your own messages count as resuming. A turn that
 finished background work or a pull request watch starts on its own does not.
@@ -182,7 +193,7 @@ choose **Auto-settle behavior**, and pick **Disabled**. The current option is ch
 **Enabled** to return to the usual rules. Manual settle, snooze, and archive still work while it
 is disabled.
 
-Change these rules in **Settings → General** on web and desktop, or **Settings → Thread behavior** on mobile.
+Change these rules in **Settings → Threads**.
 They continue to run when your apps are closed. On web and desktop, choose an environment at the
 top to change only its rules, or **All environments** to update connected environments together.
 Mixed values show where the selected environments disagree. Mobile applies these
@@ -204,8 +215,15 @@ The linked pull request participates in automatic settlement.
 ## Find and reference work
 
 On web and desktop, open the command palette with `Cmd/Ctrl+K` to search threads
-across connected environments. Message search starts after two characters and
-includes your messages and final agent responses.
+across connected environments by title, branch, pull request, or project.
+Threads you open often or recently rank higher, and for three weeks the thread
+you last picked for a query ranks higher when you type that query again.
+Threads whose messages contain all your words appear below, under **In
+messages**, and open at the matching message. Message search needs at least
+one word of three or more letters, or two for Chinese, Japanese, and Korean.
+On mobile, the thread list search also lists message matches and opens them at
+the matching message; on an iPad with a keyboard, `Cmd+K` opens the same
+palette.
 
 Use **Settings → Keybindings** to find or customize shortcuts for searching files
 and copying a thread reference. A copied reference uses the thread's pull request
@@ -223,9 +241,8 @@ Queued messages stay saved while the limit blocks the thread. They run after
 the continuation finishes. If the queue was held by a restart, resume it then.
 
 When the provider reports a reset time, choose **Resume at reset** to schedule a
-continuation. You can cancel it from the thread. Enable **Auto-resume limited
-threads** in **Settings → General** on web and desktop, or **Settings → Thread
-behavior** on mobile, to schedule limit stops by default.
+continuation. You can cancel it from the thread. Enable **Resume after
+usage limits** in **Settings → Threads** to schedule limit stops by default.
 The environment must be running when the reset arrives; it resumes overdue
 continuations after a restart. Stopping the thread, sending a new message,
 archiving, or settling it prevents a pending continuation from starting.
@@ -233,11 +250,14 @@ archiving, or settling it prevents a pending continuation from starting.
 Choose **Snooze until reset** to hide the thread until its allowance returns.
 Snooze and auto-resume are independent: snooze alone wakes the thread without
 sending a message; enabling both wakes and continues it. **Wake now** cancels
-the snooze. Enable **Snooze limited threads** in thread behavior settings to
+the snooze. Enable **Snooze until limits reset** in thread behavior settings to
 snooze limit stops by default. Providers without a reset time offer manual
 retry and the normal snooze choices.
 
 On web and desktop, use **Agents** to follow work delegated to subagents.
+On mobile, open a subagent from its conversation card or **Agents**. On iOS
+layouts with an inspector, its thread opens beside the parent. Maximize it to
+fill the screen; close the full-screen view to return to the parent and inspector.
 Stop on a thread also stops the subagents it delegated to.
 
 Subagent threads started by the agent can't take messages; message the parent
@@ -247,6 +267,13 @@ thread asks for it.
 Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
+
+On web and desktop, the thread details card lists the web servers that the
+thread's terminals or its Claude agent started, with their ports. A server the
+agent started stays listed after the agent's turn ends.
+Select a server to open it in the browser panel. **Stop** ends the server's job
+and keeps the agent, the terminal, and T3 Code running. Stop needs terminal
+access to the environment and is not available on Windows.
 
 ## Snooze until later
 

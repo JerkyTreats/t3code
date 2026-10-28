@@ -54,13 +54,14 @@ Retain upstream T3 Code product identity while binding official desktop updates 
 - `scripts/server-image-smoke.ts`
 - `scripts/desktop-artifact-smoke.ts`
 - `scripts/install-linux-desktop.mjs`
-- `apps/desktop/scripts/smoke-test.mjs`
 - `apps/desktop/src/main.ts`
+- `apps/desktop/src/app/DesktopStartupRecovery.ts`
 - `packages/ssh/src/tunnel.ts`
 - `apps/web/src/components/desktopUpdate.logic.ts`
 - `apps/marketing/src/lib/site.ts`
 - `apps/marketing/src/lib/releases.ts`
-- `apps/server/src/cli/triagePrompt.ts`
+- `apps/server/src/triage/triagePrompt.ts`
+- `apps/server/src/triage/TriageService.ts`
 - `.github/triage/PLAYBOOK.md`
 - `CONTRIBUTING.md`
 - `.github/ISSUE_TEMPLATE`
@@ -112,6 +113,15 @@ The current clean AppImages pass extraction, isolated installation, exact packag
 - Upstream CI composite actions `setup-apt-mirrors`, `setup-ci-deps` and `ci-changes` are accepted only by exact reviewed `action.yml` digests. Change detection is now upstream's credential-free local Git diff. Every job declares read-only contents permission under empty workflow permissions, and every checkout persists no credential.
 - The dispatch-only mobile showcase workflow remains read-only. Its screenshot artifacts stay workflow-run artifacts, and its pinned simulator helper install is reviewed by exact command.
 - Upstream's `t3` npm launcher, install scripts, release, preview, AUR, mobile store, relay deploy and web preview workflows remain retired. Helpers that only parsed those retired workflows are removed.
+
+## Upstream Intake 2026-10-27
+
+- Upstream's startup recovery window links to the upstream releases page. `startupRecoveryReleaseUrl` routes its download and releases links through `officialDesktopReleaseUrl`, and its test asserts exact-origin targets.
+- Upstream moved triage to `apps/server/src/triage` and added the `server.prepareTriage` RPC behind the command palette. That service cloned upstream source automatically and pruned its staging directory. The fork's `TriageService` writes the same session files as `t3 triage` with the exact-origin repository line and never clones, fetches or deletes source. Cloning stays an agent step that requires approval of the exact source and destination. The origin, clone-approval and no-package-runner tests moved to `triage/triagePrompt.test.ts`, and `TriageService.test.ts` proves the in-app path leaves the source cache untouched.
+- New upstream `npx t3@<version> pair` protocol-mismatch guidance names the installed runtime instead.
+- Client guidance follows the same rule. The web boot error page (`apps/web/src/lib/bootError.ts`) falls back to the installed `t3 triage`, files issues against exact origin and offers `officialDesktopReleaseUrl` for reinstall. `bundledDev.test.ts` copies that page into an isolated bundle and aliases `@t3tools/shared/forkReleaseIdentity` so the boot chunk still resolves the owner. Web and mobile triage palette fallbacks name `t3 triage`, and the streamed-browser host setup fallback names `sudo t3 browser setup`. The web composer and sidebar update offers stay desktop-managed only, so the upstream npm publication check never runs.
+- Upstream retired `apps/desktop/scripts/smoke-test.mjs` in favor of the release-only `scripts/smoke-desktop-app.ts`. The fork keeps packaged readiness and early-exit coverage in `scripts/desktop-artifact-smoke.ts` and preload coverage in `verify-preload-bundle.mjs`; no workflow runs the upstream release launch check.
+- Upstream's new relay preview, relay preview cleanup, stale-issue and agent-context-budget workflows remain absent. General CI drops upstream's task-cache OIDC permission and read-token secret and keeps the uncached server test command. The scanner accepts upstream's read-only production web boot step by content digest.
 
 ## Reconciliation Rule
 

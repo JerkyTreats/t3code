@@ -46,6 +46,7 @@ describe("composer send snapshot", () => {
     previewAnnotations: [],
     reviewComments: [],
     threadContexts: [],
+    environmentContexts: [],
   };
 
   it("trims an ordinary prompt", () => {

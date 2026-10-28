@@ -139,6 +139,10 @@ it.effect("rolls back the V2 schema and baseline events together before retry", 
       [90, "RepairClientSettlementTimestamps"],
       [91, "WebhookDedupe"],
       [92, "ShellStopRequestIndex"],
+      [93, "ThreadMessageSearch"],
+      [94, "PeerLinks"],
+      [95, "PeerLinkFence"],
+      [96, "WaitingLinkRequestIndex"],
     ]);
     assert.deepStrictEqual(yield* runMigrations(), []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -182,6 +186,10 @@ it.effect("continues the current journal with stable upstream identities", () =>
       [90, "RepairClientSettlementTimestamps"],
       [91, "WebhookDedupe"],
       [92, "ShellStopRequestIndex"],
+      [93, "ThreadMessageSearch"],
+      [94, "PeerLinks"],
+      [95, "PeerLinkFence"],
+      [96, "WaitingLinkRequestIndex"],
     ]);
     assert.deepStrictEqual(
       yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 70 ORDER BY migration_id`,

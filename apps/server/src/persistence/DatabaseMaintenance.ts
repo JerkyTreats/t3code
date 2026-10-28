@@ -11,6 +11,7 @@ import { isSqlError } from "effect/sql/SqlError";
 import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import { rebuildMessageSearch } from "../orchestration-v2/messageSearchIndex.ts";
 
 export class DatabaseMissingError extends Schema.TaggedError<DatabaseMissingError>()(
   "DatabaseMissingError",
@@ -164,20 +165,19 @@ const make = Effect.gen(function* () {
       const beforeBytes = Number((yield* fs.stat(databasePath)).size);
       const result = yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        // Held through compaction and VACUUM.
         yield* lockExclusively(databasePath);
         const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
         if (!(yield* maintenance.verify).valid) {
           return yield* new DatabaseProjectionsInvalidError({ path: databasePath });
         }
-        const summary = yield* maintenance.compactEventStore;
+        const summary = yield* maintenance.compactEventStore();
         if (!(yield* maintenance.verify).valid) {
           return yield* new DatabaseProjectionsInvalidError({ path: databasePath });
         }
-        // VACUUM rebuilds the file, which is the only way to switch an existing
-        // database to incremental auto_vacuum; the server reclaims online after.
+        // VACUUM is required to enable incremental auto_vacuum on existing databases.
         yield* sql`PRAGMA auto_vacuum = INCREMENTAL`;
         yield* sql`VACUUM`;
+        yield* rebuildMessageSearch(sql);
         yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
         return summary;
       }).pipe(

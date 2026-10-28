@@ -2,7 +2,11 @@ import { SourceControlProviderKind } from "./sourceControl.ts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { PullRequestDetail, PullRequestListResult, pullRequestHostOf } from "./pullRequest.ts";
+import {
+  PullRequestDetail,
+  PullRequestListResult,
+  resolvePullRequestAuthorFilter,
+} from "./pullRequest.ts";
 
 const decodeDetail = Schema.decodeUnknownSync(Schema.toCodecJson(PullRequestDetail));
 
@@ -56,30 +60,6 @@ const LIST_RESULT: PullRequestListResult = {
 };
 
 describe("PullRequestListResult", () => {
-  it("separates Forgejo HTTP ports while preserving other provider host identities", () => {
-    const identity = {
-      canonicalKey: "forge.example/team/repo",
-      locator: { remoteName: "origin", remoteUrl: "http://forge.example:3000/team/repo.git" },
-    };
-    expect(pullRequestHostOf(identity, SourceControlProviderKind.make("forgejo"))).toBe(
-      "forge.example:3000",
-    );
-    expect(pullRequestHostOf(identity, SourceControlProviderKind.make("gitlab"))).toBe(
-      "forge.example:3000",
-    );
-    expect(
-      pullRequestHostOf(
-        {
-          ...identity,
-          locator: {
-            remoteName: "origin",
-            remoteUrl: "ssh://git@forge.example:2222/team/repo.git",
-          },
-        },
-        SourceControlProviderKind.make("forgejo"),
-      ),
-    ).toBe("forge.example");
-  });
   /**
    * The RPC builds this codec at call time, so a shape it cannot lower — an open-keyed record
    * with an optional value, for one — fails as an interrupted request rather than as a schema
@@ -91,53 +71,6 @@ describe("PullRequestListResult", () => {
     const decoded = Schema.decodeSync(codec)(Schema.encodeUnknownSync(codec)(LIST_RESULT));
 
     expect(decoded).toStrictEqual(LIST_RESULT);
-  });
-});
-
-describe("pullRequestHostOf", () => {
-  it("preserves the exact origin port for self-hosted GitHub", () => {
-    expect(
-      pullRequestHostOf(
-        {
-          canonicalKey: "github.example.test/acme/web",
-          locator: {
-            remoteName: "origin",
-            remoteUrl: "https://github.example.test:8443/acme/web.git",
-          },
-        },
-        SourceControlProviderKind.make("github"),
-      ),
-    ).toBe("github.example.test:8443");
-  });
-
-  it("preserves the exact origin port for self-hosted GitLab", () => {
-    expect(
-      pullRequestHostOf(
-        {
-          canonicalKey: "gitlab.example.test/acme/web",
-          locator: {
-            remoteName: "origin",
-            remoteUrl: "https://gitlab.example.test:9443/acme/web.git",
-          },
-        },
-        SourceControlProviderKind.make("gitlab"),
-      ),
-    ).toBe("gitlab.example.test:9443");
-  });
-
-  it("does not let a non-origin locator override the canonical host", () => {
-    expect(
-      pullRequestHostOf(
-        {
-          canonicalKey: "github.com/acme/web",
-          locator: {
-            remoteName: "upstream",
-            remoteUrl: "https://github.example.test:8443/acme/web.git",
-          },
-        },
-        SourceControlProviderKind.make("github"),
-      ),
-    ).toBe("github.com");
   });
 });
 
@@ -195,5 +128,22 @@ describe("PullRequestCapabilities", () => {
       requestReviewers: true,
     });
     expect(decoded.title).toBe(detail.title);
+  });
+});
+
+describe("resolvePullRequestAuthorFilter", () => {
+  it("reads me as the signed-in account on the host", () => {
+    expect(resolvePullRequestAuthorFilter("me", "bilal")).toBe("bilal");
+    expect(resolvePullRequestAuthorFilter(" @Me ", "bilal")).toBe("bilal");
+  });
+
+  it("keeps me as a literal login when the host has no viewer", () => {
+    expect(resolvePullRequestAuthorFilter("me", null)).toBe("me");
+    expect(resolvePullRequestAuthorFilter("@me", " ")).toBe("@me");
+  });
+
+  it("passes any other login through trimmed", () => {
+    expect(resolvePullRequestAuthorFilter(" ana ", "bilal")).toBe("ana");
+    expect(resolvePullRequestAuthorFilter("meredith", "bilal")).toBe("meredith");
   });
 });

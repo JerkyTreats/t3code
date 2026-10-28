@@ -131,6 +131,8 @@ const READ_ONLY_MULTILINE_RUN_DIGESTS = new Set([
   "afc5bf24b4f6c3ca8a44268d757d011e4e019405d4d16609af4b5bf3680ab41a",
   "e7f6223a07c059b512271135e03dc4a830ef815c375ce0e5dc70ba7084f52660",
   "f4b1bb27f25f1dd05c1561c913f12c1423ccd17a98f6b6b21b55db641877374d",
+  // Upstream production web boot check: local build, headless Chromium, no network.
+  "5b3aca75750a8ae6fbd015619f7d38f1e7da32c918cc3a5f741d367a3ebad4ee",
 ]);
 const FORBIDDEN_COMMAND_PATTERNS = [
   /\bgit\s+push\b/iu,

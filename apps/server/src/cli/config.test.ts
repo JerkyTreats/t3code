@@ -101,8 +101,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     yield* fs.writeFileString(filePath, `${encoded}\n`);
     return yield* Effect.acquireRelease(
       Effect.sync(() => NodeFS.openSync(filePath, "r")),
-      // Without a /proc or /dev/fd path to reopen, the reader consumes the fd
-      // itself (autoClose), so on Windows it is already closed here.
+      // Windows cannot reopen the fd through /proc or /dev/fd, so the reader closes it.
       (fd) =>
         Effect.sync(() => {
           try {
@@ -855,5 +854,25 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         expect(resolved.otlpMetricsUrl).toBeUndefined();
         expect(resolved.otlpLogsUrl).toBeUndefined();
       }),
+  );
+
+  it.effect("keeps web mode's unset default host without a service launcher", () =>
+    Effect.gen(function* () {
+      const { join } = yield* Path.Path;
+      const baseDir = join(NodeOS.tmpdir(), "t3-cli-config-service-host");
+      const resolveHost = (env: Record<string, string>) =>
+        resolveServerConfig(minimalWebFlags(baseDir), Option.none()).pipe(
+          Effect.map(({ host, privateNetworkOnly }) => ({ host, privateNetworkOnly })),
+          Effect.provide(
+            Layer.mergeAll(ConfigProvider.layer(ConfigProvider.fromEnv({ env })), NetService.layer),
+          ),
+        );
+
+      expect(yield* resolveHost({})).toEqual({ host: undefined, privateNetworkOnly: undefined });
+      expect(yield* resolveHost({ T3CODE_HOST: "127.0.0.1" })).toEqual({
+        host: "127.0.0.1",
+        privateNetworkOnly: undefined,
+      });
+    }),
   );
 });

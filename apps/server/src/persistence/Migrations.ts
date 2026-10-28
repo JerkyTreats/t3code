@@ -15,14 +15,8 @@ export interface RunMigrationsOptions {
 }
 
 /**
- * Run all pending migrations.
- *
- * Creates the migrations tracking table (effect_sql_migrations) if it doesn't exist,
- * then runs any migrations with ID greater than the latest recorded migration.
- *
- * Returns array of [id, name] tuples for migrations that were run.
- *
- * @returns Effect containing array of executed migrations
+ * Run all pending migrations after the latest one recorded in `effect_sql_migrations`.
+ * Returns the [id, name] tuples that ran.
  */
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,

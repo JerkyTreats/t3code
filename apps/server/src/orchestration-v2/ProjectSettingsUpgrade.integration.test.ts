@@ -158,6 +158,7 @@ const layerRuntime = (dbPath: string) => {
     Layer.provide(ServerSettings.layerTest()),
     Layer.provide(
       Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
+        // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
         getInstance: () => Effect.succeed(undefined),
         listInstances: Effect.succeed([]),
         listUnavailable: Effect.succeed([]),
@@ -203,6 +204,10 @@ it.live("keeps project settings through the V2 migrations and the first V2 boot"
           [90, "RepairClientSettlementTimestamps"],
           [91, "WebhookDedupe"],
           [92, "ShellStopRequestIndex"],
+          [93, "ThreadMessageSearch"],
+          [94, "PeerLinks"],
+          [95, "PeerLinkFence"],
+          [96, "WaitingLinkRequestIndex"],
         ]);
         assert.deepEqual(yield* readSettings, expectedSettings);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));

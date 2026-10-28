@@ -184,12 +184,6 @@ function sendButton(screen: Screen) {
 function submit(screen: Screen) {
   screen.container.querySelector("form")!.requestSubmit();
 }
-function urlSpies() {
-  return {
-    create: vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:prepared"),
-    revoke: vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {}),
-  };
-}
 
 describe("ChatComposer screenshot admission", () => {
   it("shares paste capacity with a single native capture and transfers without double counting", async () => {
@@ -258,7 +252,10 @@ describe("ChatComposer screenshot admission", () => {
       if (outcome !== "cancel")
         expect(input.setThreadError).toHaveBeenCalledWith(
           threadId,
-          outcome === "native-error" ? "native failed" : "preparation failed",
+          // Upstream preparation reports a rejected compression as an unreadable image.
+          outcome === "native-error"
+            ? "native failed"
+            : "'capture.png' could not be read as an image.",
         );
       await button.click();
       expect(mocks.capture).toHaveBeenCalledTimes(2);
@@ -377,9 +374,8 @@ describe("ChatComposer screenshot admission", () => {
     );
   });
 
-  it("releases ordinary preparation and revokes partial previews when the scoped destination changes", async () => {
+  it("keeps ordinary preparation with its original draft when the scoped destination changes", async () => {
     using _fixture = setup();
-    const urls = urlSpies();
     const pending = deferred<{ ok: true; file: File }>();
     mocks.prepare
       .mockResolvedValueOnce({ ok: true, file: image("first.png") })
@@ -389,7 +385,7 @@ describe("ChatComposer screenshot admission", () => {
     await act(() =>
       input.composerRef.current!.addDroppedFiles([image("first.png"), image("second.png")]),
     );
-    await expect.poll(() => urls.create).toHaveBeenCalledOnce();
+    await expect.poll(() => mocks.prepare).toHaveBeenCalledTimes(2);
     const otherTarget = { environmentId, threadId: ThreadId.make("other-thread") };
     await screen.rerender(
       <ChatComposer
@@ -400,8 +396,10 @@ describe("ChatComposer screenshot admission", () => {
       />,
     );
     await act(() => pending.resolve({ ok: true, file: image("second.png") }));
-    await expect.poll(() => urls.revoke).toHaveBeenCalledWith("blob:prepared");
-    expect(draft()?.images ?? []).toHaveLength(0);
+    // Upstream placeholders hold their slots in the draft they were added to.
+    await expect
+      .poll(() => draft()?.images.map((value) => value.name))
+      .toEqual(["first.png", "second.png"]);
     expect(
       useComposerDraftStore.getState().getComposerDraft(otherTarget)?.images ?? [],
     ).toHaveLength(0);
@@ -445,11 +443,12 @@ describe("ChatComposer screenshot admission", () => {
       input.composerRef.current!.addDroppedFiles([
         new File(["body"], "notes.txt", { type: "text/plain" }),
         new File(["svg"], "vector.svg", { type: "image/svg+xml" }),
+        new File(["raw"], "scan.synthetic", { type: "image/x-synthetic" }),
         image(),
       ]),
     );
     await expect.poll(() => draft()?.images).toHaveLength(1);
-    expect(draft()?.files[0]?.mimeType).toBe("text/plain");
+    expect(draft()?.files.map((file) => file.mimeType)).toEqual(["text/plain", "image/svg+xml"]);
     expect(input.setThreadError).toHaveBeenCalledWith(
       threadId,
       expect.stringContaining("not a supported image type"),
@@ -504,9 +503,8 @@ describe("ChatComposer question attachment reservations", () => {
     expect(mocks.capture).not.toHaveBeenCalled();
   });
 
-  it("drops image preparation when the active question changes", async () => {
+  it("keeps image preparation with its question when the active question changes", async () => {
     using _fixture = setup();
-    const urls = urlSpies();
     const preparation = deferred<{ ok: true; file: File }>();
     mocks.prepare.mockReturnValue(preparation.promise);
     const input = questionProps();
@@ -514,7 +512,7 @@ describe("ChatComposer question attachment reservations", () => {
     await act(() => input.composerRef.current!.addDroppedFiles([image("first.png")]));
     await screen.rerender(<ChatComposer {...questionProps("two", input)} />);
     await act(() => preparation.resolve({ ok: true, file: image("first.png") }));
-    for (const id of ["one", "two"]) expect(answerDraft(id)?.images ?? []).toHaveLength(0);
-    expect(urls.create).not.toHaveBeenCalled();
+    await expect.poll(() => answerDraft("one")?.images).toHaveLength(1);
+    expect(answerDraft("two")?.images ?? []).toHaveLength(0);
   });
 });

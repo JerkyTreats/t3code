@@ -17,7 +17,7 @@ Let an orchestrating thread own ordinary child threads so a manager running many
 - Older clients and servers ignore the field and list nested threads at top level. Rolling the server back loses no data.
 - Web and mobile group visible children under their parent row. Children do not take part in status sections or drag. A child that needs approval or input surfaces its parent in the active section.
 - The expansion control appears only when visible children exist. Selecting a non-active row opens it. Selecting the active row toggles expansion. The control toggles without navigating: a chevron on web, the provider badge on mobile, which is filled while expanded. A parent expands automatically while one of its children is active.
-- The parent row's badge shows the parent's own provider icon, then up to two child provider icons with the most recently active first, and `+n` for the rest. On card rows the badge replaces the parent's provider history and follows the machine icon. Compact list mode and the rail show the badge only.
+- The parent row's badge shows the parent's own provider icon, then up to two child provider icons with the most recently active first, and `+n` for the rest. On card rows the badge replaces the parent's provider history and follows the machine icon; a card row that drops its empty meta line shows the badge after the title instead. On web the badge follows the provider stack's treatment: the parent icon is dimmed like the current provider icon, and child icons are dimmed and grayscale like provider history. Compact list mode and the rail show the badge only.
 - Keyboard traversal and jump hints follow the visible nested order. The command palette labels nested threads `parent › child`.
 - **Move to top level** is available on nested threads on web and mobile.
 - Nested threads cannot be pinned; **Move to top level** first.
@@ -50,6 +50,7 @@ Let an orchestrating thread own ordinary child threads so a manager running many
 - `apps/web/src/uiStateStore.ts`
 - `apps/web/src/hooks/useThreadActions.ts` and `useThreadActionMenu.ts`
 - `apps/mobile/src/features/threads/threadListV2.ts`
+- `apps/mobile/src/features/threads/useThreadListV2.ts` passes the persisted expansion to the shared Home and sidebar list
 - `apps/mobile/src/features/threads/thread-list-v2-items.tsx`
 - `apps/mobile/src/features/threads/useThreadListActions.ts`
 - `apps/mobile/src/features/keyboard/commandPaletteItems.ts`
@@ -75,11 +76,11 @@ Let an orchestrating thread own ordinary child threads so a manager running many
 - Orchestrator tests cover nested creation, every rejection, clearing, repeated clearing, and children surviving an archived and deleted parent.
 - Projection tests prove the in-memory and SQL shells agree, and that a shell carrying the field decodes under the schema without it.
 - Fork tests prove a fork of a nested thread is top-level.
-- Client-runtime owner tests cover grouping, orphans, badge, expansion, attention, traversal, palette label, move eligibility and stable identity.
+- Client-runtime owner tests cover grouping, orphans, badge and its shared icon keys, expansion, attention, traversal, palette label, move eligibility and stable identity.
 - Web and mobile adapter tests cover rows, expansion control, drag exclusion, traversal, palette and move availability.
-- `SidebarNestedThreads.browser.test.tsx` renders the web badge alone and inside nested parent rows: the parent's provider icon leads one size larger, children follow by recency with `+n`, card rows place it after the machine icon in place of the provider history, and slim rows keep it after the title.
+- `SidebarNestedThreads.browser.test.tsx` renders the web badge alone and inside nested parent rows: the parent's provider icon leads one size larger with the current-provider dimming, children follow by recency with history dimming and grayscale and `+n`, card rows place it after the machine icon in place of the provider history or after the title when the meta line is empty, and slim rows keep it after the title.
 - Mobile `thread-list-v2-nested-badge.test.tsx` covers the parent icon leading one size larger, child order, overflow, and the press toggle with its filled expanded state. The mobile card-row provider slot is a one-line host choice in `thread-list-v2-items.tsx` without a mounted test.
 
 ## Current Adapter Contract
 
-Upstream moved sidebar rows into `SidebarThreadRow.tsx` and arranges them from quiet thread shells, so a streaming thread re-renders only its own row. Nesting keeps that boundary. The sidebar groups the quiet shells, and the badge, chevron and indented child row render inside `SidebarThreadRow`. Child rows read their own live shell like sortable rows do, but they are never sortable. A child's approval or question reaches its parent through `pendingSubagentRequestsByThread`. That request map is compared by content before it reaches shells, so a child's streaming ticks never re-render the parent row. The palette label is supplied through `buildThreadActionItems` `resolveTitle` in `CommandPaletteThreadItems.tsx`. The notifier excludes copies bubbled from nested children, so each child notifies once for itself.
+Upstream moved sidebar rows into `SidebarThreadRow.tsx` and arranges them from quiet thread shells, so a streaming thread re-renders only its own row. Nesting keeps that boundary. The sidebar groups the quiet shells, and the badge, chevron and indented child row render inside `SidebarThreadRow`. Child rows read their own live shell like sortable rows do, but they are never sortable. A child's approval or question reaches its parent through the nested layer in `threadShell.ts`, applied on top of upstream's subagent and linked-environment requests. Shells read that layer through `shellSubagentRequestsAtom`, compared by content, so a child's streaming ticks never re-render the parent row. The palette label is supplied through `buildThreadActionItems` `resolveTitle` in `CommandPaletteThreadItems.tsx`. Upstream's notifier reads `pendingSubagentRequestsAtom`, which has no nested layer, so each child notifies once for itself; `threadShell.test.ts` proves both maps. Upstream's card row drops its meta line when only the provider icon would remain; a nested parent's badge then follows the title.

@@ -5,7 +5,6 @@ import type { ThreadAppActivation } from "@t3tools/contracts/threadAppActivation
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { act, render, type Screen } from "../../../test/render";
-import { onOpenCommandPalette } from "../../commandPaletteBus";
 import type { DraftId } from "../../composerDraftStore";
 import { createThreadClientActivationOwner } from "../../fork/threadClientActivation";
 import {
@@ -14,6 +13,15 @@ import {
   selectThreadClientActivationProject,
   type ThreadClientActivationHostProps,
 } from "./ThreadClientActivationCoordinator";
+
+// The palette drops requests while unmounted, so record what the host asks it to open.
+const paletteRequests = vi.hoisted((): Array<unknown> => []);
+vi.mock(import("../../commandPaletteBus"), async (original) => ({
+  ...(await original()),
+  openCommandPalette: (detail = {}) => {
+    paletteRequests.push(detail);
+  },
+}));
 
 const primaryEnvironmentId = EnvironmentId.make("primary");
 const projectRef = scopeProjectRef(primaryEnvironmentId, ProjectId.make("project-1"));
@@ -207,8 +215,7 @@ describe("Thread client activation coordinator host", () => {
   it("waits visibly for a project, offers Add project, then opens when one appears", async () => {
     const owner = createThreadClientActivationOwner();
     owner.admit(activation);
-    const paletteRequests: Array<unknown> = [];
-    const stopListening = onOpenCommandPalette((detail) => paletteRequests.push(detail));
+    paletteRequests.length = 0;
     const openDraft = vi.fn(async () => ({ draftId, threadId }));
     const stageDraft = vi.fn();
     const baseProps = hostProps({ openDraft, owner, stageDraft });
@@ -229,7 +236,7 @@ describe("Thread client activation coordinator host", () => {
       expect(openDraft).toHaveBeenCalledWith(projectRef);
       expect(stageDraft).toHaveBeenCalledWith(draftId, activation.draft);
     } finally {
-      stopListening();
+      paletteRequests.length = 0;
     }
   });
 

@@ -6,7 +6,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { resolveAttachmentPathById } from "../attachmentStore.ts";
+import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
+import { parseAttachmentFileExtension, resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as PreviewManager from "../preview/Manager.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
@@ -48,36 +49,48 @@ export const layer = Layer.effect(
     const config = yield* ServerConfig.ServerConfig;
     const scheduledTasks = yield* ScheduledTaskService.ScheduledTaskService;
     return {
-      cleanupScheduledTasks: (threadId: ThreadId) =>
-        scheduledTasks
+      cleanupScheduledTasks: Effect.fn("ResourceCleanupService.cleanupScheduledTasks")(function (
+        threadId: ThreadId,
+      ) {
+        return scheduledTasks
           .deleteForThread(threadId)
           .pipe(
             Effect.mapError(
               (cause) =>
                 new ResourceCleanupError({ operation: "scheduled-tasks", threadId, cause }),
             ),
-          ),
-      cleanupTerminals: (threadId: string) =>
-        terminals
+          );
+      }),
+      cleanupTerminals: Effect.fn("ResourceCleanupService.cleanupTerminals")(function (
+        threadId: string,
+      ) {
+        return terminals
           .close({ threadId, deleteHistory: true })
           .pipe(
             Effect.mapError(
               (cause) => new ResourceCleanupError({ operation: "terminal", threadId, cause }),
             ),
-          ),
-      cleanupPreviews: (threadId: string) =>
-        previews
+          );
+      }),
+      cleanupPreviews: Effect.fn("ResourceCleanupService.cleanupPreviews")(function (
+        threadId: string,
+      ) {
+        return previews
           .close({ threadId: ThreadId.make(threadId) })
           .pipe(
             Effect.mapError(
               (cause) => new ResourceCleanupError({ operation: "preview", threadId, cause }),
             ),
-          ),
-      cleanupAttachments: (attachmentIds: ReadonlyArray<string>) =>
-        cleanupUnretainedAttachments(config.attachmentsDir, attachmentIds).pipe(
+          );
+      }),
+      cleanupAttachments: Effect.fn("ResourceCleanupService.cleanupAttachments")(function (
+        attachmentIds: ReadonlyArray<string>,
+      ) {
+        return cleanupUnretainedAttachments(config.attachmentsDir, attachmentIds).pipe(
           Effect.provideService(SqlClient.SqlClient, sql),
           Effect.provideService(FileSystem.FileSystem, fileSystem),
-        ),
+        );
+      }),
     };
   }),
 );
@@ -93,10 +106,15 @@ export const cleanupUnretainedAttachments = Effect.fn("cleanupUnretainedAttachme
     attachmentIds,
     (attachmentId) =>
       Effect.gen(function* () {
-        const path = resolveAttachmentPathById({
-          attachmentsDir,
-          attachmentId,
-        });
+        const extension = parseAttachmentFileExtension(attachmentId);
+        const path =
+          resolveAttachmentPathById({ attachmentsDir, attachmentId }) ??
+          (extension
+            ? resolveAttachmentRelativePath({
+                attachmentsDir,
+                relativePath: `${attachmentId}.${extension}`,
+              })
+            : null);
         if (path === null) return;
         // V1 and V2 share attachment files. The immutable legacy projection
         // remains a recovery source even after its V2 thread is deleted.
@@ -110,6 +128,7 @@ export const cleanupUnretainedAttachments = Effect.fn("cleanupUnretainedAttachme
             `;
         if (retained.length > 0) return;
         yield* fileSystem.remove(path, { force: true });
+        yield* fileSystem.remove(`${path}.txt`, { force: true });
       }).pipe(
         Effect.mapError(
           (cause) =>

@@ -7,7 +7,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
-import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/process";
 
 import {
@@ -18,13 +17,9 @@ import {
 
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
-import * as BitbucketSourceControlProvider from "@t3tools/source-control-bitbucket/server/BitbucketSourceControlProvider";
 import type * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./SourceControlRepositoryService.ts";
-
-const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
 const CLONE_URLS = {
   nameWithOwner: "octocat/t3code",
@@ -212,52 +207,6 @@ it.effect("preserves provider failures without deriving the repository message f
   }).pipe(Effect.provide(layer({ provider })));
 });
 
-it.effect(
-  "reports the safe Bitbucket locator detail through repository lookup and publishing",
-  () =>
-    Effect.gen(function* () {
-      const locatorCause = new BitbucketApi.BitbucketRepositoryLocatorError({
-        repository: "credential-token-abc123",
-      });
-      const provider = yield* BitbucketSourceControlProvider.make.pipe(
-        Effect.provide(
-          Layer.mock(BitbucketApi.BitbucketApi)({
-            getRepositoryCloneUrls: () => Effect.fail(locatorCause),
-            createRepository: () => Effect.fail(locatorCause),
-          }),
-        ),
-      );
-
-      yield* Effect.gen(function* () {
-        const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
-        const input = {
-          provider: SourceControlProviderKind.make("bitbucket"),
-          providerBaseUrl: "https://bitbucket.org",
-          repository: "workspace/repository",
-          cwd: "/workspace",
-        };
-        for (const operation of [
-          service.lookupRepository(input).pipe(Effect.asVoid),
-          service.publishRepository({ ...input, visibility: "private" }).pipe(Effect.asVoid),
-        ]) {
-          const error = yield* Effect.flip(operation);
-
-          assert.strictEqual(error.provider, "bitbucket");
-          assert.strictEqual(
-            error.detail,
-            "Bitbucket repositories must be specified as workspace/repository.",
-          );
-          assert.notInclude(error.message, locatorCause.repository);
-          assert.instanceOf(error.cause, SourceControlProviderError);
-          assert.strictEqual(
-            isSourceControlProviderError(error.cause) ? error.cause.cause : null,
-            locatorCause,
-          );
-        }
-      }).pipe(Effect.provide(layer({ provider })));
-    }),
-);
-
 it.effect("keeps a plain Bitbucket locator lookalike out of the repository message", () => {
   const provider = makeProvider({
     kind: SourceControlProviderKind.make("bitbucket"),
@@ -292,35 +241,53 @@ it.effect("keeps a plain Bitbucket locator lookalike out of the repository messa
   }).pipe(Effect.provide(layer({ provider })));
 });
 
-it.effect("keeps arbitrary Bitbucket request failures out of the repository message", () =>
+const lookupFailingWith = (cause: unknown, detail: string) =>
   Effect.gen(function* () {
-    const cause = new BitbucketApi.BitbucketRequestError({
-      operation: "getRepository",
-      cause: new Error("credential token abc123 was rejected"),
-    });
-    const provider = yield* BitbucketSourceControlProvider.make.pipe(
-      Effect.provide(
-        Layer.mock(BitbucketApi.BitbucketApi)({
-          getRepositoryCloneUrls: () => Effect.fail(cause),
+    const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    return yield* service
+      .lookupRepository({
+        provider: SourceControlProviderKind.make("bitbucket"),
+        // Fork F06.D7: lookups name the selected provider endpoint.
+        providerBaseUrl: "https://bitbucket.org",
+        repository: "workspace/repository",
+      })
+      .pipe(Effect.flip);
+  }).pipe(
+    Effect.provide(
+      layer({
+        provider: makeProvider({
+          getRepositoryCloneUrls: (input) =>
+            Effect.fail(
+              new SourceControlProviderError({
+                provider: SourceControlProviderKind.make("bitbucket"),
+                operation: "getRepositoryCloneUrls",
+                cwd: input.cwd,
+                detail,
+                cause,
+              }),
+            ),
         }),
-      ),
+      }),
+    ),
+  );
+
+it.effect("tells the user a host's fixed explanation of a failed repository lookup", () =>
+  Effect.gen(function* () {
+    const error = yield* lookupFailingWith(
+      { userFacingDetail: "Repositories are named workspace/repository." },
+      "Repositories are named workspace/repository.",
     );
+    assert.strictEqual(error.detail, "Repositories are named workspace/repository.");
+  }),
+);
 
-    yield* Effect.gen(function* () {
-      const service = yield* SourceControlRepositoryService.SourceControlRepositoryService;
-      const error = yield* Effect.flip(
-        service.lookupRepository({
-          provider: SourceControlProviderKind.make("bitbucket"),
-          providerBaseUrl: "https://bitbucket.org",
-          repository: "pingdotgg/t3code",
-          cwd: "/workspace",
-        }),
-      );
-
-      assert.strictEqual(error.detail, "The source control operation could not be completed.");
-      assert.notInclude(error.message, "abc123");
-      assert.notInclude(error.message, cause.detail);
-    }).pipe(Effect.provide(layer({ provider })));
+it.effect("keeps a host's raw response text out of a failed repository lookup", () =>
+  Effect.gen(function* () {
+    const error = yield* lookupFailingWith(
+      new Error("upstream"),
+      "<html>internal token=abc</html>",
+    );
+    assert.strictEqual(error.detail, "The source control operation could not be completed.");
   }),
 );
 

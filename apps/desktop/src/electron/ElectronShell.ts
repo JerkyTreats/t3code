@@ -18,9 +18,7 @@ import * as Electron from "electron";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { isStandaloneDesktop } from "../fork/StandaloneDesktopPolicy.ts";
 
-// Remote open-in-editor deep links (`vscode://vscode-remote/ssh-remote+…`,
-// `zed://ssh/<host>/<path>`, `jetbrains://gateway/ssh/environment?h=…`) must
-// reach the OS handler; every other non-web scheme stays blocked.
+// Remote editor deep links must reach the OS handler.
 const SAFE_WEB_PROTOCOLS = new Set(["http:", "https:"]);
 const REMOTE_EDITOR_PROTOCOLS = new Set(
   REMOTE_CAPABLE_EDITOR_IDS.flatMap((id) => {
@@ -103,11 +101,11 @@ export function resolveSessionXdgConfigHome(environment: {
     : Option.none();
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = (sessionXdgConfigHome: Option.Option<string>) =>
   ElectronShell.of({
-    openExternal: (rawUrl) =>
-      Option.match(parseSafeExternalUrl(rawUrl), {
+    openExternal: Effect.fn("ElectronShell.openExternal")(function (rawUrl) {
+      return Option.match(parseSafeExternalUrl(rawUrl), {
         onNone: () => Effect.succeed(false),
         onSome: (externalUrl) =>
           Option.match(sessionXdgConfigHome, {
@@ -120,16 +118,19 @@ export const make = (sessionXdgConfigHome: Option.Option<string>) =>
                 ),
               ),
           }),
-      }),
-    openSystemSettings: (pane) =>
-      Effect.promise(() =>
+      });
+    }),
+    openSystemSettings: Effect.fn("ElectronShell.openSystemSettings")(function (pane) {
+      return Effect.promise(() =>
         Electron.shell.openExternal(MAC_PERMISSION_SETTINGS_URLS[pane]).then(
           () => true,
           () => false,
         ),
-      ),
-    copyText: (text) =>
-      Effect.promise(() => Electron.clipboard.writeText(text).catch(() => undefined)),
+      );
+    }),
+    copyText: Effect.fn("ElectronShell.copyText")(function (text) {
+      return Effect.promise(() => Electron.clipboard.writeText(text).catch(() => undefined));
+    }),
   });
 
 export const layer = Layer.effect(

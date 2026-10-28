@@ -128,7 +128,7 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
         const second = yield* sessions.issue();
         const ticket = yield* sessions.issueWebSocketToken(first.sessionId);
         const claimsCodec = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
-        const claims = yield* Schema.decodeUnknownEffect(claimsCodec)(
+        const claims = yield* Schema.decodeEffect(claimsCodec)(
           base64UrlDecodeUtf8(ticket.token.split(".")[0]!),
         );
         const legacy = { ...claims };

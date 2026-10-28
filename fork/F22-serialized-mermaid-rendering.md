@@ -42,6 +42,7 @@ The 2026-10-23 intake accepted upstream's `pele` renderer and dropped the `merma
 - the `.pele` semantic color variables in `apps/web/src/index.css`
 - Markdown fenced-code dispatch, source toggle and find reveal
 - message, plan, file, attachment and pull-request Markdown hosts
+- `apps/web/src/components/files/MermaidViewer.tsx`: standalone `.mmd` file previews render one diagram through the same pele `MermaidDiagram`, so they need no visibility gate
 
 ## Non Ownership Boundaries
 

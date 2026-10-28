@@ -22,9 +22,9 @@ Preserve unrelated dirty work. Read the fork's patch and isolation policy before
 
 ## Wakeups and long runs
 
-Within an active turn, keep working against the fixed predicate. A delegated completion supplies its own parent wakeup. For requested PR monitoring, register watch_pull_request and end the turn; unwatch_pull_request when returning control. Link every task PR and reconcile the thread's registered PR list before finishing.
+Within an active turn, keep working against the fixed predicate. A delegated completion supplies its own parent wakeup. For requested PR monitoring, register watch_pull_request and end the turn; unwatch_pull_request when returning control. Link every task PR with link_pull_request as soon as it exists.
 
-Persistent scheduled work requires an applicable explicit grant covering recurrence and future runs. Pass schedule_task a structured schedule object, the granted cadence, a bounded prompt and a stable clientRequestId. The prompt points at task-owned durable state, checks whether the run remains active before acting, and deduplicates existing in-flight units. Retain scheduledTaskId and nextRunAt; report the actual cadence and next run time. On completion or explicit hold, use update_scheduled_task with enabled=false for that exact owned ID. Keep other schedules intact.
+Persistent scheduled work requires an applicable explicit grant covering recurrence and future runs. Pass schedule_task a structured schedule object, the granted cadence, a bounded prompt and a stable clientRequestId. The prompt points at task-owned durable state, checks whether the run remains active before acting, and deduplicates existing in-flight units. Retain scheduledTaskId and nextRunAt; report the actual cadence and next run time. On completion or explicit hold, call schedule_task with that exact owned scheduledTaskId and enabled=false. Keep other schedules intact.
 
 Scheduler runs return to the current thread by default. Use that for a coordinator that needs existing context. Do not create recurring work merely because a single task is long, and do not silently infer future provider spend from "keep going". Webhooks, secret handling and external notifications follow their tool contracts and the user's specific task authorization.
 

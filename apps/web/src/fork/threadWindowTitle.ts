@@ -25,10 +25,12 @@ export function useThreadWindowTitle(input: {
   latestRunStatus: OrchestrationV2RunStatus | null;
 }): void {
   const { enabled, title, working, latestRunStatus } = input;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- writes document.title, which the Thread shell publishes as the native window title
   useEffect(() => {
     if (!enabled) return;
     document.title = formatThreadWindowTitle({ title, working, latestRunStatus });
   }, [enabled, title, working, latestRunStatus]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the base native window title only when the Thread client stops owning it, not on each title change
   useEffect(() => {
     if (!enabled) return;
     return () => {

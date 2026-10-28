@@ -29,7 +29,7 @@ it.effect.each([
           source: { branch: { name: "release" } },
           destination: { branch: { name: "master" } },
           created_on: "2025-06-16T06:20:58.415108+00:00",
-          // Comments after a merge move this, so it is not the merge time.
+          // Comments after merging move this timestamp.
           updated_on: "2025-06-20T10:00:00.000000+00:00",
           closed_on: state === "OPEN" ? null : "2025-06-16T23:40:46.222238+00:00",
           links: { html: { href: "https://bitbucket.org/acme/web/pull-requests/52" } },
@@ -133,6 +133,59 @@ for (const operation of [
       }),
   );
 }
+
+it.effect("previews an origin pull request and refuses one without an origin (fork F06)", () =>
+  Effect.gen(function* () {
+    const requests: string[] = [];
+    const provider = yield* make.pipe(
+      Effect.provide(
+        BitbucketPullRequestApi.layer.pipe(
+          Layer.provide(
+            Layer.mock(BitbucketApi.BitbucketApi)({
+              authorizeOrigin: (origin) =>
+                origin?.remoteName === "origin"
+                  ? Effect.void
+                  : Effect.fail(
+                      new BitbucketApi.BitbucketOriginHostError({
+                        reason: "origin-context-required",
+                        apiHost: "api.bitbucket.org",
+                      }),
+                    ),
+              request: ({ url }) => {
+                requests.push(url);
+                return Effect.succeed({
+                  body: JSON.stringify({
+                    id: 7,
+                    title: "Preview",
+                    state: "OPEN",
+                    source: { branch: { name: "feature" } },
+                    destination: { branch: { name: "main" } },
+                    created_on: "2026-09-16T00:00:00Z",
+                    updated_on: "2026-09-16T00:00:00Z",
+                    links: { html: { href: "https://bitbucket.org/acme/web/pull-requests/7" } },
+                  }),
+                  truncated: false,
+                });
+              },
+            }),
+          ),
+        ),
+      ),
+    );
+    const preview = provider.getChangeRequestPreview;
+    if (preview === undefined) return yield* Effect.die("preview read missing");
+    const input = { cwd: "/repo", repository: "acme/web", host: "bitbucket.org", number: 7 };
+
+    const read = yield* preview({
+      ...input,
+      origin: { remoteName: "origin", remoteUrl: "https://bitbucket.org/acme/web.git" },
+    });
+    expect(read).toMatchObject({ number: 7, title: "Preview", state: "open" });
+
+    yield* Effect.flip(preview(input));
+    expect(requests).toHaveLength(1);
+  }),
+);
 
 it.effect("reads checks and PR state without diff, mergeability, or permission requests", () =>
   Effect.gen(function* () {

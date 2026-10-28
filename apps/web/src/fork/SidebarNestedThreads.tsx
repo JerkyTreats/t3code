@@ -1,4 +1,7 @@
-import type { NestedThreadBadge } from "@t3tools/client-runtime/state/thread-nesting";
+import {
+  nestedThreadBadgeIconKeys,
+  type NestedThreadBadge,
+} from "@t3tools/client-runtime/state/thread-nesting";
 import type { ProviderInstanceId } from "@t3tools/contracts";
 import { ChevronRightIcon } from "lucide-react";
 import { memo, type MouseEvent as ReactMouseEvent } from "react";
@@ -12,16 +15,6 @@ type NestedBadgeProviderEntry = Pick<
   ProviderInstanceEntry,
   "driverKind" | "displayName" | "accentColor" | "acpRegistryAgentId" | "acpRegistryIconUrl"
 >;
-
-/** Children may share a provider, so each repeat gets its own key. */
-function badgeIconKeys(instanceIds: ReadonlyArray<ProviderInstanceId>) {
-  const seen = new Map<ProviderInstanceId, number>();
-  return instanceIds.map((instanceId) => {
-    const repeat = seen.get(instanceId) ?? 0;
-    seen.set(instanceId, repeat + 1);
-    return { instanceId, key: `${instanceId}:${repeat}` };
-  });
-}
 
 /**
  * A parent row's provider and its nested threads: the parent's own provider
@@ -50,11 +43,12 @@ export const SidebarNestedThreadBadge = memo(function SidebarNestedThreadBadge(p
           accentColor={parentEntry.accentColor}
           acpRegistryAgentId={parentEntry.acpRegistryAgentId}
           acpRegistryIconUrl={parentEntry.acpRegistryIconUrl}
-          // One step larger than the children's icons marks it as the parent.
-          iconClassName="size-3.5"
+          // The row's own provider, drawn like the provider stack's current icon and
+          // one step larger than the children, which follow its history icons.
+          iconClassName="size-3.5 opacity-60"
         />
       )}
-      {badgeIconKeys(badge.providerInstanceIds).map(({ instanceId, key }) => {
+      {nestedThreadBadgeIconKeys(badge.providerInstanceIds).map(({ instanceId, key }) => {
         const entry = props.providerEntryByInstanceId.get(instanceId);
         return entry === undefined ? null : (
           <ProviderInstanceIcon
@@ -64,7 +58,7 @@ export const SidebarNestedThreadBadge = memo(function SidebarNestedThreadBadge(p
             accentColor={entry.accentColor}
             acpRegistryAgentId={entry.acpRegistryAgentId}
             acpRegistryIconUrl={entry.acpRegistryIconUrl}
-            iconClassName="size-3"
+            iconClassName="size-3 opacity-35 grayscale"
           />
         );
       })}

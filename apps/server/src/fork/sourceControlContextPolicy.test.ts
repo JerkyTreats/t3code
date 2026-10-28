@@ -3,7 +3,11 @@ import { originForgejoChangeRequestNumber } from "@t3tools/source-control-core/s
 import { describe, expect, it } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import { ChildProcessSpawner } from "effect/process";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as OriginRepositoryMutationAuthority from "./OriginRepositoryMutationAuthority.ts";
 import { OriginRepositoryMutationAuthorityError } from "./OriginRepositoryMutationAuthority.ts";
 import {
   originAdmitsThreadPullRequest,
@@ -127,6 +131,52 @@ it.effect(
       yield* bound.createChangeRequest(input);
       expect(providerCalls).toBe(1);
     }),
+);
+
+it.effect("binding authorizes an Azure SSH origin through the live origin authority", () =>
+  Effect.gen(function* () {
+    const remoteUrl = "git@ssh.dev.azure.com:v3/acme/platform/web";
+    const context = pickOriginSourceControlContext([{ name: "origin", url: remoteUrl }])!;
+    const authority = yield* OriginRepositoryMutationAuthority.make.pipe(
+      Effect.provide(
+        Layer.mock(VcsProcess.VcsProcess)({
+          run: (input) =>
+            Effect.succeed({
+              exitCode: ChildProcessSpawner.ExitCode(0),
+              stdout: input.args[0] === "remote" ? `${remoteUrl}\n` : "",
+              stderr: "",
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdoutInvalidUtf8: false,
+              stderrInvalidUtf8: false,
+            }),
+        }),
+      ),
+    );
+    let created = 0;
+    const provider = SourceControlProvider.SourceControlProvider.of({
+      kind: SourceControlProviderKind.make("azure-devops"),
+      createChangeRequest: () =>
+        Effect.sync(() => {
+          created += 1;
+          return { url: "https://dev.azure.com/acme/platform/_git/web/pullrequest/1" };
+        }),
+      listChangeRequests: () => Effect.die("unused"),
+      getChangeRequest: () => Effect.die("unused"),
+      getRepositoryCloneUrls: () => Effect.die("unused"),
+      createRepository: () => Effect.die("unused"),
+      getDefaultBranch: () => Effect.die("unused"),
+      checkoutChangeRequest: () => Effect.die("unused"),
+    });
+    yield* bindOriginProviderContext(provider, context, authority).createChangeRequest({
+      cwd: "/workspace",
+      baseRefName: "main",
+      headSelector: "feature",
+      title: "Change",
+      bodyFile: "/tmp/body",
+    });
+    expect(created).toBe(1);
+  }),
 );
 
 describe("originAdmitsThreadPullRequest", () => {
