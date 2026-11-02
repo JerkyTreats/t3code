@@ -247,18 +247,12 @@ export function describeCanvasChanges(scene: ThreadCanvasScene, message: string)
     .toSorted((left, right) => left.y - right.y);
   const isFresh = (mark: (typeof marks)[number]) => previous[mark.id] !== stamps.get(mark.id);
   const asked = message.trim();
-  // A note is sent as its words; a cite is sent quoting the words its box covers.
   const sentNotes = marks.filter((mark) => {
     const text = mark.text?.trim();
-    const covers = mark.covers?.trim();
     return (
-      (text !== undefined &&
-        text !== "" &&
-        (text === asked || (isFresh(mark) && asked.includes(text)))) ||
-      (covers !== undefined &&
-        covers !== "" &&
-        isFresh(mark) &&
-        asked.includes(JSON.stringify(covers)))
+      text !== undefined &&
+      text !== "" &&
+      (text === asked || (isFresh(mark) && asked.includes(text)))
     );
   });
   const sentIds = new Set(sentNotes.map((mark) => mark.id));
