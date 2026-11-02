@@ -16,6 +16,7 @@ import {
   pendingRestartCancelledBackgroundWork,
   restartContinuationNote,
   mergeRestartCancelledBackgroundWork,
+  serverRestartNote,
 } from "./RestartBackgroundNote.ts";
 
 const claudeThread = ProviderThreadId.make("provider-thread:claude");
@@ -42,6 +43,23 @@ const turnFor = (source: OrchestrationV2Run) => ({
   runAttemptId: source.activeAttemptId,
   providerThreadId: source.providerThreadId!,
   status: "completed" as const,
+});
+
+it("tells the agent the server restarted only when an earlier run finished before this process", () => {
+  const before = run(1, claudeThread, {
+    completedAt: DateTime.makeUnsafe("2026-11-02T18:00:00.000Z"),
+  });
+  const after = run(2, claudeThread, {
+    completedAt: DateTime.makeUnsafe("2026-11-02T19:00:00.000Z"),
+  });
+  const started = DateTime.toEpochMillis(DateTime.makeUnsafe("2026-11-02T18:30:00.000Z"));
+  const note = (runs: ReadonlyArray<OrchestrationV2Run>, target: OrchestrationV2Run) =>
+    serverRestartNote({ runs, run: target, serverStartedAt: started, serverVersion: "0.1.3-abc" });
+
+  assert.include(note([before], run(2, claudeThread)), "now runs 0.1.3-abc");
+  assert.strictEqual(note([before, after], run(3, claudeThread)), "");
+  assert.strictEqual(note([], run(1, claudeThread)), "");
+  assert.strictEqual(note([run(1, claudeThread, { completedAt: null })], run(2, claudeThread)), "");
 });
 
 it("keeps the note for the provider thread that lost the work across a provider switch", () => {

@@ -60,7 +60,10 @@ import {
   isRestartNoteContinuation,
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
+  serverRestartNote,
 } from "./RestartBackgroundNote.ts";
+import { serverVersion } from "../serverVersion.ts";
+import * as Clock from "effect/Clock";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -149,6 +152,9 @@ export const layer: Layer.Layer<
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const threadCanvas = yield* ThreadCanvasStore.ThreadCanvasStore;
+    // The layer builds when the process comes up, so a thread whose last run finished earlier
+    // spans a restart.
+    const serverStartedAt = yield* Clock.currentTimeMillis;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
@@ -792,10 +798,19 @@ export const layer: Layer.Layer<
         run,
         attempts: projection.attempts,
       });
-      const restartNote =
+      const restartNote = [
         restartCancelledWork.length === 0
           ? ""
-          : restartCancelledBackgroundWorkNote(restartCancelledWork);
+          : restartCancelledBackgroundWorkNote(restartCancelledWork),
+        serverRestartNote({
+          runs: projection.runs,
+          run,
+          serverStartedAt,
+          serverVersion,
+        }),
+      ]
+        .filter((part) => part !== "")
+        .join("\n\n");
       // Slash commands must stay the first thing the provider reads.
       const canvasDelivery =
         message.createdBy === "user" && !message.text.trimStart().startsWith("/")

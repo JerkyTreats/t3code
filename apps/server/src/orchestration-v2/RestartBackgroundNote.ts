@@ -7,6 +7,7 @@ import type {
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
+import * as DateTime from "effect/DateTime";
 
 type Work = OrchestrationV2RestartCancelledBackgroundWork;
 type Attempt = Pick<OrchestrationV2RunAttempt, "id" | "runId">;
@@ -119,6 +120,28 @@ export function cancelledRosterTaskWork(task: OrchestrationV2PendingBackgroundTa
 const MAX_NOTE_ENTRIES = 10;
 
 /** Bounds entries and labels to protect the context budget. */
+/**
+ * The server came up after this thread's last completed run. Tool schemas and instructions the
+ * agent loaded earlier in the conversation may be stale, which it cannot see on its own.
+ */
+export function serverRestartNote(input: {
+  readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "ordinal" | "completedAt">>;
+  readonly run: Pick<OrchestrationV2Run, "ordinal">;
+  /** When this server process started, in epoch milliseconds. */
+  readonly serverStartedAt: number;
+  readonly serverVersion: string;
+}): string {
+  const completedBefore = input.runs.flatMap((candidate) =>
+    candidate.ordinal < input.run.ordinal && candidate.completedAt !== null
+      ? [DateTime.toEpochMillis(candidate.completedAt)]
+      : [],
+  );
+  if (completedBefore.length === 0 || Math.max(...completedBefore) >= input.serverStartedAt) {
+    return "";
+  }
+  return `Note: the T3 server restarted since your last turn in this thread and now runs ${input.serverVersion}. Its MCP tool schemas and these instructions may have changed, so load a tool again with ToolSearch before relying on a schema from earlier in this conversation.`;
+}
+
 export function restartCancelledBackgroundWorkNote(work: ReadonlyArray<Work>): string {
   const omitted = work.length - MAX_NOTE_ENTRIES;
   return [
