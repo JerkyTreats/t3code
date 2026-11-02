@@ -136,6 +136,8 @@ export class HtmlRender extends Context.Service<
       { readonly attachmentId: string },
       HtmlRenderPrepareError | HtmlRenderStoreError
     >;
+    /** A stored page's HTML, or null when the attachment is missing or unreadable. */
+    readonly readStored: (attachmentId: string) => Effect.Effect<string | null>;
     readonly preview: (input: {
       readonly html: string;
       readonly width?: number | undefined;
@@ -492,6 +494,16 @@ const make = Effect.gen(function* () {
     return { attachmentId };
   });
 
+  const readStored = (attachmentId: string) => {
+    const filePath = resolveAttachmentRelativePath({
+      attachmentsDir: config.attachmentsDir,
+      relativePath: `${attachmentId}.html`,
+    });
+    return filePath === null
+      ? Effect.succeed(null)
+      : fileSystem.readFileString(filePath).pipe(Effect.orElseSucceed(() => null));
+  };
+
   const preview = Effect.fn("HtmlRender.preview")(function* (input: {
     readonly html: string;
     readonly width?: number | undefined;
@@ -527,7 +539,7 @@ const make = Effect.gen(function* () {
     } satisfies HtmlPreview;
   });
 
-  return HtmlRender.of({ prepare, publish, store, preview });
+  return HtmlRender.of({ prepare, publish, store, readStored, preview });
 });
 
 export const layer = Layer.effect(HtmlRender, make);

@@ -459,6 +459,9 @@ export function summarizeT3ToolCalls(
     case "canvas-update":
       label = phrase("Drew", "draw", `on the canvas ${times}`);
       break;
+    case "canvas-preview":
+      label = phrase("Previewed", "preview", `the canvas ${times}`);
+      break;
     case "capabilities":
       label = phrase("Checked", "check", `orchestration capabilities ${times}`);
       break;
