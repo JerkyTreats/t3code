@@ -29,6 +29,7 @@ import {
 } from "./ThreadCanvasSync";
 import {
   coveredText,
+  renderedCardsIn,
   drawingTurnOf,
   isUserMark,
   selectedNotes,
@@ -550,7 +551,8 @@ export default function ExcalidrawBoard({
       const key = `${element.id}:${element.version}`;
       const known = coveredCache.current.get(key);
       if (known !== undefined) return known;
-      const text = coveredText(element, turnBoard.cards(), layer, zoom);
+      const cards = [...turnBoard.cards(), ...renderedCardsIn(layer)];
+      const text = coveredText(element, cards, layer, zoom);
       coveredCache.current.set(key, text);
       return text;
     };

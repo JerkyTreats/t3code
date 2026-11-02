@@ -5,6 +5,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   coveredText,
   isUserMark,
+  renderedCardsIn,
   selectedNotes,
   toSavableElements,
   unseenMarks,
@@ -50,6 +51,29 @@ describe("coveredText", () => {
     const { layer, cards } = fixture();
     const arrow = mark({ type: "arrow", x: 600, y: 10, points: [[-500, 90]] });
     expect(coveredText(arrow, cards, layer, 1)).toBe("Last paragraph");
+    layer.remove();
+  });
+
+  it("quotes the table cell under a mark, and a row as its cells", () => {
+    const layer = document.createElement("div");
+    layer.style.cssText = "position:absolute;top:0;left:0;width:0;height:0";
+    const card = document.createElement("div");
+    card.className = "canvas-card";
+    card.style.cssText = "position:absolute;top:0;left:0;width:400px";
+    card.innerHTML = `<table style="border-collapse:collapse;width:400px"><tbody>
+      <tr style="height:40px"><td style="width:100px">Mon 11-02</td><td>TASK-101: inventory token</td><td style="width:60px">you</td></tr>
+      <tr style="height:40px"><td>Tue 11-03</td><td>CHG-202 swap vote</td><td>Alex</td></tr>
+    </tbody></table>`;
+    layer.append(card);
+    document.body.append(layer);
+    const cards = renderedCardsIn(layer);
+    expect(cards).toHaveLength(1);
+    expect(coveredText(mark({ x: 120, y: 5, width: 200, height: 30 }), cards, layer, 1)).toBe(
+      "TASK-101: inventory token",
+    );
+    expect(coveredText(mark({ x: 5, y: 45, width: 390, height: 30 }), cards, layer, 1)).toBe(
+      "Tue 11-03 / CHG-202 swap vote / Alex",
+    );
     layer.remove();
   });
 

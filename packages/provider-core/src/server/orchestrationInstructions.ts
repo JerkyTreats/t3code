@@ -31,6 +31,7 @@ Every thread has an Excalidraw canvas, a persistent whiteboard behind its turns.
 - For graphs set \`layout\` and leave out coordinates. The result reports crossings, clipped labels, and overlaps, so fix those rather than guessing.
 - To change a drawing, send it again with the same \`drawingId\`. Do not describe what you drew; say only what it does not show.
 - \`markdown\` and \`html\` shapes are T3's own reading blocks on the canvas, in the app's font. A markdown shape renders its \`text\` as Markdown; an html shape renders a page like \`html_render\` does, from \`html\` or the \`attachmentId\` of a page already rendered. Use them for anything with more than a few words, a table, a chart, or links, sized with \`width\` and \`height\` (480 by 320 if left out). Keep rectangle, ellipse, diamond, and text for diagram nodes and labels.
+- A user mark on one of your cards or shapes arrives as on that element, with the words under it. A note like "cite" or "source?" there asks where that line came from: answer with a note beside the mark naming the source (file, URL, ticket, message), and fix the line if it was wrong.
 - A delegated task draws on the canvas of the thread that delegated it, beside that thread's turns. When the user puts a note on the canvas and asks for several things looked into, delegate one task per note, put the note's id in each task, and tell the child to pass it as \`near\` so its drawing lands beside the note. As a delegated task, draw what you found rather than only reporting it back.`,
 ];
 

@@ -97,6 +97,79 @@ describe("describeCanvas", () => {
     expect(described.elements[1]).not.toHaveProperty("text");
   });
 
+  it("places a user mark on the agent's smallest piece under it, or beside the nearest", () => {
+    const described = describeCanvas(
+      scene([
+        {
+          id: "d/asks",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 1000,
+          height: 1000,
+          customData: {
+            t3Drawing: { id: "d" },
+            t3Card: { kind: "markdown", text: "## Asks on you\n\n| Due |" },
+          },
+        },
+        {
+          id: "d/node",
+          type: "rectangle",
+          x: 100,
+          y: 100,
+          width: 200,
+          height: 80,
+          customData: { t3Drawing: { id: "d" } },
+        },
+        { id: "d/node-label", type: "text", text: "Example AI Platform", containerId: "d/node" },
+        {
+          id: "d/edge",
+          type: "arrow",
+          x: 0,
+          y: 0,
+          width: 2000,
+          height: 2000,
+          customData: { t3Drawing: { id: "d" } },
+        },
+        {
+          id: "box",
+          type: "rectangle",
+          x: 150,
+          y: 120,
+          width: 300,
+          height: 30,
+          customData: { t3Covers: "TASK-101: inventory token" },
+        },
+        { id: "cite", type: "text", text: "CITE", x: 460, y: 110, width: 60, height: 25 },
+        {
+          id: "pointer",
+          type: "arrow",
+          x: 1300,
+          y: 500,
+          width: 100,
+          height: 10,
+          points: [
+            [0, 0],
+            [-310, 0],
+          ],
+        },
+        { id: "far", type: "text", text: "elsewhere", x: 1050, y: 1050, width: 60, height: 25 },
+      ]),
+    );
+    const placed = Object.fromEntries(described.elements.map((element) => [element.id, element]));
+    expect(placed["box"]).toMatchObject({
+      on: { id: "d/node", text: "Example AI Platform", x: 50, y: 20 },
+    });
+    expect(placed["cite"]).toMatchObject({
+      on: { id: "d/asks", card: "markdown", x: 460, y: 110 },
+    });
+    expect(placed["cite"]).not.toHaveProperty("beside");
+    expect(placed["pointer"]).toMatchObject({ on: { id: "d/asks" } });
+    expect(placed["far"]).toMatchObject({ beside: { id: "d/asks", card: "markdown" } });
+    expect(placed["far"]).not.toHaveProperty("on");
+    expect(placed["d/node"]).not.toHaveProperty("on");
+  });
+
   it("folds labels into their shape, keeps arrow ends, and skips deleted marks", () => {
     const described = describeCanvas(
       scene([
@@ -157,7 +230,10 @@ describe("describeCanvasChanges", () => {
     expect(changes.note).toContain('text "Show me this" [note], near turn "Rust timings"');
     expect(changes.note).toContain('freedraw [stroke], near turn "Rust timings"');
     expect(changes.note).toContain('over "94% of compile time was rebuilds"');
-    expect(changes.note).not.toContain("agent-box");
+    expect(changes.note).toContain(
+      'freedraw [stroke], near turn "Rust timings", beside your [agent-box]',
+    );
+    expect(changes.note).not.toContain("agent-box [");
     expect(changes.sketched).toBe(true);
   });
 

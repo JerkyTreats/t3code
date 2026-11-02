@@ -18,7 +18,7 @@ export interface CanvasMark {
   readonly customData?: Record<string, unknown>;
 }
 
-const TEXT_BLOCKS = "p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, tr";
+const TEXT_BLOCKS = "p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, tr, th, td";
 const MAX_COVERED_TEXT_CHARS = 400;
 const ARROW_TIP_REACH_PX = 12;
 
@@ -116,9 +116,14 @@ function reachOf(mark: CanvasMark) {
       };
 }
 
+/** The agent's markdown cards as rendered, which hit-test like turn cards. An html card's page is a frame and keeps its words. */
+export function renderedCardsIn(layer: HTMLElement) {
+  return [...layer.querySelectorAll<HTMLElement>(".canvas-card")].map((element) => ({ element }));
+}
+
 /**
- * The turn text under a mark. Turns are DOM above the canvas, so neither a scene export nor the
- * element's coordinates can tell an agent what the reader circled.
+ * The turn or card text under a mark. Turns and cards are DOM above the canvas, so neither a
+ * scene export nor the element's coordinates can tell an agent what the reader circled.
  */
 export function coveredText(
   mark: CanvasMark,
