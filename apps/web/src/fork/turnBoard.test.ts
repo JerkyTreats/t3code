@@ -82,3 +82,36 @@ describe("layoutTurns", () => {
     expect(boxFor(next, "a").y).toBe(-(100 + 2 * TURN_INSET_PX + TURN_GAP_PX));
   });
 });
+
+describe("layoutTurns with drawings", () => {
+  it("moves a drawing whole when the turn above it grows, even if it starts beside the turn", () => {
+    const start = layoutTurns([], [measured("a", 100)]);
+    const turnBottom = boxFor(start, "a").y + boxFor(start, "a").height;
+    const piece = (key: string, y: number): BoardBox => ({ ...mark(key, 600, y), group: "map" });
+    const grown = layoutTurns(
+      [
+        ...start,
+        piece("map/top", turnBottom - 20),
+        piece("map/low", turnBottom + 200),
+        mark("loose", 600, turnBottom - 20),
+      ],
+      [measured("a", 300)],
+    );
+    // The drawing starts above the old bottom, so it stays together where it was.
+    expect(boxFor(grown, "map/top").y).toBe(turnBottom - 20);
+    expect(boxFor(grown, "map/low").y).toBe(turnBottom + 200);
+    expect(boxFor(grown, "loose").y).toBe(turnBottom - 20);
+  });
+
+  it("pushes a drawing below the turn down as one", () => {
+    const start = layoutTurns([], [measured("a", 100)]);
+    const turnBottom = boxFor(start, "a").y + boxFor(start, "a").height;
+    const piece = (key: string, y: number): BoardBox => ({ ...mark(key, 0, y), group: "map" });
+    const grown = layoutTurns(
+      [...start, piece("map/one", turnBottom + 40), piece("map/two", turnBottom + 400)],
+      [measured("a", 300)],
+    );
+    expect(boxFor(grown, "map/one").y).toBe(turnBottom + 40 + 200);
+    expect(boxFor(grown, "map/two").y).toBe(turnBottom + 400 + 200);
+  });
+});

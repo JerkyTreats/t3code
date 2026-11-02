@@ -85,6 +85,8 @@ export interface BoardBox {
   readonly y: number;
   readonly width: number;
   readonly height: number;
+  /** The agent drawing a box belongs to, which moves as one when a turn above it grows. */
+  readonly group?: string | null;
 }
 
 export interface MeasuredTurn {
@@ -156,8 +158,15 @@ export function layoutTurns(
     const previousBottom = box.y + box.height;
     box.height = height;
     if (!inColumn(box)) continue;
+    // A drawing moves whole: splitting it would read as the reader having dragged its pieces.
+    const groupTops = new Map<string, number>();
     for (const other of placed) {
-      if (other !== box && other.y >= previousBottom - 1) other.y += delta;
+      if (other.group == null) continue;
+      groupTops.set(other.group, Math.min(groupTops.get(other.group) ?? Infinity, other.y));
+    }
+    for (const other of placed) {
+      const top = other.group == null ? other.y : (groupTops.get(other.group) ?? other.y);
+      if (other !== box && top >= previousBottom - 1) other.y += delta;
     }
   }
   return placed;

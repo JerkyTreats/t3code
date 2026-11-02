@@ -364,7 +364,15 @@ function carryMarks(input: {
     const from = boxOf(element);
     const to = after.get(String(element.id));
     if (to === undefined || (to.x === from.x && to.y === from.y)) return [];
-    return [{ id: String(element.id), from, dx: to.x - from.x, dy: to.y - from.y }];
+    return [
+      {
+        id: String(element.id),
+        drawing: drawingOf(element)?.id ?? "",
+        from,
+        dx: to.x - from.x,
+        dy: to.y - from.y,
+      },
+    ];
   });
   const carried = new Map<string, ThreadCanvasElement>();
   if (moves.length === 0) return carried;
@@ -376,7 +384,10 @@ function carryMarks(input: {
     version: numberOf(element.version) + 1,
     versionNonce: randomInt(),
     updated: now,
-    customData: { ...recordOf(element.customData), t3Follow: { id: move.id, written: now } },
+    customData: {
+      ...recordOf(element.customData),
+      t3Follow: { id: move.id, drawing: move.drawing, written: now },
+    },
   });
   for (const mark of live.filter(isUserMark)) {
     const box = boxOf(mark);
