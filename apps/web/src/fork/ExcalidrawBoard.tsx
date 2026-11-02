@@ -865,12 +865,19 @@ export default function ExcalidrawBoard({
                   }}
                 >
                   {card.card.kind === "markdown" ? (
-                    <ChatMarkdown
-                      text={card.card.text}
-                      cwd={undefined}
-                      environmentId={canvasThread.environmentId}
-                      threadRef={canvasThread}
-                    />
+                    // A card is the agent's writing, so selecting in it offers the timeline's Cite.
+                    <div
+                      data-assistant-citation-source={card.id}
+                      data-assistant-citation-environment={canvasThread.environmentId}
+                      data-assistant-citation-thread={canvasThread.threadId}
+                    >
+                      <ChatMarkdown
+                        text={card.card.text}
+                        cwd={undefined}
+                        environmentId={canvasThread.environmentId}
+                        threadRef={canvasThread}
+                      />
+                    </div>
                   ) : (
                     <HtmlRenderFrame
                       key={card.card.attachmentId}
