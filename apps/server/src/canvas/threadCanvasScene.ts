@@ -1,11 +1,16 @@
 import type { ThreadCanvasElement, ThreadCanvasScene } from "@t3tools/contracts";
+import { isStaleDrawingCopy } from "@t3tools/shared/threadCanvasDrawing";
 
 const versionOf = (element: ThreadCanvasElement) =>
   typeof element.version === "number" ? element.version : 0;
 const idOf = (element: ThreadCanvasElement) =>
   typeof element.id === "string" ? element.id : undefined;
 
-/** Merges by element id, keeping the higher version, so no writer can erase a newer edit. */
+/**
+ * Merges by element id, keeping the higher version, so no writer can erase a newer edit. A copy
+ * of an agent element from before the agent's latest write loses whatever its version, and the
+ * agent's element is re-versioned above it, so the client that sent it takes the newer one.
+ */
 export function mergeCanvasElements(
   current: ReadonlyArray<ThreadCanvasElement>,
   incoming: ReadonlyArray<ThreadCanvasElement>,
@@ -20,6 +25,12 @@ export function mergeCanvasElements(
     const id = idOf(element);
     if (id === undefined) continue;
     const existing = merged.get(id);
+    if (existing !== undefined && isStaleDrawingCopy(element, existing)) {
+      if (versionOf(existing) > versionOf(element)) continue;
+      merged.set(id, { ...existing, version: versionOf(element) + 1 });
+      changed = true;
+      continue;
+    }
     if (existing !== undefined && versionOf(existing) >= versionOf(element)) continue;
     merged.set(id, element);
     changed = true;

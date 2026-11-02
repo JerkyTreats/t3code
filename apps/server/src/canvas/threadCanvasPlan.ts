@@ -290,6 +290,7 @@ export function planDrawing(input: {
   const withoutOld = scene.elements.flatMap((element) => {
     if (builtIds.has(element.id)) return [];
     if (!existing.includes(element)) return [element];
+    const customData = recordOf(element.customData);
     return [
       {
         ...element,
@@ -297,6 +298,10 @@ export function planDrawing(input: {
         version: numberOf(element.version) + 1,
         versionNonce: randomInt(),
         updated: now,
+        customData: {
+          ...customData,
+          t3Drawing: { ...recordOf(customData.t3Drawing), written: now },
+        },
       },
     ];
   });
