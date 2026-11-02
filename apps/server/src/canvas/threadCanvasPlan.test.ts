@@ -355,3 +355,37 @@ describe("the user's marks on a moved card", () => {
     expect(live(elements, "elsewhere")).toMatchObject({ x: -3000, y: -3000, version: 1 });
   });
 });
+
+describe("replacing a drawing outright", () => {
+  it("lands clear of the user's notes instead of over them", () => {
+    const first = applied(empty, { drawingId: "map", shapes: [box("old", 0, 0, "Old")] });
+    const old = live(first.elements, "map/old")!;
+    const note: ThreadCanvasElement = {
+      id: "note",
+      type: "text",
+      version: 1,
+      x: Number(old.x) + 10,
+      y: Number(old.y) + 100,
+      width: 300,
+      height: 25,
+      text: "walk my MRs",
+    };
+    const scene = { ...first, elements: [...first.elements, note] };
+    const { elements, report } = plan(scene, {
+      drawingId: "map",
+      shapes: [{ id: "card", type: "markdown", text: "New", x: 0, y: 0, width: 600, height: 400 }],
+    });
+    expect(report.overlaps).toEqual([]);
+    expect(Number(live(elements, "map/card")!.y)).toBeGreaterThan(Number(note.y));
+  });
+
+  it("keeps an edited drawing in place", () => {
+    const first = applied(empty, { drawingId: "map", shapes: [box("a", 0, 0, "A")] });
+    const before = live(first.elements, "map/a")!;
+    const { elements } = plan(first, {
+      drawingId: "map",
+      shapes: [box("a", 0, 0, "A2"), box("b", 300, 0, "B")],
+    });
+    expect(live(elements, "map/a")).toMatchObject({ x: before.x, y: before.y });
+  });
+});
