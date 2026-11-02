@@ -92,6 +92,17 @@ export function unseenSketchMarks<Element extends CanvasMark>(
   );
 }
 
+/** Every mark of the reader's the agent has not seen, words or not, so a send can carry them. */
+export function unseenMarks<Element extends CanvasMark>(
+  elements: ReadonlyArray<Element>,
+  seen: Readonly<Record<string, number>>,
+) {
+  const stamps = stampsOf(elements);
+  return elements.filter(
+    (element) => isUserMark(element) && seen[element.id] !== stamps.get(element.id),
+  );
+}
+
 /** The part of a mark that points at something: an arrow's tip, anything else's whole box. */
 function reachOf(mark: CanvasMark) {
   const tip = mark.type === "arrow" || mark.type === "line" ? mark.points?.at(-1) : undefined;

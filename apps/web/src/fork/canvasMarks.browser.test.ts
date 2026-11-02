@@ -7,6 +7,7 @@ import {
   isUserMark,
   selectedNotes,
   toSavableElements,
+  unseenMarks,
   unseenSketchMarks,
   type CanvasMark,
 } from "./canvasMarks";
@@ -101,5 +102,16 @@ describe("marks", () => {
     const note = mark({ id: "note", type: "text", text: "hi" });
     const marks = unseenSketchMarks([stroke, seenStroke, box, label, note], { seen: 2 });
     expect(marks.map((element) => element.id)).toEqual(["stroke"]);
+  });
+
+  it("counts every unseen mark of the reader's, with a labelled box as one mark", () => {
+    const stroke = mark({ id: "stroke", version: 3 });
+    const seenStroke = mark({ id: "seen", version: 2 });
+    const box = mark({ id: "box", type: "rectangle", version: 1 });
+    const label = mark({ id: "label", type: "text", text: "api", containerId: "box", version: 4 });
+    const note = mark({ id: "note", type: "text", text: "hi" });
+    const agent = mark({ id: "drawn", type: "rectangle", customData: { t3Drawing: { id: "d" } } });
+    const marks = unseenMarks([stroke, seenStroke, box, label, note, agent], { seen: 2, box: 5 });
+    expect(marks.map((element) => element.id)).toEqual(["stroke", "note"]);
   });
 });

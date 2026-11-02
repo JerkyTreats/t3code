@@ -23,6 +23,9 @@ export interface TurnBoard {
   readonly setPanToLatest: (pan: () => void) => void;
   readonly reportFollowing: (following: boolean) => void;
   readonly setFollowListener: (listener: ((following: boolean) => void) | null) => void;
+  /** How many of the reader's marks the agent has not seen, so the composer can send them alone. */
+  readonly reportPendingNotes: (count: number) => void;
+  readonly setPendingNotesListener: (listener: ((count: number) => void) | null) => void;
 }
 
 function sameCards(left: ReadonlyArray<TurnCard>, right: ReadonlyArray<TurnCard>) {
@@ -43,6 +46,7 @@ export function createTurnBoard(): TurnBoard {
   let cards: ReadonlyArray<TurnCard> = [];
   let pan = () => {};
   let followListener: ((following: boolean) => void) | null = null;
+  let pendingNotesListener: ((count: number) => void) | null = null;
   const listeners = new Set<() => void>();
   return {
     layer: () => layer,
@@ -64,6 +68,10 @@ export function createTurnBoard(): TurnBoard {
     reportFollowing: (following) => followListener?.(following),
     setFollowListener: (listener) => {
       followListener = listener;
+    },
+    reportPendingNotes: (count) => pendingNotesListener?.(count),
+    setPendingNotesListener: (listener) => {
+      pendingNotesListener = listener;
     },
   };
 }

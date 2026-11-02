@@ -408,6 +408,10 @@ export interface ChatComposerProps {
   threadClient?: boolean;
   /** Runs after each commit so the desktop launcher can re-check send readiness. */
   onSendContextCommitted?: () => void;
+  /** Marks the reader left on the canvas that the agent has not seen. */
+  canvasPendingNotes?: number;
+  /** Sends those marks alone, with no prompt typed. */
+  onSendCanvasNotes?: () => void;
 
   phase: SessionPhase;
   canInterrupt: boolean;
@@ -576,6 +580,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isSendBusy,
     canResume,
     isRevertingCheckpoint = false,
+    canvasPendingNotes = 0,
+    onSendCanvasNotes,
     sendDisabledReason: externalSendDisabledReason,
     isPreparingWorktree,
     isCompacting,
@@ -1226,6 +1232,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     terminalContexts: composerTerminalContexts,
     elementContextCount: composerPreviewAnnotations.length + composerReviewComments.length,
   });
+  // With nothing typed, unseen canvas marks are still something to send.
+  const canvasNotesSendable =
+    canvasPendingNotes > 0 &&
+    onSendCanvasNotes !== undefined &&
+    !composerSendState.hasSendableContent &&
+    !isEditingQueuedMessage &&
+    activePendingProgress === null;
   const composerTriggerKind = composerTrigger?.kind ?? null;
   const compactSlashCommandAvailable =
     composerTrigger?.kind === "slash-command" &&
@@ -2203,7 +2216,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (activePendingProgress) {
       return activePendingProgress.isLastQuestion && Boolean(activePendingResolvedAnswers);
     }
-    return showPlanFollowUpPrompt || composerSendState.hasSendableContent;
+    return showPlanFollowUpPrompt || composerSendState.hasSendableContent || canvasNotesSendable;
   };
 
   const submitComposer = (
@@ -2269,6 +2282,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const submitComposerStable = useStableCallback(submitComposer);
   const handleSubmitMessage = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
+    if (canvasNotesSendable) {
+      onSendCanvasNotes?.();
+      return;
+    }
     submitComposer(
       event,
       resolveComposerDispatchMode({
@@ -4072,7 +4089,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       projectSelectionRequired
                     }
                     isPreparingWorktree={isPreparingWorktree}
-                    hasSendableContent={composerSendState.hasSendableContent}
+                    hasSendableContent={composerSendState.hasSendableContent || canvasNotesSendable}
                     canResume={showResumeAction}
                     preserveComposerFocusOnPointerDown={isMobileViewport || isComposerResting}
                     isEditingQueuedMessage={isEditingQueuedMessage}
