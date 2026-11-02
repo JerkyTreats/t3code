@@ -38,6 +38,7 @@ import {
   unseenMarks,
 } from "./canvasMarks";
 import { type CanvasCard, canvasCardsOf, sameCanvasCards } from "./canvasCards";
+import { forwardCardMiddleDrag } from "./cardMiddleDrag";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
 
@@ -778,7 +779,7 @@ export default function ExcalidrawBoard({
     };
   }, [api, cancelPan, draft, panToLatest, syncTurns, turnBoard]);
 
-  // Cards float above the canvas, so wheel gestures over them still pan and zoom it.
+  // Cards float above the canvas, so wheel and middle-button gestures over them still pan and zoom it.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- binds a non-passive wheel listener to the card layer, which React cannot do
   useEffect(() => {
     if (draft || !api) return;
@@ -796,7 +797,14 @@ export default function ExcalidrawBoard({
         canvas.dispatchEvent(new WheelEvent("wheel", event));
       };
       layer.addEventListener("wheel", forward, { passive: false });
-      detach = () => layer.removeEventListener("wheel", forward);
+      const detachMiddleDrag = forwardCardMiddleDrag(layer, () => {
+        cancelPan();
+        return boardRef.current?.querySelector(".excalidraw__canvas.interactive") ?? null;
+      });
+      detach = () => {
+        layer.removeEventListener("wheel", forward);
+        detachMiddleDrag();
+      };
     };
     const unsubscribe = turnBoard.subscribe(attach);
     attach();
