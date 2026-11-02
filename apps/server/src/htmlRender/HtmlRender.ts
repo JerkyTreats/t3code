@@ -128,6 +128,14 @@ export class HtmlRender extends Context.Service<
       readonly height: number;
       readonly displayWidth?: number | undefined;
     }) => Effect.Effect<HtmlRenderReference, HtmlRenderPrepareError | HtmlRenderStoreError>;
+    /** Stores a page as an attachment with no turn to show it in, for a canvas card. */
+    readonly store: (input: {
+      readonly threadId: ThreadId;
+      readonly html: string;
+    }) => Effect.Effect<
+      { readonly attachmentId: string },
+      HtmlRenderPrepareError | HtmlRenderStoreError
+    >;
     readonly preview: (input: {
       readonly html: string;
       readonly width?: number | undefined;
@@ -462,6 +470,28 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const store = Effect.fn("HtmlRender.store")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly html: string;
+  }) {
+    const html = yield* prepare(input.html);
+    const attachmentId = createAttachmentId(input.threadId, "html");
+    const filePath =
+      attachmentId === null
+        ? null
+        : resolveAttachmentRelativePath({
+            attachmentsDir: config.attachmentsDir,
+            relativePath: `${attachmentId}.html`,
+          });
+    if (attachmentId === null || filePath === null) {
+      return yield* new HtmlRenderStoreError({ cause: new Error("Invalid thread id.") });
+    }
+    yield* fileSystem
+      .writeFileString(filePath, html)
+      .pipe(Effect.mapError((cause) => new HtmlRenderStoreError({ cause })));
+    return { attachmentId };
+  });
+
   const preview = Effect.fn("HtmlRender.preview")(function* (input: {
     readonly html: string;
     readonly width?: number | undefined;
@@ -497,7 +527,7 @@ const make = Effect.gen(function* () {
     } satisfies HtmlPreview;
   });
 
-  return HtmlRender.of({ prepare, publish, preview });
+  return HtmlRender.of({ prepare, publish, store, preview });
 });
 
 export const layer = Layer.effect(HtmlRender, make);

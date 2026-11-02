@@ -78,7 +78,16 @@ export function describeCanvas(scene: ThreadCanvasScene) {
           : nearest,
       null,
     );
-    const text = labels.get(id) ?? (typeof element.text === "string" ? element.text : undefined);
+    const card = recordOf(customData.t3Card);
+    const cardKind: "markdown" | "html" | undefined =
+      card.kind === "markdown" ? "markdown" : card.kind === "html" ? "html" : undefined;
+    const text =
+      labels.get(id) ??
+      (typeof element.text === "string"
+        ? element.text
+        : typeof card.text === "string"
+          ? card.text.slice(0, CARD_TEXT_PREVIEW_CHARS)
+          : undefined);
     const start = recordOf(element.startBinding).elementId;
     const end = recordOf(element.endBinding).elementId;
     const drawing = recordOf(customData.t3Drawing).id;
@@ -90,6 +99,7 @@ export function describeCanvas(scene: ThreadCanvasScene) {
         ...box,
         drawnBy: typeof drawing === "string" ? ("agent" as const) : ("user" as const),
         ...(typeof drawing === "string" ? { drawingId: drawing } : {}),
+        ...(cardKind === undefined ? {} : { card: cardKind }),
         ...(text === undefined ? {} : { text }),
         ...(typeof covers === "string" ? { covers } : {}),
         ...(typeof start === "string" ? { start } : {}),
@@ -102,6 +112,7 @@ export function describeCanvas(scene: ThreadCanvasScene) {
 }
 
 const NOTE_MAX_CHANGES = 20;
+const CARD_TEXT_PREVIEW_CHARS = 400;
 const NOTE_MAX_TEXT_CHARS = 300;
 
 const clipped = (text: string) =>

@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
+import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
@@ -29,6 +30,7 @@ export const CanvasReadTool = Tool.make("canvas_read", {
         type: Schema.String,
         drawnBy: Schema.Literals(["user", "agent"]),
         drawingId: Schema.optional(Schema.String),
+        card: Schema.optional(Schema.Literals(["markdown", "html"])),
         text: Schema.optional(Schema.String),
         covers: Schema.optional(Schema.String),
         start: Schema.optional(Schema.String),
@@ -91,6 +93,7 @@ export const CanvasUpdateTool = Tool.make("canvas_update", {
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,
     ThreadCanvasStore.ThreadCanvasStore,
+    HtmlRender.HtmlRender,
   ],
 })
   .annotate(Tool.Title, "Draw on canvas")

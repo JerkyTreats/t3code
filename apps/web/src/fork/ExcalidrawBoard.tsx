@@ -16,6 +16,8 @@ import type { ThreadCanvasScene } from "@t3tools/contracts";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import ChatMarkdown from "../components/ChatMarkdown";
+import { HtmlRenderFrame } from "../components/chat/HtmlRenderFrame";
 import { Button } from "../components/ui/button";
 import { observeResize } from "../lib/observeResize";
 import { useStableCallback } from "../hooks/useStableCallback";
@@ -34,6 +36,7 @@ import {
   unseenSketchMarks,
   unseenMarks,
 } from "./canvasMarks";
+import { type CanvasCard, canvasCardsOf, sameCanvasCards } from "./canvasCards";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
 
@@ -444,6 +447,7 @@ export default function ExcalidrawBoard({
   const waitingScene = useRef<ThreadCanvasScene | null>(null);
   const seenByAgent = useRef<Readonly<Record<string, number>>>({});
   const pendingNotes = useRef(0);
+  const [cards, setCards] = useState<ReadonlyArray<CanvasCard>>([]);
   const coveredCache = useRef(new Map<string, string | null>());
   const lastSketch = useRef("");
   const [noteAction, setNoteAction] = useState<{
@@ -672,6 +676,8 @@ export default function ExcalidrawBoard({
         root.toggleAttribute("data-board-marking", appState.activeTool.type !== "selection");
         trackNoteAction(elements, appState);
         reportPendingNotes(unseenMarks(elements, seenByAgent.current).length);
+        const nextCards = canvasCardsOf(elements);
+        setCards((current) => (sameCanvasCards(current, nextCards) ? current : nextCards));
       }
     }
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
@@ -831,6 +837,47 @@ export default function ExcalidrawBoard({
           <MainMenu.Item onSelect={resetLayout}>Reset layout</MainMenu.Item>
         </MainMenu>
       </Excalidraw>
+      {noteLayer === null || canvasThread === null || cards.length === 0
+        ? null
+        : createPortal(
+            cards.map((card) => {
+              const width = card.width - 2 * TURN_INSET_PX;
+              const height = card.height - 2 * TURN_INSET_PX;
+              return (
+                <div
+                  key={card.id}
+                  className="canvas-card bg-background text-foreground rounded-lg"
+                  data-canvas-card={card.card.kind}
+                  style={{
+                    transform: `translate(${card.x + TURN_INSET_PX}px, ${card.y + TURN_INSET_PX}px)`,
+                    width,
+                    height,
+                  }}
+                >
+                  {card.card.kind === "markdown" ? (
+                    <ChatMarkdown
+                      text={card.card.text}
+                      cwd={undefined}
+                      environmentId={canvasThread.environmentId}
+                      threadRef={canvasThread}
+                    />
+                  ) : (
+                    <HtmlRenderFrame
+                      key={card.card.attachmentId}
+                      environmentId={canvasThread.environmentId}
+                      htmlRender={{
+                        attachmentId: card.card.attachmentId,
+                        title: card.card.title,
+                        height,
+                      }}
+                      threadRef={canvasThread}
+                    />
+                  )}
+                </div>
+              );
+            }),
+            noteLayer,
+          )}
       {noteLayer === null || noteAction === null
         ? null
         : createPortal(

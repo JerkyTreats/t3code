@@ -14,7 +14,19 @@ export const ThreadCanvasShape = Schema.Struct({
   id: Schema.String.annotate({
     description: "Stable id within this drawing. Arrows name it in start and end.",
   }),
-  type: Schema.Literals(["rectangle", "ellipse", "diamond", "arrow", "line", "text"]),
+  type: Schema.Literals([
+    "rectangle",
+    "ellipse",
+    "diamond",
+    "arrow",
+    "line",
+    "text",
+    "markdown",
+    "html",
+  ]).annotate({
+    description:
+      "markdown and html are T3's own reading blocks placed on the canvas, in the app's font; the rest are Excalidraw shapes.",
+  }),
   x: Schema.optional(
     Schema.Number.annotate({
       description: "Left edge, relative to the drawing's own origin. Leave out when using layout.",
@@ -28,8 +40,24 @@ export const ThreadCanvasShape = Schema.Struct({
   width: Schema.optional(Schema.Number),
   height: Schema.optional(Schema.Number),
   text: Schema.optional(
-    Schema.String.annotate({ description: "The words of a text shape, or a box or arrow label." }),
+    Schema.String.annotate({
+      description:
+        "The words of a text shape, a box or arrow label, or the Markdown of a markdown shape.",
+    }),
   ),
+  html: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(512_000)).annotate({
+      description:
+        "html only: a complete, self-contained HTML document, as html_render takes. Stored as an attachment on the canvas thread.",
+    }),
+  ),
+  attachmentId: Schema.optional(
+    Schema.String.annotate({
+      description:
+        "html only: the attachmentId of a page html_render already published, instead of html.",
+    }),
+  ),
+  title: Schema.optional(Schema.String.annotate({ description: "html only: the page's title." })),
   fontSize: Schema.optional(Schema.Number),
   strokeColor: Schema.optional(Schema.String),
   backgroundColor: Schema.optional(Schema.String),

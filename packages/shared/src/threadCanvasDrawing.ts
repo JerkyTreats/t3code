@@ -2,15 +2,20 @@ import type { ThreadCanvasElement, ThreadCanvasShape } from "@t3tools/contracts"
 
 const DEFAULT_BOX_WIDTH_PX = 200;
 const DEFAULT_BOX_HEIGHT_PX = 80;
+// A card holds a reading block, so it starts at a readable column.
+const DEFAULT_CARD_WIDTH_PX = 480;
+const DEFAULT_CARD_HEIGHT_PX = 320;
 const DEFAULT_FONT_SIZE_PX = 20;
 const LABEL_FONT_SIZE_PX = 16;
 const LINE_HEIGHT = 1.25;
-// Excalifont runs about this wide per character. Clients refine it when the scene loads.
+// The plain sans runs about this wide per character. Clients refine it when the scene loads.
 const CHARACTER_WIDTH_EM = 0.6;
 const LABEL_PADDING_PX = 16;
 const BINDING_GAP_PX = 4;
-const EXCALIFONT = 5;
+// Excalidraw's "Normal" font: agent drawings read like the app, not like a sketch.
+const NORMAL_FONT = 2;
 const STROKE = "#1e1e1e";
+const CARD_STROKE = "#868e96";
 
 export const THREAD_CANVAS_SIZED_TEXT_PADDING_PX = LABEL_PADDING_PX;
 
@@ -40,6 +45,9 @@ export const drawingElementId = (drawingId: string, shapeId: string) => `${drawi
 const labelId = (elementId: string) => `${elementId}/label`;
 
 const hasLines = (shape: ThreadCanvasShape) => shape.type === "arrow" || shape.type === "line";
+/** A T3 reading block on the canvas, rendered by the client rather than drawn by Excalidraw. */
+export const isCardShape = (shape: ThreadCanvasShape) =>
+  shape.type === "markdown" || shape.type === "html";
 
 export function estimateTextSize(text: string, fontSize: number) {
   const lines = text.split("\n");
@@ -72,6 +80,12 @@ export function wrapText(text: string, fontSize: number, width: number) {
 /** The size a shape takes when the agent leaves it out: big enough for its label. */
 export function shapeSize(shape: ThreadCanvasShape) {
   const fontSize = shape.fontSize ?? DEFAULT_FONT_SIZE_PX;
+  if (isCardShape(shape)) {
+    return {
+      width: shape.width ?? DEFAULT_CARD_WIDTH_PX,
+      height: shape.height ?? DEFAULT_CARD_HEIGHT_PX,
+    };
+  }
   if (shape.type === "text") return estimateTextSize(shape.text ?? "", fontSize);
   if (hasLines(shape)) return { width: shape.width ?? 0, height: shape.height ?? 0 };
   const label = shape.text === undefined ? null : estimateTextSize(shape.text, fontSize);
@@ -86,7 +100,9 @@ export function shapeSize(shape: ThreadCanvasShape) {
 /** Whether a box's label cannot fit it, wrapped, at the size the agent asked for. */
 export function labelOverflows(placed: PlacedShape) {
   const { shape } = placed;
-  if (shape.text === undefined || shape.type === "text" || hasLines(shape)) return false;
+  if (shape.text === undefined || shape.type === "text" || hasLines(shape) || isCardShape(shape)) {
+    return false;
+  }
   const fontSize = shape.fontSize ?? DEFAULT_FONT_SIZE_PX;
   const wrapped = wrapText(shape.text, fontSize, placed.width - LABEL_PADDING_PX);
   const size = estimateTextSize(wrapped, fontSize);
@@ -149,7 +165,7 @@ export function buildDrawingElements(input: BuildDrawingInput): ReadonlyArray<Th
     fillStyle: "solid",
     strokeWidth: 2,
     strokeStyle: "solid",
-    roughness: 1,
+    roughness: 0,
     opacity: 100,
     groupIds: [],
     frameId: null,
@@ -184,7 +200,7 @@ export function buildDrawingElements(input: BuildDrawingInput): ReadonlyArray<Th
     text: words,
     originalText: shape.text ?? "",
     fontSize,
-    fontFamily: EXCALIFONT,
+    fontFamily: NORMAL_FONT,
     textAlign: containerId === null ? "left" : "center",
     verticalAlign: containerId === null ? "top" : "middle",
     containerId,
@@ -218,7 +234,9 @@ export function buildDrawingElements(input: BuildDrawingInput): ReadonlyArray<Th
           hasLines(other) && (other.start === shape.id || other.end === shape.id),
       )
       .map(({ shape: other }) => ({ id: drawingElementId(drawingId, other.id), type: "arrow" }))
-      .concat(shape.text === undefined ? [] : [{ id: labelId(id), type: "text" }]);
+      .concat(
+        shape.text === undefined || isCardShape(shape) ? [] : [{ id: labelId(id), type: "text" }],
+      );
   return placed.flatMap<ThreadCanvasElement>((piece) => {
     const { shape } = piece;
     const id = drawingElementId(drawingId, shape.id);
@@ -262,6 +280,32 @@ export function buildDrawingElements(input: BuildDrawingInput): ReadonlyArray<Th
       if (shape.text === undefined) return [line];
       const middle = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
       return [line, label(id, piece, middle, LABEL_FONT_SIZE_PX, Number.MAX_SAFE_INTEGER)];
+    }
+    if (isCardShape(shape)) {
+      const base = common(id, piece, local, {
+        ...shape,
+        strokeColor: shape.strokeColor ?? CARD_STROKE,
+        backgroundColor: shape.backgroundColor ?? "transparent",
+      });
+      return [
+        {
+          ...base,
+          type: "rectangle",
+          roundness: { type: 3 },
+          boundElements: attached(shape, id),
+          customData: {
+            ...base.customData,
+            t3Card:
+              shape.type === "markdown"
+                ? { kind: "markdown", text: shape.text ?? "" }
+                : {
+                    kind: "html",
+                    attachmentId: shape.attachmentId ?? "",
+                    title: shape.title ?? "HTML",
+                  },
+          },
+        },
+      ];
     }
     const outline = {
       ...common(id, piece, local, shape),
