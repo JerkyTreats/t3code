@@ -59,6 +59,44 @@ describe("describeCanvas", () => {
     ]);
   });
 
+  it("names a card's kind and previews a markdown card's text", () => {
+    const described = describeCanvas(
+      scene([
+        {
+          id: "d/notes",
+          type: "rectangle",
+          x: 0,
+          y: 0,
+          width: 480,
+          height: 320,
+          customData: { t3Drawing: { id: "d" }, t3Card: { kind: "markdown", text: "# Plan" } },
+        },
+        {
+          id: "d/page",
+          type: "rectangle",
+          x: 500,
+          y: 0,
+          width: 480,
+          height: 320,
+          customData: {
+            t3Drawing: { id: "d" },
+            t3Card: { kind: "html", attachmentId: "a-html", title: "Chart" },
+          },
+        },
+      ]),
+    );
+    expect(described.elements).toEqual([
+      expect.objectContaining({
+        id: "d/notes",
+        card: "markdown",
+        text: "# Plan",
+        drawnBy: "agent",
+      }),
+      expect.objectContaining({ id: "d/page", card: "html", drawnBy: "agent" }),
+    ]);
+    expect(described.elements[1]).not.toHaveProperty("text");
+  });
+
   it("folds labels into their shape, keeps arrow ends, and skips deleted marks", () => {
     const described = describeCanvas(
       scene([

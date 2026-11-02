@@ -2681,6 +2681,25 @@ code {
   pointer-events: none !important;
 }
 
+/* A T3 reading block placed by the agent; the Excalidraw box under it is the handle. */
+.canvas-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  overflow: auto;
+  pointer-events: auto;
+}
+
+.canvas-card[data-canvas-card="markdown"] {
+  padding: 12px 16px;
+}
+
+[data-board-marking] .canvas-card,
+[data-board-marking] .canvas-card * {
+  pointer-events: none !important;
+}
+
 .excalidraw-board .excalidraw {
   --ui-font: var(--font-sans);
 }

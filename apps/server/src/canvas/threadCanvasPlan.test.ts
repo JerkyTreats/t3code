@@ -47,6 +47,44 @@ const applied = (scene: ThreadCanvasScene, draw: DrawInput): ThreadCanvasScene =
 });
 
 describe("planDrawing", () => {
+  it("builds a markdown card as one box carrying its text, with no label", () => {
+    const { elements, report } = plan(empty, {
+      drawingId: "d",
+      shapes: [{ id: "notes", type: "markdown", text: "# Plan\n\n- one\n- two" }],
+    });
+    const card = live(elements, "d/notes");
+    expect(card).toMatchObject({
+      type: "rectangle",
+      width: 480,
+      height: 320,
+      customData: { t3Card: { kind: "markdown", text: "# Plan\n\n- one\n- two" } },
+    });
+    expect(live(elements, "d/notes/label")).toBeUndefined();
+    expect(report.clippedLabels).toEqual([]);
+  });
+
+  it("builds an html card around the attachment it was given, at the size asked for", () => {
+    const { elements } = plan(empty, {
+      drawingId: "d",
+      shapes: [
+        {
+          id: "chart",
+          type: "html",
+          attachmentId: "t-1-html",
+          title: "Burn",
+          width: 900,
+          height: 400,
+        },
+      ],
+    });
+    expect(live(elements, "d/chart")).toMatchObject({
+      type: "rectangle",
+      width: 900,
+      height: 400,
+      customData: { t3Card: { kind: "html", attachmentId: "t-1-html", title: "Burn" } },
+    });
+  });
+
   it("lands a new drawing beside the latest turn and ties it to that turn", () => {
     const { elements, report } = plan(empty, {
       drawingId: "d",

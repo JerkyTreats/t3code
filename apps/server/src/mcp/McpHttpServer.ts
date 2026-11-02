@@ -1176,7 +1176,8 @@ const layerOrchestratorTools = Layer.mergeAll(
   layerEnvironmentToolkit,
   layerWorktreeToolkitRegistration,
   layerHtmlToolkit,
-  toolkitRegistration(CanvasToolkit, CanvasHandlers.layer),
+  // Canvas cards store their pages through HtmlRender, as html_render does.
+  toolkitRegistration(CanvasToolkit, CanvasHandlers.layer).pipe(Layer.provide(HtmlRender.layer)),
 );
 const layerPreviewTools = Layer.mergeAll(layerPreviewToolkit, layerPreviewControlsRegistration);
 
