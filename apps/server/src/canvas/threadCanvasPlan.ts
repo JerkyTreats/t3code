@@ -269,6 +269,13 @@ export function planDrawing(input: {
   };
   const nearElement = live.find((element) => element.id === draw.near);
   const anchor = nearElement ?? latestTurn;
+  // A drawing whose every shape is new is a new drawing: it starts where the old one sat,
+  // but clear of the user's marks rather than over them.
+  const previousShapes = new Set(
+    existing.map((element) => String(element.id).slice(drawingId.length + 1)),
+  );
+  const replacesAll =
+    origin !== null && shapes.length > 0 && shapes.every((shape) => !previousShapes.has(shape.id));
   const spot =
     draw.place === "belowLatestTurn"
       ? slideDown(solidObstacles, belowLatest(local))
@@ -281,7 +288,9 @@ export function planDrawing(input: {
             nearElement !== undefined,
             local,
           )
-        : null;
+        : replacesAll
+          ? slideDown(solidObstacles, { ...local, x: local.x + origin.x, y: local.y + origin.y })
+          : null;
   const offset =
     spot === null ? (origin ?? { x: 0, y: 0 }) : { x: spot.x - local.x, y: spot.y - local.y };
   const laid: ReadonlyArray<PlacedShape> = localPieces.map((piece) => {
