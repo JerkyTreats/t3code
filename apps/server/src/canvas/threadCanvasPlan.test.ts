@@ -300,3 +300,58 @@ describe("placement below the latest turn", () => {
     expect(Number(live(elements, "map/a")!.y)).toBe(report.placed?.y);
   });
 });
+
+describe("the user's marks on a moved card", () => {
+  it("travel with the card, labels included, stamped against stale copies", () => {
+    const shapes: ReadonlyArray<ThreadCanvasShape> = [
+      { id: "asks", type: "markdown", text: "Asks", x: 0, y: 0, width: 600, height: 400 },
+    ];
+    const first = applied(empty, { drawingId: "map", shapes });
+    const card = live(first.elements, "map/asks")!;
+    const on: ThreadCanvasElement = {
+      id: "cite-box",
+      type: "rectangle",
+      version: 3,
+      x: Number(card.x) + 100,
+      y: Number(card.y) + 50,
+      width: 200,
+      height: 40,
+    };
+    const label: ThreadCanvasElement = {
+      id: "cite-label",
+      type: "text",
+      version: 2,
+      containerId: "cite-box",
+      x: on.x,
+      y: on.y,
+      text: "CITE",
+    };
+    const off: ThreadCanvasElement = {
+      id: "elsewhere",
+      type: "text",
+      version: 1,
+      x: -3000,
+      y: -3000,
+      width: 50,
+      height: 20,
+      text: "far",
+    };
+    const scene = { ...first, elements: [...first.elements, on, label, off] };
+    const { elements } = plan(scene, { drawingId: "map", shapes, place: "belowLatestTurn" });
+    const moved = live(elements, "map/asks")!;
+    const dx = Number(moved.x) - Number(card.x);
+    const dy = Number(moved.y) - Number(card.y);
+    expect(dx !== 0 || dy !== 0).toBe(true);
+    expect(live(elements, "cite-box")).toMatchObject({
+      x: Number(on.x) + dx,
+      y: Number(on.y) + dy,
+      version: 4,
+      customData: { t3Follow: { id: "map/asks", written: 1 } },
+    });
+    expect(live(elements, "cite-label")).toMatchObject({
+      x: Number(on.x) + dx,
+      y: Number(on.y) + dy,
+    });
+    expect(live(elements, "elsewhere")).toMatchObject({ x: -3000, y: -3000, version: 1 });
+  });
+});

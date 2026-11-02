@@ -140,14 +140,20 @@ export function arrowEnds(placed: PlacedShape, boxes: ReadonlyMap<string, Placed
   };
 }
 
-/** When the agent last wrote an element, or null for anything the agent never drew. */
+/**
+ * When the server last wrote an element: an agent's drawing (`t3Drawing`), or a user's mark it
+ * carried along with the card under it (`t3Follow`). Null for anything it never wrote.
+ */
 export function drawingWrittenAt(element: { readonly customData?: unknown }) {
   const data = element.customData;
-  const drawing =
-    typeof data === "object" && data !== null ? Reflect.get(data, "t3Drawing") : undefined;
-  const written =
-    typeof drawing === "object" && drawing !== null ? Reflect.get(drawing, "written") : undefined;
-  return typeof written === "number" ? written : null;
+  const stamps = ["t3Drawing", "t3Follow"].map((key) => {
+    const record = typeof data === "object" && data !== null ? Reflect.get(data, key) : undefined;
+    const written =
+      typeof record === "object" && record !== null ? Reflect.get(record, "written") : undefined;
+    return typeof written === "number" ? written : null;
+  });
+  const known = stamps.filter((stamp) => stamp !== null);
+  return known.length === 0 ? null : Math.max(...known);
 }
 
 /**

@@ -307,8 +307,11 @@ export function planDrawing(input: {
     now,
   });
   const builtIds = new Set(built.map((element) => element.id));
+  const carried = carryMarks({ existing, built, live, randomInt, now });
   const withoutOld = scene.elements.flatMap((element) => {
     if (builtIds.has(element.id)) return [];
+    const moved = carried.get(String(element.id));
+    if (moved !== undefined) return [moved];
     if (!existing.includes(element)) return [element];
     const customData = recordOf(element.customData);
     return [
@@ -329,6 +332,71 @@ export function planDrawing(input: {
     elements: [...withoutOld, ...built],
     report: reportDrawing({ draw, placed, others, pinned: new Set(pins.keys()) }),
   };
+}
+
+const isUserMark = (element: ThreadCanvasElement) => {
+  const data = recordOf(element.customData);
+  return (
+    data.t3Turn === undefined &&
+    data.t3Drawing === undefined &&
+    data.t3Piece === undefined &&
+    typeof element.containerId !== "string"
+  );
+};
+
+/**
+ * The user's marks that sit on an agent piece the plan moves, moved by the same amount, with
+ * their labels. A mark sits on a piece when its centre lies inside it. Each carried mark is
+ * stamped, so a client's copy from before the move cannot pull it back.
+ */
+function carryMarks(input: {
+  readonly existing: ReadonlyArray<ThreadCanvasElement>;
+  readonly built: ReadonlyArray<ThreadCanvasElement>;
+  readonly live: ReadonlyArray<ThreadCanvasElement>;
+  readonly randomInt: () => number;
+  readonly now: number;
+}) {
+  const { existing, built, live, randomInt, now } = input;
+  const after = new Map(built.map((element) => [String(element.id), boxOf(element)]));
+  const moves = existing.flatMap((element) => {
+    if (element.type === "arrow" || element.type === "line") return [];
+    if (typeof element.containerId === "string") return [];
+    const from = boxOf(element);
+    const to = after.get(String(element.id));
+    if (to === undefined || (to.x === from.x && to.y === from.y)) return [];
+    return [{ id: String(element.id), from, dx: to.x - from.x, dy: to.y - from.y }];
+  });
+  const carried = new Map<string, ThreadCanvasElement>();
+  if (moves.length === 0) return carried;
+  const area = (box: Box) => box.width * box.height;
+  const shift = (element: ThreadCanvasElement, move: (typeof moves)[number]) => ({
+    ...element,
+    x: numberOf(element.x) + move.dx,
+    y: numberOf(element.y) + move.dy,
+    version: numberOf(element.version) + 1,
+    versionNonce: randomInt(),
+    updated: now,
+    customData: { ...recordOf(element.customData), t3Follow: { id: move.id, written: now } },
+  });
+  for (const mark of live.filter(isUserMark)) {
+    const box = boxOf(mark);
+    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const under = moves
+      .filter(
+        ({ from }) =>
+          centre.x >= from.x &&
+          centre.x <= from.x + from.width &&
+          centre.y >= from.y &&
+          centre.y <= from.y + from.height,
+      )
+      .toSorted((left, right) => area(left.from) - area(right.from))[0];
+    if (under === undefined) continue;
+    carried.set(String(mark.id), shift(mark, under));
+    for (const label of live) {
+      if (label.containerId === mark.id) carried.set(String(label.id), shift(label, under));
+    }
+  }
+  return carried;
 }
 
 /**
