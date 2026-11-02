@@ -346,7 +346,7 @@ describe("the user's marks on a moved card", () => {
       x: Number(on.x) + dx,
       y: Number(on.y) + dy,
       version: 4,
-      customData: { t3Follow: { id: "map/asks", written: 1 } },
+      customData: { t3Follow: { id: "map/asks", drawing: "map", written: 1 } },
     });
     expect(live(elements, "cite-label")).toMatchObject({
       x: Number(on.x) + dx,

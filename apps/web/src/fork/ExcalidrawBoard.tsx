@@ -203,10 +203,24 @@ function syncFrames(
   publishFrames(reconciled ?? elements, root, view);
 }
 
+/** The drawing an element moves with: its own, or the one whose card a mark was carried on. */
+function drawingGroupOf(customData: Record<string, unknown> | undefined) {
+  for (const key of ["t3Drawing", "t3Follow"]) {
+    const record = customData?.[key];
+    const id =
+      typeof record === "object" && record !== null
+        ? Reflect.get(record, key === "t3Drawing" ? "id" : "drawing")
+        : undefined;
+    if (typeof id === "string" && id !== "") return id;
+  }
+  return null;
+}
+
 function asBoardBox(element: BoardElement): BoardBox {
   const { t3Turn, t3TurnWidth } = element.customData ?? {};
   return {
     key: element.id,
+    group: drawingGroupOf(element.customData),
     turnId: typeof t3Turn === "string" ? t3Turn : null,
     requestedWidth: typeof t3TurnWidth === "number" ? t3TurnWidth : null,
     x: element.x,
