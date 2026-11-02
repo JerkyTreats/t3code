@@ -22,6 +22,10 @@ export interface DrawInput {
   readonly near?: string | undefined;
   readonly layout?: "right" | "down" | undefined;
   readonly resetMoves?: boolean | undefined;
+  /** Puts the whole drawing below the latest turn, wherever it was. */
+  readonly place?: "belowLatestTurn" | undefined;
+  /** Shape ids to bring below the latest turn, leaving the rest of the drawing where it is. */
+  readonly moveBelowLatestTurn?: ReadonlyArray<string> | undefined;
 }
 
 interface Box {
@@ -151,17 +155,20 @@ function layoutShapes(shapes: ReadonlyArray<ThreadCanvasShape>, direction: "righ
   return positions;
 }
 
+/** Slides a box down past whatever it would cover. */
+function slideDown(obstacles: ReadonlyArray<Box>, spot: Box) {
+  let { y } = spot;
+  for (;;) {
+    const blocker = obstacles.find((box) => overlaps({ ...spot, y }, box));
+    if (blocker === undefined) return { ...spot, y };
+    y = blocker.y + blocker.height + GAP_PX;
+  }
+}
+
 /** A free spot for a new drawing: beside what asked for it, or under it when too wide. */
 function placeDrawing(obstacles: ReadonlyArray<Box>, anchor: Box | null, near: boolean, size: Box) {
   const free = (spot: Box) => !obstacles.some((box) => overlaps(spot, box));
-  const slide = (spot: Box) => {
-    let { y } = spot;
-    for (;;) {
-      const blocker = obstacles.find((box) => overlaps({ ...spot, y }, box));
-      if (blocker === undefined) return { ...spot, y };
-      y = blocker.y + blocker.height + GAP_PX;
-    }
-  };
+  const slide = (spot: Box) => slideDown(obstacles, spot);
   if (anchor === null) return slide({ ...size, x: -size.width / 2, y: 0 });
   const right = { ...size, x: anchor.x + anchor.width + GAP_PX, y: anchor.y };
   if (near) {
@@ -250,22 +257,34 @@ export function planDrawing(input: {
     (element) => drawingOf(element)?.id !== drawingId && typeof element.containerId !== "string",
   );
   const turns = others.filter((element) => typeof recordOf(element.customData).t3Turn === "string");
-  const latestTurn = turns.at(-1);
+  // The newest turn lands at the bottom of the column, whatever its place in the scene.
+  const latestTurn = turns.toSorted((left, right) => boxOf(left).y - boxOf(right).y).at(-1);
+  const solidObstacles = others
+    .filter((element) => element.type !== "arrow" && element.type !== "line")
+    .map(boxOf);
+  const belowLatest = (size: { readonly width: number; readonly height: number }) => {
+    const top =
+      latestTurn === undefined ? 0 : boxOf(latestTurn).y + boxOf(latestTurn).height + GAP_PX;
+    return { x: -size.width / 2, y: top, width: size.width, height: size.height };
+  };
   const nearElement = live.find((element) => element.id === draw.near);
   const anchor = nearElement ?? latestTurn;
   const spot =
-    origin === null
-      ? placeDrawing(
-          others
-            .filter((element) => element.type !== "arrow" && element !== nearElement)
-            .map(boxOf),
-          anchor === undefined ? null : boxOf(anchor),
-          nearElement !== undefined,
-          local,
-        )
-      : null;
-  const offset = origin ?? { x: (spot?.x ?? 0) - local.x, y: (spot?.y ?? 0) - local.y };
-  const placed: ReadonlyArray<PlacedShape> = localPieces.map((piece) => {
+    draw.place === "belowLatestTurn"
+      ? slideDown(solidObstacles, belowLatest(local))
+      : origin === null
+        ? placeDrawing(
+            others
+              .filter((element) => element.type !== "arrow" && element !== nearElement)
+              .map(boxOf),
+            anchor === undefined ? null : boxOf(anchor),
+            nearElement !== undefined,
+            local,
+          )
+        : null;
+  const offset =
+    spot === null ? (origin ?? { x: 0, y: 0 }) : { x: spot.x - local.x, y: spot.y - local.y };
+  const laid: ReadonlyArray<PlacedShape> = localPieces.map((piece) => {
     const pin = pins.get(piece.shape.id);
     return {
       ...piece,
@@ -273,6 +292,7 @@ export function planDrawing(input: {
       y: pin?.y ?? piece.localY + offset.y,
     };
   });
+  const placed = bringBelow(laid, draw.moveBelowLatestTurn ?? [], solidObstacles, belowLatest);
   const versions = new Map(
     scene.elements.map((element) => [element.id, numberOf(element.version)]),
   );
@@ -309,6 +329,37 @@ export function planDrawing(input: {
     elements: [...withoutOld, ...built],
     report: reportDrawing({ draw, placed, others, pinned: new Set(pins.keys()) }),
   };
+}
+
+/**
+ * Moves the named pieces into one row below the latest turn, clear of everything else, and
+ * leaves the rest of the drawing where it was. A moved piece then sits off the drawing's
+ * layout, so later calls keep it where it landed, as they keep a box the user dragged.
+ */
+function bringBelow(
+  laid: ReadonlyArray<PlacedShape>,
+  ids: ReadonlyArray<string>,
+  obstacles: ReadonlyArray<Box>,
+  belowLatest: (size: { readonly width: number; readonly height: number }) => Box,
+): ReadonlyArray<PlacedShape> {
+  const wanted = new Set(ids);
+  const moving = laid.filter((piece) => wanted.has(piece.shape.id) && !hasLines(piece.shape));
+  if (moving.length === 0) return laid;
+  const width =
+    moving.reduce((total, piece) => total + piece.width, 0) + GAP_PX * (moving.length - 1);
+  const height = Math.max(...moving.map((piece) => piece.height));
+  const staying = laid.filter((piece) => !wanted.has(piece.shape.id) && !hasLines(piece.shape));
+  const row = slideDown([...obstacles, ...staying], belowLatest({ width, height }));
+  const positions = new Map<string, { readonly x: number; readonly y: number }>();
+  let x = row.x;
+  for (const piece of moving) {
+    positions.set(piece.shape.id, { x, y: row.y });
+    x += piece.width + GAP_PX;
+  }
+  return laid.map((piece) => {
+    const position = positions.get(piece.shape.id);
+    return position === undefined ? piece : { ...piece, ...position };
+  });
 }
 
 function reportDrawing(input: {

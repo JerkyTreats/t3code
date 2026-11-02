@@ -250,3 +250,53 @@ describe("planDrawing", () => {
     expect(Number(live(elements, "d/a")?.version)).toBeGreaterThan(Number(tombstone?.version));
   });
 });
+
+describe("placement below the latest turn", () => {
+  const later: ThreadCanvasElement = {
+    id: "turn-box:2",
+    type: "rectangle",
+    version: 1,
+    x: -430,
+    y: 2000,
+    width: 860,
+    height: 400,
+    customData: { t3Turn: "2", t3TurnTitle: "Later" },
+  };
+  const cards: ReadonlyArray<ThreadCanvasShape> = [
+    { id: "a", type: "markdown", text: "A", x: 0, y: 0, width: 400, height: 200 },
+    { id: "b", type: "markdown", text: "B", x: 420, y: 0, width: 400, height: 200 },
+    { id: "c", type: "markdown", text: "C", x: 840, y: 0, width: 400, height: 200 },
+  ];
+  // The older turn comes last in the scene, as a reloaded history can leave it.
+  const scene: ThreadCanvasScene = { revision: 1, elements: [later, turn] };
+
+  it("brings only the named cards under the lowest turn and leaves the rest", () => {
+    const first = applied(scene, { drawingId: "map", shapes: cards });
+    const before = live(first.elements, "map/a")!;
+    const { elements } = plan(first, {
+      drawingId: "map",
+      shapes: cards,
+      moveBelowLatestTurn: ["b", "c"],
+    });
+    expect(live(elements, "map/a")).toMatchObject({ x: before.x, y: before.y });
+    const b = live(elements, "map/b")!;
+    const c = live(elements, "map/c")!;
+    expect(Number(b.y)).toBeGreaterThanOrEqual(2400);
+    expect(c.y).toBe(b.y);
+    expect(Number(c.x)).toBeGreaterThan(Number(b.x));
+    // The next call keeps them where they landed.
+    const again = plan({ ...first, elements }, { drawingId: "map", shapes: cards });
+    expect(live(again.elements, "map/b")).toMatchObject({ x: b.x, y: b.y });
+  });
+
+  it("moves a whole existing drawing under the lowest turn", () => {
+    const first = applied(scene, { drawingId: "map", shapes: cards });
+    const { elements, report } = plan(first, {
+      drawingId: "map",
+      shapes: cards,
+      place: "belowLatestTurn",
+    });
+    expect(report.placed?.y).toBeGreaterThanOrEqual(2400);
+    expect(Number(live(elements, "map/a")!.y)).toBe(report.placed?.y);
+  });
+});

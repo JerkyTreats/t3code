@@ -76,6 +76,14 @@ export const CanvasUpdateTool = Tool.make("canvas_update", {
     resetMoves: Schema.optional(Schema.Boolean).annotate({
       description: "Replace the positions of boxes the user dragged.",
     }),
+    place: Schema.optional(Schema.Literal("belowLatestTurn")).annotate({
+      description:
+        "Move the whole drawing below the latest turn, clear of everything there. Coordinates stay relative to the drawing.",
+    }),
+    moveBelowLatestTurn: Schema.optional(Schema.Array(Schema.String)).annotate({
+      description:
+        "Shape ids to bring below the latest turn in one row, leaving the rest of the drawing where it is. Use it to show the user what changed; those shapes then stay where they landed.",
+    }),
   }),
   success: Schema.Struct({
     drawingId: Schema.String,
