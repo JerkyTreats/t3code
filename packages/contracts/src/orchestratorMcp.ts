@@ -337,6 +337,10 @@ export const OrchestratorMcpThreadListInput = Schema.Struct({
   settled: Schema.optional(Schema.Boolean),
   snoozed: Schema.optional(Schema.Boolean),
   includeSubagents: Schema.optional(Schema.Boolean),
+  createdBy: Schema.optional(OrchestrationV2Actor).annotate({
+    description:
+      "Only threads started by this actor: user for the user's own, agent for spawned ones.",
+  }),
   cursor: Schema.optional(NonNegativeInt),
   limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(100))),
 });
