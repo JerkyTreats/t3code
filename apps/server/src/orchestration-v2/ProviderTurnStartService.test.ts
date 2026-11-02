@@ -46,6 +46,7 @@ import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
+import * as ThreadCanvasStore from "../canvas/ThreadCanvasStore.ts";
 import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
@@ -131,6 +132,7 @@ function startWithMissingWorktree(
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
+        ThreadCanvasStore.layerNoChanges,
         Layer.succeed(FileSystem.FileSystem, {
           exists: () => Effect.succeed(false),
           realPath: (target: string) =>
@@ -263,6 +265,7 @@ it.each([
 
 function makeLocalCommandHarness(input: {
   readonly text: string;
+  readonly canvasDelivery?: ThreadCanvasStore.ThreadCanvasDelivery;
   readonly worktreePath?: string;
   readonly worktreesDir?: string;
   readonly workspaceRoot?: string;
@@ -577,6 +580,9 @@ function makeLocalCommandHarness(input: {
       ),
     ensureThread: () => Effect.succeed(providerThread),
   };
+  const providerStartTurn = vi.fn(
+    (_turn: { readonly message: { readonly text: string } }) => Effect.void,
+  );
   const open = vi.fn(() =>
     input.interruptOpen === true
       ? Effect.interrupt
@@ -615,6 +621,7 @@ function makeLocalCommandHarness(input: {
                   },
                   ensureThread: () => Effect.succeed(providerThread),
                   resumeThread: () => Effect.succeed(projection.providerThreads[0]),
+                  startTurn: providerStartTurn,
                 } as never)
               : Effect.die("A local command must not open a native session."),
   );
@@ -698,6 +705,10 @@ function makeLocalCommandHarness(input: {
         }),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
+        Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({
+          deliverToAgent: () =>
+            Effect.succeed(input.canvasDelivery ?? ThreadCanvasStore.EMPTY_CANVAS_DELIVERY),
+        }),
         layerWorktreeLocation(input.worktreesDir),
         input.fileSystem === undefined
           ? FileSystem.layerNoop({ exists: () => Effect.succeed(true) })
@@ -765,6 +776,7 @@ function makeLocalCommandHarness(input: {
     resolveRuntimePolicy,
     createWorktree,
     open,
+    providerStartTurn,
     writeIfRunCurrent,
     startRootRun,
     interruptTurn,
@@ -1301,6 +1313,33 @@ effectIt.effect("leaves the run starting when a session-open failure will be ret
     expect(error._tag).toBe("ProviderTurnStartError");
     expect(harness.writeIfRunCurrent).not.toHaveBeenCalled();
     expect(harness.projection().runs.at(-1)?.status).toBe("starting");
+  }),
+);
+
+effectIt.effect("delivers canvas changes with the turn and marks them seen once accepted", () =>
+  Effect.gen(function* () {
+    const acknowledge = vi.fn(() => undefined);
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      previousTurn: { runStatus: "completed", turnStatus: "completed" },
+      canvasDelivery: {
+        note: "The user changed this thread's Excalidraw canvas.",
+        attachments: [],
+        acknowledge: Effect.sync(acknowledge),
+      },
+    });
+
+    yield* harness.start;
+    const [startInput] = harness.startRootRun.mock.calls[0]!;
+    expect(acknowledge).not.toHaveBeenCalled();
+    yield* startInput.session.startTurn({
+      message: { text: "Continue", attachments: [] },
+    } as never);
+
+    expect(harness.providerStartTurn.mock.calls[0]?.[0].message.text).toBe(
+      "The user changed this thread's Excalidraw canvas.\n\nUser message:\nContinue",
+    );
+    expect(acknowledge).toHaveBeenCalledOnce();
   }),
 );
 

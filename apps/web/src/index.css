@@ -2578,3 +2578,118 @@ code {
     }
   }
 }
+
+/* Demo: Comfortable chat floats over a local Excalidraw board. */
+.board-chrome [data-chat-canvas] > :not([data-chat-composer-overlay]) {
+  pointer-events: auto;
+}
+
+/* Each piece follows its Excalidraw box once the board has published one. */
+.board-chrome[data-board-frames] [data-board-piece="composer"] {
+  position: absolute;
+  left: var(--board-composer-left);
+  top: calc(var(--board-composer-top) - var(--workspace-topbar-height));
+  width: var(--board-composer-width);
+  max-width: none;
+  margin: 0;
+}
+
+.board-chrome[data-board-frames] [data-board-piece="hero"] {
+  inset: auto;
+  left: calc(var(--board-hero-left) - var(--board-composer-left));
+  top: calc(var(--board-hero-top) - var(--board-composer-top));
+  display: flex;
+  align-items: center;
+  width: var(--board-hero-width);
+  height: var(--board-hero-height);
+  pointer-events: none;
+}
+
+.board-hero {
+  width: 100%;
+  padding: 0;
+}
+
+.board-hero button {
+  pointer-events: auto;
+}
+
+.board-hero h1,
+.board-hero p {
+  font-family: Excalifont, Virgil, var(--font-sans);
+}
+
+.board-hero h1 {
+  font-size: 2.25rem;
+  letter-spacing: 0;
+}
+
+.board-hero h1 button {
+  font-family: inherit;
+}
+
+/* Excalidraw's canvases and controls share this column's stacking context, so turns sit between. */
+.board-chrome > [data-chat-header] {
+  z-index: 5;
+}
+
+.board-chrome > :has(> [data-chat-canvas]) {
+  z-index: 3;
+}
+
+.board-chrome [data-chat-canvas] > .board-chat-card {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.board-chat-card > :not([data-board-turn-surface]),
+[data-board-turn-surface] > button {
+  pointer-events: auto;
+}
+
+.turn-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+
+.turn-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: calc(var(--chat-content-max-width) + 100px);
+  pointer-events: auto;
+}
+
+.turn-card:not([data-placed]) {
+  visibility: hidden;
+}
+
+.turn-card .chat-content-lane:has([data-html-render-row]) {
+  max-width: none;
+}
+
+[data-board-marking] .turn-card,
+[data-board-marking] .turn-card * {
+  pointer-events: none !important;
+}
+
+.excalidraw-board .excalidraw {
+  --ui-font: var(--font-sans);
+}
+
+/* T3's header owns the top row, so Excalidraw's top controls start below it. */
+.excalidraw-board .App-menu_top {
+  margin-top: calc(var(--workspace-topbar-height) - 8px);
+}
+
+.excalidraw-board .default-sidebar-trigger {
+  display: none !important;
+}

@@ -1,4 +1,10 @@
 import {
+  ThreadCanvasError,
+  ThreadCanvasSaveInput,
+  ThreadCanvasScene,
+  ThreadCanvasSubscribeInput,
+} from "./threadCanvas.ts";
+import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -410,6 +416,8 @@ export const WS_METHODS = {
 
   filesystemBrowse: "filesystem.browse",
   filesystemGetMetadata: "filesystem.getMetadata",
+  threadCanvasSave: "threadCanvas.save",
+  subscribeThreadCanvas: "subscribeThreadCanvas",
   agentSessionsScan: "agentSessions.scan",
   agentSessionsImport: "agentSessions.import",
   assetsCreateUrl: "assets.createUrl",
@@ -1333,6 +1341,18 @@ const WsFilesystemBrowseRpc = Rpc.make(WS_METHODS.filesystemBrowse, {
   error: Schema.Union([FilesystemBrowseError, EnvironmentAuthorizationError]),
 });
 
+const WsThreadCanvasSaveRpc = Rpc.make(WS_METHODS.threadCanvasSave, {
+  payload: ThreadCanvasSaveInput,
+  error: Schema.Union([ThreadCanvasError, EnvironmentAuthorizationError]),
+});
+
+const WsSubscribeThreadCanvasRpc = Rpc.make(WS_METHODS.subscribeThreadCanvas, {
+  payload: ThreadCanvasSubscribeInput,
+  success: ThreadCanvasScene,
+  error: Schema.Union([ThreadCanvasError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 const WsAgentSessionsScanRpc = Rpc.make(WS_METHODS.agentSessionsScan, {
   payload: AgentSessionScanInput,
   success: AgentSessionScanResult,
@@ -2086,6 +2106,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsFilesystemGetMetadataRpc,
+  WsThreadCanvasSaveRpc,
+  WsSubscribeThreadCanvasRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
   WsAssetsCreateUrlRpc,

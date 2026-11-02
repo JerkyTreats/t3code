@@ -1,0 +1,67 @@
+import * as Schema from "effect/Schema";
+
+import { ThreadId } from "./baseSchemas.ts";
+
+export const THREAD_CANVAS_MAX_ELEMENTS = 5_000;
+export const THREAD_CANVAS_MAX_DRAWING_ELEMENTS = 500;
+export const THREAD_CANVAS_MAX_SKETCH_BASE64_CHARS = 8_000_000;
+
+/** An Excalidraw element as the client stores it. The server only reads its id and version. */
+export const ThreadCanvasElement = Schema.Record(Schema.String, Schema.Unknown);
+export type ThreadCanvasElement = typeof ThreadCanvasElement.Type;
+
+export const ThreadCanvasShape = Schema.Struct({
+  id: Schema.String.annotate({
+    description: "Stable id within this drawing. Arrows name it in start and end.",
+  }),
+  type: Schema.Literals(["rectangle", "ellipse", "diamond", "arrow", "line", "text"]),
+  x: Schema.optional(
+    Schema.Number.annotate({
+      description: "Left edge, relative to the drawing's own origin. Leave out when using layout.",
+    }),
+  ),
+  y: Schema.optional(
+    Schema.Number.annotate({
+      description: "Top edge, relative to the drawing's own origin. Leave out when using layout.",
+    }),
+  ),
+  width: Schema.optional(Schema.Number),
+  height: Schema.optional(Schema.Number),
+  text: Schema.optional(
+    Schema.String.annotate({ description: "The words of a text shape, or a box or arrow label." }),
+  ),
+  fontSize: Schema.optional(Schema.Number),
+  strokeColor: Schema.optional(Schema.String),
+  backgroundColor: Schema.optional(Schema.String),
+  start: Schema.optional(
+    Schema.String.annotate({ description: "Arrow only: id of the shape it starts from." }),
+  ),
+  end: Schema.optional(
+    Schema.String.annotate({ description: "Arrow only: id of the shape it points to." }),
+  ),
+});
+export type ThreadCanvasShape = typeof ThreadCanvasShape.Type;
+
+export const ThreadCanvasScene = Schema.Struct({
+  revision: Schema.Int,
+  elements: Schema.Array(ThreadCanvasElement),
+  /** The version of each user mark the agent already knows about. */
+  seen: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
+});
+export type ThreadCanvasScene = typeof ThreadCanvasScene.Type;
+
+export const ThreadCanvasSubscribeInput = Schema.Struct({ threadId: ThreadId });
+
+export const ThreadCanvasSaveInput = Schema.Struct({
+  threadId: ThreadId,
+  elements: Schema.Array(ThreadCanvasElement).check(Schema.isMaxLength(THREAD_CANVAS_MAX_ELEMENTS)),
+  /** A base64 PNG of the marks the agent has not seen, which only a client can render. */
+  sketch: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(THREAD_CANVAS_MAX_SKETCH_BASE64_CHARS)),
+  ),
+});
+
+export class ThreadCanvasError extends Schema.TaggedError<ThreadCanvasError>()(
+  "ThreadCanvasError",
+  { message: Schema.String },
+) {}

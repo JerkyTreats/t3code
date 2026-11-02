@@ -1,3 +1,5 @@
+import * as CanvasHandlers from "./toolkits/canvas/handlers.ts";
+import { CanvasToolkit } from "./toolkits/canvas/tools.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -1174,6 +1176,7 @@ const layerOrchestratorTools = Layer.mergeAll(
   layerEnvironmentToolkit,
   layerWorktreeToolkitRegistration,
   layerHtmlToolkit,
+  toolkitRegistration(CanvasToolkit, CanvasHandlers.layer),
 );
 const layerPreviewTools = Layer.mergeAll(layerPreviewToolkit, layerPreviewControlsRegistration);
 

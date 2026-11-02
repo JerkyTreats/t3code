@@ -453,6 +453,12 @@ export function summarizeT3ToolCalls(
     case "html-render":
       label = phrase("Rendered", "render", quantity(selected.length, "HTML page"));
       break;
+    case "canvas-read":
+      label = phrase("Read", "read", `the canvas ${times}`);
+      break;
+    case "canvas-update":
+      label = phrase("Drew", "draw", `on the canvas ${times}`);
+      break;
     case "capabilities":
       label = phrase("Checked", "check", `orchestration capabilities ${times}`);
       break;

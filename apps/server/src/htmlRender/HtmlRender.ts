@@ -126,6 +126,7 @@ export class HtmlRender extends Context.Service<
       readonly html: string;
       readonly title: string;
       readonly height: number;
+      readonly displayWidth?: number | undefined;
     }) => Effect.Effect<HtmlRenderReference, HtmlRenderPrepareError | HtmlRenderStoreError>;
     readonly preview: (input: {
       readonly html: string;
@@ -414,6 +415,7 @@ const make = Effect.gen(function* () {
     readonly html: string;
     readonly title: string;
     readonly height: number;
+    readonly displayWidth?: number | undefined;
   }) {
     const html = yield* prepare(input.html);
     // The `-html` id suffix makes the asset route serve it as a sandboxed text/html document.
@@ -432,6 +434,7 @@ const make = Effect.gen(function* () {
       attachmentId,
       title: input.title.trim().slice(0, HTML_RENDER_MAX_TITLE_LENGTH) || "HTML",
       height: clampHtmlRenderHeight(input.height),
+      ...(input.displayWidth === undefined ? {} : { displayWidth: input.displayWidth }),
     };
     return yield* fileSystem.writeFileString(filePath, html).pipe(
       Effect.mapError((cause) => new HtmlRenderStoreError({ cause })),

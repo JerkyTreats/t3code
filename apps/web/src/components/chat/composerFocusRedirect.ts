@@ -43,6 +43,7 @@ export function eventPathContainsSelector(event: Event, selector: string): boole
 }
 
 const SECRET_REQUEST_SELECTOR = '[data-v2-item-type="secret_request"]';
+const EXCALIDRAW_BOARD_SELECTOR = "[data-excalidraw-board]";
 const SURFACE_LAUNCHER_KEYS_ATTRIBUTE = "data-surface-launcher-keys";
 
 // The right-panel launcher registers its own window capture listener when it
@@ -59,6 +60,8 @@ export function shouldRedirectInputToComposer(event: Event): boolean {
   if (event.defaultPrevented) return false;
   // Never persist or send secret-request typing through the composer.
   if (eventPathContainsSelector(event, SECRET_REQUEST_SELECTOR)) return false;
+  // The board's tools are single letters, and it takes focus only when clicked.
+  if (eventPathContainsSelector(event, EXCALIDRAW_BOARD_SELECTOR)) return false;
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_EDITABLE_SELECTOR)) return false;
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_INTERACTIVE_SELECTOR)) return false;
   if (document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR)) return false;

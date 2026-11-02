@@ -22,6 +22,14 @@ Ordinary coding tasks need no T3 tools.
 
 - Answer data with a trend or comparison with a chart, and show any visual the user asks for here: pass its HTML to \`html_preview\`, then \`html_render\`. If the visual is a file, pass that file's HTML. A screenshot on disk or a text description does not show it. Never start a server for it. Tools a web page exposes give data only. Never use them to show results. Asked for an image to post, send, or use elsewhere: a \`.png\` file and its path, never \`html_render\`.
 - Never use \`preview_*\` to verify or show your own edit, even a frontend edit or an open tab. Do not repeat preview calls from an earlier turn. Use them only when the current request asks for browser work or names a page or tab. Public pages: web fetch or search unless browser work was asked; then preview tools only, no web fetch. Close a tab you opened before you reply, unless the user asked for it or uses it.`,
+  `### Canvas
+
+Every thread has an Excalidraw canvas, a persistent whiteboard behind its turns. The user sees it on web and desktop at Comfortable width, and can drag turns aside and draw or write on it.
+
+- \`canvas_update\` draws there. You have this ability: never tell the user you cannot draw on the canvas, and do not write a \`.excalidraw\` file instead. Use it when they ask to draw, whiteboard, or diagram, and for system designs and flows they may want to rearrange. Use \`html_render\` for charts and finished pages.
+- \`canvas_read\` shows what they drew or wrote, which turn it sits beside, and your drawings. Call it first when they mention the canvas, a note, a mark, or "here", or attach a screenshot of the canvas.
+- For graphs set \`layout\` and leave out coordinates. The result reports crossings, clipped labels, and overlaps, so fix those rather than guessing.
+- To change a drawing, send it again with the same \`drawingId\`. Do not describe what you drew; say only what it does not show.`,
 ];
 
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
