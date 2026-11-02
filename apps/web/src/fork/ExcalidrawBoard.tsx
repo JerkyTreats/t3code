@@ -37,6 +37,7 @@ import {
   unseenSketchMarks,
   unseenMarks,
 } from "./canvasMarks";
+import { isStaleDrawingCopy } from "@t3tools/shared/threadCanvasDrawing";
 import { type CanvasCard, canvasCardsOf, sameCanvasCards } from "./canvasCards";
 import { forwardCardMiddleDrag } from "./cardMiddleDrag";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
@@ -634,10 +635,14 @@ export default function ExcalidrawBoard({
     syncTurns();
     seenByAgent.current = scene.seen ?? {};
     const local = api.getSceneElementsIncludingDeleted();
-    const versions = new Map(local.map((element) => [element.id, element.version]));
-    const newer = (scene.elements as unknown as BoardElements).filter(
-      (remote) => (versions.get(remote.id) ?? -1) < remote.version,
-    );
+    const byId = new Map(local.map((element) => [element.id, element]));
+    // The agent's newer write wins over a copy this client only shifted with the turns.
+    const newer = (scene.elements as unknown as BoardElements).filter((remote) => {
+      const mine = byId.get(remote.id);
+      return (
+        mine === undefined || mine.version < remote.version || isStaleDrawingCopy(mine, remote)
+      );
+    });
     const drawn = newer.filter((remote) => remote.customData?.t3Drawing !== undefined);
     // The server estimates text. This fits it to the real font, on the elements that came from it.
     const fitted = restoreElements(drawn, null, { refreshDimensions: true, repairBindings: true });
@@ -647,7 +652,7 @@ export default function ExcalidrawBoard({
     ]);
     const elements: BoardElements = [
       ...local.map((element) => incoming.get(element.id) ?? element),
-      ...[...incoming.values()].filter((remote) => !versions.has(remote.id)),
+      ...[...incoming.values()].filter((remote) => !byId.has(remote.id)),
     ];
     if (incoming.size > 0) {
       api.updateScene({ elements, captureUpdate: CaptureUpdateAction.NEVER });

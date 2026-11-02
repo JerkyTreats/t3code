@@ -140,6 +140,30 @@ export function arrowEnds(placed: PlacedShape, boxes: ReadonlyMap<string, Placed
   };
 }
 
+/** When the agent last wrote an element, or null for anything the agent never drew. */
+export function drawingWrittenAt(element: { readonly customData?: unknown }) {
+  const data = element.customData;
+  const drawing =
+    typeof data === "object" && data !== null ? Reflect.get(data, "t3Drawing") : undefined;
+  const written =
+    typeof drawing === "object" && drawing !== null ? Reflect.get(drawing, "written") : undefined;
+  return typeof written === "number" ? written : null;
+}
+
+/**
+ * Whether `incoming` is a copy of the agent's element from before its latest write. A client
+ * moves agent drawings with the turns around them, and each move counts up the element's
+ * version, so a copy shifted often enough would otherwise outrank what the agent wrote since.
+ */
+export function isStaleDrawingCopy(
+  incoming: { readonly customData?: unknown },
+  current: { readonly customData?: unknown },
+) {
+  const before = drawingWrittenAt(incoming);
+  const after = drawingWrittenAt(current);
+  return after !== null && (before === null || before < after);
+}
+
 /** Excalidraw elements for a whole drawing: plain data, so a server can make them. */
 export function buildDrawingElements(input: BuildDrawingInput): ReadonlyArray<ThreadCanvasElement> {
   const { drawingId, turn, placed, versionOf, randomInt, now } = input;
@@ -177,7 +201,10 @@ export function buildDrawingElements(input: BuildDrawingInput): ReadonlyArray<Th
     updated: now,
     link: null,
     locked: false,
-    customData: { t3Drawing: { id: drawingId, turn, localX: local.x, localY: local.y } },
+    // `written` dates the agent's write, so a copy a client shifted since then cannot outrank it.
+    customData: {
+      t3Drawing: { id: drawingId, turn, localX: local.x, localY: local.y, written: now },
+    },
   });
   const text = (
     id: string,

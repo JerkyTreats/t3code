@@ -9,6 +9,26 @@ const scene = (elements: ThreadCanvasScene["elements"]): ThreadCanvasScene => ({
 });
 
 describe("mergeCanvasElements", () => {
+  it("keeps the agent's newer write over a client copy that only counted higher", () => {
+    const card = (version: number, y: number, written: number) => ({
+      id: "map/asks",
+      type: "rectangle",
+      version,
+      y,
+      customData: { t3Drawing: { id: "map", localY: 0, written } },
+    });
+    // The agent moved the card at t=2; the client shifted its t=1 copy five times meanwhile.
+    const { elements, changed } = mergeCanvasElements([card(4, 900, 2)], [card(8, 120, 1)]);
+    expect(changed).toBe(true);
+    expect(elements).toEqual([expect.objectContaining({ y: 900, version: 9 })]);
+    // Once the client holds the agent's write, its own shifts count again.
+    expect(mergeCanvasElements([card(9, 900, 2)], [card(10, 940, 2)]).elements).toEqual([
+      expect.objectContaining({ y: 940, version: 10 }),
+    ]);
+    // A stale copy that already counts lower changes nothing.
+    expect(mergeCanvasElements([card(9, 900, 2)], [card(3, 120, 1)]).changed).toBe(false);
+  });
+
   it("keeps the newer version from either side and reports whether anything changed", () => {
     const current = [
       { id: "a", version: 3, x: 1 },
