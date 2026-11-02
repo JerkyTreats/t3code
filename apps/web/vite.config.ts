@@ -102,6 +102,7 @@ const browserTestProject = {
   optimizeDeps: {
     include: [
       "vite-plus/test/browser",
+      "@excalidraw/excalidraw",
       "@base-ui/react/autocomplete",
       "saxes",
       "@betteroffice/docx/editor",

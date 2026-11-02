@@ -17,6 +17,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as ThreadCanvasStore from "../canvas/ThreadCanvasStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 
@@ -84,12 +85,15 @@ export class ProviderTurnControlServiceV2 extends Context.Service<
 export const layer: Layer.Layer<
   ProviderTurnControlServiceV2,
   never,
-  ProjectionStore.ProjectionStoreV2 | ProviderSessionManager.ProviderSessionManagerV2
+  | ProjectionStore.ProjectionStoreV2
+  | ProviderSessionManager.ProviderSessionManagerV2
+  | ThreadCanvasStore.ThreadCanvasStore
 > = Layer.effect(
   ProviderTurnControlServiceV2,
   Effect.gen(function* () {
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
+    const threadCanvas = yield* ThreadCanvasStore.ThreadCanvasStore;
 
     const load = Effect.fn("ProviderTurnControlService.load")(function* (input: {
       readonly threadId: ThreadId;
@@ -349,6 +353,21 @@ export const layer: Layer.Layer<
               cause: "The persisted steering message or target run is missing.",
             });
           }
+          const { driver } = loaded.session.value;
+          const canvasDelivery =
+            message.createdBy === "user" && !message.text.trimStart().startsWith("/")
+              ? yield* threadCanvas
+                  .deliverToAgent({
+                    threadId: input.threadId,
+                    message: message.text,
+                    picture: driver === "codex" || driver === "claudeAgent",
+                  })
+                  .pipe(Effect.orElseSucceed(() => ThreadCanvasStore.EMPTY_CANVAS_DELIVERY))
+              : ThreadCanvasStore.EMPTY_CANVAS_DELIVERY;
+          const steerText = projectComposerContextForProvider({
+            text: message.text,
+            records: message.context?.records ?? [],
+          });
           yield* loaded.session.value
             .steerTurn({
               threadId: input.threadId,
@@ -360,11 +379,11 @@ export const layer: Layer.Layer<
               providerTurnId: loaded.providerTurn.id,
               message: {
                 messageId: message.id,
-                text: projectComposerContextForProvider({
-                  text: message.text,
-                  records: message.context?.records ?? [],
-                }),
-                attachments: message.attachments,
+                text:
+                  canvasDelivery.note === ""
+                    ? steerText
+                    : `${canvasDelivery.note}\n\nUser message:\n${steerText}`,
+                attachments: [...message.attachments, ...canvasDelivery.attachments],
                 createdBy: message.createdBy,
                 creationSource: message.creationSource,
                 ...(message.scheduledTaskId === undefined
@@ -392,6 +411,11 @@ export const layer: Layer.Layer<
                 }),
               ),
             );
+          yield* canvasDelivery.acknowledge.pipe(
+            Effect.catchCause(() =>
+              Effect.logWarning("Failed to record delivered canvas changes", { runId: run.id }),
+            ),
+          );
         },
         (effect, input) =>
           effect.pipe(

@@ -15,6 +15,7 @@ import {
   readHtmlRenderContentHeight,
   readHtmlRenderImageRequest,
   readHtmlRenderKeyDown,
+  readHtmlRenderWheel,
   readHtmlRenderLinkRequest,
 } from "@t3tools/shared/htmlRender";
 import {
@@ -245,6 +246,11 @@ export function HtmlRenderDocument(props: {
     const height = readHtmlRenderContentHeight(event.data);
     if (height !== undefined) {
       props.onContentHeight?.(height);
+      return;
+    }
+    const wheel = readHtmlRenderWheel(event.data);
+    if (wheel !== undefined) {
+      frame.dispatchEvent(new WheelEvent("wheel", { ...wheel, bubbles: true, cancelable: true }));
       return;
     }
     if (document.activeElement !== frame || navigator.userActivation?.isActive === false) return;

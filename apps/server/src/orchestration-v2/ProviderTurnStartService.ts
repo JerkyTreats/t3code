@@ -33,6 +33,7 @@ import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as EventSink from "./EventSink.ts";
+import * as ThreadCanvasStore from "../canvas/ThreadCanvasStore.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import {
   DEFAULT_HANDOFF_TOKEN_CAP,
@@ -129,6 +130,7 @@ export const layer: Layer.Layer<
   | EventSink.EventSinkV2
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
+  | ThreadCanvasStore.ThreadCanvasStore
   | FileSystem.FileSystem
   | Path.Path
   | ServerConfig.ServerConfig
@@ -146,6 +148,7 @@ export const layer: Layer.Layer<
     const eventSink = yield* EventSink.EventSinkV2;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const threadCanvas = yield* ThreadCanvasStore.ThreadCanvasStore;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
@@ -793,6 +796,17 @@ export const layer: Layer.Layer<
         restartCancelledWork.length === 0
           ? ""
           : restartCancelledBackgroundWorkNote(restartCancelledWork);
+      // Slash commands must stay the first thing the provider reads.
+      const canvasDelivery =
+        message.createdBy === "user" && !message.text.trimStart().startsWith("/")
+          ? yield* threadCanvas
+              .deliverToAgent({
+                threadId: input.threadId,
+                message: message.text,
+                picture: session.driver === "codex" || session.driver === "claudeAgent",
+              })
+              .pipe(Effect.orElseSucceed(() => ThreadCanvasStore.EMPTY_CANVAS_DELIVERY))
+          : ThreadCanvasStore.EMPTY_CANVAS_DELIVERY;
       const tokenCap = yield* handoffTokenCapConfig.pipe(
         Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
       );
@@ -1414,7 +1428,7 @@ export const layer: Layer.Layer<
           });
           if (!(yield* isCurrentAttemptInStatus("running"))) return;
           const start = compact ? session.compactThread! : session.startTurn;
-          const context = [delivery.context, restartNote]
+          const context = [delivery.context, restartNote, canvasDelivery.note]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -1422,6 +1436,7 @@ export const layer: Layer.Layer<
             ...(noteContinuation ? promptedInput : turnInput),
             message: {
               ...turnInput.message,
+              attachments: [...turnInput.message.attachments, ...canvasDelivery.attachments],
               text:
                 context === "" || goalCommand
                   ? userText
@@ -1439,6 +1454,11 @@ export const layer: Layer.Layer<
                     ),
                   )
                 : Effect.void,
+            ),
+          );
+          yield* canvasDelivery.acknowledge.pipe(
+            Effect.catchCause(() =>
+              Effect.logWarning("Failed to record delivered canvas changes", { runId: run.id }),
             ),
           );
           // After provider acceptance, failed delivery bookkeeping must not stop live ingestion.
@@ -1467,6 +1487,7 @@ export const layer: Layer.Layer<
         effectiveHandoffs.length === 0 &&
         retryHandoff.length === 0 &&
         restartNote === "" &&
+        canvasDelivery.note === "" &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);

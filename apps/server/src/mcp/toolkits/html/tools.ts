@@ -2,9 +2,11 @@ import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import {
   HTML_RENDER_COLUMN_WIDTH,
   HTML_RENDER_LAYOUT_GUIDE,
+  HTML_RENDER_MAX_DISPLAY_WIDTH,
   HTML_RENDER_MAX_FIT_HEIGHT,
   HTML_RENDER_MAX_HEIGHT,
   HTML_RENDER_MAX_TITLE_LENGTH,
+  HTML_RENDER_MIN_DISPLAY_WIDTH,
   HTML_RENDER_MIN_HEIGHT,
   HTML_RENDER_THEME_GUIDE,
   HTML_RENDER_TOOL_NAME,
@@ -81,6 +83,16 @@ const HtmlRenderTool = Tool.make(HTML_RENDER_TOOL_NAME, {
     height: Schema.Int.annotate({
       description: `Frame height in CSS pixels, ${HTML_RENDER_MIN_HEIGHT} to ${HTML_RENDER_MAX_HEIGHT}. Use the contentHeight from html_preview.`,
     }),
+    displayWidth: Schema.optional(
+      Schema.Int.check(
+        Schema.isBetween({
+          minimum: HTML_RENDER_MIN_DISPLAY_WIDTH,
+          maximum: HTML_RENDER_MAX_DISPLAY_WIDTH,
+        }),
+      ).annotate({
+        description: `Width of this turn on a canvas, in CSS pixels, ${HTML_RENDER_MIN_DISPLAY_WIDTH} to ${HTML_RENDER_MAX_DISPLAY_WIDTH}. Omit for reply width.`,
+      }),
+    ),
   }),
   success: Schema.Struct({
     htmlRender: Schema.Struct({
@@ -88,6 +100,7 @@ const HtmlRenderTool = Tool.make(HTML_RENDER_TOOL_NAME, {
       title: Schema.String,
       height: Schema.Number,
       heights: Schema.optional(Schema.Array(Schema.Tuple([Schema.Int, Schema.Int]))),
+      displayWidth: Schema.optional(Schema.Int),
     }),
     message: Schema.String,
   }),

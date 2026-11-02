@@ -1,3 +1,4 @@
+import * as ThreadCanvasStore from "../canvas/ThreadCanvasStore.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -123,6 +124,7 @@ const mcpRouteTestDependencies = Layer.mergeAll(
   McpProviderSessions.layer,
   Layer.mock(DeviceService.DeviceService)({}),
   Layer.mock(PreviewManager.PreviewManager)({}),
+  Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({}),
   Layer.mock(PreviewBrowser.PreviewBrowser)({}),
   Layer.mock(ProjectService.ProjectService)({}),
   Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
