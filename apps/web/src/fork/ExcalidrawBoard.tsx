@@ -32,6 +32,7 @@ import {
   selectedNotes,
   toSavableElements,
   unseenSketchMarks,
+  unseenMarks,
 } from "./canvasMarks";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
@@ -442,6 +443,7 @@ export default function ExcalidrawBoard({
   // A scene that arrived before Excalidraw finished loading.
   const waitingScene = useRef<ThreadCanvasScene | null>(null);
   const seenByAgent = useRef<Readonly<Record<string, number>>>({});
+  const pendingNotes = useRef(0);
   const coveredCache = useRef(new Map<string, string | null>());
   const lastSketch = useRef("");
   const [noteAction, setNoteAction] = useState<{
@@ -584,6 +586,12 @@ export default function ExcalidrawBoard({
     });
   });
 
+  const reportPendingNotes = (count: number) => {
+    if (count === pendingNotes.current) return;
+    pendingNotes.current = count;
+    turnBoard.reportPendingNotes(count);
+  };
+
   const trackNoteAction = (elements: BoardElements, appState: Parameters<BoardChange>[1]) => {
     const notes = selectedNotes(elements, appState.selectedElementIds);
     const idle =
@@ -663,6 +671,7 @@ export default function ExcalidrawBoard({
         // Every tool but select draws or pans, so it reaches through the cards to the canvas.
         root.toggleAttribute("data-board-marking", appState.activeTool.type !== "selection");
         trackNoteAction(elements, appState);
+        reportPendingNotes(unseenMarks(elements, seenByAgent.current).length);
       }
     }
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
@@ -756,6 +765,8 @@ export default function ExcalidrawBoard({
       unsubscribe();
       for (const stop of stopObserving) stop();
       cancelPan();
+      pendingNotes.current = 0;
+      turnBoard.reportPendingNotes(0);
     };
   }, [api, cancelPan, draft, panToLatest, syncTurns, turnBoard]);
 

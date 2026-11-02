@@ -289,6 +289,8 @@ import { useThreadWindowTitle } from "../fork/threadWindowTitle";
 import { chatComposerPresentation } from "../fork/chatComposerPresentation";
 import { armDraftHandoff } from "../fork/draftBoardHandoff";
 import { createTurnBoard } from "../fork/turnBoard";
+
+const CANVAS_NOTES_PROMPT = "Read my notes on the canvas.";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
@@ -2941,6 +2943,14 @@ export default function ChatView(props: ChatViewProps) {
     requestAnimationFrame(() => void onComposerSendStable());
   };
   const sendCanvasNoteStable = useStableCallback(sendCanvasNote);
+  // The server lists the unseen marks for the agent; this prompt only has to open the turn.
+  const sendCanvasNotesStable = useStableCallback(() => sendCanvasNote(CANVAS_NOTES_PROMPT));
+  const [canvasPendingNotes, setCanvasPendingNotes] = useState(0);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the board counts unseen marks outside React and reports them here
+  useEffect(() => {
+    turnBoard.setPendingNotesListener(setCanvasPendingNotes);
+    return () => turnBoard.setPendingNotesListener(null);
+  }, [turnBoard]);
   const onComposerResumeStable = useStableCallback(onResume);
   const onComposerCompactContextStable = useStableCallback(onCompactContext);
   // Read from the projection the footer renders, so the scroll below sees the new message.
@@ -3716,6 +3726,8 @@ export default function ChatView(props: ChatViewProps) {
                                 onCompactContext={onComposerCompactContextStable}
                                 onSend={onComposerSendStable}
                                 onSendContextCommitted={onLauncherComposerCommitted}
+                                canvasPendingNotes={showBoardChat ? canvasPendingNotes : 0}
+                                onSendCanvasNotes={sendCanvasNotesStable}
                                 onResume={onComposerResumeStable}
                                 onInterrupt={onInterruptStable}
                                 onImplementPlanInNewThread={onImplementPlanInNewThreadStable}
