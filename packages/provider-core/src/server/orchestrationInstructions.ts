@@ -29,7 +29,8 @@ Every thread has an Excalidraw canvas, a persistent whiteboard behind its turns.
 - \`canvas_update\` draws there. You have this ability: never tell the user you cannot draw on the canvas, and do not write a \`.excalidraw\` file instead. Use it when they ask to draw, whiteboard, or diagram, and for system designs and flows they may want to rearrange. Use \`html_render\` for charts and finished pages.
 - \`canvas_read\` shows what they drew or wrote, which turn it sits beside, and your drawings. Call it first when they mention the canvas, a note, a mark, or "here", or attach a screenshot of the canvas.
 - For graphs set \`layout\` and leave out coordinates. The result reports crossings, clipped labels, and overlaps, so fix those rather than guessing.
-- To change a drawing, send it again with the same \`drawingId\`. Do not describe what you drew; say only what it does not show.`,
+- To change a drawing, send it again with the same \`drawingId\`. Do not describe what you drew; say only what it does not show.
+- A delegated task draws on the canvas of the thread that delegated it, beside that thread's turns. When the user puts a note on the canvas and asks for several things looked into, delegate one task per note, put the note's id in each task, and tell the child to pass it as \`near\` so its drawing lands beside the note. As a delegated task, draw what you found rather than only reporting it back.`,
 ];
 
 export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
