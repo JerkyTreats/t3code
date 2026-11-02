@@ -50,6 +50,75 @@ function distanceBetween(left: CanvasBox, right: CanvasBox) {
   return Math.hypot(dx, dy);
 }
 
+const ARROW_TIP_REACH = 12;
+const BESIDE_REACH = 120;
+
+/** The part of a mark that points at something: an arrow's tip, anything else's whole box. */
+function reachOf(element: ThreadCanvasElement, box: CanvasBox): CanvasBox {
+  if (element.type !== "arrow" && element.type !== "line") return box;
+  const tip = Array.isArray(element.points) ? element.points.at(-1) : undefined;
+  if (!Array.isArray(tip)) return box;
+  return {
+    x: box.x + numberOf(tip[0]) - ARROW_TIP_REACH,
+    y: box.y + numberOf(tip[1]) - ARROW_TIP_REACH,
+    width: 2 * ARROW_TIP_REACH,
+    height: 2 * ARROW_TIP_REACH,
+  };
+}
+
+interface AgentPiece {
+  readonly id: string;
+  readonly box: CanvasBox;
+  readonly card?: "markdown" | "html";
+  readonly text?: string;
+}
+
+/**
+ * The agent's element a user mark sits on, the smallest one its reach touches, or failing that
+ * the nearest within arm's reach. Arrows and lines are never targets: a mark beside an edge
+ * means the node, not the edge.
+ */
+interface PieceRef {
+  readonly id: string;
+  readonly card?: "markdown" | "html";
+  readonly text?: string;
+}
+interface MarkPlacement {
+  readonly on?: PieceRef & { readonly x: number; readonly y: number };
+  readonly beside?: PieceRef;
+}
+
+function placeOnAgentPiece(reach: CanvasBox, pieces: ReadonlyArray<AgentPiece>): MarkPlacement {
+  const area = (box: CanvasBox) => box.width * box.height;
+  const on = pieces
+    .filter((piece) => distanceBetween(reach, piece.box) === 0)
+    .toSorted((left, right) => area(left.box) - area(right.box))[0];
+  if (on !== undefined) {
+    return {
+      on: {
+        id: on.id,
+        ...(on.card === undefined ? {} : { card: on.card }),
+        ...(on.text === undefined ? {} : { text: on.text }),
+        x: Math.max(0, reach.x - on.box.x),
+        y: Math.max(0, reach.y - on.box.y),
+      },
+    };
+  }
+  const beside = pieces
+    .map((piece) => ({ piece, distance: distanceBetween(reach, piece.box) }))
+    .filter(({ distance }) => distance <= BESIDE_REACH)
+    .toSorted((left, right) => left.distance - right.distance)[0]?.piece;
+  return beside === undefined
+    ? {}
+    : {
+        beside: {
+          id: beside.id,
+          ...(beside.card === undefined ? {} : { card: beside.card }),
+          ...(beside.text === undefined ? {} : { text: beside.text }),
+        },
+      };
+}
+
 /** The scene as an agent reads it: turns by their opening words, everything else beside them. */
 export function describeCanvas(scene: ThreadCanvasScene) {
   const live = scene.elements.filter((element) => element.isDeleted !== true);
@@ -65,6 +134,7 @@ export function describeCanvas(scene: ThreadCanvasScene) {
       labels.set(element.containerId, element.text);
     }
   }
+  const pieces: AgentPiece[] = [];
   const elements = live.flatMap((element) => {
     const customData = recordOf(element.customData);
     const id = idOf(element);
@@ -92,11 +162,20 @@ export function describeCanvas(scene: ThreadCanvasScene) {
     const end = recordOf(element.endBinding).elementId;
     const drawing = recordOf(customData.t3Drawing).id;
     const covers = customData.t3Covers;
+    if (typeof drawing === "string" && element.type !== "arrow" && element.type !== "line") {
+      pieces.push({
+        id,
+        box,
+        ...(cardKind === undefined ? {} : { card: cardKind }),
+        ...(text === undefined ? {} : { text }),
+      });
+    }
     return [
       {
         id,
         type: String(element.type),
         ...box,
+        reach: reachOf(element, box),
         drawnBy: typeof drawing === "string" ? ("agent" as const) : ("user" as const),
         ...(typeof drawing === "string" ? { drawingId: drawing } : {}),
         ...(cardKind === undefined ? {} : { card: cardKind }),
@@ -108,7 +187,14 @@ export function describeCanvas(scene: ThreadCanvasScene) {
       },
     ];
   });
-  return { turns, elements };
+  // Agent pieces are known only once the whole scene is read, so user marks are placed last.
+  return {
+    turns,
+    elements: elements.map(({ reach, ...element }) => ({
+      ...element,
+      ...(element.drawnBy === "user" ? placeOnAgentPiece(reach, pieces) : ({} as MarkPlacement)),
+    })),
+  };
 }
 
 const NOTE_MAX_CHANGES = 20;
@@ -119,10 +205,26 @@ const clipped = (text: string) =>
   text.length > NOTE_MAX_TEXT_CHARS ? `${text.slice(0, NOTE_MAX_TEXT_CHARS)}…` : text;
 const quoted = (text: string) => JSON.stringify(clipped(text));
 
+const CARD_LABEL_CHARS = 60;
+
+/** An agent piece as a mark's note names it: a card by its opening words, a shape by its label. */
+function pieceLabel(piece: { id: string; card?: "markdown" | "html"; text?: string }) {
+  const kind = piece.card === undefined ? "" : `${piece.card} card `;
+  const words =
+    piece.text === undefined
+      ? ""
+      : `${JSON.stringify(piece.text.replace(/\s+/g, " ").trim().slice(0, CARD_LABEL_CHARS))} `;
+  return `${kind}${words}[${piece.id}]`;
+}
+
 function describeMark(mark: ReturnType<typeof describeCanvas>["elements"][number]) {
   const parts = [
     `${mark.type}${mark.text === undefined ? "" : ` ${quoted(mark.text)}`} [${mark.id}]`,
     ...(mark.nearestTurn === undefined ? [] : [`near turn ${quoted(mark.nearestTurn)}`]),
+    ...(mark.on === undefined
+      ? []
+      : [`on your ${pieceLabel(mark.on)} at ${mark.on.x},${mark.on.y} from its top left`]),
+    ...(mark.beside === undefined ? [] : [`beside your ${pieceLabel(mark.beside)}`]),
     ...(mark.covers === undefined ? [] : [`over ${quoted(mark.covers)}`]),
   ];
   return `- ${parts.join(", ")}`;
