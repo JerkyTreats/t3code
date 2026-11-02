@@ -62,3 +62,25 @@ export function sameCanvasCards(left: ReadonlyArray<CanvasCard>, right: Readonly
     })
   );
 }
+
+const CANVAS_REVEAL_EVENT = "t3:canvas-reveal";
+
+/**
+ * Pans the open canvas to the card a citation quotes. A card is keyed by its canvas element id,
+ * which no message in the thread history has, so a citation of one is found on the board.
+ * Returns false when no board shows that card, so the caller can fall back.
+ */
+export function revealCanvasCard(source: Element | null, elementId: string) {
+  if (source?.closest(".canvas-card") == null) return false;
+  window.dispatchEvent(new CustomEvent(CANVAS_REVEAL_EVENT, { detail: elementId }));
+  return true;
+}
+
+/** Calls `reveal` with each element id a citation asks the board to show. */
+export function onCanvasReveal(reveal: (elementId: string) => void) {
+  const listener = (event: Event) => {
+    if (event instanceof CustomEvent && typeof event.detail === "string") reveal(event.detail);
+  };
+  window.addEventListener(CANVAS_REVEAL_EVENT, listener);
+  return () => window.removeEventListener(CANVAS_REVEAL_EVENT, listener);
+}

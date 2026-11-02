@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { canvasCardsOf, sameCanvasCards } from "./canvasCards";
+import { canvasCardsOf, onCanvasReveal, revealCanvasCard, sameCanvasCards } from "./canvasCards";
 import type { CanvasMark } from "./canvasMarks";
 
 const element = (overrides: Partial<CanvasMark>): CanvasMark => ({
@@ -45,5 +45,21 @@ describe("sameCanvasCards", () => {
     expect(sameCanvasCards([card], [{ ...card, x: 10 }])).toBe(false);
     expect(sameCanvasCards([card], [{ ...card, version: 2 }])).toBe(false);
     expect(sameCanvasCards([card], [])).toBe(false);
+  });
+});
+
+describe("revealCanvasCard", () => {
+  it("asks the board for a card a citation quotes, and declines anything else", () => {
+    const asked: string[] = [];
+    const stop = onCanvasReveal((id) => asked.push(id));
+    const card = document.createElement("div");
+    card.className = "canvas-card";
+    const source = document.createElement("div");
+    card.append(source);
+    expect(revealCanvasCard(source, "map/asks")).toBe(true);
+    expect(revealCanvasCard(document.createElement("div"), "msg-1")).toBe(false);
+    expect(revealCanvasCard(null, "msg-2")).toBe(false);
+    stop();
+    expect(asked).toEqual(["map/asks"]);
   });
 });
