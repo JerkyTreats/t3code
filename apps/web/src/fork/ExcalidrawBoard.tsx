@@ -38,7 +38,7 @@ import {
   unseenMarks,
 } from "./canvasMarks";
 import { isStaleDrawingCopy } from "@t3tools/shared/threadCanvasDrawing";
-import { type CanvasCard, canvasCardsOf, sameCanvasCards } from "./canvasCards";
+import { type CanvasCard, canvasCardsOf, onCanvasReveal, sameCanvasCards } from "./canvasCards";
 import { forwardCardMiddleDrag } from "./cardMiddleDrag";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
@@ -797,6 +797,26 @@ export default function ExcalidrawBoard({
       turnBoard.reportPendingNotes(0);
     };
   }, [api, cancelPan, draft, panToLatest, syncTurns, turnBoard]);
+
+  // A citation of a card shows that card: the board stops following turns and centres on it.
+  const revealElement = useStableCallback((elementId: string) => {
+    const root = boardRootOf(boardRef.current);
+    const element = api?.getSceneElements().find((candidate) => candidate.id === elementId);
+    if (!api || !root || element === undefined) return;
+    cancelPan();
+    setFollowing(false);
+    const zoom = api.getAppState().zoom.value;
+    const rect = root.getBoundingClientRect();
+    moveCamera({
+      scrollX: rect.width / 2 / zoom - (element.x + element.width / 2),
+      scrollY: Math.max(
+        rect.height / 2 / zoom - (element.y + element.height / 2),
+        TOPBAR_FALLBACK_PX / zoom - element.y,
+      ),
+    });
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a citation chip asks for this through a window event, outside React
+  useEffect(() => (draft ? undefined : onCanvasReveal(revealElement)), [draft, revealElement]);
 
   // Cards float above the canvas, so wheel and middle-button gestures over them still pan and zoom it.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- binds a non-passive wheel listener to the card layer, which React cannot do
