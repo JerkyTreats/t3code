@@ -39,6 +39,12 @@ import {
 } from "./canvasMarks";
 import { type CanvasCard, canvasCardsOf, sameCanvasCards } from "./canvasCards";
 import { forwardCardMiddleDrag } from "./cardMiddleDrag";
+import {
+  type CardSelection,
+  cardSelectionOf,
+  citeMarkSkeleton,
+  citeMessage,
+} from "./cardSelection";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
 
@@ -452,6 +458,11 @@ export default function ExcalidrawBoard({
   const [cards, setCards] = useState<ReadonlyArray<CanvasCard>>([]);
   const coveredCache = useRef(new Map<string, string | null>());
   const lastSketch = useRef("");
+  const [citeAction, setCiteAction] = useState<{
+    readonly key: string;
+    readonly zoom: number;
+    readonly selection: CardSelection;
+  } | null>(null);
   const [noteAction, setNoteAction] = useState<{
     readonly key: string;
     readonly x: number;
@@ -549,6 +560,8 @@ export default function ExcalidrawBoard({
     const zoom = api?.getAppState().zoom.value ?? 1;
     const covered = (element: BoardElement) => {
       if (!layer || !isUserMark(element)) return null;
+      const own = element.customData?.t3Covers;
+      if (typeof own === "string") return own;
       const key = `${element.id}:${element.version}`;
       const known = coveredCache.current.get(key);
       if (known !== undefined) return known;
@@ -591,6 +604,22 @@ export default function ExcalidrawBoard({
       appState: { selectedElementIds: {} },
       captureUpdate: CaptureUpdateAction.NEVER,
     });
+  });
+
+  /** Leaves a red box around the highlighted words, saves it, then asks for their source. */
+  const sendCite = useStableCallback(async (selection: CardSelection) => {
+    if (!api) return;
+    window.getSelection()?.removeAllRanges();
+    setCiteAction(null);
+    api.updateScene({
+      elements: [
+        ...api.getSceneElementsIncludingDeleted(),
+        ...convertToExcalidrawElements([citeMarkSkeleton(selection)]),
+      ],
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    await pushScene();
+    onSendNote(citeMessage(selection));
   });
 
   const reportPendingNotes = (count: number) => {
@@ -779,6 +808,24 @@ export default function ExcalidrawBoard({
     };
   }, [api, cancelPan, draft, panToLatest, syncTurns, turnBoard]);
 
+  // Words highlighted in a card offer a cite, as a selected note offers a send.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the DOM selection is not React state; selectionchange is its only signal
+  useEffect(() => {
+    if (draft || !api) return;
+    const track = () => {
+      const layer = turnBoard.layer();
+      const zoom = api.getAppState().zoom.value;
+      const selection = layer ? cardSelectionOf(document.getSelection(), layer, zoom) : null;
+      const next =
+        selection === null
+          ? null
+          : { key: `${selection.text}:${selection.x}:${selection.y}:${zoom}`, zoom, selection };
+      setCiteAction((current) => (current?.key === next?.key ? current : next));
+    };
+    document.addEventListener("selectionchange", track);
+    return () => document.removeEventListener("selectionchange", track);
+  }, [api, draft, turnBoard]);
+
   // Cards float above the canvas, so wheel and middle-button gestures over them still pan and zoom it.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- binds a non-passive wheel listener to the card layer, which React cannot do
   useEffect(() => {
@@ -886,6 +933,25 @@ export default function ExcalidrawBoard({
                 </div>
               );
             }),
+            noteLayer,
+          )}
+      {noteLayer === null || citeAction === null
+        ? null
+        : createPortal(
+            <div
+              className="pointer-events-auto absolute top-0 left-0 origin-top-left"
+              style={{
+                transform: `translate(${citeAction.selection.x}px, ${citeAction.selection.y + citeAction.selection.height + NOTE_ACTION_GAP_PX}px) scale(${1 / citeAction.zoom})`,
+              }}
+            >
+              <Button
+                size="xs"
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => void sendCite(citeAction.selection)}
+              >
+                Cite
+              </Button>
+            </div>,
             noteLayer,
           )}
       {noteLayer === null || noteAction === null
