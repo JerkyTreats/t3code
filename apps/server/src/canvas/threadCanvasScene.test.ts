@@ -262,6 +262,24 @@ describe("describeCanvasChanges", () => {
     expect(changes.note).toContain("sent from the canvas note [note]");
   });
 
+  it("names a cite box as the anchor when the message quotes the words it covers", () => {
+    const cite = {
+      id: "cite",
+      version: 2,
+      type: "rectangle",
+      x: 150,
+      y: 120,
+      customData: { t3Covers: "TASK-101: inventory token" },
+    };
+    const changes = describeCanvasChanges(
+      scene([turn, cite]),
+      'Cite the source of "TASK-101: inventory token".',
+    );
+    expect(changes.note).toContain("sent from the canvas note [cite]");
+    expect(changes.note).not.toContain("rectangle [cite]");
+    expect(changes.sketched).toBe(false);
+  });
+
   it("reports what the user removed", () => {
     const seen = describeCanvasChanges(scene([turn, note]), "").seen;
     const removed = { ...note, version: 3, isDeleted: true };
