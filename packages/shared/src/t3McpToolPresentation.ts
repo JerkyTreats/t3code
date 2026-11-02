@@ -70,7 +70,8 @@ export type T3McpToolSummaryAction =
   | "html-preview"
   | "html-render"
   | "canvas-read"
-  | "canvas-update";
+  | "canvas-update"
+  | "canvas-preview";
 
 export interface T3McpToolDefinition {
   readonly displayName: string;
@@ -373,6 +374,7 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   html_render: tool(["Render", "Rendering", "Rendered", "an HTML page"], "html-render"),
   canvas_read: tool(["Read", "Reading", "Read", "the canvas"], "canvas-read"),
   canvas_update: tool(["Draw", "Drawing", "Drew", "on the canvas"], "canvas-update"),
+  canvas_preview: tool(["Preview", "Previewing", "Previewed", "the canvas"], "canvas-preview"),
 };
 
 export const T3_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(T3_MCP_TOOLS));

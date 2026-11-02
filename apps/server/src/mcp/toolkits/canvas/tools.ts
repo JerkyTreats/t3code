@@ -102,4 +102,44 @@ export const CanvasUpdateTool = Tool.make("canvas_update", {
   .annotate(Tool.Idempotent, false)
   .annotate(Tool.OpenWorld, false);
 
-export const CanvasToolkit = Toolkit.make(CanvasReadTool, CanvasUpdateTool);
+export const CanvasPreviewTool = Tool.make("canvas_preview", {
+  description:
+    "See this thread's canvas as a picture, as the user sees it: turns as titled boxes, your shapes, cards rendered, and the user's marks in yellow. By default it shows the latest turn and what lies just above and well below it; pass drawingId for one drawing, or region for a box in canvas coordinates. Call it after canvas_update when layout matters, and fix what it shows. clippedCards lists markdown cards whose text does not fit, with the height that would fit it. If it says the browser is still installing, call again in a minute.",
+  parameters: Schema.Struct({
+    drawingId: Schema.optional(Schema.String).annotate({
+      description: "Show just this drawing and a margin around it.",
+    }),
+    region: Schema.optional(Schema.Struct(CanvasBox)).annotate({
+      description:
+        "Show this box of the canvas, in canvas coordinates as canvas_read reports them.",
+    }),
+  }),
+  success: Schema.Struct({
+    region: Schema.Struct(CanvasBox),
+    scale: Schema.Number,
+    clippedCards: Schema.Array(
+      Schema.Struct({ id: Schema.String, height: Schema.Number, neededHeight: Schema.Number }),
+    ),
+    screenshot: Schema.Struct({
+      mimeType: Schema.Literal("image/png"),
+      data: Schema.String,
+      width: Schema.Int,
+      height: Schema.Int,
+    }),
+  }),
+  failure: OrchestratorMcpFailure,
+  failureMode: "return",
+  dependencies: [
+    McpInvocationContext.McpInvocationContext,
+    ThreadManagementService.ThreadManagementService,
+    ThreadCanvasStore.ThreadCanvasStore,
+    HtmlRender.HtmlRender,
+  ],
+})
+  .annotate(Tool.Title, "Preview canvas")
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, false);
+
+export const CanvasToolkit = Toolkit.make(CanvasReadTool, CanvasUpdateTool, CanvasPreviewTool);
