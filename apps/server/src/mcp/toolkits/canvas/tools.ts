@@ -80,13 +80,16 @@ export const CanvasUpdateTool = Tool.make("canvas_update", {
     resetMoves: Schema.optional(Schema.Boolean).annotate({
       description: "Replace the positions of boxes the user dragged.",
     }),
-    place: Schema.optional(Schema.Literal("belowLatestTurn")).annotate({
+    place: Schema.optional(Schema.Literals(["besideLatestTurn", "belowLatestTurn"])).annotate({
       description:
-        "Put the drawing below the latest turn and keep it there as the turn grows. A drawing of only cards fills rows left to right in the order listed, so leave out their x and y. Otherwise coordinates stay relative to the drawing.",
+        "besideLatestTurn puts the drawing level with the latest turn, left or right of the column the turns stack in, and keeps it level as turns grow. belowLatestTurn puts it in that column under the turn, so the next turns land after it; use it only when asked. A drawing of only cards fills rows left to right in the order listed, so leave out their x and y.",
+    }),
+    moveToLatestTurn: Schema.optional(Schema.Array(Schema.String)).annotate({
+      description:
+        "Shape ids to bring beside the latest turn, in rows in this order, leaving the rest of the drawing where it is. Use it to show the user what changed.",
     }),
     moveBelowLatestTurn: Schema.optional(Schema.Array(Schema.String)).annotate({
-      description:
-        "Shape ids to bring below the latest turn, in rows in this order, leaving the rest of the drawing where it is. Use it to show the user what changed; those shapes then stay below that turn.",
+      description: "As moveToLatestTurn, but under the turn in its column. Use it only when asked.",
     }),
   }),
   success: Schema.Struct({

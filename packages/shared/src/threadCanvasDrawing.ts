@@ -141,13 +141,15 @@ export function arrowEnds(placed: PlacedShape, boxes: ReadonlyMap<string, Placed
 }
 
 /**
- * A piece placed below a turn: it sits `dy` under that turn's bottom edge, however the turn grows
- * or shrinks. `bottom` and `x` record where the piece was put, so one the user dragged away no
- * longer matches its anchor and stays where they left it.
+ * A piece placed against a turn: it sits `dy` from that turn's top edge (beside the turn) or its
+ * bottom edge (below it), however the turns above grow or shrink. `at` is that edge's y and `x`
+ * the piece's x when it was put there, so one the user dragged away no longer matches its anchor
+ * and stays where they left it.
  */
 export interface TurnAnchor {
   readonly turn: string;
-  readonly bottom: number;
+  readonly edge: "top" | "bottom";
+  readonly at: number;
   readonly dy: number;
   readonly x: number;
 }
@@ -159,12 +161,14 @@ export function turnAnchorOf(element: { readonly customData?: unknown }): TurnAn
   const anchor =
     typeof data === "object" && data !== null ? Reflect.get(data, TURN_ANCHOR_KEY) : null;
   if (typeof anchor !== "object" || anchor === null) return null;
-  const { turn, bottom, dy, x } = anchor as Record<string, unknown>;
+  const { turn, edge, at, bottom, dy, x } = anchor as Record<string, unknown>;
+  // Anchors written before beside-placement name only the bottom edge, as `bottom`.
+  const edgeY = typeof at === "number" ? at : bottom;
   return typeof turn === "string" &&
-    typeof bottom === "number" &&
+    typeof edgeY === "number" &&
     typeof dy === "number" &&
     typeof x === "number"
-    ? { turn, bottom, dy, x }
+    ? { turn, edge: edge === "top" ? "top" : "bottom", at: edgeY, dy, x }
     : null;
 }
 
@@ -173,18 +177,61 @@ export function holdsTurnAnchor(
   element: { readonly x: number; readonly y: number },
   anchor: TurnAnchor,
 ) {
-  return (
-    Math.abs(element.x - anchor.x) < 1 && Math.abs(element.y - (anchor.bottom + anchor.dy)) < 1
-  );
+  return Math.abs(element.x - anchor.x) < 1 && Math.abs(element.y - (anchor.at + anchor.dy)) < 1;
 }
 
-/** The anchor that puts an element where it is now, under a turn whose bottom edge is `bottom`. */
-export function anchorBelow(
+/** The anchor that keeps an element where it is now against a turn edge that lies at `at`. */
+export function anchorTo(
   element: { readonly x: number; readonly y: number },
   turn: string,
-  bottom: number,
+  edge: TurnAnchor["edge"],
+  at: number,
 ): TurnAnchor {
-  return { turn, bottom, dy: element.y - bottom, x: element.x };
+  return { turn, edge, at, dy: element.y - at, x: element.x };
+}
+
+/** A turn's edge that an anchor follows. */
+export function turnEdgeY(
+  turn: { readonly y: number; readonly height: number },
+  edge: TurnAnchor["edge"],
+) {
+  return edge === "top" ? turn.y : turn.y + turn.height;
+}
+
+/**
+ * The lane a thread's turns stack in, and the corridor below its latest turn where its next turns
+ * will land. Drawings keep out of the corridor so the turns read as one unbroken spine. A canvas
+ * has one spine per conversation on it; today that is the thread's own.
+ */
+export interface TurnSpine {
+  readonly left: number;
+  readonly right: number;
+  readonly latestTurn: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+}
+
+/** The column every new turn lands in, centred on x = 0, at its default width. */
+const SPINE_COLUMN_WIDTH_PX = 860;
+
+export function turnSpineOf(
+  turns: ReadonlyArray<{
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  }>,
+): TurnSpine | null {
+  const latestTurn = [...turns].sort((left, right) => left.y - right.y).at(-1);
+  if (latestTurn === undefined) return null;
+  return {
+    left: Math.min(latestTurn.x, -SPINE_COLUMN_WIDTH_PX / 2),
+    right: Math.max(latestTurn.x + latestTurn.width, SPINE_COLUMN_WIDTH_PX / 2),
+    latestTurn,
+  };
 }
 
 /**
