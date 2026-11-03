@@ -5,7 +5,9 @@ import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts"
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as Exit from "effect/Exit";
 import * as Base64 from "effect/encoding/Base64";
 import * as Fiber from "effect/Fiber";
@@ -49,6 +51,7 @@ const layerHtmlRender = (
     Layer.provideMerge(NodeServices.layer),
   );
 const layerTest = layerHtmlRender();
+const isViewportHeightError = Schema.is(HtmlRender.HtmlRenderViewportHeightError);
 
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
@@ -112,6 +115,24 @@ describe("HtmlRender", () => {
       );
       yield* htmlRender.prepare(`<style>${"1".repeat(200_000)}vx</style>`);
     }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect(
+    "lets T3's own preview pages, which carry the app's stylesheet, use viewport units",
+    () =>
+      Effect.gen(function* () {
+        const htmlRender = yield* HtmlRender.HtmlRender;
+        const html = "<style>.h-dvh{height:100dvh}</style><p>canvas</p>";
+        const agentPage = yield* htmlRender.preview({ html }).pipe(Effect.flip);
+        expect(agentPage).toBeInstanceOf(HtmlRender.HtmlRenderViewportHeightError);
+        const ownPage = yield* htmlRender.preview({ html, ownPage: true }).pipe(Effect.exit);
+        expect(
+          ownPage._tag === "Failure" &&
+            ownPage.cause.reasons.some(
+              (reason) => Cause.isFailReason(reason) && isViewportHeightError(reason.error),
+            ),
+        ).toBe(false);
+      }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect("inlines an SVG behind processing instructions and a doctype subset", () =>

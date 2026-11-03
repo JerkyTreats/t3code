@@ -140,7 +140,7 @@ export const CanvasPreviewTool = Tool.make("canvas_preview", {
     }),
   }),
   failure: OrchestratorMcpFailure,
-  failureMode: "return",
+  // Image tools report failure as an error result: a returned failure has no screenshot to send.
   dependencies: [
     McpInvocationContext.McpInvocationContext,
     ThreadManagementService.ThreadManagementService,

@@ -100,6 +100,15 @@ it.effect("returns the canvas preview as image content", () =>
         screenshot: { mimeType: "image/png", width: 1000, height: 800 },
       });
       expect(JSON.stringify(shot.structuredContent)).not.toContain('"data"');
+
+      const missing = yield* server
+        .callTool({ name: "canvas_preview", arguments: { drawingId: "nope" } })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+      expect(missing.isError).toBe(true);
+      expect(JSON.stringify(missing.content)).toContain("Nothing on the canvas matches");
     }),
   ).pipe(Effect.provide(layerTest)),
 );

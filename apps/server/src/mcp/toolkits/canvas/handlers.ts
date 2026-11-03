@@ -66,7 +66,7 @@ const handlers = {
         htmlOf: (attachmentId) => pages.get(attachmentId) ?? null,
       });
       const shot = yield* htmlRender
-        .preview({ html: page.html, width: page.width })
+        .preview({ html: page.html, width: page.width, ownPage: true })
         .pipe(Effect.mapError(previewFailure));
       const report = shot.consoleMessages.find((message) =>
         message.text.startsWith(CANVAS_PREVIEW_MEASURE_PREFIX),
