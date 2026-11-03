@@ -94,12 +94,12 @@ describe("planDrawing", () => {
     expect(live(elements, "d/a")?.customData).toMatchObject({ t3Drawing: { turn: "1" } });
   });
 
-  it("drops a drawing too wide to sit beside the turn under it", () => {
+  it("puts even a wide drawing beside the turn, out of the spine its next turns land in", () => {
     const { report } = plan(empty, {
       drawingId: "d",
       shapes: [{ ...box("a", 0, 0), width: 1200 }],
     });
-    expect(report.placed).toMatchObject({ x: -600, y: 332 });
+    expect(report.placed).toMatchObject({ x: 430 + 32, y: 0 });
   });
 
   it("takes the free side of a note it was asked to land near", () => {
@@ -335,7 +335,13 @@ describe("a response region below the latest turn", () => {
       place: "belowLatestTurn",
     });
     const a = live(elements, "r/a")!;
-    expect(anchorOf(elements, "r/a")).toEqual({ turn: "1", bottom: 300, dy: 32, x: a.x });
+    expect(anchorOf(elements, "r/a")).toEqual({
+      turn: "1",
+      edge: "bottom",
+      at: 300,
+      dy: 32,
+      x: a.x,
+    });
   });
 
   it("keeps the anchor on a later call, and drops it once the user drags the card", () => {
@@ -382,13 +388,100 @@ describe("a response region below the latest turn", () => {
     const moved = live(elements, "r/a")!;
     const dy = Number(moved.y) - 300;
     expect(dy).toBeGreaterThanOrEqual(32);
-    expect(anchorOf(elements, "r/a")).toEqual({ turn: "1", bottom: 300, dy, x: moved.x });
+    expect(anchorOf(elements, "r/a")).toEqual({
+      turn: "1",
+      edge: "bottom",
+      at: 300,
+      dy,
+      x: moved.x,
+    });
     expect(anchorOf(elements, "mark")).toEqual({
       turn: "1",
-      bottom: 300,
+      edge: "bottom",
+      at: 300,
       dy: dy + 10,
       x: Number(moved.x) + 10,
     });
+  });
+});
+
+describe("a drawing beside the turn spine", () => {
+  const card = (id: string): ThreadCanvasShape => ({
+    id,
+    type: "markdown",
+    text: id,
+    x: 0,
+    y: 0,
+    width: 600,
+    height: 400,
+  });
+  const anchorOf = (elements: ReadonlyArray<ThreadCanvasElement>, id: string) =>
+    (live(elements, id)?.customData as { t3Below?: unknown } | undefined)?.t3Below;
+
+  it("lands level with the latest turn, right of the spine, anchored to the turn's top", () => {
+    const { elements } = plan(empty, {
+      drawingId: "r",
+      shapes: [card("a"), card("b")],
+      place: "besideLatestTurn",
+    });
+    expect(live(elements, "r/a")).toMatchObject({ x: 462, y: 0 });
+    expect(live(elements, "r/b")).toMatchObject({ x: 462 + 600 + 32, y: 0 });
+    expect(anchorOf(elements, "r/a")).toEqual({ turn: "1", edge: "top", at: 0, dy: 0, x: 462 });
+  });
+
+  it("puts cards sent without coordinates in rows, not on top of each other", () => {
+    const loose = (id: string): ThreadCanvasShape => ({ id, type: "markdown", text: id });
+    const { report } = plan(empty, { drawingId: "r", shapes: [loose("a"), loose("b")] });
+    expect(report.overlaps).toEqual([]);
+    expect(report.placed).toMatchObject({ width: 480 + 32 + 480 });
+  });
+
+  it("takes the nearer side once it slides clear of what is already there", () => {
+    const wall: ThreadCanvasElement = {
+      id: "wall",
+      type: "rectangle",
+      version: 1,
+      x: 462,
+      y: -100,
+      width: 3000,
+      height: 900,
+    };
+    const { report } = plan(
+      { ...empty, elements: [turn, wall] },
+      { drawingId: "r", shapes: [card("a")], place: "besideLatestTurn" },
+    );
+    expect(report.placed).toMatchObject({ x: -430 - 32 - 600, y: 0 });
+  });
+
+  it("keeps a drawing near a note out of the corridor below the latest turn", () => {
+    const note = { id: "note", type: "text", text: "hi", x: -100, y: 320, width: 200, height: 25 };
+    const blockers = [
+      { id: "l", type: "rectangle", x: -1000, y: 300, width: 890, height: 600 },
+      { id: "r", type: "rectangle", x: 110, y: 300, width: 890, height: 600 },
+    ];
+    const { report } = plan(
+      { ...empty, elements: [turn, note, ...blockers] },
+      { drawingId: "d", shapes: [box("a", 0, 0)], near: "note" },
+    );
+    expect(Number(report.placed?.x)).toBeGreaterThanOrEqual(430);
+  });
+
+  it("brings named cards beside the latest turn and leaves the rest", () => {
+    const first = applied(empty, { drawingId: "r", shapes: [card("a"), card("b")] });
+    const before = live(first.elements, "r/a")!;
+    const later: ThreadCanvasElement = {
+      ...turn,
+      id: "turn-box:2",
+      y: 2000,
+      customData: { t3Turn: "2", t3TurnTitle: "Later" },
+    };
+    const { elements } = plan(
+      { ...first, elements: [...first.elements, later] },
+      { drawingId: "r", shapes: [card("a"), card("b")], moveToLatestTurn: ["b"] },
+    );
+    expect(live(elements, "r/a")).toMatchObject({ x: before.x, y: before.y });
+    expect(live(elements, "r/b")).toMatchObject({ y: 2000 });
+    expect(anchorOf(elements, "r/b")).toMatchObject({ turn: "2", edge: "top", at: 2000, dy: 0 });
   });
 });
 

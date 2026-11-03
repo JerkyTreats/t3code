@@ -1,7 +1,7 @@
 import dagre from "@dagrejs/dagre";
 import type { ThreadCanvasElement, ThreadCanvasScene, ThreadCanvasShape } from "@t3tools/contracts";
 import {
-  anchorBelow,
+  anchorTo,
   arrowEnds,
   buildDrawingElements,
   drawingElementId,
@@ -13,16 +13,17 @@ import {
   TURN_ANCHOR_KEY,
   type TurnAnchor,
   turnAnchorOf,
+  turnSpineOf,
 } from "@t3tools/shared/threadCanvasDrawing";
 
 const GAP_PX = 32;
 const NODE_GAP_PX = 60;
 const RANK_GAP_PX = 110;
 const TITLE_GAP_PX = 48;
-// The widest drawing that still sits beside a turn on an ordinary screen.
-const MAX_WIDTH_BESIDE_TURN_PX = 900;
 // The widest row of cards below a turn: three wide cards side by side.
 const MAX_ROW_WIDTH_PX = 3400;
+// How far the corridor below the latest turn reaches: past anything a canvas holds.
+const CORRIDOR_DEPTH_PX = 1_000_000;
 // How far a drawing sits inside a box the user drew for it, from its edges and its title.
 const HOLDER_PADDING_PX = 24;
 const HOLDER_TYPES = new Set(["rectangle", "ellipse", "diamond", "frame"]);
@@ -33,9 +34,14 @@ export interface DrawInput {
   readonly near?: string | undefined;
   readonly layout?: "right" | "down" | undefined;
   readonly resetMoves?: boolean | undefined;
-  /** Puts the whole drawing below the latest turn, wherever it was. Cards alone fill rows. */
-  readonly place?: "belowLatestTurn" | undefined;
-  /** Shape ids to bring below the latest turn, leaving the rest of the drawing where it is. */
+  /**
+   * Puts the whole drawing beside the latest turn, clear of the spine its next turns land in, or
+   * below it, in the spine. Cards alone fill rows.
+   */
+  readonly place?: "besideLatestTurn" | "belowLatestTurn" | undefined;
+  /** Shape ids to bring beside the latest turn, leaving the rest of the drawing where it is. */
+  readonly moveToLatestTurn?: ReadonlyArray<string> | undefined;
+  /** Shape ids to bring below the latest turn, into the spine. */
   readonly moveBelowLatestTurn?: ReadonlyArray<string> | undefined;
   /** Id of a box the user drew to hold this drawing: it lands inside, and the box grows to fit. */
   readonly inside?: string | undefined;
@@ -56,6 +62,8 @@ interface Named extends Box {
 const numberOf = (value: unknown) => (typeof value === "number" ? value : 0);
 const recordOf = (value: unknown) =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+const turnEdgeOf = (turn: Box, edge: TurnAnchor["edge"]) =>
+  edge === "top" ? turn.y : turn.y + turn.height;
 const boxOf = (element: ThreadCanvasElement): Box => ({
   x: numberOf(element.x),
   y: numberOf(element.y),
@@ -178,6 +186,32 @@ function slideDown(obstacles: ReadonlyArray<Box>, spot: Box) {
   }
 }
 
+/** Slides a box sideways, away from the spine, past whatever it would cover. */
+function slideOut(obstacles: ReadonlyArray<Box>, spot: Box, direction: 1 | -1) {
+  let { x } = spot;
+  for (;;) {
+    const blocker = obstacles.find((box) => overlaps({ ...spot, x }, box));
+    if (blocker === undefined) return { ...spot, x };
+    x = direction === 1 ? blocker.x + blocker.width + GAP_PX : blocker.x - spot.width - GAP_PX;
+  }
+}
+
+/**
+ * A spot level with the latest turn, to the right or left of the spine, whichever lies nearer
+ * once it slides clear of what is already there. Without turns, it goes where a first turn would.
+ */
+function besideSpine(
+  obstacles: ReadonlyArray<Box>,
+  spine: ReturnType<typeof turnSpineOf>,
+  size: { readonly width: number; readonly height: number },
+) {
+  if (spine === null) return slideDown(obstacles, { ...size, x: -size.width / 2, y: 0 });
+  const y = spine.latestTurn.y;
+  const right = slideOut(obstacles, { ...size, x: spine.right + GAP_PX, y }, 1);
+  const left = slideOut(obstacles, { ...size, x: spine.left - GAP_PX - size.width, y }, -1);
+  return right.x - spine.right <= spine.left - (left.x + left.width) ? right : left;
+}
+
 /**
  * Cards in rows, left to right in the order given, each row as tall as its tallest card, so no
  * two overlap whatever sizes the agent picked.
@@ -203,20 +237,22 @@ function shelve(
   return positions;
 }
 
-/** A free spot for a new drawing: beside what asked for it, or under it when too wide. */
-function placeDrawing(obstacles: ReadonlyArray<Box>, anchor: Box | null, near: boolean, size: Box) {
+/**
+ * A free spot for a new drawing: beside the note that asked for it, or beside the spine. Neither
+ * lands in the corridor where the next turns go.
+ */
+function placeDrawing(
+  obstacles: ReadonlyArray<Box>,
+  spine: ReturnType<typeof turnSpineOf>,
+  near: Box | null,
+  size: Box,
+) {
+  if (near === null) return besideSpine(obstacles, spine, size);
   const free = (spot: Box) => !obstacles.some((box) => overlaps(spot, box));
-  const slide = (spot: Box) => slideDown(obstacles, spot);
-  if (anchor === null) return slide({ ...size, x: -size.width / 2, y: 0 });
-  const right = { ...size, x: anchor.x + anchor.width + GAP_PX, y: anchor.y };
-  if (near) {
-    const left = { ...size, x: anchor.x - size.width - GAP_PX, y: anchor.y };
-    const under = { ...size, x: anchor.x, y: anchor.y + anchor.height + GAP_PX };
-    return [right, left].find(free) ?? slide(under);
-  }
-  return size.width <= MAX_WIDTH_BESIDE_TURN_PX
-    ? slide(right)
-    : slide({ ...size, x: -size.width / 2, y: anchor.y + anchor.height + GAP_PX });
+  const right = { ...size, x: near.x + near.width + GAP_PX, y: near.y };
+  const left = { ...size, x: near.x - size.width - GAP_PX, y: near.y };
+  const under = { ...size, x: near.x, y: near.y + near.height + GAP_PX };
+  return [right, left, under].find(free) ?? slideOut(obstacles, right, 1);
 }
 
 function segmentsCross(
@@ -282,7 +318,9 @@ export function planDrawing(input: {
   const laidOut =
     draw.layout !== undefined
       ? layoutShapes(shapes, draw.layout)
-      : (draw.place === "belowLatestTurn" || holder !== undefined) &&
+      : (draw.place !== undefined ||
+            holder !== undefined ||
+            shapes.every((shape) => shape.x === undefined && shape.y === undefined)) &&
           shapes.length > 0 &&
           shapes.every(isCardShape)
         ? shelve(
@@ -320,13 +358,27 @@ export function planDrawing(input: {
   const solidObstacles = others
     .filter((element) => element.type !== "arrow" && element.type !== "line")
     .map(boxOf);
+  const spine = turnSpineOf(turns.map(boxOf));
+  // Where the next turns land. Only a drawing asked to go below the turn may sit in it.
+  const corridor =
+    spine === null
+      ? []
+      : [
+          {
+            x: spine.left,
+            y: spine.latestTurn.y + spine.latestTurn.height,
+            width: spine.right - spine.left,
+            height: CORRIDOR_DEPTH_PX,
+          },
+        ];
+  const besideLatest = (size: { readonly width: number; readonly height: number }) =>
+    besideSpine([...solidObstacles, ...corridor], spine, size);
   const belowLatest = (size: { readonly width: number; readonly height: number }) => {
     const top =
       latestTurn === undefined ? 0 : boxOf(latestTurn).y + boxOf(latestTurn).height + GAP_PX;
     return { x: -size.width / 2, y: top, width: size.width, height: size.height };
   };
   const nearElement = live.find((element) => element.id === draw.near);
-  const anchor = nearElement ?? latestTurn;
   // A drawing whose every shape is new is a new drawing: it starts where the old one sat,
   // but clear of the user's marks rather than over them.
   const previousShapes = new Set(
@@ -339,18 +391,27 @@ export function planDrawing(input: {
       ? { ...local, ...insideOf(holder, live) }
       : draw.place === "belowLatestTurn"
         ? slideDown(solidObstacles, belowLatest(local))
-        : origin === null
-          ? placeDrawing(
-              others
-                .filter((element) => element.type !== "arrow" && element !== nearElement)
-                .map(boxOf),
-              anchor === undefined ? null : boxOf(anchor),
-              nearElement !== undefined,
-              local,
-            )
-          : replacesAll
-            ? slideDown(solidObstacles, { ...local, x: local.x + origin.x, y: local.y + origin.y })
-            : null;
+        : draw.place === "besideLatestTurn"
+          ? besideLatest(local)
+          : origin === null
+            ? placeDrawing(
+                [
+                  ...others
+                    .filter((element) => element.type !== "arrow" && element !== nearElement)
+                    .map(boxOf),
+                  ...corridor,
+                ],
+                spine,
+                nearElement === undefined ? null : boxOf(nearElement),
+                local,
+              )
+            : replacesAll
+              ? slideDown(solidObstacles, {
+                  ...local,
+                  x: local.x + origin.x,
+                  y: local.y + origin.y,
+                })
+              : null;
   const offset =
     spot === null ? (origin ?? { x: 0, y: 0 }) : { x: spot.x - local.x, y: spot.y - local.y };
   const laid: ReadonlyArray<PlacedShape> = localPieces.map((piece) => {
@@ -361,27 +422,44 @@ export function planDrawing(input: {
       y: pin?.y ?? piece.localY + offset.y,
     };
   });
-  const broughtBelow = new Set(
-    (draw.moveBelowLatestTurn ?? []).filter((id) =>
-      laid.some((piece) => piece.shape.id === id && !hasLines(piece.shape)),
+  const movable = (ids: ReadonlyArray<string> | undefined) =>
+    new Set(
+      (ids ?? []).filter((id) =>
+        laid.some((piece) => piece.shape.id === id && !hasLines(piece.shape)),
+      ),
+    );
+  const broughtBelow = movable(draw.moveBelowLatestTurn);
+  const broughtBeside = movable(draw.moveToLatestTurn);
+  const placed = bringTo(
+    bringTo(laid, broughtBelow, (block, staying) =>
+      slideDown([...solidObstacles, ...staying], belowLatest(block)),
     ),
+    broughtBeside,
+    (block, staying) => besideSpine([...solidObstacles, ...corridor, ...staying], spine, block),
   );
-  const placed = bringBelow(laid, [...broughtBelow], solidObstacles, belowLatest);
-  // What lands below the latest turn is anchored to it, so it stays below as the turn grows.
-  const anchoredShapes = new Set(
+  // What lands against the latest turn is anchored to it: beside it, to its top edge, so it stays
+  // level with the turn; below it, to its bottom edge, so it stays below as the turn grows.
+  const placedHere = placed
+    .filter((piece) => !pins.has(piece.shape.id))
+    .map((piece) => piece.shape.id);
+  const anchoredShapes = new Map<string, TurnAnchor["edge"]>(
     holder !== undefined
       ? []
-      : draw.place === "belowLatestTurn"
-        ? placed.filter((piece) => !pins.has(piece.shape.id)).map((piece) => piece.shape.id)
-        : broughtBelow,
+      : [
+          ...(draw.place === undefined
+            ? []
+            : placedHere.map(
+                (id) => [id, draw.place === "besideLatestTurn" ? "top" : "bottom"] as const,
+              )),
+          ...[...broughtBelow].map((id) => [id, "bottom"] as const),
+          ...[...broughtBeside].map((id) => [id, "top"] as const),
+        ],
   );
   const versions = new Map(
     scene.elements.map((element) => [element.id, numberOf(element.version)]),
   );
   const previousTurn = existing.map((element) => drawingOf(element)?.turn ?? null).find(Boolean);
   const turnId = recordOf(latestTurn?.customData).t3Turn;
-  const latestBottom =
-    latestTurn === undefined ? null : boxOf(latestTurn).y + boxOf(latestTurn).height;
   const existingById = new Map(existing.map((element) => [String(element.id), element]));
   const anchors = new Map<string, TurnAnchor>();
   // Excalidraw moves a group as one, so the user's box carries what it holds when dragged.
@@ -406,12 +484,16 @@ export function planDrawing(input: {
           : (element.groupIds ?? []);
     element = { ...element, groupIds };
     const kept = before === undefined ? null : turnAnchorOf(before);
+    const edge = anchoredShapes.get(piece);
+    // A label moves with its shape, so only shapes carry anchors.
     const anchor =
-      anchoredShapes.has(piece) && typeof turnId === "string" && latestBottom !== null
-        ? anchorBelow(boxOf(element), turnId, latestBottom)
-        : kept !== null && holdsTurnAnchor(boxOf(element), kept)
-          ? kept
-          : null;
+      typeof element.containerId === "string"
+        ? null
+        : edge !== undefined && typeof turnId === "string" && latestTurn !== undefined
+          ? anchorTo(boxOf(element), turnId, edge, turnEdgeOf(boxOf(latestTurn), edge))
+          : kept !== null && holdsTurnAnchor(boxOf(element), kept)
+            ? kept
+            : null;
     if (anchor === null) return element;
     anchors.set(String(element.id), anchor);
     return {
@@ -611,7 +693,7 @@ function carryMarks(input: {
         t3Follow: { id: move.id, drawing: move.drawing, written: now },
         ...(anchor === undefined
           ? {}
-          : { [TURN_ANCHOR_KEY]: anchorBelow(at, anchor.turn, anchor.bottom) }),
+          : { [TURN_ANCHOR_KEY]: anchorTo(at, anchor.turn, anchor.edge, anchor.at) }),
       },
     };
   };
@@ -637,17 +719,15 @@ function carryMarks(input: {
 }
 
 /**
- * Moves the named pieces into rows below the latest turn, clear of everything else, and leaves
- * the rest of the drawing where it was. A moved piece then sits off the drawing's layout, so
- * later calls keep it where it landed, as they keep a box the user dragged.
+ * Moves the named pieces, in rows, to the spot `spotFor` finds for them, and leaves the rest of
+ * the drawing where it was. A moved piece then sits off the drawing's layout, so later calls keep
+ * it where it landed, as they keep a box the user dragged.
  */
-function bringBelow(
+function bringTo(
   laid: ReadonlyArray<PlacedShape>,
-  ids: ReadonlyArray<string>,
-  obstacles: ReadonlyArray<Box>,
-  belowLatest: (size: { readonly width: number; readonly height: number }) => Box,
+  wanted: ReadonlySet<string>,
+  spotFor: (block: Box, staying: ReadonlyArray<Box>) => Box,
 ): ReadonlyArray<PlacedShape> {
-  const wanted = new Set(ids);
   const moving = laid.filter((piece) => wanted.has(piece.shape.id) && !hasLines(piece.shape));
   if (moving.length === 0) return laid;
   const rows = shelve(
@@ -655,7 +735,7 @@ function bringBelow(
   );
   const block = boundsOf(moving.map((piece) => ({ ...piece, ...rows.get(piece.shape.id) })));
   const staying = laid.filter((piece) => !wanted.has(piece.shape.id) && !hasLines(piece.shape));
-  const spot = slideDown([...obstacles, ...staying], belowLatest(block));
+  const spot = spotFor(block, staying);
   return laid.map((piece) => {
     const position = rows.get(piece.shape.id);
     return position === undefined

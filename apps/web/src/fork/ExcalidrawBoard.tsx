@@ -335,7 +335,8 @@ const sameAnchor = (left: TurnAnchor | null, right: TurnAnchor | null) =>
   (left !== null &&
     right !== null &&
     left.turn === right.turn &&
-    left.bottom === right.bottom &&
+    left.edge === right.edge &&
+    left.at === right.at &&
     left.dy === right.dy &&
     left.x === right.x);
 

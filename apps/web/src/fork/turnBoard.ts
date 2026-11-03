@@ -1,4 +1,4 @@
-import { holdsTurnAnchor, type TurnAnchor } from "@t3tools/shared/threadCanvasDrawing";
+import { holdsTurnAnchor, type TurnAnchor, turnEdgeY } from "@t3tools/shared/threadCanvasDrawing";
 
 // T3's turn content sits inside its box, so the stroke and handles stay grabbable.
 export const TURN_INSET_PX = 12;
@@ -245,22 +245,24 @@ function growHolders(placed: MutableBox[]) {
 }
 
 /**
- * Puts each anchored box its anchor's distance below its turn, wherever the turn now ends, then
- * moves a region's cards down past any card above them that grew.
+ * Puts each anchored box its anchor's distance from its turn's top or bottom edge, wherever that
+ * edge now lies, then moves a region's cards down past any card above them that grew.
  */
 function followAnchors(placed: MutableBox[]) {
-  const bottoms = new Map(
-    placed.flatMap((box) => (box.turnId === null ? [] : [[box.turnId, box.y + box.height]])),
+  const turnBoxes = new Map(
+    placed.flatMap((box) => (box.turnId === null ? [] : [[box.turnId, box] as const])),
   );
   const regions = new Map<string, MutableBox[]>();
   for (const box of placed) {
     const anchor = box.anchor;
-    if (anchor == null) continue;
-    const bottom = bottoms.get(anchor.turn);
-    if (bottom === undefined) continue;
-    box.y = bottom + anchor.dy;
-    box.anchor = { ...anchor, bottom };
-    if (box.card === true) regions.set(anchor.turn, [...(regions.get(anchor.turn) ?? []), box]);
+    const turn = anchor == null ? undefined : turnBoxes.get(anchor.turn);
+    if (anchor == null || turn === undefined) continue;
+    const at = turnEdgeY(turn, anchor.edge);
+    box.y = at + anchor.dy;
+    box.anchor = { ...anchor, at };
+    if (box.card !== true) continue;
+    const region = `${anchor.turn}:${anchor.edge}`;
+    regions.set(region, [...(regions.get(region) ?? []), box]);
   }
   for (const cards of regions.values()) {
     const settled: MutableBox[] = [];
@@ -271,7 +273,7 @@ function followAnchors(placed: MutableBox[]) {
           card.y = above.y + above.height + TURN_GAP_PX;
         }
       }
-      if (card.anchor != null) card.anchor = { ...card.anchor, dy: card.y - card.anchor.bottom };
+      if (card.anchor != null) card.anchor = { ...card.anchor, dy: card.y - card.anchor.at };
       settled.push(card);
     }
   }

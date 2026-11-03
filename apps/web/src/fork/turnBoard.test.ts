@@ -127,7 +127,7 @@ describe("layoutTurns with a response region", () => {
     y,
     width: 400,
     height,
-    anchor: { turn: "a", bottom, dy: y - bottom, x },
+    anchor: { turn: "a", edge: "bottom", at: bottom, dy: y - bottom, x },
   });
 
   it("keeps a card that arrived inside a grown turn below it", () => {
@@ -138,7 +138,7 @@ describe("layoutTurns with a response region", () => {
     const bottom = 600 + 2 * TURN_INSET_PX;
     expect(boxFor(boxes, "c")).toMatchObject({
       y: bottom + 32,
-      anchor: { turn: "a", bottom, dy: 32 },
+      anchor: { turn: "a", at: bottom, dy: 32 },
     });
   });
 
@@ -212,7 +212,7 @@ describe("layoutTurns with labels", () => {
       ...mark("d/box", -200, bottom + 32),
       width: 400,
       height: 200,
-      anchor: { turn: "a", bottom, dy: 32, x: -200 },
+      anchor: { turn: "a", edge: "bottom", at: bottom, dy: 32, x: -200 },
     };
     // Refitting the text nudged the label off the anchor the server gave it.
     const label: BoardBox = {
@@ -220,7 +220,7 @@ describe("layoutTurns with labels", () => {
       width: 120,
       height: 30,
       container: "d/box",
-      anchor: { turn: "a", bottom, dy: 80, x: -63 },
+      anchor: { turn: "a", edge: "bottom", at: bottom, dy: 80, x: -63 },
     };
     const boxes = layoutTurns([turn!, shape, label], [measured("a", 1300)]);
     const grownBottom = 1300 + 2 * TURN_INSET_PX;
@@ -238,5 +238,22 @@ describe("layoutTurns with labels", () => {
     };
     const boxes = layoutTurns([shape, label], []);
     expect(boxFor(boxes, "d/box/label")).toMatchObject({ x: 150, y: 2080 });
+  });
+});
+
+describe("layoutTurns with a region beside a turn", () => {
+  it("keeps the region level with the turn's top as turns above it grow, whatever its own height", () => {
+    const start = layoutTurns([], [measured("a", 100), measured("b", 100)]);
+    const b = boxFor(start, "b");
+    const beside: BoardBox = {
+      ...mark("r/card", 462, b.y),
+      width: 600,
+      height: 900,
+      card: true,
+      anchor: { turn: "b", edge: "top", at: b.y, dy: 0, x: 462 },
+    };
+    const grown = layoutTurns([...start, beside], [measured("a", 700), measured("b", 1500)]);
+    expect(boxFor(grown, "r/card").y).toBe(boxFor(grown, "b").y);
+    expect(boxFor(grown, "r/card").y).toBe(b.y + 600);
   });
 });
