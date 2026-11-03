@@ -145,6 +145,11 @@ export class HtmlRender extends Context.Service<
       readonly html: string;
       readonly width?: number | undefined;
       readonly appearance?: ThemeAppearance | undefined;
+      /**
+       * A page T3 built itself, like a canvas preview carrying the app's stylesheet. Its
+       * screenshot is not fitted to its height, so viewport height units are harmless in it.
+       */
+      readonly ownPage?: boolean | undefined;
     }) => Effect.Effect<
       HtmlPreview,
       | Exclude<HtmlRenderPrepareError, HtmlRenderImagesNotFoundError>
@@ -511,13 +516,14 @@ const make = Effect.gen(function* () {
     readonly html: string;
     readonly width?: number | undefined;
     readonly appearance?: ThemeAppearance | undefined;
+    readonly ownPage?: boolean | undefined;
   }) {
     const width = Math.min(
       MAX_PREVIEW_WIDTH,
       Math.max(MIN_PREVIEW_WIDTH, Math.round(input.width ?? HTML_RENDER_COLUMN_WIDTH)),
     );
     const appearance = input.appearance ?? "dark";
-    yield* rejectViewportHeight(input.html);
+    if (input.ownPage !== true) yield* rejectViewportHeight(input.html);
     const inlined = yield* inline(input.html);
     const executable = yield* previewBrowser.executable;
     const theme = htmlRenderTheme(
