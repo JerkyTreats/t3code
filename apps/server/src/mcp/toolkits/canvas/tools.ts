@@ -78,11 +78,11 @@ export const CanvasUpdateTool = Tool.make("canvas_update", {
     }),
     place: Schema.optional(Schema.Literal("belowLatestTurn")).annotate({
       description:
-        "Move the whole drawing below the latest turn, clear of everything there. Coordinates stay relative to the drawing.",
+        "Put the drawing below the latest turn and keep it there as the turn grows. A drawing of only cards fills rows left to right in the order listed, so leave out their x and y. Otherwise coordinates stay relative to the drawing.",
     }),
     moveBelowLatestTurn: Schema.optional(Schema.Array(Schema.String)).annotate({
       description:
-        "Shape ids to bring below the latest turn in one row, leaving the rest of the drawing where it is. Use it to show the user what changed; those shapes then stay where they landed.",
+        "Shape ids to bring below the latest turn, in rows in this order, leaving the rest of the drawing where it is. Use it to show the user what changed; those shapes then stay below that turn.",
     }),
   }),
   success: Schema.Struct({

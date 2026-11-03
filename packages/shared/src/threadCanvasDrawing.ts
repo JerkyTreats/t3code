@@ -141,6 +141,53 @@ export function arrowEnds(placed: PlacedShape, boxes: ReadonlyMap<string, Placed
 }
 
 /**
+ * A piece placed below a turn: it sits `dy` under that turn's bottom edge, however the turn grows
+ * or shrinks. `bottom` and `x` record where the piece was put, so one the user dragged away no
+ * longer matches its anchor and stays where they left it.
+ */
+export interface TurnAnchor {
+  readonly turn: string;
+  readonly bottom: number;
+  readonly dy: number;
+  readonly x: number;
+}
+
+export const TURN_ANCHOR_KEY = "t3Below";
+
+export function turnAnchorOf(element: { readonly customData?: unknown }): TurnAnchor | null {
+  const data = element.customData;
+  const anchor =
+    typeof data === "object" && data !== null ? Reflect.get(data, TURN_ANCHOR_KEY) : null;
+  if (typeof anchor !== "object" || anchor === null) return null;
+  const { turn, bottom, dy, x } = anchor as Record<string, unknown>;
+  return typeof turn === "string" &&
+    typeof bottom === "number" &&
+    typeof dy === "number" &&
+    typeof x === "number"
+    ? { turn, bottom, dy, x }
+    : null;
+}
+
+/** Whether an element still sits where its anchor put it, rather than where the user dragged it. */
+export function holdsTurnAnchor(
+  element: { readonly x: number; readonly y: number },
+  anchor: TurnAnchor,
+) {
+  return (
+    Math.abs(element.x - anchor.x) < 1 && Math.abs(element.y - (anchor.bottom + anchor.dy)) < 1
+  );
+}
+
+/** The anchor that puts an element where it is now, under a turn whose bottom edge is `bottom`. */
+export function anchorBelow(
+  element: { readonly x: number; readonly y: number },
+  turn: string,
+  bottom: number,
+): TurnAnchor {
+  return { turn, bottom, dy: element.y - bottom, x: element.x };
+}
+
+/**
  * When the server last wrote an element: an agent's drawing (`t3Drawing`), or a user's mark it
  * carried along with the card under it (`t3Follow`). Null for anything it never wrote.
  */

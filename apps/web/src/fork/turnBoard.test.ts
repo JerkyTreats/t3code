@@ -115,3 +115,70 @@ describe("layoutTurns with drawings", () => {
     expect(boxFor(grown, "map/two").y).toBe(turnBottom + 400 + 200);
   });
 });
+
+describe("layoutTurns with a response region", () => {
+  const card = (key: string, x: number, y: number, height: number, bottom: number): BoardBox => ({
+    key,
+    turnId: null,
+    requestedWidth: null,
+    group: "region",
+    card: true,
+    x,
+    y,
+    width: 400,
+    height,
+    anchor: { turn: "a", bottom, dy: y - bottom, x },
+  });
+
+  it("keeps a card that arrived inside a grown turn below it", () => {
+    const [turn] = layoutTurns([], [measured("a", 600)]);
+    // The server placed the card under the turn as it was saved, 600 px shorter than now.
+    const stale = card("c", -200, 32 + 24, 300, 24);
+    const boxes = layoutTurns([turn!, stale], [measured("a", 600)]);
+    const bottom = 600 + 2 * TURN_INSET_PX;
+    expect(boxFor(boxes, "c")).toMatchObject({
+      y: bottom + 32,
+      anchor: { turn: "a", bottom, dy: 32 },
+    });
+  });
+
+  it("follows the turn as it grows and shrinks", () => {
+    const [turn] = layoutTurns([], [measured("a", 100)]);
+    const bottom = 100 + 2 * TURN_INSET_PX;
+    const start = [turn!, card("c", -200, bottom + 32, 300, bottom)];
+    const grown = layoutTurns(start, [measured("a", 500)]);
+    expect(boxFor(grown, "c").y).toBe(500 + 2 * TURN_INSET_PX + 32);
+    const shrunk = layoutTurns(grown, [measured("a", 50)]);
+    expect(boxFor(shrunk, "c").y).toBe(50 + 2 * TURN_INSET_PX + 32);
+  });
+
+  it("leaves a card the user dragged off its anchor", () => {
+    const [turn] = layoutTurns([], [measured("a", 100)]);
+    const bottom = 100 + 2 * TURN_INSET_PX;
+    const dragged = { ...card("c", -200, bottom + 32, 300, bottom), x: 1500, y: 40 };
+    const boxes = layoutTurns([turn!, dragged], [measured("a", 500)]);
+    expect(boxFor(boxes, "c")).toMatchObject({ x: 1500, y: 40, anchor: null });
+  });
+
+  it("moves a card down past a card above it that grew", () => {
+    const [turn] = layoutTurns([], [measured("a", 100)]);
+    const bottom = 100 + 2 * TURN_INSET_PX;
+    const top = { ...card("top", -200, bottom + 32, 300, bottom), height: 700 };
+    const under = card("under", -200, bottom + 32 + 300 + 32, 200, bottom);
+    const beside = card("beside", 400, bottom + 32 + 300 + 32, 200, bottom);
+    const boxes = layoutTurns([turn!, top, under, beside], [measured("a", 100)]);
+    expect(boxFor(boxes, "under")).toMatchObject({
+      y: bottom + 32 + 700 + 32,
+      anchor: { dy: 32 + 700 + 32 },
+    });
+    expect(boxFor(boxes, "beside").y).toBe(bottom + 32 + 300 + 32);
+  });
+
+  it("lands the next turn below the region", () => {
+    const [turn] = layoutTurns([], [measured("a", 100)]);
+    const bottom = 100 + 2 * TURN_INSET_PX;
+    const region = card("c", -200, bottom + 32, 300, bottom);
+    const boxes = layoutTurns([turn!, region], [measured("a", 100), measured("b", 100)]);
+    expect(boxFor(boxes, "b").y).toBe(bottom + 32 + 300 + TURN_GAP_PX);
+  });
+});
