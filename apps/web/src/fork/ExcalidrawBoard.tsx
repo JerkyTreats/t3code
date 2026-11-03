@@ -37,8 +37,19 @@ import {
   unseenSketchMarks,
   unseenMarks,
 } from "./canvasMarks";
-import { isStaleDrawingCopy } from "@t3tools/shared/threadCanvasDrawing";
-import { type CanvasCard, canvasCardsOf, onCanvasReveal, sameCanvasCards } from "./canvasCards";
+import {
+  isStaleDrawingCopy,
+  TURN_ANCHOR_KEY,
+  type TurnAnchor,
+  turnAnchorOf,
+} from "@t3tools/shared/threadCanvasDrawing";
+import {
+  type CanvasCard,
+  canvasCardsOf,
+  fittedCardHeights,
+  onCanvasReveal,
+  sameCanvasCards,
+} from "./canvasCards";
 import { forwardCardMiddleDrag } from "./cardMiddleDrag";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
@@ -217,10 +228,12 @@ function drawingGroupOf(customData: Record<string, unknown> | undefined) {
 }
 
 function asBoardBox(element: BoardElement): BoardBox {
-  const { t3Turn, t3TurnWidth } = element.customData ?? {};
+  const { t3Turn, t3TurnWidth, t3Card } = element.customData ?? {};
   return {
     key: element.id,
     group: drawingGroupOf(element.customData),
+    anchor: turnAnchorOf(element),
+    card: t3Card !== undefined,
     turnId: typeof t3Turn === "string" ? t3Turn : null,
     requestedWidth: typeof t3TurnWidth === "number" ? t3TurnWidth : null,
     x: element.x,
@@ -296,11 +309,33 @@ function measureCards(turnBoard: TurnBoard) {
   }));
 }
 
-/** Applies the turn layout to the scene, restoring any turn box that was deleted. */
+const sameAnchor = (left: TurnAnchor | null, right: TurnAnchor | null) =>
+  left === right ||
+  (left !== null &&
+    right !== null &&
+    left.turn === right.turn &&
+    left.bottom === right.bottom &&
+    left.dy === right.dy &&
+    left.x === right.x);
+
+function withAnchor(customData: BoardElement["customData"], anchor: TurnAnchor | null) {
+  const { [TURN_ANCHOR_KEY]: _previous, ...rest } = customData ?? {};
+  return anchor === null ? rest : { ...rest, [TURN_ANCHOR_KEY]: anchor };
+}
+
+/**
+ * Applies the turn layout to the scene, restoring any turn box that was deleted. Markdown cards
+ * take the height of their text first, so the layout makes room for what they really show.
+ */
 function reconcileTurns(api: ExcalidrawImperativeAPI, turnBoard: TurnBoard) {
   const all = api.getSceneElementsIncludingDeleted();
   const live = all.filter((element) => !element.isDeleted || asBoardBox(element).turnId !== null);
-  const boxes = live.map(asBoardBox);
+  const fitted = fittedCardHeights(turnBoard.layer(), TURN_INSET_PX);
+  const boxes = live.map((element) => {
+    const box = asBoardBox(element);
+    const height = element.isDeleted ? undefined : fitted.get(element.id);
+    return height === undefined || Math.abs(height - box.height) < 1 ? box : { ...box, height };
+  });
   const titles = new Map(turnBoard.cards().map((card) => [card.id, card.title]));
   const placed = layoutTurns(boxes, measureCards(turnBoard));
   const byKey = new Map(placed.map((box) => [box.key, box]));
@@ -310,8 +345,11 @@ function reconcileTurns(api: ExcalidrawImperativeAPI, turnBoard: TurnBoard) {
     if (box === undefined) return element;
     const restored = element.isDeleted && box.turnId !== null;
     const title = box.turnId === null ? undefined : titles.get(box.turnId);
+    const anchor = box.anchor ?? null;
+    const anchorMoved = box.turnId === null && !sameAnchor(turnAnchorOf(element), anchor);
     if (
       !restored &&
+      !anchorMoved &&
       (title === undefined || element.customData?.t3TurnTitle === title) &&
       box.x === element.x &&
       box.y === element.y &&
@@ -327,7 +365,11 @@ function reconcileTurns(api: ExcalidrawImperativeAPI, turnBoard: TurnBoard) {
       width: box.width,
       height: box.height,
       isDeleted: false,
-      ...(box.turnId === null ? {} : { customData: turnData(box, title ?? "") }),
+      ...(box.turnId !== null
+        ? { customData: turnData(box, title ?? "") }
+        : anchorMoved
+          ? { customData: withAnchor(element.customData, anchor) }
+          : {}),
     });
   });
   const known = new Set(all.map((element) => element.id));
@@ -798,6 +840,19 @@ export default function ExcalidrawBoard({
     };
   }, [api, cancelPan, draft, panToLatest, syncTurns, turnBoard]);
 
+  // A card's text settles after it renders, as fonts and code load, so its box follows it.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes rendered cards and writes their fitted heights to the external scene
+  useEffect(() => {
+    const layer = turnBoard.layer();
+    if (draft || !api || !layer || cards.length === 0) return;
+    const stops = [
+      ...layer.querySelectorAll<HTMLElement>('.canvas-card[data-canvas-card="markdown"] > *'),
+    ].map((content) => observeResize(content, () => syncTurns()));
+    return () => {
+      for (const stop of stops) stop();
+    };
+  }, [api, cards, draft, syncTurns, turnBoard]);
+
   // A citation of a card shows that card: the board stops following turns and centres on it.
   const revealElement = useStableCallback((elementId: string) => {
     const root = boardRootOf(boardRef.current);
@@ -897,6 +952,7 @@ export default function ExcalidrawBoard({
                   key={card.id}
                   className="canvas-card bg-background text-foreground rounded-lg"
                   data-canvas-card={card.card.kind}
+                  data-canvas-card-id={card.id}
                   style={{
                     transform: `translate(${card.x + TURN_INSET_PX}px, ${card.y + TURN_INSET_PX}px)`,
                     width,

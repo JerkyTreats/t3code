@@ -301,6 +301,97 @@ describe("placement below the latest turn", () => {
   });
 });
 
+describe("a response region below the latest turn", () => {
+  const wide = (id: string): ThreadCanvasShape => ({
+    id,
+    type: "markdown",
+    text: id,
+    x: 0,
+    y: 0,
+    width: 1100,
+    height: 500,
+  });
+  const anchorOf = (elements: ReadonlyArray<ThreadCanvasElement>, id: string) =>
+    (live(elements, id)?.customData as { t3Below?: unknown } | undefined)?.t3Below;
+
+  it("lays cards in rows that never overlap, whatever coordinates the agent sent", () => {
+    const { elements } = plan(empty, {
+      drawingId: "r",
+      shapes: ["a", "b", "c", "d"].map(wide),
+      place: "belowLatestTurn",
+    });
+    const [a, b, c, d] = ["r/a", "r/b", "r/c", "r/d"].map((id) => live(elements, id)!);
+    expect(a!.y).toBe(332);
+    expect([b!.y, c!.y]).toEqual([332, 332]);
+    expect(Number(b!.x)).toBe(Number(a!.x) + 1100 + 32);
+    expect(Number(c!.x)).toBe(Number(b!.x) + 1100 + 32);
+    expect(d).toMatchObject({ x: a!.x, y: 332 + 500 + 32 });
+  });
+
+  it("anchors each piece to the turn, so it stays below as the turn grows", () => {
+    const { elements } = plan(empty, {
+      drawingId: "r",
+      shapes: [wide("a")],
+      place: "belowLatestTurn",
+    });
+    const a = live(elements, "r/a")!;
+    expect(anchorOf(elements, "r/a")).toEqual({ turn: "1", bottom: 300, dy: 32, x: a.x });
+  });
+
+  it("keeps the anchor on a later call, and drops it once the user drags the card", () => {
+    const first = applied(empty, {
+      drawingId: "r",
+      shapes: [wide("a"), wide("b")],
+      place: "belowLatestTurn",
+    });
+    const again = plan(first, { drawingId: "r", shapes: [wide("a"), wide("b")] });
+    expect(anchorOf(again.elements, "r/a")).toMatchObject({ turn: "1", dy: 32 });
+    const dragged = plan(drag(first, "r/b", 0, 900), {
+      drawingId: "r",
+      shapes: [wide("a"), wide("b")],
+    });
+    expect(anchorOf(dragged.elements, "r/a")).toMatchObject({ turn: "1" });
+    expect(anchorOf(dragged.elements, "r/b")).toBeUndefined();
+  });
+
+  it("keeps an agent's own layout when the drawing holds more than cards", () => {
+    const { elements } = plan(empty, {
+      drawingId: "r",
+      shapes: [wide("a"), box("n", 0, 600, "Note")],
+      place: "belowLatestTurn",
+    });
+    expect(Number(live(elements, "r/n")!.y) - Number(live(elements, "r/a")!.y)).toBe(600);
+  });
+
+  it("anchors a card brought below, and the user's mark on it", () => {
+    const first = applied(empty, { drawingId: "r", shapes: [wide("a")] });
+    const card = live(first.elements, "r/a")!;
+    const mark: ThreadCanvasElement = {
+      id: "mark",
+      type: "rectangle",
+      version: 1,
+      x: Number(card.x) + 10,
+      y: Number(card.y) + 10,
+      width: 40,
+      height: 20,
+    };
+    const { elements } = plan(
+      { ...first, elements: [...first.elements, mark] },
+      { drawingId: "r", shapes: [wide("a")], moveBelowLatestTurn: ["a"] },
+    );
+    const moved = live(elements, "r/a")!;
+    const dy = Number(moved.y) - 300;
+    expect(dy).toBeGreaterThanOrEqual(32);
+    expect(anchorOf(elements, "r/a")).toEqual({ turn: "1", bottom: 300, dy, x: moved.x });
+    expect(anchorOf(elements, "mark")).toEqual({
+      turn: "1",
+      bottom: 300,
+      dy: dy + 10,
+      x: Number(moved.x) + 10,
+    });
+  });
+});
+
 describe("the user's marks on a moved card", () => {
   it("travel with the card, labels included, stamped against stale copies", () => {
     const shapes: ReadonlyArray<ThreadCanvasShape> = [

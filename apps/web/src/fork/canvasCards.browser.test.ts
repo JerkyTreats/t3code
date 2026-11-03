@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { canvasCardsOf, onCanvasReveal, revealCanvasCard, sameCanvasCards } from "./canvasCards";
+import {
+  canvasCardsOf,
+  fittedCardHeights,
+  onCanvasReveal,
+  revealCanvasCard,
+  sameCanvasCards,
+} from "./canvasCards";
 import type { CanvasMark } from "./canvasMarks";
 
 const element = (overrides: Partial<CanvasMark>): CanvasMark => ({
@@ -61,5 +67,28 @@ describe("revealCanvasCard", () => {
     expect(revealCanvasCard(null, "msg-2")).toBe(false);
     stop();
     expect(asked).toEqual(["map/asks"]);
+  });
+});
+
+describe("fittedCardHeights", () => {
+  it("measures each markdown card's text, padding and inset, whatever height its box has", () => {
+    const layer = document.createElement("div");
+    layer.innerHTML = `
+      <div class="canvas-card" data-canvas-card="markdown" data-canvas-card-id="short"
+        style="height: 900px; padding: 12px 16px; overflow: auto"><div style="height: 100px"></div></div>
+      <div class="canvas-card" data-canvas-card="markdown" data-canvas-card-id="long"
+        style="height: 50px; padding: 12px 16px; overflow: auto"><div style="height: 400px"></div></div>
+      <div class="canvas-card" data-canvas-card="html" data-canvas-card-id="page"><div></div></div>`;
+    document.body.append(layer);
+    try {
+      expect(fittedCardHeights(layer, 12)).toEqual(
+        new Map([
+          ["short", 100 + 24 + 24],
+          ["long", 400 + 24 + 24],
+        ]),
+      );
+    } finally {
+      layer.remove();
+    }
   });
 });

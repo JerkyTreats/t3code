@@ -1,12 +1,18 @@
 import dagre from "@dagrejs/dagre";
 import type { ThreadCanvasElement, ThreadCanvasScene, ThreadCanvasShape } from "@t3tools/contracts";
 import {
+  anchorBelow,
   arrowEnds,
   buildDrawingElements,
   drawingElementId,
+  holdsTurnAnchor,
+  isCardShape,
   labelOverflows,
   type PlacedShape,
   shapeSize,
+  TURN_ANCHOR_KEY,
+  type TurnAnchor,
+  turnAnchorOf,
 } from "@t3tools/shared/threadCanvasDrawing";
 
 const GAP_PX = 32;
@@ -15,6 +21,8 @@ const RANK_GAP_PX = 110;
 const TITLE_GAP_PX = 48;
 // The widest drawing that still sits beside a turn on an ordinary screen.
 const MAX_WIDTH_BESIDE_TURN_PX = 900;
+// The widest row of cards below a turn: three wide cards side by side.
+const MAX_ROW_WIDTH_PX = 3400;
 
 export interface DrawInput {
   readonly drawingId: string;
@@ -22,7 +30,7 @@ export interface DrawInput {
   readonly near?: string | undefined;
   readonly layout?: "right" | "down" | undefined;
   readonly resetMoves?: boolean | undefined;
-  /** Puts the whole drawing below the latest turn, wherever it was. */
+  /** Puts the whole drawing below the latest turn, wherever it was. Cards alone fill rows. */
   readonly place?: "belowLatestTurn" | undefined;
   /** Shape ids to bring below the latest turn, leaving the rest of the drawing where it is. */
   readonly moveBelowLatestTurn?: ReadonlyArray<string> | undefined;
@@ -165,6 +173,30 @@ function slideDown(obstacles: ReadonlyArray<Box>, spot: Box) {
   }
 }
 
+/**
+ * Cards in rows, left to right in the order given, each row as tall as its tallest card, so no
+ * two overlap whatever sizes the agent picked.
+ */
+function shelve(
+  pieces: ReadonlyArray<{ readonly id: string; readonly width: number; readonly height: number }>,
+) {
+  const positions = new Map<string, { readonly x: number; readonly y: number }>();
+  let x = 0;
+  let y = 0;
+  let rowHeight = 0;
+  for (const piece of pieces) {
+    if (x > 0 && x + piece.width > MAX_ROW_WIDTH_PX) {
+      x = 0;
+      y += rowHeight + GAP_PX;
+      rowHeight = 0;
+    }
+    positions.set(piece.id, { x, y });
+    x += piece.width + GAP_PX;
+    rowHeight = Math.max(rowHeight, piece.height);
+  }
+  return positions;
+}
+
 /** A free spot for a new drawing: beside what asked for it, or under it when too wide. */
 function placeDrawing(obstacles: ReadonlyArray<Box>, anchor: Box | null, near: boolean, size: Box) {
   const free = (spot: Box) => !obstacles.some((box) => overlaps(spot, box));
@@ -236,10 +268,19 @@ export function planDrawing(input: {
     draw.resetMoves === true
       ? new Map<string, { readonly x: number; readonly y: number }>()
       : pinsOf(drawingId, existing, origin);
-  const laidOut = draw.layout === undefined ? null : layoutShapes(shapes, draw.layout);
-  const localPieces = shapes.map((shape) => {
-    const position = laidOut?.get(shape.id) ?? { x: shape.x ?? 0, y: shape.y ?? 0 };
-    return { shape, ...shapeSize(shape), localX: position.x, localY: position.y };
+  const sized = shapes.map((shape) => ({ shape, ...shapeSize(shape) }));
+  const laidOut =
+    draw.layout !== undefined
+      ? layoutShapes(shapes, draw.layout)
+      : draw.place === "belowLatestTurn" && shapes.length > 0 && shapes.every(isCardShape)
+        ? shelve(sized.map(({ shape, width, height }) => ({ id: shape.id, width, height })))
+        : null;
+  const localPieces = sized.map((piece) => {
+    const position = laidOut?.get(piece.shape.id) ?? {
+      x: piece.shape.x ?? 0,
+      y: piece.shape.y ?? 0,
+    };
+    return { ...piece, localX: position.x, localY: position.y };
   });
   const solid = localPieces.filter((piece) => !hasLines(piece.shape));
   const local =
@@ -301,12 +342,27 @@ export function planDrawing(input: {
       y: pin?.y ?? piece.localY + offset.y,
     };
   });
-  const placed = bringBelow(laid, draw.moveBelowLatestTurn ?? [], solidObstacles, belowLatest);
+  const broughtBelow = new Set(
+    (draw.moveBelowLatestTurn ?? []).filter((id) =>
+      laid.some((piece) => piece.shape.id === id && !hasLines(piece.shape)),
+    ),
+  );
+  const placed = bringBelow(laid, [...broughtBelow], solidObstacles, belowLatest);
+  // What lands below the latest turn is anchored to it, so it stays below as the turn grows.
+  const anchoredShapes = new Set(
+    draw.place === "belowLatestTurn"
+      ? placed.filter((piece) => !pins.has(piece.shape.id)).map((piece) => piece.shape.id)
+      : broughtBelow,
+  );
   const versions = new Map(
     scene.elements.map((element) => [element.id, numberOf(element.version)]),
   );
   const previousTurn = existing.map((element) => drawingOf(element)?.turn ?? null).find(Boolean);
   const turnId = recordOf(latestTurn?.customData).t3Turn;
+  const latestBottom =
+    latestTurn === undefined ? null : boxOf(latestTurn).y + boxOf(latestTurn).height;
+  const existingById = new Map(existing.map((element) => [String(element.id), element]));
+  const anchors = new Map<string, TurnAnchor>();
   const built = buildDrawingElements({
     drawingId,
     turn: previousTurn ?? (typeof turnId === "string" ? turnId : null),
@@ -314,9 +370,27 @@ export function planDrawing(input: {
     versionOf: (id) => versions.get(id) ?? 0,
     randomInt,
     now,
+  }).map((element) => {
+    const piece = String(
+      typeof element.containerId === "string" ? element.containerId : element.id,
+    ).slice(drawingId.length + 1);
+    const before = existingById.get(String(element.id));
+    const kept = before === undefined ? null : turnAnchorOf(before);
+    const anchor =
+      anchoredShapes.has(piece) && typeof turnId === "string" && latestBottom !== null
+        ? anchorBelow(boxOf(element), turnId, latestBottom)
+        : kept !== null && holdsTurnAnchor(boxOf(element), kept)
+          ? kept
+          : null;
+    if (anchor === null) return element;
+    anchors.set(String(element.id), anchor);
+    return {
+      ...element,
+      customData: { ...recordOf(element.customData), [TURN_ANCHOR_KEY]: anchor },
+    };
   });
   const builtIds = new Set(built.map((element) => element.id));
-  const carried = carryMarks({ existing, built, live, randomInt, now });
+  const carried = carryMarks({ existing, built, live, anchors, randomInt, now });
   const withoutOld = scene.elements.flatMap((element) => {
     if (builtIds.has(element.id)) return [];
     const moved = carried.get(String(element.id));
@@ -362,10 +436,11 @@ function carryMarks(input: {
   readonly existing: ReadonlyArray<ThreadCanvasElement>;
   readonly built: ReadonlyArray<ThreadCanvasElement>;
   readonly live: ReadonlyArray<ThreadCanvasElement>;
+  readonly anchors: ReadonlyMap<string, TurnAnchor>;
   readonly randomInt: () => number;
   readonly now: number;
 }) {
-  const { existing, built, live, randomInt, now } = input;
+  const { existing, built, live, anchors, randomInt, now } = input;
   const after = new Map(built.map((element) => [String(element.id), boxOf(element)]));
   const moves = existing.flatMap((element) => {
     if (element.type === "arrow" || element.type === "line") return [];
@@ -386,18 +461,26 @@ function carryMarks(input: {
   const carried = new Map<string, ThreadCanvasElement>();
   if (moves.length === 0) return carried;
   const area = (box: Box) => box.width * box.height;
-  const shift = (element: ThreadCanvasElement, move: (typeof moves)[number]) => ({
-    ...element,
-    x: numberOf(element.x) + move.dx,
-    y: numberOf(element.y) + move.dy,
-    version: numberOf(element.version) + 1,
-    versionNonce: randomInt(),
-    updated: now,
-    customData: {
-      ...recordOf(element.customData),
-      t3Follow: { id: move.id, drawing: move.drawing, written: now },
-    },
-  });
+  const shift = (element: ThreadCanvasElement, move: (typeof moves)[number]) => {
+    const at = { x: numberOf(element.x) + move.dx, y: numberOf(element.y) + move.dy };
+    // A mark on an anchored card is anchored the same way, so it stays on the card.
+    const anchor = anchors.get(move.id);
+    const { [TURN_ANCHOR_KEY]: _previous, ...customData } = recordOf(element.customData);
+    return {
+      ...element,
+      ...at,
+      version: numberOf(element.version) + 1,
+      versionNonce: randomInt(),
+      updated: now,
+      customData: {
+        ...customData,
+        t3Follow: { id: move.id, drawing: move.drawing, written: now },
+        ...(anchor === undefined
+          ? {}
+          : { [TURN_ANCHOR_KEY]: anchorBelow(at, anchor.turn, anchor.bottom) }),
+      },
+    };
+  };
   for (const mark of live.filter(isUserMark)) {
     const box = boxOf(mark);
     const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -420,9 +503,9 @@ function carryMarks(input: {
 }
 
 /**
- * Moves the named pieces into one row below the latest turn, clear of everything else, and
- * leaves the rest of the drawing where it was. A moved piece then sits off the drawing's
- * layout, so later calls keep it where it landed, as they keep a box the user dragged.
+ * Moves the named pieces into rows below the latest turn, clear of everything else, and leaves
+ * the rest of the drawing where it was. A moved piece then sits off the drawing's layout, so
+ * later calls keep it where it landed, as they keep a box the user dragged.
  */
 function bringBelow(
   laid: ReadonlyArray<PlacedShape>,
@@ -433,20 +516,17 @@ function bringBelow(
   const wanted = new Set(ids);
   const moving = laid.filter((piece) => wanted.has(piece.shape.id) && !hasLines(piece.shape));
   if (moving.length === 0) return laid;
-  const width =
-    moving.reduce((total, piece) => total + piece.width, 0) + GAP_PX * (moving.length - 1);
-  const height = Math.max(...moving.map((piece) => piece.height));
+  const rows = shelve(
+    moving.map((piece) => ({ id: piece.shape.id, width: piece.width, height: piece.height })),
+  );
+  const block = boundsOf(moving.map((piece) => ({ ...piece, ...rows.get(piece.shape.id) })));
   const staying = laid.filter((piece) => !wanted.has(piece.shape.id) && !hasLines(piece.shape));
-  const row = slideDown([...obstacles, ...staying], belowLatest({ width, height }));
-  const positions = new Map<string, { readonly x: number; readonly y: number }>();
-  let x = row.x;
-  for (const piece of moving) {
-    positions.set(piece.shape.id, { x, y: row.y });
-    x += piece.width + GAP_PX;
-  }
+  const spot = slideDown([...obstacles, ...staying], belowLatest(block));
   return laid.map((piece) => {
-    const position = positions.get(piece.shape.id);
-    return position === undefined ? piece : { ...piece, ...position };
+    const position = rows.get(piece.shape.id);
+    return position === undefined
+      ? piece
+      : { ...piece, x: spot.x + position.x, y: spot.y + position.y };
   });
 }
 

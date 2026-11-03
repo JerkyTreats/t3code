@@ -84,3 +84,19 @@ export function onCanvasReveal(reveal: (elementId: string) => void) {
   window.addEventListener(CANVAS_REVEAL_EVENT, listener);
   return () => window.removeEventListener(CANVAS_REVEAL_EVENT, listener);
 }
+
+/** The height each rendered markdown card needs to show all of its text, by element id. */
+export function fittedCardHeights(layer: HTMLElement | null, inset: number) {
+  const heights = new Map<string, number>();
+  for (const card of layer?.querySelectorAll<HTMLElement>(
+    '.canvas-card[data-canvas-card="markdown"]',
+  ) ?? []) {
+    const content = card.firstElementChild;
+    const id = card.dataset.canvasCardId;
+    if (!(content instanceof HTMLElement) || id === undefined) continue;
+    const style = getComputedStyle(card);
+    const padding = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+    heights.set(id, Math.ceil(content.offsetHeight + padding) + 2 * inset);
+  }
+  return heights;
+}
