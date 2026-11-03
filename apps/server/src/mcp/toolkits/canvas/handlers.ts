@@ -62,6 +62,7 @@ const handlers = {
       const page = canvasPreviewPage({
         scene,
         region,
+        appStylesheet: yield* htmlRender.appStylesheet,
         htmlOf: (attachmentId) => pages.get(attachmentId) ?? null,
       });
       const shot = yield* htmlRender

@@ -32,6 +32,7 @@ import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
 import { createAttachmentId } from "../attachmentStore.ts";
 import { resolveRootCliCommand } from "../cli/invocation.ts";
 import * as ServerConfig from "../config.ts";
+import { loadAppStylesheet } from "./appStylesheet.ts";
 import * as HeadlessChrome from "./headlessChrome.ts";
 import * as PreviewBrowser from "../preview/PreviewBrowser.ts";
 import * as PreviewBrowserHost from "../preview/PreviewBrowserHost.ts";
@@ -136,6 +137,8 @@ export class HtmlRender extends Context.Service<
       { readonly attachmentId: string },
       HtmlRenderPrepareError | HtmlRenderStoreError
     >;
+    /** The web client's stylesheet with its fonts inlined, or null without a built client. */
+    readonly appStylesheet: Effect.Effect<string | null>;
     /** A stored page's HTML, or null when the attachment is missing or unreadable. */
     readonly readStored: (attachmentId: string) => Effect.Effect<string | null>;
     readonly preview: (input: {
@@ -539,7 +542,14 @@ const make = Effect.gen(function* () {
     } satisfies HtmlPreview;
   });
 
-  return HtmlRender.of({ prepare, publish, store, readStored, preview });
+  const appStylesheet = yield* Effect.cached(
+    loadAppStylesheet.pipe(
+      Effect.provideService(ServerConfig.ServerConfig, config),
+      Effect.provideContext(services),
+    ),
+  );
+
+  return HtmlRender.of({ prepare, publish, store, readStored, preview, appStylesheet });
 });
 
 export const layer = Layer.effect(HtmlRender, make);
