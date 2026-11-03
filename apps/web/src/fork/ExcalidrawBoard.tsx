@@ -215,9 +215,12 @@ function syncFrames(
   publishFrames(reconciled ?? elements, root, view);
 }
 
-/** The drawing an element moves with: its own, or the one whose card a mark was carried on. */
+/**
+ * The drawing an element moves with: its own, the one whose card a mark was carried on, or the
+ * one a user's box holds.
+ */
 function drawingGroupOf(customData: Record<string, unknown> | undefined) {
-  for (const key of ["t3Drawing", "t3Follow"]) {
+  for (const key of ["t3Drawing", "t3Follow", "t3Holds"]) {
     const record = customData?.[key];
     const id =
       typeof record === "object" && record !== null
@@ -228,6 +231,13 @@ function drawingGroupOf(customData: Record<string, unknown> | undefined) {
   return null;
 }
 
+function holdsOf(customData: Record<string, unknown> | undefined) {
+  const record = customData?.t3Holds;
+  const drawing =
+    typeof record === "object" && record !== null ? Reflect.get(record, "drawing") : undefined;
+  return typeof drawing === "string" ? drawing : null;
+}
+
 function asBoardBox(element: BoardElement): BoardBox {
   const { t3Turn, t3TurnWidth, t3Card } = element.customData ?? {};
   return {
@@ -235,6 +245,8 @@ function asBoardBox(element: BoardElement): BoardBox {
     group: drawingGroupOf(element.customData),
     anchor: turnAnchorOf(element),
     card: t3Card !== undefined,
+    // The box's title carries the same stamp, but only the box grows.
+    holds: element.type === "text" ? null : holdsOf(element.customData),
     turnId: typeof t3Turn === "string" ? t3Turn : null,
     requestedWidth: typeof t3TurnWidth === "number" ? t3TurnWidth : null,
     x: element.x,

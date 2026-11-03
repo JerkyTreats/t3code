@@ -73,6 +73,10 @@ export const CanvasUpdateTool = Tool.make("canvas_update", {
       description:
         "Id of a canvas element to land a new drawing beside, such as the note that asked for it.",
     }),
+    inside: Schema.optional(Schema.String).annotate({
+      description:
+        "Id of a box the user drew for you to fill, such as one titled 'fill this out'. The drawing lands inside it under its title, cards in rows across its width, and the box grows to fit and moves with it.",
+    }),
     resetMoves: Schema.optional(Schema.Boolean).annotate({
       description: "Replace the positions of boxes the user dragged.",
     }),

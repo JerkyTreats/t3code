@@ -93,7 +93,12 @@ export interface BoardBox {
   readonly anchor?: TurnAnchor | null;
   /** A card's height fits its content, so cards below it in the same region make room. */
   readonly card?: boolean;
+  /** The agent drawing this box of the user's holds: it grows to keep that drawing inside. */
+  readonly holds?: string | null;
 }
+
+// Matches the server's padding inside a box the user drew for a drawing.
+const HOLDER_PADDING_PX = 24;
 
 export interface MeasuredTurn {
   readonly id: string;
@@ -182,7 +187,23 @@ export function layoutTurns(
     }
   }
   followAnchors(placed);
+  growHolders(placed);
   return placed;
+}
+
+/** A box the user drew around a drawing grows when a card in it grows, as the server sized it. */
+function growHolders(placed: MutableBox[]) {
+  for (const holder of placed) {
+    if (holder.holds == null) continue;
+    const held = placed.filter(
+      (box) => box !== holder && box.group === holder.holds && box.holds == null,
+    );
+    if (held.length === 0) continue;
+    const right = Math.max(...held.map((box) => box.x + box.width)) + HOLDER_PADDING_PX;
+    const bottom = Math.max(...held.map((box) => box.y + box.height)) + HOLDER_PADDING_PX;
+    holder.width = Math.max(holder.width, right - holder.x);
+    holder.height = Math.max(holder.height, bottom - holder.y);
+  }
 }
 
 /**
