@@ -172,16 +172,21 @@ subscription start calls the same persisted admission check before dispatch.
 Same-runtime revocation signals interrupt the exact session immediately. Independent CLI runtimes
 persist revocation through separate database connections and do not share that PubSub. One server
 watcher checks the distinct active session identifiers one second after each completed pass, with
-at most eight admission reads in flight and a one-second timeout per read. Failed or timed-out
-admission closes only that session. The observation delay is the one-second interval plus queued
+at most eight admission reads in flight and a one-second timeout per read. A denied admission
+(unknown, revoked, expired, disabled, deleted or forbidden) closes only that session on that pass.
+A timed-out or unreadable admission is unconfirmed, not denied: the session stays open and closes
+only after 30 seconds of consecutive unconfirmed passes, with a warning. Treating a slow read as a
+denial closed every client at once whenever the shared reader queued behind other work, and the
+reconnect load prolonged the stall. The observation delay is the one-second interval plus queued
 read batches and database execution, each read bounded by its timeout; it is not a universal
 one-second teardown promise under load. RPC admission observes persisted revocation immediately
 without waiting for that watcher. `server.test.ts` proves this with two independent real auth
 runtimes over one fresh file database, an already-open RPC connection and live subscription,
 clock-controlled observation, and a live peer that still completes RPC on its existing connection.
 The disable test also keeps its subscription source open, so natural finite-stream completion
-cannot substitute for revocation teardown. Registry tests cover shared checks, failed
-reads, timeout teardown, and guard cleanup.
+cannot substitute for revocation teardown. Registry tests cover shared checks, immediate denial
+teardown, brief stalls and read failures that keep the session, grace-window teardown, and guard
+cleanup.
 
 Upstream routes session reads (`AuthSessions.getById`, `listActive`, pairing `listActive`) to the
 read-only connection. Reads inside an open write transaction keep the writer, and WAL readers see
