@@ -10,6 +10,13 @@ const REGION_MARGIN_PX = 80;
 const AROUND_LATEST_ABOVE_PX = 600;
 const AROUND_LATEST_BELOW_PX = 3000;
 export const CANVAS_PREVIEW_MEASURE_PREFIX = "t3-canvas-cards:";
+// ChatMarkdown's classes for a block of text, so the app stylesheet styles a card as the board does.
+const CHAT_MARKDOWN_CLASSES =
+  "chat-markdown w-full min-w-0 [overflow-wrap:anywhere] [word-break:break-word] text-sm leading-relaxed";
+const APPROXIMATE_CARD_STYLE = `
+    .card.markdown { font-size: 14px; line-height: 1.625; }
+    .card table { border-collapse: collapse; } .card th, .card td { border-bottom: 1px solid #333; padding: 4px 8px; text-align: left; }
+    .card a { color: #7aa2ff; } .card h1, .card h2, .card h3 { margin: 0.4em 0; }`;
 
 export interface CanvasRegion {
   readonly x: number;
@@ -142,8 +149,11 @@ export function canvasPreviewPage(input: {
   readonly scene: ThreadCanvasScene;
   readonly region: CanvasRegion;
   readonly htmlOf: (attachmentId: string) => string | null;
+  /** The web client's stylesheet; without it cards use an approximation of its typography. */
+  readonly appStylesheet?: string | null;
 }) {
   const { scene, region, htmlOf } = input;
+  const appStylesheet = input.appStylesheet ?? null;
   const scale = Math.min(1, MAX_PAGE_WIDTH_PX / region.width, MAX_PAGE_HEIGHT_PX / region.height);
   const live = scene.elements.filter((element) => element.isDeleted !== true);
   const labels = new Map<string, ThreadCanvasElement>();
@@ -176,7 +186,7 @@ export function canvasPreviewPage(input: {
     const inner = `left:${left + CARD_INSET_PX}px;top:${top + CARD_INSET_PX}px;width:${Math.max(1, box.width - 2 * CARD_INSET_PX)}px;height:${Math.max(1, box.height - 2 * CARD_INSET_PX)}px`;
     if (card.kind === "markdown") {
       return [
-        `<div class="card-frame" style="${at}"></div><div class="card markdown" data-card="${id}" style="${inner}">${markdownToHtml(typeof card.text === "string" ? card.text : "")}</div>`,
+        `<div class="card-frame" style="${at}"></div><div class="card markdown canvas-card bg-background text-foreground rounded-lg" data-canvas-card="markdown" data-card="${id}" style="${inner}"><div class="${CHAT_MARKDOWN_CLASSES}">${markdownToHtml(typeof card.text === "string" ? card.text : "")}</div></div>`,
       ];
     }
     if (card.kind === "html") {
@@ -213,18 +223,20 @@ export function canvasPreviewPage(input: {
           : []);
       console.log(${JSON.stringify(CANVAS_PREVIEW_MEASURE_PREFIX)} + JSON.stringify(cards));
     });`;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
-    html, body { margin: 0; background: #121212; color: #e8e8e8; font-family: system-ui, sans-serif; }
+  const html = `<!doctype html><html class="dark"><head><meta charset="utf-8">${
+    appStylesheet === null
+      ? `<style>${APPROXIMATE_CARD_STYLE}</style>`
+      : `<style>${appStylesheet}</style>`
+  }<style>
+    html, body { margin: 0; background: #121212; color: #e8e8e8; font-family: var(--font-sans, system-ui, sans-serif); }
     .board { position: relative; width: ${region.width}px; height: ${region.height}px; transform: scale(${scale}); transform-origin: 0 0; }
     .viewport { width: ${Math.ceil(region.width * scale)}px; height: ${Math.ceil(region.height * scale)}px; overflow: hidden; }
     .board > * { position: absolute; box-sizing: border-box; }
     .turn { border: 1px solid #555; border-radius: 16px; background: #1b1b1b; }
     .turn-title { padding: 16px 24px; font-size: 18px; color: #9a9a9a; }
     .card-frame { border: 2px solid #868e96; border-radius: 8px; }
-    .card { overflow: hidden; background: #181818; border-radius: 8px; border: 0; font-size: 15px; line-height: 1.55; }
+    .card { overflow: hidden; background: #181818; border-radius: 8px; border: 0; }
     .card.markdown { padding: 12px 16px; }
-    .card table { border-collapse: collapse; } .card th, .card td { border-bottom: 1px solid #333; padding: 4px 8px; text-align: left; }
-    .card a { color: #7aa2ff; } .card h1, .card h2, .card h3 { margin: 0.4em 0; }
     .card.missing { color: #ff8787; padding: 12px; }
     .text { white-space: pre; line-height: 1.25; } .text.user { color: #ffd43b !important; }
     .shape svg { position: absolute; inset: 0; }

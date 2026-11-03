@@ -89,6 +89,22 @@ describe("canvasPreviewPage", () => {
     expect(html).not.toContain("Turn: Old");
   });
 
+  it("styles markdown cards with the app stylesheet when it has one", () => {
+    const region = previewRegion(scene, {})!;
+    const approximate = canvasPreviewPage({ scene, region, htmlOf: () => null }).html;
+    expect(approximate).toContain(".card table");
+    const { html } = canvasPreviewPage({
+      scene,
+      region,
+      htmlOf: () => null,
+      appStylesheet: ".chat-markdown{font-size:14px}",
+    });
+    expect(html).toContain("<style>.chat-markdown{font-size:14px}</style>");
+    expect(html).not.toContain(".card table");
+    expect(html).toContain('data-card="map/asks"');
+    expect(html).toContain('class="chat-markdown w-full min-w-0');
+  });
+
   it("shrinks a wide region to the page width", () => {
     const { scale, width } = canvasPreviewPage({
       scene,

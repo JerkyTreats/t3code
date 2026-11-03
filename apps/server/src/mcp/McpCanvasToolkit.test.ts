@@ -57,6 +57,7 @@ const layerCanvasMock = Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({
 });
 const layerHtmlRenderMock = Layer.mock(HtmlRender.HtmlRender)({
   readStored: () => Effect.succeed(null),
+  appStylesheet: Effect.succeed(null),
   preview: () =>
     Effect.succeed({
       png: Buffer.from("png").toString("base64"),
