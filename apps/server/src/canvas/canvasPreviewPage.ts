@@ -140,6 +140,20 @@ function shapeSvg(element: ThreadCanvasElement, box: CanvasRegion) {
   }
 }
 
+const FLEX_ALIGN: Record<string, string> = {
+  left: "flex-start",
+  right: "flex-end",
+  top: "flex-start",
+  bottom: "flex-end",
+};
+
+/** A bound label sits where Excalidraw puts it: a user's frame title at its top left, say. */
+function labelAlignment(label: { readonly textAlign?: unknown; readonly verticalAlign?: unknown }) {
+  const across = typeof label.textAlign === "string" ? label.textAlign : "center";
+  const down = typeof label.verticalAlign === "string" ? label.verticalAlign : "middle";
+  return `justify-content:${FLEX_ALIGN[across] ?? "center"};align-items:${FLEX_ALIGN[down] ?? "center"};text-align:${across}`;
+}
+
 /**
  * A static page of one canvas region at scene scale, shrunk to fit: turns as titled boxes (the
  * board renders their text in the app), shapes and strokes as SVG, text as text, and markdown
@@ -210,7 +224,7 @@ export function canvasPreviewPage(input: {
     const caption =
       label === undefined
         ? ""
-        : `<div class="label" style="font-size:${numberOf(label.fontSize) || 16}px">${escapeHtml(String(label.text ?? ""))}</div>`;
+        : `<div class="label" style="font-size:${numberOf(label.fontSize) || 16}px;${labelAlignment(label)}">${escapeHtml(String(label.text ?? ""))}</div>`;
     return [
       `<div class="shape" style="${at}"><svg width="${Math.max(box.width, 1)}" height="${Math.max(box.height, 1)}" overflow="visible">${svg}</svg>${caption}</div>`,
     ];

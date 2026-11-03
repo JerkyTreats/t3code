@@ -114,4 +114,33 @@ describe("canvasPreviewPage", () => {
     expect(scale).toBe(0.5);
     expect(width).toBe(1600);
   });
+
+  it("puts a label where Excalidraw aligns it, a user's frame title at the top left", () => {
+    const { html } = canvasPreviewPage({
+      scene: {
+        revision: 1,
+        elements: [
+          { id: "frame", type: "rectangle", x: 0, y: 0, width: 600, height: 400 },
+          {
+            id: "frame-title",
+            type: "text",
+            x: 10,
+            y: 10,
+            width: 200,
+            height: 25,
+            text: "Org structure",
+            containerId: "frame",
+            textAlign: "left",
+            verticalAlign: "top",
+          },
+        ],
+      },
+      region: { x: -50, y: -50, width: 700, height: 500 },
+      appStylesheet: null,
+      htmlOf: () => null,
+    });
+    expect(html).toContain(
+      'justify-content:flex-start;align-items:flex-start;text-align:left">Org structure',
+    );
+  });
 });
