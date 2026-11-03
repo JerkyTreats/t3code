@@ -53,6 +53,7 @@ import {
 import { forwardCardMiddleDrag } from "./cardMiddleDrag";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
+import { tableWidthOf } from "./turnTableWidth";
 
 type ExcalidrawProps = React.ComponentProps<typeof Excalidraw>;
 type BoardChange = NonNullable<ExcalidrawProps["onChange"]>;
@@ -301,12 +302,17 @@ function createTurnBox(box: BoardBox, title: string) {
   return element;
 }
 
+/** Each turn's height, and the width it asks for: an html render's, or a wide table's. */
 function measureCards(turnBoard: TurnBoard) {
-  return turnBoard.cards().map(({ id, element, requestedWidth }) => ({
-    id,
-    height: element.offsetHeight,
-    requestedWidth,
-  }));
+  return turnBoard.cards().map(({ id, element, requestedWidth }) => {
+    const tableWidth = tableWidthOf(element);
+    return {
+      id,
+      height: element.offsetHeight,
+      requestedWidth:
+        tableWidth === null ? requestedWidth : Math.max(requestedWidth ?? 0, tableWidth),
+    };
+  });
 }
 
 const sameAnchor = (left: TurnAnchor | null, right: TurnAnchor | null) =>
