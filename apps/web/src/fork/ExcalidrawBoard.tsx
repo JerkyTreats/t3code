@@ -315,6 +315,8 @@ function measureCards(turnBoard: TurnBoard) {
   });
 }
 
+const CARD_SHRINK_SLACK_PX = 32;
+
 const sameAnchor = (left: TurnAnchor | null, right: TurnAnchor | null) =>
   left === right ||
   (left !== null &&
@@ -340,7 +342,11 @@ function reconcileTurns(api: ExcalidrawImperativeAPI, turnBoard: TurnBoard) {
   const boxes = live.map((element) => {
     const box = asBoardBox(element);
     const height = element.isDeleted ? undefined : fitted.get(element.id);
-    return height === undefined || Math.abs(height - box.height) < 1 ? box : { ...box, height };
+    if (height === undefined) return box;
+    // A small shrink is left alone, so no measurement that wavers can set off a loop of saves.
+    const grows = height - box.height >= 1;
+    const shrinks = box.height - height >= CARD_SHRINK_SLACK_PX;
+    return grows || shrinks ? { ...box, height } : box;
   });
   const titles = new Map(turnBoard.cards().map((card) => [card.id, card.title]));
   const placed = layoutTurns(boxes, measureCards(turnBoard));

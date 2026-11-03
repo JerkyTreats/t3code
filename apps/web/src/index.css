@@ -2693,6 +2693,9 @@ code {
 
 .canvas-card[data-canvas-card="markdown"] {
   padding: 12px 16px;
+  /* The board fits a card's height to its text. A scrollbar that came and went would change
+     the text's width, and so its height, and the fit would never settle. */
+  scrollbar-gutter: stable;
 }
 
 [data-board-marking] .canvas-card,
