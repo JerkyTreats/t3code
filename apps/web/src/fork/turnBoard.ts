@@ -95,6 +95,8 @@ export interface BoardBox {
   readonly card?: boolean;
   /** The agent drawing this box of the user's holds: it grows to keep that drawing inside. */
   readonly holds?: string | null;
+  /** The shape or arrow a label is bound to; the label moves with it, not on its own. */
+  readonly container?: string | null;
 }
 
 // Matches the server's padding inside a box the user drew for a drawing.
@@ -136,10 +138,14 @@ export function layoutTurns(
   boxes: ReadonlyArray<BoardBox>,
   turns: ReadonlyArray<MeasuredTurn>,
 ): ReadonlyArray<BoardBox> {
-  // Checked before anything moves: a box off its anchor was dragged there.
+  // Checked before anything moves: a box off its anchor was dragged there. A label has no anchor
+  // of its own: the board refits its text to the real font, which moves it a little.
   const placed: MutableBox[] = boxes.map((box) =>
-    box.anchor != null && !holdsTurnAnchor(box, box.anchor) ? { ...box, anchor: null } : { ...box },
+    box.anchor != null && (box.container != null || !holdsTurnAnchor(box, box.anchor))
+      ? { ...box, anchor: null }
+      : { ...box },
   );
+  const before = new Map(placed.map((box) => [box.key, { x: box.x, y: box.y }]));
   // A new turn lands below the regions as they stand, not where a stale copy left them.
   followAnchors(placed);
   const boxFor = (id: string) => placed.find((box) => box.turnId === id);
@@ -188,7 +194,39 @@ export function layoutTurns(
   }
   followAnchors(placed);
   growHolders(placed);
+  seatLabels(placed, before);
   return placed;
+}
+
+/**
+ * Moves each label as far as its shape moved in this pass, and puts one found outside its shape
+ * back in the middle of it, as Excalidraw draws a bound label.
+ */
+function seatLabels(
+  placed: MutableBox[],
+  before: ReadonlyMap<string, { readonly x: number; readonly y: number }>,
+) {
+  const byKey = new Map(placed.map((box) => [box.key, box]));
+  for (const label of placed) {
+    const shape = label.container == null ? undefined : byKey.get(label.container);
+    const was = shape === undefined ? undefined : before.get(shape.key);
+    if (shape === undefined || was === undefined) continue;
+    const labelWas = before.get(label.key);
+    if (labelWas !== undefined && label.x === labelWas.x && label.y === labelWas.y) {
+      label.x += shape.x - was.x;
+      label.y += shape.y - was.y;
+    }
+    const centreX = label.x + label.width / 2;
+    const centreY = label.y + label.height / 2;
+    const inside =
+      centreX >= shape.x - label.width / 2 &&
+      centreX <= shape.x + shape.width + label.width / 2 &&
+      centreY >= shape.y - label.height / 2 &&
+      centreY <= shape.y + shape.height + label.height / 2;
+    if (inside) continue;
+    label.x = shape.x + (shape.width - label.width) / 2;
+    label.y = shape.y + (shape.height - label.height) / 2;
+  }
 }
 
 /** A box the user drew around a drawing grows when a card in it grows, as the server sized it. */

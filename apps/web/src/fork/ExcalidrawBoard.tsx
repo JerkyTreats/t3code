@@ -247,6 +247,7 @@ function asBoardBox(element: BoardElement): BoardBox {
     card: t3Card !== undefined,
     // The box's title carries the same stamp, but only the box grows.
     holds: element.type === "text" ? null : holdsOf(element.customData),
+    container: element.type === "text" ? element.containerId : null,
     turnId: typeof t3Turn === "string" ? t3Turn : null,
     requestedWidth: typeof t3TurnWidth === "number" ? t3TurnWidth : null,
     x: element.x,

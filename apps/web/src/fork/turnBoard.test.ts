@@ -203,3 +203,40 @@ describe("layoutTurns with a box the user drew around a drawing", () => {
     expect(boxFor(small, "frame")).toMatchObject({ width: 800, height: 600 });
   });
 });
+
+describe("layoutTurns with labels", () => {
+  it("moves a label with its anchored shape, even after the board refit its text", () => {
+    const [turn] = layoutTurns([], [measured("a", 100)]);
+    const bottom = 100 + 2 * TURN_INSET_PX;
+    const shape: BoardBox = {
+      ...mark("d/box", -200, bottom + 32),
+      width: 400,
+      height: 200,
+      anchor: { turn: "a", bottom, dy: 32, x: -200 },
+    };
+    // Refitting the text nudged the label off the anchor the server gave it.
+    const label: BoardBox = {
+      ...mark("d/box/label", -60, bottom + 32 + 85),
+      width: 120,
+      height: 30,
+      container: "d/box",
+      anchor: { turn: "a", bottom, dy: 80, x: -63 },
+    };
+    const boxes = layoutTurns([turn!, shape, label], [measured("a", 1300)]);
+    const grownBottom = 1300 + 2 * TURN_INSET_PX;
+    expect(boxFor(boxes, "d/box").y).toBe(grownBottom + 32);
+    expect(boxFor(boxes, "d/box/label")).toMatchObject({ x: -60, y: grownBottom + 32 + 85 });
+  });
+
+  it("puts a label found far from its shape back in the middle of it", () => {
+    const shape: BoardBox = { ...mark("d/box", 0, 2000), width: 400, height: 200 };
+    const label: BoardBox = {
+      ...mark("d/box/label", 50, 900),
+      width: 100,
+      height: 40,
+      container: "d/box",
+    };
+    const boxes = layoutTurns([shape, label], []);
+    expect(boxFor(boxes, "d/box/label")).toMatchObject({ x: 150, y: 2080 });
+  });
+});
