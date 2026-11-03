@@ -14,7 +14,7 @@ import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
 import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
-import { CanvasToolkit } from "./tools.ts";
+import { CanvasEditToolkit, CanvasPreviewToolkit, type CanvasToolkit } from "./tools.ts";
 
 const toFailure = (error: ThreadCanvasError) =>
   new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message });
@@ -30,7 +30,7 @@ const decodeClippedCards = Schema.decodeUnknownOption(
 const previewFailure = (error: { readonly _tag: string; readonly message: string }) =>
   new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message });
 
-export const layer = McpToolAccess.toLayer(CanvasToolkit, {
+const handlers = {
   canvas_preview: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
@@ -149,4 +149,13 @@ export const layer = McpToolAccess.toLayer(CanvasToolkit, {
         .pipe(Effect.mapError(toFailure));
     }),
   ),
+} satisfies McpToolAccess.Handlers<typeof CanvasToolkit.tools>;
+
+export const layerEdit = McpToolAccess.toLayer(CanvasEditToolkit, {
+  canvas_read: handlers.canvas_read,
+  canvas_update: handlers.canvas_update,
+});
+
+export const layerPreview = McpToolAccess.toLayer(CanvasPreviewToolkit, {
+  canvas_preview: handlers.canvas_preview,
 });

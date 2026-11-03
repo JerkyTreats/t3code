@@ -151,3 +151,8 @@ export const CanvasPreviewTool = Tool.make("canvas_preview", {
   .annotate(Tool.OpenWorld, false);
 
 export const CanvasToolkit = Toolkit.make(CanvasReadTool, CanvasUpdateTool, CanvasPreviewTool);
+
+export const CanvasEditToolkit = Toolkit.make(CanvasReadTool, CanvasUpdateTool);
+
+/** Registered apart from the others: its screenshot goes out as image content. */
+export const CanvasPreviewToolkit = Toolkit.make(CanvasPreviewTool);
