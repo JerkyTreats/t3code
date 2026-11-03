@@ -1,5 +1,9 @@
 import * as CanvasHandlers from "./toolkits/canvas/handlers.ts";
-import { CanvasToolkit } from "./toolkits/canvas/tools.ts";
+import {
+  CanvasEditToolkit,
+  CanvasPreviewTool,
+  CanvasPreviewToolkit,
+} from "./toolkits/canvas/tools.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -28,6 +32,7 @@ import { serverVersion } from "../serverVersion.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as DeviceService from "../device/DeviceService.ts";
+import * as ThreadCanvasStore from "../canvas/ThreadCanvasStore.ts";
 import * as HtmlRender from "../htmlRender/HtmlRender.ts";
 import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -823,6 +828,28 @@ const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(funct
   );
 });
 
+const registerCanvasPreview = Effect.fn("McpHttpServer.registerCanvasPreview")(function* () {
+  const htmlRender = yield* HtmlRender.HtmlRender;
+  const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
+  const threads = yield* ThreadManagementService.ThreadManagementService;
+  const built = yield* decodeAsAdvertised(CanvasPreviewToolkit);
+  yield* registerImageTool(
+    CanvasPreviewTool,
+    (payload) =>
+      built
+        .handle("canvas_preview", payload)
+        .pipe(Stream.unwrap, Stream.run(Sink.last()), Effect.flatMap(Effect.fromOption)),
+    (effect) =>
+      effect.pipe(
+        Effect.provideService(HtmlRender.HtmlRender, htmlRender),
+        Effect.provideService(ThreadCanvasStore.ThreadCanvasStore, canvas),
+        Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
+      ),
+    "preview",
+    (error) => error.message,
+  );
+});
+
 /**
  * Tools that hand work to another thread's agent: they create it, message it,
  * steer it, or move context into it. Their events name the receiving agent too.
@@ -1168,6 +1195,11 @@ const transport = (name: string, path: McpEndpointAdmission.McpEndpoint) =>
     allowSessionTermination: true,
   }).pipe(Layer.provide(layerMcpAuthMiddleware(path)));
 
+export const layerCanvasToolkit = Layer.mergeAll(
+  toolkitRegistration(CanvasEditToolkit, CanvasHandlers.layerEdit),
+  imageToolRegistration(registerCanvasPreview(), CanvasHandlers.layerPreview),
+);
+
 const layerOrchestratorTools = Layer.mergeAll(
   layerOrchestratorToolkit,
   layerThreadToolkit,
@@ -1177,7 +1209,7 @@ const layerOrchestratorTools = Layer.mergeAll(
   layerWorktreeToolkitRegistration,
   layerHtmlToolkit,
   // Canvas cards store their pages through HtmlRender, as html_render does.
-  toolkitRegistration(CanvasToolkit, CanvasHandlers.layer).pipe(Layer.provide(HtmlRender.layer)),
+  layerCanvasToolkit.pipe(Layer.provide(HtmlRender.layer)),
 );
 const layerPreviewTools = Layer.mergeAll(layerPreviewToolkit, layerPreviewControlsRegistration);
 
