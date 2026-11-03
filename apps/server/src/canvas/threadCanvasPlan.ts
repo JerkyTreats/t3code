@@ -23,6 +23,9 @@ const TITLE_GAP_PX = 48;
 const MAX_WIDTH_BESIDE_TURN_PX = 900;
 // The widest row of cards below a turn: three wide cards side by side.
 const MAX_ROW_WIDTH_PX = 3400;
+// How far a drawing sits inside a box the user drew for it, from its edges and its title.
+const HOLDER_PADDING_PX = 24;
+const HOLDER_TYPES = new Set(["rectangle", "ellipse", "diamond", "frame"]);
 
 export interface DrawInput {
   readonly drawingId: string;
@@ -34,6 +37,8 @@ export interface DrawInput {
   readonly place?: "belowLatestTurn" | undefined;
   /** Shape ids to bring below the latest turn, leaving the rest of the drawing where it is. */
   readonly moveBelowLatestTurn?: ReadonlyArray<string> | undefined;
+  /** Id of a box the user drew to hold this drawing: it lands inside, and the box grows to fit. */
+  readonly inside?: string | undefined;
 }
 
 interface Box {
@@ -179,13 +184,14 @@ function slideDown(obstacles: ReadonlyArray<Box>, spot: Box) {
  */
 function shelve(
   pieces: ReadonlyArray<{ readonly id: string; readonly width: number; readonly height: number }>,
+  maxRowWidth = MAX_ROW_WIDTH_PX,
 ) {
   const positions = new Map<string, { readonly x: number; readonly y: number }>();
   let x = 0;
   let y = 0;
   let rowHeight = 0;
   for (const piece of pieces) {
-    if (x > 0 && x + piece.width > MAX_ROW_WIDTH_PX) {
+    if (x > 0 && x + piece.width > maxRowWidth) {
       x = 0;
       y += rowHeight + GAP_PX;
       rowHeight = 0;
@@ -269,11 +275,22 @@ export function planDrawing(input: {
       ? new Map<string, { readonly x: number; readonly y: number }>()
       : pinsOf(drawingId, existing, origin);
   const sized = shapes.map((shape) => ({ shape, ...shapeSize(shape) }));
+  const holder = live.find(
+    (element) =>
+      element.id === draw.inside && isUserMark(element) && HOLDER_TYPES.has(String(element.type)),
+  );
   const laidOut =
     draw.layout !== undefined
       ? layoutShapes(shapes, draw.layout)
-      : draw.place === "belowLatestTurn" && shapes.length > 0 && shapes.every(isCardShape)
-        ? shelve(sized.map(({ shape, width, height }) => ({ id: shape.id, width, height })))
+      : (draw.place === "belowLatestTurn" || holder !== undefined) &&
+          shapes.length > 0 &&
+          shapes.every(isCardShape)
+        ? shelve(
+            sized.map(({ shape, width, height }) => ({ id: shape.id, width, height })),
+            holder === undefined
+              ? MAX_ROW_WIDTH_PX
+              : Math.max(numberOf(holder.width) - 2 * HOLDER_PADDING_PX, 1),
+          )
         : null;
   const localPieces = sized.map((piece) => {
     const position = laidOut?.get(piece.shape.id) ?? {
@@ -318,20 +335,22 @@ export function planDrawing(input: {
   const replacesAll =
     origin !== null && shapes.length > 0 && shapes.every((shape) => !previousShapes.has(shape.id));
   const spot =
-    draw.place === "belowLatestTurn"
-      ? slideDown(solidObstacles, belowLatest(local))
-      : origin === null
-        ? placeDrawing(
-            others
-              .filter((element) => element.type !== "arrow" && element !== nearElement)
-              .map(boxOf),
-            anchor === undefined ? null : boxOf(anchor),
-            nearElement !== undefined,
-            local,
-          )
-        : replacesAll
-          ? slideDown(solidObstacles, { ...local, x: local.x + origin.x, y: local.y + origin.y })
-          : null;
+    holder !== undefined
+      ? { ...local, ...insideOf(holder, live) }
+      : draw.place === "belowLatestTurn"
+        ? slideDown(solidObstacles, belowLatest(local))
+        : origin === null
+          ? placeDrawing(
+              others
+                .filter((element) => element.type !== "arrow" && element !== nearElement)
+                .map(boxOf),
+              anchor === undefined ? null : boxOf(anchor),
+              nearElement !== undefined,
+              local,
+            )
+          : replacesAll
+            ? slideDown(solidObstacles, { ...local, x: local.x + origin.x, y: local.y + origin.y })
+            : null;
   const offset =
     spot === null ? (origin ?? { x: 0, y: 0 }) : { x: spot.x - local.x, y: spot.y - local.y };
   const laid: ReadonlyArray<PlacedShape> = localPieces.map((piece) => {
@@ -350,9 +369,11 @@ export function planDrawing(input: {
   const placed = bringBelow(laid, [...broughtBelow], solidObstacles, belowLatest);
   // What lands below the latest turn is anchored to it, so it stays below as the turn grows.
   const anchoredShapes = new Set(
-    draw.place === "belowLatestTurn"
-      ? placed.filter((piece) => !pins.has(piece.shape.id)).map((piece) => piece.shape.id)
-      : broughtBelow,
+    holder !== undefined
+      ? []
+      : draw.place === "belowLatestTurn"
+        ? placed.filter((piece) => !pins.has(piece.shape.id)).map((piece) => piece.shape.id)
+        : broughtBelow,
   );
   const versions = new Map(
     scene.elements.map((element) => [element.id, numberOf(element.version)]),
@@ -363,6 +384,8 @@ export function planDrawing(input: {
     latestTurn === undefined ? null : boxOf(latestTurn).y + boxOf(latestTurn).height;
   const existingById = new Map(existing.map((element) => [String(element.id), element]));
   const anchors = new Map<string, TurnAnchor>();
+  // Excalidraw moves a group as one, so the user's box carries what it holds when dragged.
+  const holderGroup = `t3-holds:${drawingId}`;
   const built = buildDrawingElements({
     drawingId,
     turn: previousTurn ?? (typeof turnId === "string" ? turnId : null),
@@ -375,6 +398,13 @@ export function planDrawing(input: {
       typeof element.containerId === "string" ? element.containerId : element.id,
     ).slice(drawingId.length + 1);
     const before = existingById.get(String(element.id));
+    const groupIds =
+      holder !== undefined
+        ? [holderGroup]
+        : Array.isArray(before?.groupIds)
+          ? before.groupIds
+          : (element.groupIds ?? []);
+    element = { ...element, groupIds };
     const kept = before === undefined ? null : turnAnchorOf(before);
     const anchor =
       anchoredShapes.has(piece) && typeof turnId === "string" && latestBottom !== null
@@ -391,8 +421,22 @@ export function planDrawing(input: {
   });
   const builtIds = new Set(built.map((element) => element.id));
   const carried = carryMarks({ existing, built, live, anchors, randomInt, now });
+  const held =
+    holder === undefined
+      ? new Map<string, ThreadCanvasElement>()
+      : holdDrawing({
+          holder,
+          live,
+          drawingId,
+          group: holderGroup,
+          placed: placed.filter((piece) => !hasLines(piece.shape) && !pins.has(piece.shape.id)),
+          randomInt,
+          now,
+        });
   const withoutOld = scene.elements.flatMap((element) => {
     if (builtIds.has(element.id)) return [];
+    const holding = held.get(String(element.id));
+    if (holding !== undefined) return [holding];
     const moved = carried.get(String(element.id));
     if (moved !== undefined) return [moved];
     if (!existing.includes(element)) return [element];
@@ -411,10 +455,100 @@ export function planDrawing(input: {
       },
     ];
   });
+  const elements = [...withoutOld, ...built];
   return {
-    elements: [...withoutOld, ...built],
+    elements,
+    seen: seenAfter(scene, elements),
     report: reportDrawing({ draw, placed, others, pinned: new Set(pins.keys()) }),
   };
+}
+
+/** Each mark's stamp: its version plus its label's, as the user's changes are tracked. */
+function markStamps(elements: ReadonlyArray<ThreadCanvasElement>) {
+  const stamps = new Map<string, number>();
+  for (const element of elements) {
+    if (element.isDeleted === true) continue;
+    const owner = String(
+      typeof element.containerId === "string" ? element.containerId : element.id,
+    );
+    stamps.set(owner, (stamps.get(owner) ?? 0) + numberOf(element.version));
+  }
+  return stamps;
+}
+
+/**
+ * The agent's own edits to the user's marks, like carrying one with a card or growing a box it
+ * filled, are not news to the agent: a mark it had seen stays seen.
+ */
+function seenAfter(scene: ThreadCanvasScene, elements: ReadonlyArray<ThreadCanvasElement>) {
+  const seen = scene.seen;
+  if (seen === undefined) return undefined;
+  const before = markStamps(scene.elements);
+  const after = markStamps(elements);
+  return Object.fromEntries(
+    Object.entries(seen).map(([id, stamp]) =>
+      stamp === before.get(id) && after.has(id) ? [id, after.get(id)!] : [id, stamp],
+    ),
+  );
+}
+
+/** Where a drawing starts inside a box the user drew for it: under the box's title, if any. */
+function insideOf(holder: ThreadCanvasElement, live: ReadonlyArray<ThreadCanvasElement>) {
+  const box = boxOf(holder);
+  const title = live.find((element) => element.containerId === holder.id);
+  const titleBottom = title === undefined ? 0 : boxOf(title).y + boxOf(title).height - box.y;
+  return {
+    x: box.x + HOLDER_PADDING_PX,
+    y: box.y + Math.max(0, titleBottom) + HOLDER_PADDING_PX,
+  };
+}
+
+/**
+ * The user's box grown to hold the drawing, and it and its title grouped with the drawing so they
+ * move together. Both are stamped, so a client's copy from before cannot shrink the box back.
+ */
+function holdDrawing(input: {
+  readonly holder: ThreadCanvasElement;
+  readonly live: ReadonlyArray<ThreadCanvasElement>;
+  readonly drawingId: string;
+  readonly group: string;
+  readonly placed: ReadonlyArray<PlacedShape>;
+  readonly randomInt: () => number;
+  readonly now: number;
+}) {
+  const { holder, live, drawingId, group, placed, randomInt, now } = input;
+  const box = boxOf(holder);
+  const content = placed.length === 0 ? null : boundsOf(placed);
+  const right =
+    content === null
+      ? box.x + box.width
+      : Math.max(box.x + box.width, content.x + content.width + HOLDER_PADDING_PX);
+  const bottom =
+    content === null
+      ? box.y + box.height
+      : Math.max(box.y + box.height, content.y + content.height + HOLDER_PADDING_PX);
+  const stamp = (element: ThreadCanvasElement, size: Partial<Box>): ThreadCanvasElement => {
+    const groupIds = Array.isArray(element.groupIds) ? (element.groupIds as string[]) : [];
+    return {
+      ...element,
+      ...size,
+      groupIds: groupIds.includes(group) ? groupIds : [...groupIds, group],
+      version: numberOf(element.version) + 1,
+      versionNonce: randomInt(),
+      updated: now,
+      customData: {
+        ...recordOf(element.customData),
+        t3Holds: { drawing: drawingId, written: now },
+      },
+    };
+  };
+  const held = new Map<string, ThreadCanvasElement>([
+    [String(holder.id), stamp(holder, { width: right - box.x, height: bottom - box.y })],
+  ]);
+  for (const title of live) {
+    if (title.containerId === holder.id) held.set(String(title.id), stamp(title, {}));
+  }
+  return held;
 }
 
 const isUserMark = (element: ThreadCanvasElement) => {

@@ -182,3 +182,24 @@ describe("layoutTurns with a response region", () => {
     expect(boxFor(boxes, "b").y).toBe(bottom + 32 + 300 + TURN_GAP_PX);
   });
 });
+
+describe("layoutTurns with a box the user drew around a drawing", () => {
+  it("grows the box when a card in it grows, and never shrinks it", () => {
+    const holder: BoardBox = {
+      key: "frame",
+      turnId: null,
+      requestedWidth: null,
+      group: "org",
+      holds: "org",
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+    };
+    const held: BoardBox = { ...mark("org/a", 24, 80), group: "org", width: 900, height: 700 };
+    const grown = layoutTurns([holder, held], []);
+    expect(boxFor(grown, "frame")).toMatchObject({ width: 24 + 900 + 24, height: 80 + 700 + 24 });
+    const small = layoutTurns([holder, { ...held, width: 100, height: 100 }], []);
+    expect(boxFor(small, "frame")).toMatchObject({ width: 800, height: 600 });
+  });
+});

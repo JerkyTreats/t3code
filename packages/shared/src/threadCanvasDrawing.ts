@@ -188,12 +188,13 @@ export function anchorBelow(
 }
 
 /**
- * When the server last wrote an element: an agent's drawing (`t3Drawing`), or a user's mark it
- * carried along with the card under it (`t3Follow`). Null for anything it never wrote.
+ * When the server last wrote an element: an agent's drawing (`t3Drawing`), a user's mark it
+ * carried along with the card under it (`t3Follow`), or a user's box it grew to hold a drawing
+ * (`t3Holds`). Null for anything it never wrote.
  */
 export function drawingWrittenAt(element: { readonly customData?: unknown }) {
   const data = element.customData;
-  const stamps = ["t3Drawing", "t3Follow"].map((key) => {
+  const stamps = ["t3Drawing", "t3Follow", "t3Holds"].map((key) => {
     const record = typeof data === "object" && data !== null ? Reflect.get(data, key) : undefined;
     const written =
       typeof record === "object" && record !== null ? Reflect.get(record, "written") : undefined;

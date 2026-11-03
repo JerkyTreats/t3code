@@ -392,6 +392,81 @@ describe("a response region below the latest turn", () => {
   });
 });
 
+describe("a box the user drew to hold a drawing", () => {
+  const frame: ThreadCanvasElement = {
+    id: "frame",
+    type: "rectangle",
+    version: 4,
+    x: -3000,
+    y: 1000,
+    width: 1200,
+    height: 600,
+    groupIds: [],
+  };
+  const title: ThreadCanvasElement = {
+    id: "frame-title",
+    type: "text",
+    version: 2,
+    x: -2995,
+    y: 1005,
+    width: 400,
+    height: 45,
+    containerId: "frame",
+    text: "Org structure (fill this out)",
+  };
+  const scene: ThreadCanvasScene = {
+    revision: 1,
+    elements: [turn, frame, title],
+    seen: { frame: 6 },
+  };
+  const card = (id: string, width: number): ThreadCanvasShape => ({
+    id,
+    type: "markdown",
+    text: id,
+    x: 5000,
+    y: 5000,
+    width,
+    height: 800,
+  });
+
+  it("lands inside under the title, grows the box to fit, and groups them", () => {
+    const { elements, seen } = plan(scene, {
+      drawingId: "org",
+      shapes: [card("a", 700), card("b", 700)],
+      inside: "frame",
+    });
+    const a = live(elements, "org/a")!;
+    const b = live(elements, "org/b")!;
+    expect(a).toMatchObject({ x: -3000 + 24, y: 1005 + 45 + 24 });
+    // Two 700 px cards do not fit across the 1200 px box, so the second starts a row.
+    expect(b).toMatchObject({ x: a.x, y: Number(a.y) + 800 + 32 });
+    const grown = live(elements, "frame")!;
+    expect(grown).toMatchObject({
+      x: -3000,
+      y: 1000,
+      width: 1200,
+      height: Number(b.y) + 800 + 24 - 1000,
+      version: 5,
+      customData: { t3Holds: { drawing: "org", written: 1 } },
+    });
+    const group = (grown.groupIds as string[])[0];
+    expect(a.groupIds).toEqual([group]);
+    expect(live(elements, "frame-title")!.groupIds).toEqual([group]);
+    expect(a.customData).not.toHaveProperty("t3Below");
+    // The agent grew the box itself, so the box is not news to it.
+    expect(seen).toEqual({ frame: 8 });
+  });
+
+  it("ignores an agent shape or a missing id and places the drawing as usual", () => {
+    const { elements } = plan(scene, {
+      drawingId: "org",
+      shapes: [card("a", 700)],
+      inside: "nope",
+    });
+    expect(live(elements, "frame")).toBe(frame);
+  });
+});
+
 describe("the user's marks on a moved card", () => {
   it("travel with the card, labels included, stamped against stale copies", () => {
     const shapes: ReadonlyArray<ThreadCanvasShape> = [

@@ -146,13 +146,18 @@ const make = Effect.gen(function* () {
     writes.withPermits(1)(
       Effect.gen(function* () {
         const current = yield* read(threadId);
-        const { elements, report } = planDrawing({
+        const { elements, seen, report } = planDrawing({
           scene: current,
           draw: input,
           randomInt: () => NodeCrypto.randomInt(2 ** 31),
           now: yield* Clock.currentTimeMillis,
         });
-        yield* write(threadId, { ...current, revision: current.revision + 1, elements });
+        yield* write(threadId, {
+          ...current,
+          revision: current.revision + 1,
+          elements,
+          ...(seen === undefined ? {} : { seen }),
+        });
         return report;
       }),
     );
