@@ -1,6 +1,9 @@
 import type { AuthClientId, AuthSessionId } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -13,6 +16,7 @@ type DisconnectSignal = Deferred.Deferred<void>;
 
 export const SESSION_REVALIDATION_INTERVAL = "1 second";
 export const SESSION_REVALIDATION_TIMEOUT = "1 second";
+export const SESSION_REVALIDATION_GRACE = "30 seconds";
 
 export class ClientConnectionRegistry extends Context.Service<
   ClientConnectionRegistry,
@@ -112,17 +116,46 @@ export const sessionRevocationLayer = Layer.effectDiscard(
         : Effect.void,
     ).pipe(Effect.forkScoped({ startImmediately: true }), Effect.asVoid);
     // CLI runtimes have independent PubSubs. One bounded watcher observes their persisted changes.
+    // A denial disconnects at once; a stalled or unreadable check only after the grace window.
+    const unconfirmedSince = new Map<AuthSessionId, number>();
+    const disconnect = (sessionId: AuthSessionId) =>
+      Effect.sync(() => unconfirmedSince.delete(sessionId)).pipe(
+        Effect.andThen(registry.disconnectSession(sessionId)),
+        Effect.asVoid,
+      );
+    const revalidate = (sessionId: AuthSessionId) =>
+      sessions.assertClientAdmission(sessionId).pipe(
+        Effect.timeout(SESSION_REVALIDATION_TIMEOUT),
+        Effect.matchEffect({
+          onSuccess: () => Effect.sync(() => unconfirmedSince.delete(sessionId)),
+          onFailure: (error) =>
+            Cause.isTimeoutError(error) || error._tag === "SessionCredentialVerificationError"
+              ? Clock.currentTimeMillis.pipe(
+                  Effect.flatMap((now) => {
+                    const since = unconfirmedSince.get(sessionId) ?? now;
+                    unconfirmedSince.set(sessionId, since);
+                    return now - since >= Duration.toMillis(SESSION_REVALIDATION_GRACE)
+                      ? Effect.logWarning("session admission unconfirmed; disconnecting", {
+                          sessionId,
+                          unconfirmedMs: now - since,
+                        }).pipe(Effect.andThen(disconnect(sessionId)))
+                      : Effect.void;
+                  }),
+                )
+              : disconnect(sessionId),
+        }),
+      );
     yield* registry.activeSessionIds.pipe(
+      Effect.tap((sessionIds) =>
+        Effect.sync(() => {
+          const active = new Set(sessionIds);
+          for (const sessionId of unconfirmedSince.keys()) {
+            if (!active.has(sessionId)) unconfirmedSince.delete(sessionId);
+          }
+        }),
+      ),
       Effect.flatMap((sessionIds) =>
-        Effect.forEach(
-          sessionIds,
-          (sessionId) =>
-            sessions.assertClientAdmission(sessionId).pipe(
-              Effect.timeout(SESSION_REVALIDATION_TIMEOUT),
-              Effect.catch(() => registry.disconnectSession(sessionId).pipe(Effect.asVoid)),
-            ),
-          { concurrency: 8, discard: true },
-        ),
+        Effect.forEach(sessionIds, revalidate, { concurrency: 8, discard: true }),
       ),
       Effect.repeat(Schedule.spaced(SESSION_REVALIDATION_INTERVAL)),
       Effect.forkScoped({ startImmediately: true }),

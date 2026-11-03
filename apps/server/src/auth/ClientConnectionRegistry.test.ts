@@ -60,7 +60,7 @@ it.effect("disconnects every guarded connection for the exact client only", () =
   }).pipe(Effect.provide(ClientConnectionRegistry.layer)),
 );
 
-it.effect("shares persisted checks per session and closes failed or stalled admissions", () =>
+it.effect("closes denied admissions at once and stalled admissions after the grace window", () =>
   Effect.gen(function* () {
     const registry = yield* ClientConnectionRegistry.make;
     const failed = AuthSessionId.make("failed-session");
@@ -105,11 +105,81 @@ it.effect("shares persisted checks per session and closes failed or stalled admi
     yield* Fiber.await(fibers[0]!);
     yield* Fiber.await(fibers[1]!);
     expect(fibers[2]!.pollUnsafe()).toBeUndefined();
-    yield* TestClock.adjust(ClientConnectionRegistry.SESSION_REVALIDATION_TIMEOUT);
+    yield* TestClock.adjust("20 seconds");
+    expect(fibers[2]!.pollUnsafe()).toBeUndefined();
+    yield* TestClock.adjust("20 seconds");
     yield* Fiber.await(fibers[2]!);
     expect(fibers[3]!.pollUnsafe()).toBeUndefined();
     expect(yield* registry.activeSessionIds).toEqual([valid]);
     yield* Fiber.interrupt(fibers[3]!);
     expect(yield* registry.activeSessionIds).toEqual([]);
+  }),
+);
+
+const startRevalidation = (
+  registry: ClientConnectionRegistry.ClientConnectionRegistry["Service"],
+  assertClientAdmission: SessionStore.SessionStore["Service"]["assertClientAdmission"],
+) =>
+  Layer.build(
+    ClientConnectionRegistry.sessionRevocationLayer.pipe(
+      Layer.provide(Layer.succeed(ClientConnectionRegistry.ClientConnectionRegistry, registry)),
+      Layer.provide(
+        Layer.mock(SessionStore.SessionStore)({
+          cookieName: "test-session",
+          legacyCookieName: undefined,
+          streamChanges: Stream.never,
+          assertClientAdmission,
+        }),
+      ),
+    ),
+  );
+
+const guardUntilInterrupted = Effect.fn(function* (
+  registry: ClientConnectionRegistry.ClientConnectionRegistry["Service"],
+  sessionId: AuthSessionId,
+) {
+  const started = yield* Deferred.make<void>();
+  const fiber = yield* registry
+    .guardSession(
+      sessionId,
+      Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+    )
+    .pipe(Effect.forkChild);
+  yield* Deferred.await(started);
+  return fiber;
+});
+
+it.effect("keeps connections whose admission checks briefly stall or fail to read", () =>
+  Effect.gen(function* () {
+    const registry = yield* ClientConnectionRegistry.make;
+    const stalled = AuthSessionId.make("briefly-stalled-session");
+    const unreadable = AuthSessionId.make("briefly-unreadable-session");
+    let degraded = true;
+    yield* startRevalidation(registry, (sessionId) =>
+      Effect.suspend(() => {
+        if (!degraded) return Effect.void;
+        if (sessionId === stalled) return Effect.never;
+        return Effect.fail(
+          new SessionStore.SessionCredentialVerificationError({
+            sessionId,
+            cause: new Error("reader unavailable"),
+          }),
+        );
+      }),
+    );
+    const stalledFiber = yield* guardUntilInterrupted(registry, stalled);
+    const unreadableFiber = yield* guardUntilInterrupted(registry, unreadable);
+
+    yield* TestClock.adjust("10 seconds");
+    expect(stalledFiber.pollUnsafe()).toBeUndefined();
+    expect(unreadableFiber.pollUnsafe()).toBeUndefined();
+
+    degraded = false;
+    yield* TestClock.adjust("60 seconds");
+    expect(stalledFiber.pollUnsafe()).toBeUndefined();
+    expect(unreadableFiber.pollUnsafe()).toBeUndefined();
+    expect([...(yield* registry.activeSessionIds)].sort()).toEqual([stalled, unreadable].sort());
+    yield* Fiber.interrupt(stalledFiber);
+    yield* Fiber.interrupt(unreadableFiber);
   }),
 );
