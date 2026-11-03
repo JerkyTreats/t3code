@@ -8,7 +8,7 @@ import {
   canvasPreviewPage,
   previewRegion,
 } from "../../../canvas/canvasPreviewPage.ts";
-import { describeCanvas } from "../../../canvas/threadCanvasScene.ts";
+import { readCanvas } from "../../../canvas/threadCanvasScene.ts";
 import { canvasThreadOf, sharedDrawingId } from "../../../canvas/sharedCanvas.ts";
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
 import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
@@ -91,7 +91,7 @@ const handlers = {
       };
     }),
   ),
-  canvas_read: McpToolAccess.readsAsCaller(() =>
+  canvas_read: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "canvas_read");
@@ -106,7 +106,8 @@ const handlers = {
           .pipe(Effect.mapError(toFailure));
         yield* delivery.acknowledge.pipe(Effect.mapError(toFailure));
       }
-      return describeCanvas(scene);
+      // A drawing id also matches a delegated task's copy of it, `<id>~<owner>`.
+      return readCanvas(scene, input);
     }),
   ),
   canvas_update: McpToolAccess.actsAsCaller((input) =>

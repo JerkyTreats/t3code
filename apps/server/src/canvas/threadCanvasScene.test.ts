@@ -1,7 +1,12 @@
 import type { ThreadCanvasScene } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { describeCanvas, describeCanvasChanges, mergeCanvasElements } from "./threadCanvasScene.ts";
+import {
+  describeCanvas,
+  describeCanvasChanges,
+  mergeCanvasElements,
+  readCanvas,
+} from "./threadCanvasScene.ts";
 
 const scene = (elements: ThreadCanvasScene["elements"]): ThreadCanvasScene => ({
   revision: 1,
@@ -298,5 +303,84 @@ describe("describeCanvasChanges", () => {
     }));
     const lines = describeCanvasChanges(scene(notes), "").note.split("\n");
     expect(lines.at(-1)).toBe("- and 5 more; canvas_read lists them");
+  });
+});
+
+describe("readCanvas", () => {
+  const turn = {
+    id: "turn-a",
+    type: "rectangle",
+    x: -430,
+    y: 0,
+    width: 860,
+    height: 300,
+    customData: { t3Turn: "a", t3TurnTitle: "Map the platform" },
+  };
+  const card = (drawing: string, id: string, x: number, text: string) => ({
+    id: `${drawing}/${id}`,
+    type: "rectangle",
+    x,
+    y: 0,
+    width: 400,
+    height: 200,
+    customData: {
+      t3Drawing: { id: drawing },
+      t3Card: { kind: "markdown", text },
+      t3Below: { turn: "a", edge: "top", at: 0, dy: 0, x },
+    },
+  });
+  const canvas = scene([
+    turn,
+    card("map", "today", 462, `## **Today** as built\n\n${"x".repeat(1000)}`),
+    card("map", "next", 900, "Next"),
+    card("map~0123abcd", "child", 1400, "Child finding"),
+    { id: "note", type: "text", x: -700, y: 40, width: 100, height: 20, text: "cite?" },
+  ]);
+
+  it("gives an overview: the spine, each drawing as one box, and only the user's marks", () => {
+    const read = readCanvas(canvas);
+    expect(read.spine).toEqual({ left: -430, right: 430, nextTurnY: 300 });
+    expect(read.drawings).toEqual([
+      {
+        drawingId: "map",
+        x: 462,
+        y: 0,
+        width: 838,
+        height: 200,
+        shapes: 2,
+        cards: 2,
+        title: "Today as built",
+        followsTurn: "Map the platform",
+      },
+      expect.objectContaining({ drawingId: "map~0123abcd", title: "Child finding" }),
+    ]);
+    expect(read.elements.map((element) => element.id)).toEqual(["note"]);
+  });
+
+  it("lists a drawing in full, a delegated copy of it included, or what overlaps a region", () => {
+    const byDrawing = readCanvas(canvas, { drawingIds: ["map"] });
+    expect(byDrawing.elements.map((element) => element.id)).toEqual([
+      "map/today",
+      "map/next",
+      "map~0123abcd/child",
+    ]);
+    expect(byDrawing.elements[0]?.text).toHaveLength(1000 + "## **Today** as built\n\n".length);
+    const byRegion = readCanvas(canvas, { region: { x: 870, y: 0, width: 100, height: 100 } });
+    expect(byRegion.elements.map((element) => element.id)).toEqual(["map/next"]);
+    expect(readCanvas(canvas, { ids: ["note"] }).elements.map((element) => element.id)).toEqual([
+      "note",
+    ]);
+  });
+
+  it("leaves out what does not fit one tool result and says so", () => {
+    const many = scene(
+      Array.from({ length: 30 }, (_, index) =>
+        card("big", `c${index}`, index * 500, "y".repeat(3000)),
+      ),
+    );
+    const read = readCanvas(many, { drawingIds: ["big"] });
+    expect(JSON.stringify(read).length).toBeLessThan(45_000);
+    expect(read.elements.length).toBeLessThan(30);
+    expect(read.note).toContain(`${30 - read.elements.length} more matching elements left out`);
   });
 });

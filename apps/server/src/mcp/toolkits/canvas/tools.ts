@@ -20,9 +20,33 @@ const CanvasBox = {
 
 export const CanvasReadTool = Tool.make("canvas_read", {
   description:
-    "Read this thread's Excalidraw canvas, the whiteboard behind its turns: where each turn sits, plus what the user drew or wrote and what you drew. Each element names its nearest turn, and covers quotes the turn text a mark sits on. Freehand strokes give a position, not a shape. Call it before answering about the canvas or the user's marks.",
+    "Read this thread's Excalidraw canvas, the whiteboard behind its turns. With no arguments it returns an overview: the spine (the column the turns stack in, from left to right, with nextTurnY where the next turn lands), each turn, each of your drawings as one box with its title and the turn it follows, and every mark the user drew or wrote, with the turn it sits near and the card or shape of yours it is on. Pass drawingIds, ids or region for your shapes in full, card text included. Coordinates are current only as of this call: read again after the user may have moved things. Call it before answering about the canvas or the user's marks.",
+  parameters: Schema.Struct({
+    drawingIds: Schema.optional(Schema.Array(Schema.String)).annotate({
+      description: "List every shape of these drawings, card text in full.",
+    }),
+    ids: Schema.optional(Schema.Array(Schema.String)).annotate({
+      description: "List these elements, card text in full.",
+    }),
+    region: Schema.optional(Schema.Struct(CanvasBox)).annotate({
+      description: "List every element overlapping this box, in canvas coordinates.",
+    }),
+  }),
   success: Schema.Struct({
+    spine: Schema.NullOr(
+      Schema.Struct({ left: Schema.Number, right: Schema.Number, nextTurnY: Schema.Number }),
+    ),
     turns: Schema.Array(Schema.Struct({ ...CanvasBox, title: Schema.String })),
+    drawings: Schema.Array(
+      Schema.Struct({
+        ...CanvasBox,
+        drawingId: Schema.String,
+        shapes: Schema.Int,
+        cards: Schema.Int,
+        title: Schema.optional(Schema.String),
+        followsTurn: Schema.optional(Schema.String),
+      }),
+    ),
     elements: Schema.Array(
       Schema.Struct({
         ...CanvasBox,
@@ -38,6 +62,7 @@ export const CanvasReadTool = Tool.make("canvas_read", {
         nearestTurn: Schema.optional(Schema.String),
       }),
     ),
+    note: Schema.String,
   }),
   failure: OrchestratorMcpFailure,
   failureMode: "return",

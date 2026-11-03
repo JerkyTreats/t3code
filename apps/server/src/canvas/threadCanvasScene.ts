@@ -1,5 +1,5 @@
 import type { ThreadCanvasElement, ThreadCanvasScene } from "@t3tools/contracts";
-import { isStaleDrawingCopy } from "@t3tools/shared/threadCanvasDrawing";
+import { isStaleDrawingCopy, turnAnchorOf, turnSpineOf } from "@t3tools/shared/threadCanvasDrawing";
 
 const versionOf = (element: ThreadCanvasElement) =>
   typeof element.version === "number" ? element.version : 0;
@@ -44,6 +44,12 @@ interface CanvasBox {
   readonly width: number;
   readonly height: number;
 }
+
+const CARD_TEXT_PREVIEW_CHARS = 400;
+const TITLE_CHARS = 80;
+
+const clippedTo = (text: string, chars: number) =>
+  text.length > chars ? `${text.slice(0, chars)}…` : text;
 
 const numberOf = (value: unknown) => (typeof value === "number" ? Math.round(value) : 0);
 const boxOf = (element: ThreadCanvasElement): CanvasBox => ({
@@ -131,12 +137,16 @@ function placeOnAgentPiece(reach: CanvasBox, pieces: ReadonlyArray<AgentPiece>):
 }
 
 /** The scene as an agent reads it: turns by their opening words, everything else beside them. */
-export function describeCanvas(scene: ThreadCanvasScene) {
+export function describeCanvas(
+  scene: ThreadCanvasScene,
+  options: { readonly cardTextChars?: number } = {},
+) {
+  const cardTextChars = options.cardTextChars ?? CARD_TEXT_PREVIEW_CHARS;
   const live = scene.elements.filter((element) => element.isDeleted !== true);
   const turns = live.flatMap((element) => {
     const customData = recordOf(element.customData);
     return typeof customData.t3Turn === "string"
-      ? [{ ...boxOf(element), title: String(customData.t3TurnTitle ?? "") }]
+      ? [{ ...boxOf(element), title: clippedTo(String(customData.t3TurnTitle ?? ""), TITLE_CHARS) }]
       : [];
   });
   const labels = new Map<string, string>();
@@ -167,7 +177,7 @@ export function describeCanvas(scene: ThreadCanvasScene) {
       (typeof element.text === "string"
         ? element.text
         : typeof card.text === "string"
-          ? card.text.slice(0, CARD_TEXT_PREVIEW_CHARS)
+          ? card.text.slice(0, cardTextChars)
           : undefined);
     const start = recordOf(element.startBinding).elementId;
     const end = recordOf(element.endBinding).elementId;
@@ -209,7 +219,6 @@ export function describeCanvas(scene: ThreadCanvasScene) {
 }
 
 const NOTE_MAX_CHANGES = 20;
-const CARD_TEXT_PREVIEW_CHARS = 400;
 const NOTE_MAX_TEXT_CHARS = 300;
 
 const clipped = (text: string) =>
@@ -304,5 +313,133 @@ export function describeCanvasChanges(scene: ThreadCanvasScene, message: string)
     note: sections.join("\n\n"),
     seen: Object.fromEntries(marks.map((mark) => [mark.id, stamps.get(mark.id) ?? 0])),
     sketched: fresh.some((mark) => mark.text === undefined),
+  };
+}
+
+/** Whole card text in a detailed read, up to this much per card. */
+const DETAIL_CARD_TEXT_CHARS = 4000;
+/** A detailed read stops listing elements past this much JSON, so it fits one tool result. */
+const DETAIL_BUDGET_CHARS = 40_000;
+
+export interface CanvasReadQuery {
+  readonly drawingIds?: ReadonlyArray<string> | undefined;
+  readonly ids?: ReadonlyArray<string> | undefined;
+  readonly region?: CanvasBox | undefined;
+}
+
+const overlaps = (left: CanvasBox, right: CanvasBox) =>
+  left.x < right.x + right.width &&
+  right.x < left.x + left.width &&
+  left.y < right.y + right.height &&
+  right.y < left.y + left.height;
+
+/** One line naming a drawing: its first card's heading, or else its first label. */
+function drawingTitle(elements: ReadonlyArray<{ readonly card?: string; readonly text?: string }>) {
+  const text =
+    elements.find((element) => element.card === "markdown" && element.text !== undefined)?.text ??
+    elements.find((element) => element.text !== undefined)?.text;
+  const line = text
+    ?.split("\n")
+    .map((entry) =>
+      entry
+        .replace(/^[#>\-\s]+/, "")
+        .replace(/[*_`]/g, "")
+        .trim(),
+    )
+    .find((entry) => entry !== "");
+  return line === undefined ? undefined : clippedTo(line, TITLE_CHARS);
+}
+
+/**
+ * The canvas as canvas_read returns it. With no query it is an overview that fits one tool
+ * result however full the canvas gets: the turn spine, each agent drawing as one box, and every
+ * user mark. A query lists the matching elements in full, up to a size budget.
+ */
+export function readCanvas(scene: ThreadCanvasScene, query: CanvasReadQuery = {}) {
+  const detailed =
+    query.drawingIds !== undefined || query.ids !== undefined || query.region !== undefined;
+  const described = describeCanvas(scene, {
+    cardTextChars: detailed ? DETAIL_CARD_TEXT_CHARS : CARD_TEXT_PREVIEW_CHARS,
+  });
+  const live = scene.elements.filter((element) => element.isDeleted !== true);
+  const turnTitles = new Map<string, string>();
+  const anchors = new Map<string, string>();
+  for (const element of live) {
+    const customData = recordOf(element.customData);
+    if (typeof customData.t3Turn === "string") {
+      turnTitles.set(customData.t3Turn, String(customData.t3TurnTitle ?? ""));
+    }
+    const anchor = turnAnchorOf(element);
+    const id = idOf(element);
+    if (anchor !== null && id !== undefined) anchors.set(id, anchor.turn);
+  }
+  const spine = turnSpineOf(described.turns);
+  const groups = new Map<string, (typeof described.elements)[number][]>();
+  for (const element of described.elements) {
+    if (element.drawingId === undefined) continue;
+    const group = groups.get(element.drawingId) ?? [];
+    group.push(element);
+    groups.set(element.drawingId, group);
+  }
+  const drawings = [...groups].map(([drawingId, elements]) => {
+    const left = Math.min(...elements.map((element) => element.x));
+    const top = Math.min(...elements.map((element) => element.y));
+    const right = Math.max(...elements.map((element) => element.x + element.width));
+    const bottom = Math.max(...elements.map((element) => element.y + element.height));
+    const title = drawingTitle(elements);
+    const anchoredTo = elements
+      .map((element) => anchors.get(element.id))
+      .find((turn) => turn !== undefined);
+    const besideTurn = anchoredTo === undefined ? undefined : turnTitles.get(anchoredTo);
+    return {
+      drawingId,
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+      shapes: elements.length,
+      cards: elements.filter((element) => element.card !== undefined).length,
+      ...(title === undefined ? {} : { title }),
+      ...(besideTurn === undefined ? {} : { followsTurn: clippedTo(besideTurn, TITLE_CHARS) }),
+    };
+  });
+  const wanted = (element: (typeof described.elements)[number]) =>
+    !detailed
+      ? element.drawnBy === "user"
+      : (element.drawingId !== undefined &&
+          query.drawingIds?.some(
+            (id) => element.drawingId === id || element.drawingId?.startsWith(`${id}~`) === true,
+          ) === true) ||
+        query.ids?.includes(element.id) === true ||
+        (query.region !== undefined && overlaps(element, query.region));
+  const elements: (typeof described.elements)[number][] = [];
+  let spent = 0;
+  let omitted = 0;
+  for (const element of described.elements.filter(wanted)) {
+    const size = JSON.stringify(element).length;
+    if (detailed && spent + size > DETAIL_BUDGET_CHARS) {
+      omitted += 1;
+      continue;
+    }
+    spent += size;
+    elements.push(element);
+  }
+  return {
+    spine:
+      spine === null
+        ? null
+        : {
+            left: spine.left,
+            right: spine.right,
+            nextTurnY: spine.latestTurn.y + spine.latestTurn.height,
+          },
+    turns: described.turns,
+    drawings,
+    elements,
+    note: detailed
+      ? omitted === 0
+        ? "Elements matching the query, card text in full."
+        : `${omitted} more matching elements left out to fit; ask for fewer drawings or a smaller region.`
+      : "Your drawings appear as one box each; elements lists only the user's marks. Pass drawingIds, ids or region for your shapes and full card text. Coordinates are current: read again rather than reuse ones from earlier.",
   };
 }
