@@ -356,6 +356,30 @@ describe("readCanvas", () => {
       expect.objectContaining({ drawingId: "map~0123abcd", title: "Child finding" }),
     ]);
     expect(read.elements.map((element) => element.id)).toEqual(["note"]);
+    expect(read.elements[0]).toMatchObject({ turn: 0 });
+    expect(read.elements[0]).not.toHaveProperty("nearestTurn");
+  });
+
+  it("names the piece a mark sits on by id and clips the words under it", () => {
+    const read = readCanvas(
+      scene([
+        turn,
+        card("map", "today", 462, "Today"),
+        {
+          id: "cite",
+          type: "text",
+          x: 500,
+          y: 40,
+          width: 60,
+          height: 20,
+          text: "cite?",
+          customData: { t3Covers: "w".repeat(500) },
+        },
+      ]),
+    );
+    expect(read.elements).toEqual([
+      expect.objectContaining({ id: "cite", on: "map/today", covers: `${"w".repeat(160)}…` }),
+    ]);
   });
 
   it("lists a drawing in full, a delegated copy of it included, or what overlaps a region", () => {

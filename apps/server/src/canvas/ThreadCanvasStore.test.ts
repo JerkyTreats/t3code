@@ -27,7 +27,6 @@ layer("ThreadCanvasStore", (it) => {
         shapes: [{ id: "box", type: "rectangle", x: 0, y: 0, text: "API" }],
       });
       assert.strictEqual(report.placed?.width, 200);
-      assert.deepStrictEqual(report.elementIds, ["design/box"]);
 
       const [scene] = yield* canvas.follow(threadId).pipe(Stream.take(1), Stream.runCollect);
       assert.sameMembers(scene?.elements.map((element) => element.id) ?? [], [

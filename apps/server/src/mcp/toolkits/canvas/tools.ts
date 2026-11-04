@@ -20,7 +20,7 @@ const CanvasBox = {
 
 export const CanvasReadTool = Tool.make("canvas_read", {
   description:
-    "Read this thread's Excalidraw canvas, the whiteboard behind its turns. With no arguments it returns an overview: the spine (the column the turns stack in, from left to right, with nextTurnY where the next turn lands), each turn, each of your drawings as one box with its title and the turn it follows, and every mark the user drew or wrote, with the turn it sits near and the card or shape of yours it is on. Pass drawingIds, ids or region for your shapes in full, card text included. Coordinates are current only as of this call: read again after the user may have moved things. Call it before answering about the canvas or the user's marks.",
+    "Read this thread's Excalidraw canvas, the whiteboard behind its turns. With no arguments it returns an overview: the spine (the column the turns stack in, from left to right, with nextTurnY where the next turn lands), each turn, each of your drawings as one box with its title and the turn it follows, and every mark the user drew or wrote, with turn (its index in turns) and on or beside (the id of your piece under or next to it). Pass drawingIds, ids or region for your shapes in full, card text included. Coordinates are current only as of this call: read again after the user may have moved things. Call it before answering about the canvas or the user's marks.",
   parameters: Schema.Struct({
     drawingIds: Schema.optional(Schema.Array(Schema.String)).annotate({
       description: "List every shape of these drawings, card text in full.",
@@ -61,7 +61,9 @@ export const CanvasReadTool = Tool.make("canvas_read", {
         covers: Schema.optional(Schema.String),
         start: Schema.optional(Schema.String),
         end: Schema.optional(Schema.String),
-        nearestTurn: Schema.optional(Schema.String),
+        turn: Schema.optional(Schema.Int),
+        on: Schema.optional(Schema.String),
+        beside: Schema.optional(Schema.String),
       }),
     ),
     note: Schema.String,
@@ -134,7 +136,6 @@ export const CanvasUpdateTool = Tool.make("canvas_update", {
     clippedLabels: Schema.Array(Schema.String),
     overlaps: Schema.Array(Schema.String),
     keptUserMoves: Schema.Array(Schema.String),
-    elementIds: Schema.Array(Schema.String),
   }),
   failure: OrchestratorMcpFailure,
   failureMode: "return",
