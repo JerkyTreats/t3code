@@ -123,3 +123,84 @@ describe("a drawing built on the server", () => {
     expect(saved("d/b/label")?.x).toBeLessThan(800);
   });
 });
+
+describe("an html card on the board", () => {
+  it("lets a middle drag and the wheel reach the board until a click opens the page", async () => {
+    localStorage.removeItem(STORAGE_KEY);
+    await page.viewport(1300, 800);
+    const turnBoard = createTurnBoard();
+    // The chat publishes the layer cards render into; here a bare one stands in for it.
+    const layer = document.createElement("div");
+    document.body.append(layer);
+    turnBoard.publish(layer, []);
+    await using _ = await render(
+      <div data-board-root style={{ position: "relative", width: 1200, height: 700 }}>
+        <ExcalidrawBoard
+          draft={false}
+          storageId="server-drawing"
+          turnBoard={turnBoard}
+          canvasThread={{ environmentId: "e", threadId: "t" } as never}
+          onSendNote={() => {}}
+        />
+      </div>,
+    );
+    await vi.waitFor(() =>
+      expect(document.querySelector(".excalidraw__canvas.interactive")).not.toBeNull(),
+    );
+    const card: ThreadCanvasShape = {
+      id: "page",
+      type: "html",
+      attachmentId: "a-1-html",
+      title: "Chart",
+      width: 480,
+      height: 320,
+    };
+    sync.onScene?.({
+      revision: 1,
+      elements: buildDrawingElements({
+        drawingId: "h",
+        turn: null,
+        placed: [{ shape: card, ...shapeSize(card), x: 100, y: 100, localX: 0, localY: 0 }],
+        versionOf: () => 0,
+        randomInt: () => 7,
+        now: 1,
+      }),
+    });
+    const cover = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>(
+        '[data-canvas-card-id="h/page"] .canvas-card-cover',
+      );
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const canvas = document.querySelector(".excalidraw__canvas.interactive")!;
+    const pressed: number[] = [];
+    // The forwarded press stops at the canvas: Excalidraw cannot capture a pointer that never was.
+    canvas.addEventListener("pointerdown", (event) => {
+      pressed.push((event as PointerEvent).button);
+      event.stopImmediatePropagation();
+    });
+    cover.dispatchEvent(
+      new PointerEvent("pointerdown", { button: 1, bubbles: true, cancelable: true }),
+    );
+    window.dispatchEvent(new PointerEvent("pointerup", { button: 1 }));
+    expect(pressed).toEqual([1]);
+    expect(cover.hidden).toBe(false);
+    const wheeled: number[] = [];
+    canvas.addEventListener("wheel", (event) => {
+      wheeled.push((event as WheelEvent).deltaY);
+      event.stopImmediatePropagation();
+    });
+    cover.dispatchEvent(new WheelEvent("wheel", { deltaY: 120, bubbles: true, cancelable: true }));
+    expect(wheeled).toEqual([120]);
+
+    cover.dispatchEvent(new PointerEvent("pointerdown", { button: 0, bubbles: true }));
+    expect(cover.hidden).toBe(true);
+    // React reads leaving from pointerout to an element outside the card.
+    cover.parentElement!.dispatchEvent(
+      new PointerEvent("pointerout", { bubbles: true, relatedTarget: document.body }),
+    );
+    expect(cover.hidden).toBe(false);
+    layer.remove();
+  });
+});

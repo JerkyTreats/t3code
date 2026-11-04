@@ -2698,6 +2698,16 @@ code {
   scrollbar-gutter: stable;
 }
 
+.canvas-card-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.canvas-card-cover[hidden] {
+  display: none;
+}
+
 [data-board-marking] .canvas-card,
 [data-board-marking] .canvas-card * {
   pointer-events: none !important;

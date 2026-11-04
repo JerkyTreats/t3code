@@ -998,6 +998,11 @@ export default function ExcalidrawBoard({
                   className="canvas-card bg-background text-foreground rounded-lg"
                   data-canvas-card={card.card.kind}
                   data-canvas-card-id={card.id}
+                  onPointerLeave={(event) => {
+                    const cover =
+                      event.currentTarget.querySelector<HTMLElement>(".canvas-card-cover");
+                    if (cover) cover.hidden = false;
+                  }}
                   style={{
                     transform: `translate(${card.x + TURN_INSET_PX}px, ${card.y + TURN_INSET_PX}px)`,
                     width,
@@ -1019,16 +1024,27 @@ export default function ExcalidrawBoard({
                       />
                     </div>
                   ) : (
-                    <HtmlRenderFrame
-                      key={card.card.attachmentId}
-                      environmentId={canvasThread.environmentId}
-                      htmlRender={{
-                        attachmentId: card.card.attachmentId,
-                        title: card.card.title,
-                        height,
-                      }}
-                      threadRef={canvasThread}
-                    />
+                    <>
+                      <HtmlRenderFrame
+                        key={card.card.attachmentId}
+                        environmentId={canvasThread.environmentId}
+                        htmlRender={{
+                          attachmentId: card.card.attachmentId,
+                          title: card.card.title,
+                          height,
+                        }}
+                        threadRef={canvasThread}
+                      />
+                      {/* An iframe keeps every pointer and wheel event, so the board would never
+                          pan over the page. The cover passes those on; a click lifts it to use
+                          the page until the pointer leaves the card. */}
+                      <div
+                        className="canvas-card-cover"
+                        onPointerDown={(event) => {
+                          if (event.button === 0) event.currentTarget.hidden = true;
+                        }}
+                      />
+                    </>
                   )}
                 </div>
               );
