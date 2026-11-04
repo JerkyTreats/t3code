@@ -224,7 +224,7 @@ export function canvasPreviewPage(input: {
     const caption =
       label === undefined
         ? ""
-        : `<div class="label" style="font-size:${numberOf(label.fontSize) || 16}px;${labelAlignment(label)}">${escapeHtml(String(label.text ?? ""))}</div>`;
+        : `<div class="label" style="font-size:${numberOf(label.fontSize) || 16}px;${labelAlignment(label)}${element.type === "arrow" || element.type === "line" ? ";white-space:nowrap;padding:0" : ""}">${escapeHtml(String(label.text ?? ""))}</div>`;
     return [
       `<div class="shape" style="${at}"><svg width="${Math.max(box.width, 1)}" height="${Math.max(box.height, 1)}" overflow="visible">${svg}</svg>${caption}</div>`,
     ];

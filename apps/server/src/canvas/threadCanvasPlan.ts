@@ -38,6 +38,8 @@ export interface DrawInput {
   readonly patch?: boolean | undefined;
   /** In a patch, shape ids to take out, with the arrows that join them. */
   readonly remove?: ReadonlyArray<string> | undefined;
+  /** The shapes carry a finished layout, as a compiled diagram does: never re-shelve them. */
+  readonly arranged?: boolean | undefined;
   readonly near?: string | undefined;
   readonly layout?: "right" | "down" | undefined;
   readonly resetMoves?: boolean | undefined;
@@ -412,7 +414,8 @@ export function planDrawing(input: {
   const laidOut =
     draw.layout !== undefined
       ? layoutShapes(shapes, draw.layout)
-      : (draw.place !== undefined ||
+      : draw.arranged !== true &&
+          (draw.place !== undefined ||
             holder !== undefined ||
             shapes.every((shape) => shape.x === undefined && shape.y === undefined)) &&
           shapes.length > 0 &&
