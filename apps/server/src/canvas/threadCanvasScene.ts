@@ -48,7 +48,9 @@ interface CanvasBox {
 }
 
 const CARD_TEXT_PREVIEW_CHARS = 400;
-const TITLE_CHARS = 80;
+const TITLE_CHARS = 40;
+// The words under a mark, in an overview: enough to tell which line it sits on.
+const COVERS_CHARS = 160;
 
 const clippedTo = (text: string, chars: number) =>
   text.length > chars ? `${text.slice(0, chars)}…` : text;
@@ -209,7 +211,9 @@ export function describeCanvas(
         ...(typeof covers === "string" ? { covers } : {}),
         ...(typeof start === "string" ? { start } : {}),
         ...(typeof end === "string" ? { end } : {}),
-        ...(nearestTurn === null ? {} : { nearestTurn: nearestTurn.title }),
+        ...(nearestTurn === null
+          ? {}
+          : { nearestTurn: nearestTurn.title, turn: turns.indexOf(nearestTurn) }),
       },
     ];
   });
@@ -425,10 +429,25 @@ export function readCanvas(scene: ThreadCanvasScene, query: CanvasReadQuery = {}
           ) === true) ||
         query.ids?.includes(element.id) === true ||
         (query.region !== undefined && overlaps(element, query.region));
-  const elements: (typeof described.elements)[number][] = [];
+  // Marks name the turn by its place in turns and the piece under them by id, not by their words.
+  const compact = ({
+    nearestTurn: _title,
+    on,
+    beside,
+    covers,
+    ...element
+  }: (typeof described.elements)[number]) => ({
+    ...element,
+    ...(covers === undefined
+      ? {}
+      : { covers: detailed ? covers : clippedTo(covers, COVERS_CHARS) }),
+    ...(on === undefined ? {} : { on: on.id }),
+    ...(beside === undefined ? {} : { beside: beside.id }),
+  });
+  const elements: ReturnType<typeof compact>[] = [];
   let spent = 0;
   let omitted = 0;
-  for (const element of described.elements.filter(wanted)) {
+  for (const element of described.elements.filter(wanted).map(compact)) {
     const size = JSON.stringify(element).length;
     if (detailed && spent + size > DETAIL_BUDGET_CHARS) {
       omitted += 1;

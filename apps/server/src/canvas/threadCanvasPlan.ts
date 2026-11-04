@@ -4,7 +4,6 @@ import {
   anchorTo,
   arrowEnds,
   buildDrawingElements,
-  drawingElementId,
   drawingShapesOf,
   holdsTurnAnchor,
   isCardShape,
@@ -352,12 +351,16 @@ function lineHitsBox(
   );
 }
 
+const NAME_CHARS = 40;
+const clip = (text: string) => (text.length > NAME_CHARS ? `${text.slice(0, NAME_CHARS)}…` : text);
+
 function nameOf(element: ThreadCanvasElement) {
   const data = recordOf(element.customData);
-  if (typeof data.t3Turn === "string") return `turn "${String(data.t3TurnTitle ?? "")}"`;
+  if (typeof data.t3Turn === "string") return `turn "${clip(String(data.t3TurnTitle ?? ""))}"`;
+  if (drawingOf(element) !== null) return `your [${String(element.id)}]`;
   return typeof element.text === "string"
-    ? `"${element.text}"`
-    : `the user's ${String(element.type)}`;
+    ? `"${clip(element.text)}"`
+    : `the user's ${String(element.type)} [${String(element.id)}]`;
 }
 
 /**
@@ -898,6 +901,5 @@ function reportDrawing(input: {
       ),
     ],
     keptUserMoves: solid.flatMap((piece) => (pinned.has(piece.shape.id) ? [piece.shape.id] : [])),
-    elementIds: placed.map((piece) => drawingElementId(draw.drawingId, piece.shape.id)),
   };
 }
