@@ -12,10 +12,10 @@ import * as ThreadManagementService from "../../../orchestration-v2/ThreadManage
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const CanvasBox = {
-  x: Schema.Number,
-  y: Schema.Number,
-  width: Schema.Number,
-  height: Schema.Number,
+  x: Schema.Finite,
+  y: Schema.Finite,
+  width: Schema.Finite,
+  height: Schema.Finite,
 };
 
 export const CanvasReadTool = Tool.make("canvas_read", {
@@ -34,13 +34,14 @@ export const CanvasReadTool = Tool.make("canvas_read", {
   }),
   success: Schema.Struct({
     spine: Schema.NullOr(
-      Schema.Struct({ left: Schema.Number, right: Schema.Number, nextTurnY: Schema.Number }),
+      Schema.Struct({ left: Schema.Finite, right: Schema.Finite, nextTurnY: Schema.Finite }),
     ),
     turns: Schema.Array(Schema.Struct({ ...CanvasBox, title: Schema.String })),
     drawings: Schema.Array(
       Schema.Struct({
         ...CanvasBox,
         drawingId: Schema.String,
+        origin: Schema.Struct({ x: Schema.Finite, y: Schema.Finite }),
         shapes: Schema.Int,
         cards: Schema.Int,
         title: Schema.optional(Schema.String),
@@ -55,6 +56,7 @@ export const CanvasReadTool = Tool.make("canvas_read", {
         drawnBy: Schema.Literals(["user", "agent"]),
         drawingId: Schema.optional(Schema.String),
         card: Schema.optional(Schema.Literals(["markdown", "html"])),
+        attachmentId: Schema.optional(Schema.String),
         text: Schema.optional(Schema.String),
         covers: Schema.optional(Schema.String),
         start: Schema.optional(Schema.String),
@@ -81,14 +83,21 @@ export const CanvasReadTool = Tool.make("canvas_read", {
 // This affects only the caller's thread, not its workspace, so read-only sandboxes and plan mode may use it.
 export const CanvasUpdateTool = Tool.make("canvas_update", {
   description:
-    "Draw on this thread's Excalidraw canvas, the whiteboard behind its turns. Use it for diagrams, system designs, flows, and whiteboard notes the user may move, edit, or mark up. Shapes are live: the user can drag and change them. For a graph, set layout and leave out x, y and sizes: T3 places the boxes and sizes them to their labels. Use x and y only for freeform work. A drawingId names one drawing; each call sends the whole drawing, so call again with the same drawingId to change it, and leave a shape out to remove it. An empty shapes list removes the drawing. Boxes the user dragged stay where they put them unless resetMoves is true, which is for when they ask you to re-lay it out. T3 places a new drawing beside the current turn. Label a box or arrow with text; connect shapes with arrow start and end. Omit colors unless they carry meaning. The result reports where it landed, crossings, arrows through boxes, clipped labels, and overlaps: fix what it reports rather than guessing.",
+    "Draw on this thread's Excalidraw canvas, the whiteboard behind its turns. Use it for diagrams, system designs, flows, and whiteboard notes the user may move, edit, or mark up. Shapes are live: the user can drag and change them. For a graph, set layout and leave out x, y and sizes: T3 places the boxes and sizes them to their labels. Use x and y only for freeform work. A drawingId names one drawing. To change one, call again with the same drawingId and patch: true, sending only the shapes that change and only their changed fields; list ids in remove to take shapes out. Without patch, the shapes sent are the whole drawing, and an empty list removes it. Shape x and y are relative to the drawing's origin, which canvas_read lists per drawing. Boxes the user dragged stay where they put them unless resetMoves is true, which is for when they ask you to re-lay it out. T3 places a new drawing beside the current turn. Label a box or arrow with text; connect shapes with arrow start and end. Omit colors unless they carry meaning. The result reports where it landed, crossings, arrows through boxes, clipped labels, and overlaps: fix what it reports rather than guessing.",
   parameters: Schema.Struct({
     drawingId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)).annotate({
       description: "A short stable name, such as system-design.",
     }),
-    shapes: Schema.Array(ThreadCanvasShape).check(
-      Schema.isMaxLength(THREAD_CANVAS_MAX_DRAWING_ELEMENTS),
+    shapes: Schema.optional(
+      Schema.Array(ThreadCanvasShape).check(Schema.isMaxLength(THREAD_CANVAS_MAX_DRAWING_ELEMENTS)),
     ),
+    patch: Schema.optional(Schema.Boolean).annotate({
+      description:
+        "Change only the shapes sent, keeping the rest. A shape's x or y sent in a patch moves it even where the user dragged it. Leaving out shapes implies a patch.",
+    }),
+    remove: Schema.optional(Schema.Array(Schema.String)).annotate({
+      description: "In a patch, shape ids to take out, with the arrows that join them.",
+    }),
     layout: Schema.optional(
       Schema.Literals(["right", "down"]).annotate({
         description: "Lay the shapes out as a graph flowing this way.",

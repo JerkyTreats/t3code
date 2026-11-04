@@ -5,6 +5,7 @@ import {
   arrowEnds,
   buildDrawingElements,
   drawingElementId,
+  drawingShapesOf,
   holdsTurnAnchor,
   isCardShape,
   labelOverflows,
@@ -31,6 +32,13 @@ const HOLDER_TYPES = new Set(["rectangle", "ellipse", "diamond", "frame"]);
 export interface DrawInput {
   readonly drawingId: string;
   readonly shapes: ReadonlyArray<ThreadCanvasShape>;
+  /**
+   * Changes only the shapes sent, field by field, and keeps the rest of the drawing; a shape's x or
+   * y sent here moves it even where it was dragged. Without it, the shapes sent are the drawing.
+   */
+  readonly patch?: boolean | undefined;
+  /** In a patch, shape ids to take out, with the arrows that join them. */
+  readonly remove?: ReadonlyArray<string> | undefined;
   readonly near?: string | undefined;
   readonly layout?: "right" | "down" | undefined;
   readonly resetMoves?: boolean | undefined;
@@ -103,10 +111,20 @@ function boundsOf(boxes: ReadonlyArray<Box>): Box {
   };
 }
 
-/** Where a drawing sits: the offset most of its shapes share, so one dragged box cannot move it. */
-function originOf(existing: ReadonlyArray<ThreadCanvasElement>) {
+/** Whether a piece sits where a turn anchor put it, as moveToLatestTurn or the turn's growth left it. */
+const heldByTurn = (element: ThreadCanvasElement) => {
+  const anchor = turnAnchorOf(element);
+  return anchor !== null && holdsTurnAnchor(boxOf(element), anchor);
+};
+
+/**
+ * Where a drawing sits: the offset most of its shapes share, so one dragged box cannot move it.
+ * Pieces brought to a turn sit off that offset, so they vote only when nothing else does.
+ */
+export function originOf(existing: ReadonlyArray<ThreadCanvasElement>) {
+  const unanchored = existing.filter((element) => !heldByTurn(element));
   const votes = new Map<string, { x: number; y: number; count: number }>();
-  for (const element of existing) {
+  for (const element of unanchored.some(isPiece) ? unanchored : existing) {
     const data = drawingOf(element);
     if (data === null || typeof element.containerId === "string") continue;
     if (element.type === "arrow" || element.type === "line") continue;
@@ -119,6 +137,57 @@ function originOf(existing: ReadonlyArray<ThreadCanvasElement>) {
 }
 
 /** Boxes the reader dragged away from the agent's layout. They stay there until asked to move. */
+const isPiece = (element: ThreadCanvasElement) =>
+  drawingOf(element) !== null &&
+  typeof element.containerId !== "string" &&
+  element.type !== "arrow" &&
+  element.type !== "line";
+
+/** The drawing's shapes as last written, with the patch applied: changed fields, new and removed shapes. */
+function patchedShapes(
+  previous: ReadonlyArray<ThreadCanvasShape>,
+  sent: ReadonlyArray<ThreadCanvasShape>,
+  remove: ReadonlyArray<string>,
+) {
+  const changes = new Map(sent.map((shape) => [shape.id, shape]));
+  const gone = new Set(remove);
+  const kept = previous
+    .filter((shape) => !gone.has(shape.id))
+    .filter(
+      (shape) =>
+        !hasLines(shape) ||
+        !(
+          (shape.start !== undefined && gone.has(shape.start)) ||
+          (shape.end !== undefined && gone.has(shape.end))
+        ),
+    )
+    .map((shape) => {
+      const change = changes.get(shape.id);
+      return change === undefined ? shape : { ...shape, ...change };
+    });
+  const known = new Set(previous.map((shape) => shape.id));
+  return [...kept, ...sent.filter((shape) => !known.has(shape.id) && !gone.has(shape.id))];
+}
+
+/** Shapes a patch adds without a place go in rows under the rest of the drawing. */
+function rowsUnder(shapes: ReadonlyArray<ThreadCanvasShape>) {
+  const unplaced = (shape: ThreadCanvasShape) =>
+    !hasLines(shape) && shape.x === undefined && shape.y === undefined;
+  const settled = shapes.filter((shape) => !hasLines(shape) && !unplaced(shape));
+  const newcomers = shapes.filter(unplaced);
+  if (settled.length === 0 || newcomers.length === 0) return shapes;
+  const bounds = boundsOf(
+    settled.map((shape) => ({ x: shape.x ?? 0, y: shape.y ?? 0, ...shapeSize(shape) })),
+  );
+  const rows = shelve(newcomers.map((shape) => ({ id: shape.id, ...shapeSize(shape) })));
+  return shapes.map((shape) => {
+    const row = rows.get(shape.id);
+    return row === undefined
+      ? shape
+      : { ...shape, x: bounds.x + row.x, y: bounds.y + bounds.height + GAP_PX + row.y };
+  });
+}
+
 function pinsOf(
   drawingId: string,
   existing: ReadonlyArray<ThreadCanvasElement>,
@@ -302,14 +371,36 @@ export function planDrawing(input: {
   readonly now: number;
 }) {
   const { scene, draw, randomInt, now } = input;
-  const { drawingId, shapes } = draw;
+  const { drawingId } = draw;
   const live = scene.elements.filter((element) => element.isDeleted !== true);
   const existing = live.filter((element) => drawingOf(element)?.id === drawingId);
+  const shapes =
+    draw.patch === true
+      ? ((patched) => (draw.layout === undefined ? rowsUnder(patched) : patched))(
+          patchedShapes(drawingShapesOf(live, drawingId), draw.shapes, draw.remove ?? []),
+        )
+      : draw.shapes;
   const origin = originOf(existing);
-  const pins =
-    draw.resetMoves === true
-      ? new Map<string, { readonly x: number; readonly y: number }>()
-      : pinsOf(drawingId, existing, origin);
+  // Pieces brought to a turn stay there like the user's drags, but resetMoves leaves them be, and
+  // only the user's drags are reported as kept.
+  const broughtToTurn = new Set(
+    existing
+      .filter((element) => isPiece(element) && heldByTurn(element))
+      .map((element) => String(element.id).slice(drawingId.length + 1)),
+  );
+  // A patch that gives a shape a place puts it there, wherever it was dragged.
+  const placedByPatch = new Set(
+    draw.patch === true
+      ? draw.shapes
+          .filter((shape) => shape.x !== undefined || shape.y !== undefined)
+          .map((shape) => shape.id)
+      : [],
+  );
+  const pins = new Map(
+    [...pinsOf(drawingId, existing, origin)].filter(
+      ([id]) => !placedByPatch.has(id) && (draw.resetMoves !== true || broughtToTurn.has(id)),
+    ),
+  );
   const sized = shapes.map((shape) => ({ shape, ...shapeSize(shape) }));
   const holder = live.find(
     (element) =>
@@ -385,7 +476,10 @@ export function planDrawing(input: {
     existing.map((element) => String(element.id).slice(drawingId.length + 1)),
   );
   const replacesAll =
-    origin !== null && shapes.length > 0 && shapes.every((shape) => !previousShapes.has(shape.id));
+    draw.patch !== true &&
+    origin !== null &&
+    shapes.length > 0 &&
+    shapes.every((shape) => !previousShapes.has(shape.id));
   const spot =
     holder !== undefined
       ? { ...local, ...insideOf(holder, live) }
@@ -541,7 +635,12 @@ export function planDrawing(input: {
   return {
     elements,
     seen: seenAfter(scene, elements),
-    report: reportDrawing({ draw, placed, others, pinned: new Set(pins.keys()) }),
+    report: reportDrawing({
+      draw,
+      placed,
+      others,
+      pinned: new Set([...pins.keys()].filter((id) => !broughtToTurn.has(id))),
+    }),
   };
 }
 

@@ -119,7 +119,7 @@ const handlers = {
       const canvasThreadId = yield* canvasThreadOf(thread.threadId);
       // An html card's page becomes an attachment of the canvas thread, so every client of that
       // thread can load it. A card that names an existing attachment keeps it.
-      const shapes = yield* Effect.forEach(input.shapes, (shape) => {
+      const shapes = yield* Effect.forEach(input.shapes ?? [], (shape) => {
         if (shape.type !== "html" || shape.attachmentId !== undefined) return Effect.succeed(shape);
         if (shape.html === undefined) {
           return Effect.fail(
@@ -145,6 +145,7 @@ const handlers = {
         .draw({
           ...input,
           shapes,
+          patch: input.patch ?? input.shapes === undefined,
           threadId: canvasThreadId,
           drawingId: sharedDrawingId(input.drawingId, thread.threadId, canvasThreadId),
         })

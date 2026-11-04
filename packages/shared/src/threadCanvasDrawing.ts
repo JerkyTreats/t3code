@@ -454,3 +454,115 @@ export function buildDrawingElements(input: BuildDrawingInput): ReadonlyArray<Th
     ];
   });
 }
+
+const sameSize = (
+  left: { readonly width: number; readonly height: number },
+  right: { readonly width: number; readonly height: number },
+) => Math.abs(left.width - right.width) < 1 && Math.abs(left.height - right.height) < 1;
+
+/**
+ * The shapes a drawing's elements were built from, in scene order, as the agent would send them
+ * again: positions within the drawing, sizes only where they differ from the size T3 would give,
+ * colors only where they differ from the default. Patching a drawing starts from these.
+ */
+export function drawingShapesOf(
+  elements: ReadonlyArray<ThreadCanvasElement>,
+  drawingId: string,
+): ReadonlyArray<ThreadCanvasShape> {
+  const prefix = `${drawingId}/`;
+  const live = elements.filter((element) => element.isDeleted !== true);
+  const labels = new Map<string, ThreadCanvasElement>();
+  for (const element of live) {
+    if (typeof element.containerId === "string") labels.set(element.containerId, element);
+  }
+  const record = (value: unknown) =>
+    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  const shapeIdOf = (id: unknown) =>
+    typeof id === "string" && id.startsWith(prefix) ? id.slice(prefix.length) : undefined;
+  const numberOf = (value: unknown) => (typeof value === "number" ? value : 0);
+  return live.flatMap((element) => {
+    const data = record(record(element.customData).t3Drawing);
+    const id = shapeIdOf(element.id);
+    if (data.id !== drawingId || id === undefined || typeof element.containerId === "string") {
+      return [];
+    }
+    const card = record(record(element.customData).t3Card);
+    const label = labels.get(String(element.id));
+    const labelText =
+      typeof label?.originalText === "string"
+        ? label.originalText
+        : typeof label?.text === "string"
+          ? label.text
+          : undefined;
+    const type: ThreadCanvasShape["type"] =
+      card.kind === "markdown"
+        ? "markdown"
+        : card.kind === "html"
+          ? "html"
+          : (String(element.type) as ThreadCanvasShape["type"]);
+    const size = { width: numberOf(element.width), height: numberOf(element.height) };
+    const position = { x: numberOf(data.localX), y: numberOf(data.localY) };
+    const strokeDefault = card.kind === undefined ? STROKE : CARD_STROKE;
+    const colors = {
+      ...(typeof element.strokeColor === "string" && element.strokeColor !== strokeDefault
+        ? { strokeColor: element.strokeColor }
+        : {}),
+      ...(type !== "text" &&
+      typeof element.backgroundColor === "string" &&
+      element.backgroundColor !== "transparent"
+        ? { backgroundColor: element.backgroundColor }
+        : {}),
+    };
+    if (type === "markdown" || type === "html") {
+      return [
+        {
+          id,
+          type,
+          ...position,
+          ...size,
+          ...(type === "markdown"
+            ? { text: typeof card.text === "string" ? card.text : "" }
+            : {
+                ...(typeof card.attachmentId === "string" && card.attachmentId !== ""
+                  ? { attachmentId: card.attachmentId }
+                  : {}),
+                ...(typeof card.title === "string" ? { title: card.title } : {}),
+              }),
+          ...colors,
+        },
+      ];
+    }
+    if (type === "arrow" || type === "line") {
+      const start = shapeIdOf(record(element.startBinding).elementId);
+      const end = shapeIdOf(record(element.endBinding).elementId);
+      const tip = Array.isArray(element.points) ? element.points.at(-1) : undefined;
+      const fontSize = numberOf(label?.fontSize);
+      return [
+        {
+          id,
+          type,
+          ...position,
+          ...(start === undefined && end === undefined && Array.isArray(tip)
+            ? { width: numberOf(tip[0]), height: numberOf(tip[1]) }
+            : {}),
+          ...(labelText === undefined ? {} : { text: labelText }),
+          ...(fontSize !== 0 && fontSize !== LABEL_FONT_SIZE_PX ? { fontSize } : {}),
+          ...(start === undefined ? {} : { start }),
+          ...(end === undefined ? {} : { end }),
+          ...colors,
+        },
+      ];
+    }
+    const text = type === "text" ? (element.originalText ?? element.text) : labelText;
+    const fontSize = numberOf(type === "text" ? element.fontSize : label?.fontSize);
+    const shape: ThreadCanvasShape = {
+      id,
+      type,
+      ...position,
+      ...(typeof text === "string" ? { text } : {}),
+      ...(fontSize !== 0 && fontSize !== DEFAULT_FONT_SIZE_PX ? { fontSize } : {}),
+      ...colors,
+    };
+    return [sameSize(shapeSize(shape), size) ? shape : { ...shape, ...size }];
+  });
+}
