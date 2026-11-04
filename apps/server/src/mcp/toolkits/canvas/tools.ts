@@ -93,6 +93,10 @@ export const CanvasUpdateTool = Tool.make("canvas_update", {
     shapes: Schema.optional(
       Schema.Array(ThreadCanvasShape).check(Schema.isMaxLength(THREAD_CANVAS_MAX_DRAWING_ELEMENTS)),
     ),
+    diagram: Schema.optional(Schema.String.check(Schema.isMaxLength(40_000))).annotate({
+      description:
+        'The whole drawing as a Mermaid flowchart, instead of shapes; T3 lays it out and colours it. A subgraph is a titled band, and bands stacked down read as levels (why, how, what); direction sets each band\'s flow. Nodes joined by edges form a graph. class x lead marks the one answer (first, larger), aside marks side notes; any other class is a kind, given one colour and a legend. A "`markdown`" label makes a card. Keep node labels to a name and one qualifier, edge labels to a few words.',
+    }),
     patch: Schema.optional(Schema.Boolean).annotate({
       description:
         "Change only the shapes sent, keeping the rest. A shape's x or y sent in a patch moves it even where the user dragged it. Leaving out shapes implies a patch.",

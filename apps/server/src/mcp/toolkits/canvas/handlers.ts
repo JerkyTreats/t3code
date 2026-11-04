@@ -8,6 +8,7 @@ import {
   canvasPreviewPage,
   previewRegion,
 } from "../../../canvas/canvasPreviewPage.ts";
+import { compileDiagram, DiagramError } from "../../../canvas/canvasDiagram.ts";
 import { readCanvas } from "../../../canvas/threadCanvasScene.ts";
 import { canvasThreadOf, sharedDrawingId } from "../../../canvas/sharedCanvas.ts";
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
@@ -119,7 +120,24 @@ const handlers = {
       const canvasThreadId = yield* canvasThreadOf(thread.threadId);
       // An html card's page becomes an attachment of the canvas thread, so every client of that
       // thread can load it. A card that names an existing attachment keeps it.
-      const shapes = yield* Effect.forEach(input.shapes ?? [], (shape) => {
+      if (input.diagram !== undefined && input.shapes !== undefined) {
+        return yield* new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message: "Send diagram or shapes, not both.",
+        });
+      }
+      const diagram =
+        input.diagram === undefined
+          ? undefined
+          : yield* Effect.try({
+              try: () => compileDiagram(input.diagram!),
+              catch: (error) =>
+                new OrchestratorMcpFailure({
+                  code: "invalid_request",
+                  message: `Could not read the diagram: ${error instanceof DiagramError ? error.message : String(error)}`,
+                }),
+            });
+      const shapes = yield* Effect.forEach(diagram ?? input.shapes ?? [], (shape) => {
         if (shape.type !== "html" || shape.attachmentId !== undefined) return Effect.succeed(shape);
         if (shape.html === undefined) {
           return Effect.fail(
@@ -145,7 +163,8 @@ const handlers = {
         .draw({
           ...input,
           shapes,
-          patch: input.patch ?? input.shapes === undefined,
+          patch: diagram === undefined && (input.patch ?? input.shapes === undefined),
+          arranged: diagram !== undefined,
           threadId: canvasThreadId,
           drawingId: sharedDrawingId(input.drawingId, thread.threadId, canvasThreadId),
         })

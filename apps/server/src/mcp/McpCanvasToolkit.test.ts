@@ -38,7 +38,20 @@ const client = McpSchema.McpServerClient.of({
   getClient: Effect.die("unused"),
 });
 
+const drawn: Array<Parameters<ThreadCanvasStore.ThreadCanvasStore["Service"]["draw"]>[0]> = [];
 const layerCanvasMock = Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({
+  draw: (input) => {
+    drawn.push(input);
+    return Effect.succeed({
+      drawingId: input.drawingId,
+      placed: null,
+      crossings: 0,
+      arrowsThroughBoxes: [],
+      clippedLabels: [],
+      overlaps: [],
+      keptUserMoves: [],
+    });
+  },
   read: () =>
     Effect.succeed({
       revision: 1,
@@ -109,6 +122,34 @@ it.effect("returns the canvas preview as image content", () =>
         );
       expect(missing.isError).toBe(true);
       expect(JSON.stringify(missing.content)).toContain("Nothing on the canvas matches");
+    }),
+  ).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("compiles a diagram into laid-out shapes, and says why it cannot read one", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      // The test kit's live thread runs on codex; acting tools check the caller owns its run.
+      const caller = {
+        ...invocation,
+        thread: { ...invocation.thread, providerInstanceId: ProviderInstanceId.make("codex") },
+      };
+      const call = (diagram: string) =>
+        server
+          .callTool({ name: "canvas_update", arguments: { drawingId: "plan", diagram } })
+          .pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, caller),
+            Effect.provideService(McpSchema.McpServerClient, client),
+          );
+      const done = yield* call("flowchart TB\n  a[Alpha] -->|calls| b[Beta]\n  class a lead");
+      expect(done.isError).toBe(false);
+      expect(drawn.at(-1)).toMatchObject({ drawingId: "plan", arranged: true, patch: false });
+      expect(drawn.at(-1)?.shapes.map((shape) => shape.id)).toEqual(["a", "b", "e1"]);
+
+      const broken = yield* call("flowchart TB\n  subgraph S\n  a");
+      expect(broken.isError).toBe(true);
+      expect(JSON.stringify(broken.content)).toContain("Could not read the diagram");
     }),
   ).pipe(Effect.provide(layerTest)),
 );

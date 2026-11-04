@@ -753,3 +753,21 @@ describe("patching a drawing", () => {
     );
   });
 });
+
+describe("a compiled diagram", () => {
+  it("keeps its own layout beside the turn instead of being shelved into rows", () => {
+    const shapes: ReadonlyArray<ThreadCanvasShape> = [
+      { id: "lead", type: "markdown", text: "Answer", x: 0, y: 0, width: 960, height: 200 },
+      { id: "one", type: "markdown", text: "One", x: 0, y: 240, width: 480, height: 200 },
+    ];
+    const { elements } = plan(empty, {
+      drawingId: "d",
+      shapes,
+      place: "besideLatestTurn",
+      arranged: true,
+    });
+    const lead = live(elements, "d/lead")!;
+    expect(Number(live(elements, "d/one")?.y) - Number(lead.y)).toBe(240);
+    expect(live(elements, "d/one")?.x).toBe(lead.x);
+  });
+});
