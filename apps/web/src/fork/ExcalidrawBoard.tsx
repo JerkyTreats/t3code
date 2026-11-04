@@ -412,6 +412,22 @@ function reconcileTurns(api: ExcalidrawImperativeAPI, turnBoard: TurnBoard) {
   }
 }
 
+const turnBoxes = new WeakMap<object, ReadonlyMap<string, BoardElement>>();
+
+/** Each turn's box by turn id, worked out once per scene, since panning asks for it every frame. */
+function turnBoxesOf(elements: ReadonlyArray<BoardElement>) {
+  const known = turnBoxes.get(elements);
+  if (known !== undefined) return known;
+  const boxes = new Map(
+    elements.flatMap((element) => {
+      const { turnId } = asBoardBox(element);
+      return turnId === null ? [] : [[turnId, element] as const];
+    }),
+  );
+  turnBoxes.set(elements, boxes);
+  return boxes;
+}
+
 /** Moves the card layer with the camera, and each card to its box, without touching React. */
 function placeCards(
   api: ExcalidrawImperativeAPI,
@@ -428,12 +444,7 @@ function placeCards(
   const left = view.scrollX * zoom + boardRect.left - originRect.left;
   const top = view.scrollY * zoom + boardRect.top - originRect.top;
   layer.style.transform = `translate(${left}px, ${top}px) scale(${zoom})`;
-  const boxes = new Map(
-    api.getSceneElements().flatMap((element) => {
-      const { turnId } = asBoardBox(element);
-      return turnId === null ? [] : [[turnId, element] as const];
-    }),
-  );
+  const boxes = turnBoxesOf(api.getSceneElements());
   for (const card of turnBoard.cards()) {
     const box = boxes.get(card.id);
     if (box === undefined) continue;
@@ -526,6 +537,8 @@ export default function ExcalidrawBoard({
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const boardRef = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<number | null>(null);
+  // Every edit raises an element's version, even one made in place, so a pan leaves the sum alone.
+  const lastVersions = useRef<number | null>(null);
   const saveCanvas = useRef<SaveThreadCanvas | null>(null);
   const savedVersions = useRef(0);
   // A scene that arrived before Excalidraw finished loading.
@@ -746,6 +759,7 @@ export default function ExcalidrawBoard({
 
   // A pending save still runs after unmount, so the last stroke survives sending a message.
   const saveBoard: BoardChange = (elements, appState) => {
+    const versions = elements.reduce((total, element) => total + element.version, elements.length);
     const board = boardRef.current;
     const root = boardRootOf(board);
     if (api && root && board && !appState.isLoading) {
@@ -765,11 +779,16 @@ export default function ExcalidrawBoard({
         // Every tool but select draws or pans, so it reaches through the cards to the canvas.
         root.toggleAttribute("data-board-marking", appState.activeTool.type !== "selection");
         trackNoteAction(elements, appState);
-        reportPendingNotes(unseenMarks(elements, seenByAgent.current).length);
-        const nextCards = canvasCardsOf(elements);
-        setCards((current) => (sameCanvasCards(current, nextCards) ? current : nextCards));
+        if (versions !== lastVersions.current) {
+          reportPendingNotes(unseenMarks(elements, seenByAgent.current).length);
+          const nextCards = canvasCardsOf(elements);
+          setCards((current) => (sameCanvasCards(current, nextCards) ? current : nextCards));
+        }
       }
     }
+    // Only the camera moved: nothing to save, and serialising the scene would stall every pan.
+    if (versions === lastVersions.current) return;
+    lastVersions.current = versions;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       localStorage.setItem(
