@@ -343,6 +343,7 @@ describe("readCanvas", () => {
     expect(read.drawings).toEqual([
       {
         drawingId: "map",
+        origin: { x: 462, y: 0 },
         x: 462,
         y: 0,
         width: 838,

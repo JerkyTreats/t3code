@@ -28,17 +28,17 @@ export const ThreadCanvasShape = Schema.Struct({
       "markdown and html are T3's own reading blocks placed on the canvas, in the app's font; the rest are Excalidraw shapes.",
   }),
   x: Schema.optional(
-    Schema.Number.annotate({
+    Schema.Finite.annotate({
       description: "Left edge, relative to the drawing's own origin. Leave out when using layout.",
     }),
   ),
   y: Schema.optional(
-    Schema.Number.annotate({
+    Schema.Finite.annotate({
       description: "Top edge, relative to the drawing's own origin. Leave out when using layout.",
     }),
   ),
-  width: Schema.optional(Schema.Number),
-  height: Schema.optional(Schema.Number),
+  width: Schema.optional(Schema.Finite),
+  height: Schema.optional(Schema.Finite),
   text: Schema.optional(
     Schema.String.annotate({
       description:
@@ -58,7 +58,7 @@ export const ThreadCanvasShape = Schema.Struct({
     }),
   ),
   title: Schema.optional(Schema.String.annotate({ description: "html only: the page's title." })),
-  fontSize: Schema.optional(Schema.Number),
+  fontSize: Schema.optional(Schema.Finite),
   strokeColor: Schema.optional(Schema.String),
   backgroundColor: Schema.optional(Schema.String),
   start: Schema.optional(

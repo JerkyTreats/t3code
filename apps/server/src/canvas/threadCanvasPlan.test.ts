@@ -648,3 +648,108 @@ describe("replacing a drawing outright", () => {
     expect(live(elements, "map/a")).toMatchObject({ x: before.x, y: before.y });
   });
 });
+
+describe("patching a drawing", () => {
+  const card = (id: string, text = id): ThreadCanvasShape => ({
+    id,
+    type: "markdown",
+    text,
+    width: 600,
+    height: 400,
+  });
+  const later: ThreadCanvasElement = {
+    ...turn,
+    id: "turn-box:2",
+    y: 2000,
+    customData: { t3Turn: "2", t3TurnTitle: "Later" },
+  };
+  const drawn = applied(empty, {
+    drawingId: "p",
+    shapes: [card("a"), card("b"), box("x", 0, 500, "Box"), link("ab", "a", "x")],
+  });
+  const at = (scene: ThreadCanvasScene, id: string) => {
+    const element = live(scene.elements, id)!;
+    return { x: element.x, y: element.y };
+  };
+
+  it("changes only the fields sent and keeps every other shape where it is", () => {
+    const after = applied(drawn, {
+      drawingId: "p",
+      shapes: [{ id: "b", type: "markdown", text: "new words" }],
+      patch: true,
+    });
+    expect(live(after.elements, "p/b")?.customData).toMatchObject({
+      t3Card: { kind: "markdown", text: "new words" },
+    });
+    expect(live(after.elements, "p/b")).toMatchObject({ width: 600, height: 400 });
+    for (const id of ["p/a", "p/b", "p/x", "p/ab"]) expect(at(after, id)).toEqual(at(drawn, id));
+    expect(live(after.elements, "p/x/label")).toMatchObject({ originalText: "Box" });
+  });
+
+  it("removes listed shapes with the arrows that join them", () => {
+    const after = applied(drawn, { drawingId: "p", shapes: [], remove: ["x"], patch: true });
+    expect(live(after.elements, "p/x")).toBeUndefined();
+    expect(live(after.elements, "p/ab")).toBeUndefined();
+    expect(at(after, "p/a")).toEqual(at(drawn, "p/a"));
+  });
+
+  it("puts a new shape sent without a place in a row under the rest", () => {
+    const after = applied(drawn, { drawingId: "p", shapes: [card("c")], patch: true });
+    const bottom = Math.max(
+      ...["p/a", "p/b", "p/x"].map((id) => {
+        const element = live(drawn.elements, id)!;
+        return Number(element.y) + Number(element.height);
+      }),
+    );
+    expect(Number(live(after.elements, "p/c")?.y)).toBe(bottom + 32);
+  });
+
+  it("moves a card to the latest turn with no shapes sent, and later calls keep it there as the agent's own", () => {
+    const grown = { ...drawn, elements: [...drawn.elements, later] };
+    const moved = applied(grown, {
+      drawingId: "p",
+      shapes: [],
+      patch: true,
+      moveToLatestTurn: ["b"],
+    });
+    expect(live(moved.elements, "p/b")).toMatchObject({ y: 2000 });
+    expect(at(moved, "p/a")).toEqual(at(drawn, "p/a"));
+    const again = plan(moved, {
+      drawingId: "p",
+      shapes: [{ id: "a", type: "markdown", text: "edit" }],
+      patch: true,
+    });
+    expect(again.report.keptUserMoves).toEqual([]);
+    expect(live(again.elements, "p/b")).toMatchObject({ y: 2000 });
+    const reset = plan(moved, { drawingId: "p", shapes: [], patch: true, resetMoves: true });
+    expect(live(reset.elements, "p/b")).toMatchObject({ y: 2000 });
+  });
+
+  it("keeps the drawing's place when most of its cards were brought to a turn", () => {
+    const grown = { ...drawn, elements: [...drawn.elements, later] };
+    const moved = applied(grown, {
+      drawingId: "p",
+      shapes: [],
+      patch: true,
+      moveToLatestTurn: ["a", "b"],
+    });
+    const again = plan(moved, { drawingId: "p", shapes: [], patch: true });
+    expect(again.report.keptUserMoves).toEqual([]);
+    expect(live(again.elements, "p/x")).toMatchObject(at(drawn, "p/x"));
+  });
+
+  it("moves a shape the user dragged when the patch gives it a place", () => {
+    const dragged = drag(drawn, "p/x", 300, 0);
+    const kept = plan(dragged, { drawingId: "p", shapes: [], patch: true });
+    expect(kept.report.keptUserMoves).toEqual(["x"]);
+    const placed = plan(dragged, {
+      drawingId: "p",
+      shapes: [{ id: "x", type: "rectangle", x: 0, y: 900 }],
+      patch: true,
+    });
+    expect(placed.report.keptUserMoves).toEqual([]);
+    expect(Number(live(placed.elements, "p/x")?.y) - Number(live(drawn.elements, "p/x")?.y)).toBe(
+      400,
+    );
+  });
+});

@@ -1,6 +1,8 @@
 import type { ThreadCanvasElement, ThreadCanvasScene } from "@t3tools/contracts";
 import { isStaleDrawingCopy, turnAnchorOf, turnSpineOf } from "@t3tools/shared/threadCanvasDrawing";
 
+import { originOf } from "./threadCanvasPlan.ts";
+
 const versionOf = (element: ThreadCanvasElement) =>
   typeof element.version === "number" ? element.version : 0;
 const idOf = (element: ThreadCanvasElement) =>
@@ -200,6 +202,9 @@ export function describeCanvas(
         drawnBy: typeof drawing === "string" ? ("agent" as const) : ("user" as const),
         ...(typeof drawing === "string" ? { drawingId: drawing } : {}),
         ...(cardKind === undefined ? {} : { card: cardKind }),
+        ...(cardKind === "html" && typeof card.attachmentId === "string"
+          ? { attachmentId: card.attachmentId }
+          : {}),
         ...(text === undefined ? {} : { text }),
         ...(typeof covers === "string" ? { covers } : {}),
         ...(typeof start === "string" ? { start } : {}),
@@ -381,7 +386,14 @@ export function readCanvas(scene: ThreadCanvasScene, query: CanvasReadQuery = {}
     group.push(element);
     groups.set(element.drawingId, group);
   }
+  const drawingElements = new Map<string, ThreadCanvasElement[]>();
+  for (const element of live) {
+    const drawing = recordOf(recordOf(element.customData).t3Drawing).id;
+    if (typeof drawing !== "string") continue;
+    drawingElements.set(drawing, [...(drawingElements.get(drawing) ?? []), element]);
+  }
   const drawings = [...groups].map(([drawingId, elements]) => {
+    const origin = originOf(drawingElements.get(drawingId) ?? []);
     const left = Math.min(...elements.map((element) => element.x));
     const top = Math.min(...elements.map((element) => element.y));
     const right = Math.max(...elements.map((element) => element.x + element.width));
@@ -393,6 +405,7 @@ export function readCanvas(scene: ThreadCanvasScene, query: CanvasReadQuery = {}
     const besideTurn = anchoredTo === undefined ? undefined : turnTitles.get(anchoredTo);
     return {
       drawingId,
+      origin: { x: Math.round(origin?.x ?? 0), y: Math.round(origin?.y ?? 0) },
       x: left,
       y: top,
       width: right - left,
