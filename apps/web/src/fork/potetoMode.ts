@@ -52,7 +52,7 @@ export function potetoModeUnavailableReason(
   return null;
 }
 
-export function isPotetoModeCommand(text: string): boolean {
+function isPotetoModeCommand(text: string): boolean {
   return /^\s*\//.test(text);
 }
 

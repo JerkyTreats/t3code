@@ -2,7 +2,6 @@
 import * as NodeCrypto from "node:crypto";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -165,7 +164,6 @@ const assertSqliteIntegrity = Effect.fn("Migration42Backup.assertSqliteIntegrity
 export const backupDatabaseBeforeMigration42 = Effect.fn(
   "Migration42Backup.backupDatabaseBeforeMigration42",
 )(function* (databasePath: string) {
-  const crypto = yield* Crypto.Crypto;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   if (!(yield* migration42IsPending())) return;
@@ -177,7 +175,7 @@ export const backupDatabaseBeforeMigration42 = Effect.fn(
   }
 
   const parentDirectory = path.dirname(destination);
-  const stagingDirectory = `${destination}.staging-${process.pid}-${yield* crypto.randomUUIDv4()}`;
+  const stagingDirectory = `${destination}.staging-${process.pid}-${NodeCrypto.randomUUID()}`;
   yield* fileSystem.makeDirectory(stagingDirectory, { recursive: false, mode: 0o700 });
   const backupPath = databaseBackupFile(stagingDirectory);
 
@@ -232,7 +230,6 @@ export const backupDatabaseBeforeMigration42 = Effect.fn(
 /** Restore a validated snapshot while the server and every SQLite client are closed. */
 export const restoreMigration42Backup = Effect.fn("Migration42Backup.restoreMigration42Backup")(
   function* (databasePath: string) {
-    const crypto = yield* Crypto.Crypto;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const sourceDirectory = migration42BackupDirectory(databasePath);
@@ -241,7 +238,7 @@ export const restoreMigration42Backup = Effect.fn("Migration42Backup.restoreMigr
     }
     yield* validateBackupDirectory(databasePath, sourceDirectory);
 
-    const restorePath = `${databasePath}.restore-${process.pid}-${yield* crypto.randomUUIDv4()}`;
+    const restorePath = `${databasePath}.restore-${process.pid}-${NodeCrypto.randomUUID()}`;
     yield* Effect.gen(function* () {
       yield* fileSystem.copyFile(databaseBackupFile(sourceDirectory), restorePath);
       yield* fileSystem.chmod(restorePath, 0o600);

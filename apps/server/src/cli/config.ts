@@ -15,6 +15,7 @@ import * as LogLevel from "effect/LogLevel";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
+import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as SchemaTransformation from "effect/SchemaTransformation";
@@ -81,6 +82,12 @@ const tailscaleServeFlag = Flag.Boolean("tailscale-serve").pipe(
 const tailscaleServePortFlag = Flag.Int("tailscale-serve-port").pipe(
   Flag.withSchema(PortSchema),
   Flag.withDescription("HTTPS port for Tailscale Serve when --tailscale-serve is enabled."),
+  Flag.optional,
+);
+const lanFlag = Flag.Boolean("lan").pipe(
+  Flag.withDescription(
+    "Accept connections from your local network and tailnet, not only this machine (equivalent to T3CODE_LAN).",
+  ),
   Flag.optional,
 );
 
@@ -163,6 +170,7 @@ const EnvServerConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  lan: Config.Boolean("T3CODE_LAN").pipe(Config.option, Config.map(Option.getOrUndefined)),
 });
 
 const DevAuthTokenConfig = Config.Redacted("T3CODE_DEV_AUTH_TOKEN").pipe(
@@ -198,6 +206,7 @@ export interface CliServerFlags {
   readonly logWebSocketEvents: Option.Option<boolean>;
   readonly tailscaleServeEnabled: Option.Option<boolean>;
   readonly tailscaleServePort: Option.Option<number>;
+  readonly lan: Option.Option<boolean>;
 }
 
 export interface CliAuthLocationFlags {
@@ -232,6 +241,7 @@ export const sharedServerCommandFlags = {
   logWebSocketEvents: logWebSocketEventsFlag,
   tailscaleServeEnabled: tailscaleServeFlag,
   tailscaleServePort: tailscaleServePortFlag,
+  lan: lanFlag,
 } as const;
 
 const resolveOptionPrecedence = <Value>(
@@ -256,9 +266,13 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     readonly startupPresentation?: ServerConfig.StartupPresentation;
     readonly forceAutoBootstrapProjectFromCwd?: boolean;
     readonly rejectRunningServer?: boolean;
+    readonly selectAutomaticPort?: (
+      preferred: number,
+    ) => Effect.Effect<number, NetService.NetError | CliError.UserError>;
   },
 ) {
   const { findAvailablePort } = yield* NetService.NetService;
+  const selectAutomaticPort = options?.selectAutomaticPort ?? findAvailablePort;
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
   const env = yield* EnvServerConfig;
@@ -275,6 +289,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     logWebSocketEvents: flags.logWebSocketEvents ?? Option.none(),
     tailscaleServeEnabled: flags.tailscaleServeEnabled ?? Option.none(),
     tailscaleServePort: flags.tailscaleServePort ?? Option.none(),
+    lan: flags.lan ?? Option.none(),
   } satisfies CliServerFlags;
   const bootstrapFd = Option.getOrUndefined(normalizedFlags.bootstrapFd) ?? env.bootstrapFd;
   const bootstrapEnvelope =
@@ -304,7 +319,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
         if (mode === "desktop") {
           return Effect.succeed(ServerConfig.DEFAULT_PORT);
         }
-        return findAvailablePort(ServerConfig.DEFAULT_PORT);
+        return selectAutomaticPort(ServerConfig.DEFAULT_PORT);
       },
     },
   );
@@ -403,13 +418,19 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     () => 443,
   );
   const staticDir = devUrl ? undefined : yield* ServerConfig.resolveStaticDir();
-  const host = Option.getOrElse(
-    resolveOptionPrecedence(
-      normalizedFlags.host,
-      Option.fromUndefinedOr(env.host),
-      Option.fromUndefinedOr(bootstrap?.host),
-    ),
-    () => (mode === "desktop" ? "127.0.0.1" : undefined),
+  const explicitHost = resolveOptionPrecedence(
+    normalizedFlags.host,
+    Option.fromUndefinedOr(env.host),
+    Option.fromUndefinedOr(bootstrap?.host),
+  );
+  // Private networks only, so clients learn a LAN address and prefer it over
+  // T3 Connect. The fork has no service launcher, so only an explicit
+  // `--lan` or T3CODE_LAN opts in.
+  const lan = resolveOptionPrecedence(normalizedFlags.lan, Option.fromUndefinedOr(env.lan));
+  const privateNetworkOnly =
+    Option.isNone(explicitHost) && mode === "web" && Option.getOrElse(lan, () => false);
+  const host = Option.getOrElse(explicitHost, () =>
+    privateNetworkOnly ? "0.0.0.0" : mode === "desktop" ? "127.0.0.1" : undefined,
   );
   const logLevel = Option.getOrElse(cliLogLevel, () => env.logLevel);
 
@@ -475,6 +496,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     ...derivedPaths,
     serverTracePath,
     host,
+    ...(privateNetworkOnly ? { privateNetworkOnly } : {}),
     staticDir,
     devUrl,
     ...(devAuthToken === undefined ? {} : { devAuthToken }),
@@ -501,8 +523,9 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
 export const resolveCliAuthConfig = (
   flags: CliAuthLocationFlags,
   cliLogLevel: Option.Option<LogLevel.LogLevel>,
-) =>
-  resolveServerConfig(
+  options?: { readonly quietLogs?: boolean },
+) => {
+  const resolved = resolveServerConfig(
     {
       mode: Option.none(),
       port: Option.none(),
@@ -516,9 +539,16 @@ export const resolveCliAuthConfig = (
       logWebSocketEvents: Option.none(),
       tailscaleServeEnabled: Option.none(),
       tailscaleServePort: Option.none(),
+      lan: Option.none(),
     },
     cliLogLevel,
   );
+  // Logs go to stdout, where --json and --token-only print, and resolving can
+  // log, for example when it sweeps abandoned attachment uploads.
+  return options?.quietLogs === true
+    ? resolved.pipe(Effect.provideService(References.MinimumLogLevel, "Error"))
+    : resolved;
+};
 
 const DurationShorthandPattern = /^(?<value>\d+)(?<unit>ms|s|m|h|d|w)$/i;
 

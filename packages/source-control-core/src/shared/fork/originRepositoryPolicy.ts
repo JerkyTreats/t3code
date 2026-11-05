@@ -4,6 +4,7 @@ import type {
   ChangeRequestHostIdentity,
   ChangeRequestLink,
   ChangeRequestProjectIdentity,
+  CommitLink,
   ParsedChangeRequest,
 } from "../definition.ts";
 
@@ -23,7 +24,7 @@ function exactRepositoryTarget(value: string): string {
 /** Admit a link only when it names the checkout's literal origin repository. */
 export function exactOriginContainsChangeRequest(
   identity: ChangeRequestProjectIdentity,
-  link: ChangeRequestLink,
+  link: ChangeRequestLink | CommitLink,
 ): boolean {
   if (identity.locator?.remoteName !== "origin") return false;
   const linked = exactRepositoryTarget(`${link.authority ?? link.host}/${link.repository}`);

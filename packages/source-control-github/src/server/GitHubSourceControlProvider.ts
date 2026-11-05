@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { settingsSecretLiteral, SourceControlProviderKind } from "@t3tools/contracts";
 import * as Data from "effect/Data";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -32,6 +32,7 @@ import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
 
 import { GH_PROCESS_CONCURRENCY } from "./GitHubCredentials.ts";
+import * as GitHubAppSignIn from "./GitHubAppSignIn.ts";
 import * as GitHubRest from "./GitHubRest.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 import * as GitHubChangeRequestTemplate from "./gitHubChangeRequestTemplate.ts";
@@ -215,6 +216,9 @@ export const makeDiscovery = Effect.gen(function* () {
   const sourceControlHost = yield* SourceControlHost.SourceControlHost;
   const process = sourceControlHost.process;
   const environment = yield* HostProcess.Environment;
+  const appSignIn = yield* GitHubAppSignIn.GitHubAppSignIn;
+  const offerAppSignIn = <A extends SourceControlProviderDiscoveryItem>(item: A): A =>
+    appSignIn.enabled ? { ...item, appSignIn: true } : item;
 
   return {
     type: "managed-cli",
@@ -224,7 +228,7 @@ export const makeDiscovery = Effect.gen(function* () {
     probe: Effect.fn("GitHubSourceControlProvider.discovery")(function* (cwd: string) {
       const settings = readSourceControlHostSettings(
         GitHubClient.settings,
-        yield* sourceControlHost.settings.get.pipe(
+        yield* sourceControlHost.settings.getWithSecrets(GitHubClient.definition.kind).pipe(
           Effect.map((current) => current.sourceControlHosts[GitHubClient.definition.kind]),
           Effect.orElseSucceed(() => undefined),
         ),
@@ -236,10 +240,20 @@ export const makeDiscovery = Effect.gen(function* () {
         },
         spec: { ...discovery, parseAuth: (input) => parseGitHubAuth(input, settings) },
       });
-      const savedToken = (settings.tokens["github.com"] ?? "").trim() !== "";
+      const token = settings.tokens["github.com"];
+      const savedToken = settingsSecretLiteral(token).trim() !== "";
+      const signedIn =
+        appSignIn.enabled && !savedToken && (settings.signIns["github.com"] ?? "").trim() !== "";
       const variable = environmentTokenVariable(environment);
-      const tokenSource = savedToken ? "the token saved in Settings" : variable;
-      if (tokenSource === null || settings.hosts["github.com"]?.enabled === false) return cli;
+      const appName = GitHubClient.APP_SIGN_IN.appName;
+      const tokenSource = savedToken
+        ? "the token saved in Settings"
+        : signedIn
+          ? `the ${appName} sign-in`
+          : variable;
+      if (tokenSource === null || settings.hosts["github.com"]?.enabled === false) {
+        return offerAppSignIn(cli);
+      }
       const viewer = yield* api
         .rest({ host: "github.com", operation: "discovery", path: "user" })
         .pipe(Effect.result);
@@ -247,7 +261,7 @@ export const makeDiscovery = Effect.gen(function* () {
         ? Option.getOrUndefined(decodeViewer(viewer.success.body))?.login
         : undefined;
       const accounts = cli.auth.accounts === undefined ? {} : { accounts: cli.auth.accounts };
-      return {
+      return offerAppSignIn({
         ...cli,
         status: "available" as const,
         auth: {
@@ -258,24 +272,28 @@ export const makeDiscovery = Effect.gen(function* () {
                 host: "github.com",
                 detail: savedToken
                   ? "Using the token saved in Settings; it overrides GH_TOKEN and the gh login."
-                  : `Using ${variable} from the server environment; it overrides the account chosen in Settings.`,
+                  : signedIn
+                    ? `Signed in with ${appName}.`
+                    : `Using ${variable} from the server environment; it overrides the account chosen in Settings.`,
               })
             : Result.isFailure(viewer) && viewer.failure._tag !== "GitHubApiAuthenticationError"
               ? providerAuth({
                   status: "unknown",
                   host: "github.com",
-                  detail: `Could not check ${savedToken ? tokenSource : `the token in ${tokenSource}`}: ${viewer.failure.message}`,
+                  detail: `Could not check ${savedToken || signedIn ? tokenSource : `the token in ${tokenSource}`}: ${viewer.failure.message}`,
                 })
               : providerAuth({
                   status: "unauthenticated",
                   host: "github.com",
                   detail: savedToken
                     ? "GitHub refused the token saved in Settings. Replace or remove it in Settings → Source Control."
-                    : `GitHub refused the token in ${tokenSource}. Replace it, or unset it to use \`gh auth login\`.`,
+                    : signedIn
+                      ? `GitHub refused the ${appName} sign-in. Sign in again in Settings → Source Control.`
+                      : `GitHub refused the token in ${tokenSource}. Replace it, or unset it to use \`gh auth login\`.`,
                 })),
           ...accounts,
         },
-      } satisfies SourceControlProviderDiscoveryItem;
+      } satisfies SourceControlProviderDiscoveryItem);
     }),
     // Claim disabled hosts so errors identify the setting.
     refineUnknownRemote: ({ context }) => {
@@ -340,6 +358,7 @@ function fromGitHubApiError(
     case "GitHubApiNotFoundError":
       return failure(notFound, error);
     case "GitHubCliFailedError":
+    case "GitHubAppSessionError":
     case "GitHubApiResponseError":
     case "GitHubApiRequestError":
       return failure(error.message.trim() || "GitHub request failed.", error);
@@ -460,7 +479,12 @@ export const make = Effect.gen(function* () {
       const locator = gitHubRepositoryTargetFromSelector(repository);
       if (locator === null)
         return yield* failure("Origin-only policy requires an exact GitHub origin repository.");
-      return locator;
+      // An origin on a recognized github.com SSH alias is the same origin repository, read
+      // through github.com.
+      return input.context !== undefined &&
+        gitHubApiHostForRemote(input.context.remoteUrl) === "github.com"
+        ? { ...locator, host: "github.com" }
+        : locator;
     },
   );
 
@@ -846,6 +870,9 @@ export const make = Effect.gen(function* () {
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: SourceControlProviderKind.make("github"),
+    resolveRemoteWebHost: Effect.fn("GitHubSourceControlProvider.resolveRemoteWebHost")(
+      ({ context }) => Effect.succeed(gitHubApiHostForRemote(context.remoteUrl)),
+    ),
     // GitHub matches bare heads; read a full page to disambiguate forks by owner.
     headBranchProbe: ({ headSelectors }) => ({
       headSelectors: headSelectors.filter((selector) => !selector.includes(":")),
@@ -959,16 +986,21 @@ export const make = Effect.gen(function* () {
     ),
     getRepositoryCloneUrls: Effect.fn("GitHubSourceControlProvider.getRepositoryCloneUrls")(
       function* (input) {
-        const locator = yield* publicationLocator(
-          input.repository,
-          input.context?.provider.baseUrl ?? input.providerBaseUrl,
-        );
+        // Fork F06: lookup stays on the explicit or origin-bound endpoint and needs owner/name.
+        // A requested host is checked against that endpoint and never selects another.
+        const endpoint = input.context?.provider.baseUrl ?? input.providerBaseUrl;
+        const locator = yield* publicationLocator(input.repository, endpoint);
+        if (input.host !== undefined && input.host.toLowerCase() !== locator.host) {
+          return yield* failure("The requested host is not the selected GitHub endpoint.");
+        }
         return repositoryCloneUrls(yield* readRepository(locator));
       },
       (effect, input) =>
         effect.pipe(
           Effect.mapError(
-            providerError("getRepositoryCloneUrls", input.cwd, { repository: input.repository }),
+            providerError("getRepositoryCloneUrls", input.cwd, {
+              repository: input.repository,
+            }),
           ),
         ),
     ),

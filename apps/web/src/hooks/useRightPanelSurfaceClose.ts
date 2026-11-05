@@ -1,8 +1,10 @@
 import {
+  AuthOrchestrationOperateScope,
   AuthPreviewOperateScope,
   AuthTerminalOperateScope,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { useRouter } from "@tanstack/react-router";
 import {
@@ -21,16 +23,20 @@ import {
   useRightPanelStore,
   type RightPanelSurface,
 } from "../rightPanelStore";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { readThreadShell } from "../state/entities";
 import { previewEnvironment } from "../state/preview";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
+import { environmentShell } from "../state/shell";
+import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useStableCallback } from "./useStableCallback";
 
 /**
- * Closing releases preview and terminal sessions. Agent-driven browsers and terminal tabs
- * require confirmation. Each close resolves whether every requested surface closed; F23
- * closed-tab history records only those.
+ * Closing releases preview and terminal sessions, and deletes a side chat that never ran.
+ * Agent-driven browsers and terminal tabs require confirmation. Each close resolves whether
+ * every requested surface closed; F23 closed-tab history records only those.
  */
 export function useRightPanelSurfaceClose(input: {
   readonly threadRef: ScopedThreadRef | null;
@@ -41,6 +47,7 @@ export function useRightPanelSurfaceClose(input: {
   const isCurrentHost = () =>
     isPreviewHostRouteCurrent(threadRef, router.state.matches.at(-1)?.params ?? {});
   const closePreview = useAtomCommand(previewEnvironment.close, "preview close");
+  const deleteThread = useAtomCommand(threadEnvironment.delete, "side chat delete");
   const canOperatePreview = useEnvironmentScope(
     threadRef?.environmentId ?? null,
     AuthPreviewOperateScope,
@@ -65,8 +72,23 @@ export function useRightPanelSurfaceClose(input: {
     ) {
       for (const terminalId of surface.terminalIds) {
         storeCloseTerminal(ref, terminalId);
-        terminalActions.closeTerminalSession(terminalId);
+        terminalActions.closeTerminalSession(terminalId, ref);
       }
+    }
+    if (
+      surface.kind === "side-chat" &&
+      readEnvironmentScope(ref.environmentId, AuthOrchestrationOperateScope) &&
+      // A live shell without the side chat means it is already deleted.
+      !(
+        appAtomRegistry.get(environmentShell.stateValueAtom(ref.environmentId)).status === "live" &&
+        readThreadShell(scopeThreadRef(ref.environmentId, surface.threadId)) === null
+      )
+    ) {
+      // The server keeps a side chat with a run or message. Reopen skips one it deleted.
+      void deleteThread({
+        environmentId: ref.environmentId,
+        input: { threadId: surface.threadId, onlyIfUnused: true },
+      });
     }
     return true;
   };

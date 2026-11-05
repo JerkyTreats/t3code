@@ -430,6 +430,13 @@ layer("fork migration continuation", (it) => {
           [94, "PeerLinks"],
           [95, "PeerLinkFence"],
           [96, "WaitingLinkRequestIndex"],
+          [97, "ActiveTurnItemIndexes"],
+          [98, "ExcludeAttachmentPlaceholdersFromSearch"],
+          [99, "SubagentDeliveryState"],
+          [100, "ProjectionProjectsPinArchive"],
+          [101, "RepairBooleanSettledOverride"],
+          [102, "DropOrchestrationEventCorrelationIndex"],
+          [103, "DelegatedRecoveryIndexes"],
         ],
       );
 

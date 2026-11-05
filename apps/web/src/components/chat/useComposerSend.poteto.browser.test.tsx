@@ -338,7 +338,6 @@ describe("Poteto Mode plan implementation thread", () => {
         activeProposedPlan: plan,
         isServerThread: true,
         isSendBusy: false,
-        isConnecting: false,
         composerRef: base.composerRef,
         beginLocalDispatch: vi.fn(),
         resetLocalDispatch: vi.fn(),

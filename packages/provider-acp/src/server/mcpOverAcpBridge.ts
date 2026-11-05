@@ -1,4 +1,4 @@
-// @effect-diagnostics preferSchemaOverJson:off
+// @effect-diagnostics globalJsonInEffect:off
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -110,11 +110,18 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
         : Effect.succeed(connection);
     });
 
+  // Only initialization needs ordering; negotiated calls may wait independently.
+  const untilNegotiated = <A, E>(connection: Connection, effect: Effect.Effect<A, E>) =>
+    Effect.suspend(() =>
+      connection.protocolVersion === null ? connection.mutex.withPermits(1)(effect) : effect,
+    );
+
   const send = (
     connection: Connection,
     message: unknown,
   ): Effect.Effect<ReadonlyArray<unknown>, AcpMcpOverAcpError> =>
-    connection.mutex.withPermits(1)(
+    untilNegotiated(
+      connection,
       Effect.gen(function* () {
         if (connection.closed) {
           return yield* Effect.fail(new AcpMcpOverAcpError("MCP-over-ACP connection is closed."));

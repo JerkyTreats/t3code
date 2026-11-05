@@ -42,6 +42,7 @@ const minimalDesktopFlags = (baseDir: string) => ({
   logWebSocketEvents: Option.none<boolean>(),
   tailscaleServeEnabled: Option.none<boolean>(),
   tailscaleServePort: Option.none<number>(),
+  lan: Option.none<boolean>(),
 });
 
 const encodeDesktopBootstrap = Schema.encodeEffect(Schema.fromJsonString(DesktopBackendBootstrap));
@@ -224,6 +225,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         logWebSocketEvents: Option.none<boolean>(),
         tailscaleServeEnabled: Option.none<boolean>(),
         tailscaleServePort: Option.none<number>(),
+        lan: Option.none<boolean>(),
       };
       const layerConfig = ConfigProvider.layer(
         ConfigProvider.fromEnv({
@@ -268,6 +270,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         logWebSocketEvents: Option.none<boolean>(),
         tailscaleServeEnabled: Option.none<boolean>(),
         tailscaleServePort: Option.none<number>(),
+        lan: Option.none<boolean>(),
       };
       const layerConfig = ConfigProvider.layer(
         ConfigProvider.fromEnv({ env: { T3CODE_DEV_AUTH_TOKEN: secret } }),
@@ -323,6 +326,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           logWebSocketEvents: Option.some(false),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
+          lan: Option.none(),
         },
         Option.none(),
       ).pipe(
@@ -399,6 +403,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           logWebSocketEvents: Option.none(),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
+          lan: Option.none(),
         },
         Option.some("Debug"),
       ).pipe(
@@ -546,6 +551,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           logWebSocketEvents: Option.none(),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
+          lan: Option.none(),
         },
         Option.none(),
       ).pipe(
@@ -594,6 +600,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           logWebSocketEvents: Option.none(),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
+          lan: Option.none(),
         },
         Option.none(),
       ).pipe(
@@ -634,6 +641,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           logWebSocketEvents: Option.none(),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
+          lan: Option.none(),
         },
         Option.none(),
         {
@@ -696,6 +704,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           logWebSocketEvents: Option.none(),
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
+          lan: Option.none(),
         },
         Option.none(),
       ).pipe(
@@ -735,7 +744,45 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     logWebSocketEvents: Option.none<boolean>(),
     tailscaleServeEnabled: Option.none<boolean>(),
     tailscaleServePort: Option.none<number>(),
+    lan: Option.none<boolean>(),
   });
+
+  it.effect("uses the automatic port selector only when no port is configured", () =>
+    Effect.gen(function* () {
+      const baseDir = yield* FileSystem.FileSystem.pipe(
+        Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "t3-cli-auto-port-" })),
+      );
+      const selected: number[] = [];
+      const selectAutomaticPort = (preferred: number) =>
+        Effect.sync(() => {
+          selected.push(preferred);
+          return 50_123;
+        });
+      const resolvePort = (flags: {
+        readonly mode?: Option.Option<"web" | "desktop">;
+        readonly port: Option.Option<number>;
+      }) =>
+        resolveServerConfig({ ...minimalWebFlags(baseDir), ...flags }, Option.none(), {
+          selectAutomaticPort,
+        }).pipe(
+          Effect.map((config) => config.port),
+          Effect.provide(
+            Layer.merge(
+              NetService.layer,
+              ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })),
+            ),
+          ),
+        );
+
+      expect(yield* resolvePort({ port: Option.none() })).toBe(50_123);
+      expect(selected).toEqual([3773]);
+      expect(yield* resolvePort({ port: Option.some(8788) })).toBe(8788);
+      expect(
+        yield* resolvePort({ mode: Option.some("desktop" as const), port: Option.none() }),
+      ).toBe(3773);
+      expect(selected).toEqual([3773]);
+    }),
+  );
 
   it.effect(
     "resolves each signal's endpoint through T3CODE_OTLP_*_URL, an OTEL endpoint, the bootstrap envelope, and persisted Settings, in that order",
@@ -856,7 +903,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       }),
   );
 
-  it.effect("keeps web mode's unset default host without a service launcher", () =>
+  it.effect("keeps web mode's unset default host unless T3CODE_LAN opts in", () =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
       const baseDir = join(NodeOS.tmpdir(), "t3-cli-config-service-host");
@@ -871,6 +918,18 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(yield* resolveHost({})).toEqual({ host: undefined, privateNetworkOnly: undefined });
       expect(yield* resolveHost({ T3CODE_HOST: "127.0.0.1" })).toEqual({
         host: "127.0.0.1",
+        privateNetworkOnly: undefined,
+      });
+      expect(yield* resolveHost({ T3CODE_LAN: "true" })).toEqual({
+        host: "0.0.0.0",
+        privateNetworkOnly: true,
+      });
+      expect(yield* resolveHost({ T3CODE_LAN: "true", T3CODE_HOST: "127.0.0.1" })).toEqual({
+        host: "127.0.0.1",
+        privateNetworkOnly: undefined,
+      });
+      expect(yield* resolveHost({ T3CODE_LAN: "false" })).toEqual({
+        host: undefined,
         privateNetworkOnly: undefined,
       });
     }),

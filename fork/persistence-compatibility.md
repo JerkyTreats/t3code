@@ -25,6 +25,15 @@ Upstream-numbered 69 through 72 rows collide with fork identities or are unknown
 before continuation writes. Migration 93 creates the contentless message search index that
 `t3 doctor` rebuilds after VACUUM.
 
+Migrations 97 through 103 append upstream migrations 73 through 79 in upstream source order:
+`ActiveTurnItemIndexes`, `ExcludeAttachmentPlaceholdersFromSearch`, `SubagentDeliveryState`,
+`ProjectionProjectsPinArchive`, `RepairBooleanSettledOverride`,
+`DropOrchestrationEventCorrelationIndex` and `DelegatedRecoveryIndexes`. Upstream-numbered 73
+through 79 rows collide with fork identities or are unknown names, so they fail before
+continuation writes.
+Upstream's preview-migration reconciliation and V2 skip assertion are not adopted; the fork
+lineage selector already owns both checks.
+
 Migration 90 keeps upstream's repair predicate: dense client sweeps reported as plain
 `0.0.35` through `0.0.38` before 2026-09-05. Fork builds reported plain upstream versions until
 2026-09-26, so affected fork-built histories match exactly as upstream builds do. Fork builds
@@ -100,13 +109,14 @@ it; the upstream legacy-database removal is absent from the fork. Doctor compact
 exclusive lock and fails while a server holds the database. `DatabaseMaintenance.compact` rebuilds
 the contentless message search index after its VACUUM, as upstream migration 069 requires.
 
-Event-store compaction (`ProjectionMaintenance.compactEventStore`, background and doctor) keeps
+Event-store pruning (`ProjectionMaintenance.pruneEventStore`, background and doctor) keeps
 every legacy v1 event and command receipt, including those of fully imported threads; upstream's
 receipt scan and imported-thread deletion are absent. Thread deletion keeps attachment files
 still referenced by the legacy transcript (`ResourceCleanupService.cleanupUnretainedAttachments`).
 
-A runtime built before migration 87 rejects the 87 through 92 journal identities on reopen, and a
-runtime built before migration 93 rejects 93 through 96.
+A runtime built before migration 87 rejects the 87 through 92 journal identities on reopen, a
+runtime built before migration 93 rejects 93 through 96, and a runtime built before migration 97
+rejects 97 through 103.
 Binary rollback across this intake therefore needs the matching pre-upgrade `statev2.sqlite`
 copy or the retained `state.sqlite` reconciliation path below.
 

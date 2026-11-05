@@ -17,8 +17,8 @@ const DesktopLauncherLinuxWmClass = TrimmedNonEmptyString.check(Schema.isMaxLeng
 const DesktopLauncherArtifactPath = TrimmedNonEmptyString.check(Schema.isMaxLength(4_096));
 const DesktopLauncherVersion = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
 const DesktopLauncherGeneration = TrimmedNonEmptyString.check(Schema.isMaxLength(128));
-export const DESKTOP_LAUNCHER_WORKSPACE_MAX_CHARS = 4_096;
-export const DESKTOP_LAUNCHER_PROMPT_MAX_CHARS = 65_536;
+const DESKTOP_LAUNCHER_WORKSPACE_MAX_CHARS = 4_096;
+const DESKTOP_LAUNCHER_PROMPT_MAX_CHARS = 65_536;
 const DesktopLauncherActivationId = Schema.String.check(
   Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
 );

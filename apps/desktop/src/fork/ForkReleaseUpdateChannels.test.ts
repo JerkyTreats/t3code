@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  isNightlyDesktopVersion,
-  resolveDefaultDesktopUpdateChannel,
-} from "../updates/updateChannels.ts";
+import { desktopUpdateChannelOf as resolveDefaultDesktopUpdateChannel } from "@t3tools/shared/cliRelease";
+import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
 
 // F01.D5 appends the exact release commit as `-<10hex>`; channel detection must survive it.
 describe("fork release version update channels", () => {

@@ -6,17 +6,16 @@
   "main": "dist-electron/main.cjs",
   "scripts": {
     "build": "vp pack && node scripts/check-packed-boundary.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsrs --noEmit",
     "test": "vp test run"
   },
   "dependencies": {},
   "devDependencies": {
-    "@effect/vitest": "catalog:",
     "@t3tools/contracts": "workspace:*",
     "@t3tools/shared": "workspace:*",
     "@types/node": "catalog:",
     "electron": "43.4.1",
-    "electron-builder": "26.15.6",
+    "electron-builder": "26.16.1",
     "vite-plus": "catalog:"
   },
   "build": {

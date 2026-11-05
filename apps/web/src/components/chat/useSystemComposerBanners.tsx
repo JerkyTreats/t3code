@@ -33,7 +33,6 @@ import {
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
   supportsDesktopAppUpdate,
-  supportsServerUpdateThreadContinuation,
 } from "../../versionSkew";
 
 export type EnvironmentUnavailableState = {
@@ -86,7 +85,11 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
     ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
   );
   const handleReconnectActiveEnvironment = async (environmentId: EnvironmentId) => {
-    const result = await retryEnvironment(environmentId);
+    // A retry does nothing while the environment is switched off.
+    const result =
+      activeEnvironment?.entry.enabled === false
+        ? await setEnvironmentEnabled({ environmentId, enabled: true })
+        : await retryEnvironment(environmentId);
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       toastManager.add(
@@ -142,7 +145,6 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
   const versionMismatchSelfUpdate = resolveServerSelfUpdateCapability(serverConfig);
   const versionMismatchInstallation = serverConfig?.environment.capabilities.serverInstallation;
   const versionMismatchDesktopAppUpdate = supportsDesktopAppUpdate(serverConfig);
-  const versionMismatchThreadContinuation = supportsServerUpdateThreadContinuation(serverConfig);
   const serverUpdateState = useAtomValue(
     serverEnvironment.updateStateAtom(serverUpdateEnvironmentId),
   );
@@ -265,7 +267,6 @@ export function useSystemComposerBanners(input: SystemComposerBannersInput) {
             selfUpdate={versionMismatchSelfUpdate}
             installation={versionMismatchInstallation}
             desktopAppUpdate={versionMismatchDesktopAppUpdate}
-            threadContinuation={versionMismatchThreadContinuation}
             targetVersion={versionMismatch.clientVersion}
             label="Retry"
             variant="ghost"

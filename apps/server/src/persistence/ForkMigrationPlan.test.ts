@@ -143,6 +143,13 @@ it.effect("rolls back the V2 schema and baseline events together before retry", 
       [94, "PeerLinks"],
       [95, "PeerLinkFence"],
       [96, "WaitingLinkRequestIndex"],
+      [97, "ActiveTurnItemIndexes"],
+      [98, "ExcludeAttachmentPlaceholdersFromSearch"],
+      [99, "SubagentDeliveryState"],
+      [100, "ProjectionProjectsPinArchive"],
+      [101, "RepairBooleanSettledOverride"],
+      [102, "DropOrchestrationEventCorrelationIndex"],
+      [103, "DelegatedRecoveryIndexes"],
     ]);
     assert.deepStrictEqual(yield* runMigrations(), []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -190,6 +197,13 @@ it.effect("continues the current journal with stable upstream identities", () =>
       [94, "PeerLinks"],
       [95, "PeerLinkFence"],
       [96, "WaitingLinkRequestIndex"],
+      [97, "ActiveTurnItemIndexes"],
+      [98, "ExcludeAttachmentPlaceholdersFromSearch"],
+      [99, "SubagentDeliveryState"],
+      [100, "ProjectionProjectsPinArchive"],
+      [101, "RepairBooleanSettledOverride"],
+      [102, "DropOrchestrationEventCorrelationIndex"],
+      [103, "DelegatedRecoveryIndexes"],
     ]);
     assert.deepStrictEqual(
       yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 70 ORDER BY migration_id`,

@@ -17,8 +17,6 @@ const NORMAL_FONT = 2;
 const STROKE = "#1e1e1e";
 const CARD_STROKE = "#868e96";
 
-export const THREAD_CANVAS_SIZED_TEXT_PADDING_PX = LABEL_PADDING_PX;
-
 /** A shape with its final place on the canvas, and its place within the agent's drawing. */
 export interface PlacedShape {
   readonly shape: ThreadCanvasShape;
@@ -41,7 +39,7 @@ export interface BuildDrawingInput {
 }
 
 /** Ids are scoped to the drawing, so two drawings can both have a box called `api`. */
-export const drawingElementId = (drawingId: string, shapeId: string) => `${drawingId}/${shapeId}`;
+const drawingElementId = (drawingId: string, shapeId: string) => `${drawingId}/${shapeId}`;
 const labelId = (elementId: string) => `${elementId}/label`;
 
 const hasLines = (shape: ThreadCanvasShape) => shape.type === "arrow" || shape.type === "line";
@@ -49,7 +47,7 @@ const hasLines = (shape: ThreadCanvasShape) => shape.type === "arrow" || shape.t
 export const isCardShape = (shape: ThreadCanvasShape) =>
   shape.type === "markdown" || shape.type === "html";
 
-export function estimateTextSize(text: string, fontSize: number) {
+function estimateTextSize(text: string, fontSize: number) {
   const lines = text.split("\n");
   return {
     width: Math.ceil(Math.max(...lines.map((line) => line.length)) * fontSize * CHARACTER_WIDTH_EM),
@@ -58,7 +56,7 @@ export function estimateTextSize(text: string, fontSize: number) {
 }
 
 /** Breaks text to fit a width by words, which is what Excalidraw does to a bound label. */
-export function wrapText(text: string, fontSize: number, width: number) {
+function wrapText(text: string, fontSize: number, width: number) {
   const perLine = Math.max(1, Math.floor(width / (fontSize * CHARACTER_WIDTH_EM)));
   return text
     .split("\n")
@@ -239,7 +237,7 @@ export function turnSpineOf(
  * carried along with the card under it (`t3Follow`), or a user's box it grew to hold a drawing
  * (`t3Holds`). Null for anything it never wrote.
  */
-export function drawingWrittenAt(element: { readonly customData?: unknown }) {
+function drawingWrittenAt(element: { readonly customData?: unknown }) {
   const data = element.customData;
   const stamps = ["t3Drawing", "t3Follow", "t3Holds"].map((key) => {
     const record = typeof data === "object" && data !== null ? Reflect.get(data, key) : undefined;

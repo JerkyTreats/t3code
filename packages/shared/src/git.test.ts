@@ -7,6 +7,7 @@ import {
   formatGeneratedBranchName,
   buildTemporaryWorktreeBranchName,
   flattenTemporaryWorktreeBranchName,
+  isBareGitConfig,
   isTemporaryWorktreeBranch,
   normalizeGitRemoteMutationTarget,
   normalizeGitRemoteUrl,
@@ -65,6 +66,15 @@ describe("normalizeGitRemoteUrl", () => {
   });
 });
 
+describe("isBareGitConfig", () => {
+  it("reads continued bare values after comments and at end of input", () => {
+    const config = ["[core] bare = false # ignored backslash \\", 'bare = "tr\\', 'ue"'].join("\n");
+
+    expect(isBareGitConfig(config)).toBe(true);
+    expect(isBareGitConfig("[core]\nbare = tr\\\nue\\")).toBe(true);
+  });
+});
+
 describe("parseOriginUrlFromGitConfig", () => {
   it("reads the origin url and ignores other remotes", () => {
     const config = [
@@ -112,6 +122,21 @@ describe("parseOriginUrlFromGitConfig", () => {
         '[remote "origin"]\n\turl = https://github.com/acme/\\\n\t\trepo.git\n',
       ),
     ).toBe("https://github.com/acme/repo.git");
+  });
+
+  it("reads settings on the remote header line", () => {
+    const upstream = '\n[remote "upstream"]\n\turl = https://github.com/other/source.git\n';
+    expect(
+      parseOriginUrlFromGitConfig(`[remote "origin"] url = git@github.com:a/b.git${upstream}`),
+    ).toBe("git@github.com:a/b.git");
+    expect(parseOriginUrlFromGitConfig("[remote.Origin]url=git@github.com:a/b.git\n")).toBe(
+      "git@github.com:a/b.git",
+    );
+    expect(
+      parseOriginUrlFromGitConfig(
+        `[remote "origin"] fetch = +refs/heads/*:refs/remotes/origin/*\n\turl = git@github.com:a/b.git${upstream}`,
+      ),
+    ).toBe("git@github.com:a/b.git");
   });
 
   it("returns null when there is no exact origin remote", () => {
@@ -276,6 +301,12 @@ describe("sanitizeFeatureBranchName", () => {
     ["fix///", "feature/fix"],
   ])("keeps the fallback for unprefixed input %s", (input, expected) => {
     expect(sanitizeFeatureBranchName(input)).toBe(expected);
+  });
+
+  it("keeps accented letters as their plain letters", () => {
+    expect(sanitizeFeatureBranchName("fix/Añadir validación del café")).toBe(
+      "fix/anadir-validacion-del-cafe",
+    );
   });
 });
 

@@ -6,12 +6,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 // F20.D3/D4 host evidence: headless runtimes never offer an in-app or registry update action.
 const testState = vi.hoisted(() => ({ updateServer: vi.fn() }));
 
-vi.mock("~/hooks/useSettings", () => ({
-  useEnvironmentSettings: (
-    _environmentId: EnvironmentId,
-    selector: (settings: { continueThreadsAfterServerUpdate: boolean }) => unknown,
-  ) => selector({ continueThreadsAfterServerUpdate: false }),
-}));
+vi.mock("~/state/entities", () => ({ useServerConfigs: () => new Map() }));
+vi.mock("~/state/managedPolicy", () => ({ useManagedPolicy: () => undefined }));
 vi.mock("@effect/atom-react", async () => {
   const { AsyncResult } = await import("effect/reactivity");
   return { useAtomValue: () => AsyncResult.initial() };

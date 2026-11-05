@@ -3,7 +3,7 @@ import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { pruneNestedThreadExpansion } from "@t3tools/client-runtime/state/thread-nesting";
 import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import { create } from "zustand";
-import { normalizeProjectPathForComparison } from "./lib/projectPaths";
+import { normalizeProjectPathForComparison } from "@t3tools/client-runtime/state/projects";
 import type { SidebarView } from "./fork/threadSidebarView";
 
 export const PERSISTED_STATE_KEY = "t3code:ui-state:v1";

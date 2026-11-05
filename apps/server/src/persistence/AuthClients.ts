@@ -76,7 +76,7 @@ export class AuthClientRepository extends Context.Service<
   }
 >()("t3/persistence/AuthClients/AuthClientRepository") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const isPortalManagedDevice = sql.literal(
     "auth_clients.management_class = 'portal-managed-device'",

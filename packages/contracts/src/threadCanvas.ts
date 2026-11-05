@@ -2,9 +2,9 @@ import * as Schema from "effect/Schema";
 
 import { ThreadId } from "./baseSchemas.ts";
 
-export const THREAD_CANVAS_MAX_ELEMENTS = 5_000;
+const THREAD_CANVAS_MAX_ELEMENTS = 5_000;
 export const THREAD_CANVAS_MAX_DRAWING_ELEMENTS = 500;
-export const THREAD_CANVAS_MAX_SKETCH_BASE64_CHARS = 8_000_000;
+const THREAD_CANVAS_MAX_SKETCH_BASE64_CHARS = 8_000_000;
 
 /** An Excalidraw element as the client stores it. The server only reads its id and version. */
 export const ThreadCanvasElement = Schema.Record(Schema.String, Schema.Unknown);

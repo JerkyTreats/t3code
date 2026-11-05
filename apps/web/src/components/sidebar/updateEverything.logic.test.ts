@@ -4,6 +4,8 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   collectRestartingMachines,
   collectServerUpdateTargets,
+  describeUpdateCapsule,
+  describeUpdateEverything,
   runUpdateEverything,
   type UpdateEverythingMachine,
 } from "./updateEverything.logic";
@@ -26,7 +28,9 @@ function machine(
         capabilities: {
           repositoryIdentity: true,
           ...(selfUpdate ? { serverSelfUpdate: selfUpdate } : {}),
-          ...(selfUpdate === "desktop-managed" ? { desktopAppUpdate: true } : {}),
+          ...(selfUpdate === "desktop-managed"
+            ? { desktopAppUpdate: true, desktopAppChannelSwitch: true }
+            : {}),
         },
       },
       settings: { continueThreadsAfterServerUpdate: false },
@@ -80,6 +84,52 @@ describe("collectServerUpdateTargets", () => {
       ["manual", "needs a manual update"],
     ]);
   });
+
+  it("skips servers whose policy refuses the update, with the policy's message", () => {
+    const managed = (
+      id: string,
+      updates: { mode: "off" } | { mode: "auto"; allowNightly: false },
+      selfUpdate: "boot-service" | "desktop-managed" = "boot-service",
+    ) => {
+      const base = machine(id, "0.0.40", selfUpdate);
+      return {
+        ...base,
+        serverConfig: {
+          ...base.serverConfig!,
+          managedPolicy: { organization: "Example Corp", lockedSettings: [], limits: { updates } },
+        },
+      };
+    };
+    const machines = [
+      managed("off", { mode: "off" }),
+      managed("no-nightly", { mode: "auto", allowNightly: false }),
+      // A desktop app updates from its own feed, whatever track this app is on.
+      managed("desktop-no-nightly", { mode: "auto", allowNightly: false }, "desktop-managed"),
+    ];
+
+    expect(
+      collectServerUpdateTargets(machines, "0.0.50").skipped.map((entry) => [
+        entry.label,
+        entry.reason,
+      ]),
+    ).toEqual([
+      ["off", "Example Corp manages T3 Code updates."],
+      // Fork F01/F20: only desktop-managed runtimes update in-app.
+      ["no-nightly", "needs a manual update"],
+    ]);
+    expect(
+      collectServerUpdateTargets(
+        machines.map((entry) => ({
+          ...entry,
+          serverConfig: {
+            ...entry.serverConfig,
+            environment: { ...entry.serverConfig.environment, serverVersion: "0.0.49-nightly.1" },
+          },
+        })),
+        "0.0.50-nightly.20261028.1",
+      ).skipped.map((entry) => entry.label),
+    ).toEqual(["off", "no-nightly"]);
+  });
 });
 
 describe("collectRestartingMachines", () => {
@@ -93,13 +143,7 @@ describe("collectRestartingMachines", () => {
       return {
         ...base,
         serverConfig: {
-          environment: {
-            ...base.serverConfig!.environment,
-            capabilities: {
-              ...base.serverConfig!.environment.capabilities,
-              threadRestartContinuation: true,
-            },
-          },
+          environment: base.serverConfig!.environment,
           settings: { continueThreadsAfterServerUpdate: enabled },
         },
       };
@@ -142,5 +186,72 @@ describe("runUpdateEverything", () => {
 
     expect(calls).toEqual(["providers", "servers"]);
     expect(result.localReady).toBe(false);
+  });
+});
+
+describe("describeUpdateEverything", () => {
+  it("gives each machine one row with its T3 Code and provider updates", () => {
+    const id = EnvironmentId.make;
+    const { rows } = describeUpdateEverything({
+      localVersion: "1.1.0",
+      localMachines: [
+        { environmentId: id("local"), label: "Mainbook" },
+        { environmentId: id("wsl"), label: "Mainbook WSL" },
+      ],
+      servers: [
+        {
+          environmentId: id("npm"),
+          serverLabel: "bb-1",
+          selfUpdate: "respawn",
+          targetVersion: "1.1.0",
+        },
+      ],
+      providerMachines: [
+        { environmentId: id("npm"), label: "bb-1", providers: ["Codex", "Claude"] },
+        { environmentId: id("local"), label: "Mainbook", providers: ["Codex"] },
+        { environmentId: id("manual"), label: "alvin", providers: ["Claude"] },
+      ],
+      skipped: [
+        { environmentId: id("manual"), label: "alvin", reason: "needs a manual update" },
+        { environmentId: id("offline"), label: "TheoRoom", reason: "not connected" },
+      ],
+    });
+
+    expect(
+      rows.map(({ label, app, skipped, providers }) => [label, app, skipped, providers]),
+    ).toEqual([
+      ["Mainbook", "this-app", null, ["Codex"]],
+      ["Mainbook WSL", "this-app", null, []],
+      ["bb-1", "server", null, ["Codex", "Claude"]],
+      ["alvin", null, "needs a manual update", ["Claude"]],
+      ["TheoRoom", null, "not connected", []],
+    ]);
+  });
+});
+
+describe("describeUpdateCapsule", () => {
+  it("offers a retry when a server update fails", () => {
+    const failed = {
+      machine: {
+        environmentId: EnvironmentId.make("remote"),
+        label: "remote",
+        updatesProviders: false,
+        server: {
+          environmentId: EnvironmentId.make("remote"),
+          serverLabel: "remote",
+          selfUpdate: "boot-service" as const,
+          targetVersion: "0.1.3",
+        },
+        handedOffVersion: null,
+        startedAt: 0,
+        result: "failed" as const,
+        failure: "offline",
+        providerFailure: null,
+      },
+      status: "failed" as const,
+    };
+    const run = { localVersion: null, phase: "servers" as const, restartAt: null, machines: [] };
+
+    expect(describeUpdateCapsule(run, [failed], null, 0).action).toBe("retry");
   });
 });

@@ -36,7 +36,7 @@ const REVIEWED_LOCAL_ACTIONS: ReadonlyMap<string, string> = new Map([
   ],
   [
     "./.github/actions/setup-ci-deps",
-    "3a6fdabba70d53f534bd23f776a81e30a7eb8072f347a7fea67ab03cdf2a7b22",
+    "4f2fe98bc719ef0bb61d9dbfdf88b54bb6bea51a271468760611a0af2bcf0b38",
   ],
   [
     "./.github/actions/ci-changes",
@@ -105,6 +105,7 @@ const READ_ONLY_RUN_SOURCES = new Set([
 // authority review local to this file without normalizing away shell meaning.
 const READ_ONLY_MULTILINE_RUN_DIGESTS = new Set([
   "5420f25f805874d12c1dd347741d626c7acf5c8bdcc07f68735f1b64efc7fd04",
+  "21e2c7eb38e0958ca12a7aeb48a1391a322c6b0ca20fd39d65bb2c57d83e3ce3",
   "3e84d085a97bab04097752608e9737cc7cd4572f9ed0a092d2e951f36caf5685",
   "2620bce32ad637da57217092480e8ddca985812cf0dbf8ae8a891ca8fd658290",
   "085a0164f4dbe086b88f9dea1af1a201350d28446f9f925c5ab123c13b3bda99",

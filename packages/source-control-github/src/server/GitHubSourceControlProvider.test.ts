@@ -22,6 +22,13 @@ import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubQuota from "./GitHubQuota.ts";
 import { parseGitHubAuthStatus } from "./gitHubAuthStatus.ts";
 import * as GitHubSourceControlProvider from "./GitHubSourceControlProvider.ts";
+import * as GitHubAppSignIn from "./GitHubAppSignIn.ts";
+
+const appSignedOut = Layer.mock(GitHubAppSignIn.GitHubAppSignIn)({
+  enabled: false,
+  token: () => Effect.succeedNone,
+  invalidate: () => Effect.void,
+});
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -220,15 +227,19 @@ function harness(input: {
                 source: "gh" as const,
                 fingerprint: `${host}:token`,
               })),
+          saved: () => Effect.succeedNone,
+          fingerprint: (host, token) => Effect.succeed(`${host}:${token}`),
           invalidate: () => Effect.void,
         }),
         GitHubQuota.layer,
         SourceControlRateLimit.layer,
+        appSignedOut,
       ),
     ),
   );
   const layer = Layer.mergeAll(
     host,
+    appSignedOut,
     Layer.mock(GitHubRest.GitHubRest)(input.api ?? {}),
     policy,
     Layer.succeed(HttpClient.HttpClient, graphQlHttp(graphql, graphqlCalls)),
@@ -287,6 +298,150 @@ describe("GitHubSourceControlProvider repository resolution", () => {
       assert.deepStrictEqual(paths, ["github.com repos/me/web"]);
     }).pipe(Effect.provide(layer));
   });
+
+  // Fork F06: upstream reads the given host before the checkout's. Lookup stays on the explicit
+  // endpoint; a matching host reads there, and another host or no endpoint is refused.
+  it.effect("reads clone URLs only on the given host when it is the explicit endpoint", () => {
+    const paths: string[] = [];
+    const { layer } = harness({
+      remotes: remotesOutput(["origin", "https://github.com/acme/web.git"]),
+      api: {
+        rest: (input) =>
+          Effect.sync(() => {
+            paths.push(`${input.host} ${input.path}`);
+            return restResponse({
+              full_name: "acme/web",
+              html_url: `https://${input.host}/acme/web`,
+              ssh_url: `git@${input.host}:acme/web.git`,
+            });
+          }),
+      },
+    });
+    return Effect.gen(function* () {
+      const gh = yield* GitHubSourceControlProvider.make;
+      const cloneUrls = yield* gh.getRepositoryCloneUrls({
+        cwd: "/repo",
+        providerBaseUrl: "https://github.enterprise.test",
+        repository: "acme/web",
+        host: "GitHub.Enterprise.test",
+      });
+      assert.strictEqual(cloneUrls.url, "https://github.enterprise.test/acme/web");
+      const otherHost = yield* gh
+        .getRepositoryCloneUrls({
+          cwd: "/repo",
+          providerBaseUrl: "https://github.com",
+          repository: "acme/web",
+          host: "github.enterprise.test",
+        })
+        .pipe(Effect.flip);
+      assert.include(otherHost.message, "not the selected GitHub endpoint");
+      const noEndpoint = yield* gh
+        .getRepositoryCloneUrls({
+          cwd: "/repo",
+          repository: "acme/web",
+          host: "github.enterprise.test",
+        })
+        .pipe(Effect.flip);
+      assert.include(noEndpoint.message, "explicit GitHub provider endpoint");
+      assert.deepStrictEqual(paths, ["github.enterprise.test repos/acme/web"]);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect.each([
+    ["github", "git@github:acme/web.git"],
+    ["github.com-scale", "git@github.com-scale:acme/web.git"],
+    ["github.com-scale", "ssh://git@github.com-scale:22/acme/web.git"],
+  ] as const)("reads an SSH alias on %s through github.com (%s)", ([host, remoteUrl]) => {
+    const hosts: string[] = [];
+    const { layer } = harness({
+      remotes: remotesOutput(["origin", remoteUrl]),
+      api: {
+        rest: (input) =>
+          Effect.sync(() => {
+            hosts.push(`${input.host} ${input.path}`);
+            return restResponse({
+              full_name: "acme/web",
+              html_url: "https://github.com/acme/web",
+              ssh_url: "git@github.com:acme/web.git",
+              default_branch: "main",
+            });
+          }),
+      },
+    });
+    return Effect.gen(function* () {
+      const gh = yield* GitHubSourceControlProvider.make;
+      const resolveWebHost = gh.resolveRemoteWebHost;
+      assert.ok(resolveWebHost);
+      assert.strictEqual(
+        yield* resolveWebHost({
+          cwd: "/repo",
+          context: { ...githubContext(host), remoteUrl },
+          resolveContext: () => Effect.succeed(null),
+        }),
+        "github.com",
+      );
+      // Fork F06: only the bound origin context selects the repository.
+      yield* gh.getDefaultBranch({
+        cwd: "/repo",
+        context: { ...githubContext(host), remoteUrl },
+      });
+      assert.deepStrictEqual(hosts, ["github.com repos/acme/web"]);
+    }).pipe(Effect.provide(layer));
+  });
+
+  it.effect.each(["sole", "upstream", "missing"])(
+    "preserves an HTTPS context host with %s remotes",
+    (mode) => {
+      const paths: string[] = [];
+      const remoteUrl = "https://github.com-scale/me/web.git";
+      const { layer } = harness({
+        remotes:
+          mode === "missing"
+            ? ""
+            : remotesOutput(
+                ["origin", remoteUrl],
+                ...(mode === "upstream"
+                  ? ([["upstream", "https://github.com/acme/web.git"]] as const)
+                  : []),
+              ),
+        api: {
+          rest: (input) =>
+            Effect.sync(() => {
+              paths.push(`${input.host} ${input.path}`);
+              return restResponse({
+                full_name: "me/web",
+                html_url: "https://github.com-scale/me/web",
+                ssh_url: "git@github.com-scale:me/web.git",
+                default_branch: "trunk",
+              });
+            }),
+        },
+      });
+      return Effect.gen(function* () {
+        const gh = yield* GitHubSourceControlProvider.make;
+        const resolveWebHost = gh.resolveRemoteWebHost;
+        assert.ok(resolveWebHost);
+        for (const url of [remoteUrl, "git@github.com-evil.example:me/web.git"]) {
+          assert.strictEqual(
+            yield* resolveWebHost({
+              cwd: "/repo",
+              context: { ...githubContext("github.com-scale"), remoteUrl: url },
+              resolveContext: () => Effect.succeed(null),
+            }),
+            url === remoteUrl ? "github.com-scale" : "github.com-evil.example",
+          );
+        }
+        assert.strictEqual(
+          yield* gh.getDefaultBranch({
+            cwd: "/repo",
+            context: { ...githubContext("github.com-scale"), remoteUrl },
+          }),
+          "trunk",
+        );
+        assert.deepStrictEqual(paths, ["github.com-scale repos/me/web"]);
+      }).pipe(Effect.provide(layer));
+    },
+  );
 });
 
 describe("GitHubSourceControlProvider change request lookups by head", () => {
@@ -879,6 +1034,7 @@ it("reports every gh login and leads with the account Settings pin", () => {
   const auth = GitHubSourceControlProvider.parseGitHubAuth(multiAccountStatus(), {
     hosts: { "github.com": { account: "work", enabled: true } },
     tokens: {},
+    signIns: {},
   });
   assert.deepStrictEqual(auth.account, Option.some("work"));
   assert.deepStrictEqual(auth.accounts, [
@@ -892,6 +1048,7 @@ it("reports unauthenticated when Settings turn off every signed-in host", () => 
   const auth = GitHubSourceControlProvider.parseGitHubAuth(multiAccountStatus(), {
     hosts: { "github.com": { enabled: false } },
     tokens: {},
+    signIns: {},
   });
   assert.strictEqual(auth.status, "unauthenticated");
   assert.deepStrictEqual(
@@ -911,7 +1068,7 @@ it("names the environment token that overrides the Settings choice", () => {
         tokenSource: "GH_TOKEN",
       },
     ]),
-    { hosts: { "github.com": { account: "work", enabled: true } }, tokens: {} },
+    { hosts: { "github.com": { account: "work", enabled: true } }, tokens: {}, signIns: {} },
   );
   assert.deepStrictEqual(auth.account, Option.some("bot"));
   assert.deepStrictEqual(

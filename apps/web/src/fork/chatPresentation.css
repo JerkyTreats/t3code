@@ -4,6 +4,23 @@
   border-radius: var(--radius-2xl);
 }
 
-[data-slot="composer-shell"].fork-chat-composer-shell[data-with-context]::before {
+/* Upstream hides the shell glass under a context row and paints the card alone (Host); the fork
+   keeps the shell glass behind card and strip, so the card's own glass would double it. */
+[data-slot="composer-shell"].fork-chat-composer-shell[data-context-row]:not(
+    :has([data-composer-banner-surface="attached"])
+  )::before {
+  display: block;
   bottom: 0;
+}
+
+[data-slot="composer-shell"].fork-chat-composer-shell[data-context-row]
+  > [data-slot="composer-host"]::before {
+  display: none;
+}
+
+/* The floating lock owns runtime mode while it is mounted; upstream's strip chip returns with the
+   compact fallback. */
+[data-slot="composer-shell"].fork-chat-composer-shell:has([data-chat-composer-floating-runtime])
+  [data-fork-strip-runtime] {
+  display: none;
 }

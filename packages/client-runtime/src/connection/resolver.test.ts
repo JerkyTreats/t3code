@@ -5,6 +5,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -110,6 +111,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
           },
         })),
     authorizeDpopHttp: () => Effect.die("unused"),
+    renewDpopBeforeExpiry: () => Effect.die("unused"),
   });
   const ssh = ClientCapabilities.SshEnvironmentGateway.of({
     provision: () => Effect.die("unused"),
@@ -204,7 +206,7 @@ describe("ConnectionResolver", () => {
         label: "Primary",
         httpBaseUrl: "http://127.0.0.1:3777",
         socketUrl:
-          "ws://127.0.0.1:3777/ws?clientSurface=web&clientDeviceType=desktop&connectionMethod=direct&orchestrationProtocol=2",
+          "ws://127.0.0.1:3777/ws?clientSurface=web&clientDeviceType=desktop&connectionMethod=direct&orchestrationProtocol=2&clientCapabilities=settingsSecretReferences",
         httpAuthorization: null,
         target,
       });
@@ -221,7 +223,7 @@ describe("ConnectionResolver", () => {
             Effect.sync(() => {
               calls.push(target);
               return {
-                ticket: `ticket+${calls.length}`,
+                ticket: Redacted.make(`ticket+${calls.length}`),
                 expiresAt: DateTime.makeUnsafe("2099-01-01T00:00:00.000Z"),
               };
             }),

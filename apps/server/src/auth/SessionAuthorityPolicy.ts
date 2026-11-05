@@ -13,7 +13,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 /** Owns session authority independently of cryptography, persistence and transport hosts. */
-export const MAX_DEVICE_ADMINISTRATOR_SESSION_TTL = Duration.days(7);
+const MAX_DEVICE_ADMINISTRATOR_SESSION_TTL = Duration.days(7);
 const DEFAULT_SESSION_TTL = Duration.days(30);
 
 export const normalizeAuthority = (
@@ -235,8 +235,7 @@ export class WebSocketSessionRevokedError extends Schema.TaggedError<WebSocketSe
   }
 }
 
-export const isExpired = (expiresAt: number, observedAt: number): boolean =>
-  expiresAt <= observedAt;
+const isExpired = (expiresAt: number, observedAt: number): boolean => expiresAt <= observedAt;
 
 export const isClientEnabled = (
   state: Pick<SessionAuthorityState, "clientDisabledAt" | "clientDeletedAt">,

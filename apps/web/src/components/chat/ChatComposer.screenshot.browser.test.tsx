@@ -49,9 +49,9 @@ vi.mock(import("../ui/toast"), async (original) => {
   const actual = await original();
   return { ...actual, toastManager: { ...actual.toastManager, add: mocks.toast } };
 });
-vi.mock(import("../ComposerPromptEditor"), async (original) => ({
+vi.mock(import("../ComposerPromptEditorTiptap"), async (original) => ({
   ...(await original()),
-  ComposerPromptEditor: ((editorProps: { onPaste: (event: unknown) => void }) => {
+  ComposerPromptEditorTiptap: ((editorProps: { onPaste: (event: unknown) => void }) => {
     mocks.editor = editorProps;
     return null;
   }) as never,
@@ -331,7 +331,6 @@ describe("ChatComposer screenshot admission", () => {
       <ChatComposer
         {...input}
         environmentId={otherEnvironment}
-        activeThreadEnvironmentId={otherEnvironment}
         composerDraftTarget={otherTarget}
         routeThreadRef={otherTarget}
       />,

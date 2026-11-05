@@ -8,9 +8,10 @@ import {
   isValidDesktopBootstrapToken,
 } from "@t3tools/shared/desktopBootstrapToken";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
+import * as Mac from "effect/crypto/Mac";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -20,7 +21,7 @@ import * as Schema from "effect/Schema";
 import * as ServerConfig from "../config.ts";
 import * as AuthPairingLinks from "../persistence/AuthPairingLinks.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
-import { signPayload } from "./utils.ts";
+import * as PayloadSigner from "./PayloadSigner.ts";
 
 export interface BootstrapGrant {
   readonly method: ServerAuthBootstrapMethod;
@@ -236,6 +237,8 @@ export class PairingGrantStore extends Context.Service<
       input?: {
         readonly proofKeyThumbprint?: string;
         readonly requestedScopes?: ReadonlyArray<AuthEnvironmentScope>;
+        /** All scopes must be granted; requestedScopes only requires an overlap for OAuth. */
+        readonly requiredScopes?: ReadonlyArray<AuthEnvironmentScope>;
       },
     ) => Effect.Effect<BootstrapGrant, BootstrapCredentialError>;
   }
@@ -264,8 +267,13 @@ const PAIRING_TOKEN_LENGTH = 12;
 const PAIRING_TOKEN_REJECTION_LIMIT =
   Math.floor(256 / PAIRING_TOKEN_ALPHABET.length) * PAIRING_TOKEN_ALPHABET.length;
 
+const PAIRING_TOKEN_PATTERN = new RegExp(
+  `^[${PAIRING_TOKEN_ALPHABET}]{${PAIRING_TOKEN_LENGTH}}$`,
+  "i",
+);
+
 export const make = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const config = yield* ServerConfig.ServerConfig;
   const pairingLinks = yield* AuthPairingLinks.AuthPairingLinkRepository;
   const secretStore = yield* ServerSecretStore.ServerSecretStore;
@@ -277,7 +285,7 @@ export const make = Effect.gen(function* () {
   const generatePairingToken = Effect.gen(function* () {
     let credential = "";
     while (credential.length < PAIRING_TOKEN_LENGTH) {
-      const bytes = yield* crypto
+      const bytes = yield* random
         .randomBytes(PAIRING_TOKEN_LENGTH)
         .pipe(
           Effect.mapError(
@@ -297,7 +305,8 @@ export const make = Effect.gen(function* () {
     }
     return credential;
   });
-  const digestCredential = (credential: string) => signPayload(credential, credentialDigestSecret);
+  const credentialDigestSigner = yield* PayloadSigner.fromSecret(credentialDigestSecret);
+  const digestCredential = (credential: string) => credentialDigestSigner.sign(credential);
 
   const seedGrant = (credential: string, grant: StoredBootstrapGrant) =>
     Ref.update(seededGrantsRef, (current) => {
@@ -308,9 +317,13 @@ export const make = Effect.gen(function* () {
 
   // Accept tokens derived from the rotating desktop secret; older desktops send only a token.
   const desktopBootstrapSecret = config.desktopBootstrapSecret;
+  const mac = yield* Mac.Mac;
   const consumeRotatingDesktopToken = (credential: string, nowMs: number) =>
-    desktopBootstrapSecret !== undefined &&
-    isValidDesktopBootstrapToken(desktopBootstrapSecret, credential, nowMs);
+    desktopBootstrapSecret === undefined
+      ? Effect.succeed(false)
+      : isValidDesktopBootstrapToken(desktopBootstrapSecret, credential, nowMs).pipe(
+          Effect.provideService(Mac.Mac, mac),
+        );
 
   if (config.desktopBootstrapToken && desktopBootstrapSecret === undefined) {
     const now = yield* DateTime.now;
@@ -387,8 +400,8 @@ export const make = Effect.gen(function* () {
   const issueOneTimeToken: PairingGrantStore["Service"]["issueOneTimeToken"] = Effect.fn(
     "PairingGrantStore.issueOneTimeToken",
   )(function* (input) {
-    const id = yield* crypto
-      .randomUUIDv4()
+    const id = yield* random
+      .uuidV4()
       .pipe(
         Effect.mapError(
           (cause) =>
@@ -413,7 +426,7 @@ export const make = Effect.gen(function* () {
     yield* pairingLinks
       .create({
         id,
-        credentialDigest: digestCredential(credential),
+        credentialDigest: yield* digestCredential(credential),
         method: "one-time-token",
         scopes: input?.scopes ?? AuthStandardClientScopes,
         subject,
@@ -440,7 +453,7 @@ export const make = Effect.gen(function* () {
   const consume: PairingGrantStore["Service"]["consume"] = Effect.fn("PairingGrantStore.consume")(
     function* (credential, input) {
       const now = yield* DateTime.now;
-      if (consumeRotatingDesktopToken(credential, now.epochMilliseconds)) {
+      if (yield* consumeRotatingDesktopToken(credential, now.epochMilliseconds)) {
         return {
           method: "desktop-bootstrap",
           scopes: AuthStandardClientScopes,
@@ -490,8 +503,10 @@ export const make = Effect.gen(function* () {
           }
 
           if (
-            input?.requestedScopes !== undefined &&
-            !input.requestedScopes.some((scope) => grant.scopes.includes(scope))
+            (input?.requestedScopes !== undefined &&
+              !input.requestedScopes.some((scope) => grant.scopes.includes(scope))) ||
+            (input?.requiredScopes !== undefined &&
+              !input.requiredScopes.every((scope) => grant.scopes.includes(scope)))
           ) {
             return [
               {
@@ -541,14 +556,21 @@ export const make = Effect.gen(function* () {
         return yield* seededResult.error;
       }
 
+      // Only credentials in the issued pairing-code format are case-insensitive.
+      const pairingCredential = PAIRING_TOKEN_PATTERN.test(credential)
+        ? credential.toUpperCase()
+        : credential;
+      const pairingCredentialDigest = yield* digestCredential(pairingCredential);
+
       // Check scopes in the UPDATE so rejected requests cannot spend one-time links.
       const consumed = yield* pairingLinks
         .consumeAvailable({
-          credentialDigest: digestCredential(credential),
+          credentialDigest: pairingCredentialDigest,
           proofKeyThumbprint: input?.proofKeyThumbprint ?? null,
           ...(input?.requestedScopes !== undefined
             ? { requestedScopes: input.requestedScopes }
             : {}),
+          ...(input?.requiredScopes !== undefined ? { requiredScopes: input.requiredScopes } : {}),
           consumedAt: now,
           now,
         })
@@ -569,7 +591,7 @@ export const make = Effect.gen(function* () {
       }
 
       const matching = yield* pairingLinks
-        .getByCredentialDigest({ credentialDigest: digestCredential(credential) })
+        .getByCredentialDigest({ credentialDigest: pairingCredentialDigest })
         .pipe(Effect.mapError((cause) => new BootstrapCredentialLookupError({ cause })));
       if (Option.isNone(matching)) {
         return yield* new UnknownBootstrapCredentialError({});
@@ -595,8 +617,10 @@ export const make = Effect.gen(function* () {
       }
 
       if (
-        input?.requestedScopes !== undefined &&
-        !input.requestedScopes.some((scope) => matching.value.scopes.includes(scope))
+        (input?.requestedScopes !== undefined &&
+          !input.requestedScopes.some((scope) => matching.value.scopes.includes(scope))) ||
+        (input?.requiredScopes !== undefined &&
+          !input.requiredScopes.every((scope) => matching.value.scopes.includes(scope)))
       ) {
         return yield* new BootstrapCredentialScopeNotGrantedError({});
       }

@@ -5,6 +5,7 @@ import {
 import {
   COMPOSER_CONTEXT_REVIEW_DIFF_MAX_CHARS,
   COMPOSER_CONTEXT_REVIEW_TEXT_MAX_CHARS,
+  COMPOSER_CONTEXT_TERMINAL_TEXT_MAX_CHARS,
 } from "@t3tools/contracts";
 import type {
   ComposerContextId,
@@ -19,7 +20,6 @@ import type {
   PreviewAnnotationContextRecord,
   PreviewAnnotationPayload,
   ReviewCommentContextRecord,
-  ScopedThreadRef,
   TerminalContextRecord,
   ThreadContextRecord,
   ThreadId,
@@ -53,7 +53,11 @@ const TRUNCATION_MARKER = "\n… truncated …";
 
 function clampContextText(value: string, max: number): string {
   if (value.length <= max) return value;
-  return `${value.slice(0, Math.max(0, max - TRUNCATION_MARKER.length))}${TRUNCATION_MARKER}`;
+  let end = Math.max(0, max - TRUNCATION_MARKER.length);
+  // Never end on a lone high surrogate.
+  const last = value.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${value.slice(0, end)}${TRUNCATION_MARKER}`;
 }
 
 type ReviewCommentPresentation = ReviewCommentContext | ReviewCommentContextRecord;
@@ -154,25 +158,8 @@ export function previewAnnotationContextReference(
   };
 }
 
-function threadContextId(threadId: ThreadId): ComposerContextId {
-  return toKindScopedComposerContextId("thread", threadId);
-}
-
 export function threadContextReference(record: ThreadContextRecord): ComposerContextReference {
   return { kind: "thread", contextId: record.contextId, label: record.label };
-}
-
-export function threadContextRecord(ref: ScopedThreadRef, title: string): ThreadContextRecord {
-  const label = sanitizeComposerContextLabel(title, "thread");
-  return {
-    version: 1,
-    kind: "thread",
-    contextId: threadContextId(ref.threadId),
-    label,
-    environmentId: ref.environmentId,
-    threadId: ref.threadId,
-    title: label,
-  };
 }
 
 /** One record per machine: mentioning the same machine twice reuses the chip. */
@@ -205,7 +192,10 @@ export function terminalContextRecord(context: TerminalContextDraft): TerminalCo
     terminalLabel: context.terminalLabel,
     lineStart: context.lineStart,
     lineEnd: context.lineEnd,
-    text: normalizeTerminalContextText(context.text),
+    text: clampContextText(
+      normalizeTerminalContextText(context.text),
+      COMPOSER_CONTEXT_TERMINAL_TEXT_MAX_CHARS,
+    ),
   };
 }
 
@@ -362,7 +352,7 @@ export function asKnownContextRecord(
   record: ComposerContextRecord | undefined,
 ): KnownComposerContextRecord | undefined {
   if (!record || "payload" in record) return undefined;
-  return record as KnownComposerContextRecord;
+  return record;
 }
 
 export function composerContextImportLookupIds(

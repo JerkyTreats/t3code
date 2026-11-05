@@ -2,6 +2,13 @@
 import type { DesktopSystemTheme } from "@t3tools/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
+// The environment theme feed reaches the connection runtime, which reads desktop bridge state at
+// module load; this host only exercises the local system theme.
+vi.mock("../state/server", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return { primaryServerEnvironmentThemesAtom: Atom.make([]) };
+});
+
 function createStorage(overrides: Partial<Storage> = {}): Storage {
   const store = new Map<string, string>();
   return {

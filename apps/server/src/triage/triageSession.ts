@@ -9,6 +9,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
+import * as ManagedEndpointRuntime from "../cloud/ManagedEndpointRuntime.ts";
 import type * as ServerConfig from "../config.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { buildTriageContext, buildTriageSeedPrompt, type TriageEntry } from "./triagePrompt.ts";
@@ -31,8 +32,7 @@ export const describeServerProcess = Effect.fn("triage.describeServerProcess")(f
 });
 
 /** The source cache the playbook clones into after approval, one subdirectory per commit. */
-export const triageSourceCacheDir = (baseDir: string, path: Path.Path) =>
-  path.join(baseDir, "source");
+const triageSourceCacheDir = (baseDir: string, path: Path.Path) => path.join(baseDir, "source");
 
 /**
  * Writes `context.md` and the playbook prompt into a fresh `<stateDir>/triage/<time>`
@@ -74,6 +74,7 @@ export const writeTriageSession = Effect.fn("triage.writeTriageSession")(functio
         // app capture its output. The glob names come from DesktopObservability.ts.
         serviceLogPath: path.join(paths.logsDir, "boot-service.log"),
         desktopBackendLogGlob: path.join(paths.logsDir, "server-child*.log*"),
+        relayClientLogPath: path.join(paths.logsDir, ManagedEndpointRuntime.RELAY_CLIENT_LOG_FILE),
         serverTracePath: paths.serverTracePath,
         providerEventLogPath: paths.providerEventLogPath,
         terminalLogsDir: paths.terminalLogsDir,

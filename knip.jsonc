@@ -20,24 +20,41 @@
       // Knip loads its preprocessor through a CLI option; native verification and
       // worktree setup (from t3.json) run directly. release-desktop.yml bundles the
       // Windows verify script with esbuild through a path knip does not trace,
-      // electron-builder loads the macOS signer by path, and mobile-e2e.ts runs
-      // agent-device's CLI by path. release-desktop.yml runs the desktop launch
-      // check through xvfb-run, which knip does not trace.
+      // electron-builder loads the macOS signer and the Linux afterPack hook by path, and mobile-e2e.ts runs
+      // agent-device's CLI by path, and mobile-behavior.ts spawns its runner by path.
+      // release-desktop.yml runs the desktop launch check through xvfb-run, which knip
+      // does not trace.
       "entry": [
         // These fixture scripts are injected into a browser page by path.
         "fixtures/*/*.js",
         "knip-schemas.ts",
+        "linux-after-pack.ts",
+        "mobile-behavior/run.ts",
         "mobile-native-client.ts",
         "setup-worktree.ts",
         "sign-macos.ts",
+        "prepare-server-compile-cache.cjs",
         "smoke-desktop-app.ts",
         "verify-windows-desktop-artifact.ts",
+        // Fork: electron-builder loads Thread's afterPack hook by path, and operators run the
+        // staging Thread harness directly.
+        "thread-after-pack.mjs",
+        "staging-thread-harness.mjs",
       ],
       "ignoreDependencies": ["agent-device", "esbuild"],
       // The `t3` npm package's files: copied into the package, never imported.
       // knip-schemas.test.ts writes a throwaway project to .knip-test-*, which a
       // knip run beside it in check:changed must not report.
-      "ignore": ["npm-launcher/**", ".knip-test-*/**"],
+      // Fork: upstream's CLI archive and nightly release scripts are run only by release
+      // workflows the fork excludes.
+      "ignore": [
+        "npm-launcher/**",
+        ".knip-test-*/**",
+        "build-cli-archive.ts",
+        "smoke-cli-archive.ts",
+        "lib/windows-tar.ts",
+        "resolve-nightly-release.ts",
+      ],
     },
     "apps/server": {
       // Vite+ pack entries and the launcher used by installed background services.
@@ -59,7 +76,16 @@
       // The Vite+ web build prerequisite.
       // Native and disk-loaded provider packages stay external to the bundle; the
       // CLI archive and desktop sidecar stage them from this manifest.
-      "ignoreDependencies": ["@effect/platform-node-shared", "@t3tools/web", "@napi-rs/keyring"],
+      "ignoreDependencies": [
+        "@effect/platform-node-shared",
+        "@t3tools/web",
+        "@napi-rs/keyring",
+        "ffi-rs",
+      ],
+    },
+    "apps/thread": {
+      // Fork: scripts/build-thread-artifact.mjs runs electron-builder for this package.
+      "ignoreDependencies": ["electron-builder"],
     },
     "apps/desktop": {
       // Electron loads these bundles by filename rather than importing them.
@@ -71,6 +97,7 @@
         "src/snapShot/SnapShotAccessibilityWorker.ts!",
         "src/boot.ts!",
         "src/compileCache.ts!",
+        "src/serverCompileCache.ts!",
         "src/main.ts!",
         "src/preload.ts!",
         "src/preview-pick-preload.ts!",
@@ -131,7 +158,8 @@
       ],
     },
     "infra/relay": {
-      "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!"],
+      // Alchemy loads src/worker.ts as the Worker entry and reads its default export.
+      "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!", "src/worker.ts!"],
     },
     "packages/*": {
       // These workspace packages are private to this monorepo.

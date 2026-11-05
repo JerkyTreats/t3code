@@ -23,9 +23,9 @@ vi.mock(import("../../hooks/useMediaQuery"), async (original) => ({
   ...(await original()),
   useMediaQuery: () => false,
 }));
-vi.mock(import("../ComposerPromptEditor"), async (original) => ({
+vi.mock(import("../ComposerPromptEditorTiptap"), async (original) => ({
   ...(await original()),
-  ComposerPromptEditor: (() => null) as never,
+  ComposerPromptEditorTiptap: (() => null) as never,
 }));
 vi.mock(import("./ProviderModelPicker"), async (original) => {
   const actual = await original();
@@ -98,7 +98,7 @@ describe("Thread composer controls integration", () => {
     await using screen = await render(<ChatComposer {...input} />);
     await expect.element(screen.getByRole("button", { name: "Model: test" })).toBeVisible();
     await expect
-      .element(screen.getByRole("combobox", { name: "Runtime mode: Full access" }))
+      .element(screen.getByRole("button", { name: "Permissions: Full access" }))
       .toBeVisible();
     const instanceId = input.providerStatuses[0]!.instanceId;
     await act(() => mocks.picker!.onInstanceModelChange(instanceId as never, "test"));
@@ -108,7 +108,9 @@ describe("Thread composer controls integration", () => {
   it("keeps ordinary chat's model display mode", async () => {
     using _fixture = setup();
     await using screen = await render(<ChatComposer {...props()} />);
-    await expect.element(screen.getByRole("combobox", { name: "Runtime mode" })).toBeVisible();
+    await expect
+      .element(screen.getByRole("button", { name: "Permissions: Full access" }))
+      .toBeVisible();
     expect(screen.getByRole("button", { name: "Model: test" }).query()).toBeNull();
     expect(screen.container.textContent).toContain("Test");
   });
@@ -124,11 +126,23 @@ describe("ChatComposer floating runtime control", () => {
     expect(
       screen.container.querySelector("[data-chat-composer-main-surface='true']")?.className ?? "",
     ).toContain("rounded-2xl");
-    const trigger = screen.getByRole("combobox", { name: "Runtime mode" });
+    const trigger = screen.getByRole("button", { name: "Permissions: Full access" });
     expect(floating.contains(trigger.element())).toBe(true);
     await trigger.click();
-    await page.getByRole("option", { name: /Supervised/ }).click();
+    await page.getByRole("menuitemradio", { name: "Supervised" }).click();
     expect(input.handleRuntimeModeChange).toHaveBeenCalledWith("approval-required");
+  });
+
+  it("leaves runtime mode out of the model picker footer while the lock floats", async () => {
+    using _fixture = setup();
+    await using screen = await render(<ChatComposer {...props()} />, wide());
+    await floatingRuntime(screen.container);
+    await userEvent.click(
+      screen.container.querySelector<HTMLElement>("[data-chat-provider-model-picker]")!,
+    );
+    await expect.poll(() => document.querySelector("[data-model-picker-effort]")).not.toBeNull();
+    expect(document.querySelector("[data-composer-permissions-trigger]")).toBeNull();
+    expect(document.querySelectorAll('[aria-label^="Permissions:"]')).toHaveLength(1);
   });
 
   it("keeps the runtime control in the footer while an approval is pending", async () => {
@@ -145,7 +159,7 @@ describe("ChatComposer floating runtime control", () => {
       />,
     );
     await expect
-      .element(screen.getByRole("combobox", { name: "Runtime mode" }))
+      .element(screen.getByRole("button", { name: "Permissions: Full access" }))
       .toBeInTheDocument();
     expect(screen.container.querySelector("[data-chat-composer-floating-runtime]")).toBeNull();
   });
@@ -159,7 +173,7 @@ describe("ChatComposer Poteto toggle", () => {
       await using screen = await render(<ChatComposer {...input} />, wide());
       const toggle = screen.getByRole("button", { name: "Poteto Mode" });
       const floating = await floatingRuntime(screen.container);
-      const runtime = screen.getByRole("combobox", { name: "Runtime mode" }).element();
+      const runtime = screen.getByRole("button", { name: "Permissions: Full access" }).element();
       expect(floating.contains(toggle.element())).toBe(true);
       expect(
         runtime.compareDocumentPosition(toggle.element()) & Node.DOCUMENT_POSITION_FOLLOWING,

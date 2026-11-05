@@ -81,7 +81,7 @@ export class AdminAccess extends Context.Service<
   }
 >()("t3/auth/AdminAccess") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const clients = yield* AuthClients.AuthClientRepository;
   const pairingGrants = yield* PairingGrantStore.PairingGrantStore;
   const sessions = yield* SessionStore.SessionStore;

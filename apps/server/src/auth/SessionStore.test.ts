@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { AuthStandardClientScopes, EnvironmentId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
@@ -24,7 +25,8 @@ import * as AuthSessions from "../persistence/AuthSessions.ts";
 import * as SessionStore from "./SessionStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
-import { base64UrlDecodeUtf8, base64UrlEncode, signPayload } from "./utils.ts";
+import { base64UrlDecodeUtf8, base64UrlEncode } from "./utils.ts";
+import * as PayloadSigner from "./PayloadSigner.ts";
 
 const layerServerConfig = (overrides?: Partial<ServerConfig.ServerConfig["Service"]>) =>
   Layer.effect(
@@ -102,7 +104,6 @@ const layerFailingSessionLookupRepository = Layer.succeed(AuthSessions.AuthSessi
   revoke: () => Effect.fail(repositoryFailure),
   revokeAllExcept: () => Effect.fail(repositoryFailure),
   setLastConnectedAt: () => Effect.void,
-  setClientConnection: () => Effect.void,
 });
 
 const layerFailingSessionLookupCredential = Layer.effect(
@@ -116,14 +117,16 @@ const layerFailingSessionLookupCredential = Layer.effect(
   Layer.provide(layerServerConfig()),
 );
 
-it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.layer", (it) => {
   it.effect(
     "rejects signed legacy, unregistered and substituted websocket claims without eviction",
     () =>
       Effect.gen(function* () {
         const sessions = yield* SessionStore.SessionStore;
         const secrets = yield* ServerSecretStore.ServerSecretStore;
-        const secret = yield* secrets.getOrCreateRandom("server-signing-key", 32);
+        const signer = yield* PayloadSigner.fromSecret(
+          yield* secrets.getOrCreateRandom("server-signing-key", 32),
+        );
         const first = yield* sessions.issue();
         const second = yield* sessions.issue();
         const ticket = yield* sessions.issueWebSocketToken(first.sessionId);
@@ -147,7 +150,7 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
           ],
         ] as const) {
           const payload = base64UrlEncode(yield* Schema.encodeEffect(claimsCodec)(modified));
-          const signed = `${payload}.${signPayload(payload, secret)}`;
+          const signed = `${payload}.${yield* signer.sign(payload)}`;
           expect((yield* sessions.verifyWebSocketToken(signed).pipe(Effect.flip))._tag).toBe(
             errorTag,
           );
@@ -342,7 +345,6 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
         }).pipe(Effect.provide(layer));
       }).pipe(Effect.provide(TestClock.layer())),
   );
-
   it.effect.each(["revoke", "revokeAllExcept", "replace"] as const)(
     "invalidates every connection for a session on %s and leaves other sessions active",
     (operation) =>
@@ -358,10 +360,10 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
             Effect.forkScoped({ startImmediately: true }),
           );
         const first = yield* sessions
-          .awaitInvalidation(client.sessionId)
+          .awaitInvalidation(client.sessionId, relaySessionInput.proofKeyThumbprint)
           .pipe(Effect.forkScoped({ startImmediately: true }));
         const second = yield* sessions
-          .awaitInvalidation(client.sessionId)
+          .awaitInvalidation(client.sessionId, relaySessionInput.proofKeyThumbprint)
           .pipe(Effect.forkScoped({ startImmediately: true }));
         if (operation === "revoke") yield* sessions.revoke(client.sessionId);
         else if (operation === "revokeAllExcept") yield* sessions.revokeAllExcept(owner.sessionId);
@@ -381,7 +383,7 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       yield* sessions.markConnected(client.sessionId);
       const invalidated = yield* Deferred.make<void>();
       const watcher = yield* sessions
-        .awaitInvalidation(client.sessionId)
+        .awaitInvalidation(client.sessionId, relaySessionInput.proofKeyThumbprint)
         .pipe(
           Effect.andThen(Deferred.succeed(invalidated, undefined)),
           Effect.forkScoped({ startImmediately: true }),
@@ -391,6 +393,102 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       yield* TestClock.adjust(Duration.minutes(1));
       yield* Fiber.join(watcher);
       yield* sessions.awaitInvalidation(client.sessionId);
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
+  it.effect.each([
+    { name: "a renewal for the same key", renewal: {}, closesAtMinute: 119 },
+    {
+      name: "a renewal for another key",
+      renewal: { proofKeyThumbprint: "other-proof-key" },
+      closesAtMinute: 60,
+    },
+    {
+      name: "a renewal with fewer scopes",
+      renewal: { scopes: ["orchestration:read"] as const },
+      closesAtMinute: 60,
+    },
+    {
+      name: "a renewal, until the original is revoked",
+      renewal: {},
+      closesAtMinute: 90,
+      revoke: "original",
+    },
+    {
+      name: "a renewal, until the renewal is revoked",
+      renewal: {},
+      closesAtMinute: 90,
+      revoke: "renewal",
+    },
+  ] as const)("closes a DPoP socket at minute $closesAtMinute after $name", (testCase) =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const client = yield* sessions.issue(relaySessionInput);
+      const invalidated = yield* Deferred.make<void>();
+      const watcher = yield* sessions
+        .awaitInvalidation(client.sessionId, relaySessionInput.proofKeyThumbprint)
+        .pipe(
+          Effect.andThen(Deferred.succeed(invalidated, undefined)),
+          Effect.forkScoped({ startImmediately: true }),
+        );
+      yield* TestClock.adjust(Duration.minutes(59));
+      const renewal = yield* sessions.issue({ ...relaySessionInput, ...testCase.renewal });
+      yield* TestClock.adjust(Duration.millis((testCase.closesAtMinute - 59) * 60_000 - 1));
+      expect(yield* Deferred.isDone(invalidated)).toBe(false);
+      yield* TestClock.adjust(Duration.millis(1));
+      if ("revoke" in testCase) {
+        yield* sessions.revoke(
+          testCase.revoke === "original" ? client.sessionId : renewal.sessionId,
+        );
+      }
+      yield* Fiber.join(watcher);
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
+  it.effect("closes a DPoP socket when an earlier renewal in its chain is revoked", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const client = yield* sessions.issue(relaySessionInput);
+      const invalidated = yield* Deferred.make<void>();
+      const watcher = yield* sessions
+        .awaitInvalidation(client.sessionId, relaySessionInput.proofKeyThumbprint)
+        .pipe(
+          Effect.andThen(Deferred.succeed(invalidated, undefined)),
+          Effect.forkScoped({ startImmediately: true }),
+        );
+      yield* TestClock.adjust(Duration.minutes(59));
+      const first = yield* sessions.issue(relaySessionInput);
+      yield* TestClock.adjust(Duration.minutes(59));
+      yield* sessions.issue(relaySessionInput);
+      // Past the first renewal's expiry, so the socket now follows the second.
+      yield* TestClock.adjust(Duration.minutes(2));
+      expect(yield* Deferred.isDone(invalidated)).toBe(false);
+      yield* sessions.revoke(first.sessionId);
+      yield* Fiber.join(watcher);
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
+  );
+
+  it.effect("keeps a renewed DPoP socket when another socket on its expired session closes", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const client = yield* sessions.issue(relaySessionInput);
+      yield* sessions.markConnected(client.sessionId);
+      const invalidated = yield* Deferred.make<void>();
+      const watcher = yield* sessions
+        .awaitInvalidation(client.sessionId, relaySessionInput.proofKeyThumbprint)
+        .pipe(
+          Effect.andThen(Deferred.succeed(invalidated, undefined)),
+          Effect.forkScoped({ startImmediately: true }),
+        );
+      yield* TestClock.adjust(Duration.minutes(59));
+      yield* sessions.issue(relaySessionInput);
+      yield* TestClock.adjust(Duration.minutes(2));
+      // An expired session that loses its last socket is reported as removed, not revoked.
+      yield* sessions.markDisconnected(client.sessionId);
+      yield* TestClock.adjust(Duration.millis(58 * 60_000 - 1));
+      expect(yield* Deferred.isDone(invalidated)).toBe(false);
+      yield* TestClock.adjust(Duration.millis(1));
+      yield* Fiber.join(watcher);
     }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
   );
 
@@ -572,7 +670,7 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       expect((yield* sessions.verify(uncapped.token)).runtimeModeCeiling).toBeUndefined();
     }).pipe(Effect.provide(layerSessionStore())),
   );
-  it.effect("keeps recorded scopes unchanged for both token versions", () =>
+  it.effect("takes scopes from the session record", () =>
     Effect.gen(function* () {
       const sessions = yield* SessionStore.SessionStore;
       const secrets = yield* ServerSecretStore.ServerSecretStore;
@@ -582,12 +680,24 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       const [encodedPayload] = issued.token.split(".");
       const currentClaims = base64UrlDecodeUtf8(encodedPayload!);
       expect(currentClaims).toContain('"v":1');
-      const legacyPayload = base64UrlEncode(currentClaims.replace('"v":1', '"v":2'));
-      const secret = yield* secrets.getOrCreateRandom("server-signing-key", 32);
-      const legacyToken = `${legacyPayload}.${signPayload(legacyPayload, secret)}`;
+      const signer = yield* PayloadSigner.fromSecret(
+        yield* secrets.getOrCreateRandom("server-signing-key", 32),
+      );
+      const resign = (claims: string) => {
+        const payload = base64UrlEncode(claims);
+        return signer.sign(payload).pipe(Effect.map((signature) => `${payload}.${signature}`));
+      };
+      const legacyToken = yield* resign(currentClaims.replace('"v":1', '"v":2'));
+      const editedToken = yield* resign(
+        currentClaims.replace(/"scopes":\[[^\]]*\]/, '"scopes":["access:write"]'),
+      );
 
       expect((yield* sessions.verify(issued.token)).scopes).toEqual(legacyScopes);
       expect((yield* sessions.verify(legacyToken)).scopes).toEqual(legacyScopes);
+      // F17: signed claims that disagree with the persisted authority fail closed.
+      expect((yield* Effect.flip(sessions.verify(editedToken)))._tag).toBe(
+        "InvalidSessionAuthorityClassError",
+      );
     }).pipe(
       Effect.provide(
         SessionStore.layer.pipe(
@@ -1047,37 +1157,5 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
         expect(listed).toHaveLength(1);
         expect(listed[0]?.sessionId).toBe(administrative.sessionId);
       }).pipe(Effect.scoped, Effect.provide(Layer.merge(layerSessionStore(), TestClock.layer()))),
-  );
-
-  it.effect("records client connection metadata without clearing prior values", () =>
-    Effect.gen(function* () {
-      const sessions = yield* SessionStore.SessionStore;
-      const sql = yield* SqlClient.SqlClient;
-      const issued = yield* sessions.issue({
-        subject: "client-connection-test",
-        method: "bearer-access-token",
-      });
-      const readRow = sql<{
-        readonly surface: string | null;
-        readonly appVersion: string | null;
-      }>`
-        SELECT client_surface AS "surface", client_app_version AS "appVersion"
-        FROM auth_sessions
-        WHERE session_id = ${issued.sessionId}
-      `;
-
-      yield* sessions.recordClientConnection(issued.sessionId, {
-        surface: "mobile",
-        appVersion: "1.2.0",
-      });
-      expect((yield* readRow)[0]).toEqual({ surface: "mobile", appVersion: "1.2.0" });
-
-      // A partial report (old or minimal client) must not null out stored data.
-      yield* sessions.recordClientConnection(issued.sessionId, { appVersion: "1.3.0" });
-      expect((yield* readRow)[0]).toEqual({ surface: "mobile", appVersion: "1.3.0" });
-
-      yield* sessions.recordClientConnection(issued.sessionId, {});
-      expect((yield* readRow)[0]).toEqual({ surface: "mobile", appVersion: "1.3.0" });
-    }).pipe(Effect.provide(Layer.mergeAll(layerSessionStore(), SqlitePersistence.layerMemory))),
   );
 });

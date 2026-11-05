@@ -2,11 +2,13 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   AuthEnvironmentMaintainScope,
   type AuthSessionState,
+  managedUpdatesDenial,
   sessionGrantsScope,
 } from "@t3tools/contracts";
 import type { AsyncResult } from "effect/reactivity";
 import { environmentSession } from "~/state/session";
 import type {
+  DesktopUpdateChannel,
   EnvironmentId,
   ServerInstallation,
   ServerSelfUpdateCapability,
@@ -21,14 +23,18 @@ import { CircleArrowUpIcon } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
-import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment, updateOutdatedServer } from "~/state/server";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useServerConfigs } from "~/state/entities";
+import { useManagedPolicy } from "~/state/managedPolicy";
+import { environmentPresentations } from "~/state/presentation";
+import { ManagedControl } from "./ManagedPolicy";
 import {
   manualRuntimeUpdateGuidance,
   supportedRuntimeUpdateCapability,
 } from "~/fork/runtimeUpdateGuidance";
+import { crossesReleaseTrack } from "@t3tools/shared/cliRelease";
 import { Button } from "./ui/button";
 import { toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -44,6 +50,37 @@ export function serverUpdateStageLabel(stage: ServerUpdateStage): string {
   return UPDATE_STAGE_LABELS[stage];
 }
 
+/** Why the environment's policy refuses server updates, read outside render. */
+function readUpdatesDenial(environmentId: EnvironmentId): string | undefined {
+  return managedUpdatesDenial(
+    appAtomRegistry.get(environmentPresentations.serverConfigsAtom).get(environmentId)
+      ?.managedPolicy,
+  );
+}
+
+const CROSS_TRACK_NOTE = "Switch tracks in About → Update track";
+
+/** Hosts refuse a Stable/Nightly crossing outside a track switch, which checks the database first. */
+function refusedCrossing(
+  target: {
+    readonly selfUpdate: ServerSelfUpdateCapability | null;
+    readonly targetVersion: string;
+    readonly channel?: DesktopUpdateChannel | undefined;
+  },
+  serverVersion: string | undefined,
+): boolean {
+  return (
+    target.channel === undefined &&
+    target.selfUpdate !== null &&
+    serverVersion !== undefined &&
+    crossesReleaseTrack(serverVersion, target.targetVersion)
+  );
+}
+
+function CrossTrackNote() {
+  return <span className="text-muted-foreground text-xs">{CROSS_TRACK_NOTE}</span>;
+}
+
 function updateFailureMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Server update failed.";
 }
@@ -54,9 +91,13 @@ export interface ServerUpdateTarget {
   readonly selfUpdate: ServerSelfUpdateCapability | null;
   readonly installation?: ServerInstallation | undefined;
   readonly desktopAppUpdate?: boolean;
-  readonly threadContinuation?: boolean;
   readonly targetVersion: string;
-  readonly continueThreadsAfterServerUpdate?: boolean;
+  /** Set only by a track switch; the host's desktop app moves to this track. */
+  readonly channel?: DesktopUpdateChannel;
+  /** A track switch's checked release migration; the host re-checks its own database. */
+  readonly targetDatabaseMigration?: number;
+  /** The host already runs its track's newest build and only saves the track. */
+  readonly trackOnly?: boolean;
 }
 
 type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" | "className"> & {
@@ -76,6 +117,17 @@ export function useServerUpdate() {
     { quiet = false }: { readonly quiet?: boolean } = {},
   ): Promise<ServerUpdateOutcome> => {
     const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
+    const denial = readUpdatesDenial(environmentId);
+    if (denial !== undefined) {
+      if (!quiet) {
+        toastManager.add({
+          type: "error",
+          title: `${serverLabel} not updated`,
+          description: denial,
+        });
+      }
+      return { status: "failed", message: denial };
+    }
     if (
       !canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))) ||
       pendingUpdateEnvironmentIds.has(environmentId)
@@ -86,9 +138,10 @@ export function useServerUpdate() {
       environmentId,
       input: {
         targetVersion,
-        ...(target.threadContinuation && target.continueThreadsAfterServerUpdate
-          ? { continueRunningThreads: true }
-          : {}),
+        ...(target.channel === undefined ? {} : { channel: target.channel }),
+        ...(target.targetDatabaseMigration === undefined
+          ? {}
+          : { targetDatabaseMigration: target.targetDatabaseMigration }),
       },
     });
     pendingUpdateEnvironmentIds.delete(environmentId);
@@ -128,12 +181,15 @@ export function ServerUpdatesAction({
   readonly targets: ReadonlyArray<ServerUpdateTarget>;
 }) {
   const update = useServerUpdate();
+  const serverConfigs = useServerConfigs();
   const pending = useRef(false);
   const [isPending, setIsPending] = useState(false);
   const eligible = targets.filter(
     (target) =>
       target.selfUpdate !== null &&
-      (target.selfUpdate !== "desktop-managed" || target.desktopAppUpdate),
+      (target.selfUpdate !== "desktop-managed" || target.desktopAppUpdate) &&
+      managedUpdatesDenial(serverConfigs.get(target.environmentId)?.managedPolicy) === undefined &&
+      !refusedCrossing(target, serverConfigs.get(target.environmentId)?.environment.serverVersion),
   );
   const handleUpdate = async () => {
     if (pending.current) return;
@@ -206,21 +262,19 @@ export function ServerUpdateAction({
   serverLabel,
   selfUpdate,
   desktopAppUpdate = false,
-  threadContinuation = false,
   targetVersion,
+  channel,
   label = "Update",
   variant = "outline",
   size = "xs",
   className,
   appearance = "button",
-}: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
+}: ServerUpdateTarget & UpdateButtonProps) {
   const isDesktopAppUpdate = selfUpdate === "desktop-managed";
+  const serverVersion = useServerConfigs().get(environmentId)?.environment.serverVersion;
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
-  const canUpdate = canUpdateServer(useAtomValue(sessionStateAtom));
-  const continueThreadsAfterServerUpdate = useEnvironmentSettings(
-    environmentId,
-    (settings) => settings.continueThreadsAfterServerUpdate,
-  );
+  const canUpdate = useAtomValue(sessionStateAtom, canUpdateServer);
+  const updatesDenial = managedUpdatesDenial(useManagedPolicy(environmentId));
   const update = useServerUpdate();
   const handleUpdate = async () => {
     if (
@@ -245,11 +299,21 @@ export function ServerUpdateAction({
       serverLabel,
       selfUpdate,
       desktopAppUpdate,
-      threadContinuation,
       targetVersion,
-      continueThreadsAfterServerUpdate,
     });
   };
+
+  if (updatesDenial !== undefined) {
+    return appearance === "icon" ? (
+      <ManagedControl reason={updatesDenial}>
+        <Button size="icon-xs" variant="ghost-muted" aria-label={updatesDenial} disabled>
+          <CircleArrowUpIcon className="size-3.5" />
+        </Button>
+      </ManagedControl>
+    ) : (
+      <span className="text-muted-foreground text-xs">{updatesDenial}</span>
+    );
+  }
 
   if (selfUpdate === "desktop-managed" && !desktopAppUpdate) {
     return (
@@ -266,6 +330,11 @@ export function ServerUpdateAction({
       </span>
     );
   }
+
+  if (refusedCrossing({ selfUpdate, targetVersion, channel }, serverVersion)) {
+    return <CrossTrackNote />;
+  }
+
   const actionLabel = label;
   const onClick = () => void handleUpdate();
 
@@ -343,6 +412,9 @@ export function OutdatedServerUpdateAction({
       description: `Reconnected on t3@${result.value.targetVersion}.`,
     });
   };
+  if (fromVersion !== undefined && crossesReleaseTrack(fromVersion, targetVersion)) {
+    return <CrossTrackNote />;
+  }
   return (
     <Button size="xs" variant="outline" onClick={() => void handleUpdate()}>
       {label}

@@ -24,7 +24,7 @@ function shellSingleQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-export const OFFICIAL_REMOTE_T3_RUNNER_SCRIPT = `#!/bin/sh
+const OFFICIAL_REMOTE_T3_RUNNER_SCRIPT = `#!/bin/sh
 set -eu
 @@T3_NODE_ENV_SCRIPT@@
 ensure_remote_node_path || true

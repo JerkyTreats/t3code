@@ -37,7 +37,11 @@ const readRetainedData = Effect.fn("readUpstream69To72RetainedData")(function* (
   return {
     journal:
       yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 92 ORDER BY migration_id`,
-    projects: yield* sql`SELECT * FROM projection_projects ORDER BY project_id`,
+    // Later appended migrations add projection_projects columns; compare the retained ones.
+    projects: yield* sql`
+      SELECT project_id, title, workspace_root, scripts_json, created_at, updated_at
+      FROM projection_projects ORDER BY project_id
+    `,
     clients: yield* sql`SELECT * FROM auth_clients ORDER BY client_id`,
   };
 });
@@ -52,8 +56,9 @@ const schemaNames = Effect.fn("readSchemaNames")(function* () {
 
 it("appends upstream 69 through 72 in source order after fork 92", () => {
   const ids = migrationManifest.map(([id]) => id);
-  assert.deepStrictEqual(migrationManifest.slice(-4), [...appended]);
-  assert.isBelow(ids.indexOf(92), ids.indexOf(93));
+  const start = ids.indexOf(93);
+  assert.deepStrictEqual(migrationManifest.slice(start, start + 4), [...appended]);
+  assert.isBelow(ids.indexOf(92), start);
 });
 
 it.effect("continues fork 92 through 96, retains data, and reopens without new migrations", () =>
@@ -71,7 +76,7 @@ it.effect("continues fork 92 through 96, retains data, and reopens without new m
 
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      assert.deepStrictEqual(yield* runMigrations(), appended);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 96 }), appended);
       assert.deepStrictEqual(yield* readRetainedData(), before);
       const names = yield* schemaNames();
       for (const added of [
@@ -84,10 +89,12 @@ it.effect("continues fork 92 through 96, retains data, and reopens without new m
         readonly name: string;
       }>`PRAGMA table_info(peer_environment_links)`;
       assert.isTrue(columns.some((column) => column.name === "fenced"));
-      assert.deepStrictEqual(yield* runMigrations(), []);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 96 }), []);
     }).pipe(Effect.provide(rawLayer));
 
     yield* Effect.gen(function* () {
+      // Reopening applies only the later appended identities (97 onward).
+      assert.isTrue((yield* runMigrations()).every(([id]) => id > 96));
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* readRetainedData(), before);
     }).pipe(Effect.provide(layerFromPath(filename)));
@@ -98,8 +105,8 @@ it.effect("carries 93 through 96 through a replacement migration runner", () =>
   Effect.gen(function* () {
     const independentRunner = Migrator.make({});
     yield* independentRunner({ loader: makeMigrationLoader(92) });
-    assert.deepStrictEqual(yield* independentRunner({ loader: makeMigrationLoader() }), appended);
-    assert.deepStrictEqual(yield* independentRunner({ loader: makeMigrationLoader() }), []);
+    assert.deepStrictEqual(yield* independentRunner({ loader: makeMigrationLoader(96) }), appended);
+    assert.deepStrictEqual(yield* independentRunner({ loader: makeMigrationLoader(96) }), []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 

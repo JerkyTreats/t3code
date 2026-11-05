@@ -3,7 +3,7 @@ import * as Migrator from "effect/sql/Migrator";
 import * as Effect from "effect/Effect";
 import { makeMigrationLoader } from "./ForkMigrationPlan.ts";
 
-export { makeMigrationLoader, migrationEntries, migrationManifest } from "./ForkMigrationPlan.ts";
+export { migrationEntries, migrationManifest } from "./ForkMigrationPlan.ts";
 /**
  * Migrator run function - no schema dumping needed
  * Uses the base Migrator.make without platform dependencies

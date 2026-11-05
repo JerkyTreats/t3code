@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeHttp from "node:http";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
@@ -21,18 +22,16 @@ import {
   ORCHESTRATION_V2_WS_METHODS,
   ServerSettings,
   WS_METHODS,
-  WsSubscribeBackgroundPolicyRpc,
-  type BackgroundPolicySnapshot,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
-import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -48,7 +47,6 @@ import {
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { Rpc, RpcClient, RpcGroup, RpcSerialization, RpcServer } from "effect/rpc";
-import * as Socket from "effect/socket/Socket";
 import * as ServerConfig from "./config.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -64,6 +62,7 @@ import {
   failEnvironmentAuthInvalid,
 } from "./auth/http.ts";
 import { layerFromPath } from "./persistence/Sqlite.ts";
+import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import { deviceAdministratorBoundaryLayer } from "./server.ts";
 import { assetFileResponse } from "./http.ts";
@@ -81,34 +80,22 @@ class AuthorityTestApi extends HttpApi.make("environment")
   .add(EnvironmentHttpApi.groups.admin) {}
 
 const AuthorityRpcGroup = RpcGroup.make(
-  Rpc.make(WS_METHODS.serverGetSettings, {
+  // An orchestration-read unary method; the payload is test-owned.
+  Rpc.make(WS_METHODS.serverGetConfig, {
     payload: Schema.Struct({}),
     success: ServerSettings,
     error: EnvironmentAuthorizationError,
   }),
-  WsSubscribeBackgroundPolicyRpc,
+  // A long-lived orchestration-read stream; the payload is test-owned.
+  Rpc.make(WS_METHODS.subscribeServerLifecycle, {
+    payload: Schema.Struct({}),
+    success: Schema.Literal("ready"),
+    error: EnvironmentAuthorizationError,
+    stream: true,
+  }),
   WsServerImportAcpRegistrySessionRpc,
 );
 
-const backgroundPolicy: BackgroundPolicySnapshot = {
-  hostPower: {
-    source: "unknown",
-    idle: "unknown",
-    idleSeconds: null,
-    locked: "unknown",
-    suspended: false,
-    onBattery: "unknown",
-    lowPowerMode: "unknown",
-    thermalState: "unknown",
-    stale: true,
-    updatedAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
-  },
-  leases: [],
-  activeForegroundLeaseCount: 0,
-  activeScopeKeys: [],
-  shouldRunOpportunisticWork: true,
-  updatedAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
-};
 const makeClient = RpcClient.make(AuthorityRpcGroup);
 const withClient = <A, E, R>(
   url: string,
@@ -119,21 +106,7 @@ const withClient = <A, E, R>(
     Effect.flatMap(use),
     Effect.provide(
       RpcClient.layerProtocolSocket().pipe(
-        Layer.provide(
-          Socket.layerWebSocket(url).pipe(
-            Layer.provide(
-              Layer.succeed(
-                Socket.WebSocketConstructor,
-                (socketUrl, protocols) =>
-                  new NodeSocket.NodeWS.WebSocket(
-                    socketUrl,
-                    protocols as string | string[] | undefined,
-                    { headers: { cookie } },
-                  ) as unknown as globalThis.WebSocket,
-              ),
-            ),
-          ),
-        ),
+        Layer.provide(NodeSocket.layerWebSocket(url, cookie === "" ? {} : { headers: { cookie } })),
         Layer.provideMerge(RpcSerialization.layerJson),
       ),
     ),
@@ -143,6 +116,7 @@ const authLayerFor = (config: ServerConfig.ServerConfig["Service"]) =>
   EnvironmentAuth.layer.pipe(
     Layer.provideMerge(layerFromPath(config.dbPath)),
     Layer.provideMerge(ServerSecretStore.layer),
+    Layer.provideMerge(ManagedPolicy.layerTest()),
     Layer.provide(ServerEnvironment.layerIdentity),
     Layer.provide(ServerConfig.layer(config)),
   );
@@ -203,25 +177,25 @@ const buildAuthorityHost = Effect.gen(function* () {
               return { threadId, imported: true };
             }),
           ),
-        [WS_METHODS.serverGetSettings]: () =>
+        [WS_METHODS.serverGetConfig]: () =>
           authorizeClientRpc(
             sessions,
             session,
-            requiredScopeForRpcMethod(WS_METHODS.serverGetSettings),
+            requiredScopeForRpcMethod(WS_METHODS.serverGetConfig),
             Effect.succeed(DEFAULT_SERVER_SETTINGS),
           ),
-        [WS_METHODS.subscribeBackgroundPolicy]: () =>
+        [WS_METHODS.subscribeServerLifecycle]: () =>
           Stream.unwrap(
             authorizeClientRpc(
               sessions,
               session,
-              requiredScopeForRpcMethod(WS_METHODS.subscribeBackgroundPolicy),
-              Effect.succeed(Stream.concat(Stream.make(backgroundPolicy), Stream.never)),
+              requiredScopeForRpcMethod(WS_METHODS.subscribeServerLifecycle),
+              Effect.succeed(Stream.concat(Stream.make("ready" as const), Stream.never)),
             ),
           ),
       });
       return yield* withAdmittedWebSocketConnection(
-        { connections, sessions, session, clientOrigin },
+        { connections, sessions, session },
         Effect.gen(function* () {
           const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
           yield* RpcServer.make(AuthorityRpcGroup, { disableTracing: true }).pipe(
@@ -299,7 +273,7 @@ const decodeSnapshot = Schema.decodeUnknownEffect(Schema.toCodecJson(AdminAccess
 const decodeMutation = Schema.decodeUnknownEffect(Schema.toEncoded(AdminMutationResult));
 const decodePairing = Schema.decodeUnknownEffect(Schema.toCodecJson(AdminPairingCodeIssued));
 
-it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, RpcSerialization.layerJson))(
   "v2 authority transport replacement",
   (it) => {
     it.effect("routes ACP import creation surface from each admitted RPC connection", () =>
@@ -383,8 +357,8 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
         const session = yield* host.sessions.verify(portal.token);
         for (const method of [
           ...Object.values(ORCHESTRATION_V2_WS_METHODS),
-          WS_METHODS.serverGetSettings,
-          WS_METHODS.subscribeBackgroundPolicy,
+          WS_METHODS.serverGetConfig,
+          WS_METHODS.subscribeServerLifecycle,
           WS_METHODS.serverRunStorageCleanup,
           WS_METHODS.serverGetStorageCleanupReport,
           WS_METHODS.serverCheckOtlpEndpoint,
@@ -435,7 +409,7 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
             host.wsUrl,
             `${host.sessions.cookieName}=${browser.sessionToken}`,
             (client) =>
-              client[WS_METHODS.subscribeBackgroundPolicy]({}).pipe(
+              client[WS_METHODS.subscribeServerLifecycle]({}).pipe(
                 Stream.tap(() => Deferred.succeed(ready, undefined)),
                 Stream.runDrain,
               ),
@@ -500,7 +474,7 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
             withClient(
               host.wsUrl,
               `${host.sessions.cookieName}=${browser.sessionToken}`,
-              (client) => client[WS_METHODS.serverGetSettings]({}),
+              (client) => client[WS_METHODS.serverGetConfig]({}),
             ),
           );
           const deleted = yield* requestJson(
@@ -541,13 +515,13 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
             `${host.sessions.cookieName}=${target.token}`,
             (client) =>
               Effect.gen(function* () {
-                const subscription = yield* client[WS_METHODS.subscribeBackgroundPolicy]({}).pipe(
+                const subscription = yield* client[WS_METHODS.subscribeServerLifecycle]({}).pipe(
                   Stream.tap(() => Deferred.succeed(targetStarted, undefined)),
                   Stream.runDrain,
                   Effect.forkChild,
                 );
                 yield* Deferred.await(revoked);
-                const denied = yield* client[WS_METHODS.serverGetSettings]({}).pipe(Effect.result);
+                const denied = yield* client[WS_METHODS.serverGetConfig]({}).pipe(Effect.result);
                 assert.equal(denied._tag, "Failure");
                 if (denied._tag === "Failure")
                   assert.equal(denied.failure._tag, "EnvironmentAuthorizationError");
@@ -560,13 +534,13 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
             `${host.sessions.cookieName}=${peer.token}`,
             (client) =>
               Effect.gen(function* () {
-                const subscription = yield* client[WS_METHODS.subscribeBackgroundPolicy]({}).pipe(
+                const subscription = yield* client[WS_METHODS.subscribeServerLifecycle]({}).pipe(
                   Stream.tap(() => Deferred.succeed(peerStarted, undefined)),
                   Stream.runDrain,
                   Effect.forkChild,
                 );
                 yield* Deferred.await(checkPeer);
-                yield* client[WS_METHODS.serverGetSettings]({});
+                yield* client[WS_METHODS.serverGetConfig]({});
                 yield* Deferred.succeed(peerChecked, undefined);
                 yield* Fiber.join(subscription);
               }),
@@ -603,7 +577,6 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
               connections: host.connections,
               sessions: host.sessions,
               session,
-              clientOrigin: { surface: "web" },
               analytics,
               clientOwners: [],
             },
@@ -632,12 +605,14 @@ it.layer(Layer.merge(NodeServices.layer, RpcSerialization.layerJson))(
           const issued = yield* host.sessions.issue({});
           const session = yield* host.sessions.verify(issued.token);
           const ticket = yield* host.auth.issueWebSocketTicket(session);
-          const url = `${host.wsUrl}?wsTicket=${encodeURIComponent(ticket.ticket)}`;
+          const url = `${host.wsUrl}?wsTicket=${encodeURIComponent(Redacted.value(ticket.ticket))}`;
           const page = yield* Effect.scoped(
-            withClient(url, "", (client) => client[WS_METHODS.serverGetSettings]({})),
+            withClient(url, "", (client) => client[WS_METHODS.serverGetConfig]({})),
           );
           assert.deepEqual(page, DEFAULT_SERVER_SETTINGS);
-          const reused = yield* HttpClient.get(`/ws?wsTicket=${encodeURIComponent(ticket.ticket)}`);
+          const reused = yield* HttpClient.get(
+            `/ws?wsTicket=${encodeURIComponent(Redacted.value(ticket.ticket))}`,
+          );
           assert.equal(reused.status, 401);
         }).pipe(Effect.provide(AuthorityHttpServerLive)),
     );

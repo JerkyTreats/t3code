@@ -6,7 +6,7 @@ import * as Schema from "effect/Schema";
 
 import type { ServerInstallation } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isCommandAvailable } from "@t3tools/shared/shell";
+import { resolveCommandPath } from "@t3tools/shared/shell";
 import { detectCliRunner, formatCliCommand } from "./officialRuntimeInvocation.ts";
 
 const InstallManifest = Schema.Struct({
@@ -113,7 +113,16 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
     [prefix, ...[...rest, ...args].map((arg) => hostShellWord(platform, arg))].join(" ");
   const command = yield* resolveCliCommand(first);
   if (command !== `t3 ${first}`) return { command: withArgs(command), launcher: false };
-  if (yield* isCommandAvailable("t3")) return { command: withArgs(command), launcher: false };
+  const onPath = yield* resolveCommandPath("t3");
+  if (onPath !== null) {
+    const shim = (yield* HostProcess.Environment).T3CODE_CLI_PATH?.trim();
+    const fs = yield* FileSystem.FileSystem;
+    const real = (file: string) => fs.realPath(file).pipe(Effect.orElseSucceed(() => null));
+    const shimReal = shim ? yield* real(shim) : null;
+    if (shimReal === null || shimReal === (yield* real(onPath))) {
+      return { command: withArgs(command), launcher: false };
+    }
+  }
   const launcher = yield* resolveInstallLauncher;
   if (Option.isNone(launcher)) return { command: withArgs(command), launcher: false };
   // PowerShell runs a quoted path only through the call operator.
@@ -130,8 +139,9 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
  */
 export const resolveRootCliCommand = Effect.fn("invocation.resolveRootCliCommand")(function* (
   subcommand: string,
+  args: ReadonlyArray<string> = [],
 ) {
-  const { command, launcher } = yield* resolveHostCliCommand(subcommand);
+  const { command, launcher } = yield* resolveHostCliCommand(subcommand, args);
   if (launcher) return `sudo ${command}`;
   const executablePath = yield* HostProcess.ExecutablePath;
   const systemNode = ROOT_PATH_DIRECTORIES.some((directory) =>

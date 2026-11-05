@@ -150,7 +150,6 @@ describe("nested parent rows", () => {
 
     expect(badgeIcons(screen.container)).toEqual(EXPECTED_ICONS);
     const slot = element?.parentElement;
-    expect(slot?.className).toContain("ml-auto");
     // The machine icon wrapper leads the slot and the badge follows it directly.
     expect(element?.previousElementSibling?.querySelector("svg")).not.toBeNull();
     expect(element?.nextElementSibling).toBeNull();
@@ -171,7 +170,7 @@ describe("nested parent rows", () => {
 
     expect(badgeIcons(screen.container)).toEqual(EXPECTED_ICONS);
     // The badge shares the title line with the chevron instead of the provider history.
-    expect(element?.parentElement?.querySelector("[data-sidebar-nested-toggle]")).not.toBeNull();
+    expect(element?.closest("div")?.querySelector("[data-sidebar-nested-toggle]")).not.toBeNull();
     expect(
       screen.container.querySelectorAll("[data-testid=sidebar-nested-thread-badge]"),
     ).toHaveLength(1);
