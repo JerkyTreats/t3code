@@ -21,7 +21,8 @@ const NODE_GAP_PX = 60;
 const RANK_GAP_PX = 110;
 const TITLE_GAP_PX = 48;
 // The widest row of cards below a turn: three wide cards side by side.
-const MAX_ROW_WIDTH_PX = 3400;
+// Two cards and a gap, as in canvasDiagram: cards brought beside the turn read without panning.
+const MAX_ROW_WIDTH_PX = 1100;
 // How far the corridor below the latest turn reaches: past anything a canvas holds.
 const CORRIDOR_DEPTH_PX = 1_000_000;
 // How far a drawing sits inside a box the user drew for it, from its edges and its title.

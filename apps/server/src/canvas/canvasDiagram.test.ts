@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { compileDiagram, DiagramError, parseDiagram } from "./canvasDiagram.ts";
+import { compileDiagram, DiagramError, parseDiagram, tableWidth } from "./canvasDiagram.ts";
 
 const byId = (source: string) => new Map(compileDiagram(source).map((shape) => [shape.id, shape]));
 
@@ -74,5 +74,22 @@ describe("compileDiagram", () => {
     const shapes = byId("flowchart TB\n a --> b --> c");
     expect(shapes.get("b")!.y).toBeGreaterThan(shapes.get("a")!.y!);
     expect(shapes.get("c")!.y).toBeGreaterThan(shapes.get("b")!.y!);
+  });
+});
+
+describe("tableWidth", () => {
+  it("widens a card for its widest table row, up to two cards and a gap", () => {
+    expect(tableWidth("**Title**\n- one item")).toBe(0);
+    const narrow = tableWidth("| A | B |\n| - | - |\n| x | y |");
+    expect(narrow).toBeGreaterThan(0);
+    expect(narrow).toBeLessThan(480);
+    const wide = `| ${"long cell text ".repeat(12)} | ${"more text ".repeat(12)} |`;
+    expect(tableWidth(wide)).toBe(1000);
+  });
+
+  it("gives a card holding a wide table that width in the diagram", () => {
+    const row = `| ${"column ".repeat(10)} | ${"value ".repeat(10)} |`;
+    const shapes = byId(`flowchart TB\n t["\`${row}\n| - | - |\n| a | b |\`"]`);
+    expect(shapes.get("t")!.width).toBeGreaterThan(480);
   });
 });

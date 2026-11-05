@@ -50,6 +50,7 @@ import {
   onCanvasReveal,
   sameCanvasCards,
 } from "./canvasCards";
+import { CANVAS_CARD_REMARK_PLUGINS } from "./canvasStateChips";
 import { forwardCardMiddleDrag } from "./cardMiddleDrag";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
@@ -1020,6 +1021,7 @@ export default function ExcalidrawBoard({
                         text={card.card.text}
                         // Agents write one item per line in a card; keep those lines apart.
                         lineBreaks
+                        extraRemarkPlugins={CANVAS_CARD_REMARK_PLUGINS}
                         cwd={undefined}
                         environmentId={canvasThread.environmentId}
                         threadRef={canvasThread}

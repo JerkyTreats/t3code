@@ -300,6 +300,20 @@ function cardHeight(text: string, width: number) {
   return Math.min(1200, Math.max(120, lines * CARD_LINE_PX + 56));
 }
 
+/**
+ * The width a card's widest table row needs, up to two cards and a gap, so a table is not clipped
+ * at a single card's width. Zero when the card has no table.
+ */
+export function tableWidth(text: string) {
+  const rows = text.split("\n").filter((line) => line.trim().startsWith("|"));
+  if (rows.length === 0) return 0;
+  // Each cell pads by about two characters on each side.
+  const widest = Math.max(
+    ...rows.map((row) => row.trim().length + 4 * (row.split("|").length - 2)),
+  );
+  return Math.min(2 * CARD_WIDTH_PX + GAP_PX, Math.ceil(widest * CARD_CHARACTER_PX + 48));
+}
+
 /** Compiles a flowchart to canvas shapes laid out from (0, 0), legend included. */
 export function compileDiagram(source: string): ReadonlyArray<ThreadCanvasShape> {
   const { root, nodes, groups, edges } = parseDiagram(source);
@@ -340,12 +354,14 @@ export function compileDiagram(source: string): ReadonlyArray<ThreadCanvasShape>
           ? ASIDE_FONT_SIZE
           : fontSize;
     if (node.markdown) {
-      const width =
+      const width = Math.max(
         role === "lead"
           ? 2 * CARD_WIDTH_PX
           : role === "aside"
             ? 0.75 * CARD_WIDTH_PX
-            : CARD_WIDTH_PX;
+            : CARD_WIDTH_PX,
+        tableWidth(node.label),
+      );
       const height = cardHeight(node.label, width);
       return {
         width,

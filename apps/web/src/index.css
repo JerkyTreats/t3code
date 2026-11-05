@@ -2684,6 +2684,44 @@ code {
   scrollbar-gutter: stable;
 }
 
+/* A state word that starts a line in a card: the word is its own legend. */
+.canvas-card .canvas-state {
+  display: inline-block;
+  padding: 0 6px;
+  margin-right: 2px;
+  border-radius: 4px;
+  font-style: normal;
+  font-weight: 600;
+  font-size: 0.85em;
+  letter-spacing: 0.02em;
+  color: var(--canvas-state-color);
+  background: color-mix(in srgb, var(--canvas-state-color) 16%, transparent);
+}
+.canvas-card .canvas-state[data-state="good"] {
+  --canvas-state-color: #2f9e44;
+}
+.canvas-card .canvas-state[data-state="bad"] {
+  --canvas-state-color: #e03131;
+}
+.canvas-card .canvas-state[data-state="warn"] {
+  --canvas-state-color: #e8590c;
+}
+.canvas-card .canvas-state[data-state="news"] {
+  --canvas-state-color: #1c7ed6;
+}
+.dark .canvas-card .canvas-state[data-state="good"] {
+  --canvas-state-color: #69db7c;
+}
+.dark .canvas-card .canvas-state[data-state="bad"] {
+  --canvas-state-color: #ff8787;
+}
+.dark .canvas-card .canvas-state[data-state="warn"] {
+  --canvas-state-color: #ffa94d;
+}
+.dark .canvas-card .canvas-state[data-state="news"] {
+  --canvas-state-color: #74c0fc;
+}
+
 .canvas-card-cover {
   position: absolute;
   inset: 0;

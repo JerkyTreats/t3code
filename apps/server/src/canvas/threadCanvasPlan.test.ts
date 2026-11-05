@@ -321,11 +321,13 @@ describe("a response region below the latest turn", () => {
       place: "belowLatestTurn",
     });
     const [a, b, c, d] = ["r/a", "r/b", "r/c", "r/d"].map((id) => live(elements, id)!);
+    // A row holds about two ordinary cards, so each 1100-wide card takes its own row.
     expect(a!.y).toBe(332);
-    expect([b!.y, c!.y]).toEqual([332, 332]);
-    expect(Number(b!.x)).toBe(Number(a!.x) + 1100 + 32);
-    expect(Number(c!.x)).toBe(Number(b!.x) + 1100 + 32);
-    expect(d).toMatchObject({ x: a!.x, y: 332 + 500 + 32 });
+    expect([b, c, d].map((card) => [card!.x, card!.y])).toEqual([
+      [a!.x, 332 + 532],
+      [a!.x, 332 + 2 * 532],
+      [a!.x, 332 + 3 * 532],
+    ]);
   });
 
   it("anchors each piece to the turn, so it stays below as the turn grows", () => {
@@ -425,7 +427,8 @@ describe("a drawing beside the turn spine", () => {
       place: "besideLatestTurn",
     });
     expect(live(elements, "r/a")).toMatchObject({ x: 462, y: 0 });
-    expect(live(elements, "r/b")).toMatchObject({ x: 462 + 600 + 32, y: 0 });
+    // Two 600-wide cards pass the row width, so the second starts a new row.
+    expect(live(elements, "r/b")).toMatchObject({ x: 462, y: 400 + 32 });
     expect(anchorOf(elements, "r/a")).toEqual({ turn: "1", edge: "top", at: 0, dy: 0, x: 462 });
   });
 
