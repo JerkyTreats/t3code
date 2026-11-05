@@ -178,6 +178,12 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
     div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
     a: [...(defaultSchema.attributes?.a ?? []), "dataPullRequestAutolink"],
+    // Canvas cards render a leading state word as a chip.
+    span: [
+      ...(defaultSchema.attributes?.span ?? []),
+      ["className", "canvas-state"],
+      ["dataState", "good", "bad", "warn", "news"],
+    ],
     img: [
       ...(defaultSchema.attributes?.img ?? []),
       "dataDarkSrc",

@@ -1,6 +1,11 @@
 import type { Nodes, Root } from "mdast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
+import remarkRehype from "remark-rehype";
+import {
+  CHAT_MARKDOWN_REHYPE_PLUGINS,
+  CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS,
+} from "@t3tools/shared/markdownPipeline";
 import { unified } from "unified";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -65,4 +70,16 @@ describe("remarkCanvasStates", () => {
     remarkCanvasStates()(tree);
     expect(chipsIn(tree)).toEqual(["bad:BLOCKED", "good:DONE", "bad:OVERDUE", "news:CHANGED"]);
   });
+});
+
+it("survives the chat markdown sanitizer as a classed span", () => {
+  const processor = unified()
+    .use(remarkParse)
+    .use(CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS)
+    .use(remarkCanvasStates)
+    .use(remarkRehype)
+    .use(CHAT_MARKDOWN_REHYPE_PLUGINS);
+  const html = JSON.stringify(processor.runSync(processor.parse("- BLOCKED on review")));
+  expect(html).toContain('"className":["canvas-state"]');
+  expect(html).toContain('"dataState":"bad"');
 });
