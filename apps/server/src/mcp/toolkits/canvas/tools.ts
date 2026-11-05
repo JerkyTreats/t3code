@@ -95,7 +95,7 @@ const CanvasUpdateTool = Tool.make("canvas_update", {
     ),
     diagram: Schema.optional(Schema.String.check(Schema.isMaxLength(40_000))).annotate({
       description:
-        'The whole drawing as a Mermaid flowchart, instead of shapes; T3 lays it out and colours it. A subgraph is a titled band, and bands stacked down read as levels (why, how, what); direction sets each band\'s flow. Nodes joined by edges form a graph. class x lead marks the one answer (first, larger), aside marks side notes; any other class is a kind, given one colour and a legend. A "`markdown`" label makes a card; its line breaks are kept, lists and tables render, and a state in capitals that starts a line or table cell (DONE, BLOCKED, AT RISK, WAITING, NEW, CHANGED) shows as a coloured chip. Keep node labels to a name and one qualifier, edge labels to a few words.',
+        'The whole drawing as a Mermaid flowchart, instead of shapes; T3 lays it out and colours it. A subgraph is a titled band, and bands stacked down read as levels (why, how, what); direction sets each band\'s flow. Nodes joined by edges form a graph. class x lead marks the one answer (first, larger), aside marks side notes; any other class is a kind, given one colour and a legend. A "`markdown`" label makes a card; its line breaks are kept, lists and tables render, and a state in capitals that starts a line or table cell (DONE, BLOCKED, AT RISK, WAITING, NEW, CHANGED) shows as a coloured chip: green done, red blocked or failed, amber at risk, violet waiting, blue new or changed. Keep node labels to a name and one qualifier, edge labels to a few words.',
     }),
     patch: Schema.optional(Schema.Boolean).annotate({
       description:

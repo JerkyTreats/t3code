@@ -2706,6 +2706,9 @@ code {
 .canvas-card .canvas-state[data-state="warn"] {
   --canvas-state-color: #e8590c;
 }
+.canvas-card .canvas-state[data-state="wait"] {
+  --canvas-state-color: #7048e8;
+}
 .canvas-card .canvas-state[data-state="news"] {
   --canvas-state-color: #1c7ed6;
 }
@@ -2717,6 +2720,9 @@ code {
 }
 .dark .canvas-card .canvas-state[data-state="warn"] {
   --canvas-state-color: #ffa94d;
+}
+.dark .canvas-card .canvas-state[data-state="wait"] {
+  --canvas-state-color: #b197fc;
 }
 .dark .canvas-card .canvas-state[data-state="news"] {
   --canvas-state-color: #74c0fc;

@@ -5,7 +5,7 @@ import type { PluggableList } from "unified";
  * A state word in capitals that starts a line, list item or table cell in a canvas card shows as
  * a coloured chip, so a card can encode state without a legend: the word is its own key.
  */
-export type CanvasStateTone = "good" | "bad" | "warn" | "news";
+export type CanvasStateTone = "good" | "bad" | "warn" | "wait" | "news";
 
 const TONES: ReadonlyArray<readonly [CanvasStateTone, ReadonlyArray<string>]> = [
   [
@@ -27,25 +27,9 @@ const TONES: ReadonlyArray<readonly [CanvasStateTone, ReadonlyArray<string>]> = 
       "MISSING",
     ],
   ],
-  [
-    "warn",
-    [
-      "AT RISK",
-      "RISK",
-      "WAITING",
-      "PENDING",
-      "UNVERIFIED",
-      "PARTIAL",
-      "WEAK",
-      "DUE",
-      "STALE",
-      "OPEN",
-      "PROPOSED",
-      "TODO",
-      "CHECK",
-      "UNKNOWN",
-    ],
-  ],
+  ["warn", ["AT RISK", "RISK", "UNVERIFIED", "PARTIAL", "WEAK", "STALE", "CHECK", "UNKNOWN"]],
+  // Waiting on someone is not the same as being at risk, so it gets its own colour.
+  ["wait", ["WAITING", "PENDING", "OPEN", "TODO", "PROPOSED", "DUE"]],
   ["news", ["NEW", "CHANGED", "MOVED", "UPDATED", "RUNNING", "IN PROGRESS"]],
 ];
 

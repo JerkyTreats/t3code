@@ -182,7 +182,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     span: [
       ...(defaultSchema.attributes?.span ?? []),
       ["className", "canvas-state"],
-      ["dataState", "good", "bad", "warn", "news"],
+      ["dataState", "good", "bad", "warn", "wait", "news"],
     ],
     img: [
       ...(defaultSchema.attributes?.img ?? []),
