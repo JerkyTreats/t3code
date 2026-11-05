@@ -31,9 +31,9 @@ vi.mock(import("../../hooks/useMediaQuery"), async (original) => ({
   ...(await original()),
   useMediaQuery: () => false,
 }));
-vi.mock(import("../ComposerPromptEditor"), async (original) => ({
+vi.mock(import("../ComposerPromptEditorTiptap"), async (original) => ({
   ...(await original()),
-  ComposerPromptEditor: (() => null) as never,
+  ComposerPromptEditorTiptap: (() => null) as never,
 }));
 
 import { ChatComposer, type ChatComposerProps } from "./ChatComposer";
@@ -68,8 +68,6 @@ function draftProps(draftId: DraftId) {
     composerDraftTarget: draftId,
     draftId,
     routeKind: "draft",
-    isLocalDraftThread: true,
-    isServerThread: false,
   });
 }
 

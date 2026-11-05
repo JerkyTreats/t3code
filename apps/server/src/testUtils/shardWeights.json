@@ -138,7 +138,6 @@
   "src/persistence/Migrations/057_ScheduledTaskWebhooks.test.ts": 0.5,
   "src/persistence/OrchestrationEventStore.test.ts": 0.5,
   "src/persistence/initializeV2Database.test.ts": 0.6,
-  "src/persistence/reconcileV2PreviewMigration.test.ts": 1.1,
   "src/preview/ServerBrowserContexts.test.ts": 0.6,
   "src/preview/ServerBrowserPage.test.ts": 1.2,
   "src/preview/ServerBrowserStream.test.ts": 1.5,

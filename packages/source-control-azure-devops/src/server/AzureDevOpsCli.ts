@@ -329,6 +329,23 @@ function normalizeRepositoryCloneUrls(
   };
 }
 
+function parseRepositorySpecifier(repository: string): {
+  readonly project: string | null;
+  readonly name: string;
+} {
+  const parts: Array<string> = [];
+  for (const part of repository.split("/")) {
+    const trimmed = part.trim();
+    if (trimmed.length > 0) {
+      parts.push(trimmed);
+    }
+  }
+  return {
+    project: parts.length > 1 ? (parts.at(-2) ?? null) : null,
+    name: parts.at(-1) ?? repository.trim(),
+  };
+}
+
 function decodeAzureDevOpsJson<S extends Schema.Top>(
   raw: string,
   schema: S,
@@ -479,16 +496,29 @@ export const make = Effect.gen(function* () {
       );
     }),
     getRepositoryCloneUrls: Effect.fn("AzureDevOpsCli.getRepositoryCloneUrls")(function (input) {
+      const repository = parseRepositorySpecifier(input.repository);
       return executeJson({
         cwd: input.cwd,
         args: [
           "repos",
           "show",
+          // Fork F06: an explicit origin organization and project pin the lookup.
           ...(input.organization && input.project
-            ? ["--organization", input.organization, "--project", input.project]
-            : ["--detect", "true"]),
-          "--repository",
-          input.repository,
+            ? [
+                "--organization",
+                input.organization,
+                "--project",
+                input.project,
+                "--repository",
+                repository.name,
+              ]
+            : [
+                "--detect",
+                "true",
+                "--repository",
+                repository.name,
+                ...(repository.project ? ["--project", repository.project] : []),
+              ]),
         ],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),

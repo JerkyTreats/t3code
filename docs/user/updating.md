@@ -23,7 +23,9 @@ restart from the update button when you are ready. A server still restarting
 finishes on its own, and the button keeps showing it after the desktop app
 restarts.
 
-The confirmation lists each machine it skips and why, such as a machine that is
+Each server checks that it can install the release before it restarts. If the
+release is not available to a server yet, its update fails, the server keeps
+running, and you can retry. The confirmation lists each machine it skips and why, such as a machine that is
 offline or needs a manual update. Command-line and server image installations
 always need a manual update; see
 [Update an installed command-line runtime](#update-an-installed-command-line-runtime).
@@ -36,6 +38,13 @@ device asks. Use the update button on that machine to retry.
 The confirmation counts the running threads that the restarts will interrupt,
 and how many can resume afterwards. See **Continue threads after restarts**
 below.
+
+## Switch between Stable and Nightly
+
+In the desktop app, change **Settings → About → Update track**. The desktop app
+checks the selected track and installs its builds. The track applies to this app
+only; connected machines keep their own tracks. Your threads, settings, and data
+stay.
 
 ## Before you update
 
@@ -119,6 +128,19 @@ Only one server can use a T3 home directory at a time. If startup reports that
 another server owns it, stop that server before retrying, or use a separate home
 directory and pair with the running server.
 
+### macOS app does not reopen after an Alpha update
+
+Updating an older **T3 Code (Alpha)** installation can replace it with
+**T3 Code (Beta)** without reopening the app. Open **T3 Code (Beta)** from
+Applications, or run:
+
+```sh
+open "/Applications/T3 Code (Beta).app"
+```
+
+If an old Dock shortcut no longer opens the app, remove it and add the Beta app
+from Applications again.
+
 ## If the desktop app does not start
 
 If the desktop app's server keeps failing at startup, T3 Code shows a "T3 Code
@@ -126,6 +148,15 @@ could not start" window instead of the app. If a newer version is available,
 choose **Update** to install it. If not, the window links to the last version
 that started on your computer. Download and install it to go back. Use **Copy
 details** to include the error in a bug report.
+
+## Registries and proxies
+
+Each server checks providers installed with npm through its own npm, so the
+checks use npm's configured registry, authentication, and proxy settings.
+Providers installed with Homebrew or pnpm check through those tools. Configure
+npm on the server's machine. If that registry cannot be reached, the provider
+update check shows as unavailable. T3 Code itself is never updated from a public
+package registry.
 
 ## Update providers
 

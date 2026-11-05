@@ -2,6 +2,7 @@ import { describe } from "vite-plus/test";
 import { afterEach, expect, it, vi } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
 import { makeThreadPrimaryAuth, submitThreadEnrollmentCredential } from "./threadAuth";
@@ -41,8 +42,8 @@ describe("protected Thread ticket acquisition", { concurrent: false }, () => {
       );
     const issue = install(fetch);
     return Effect.gen(function* () {
-      expect((yield* issue(target)).ticket).toBe("one-use-1");
-      expect((yield* issue(target)).ticket).toBe("one-use-2");
+      expect(Redacted.value((yield* issue(target)).ticket)).toBe("one-use-1");
+      expect(Redacted.value((yield* issue(target)).ticket)).toBe("one-use-2");
       for (const [url, init] of fetch.mock.calls) {
         expect(url.toString()).toBe(endpoint);
         expect(init?.method).toBe("POST");

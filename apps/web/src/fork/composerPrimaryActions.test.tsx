@@ -23,7 +23,6 @@ function renderActions(input: { promptHasText: boolean; sendDisabledReason: stri
       promptHasText: input.promptHasText,
       isSendBusy: false,
       sendDisabledReason: input.sendDisabledReason,
-      isConnecting: false,
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
       hasSendableContent: input.promptHasText,

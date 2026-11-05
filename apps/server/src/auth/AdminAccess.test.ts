@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
@@ -9,6 +10,7 @@ import * as Layer from "effect/Layer";
 
 import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as AdminAccess from "./AdminAccess.ts";
 import * as ClientConnectionRegistry from "./ClientConnectionRegistry.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
@@ -64,6 +66,7 @@ const makeAdminAccessLayer = () => {
   const environmentAuth = EnvironmentAuth.layer.pipe(
     Layer.provideMerge(ServerSecretStore.layer),
     Layer.provideMerge(SqlitePersistence.layerMemory),
+    Layer.provideMerge(ManagedPolicy.layerTest()),
     Layer.provide(ServerEnvironment.layerIdentity),
     Layer.provide(layerServerConfig()),
   );
@@ -98,14 +101,10 @@ const issueElectronDevice = Effect.fn("AdminAccessTest.issueElectronDevice")(fun
     managementClass: "portal-managed-device",
     client: { label, deviceType: "desktop" },
   });
-  yield* sessions.recordClientConnection(issued.sessionId, {
-    surface: "desktop",
-    appVersion: "0.0.0-test",
-  });
   return issued;
 });
 
-it.layer(NodeServices.layer)("AdminAccess", (it) => {
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AdminAccess", (it) => {
   it.effect("rejects current client disable and delete operations", () =>
     Effect.gen(function* () {
       const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
@@ -387,10 +386,6 @@ it.layer(NodeServices.layer)("AdminAccess", (it) => {
       const owner = yield* issueBrowserDevice(sessions, "owner-client");
       const issuedOperator = yield* environmentAuth.issueSession({ label: "headless-operator" });
       const operator = yield* sessions.verify(issuedOperator.token);
-      yield* sessions.recordClientConnection(operator.sessionId, {
-        surface: "desktop",
-        appVersion: "0.0.0-spoofed",
-      });
       const snapshot = yield* admin.snapshot(owner.clientId);
 
       expect(snapshot.clients.some((client) => client.clientId === operator.clientId)).toBe(false);

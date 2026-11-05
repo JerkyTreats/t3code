@@ -1,9 +1,4 @@
 export {
-  resetPrimaryEnvironmentDescriptorForTests,
-  resolveInitialPrimaryEnvironmentDescriptor,
-} from "./context";
-
-export {
   peekPairingTokenFromUrl,
   PrimaryEnvironmentPairingCredentialRejectedError,
   PrimaryEnvironmentRequestError,
@@ -22,6 +17,5 @@ export {
   PrimaryEnvironmentUrlInvalidError,
   readPrimaryEnvironmentTarget,
   resolvePrimaryEnvironmentHttpUrl,
-  isLoopbackHostname,
   type PrimaryEnvironmentTarget,
 } from "./target";

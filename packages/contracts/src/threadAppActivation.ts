@@ -2,8 +2,7 @@ import * as Schema from "effect/Schema";
 
 import { strictStruct } from "./baseSchemas.ts";
 
-export const THREAD_APP_CONTRACT_VERSION = 1 as const;
-export const THREAD_APP_ACTIVATION_MAX_BYTES = 64 * 1024;
+const THREAD_APP_CONTRACT_VERSION = 1 as const;
 
 const ThreadAppLaunchId = Schema.String.check(
   Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),

@@ -6,13 +6,14 @@ import type {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { BotIcon, PencilRulerIcon } from "lucide-react";
-import { type ComponentProps, memo } from "react";
+import { type ComponentProps, memo, useId, useRef, useState } from "react";
 
 import type { ContextWindowSnapshot } from "../../lib/contextWindow";
-import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
+import { Menu as MenuPrimitive } from "@base-ui/react/menu";
+import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { ComposerControl, ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
-import { useComposerMenuProps } from "./composerEventScope";
+import { ComposerControl, ComposerControlIcon } from "./ComposerControl";
+import { focusRequestedPermission, useComposerMenuProps } from "./composerEventScope";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWindowMeter";
 import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
@@ -21,8 +22,11 @@ import { runtimeModeConfig } from "./runtimeModeConfig";
 import { chatComposerPresentation } from "../../fork/chatComposerPresentation";
 import { useComposerMenuState } from "./useComposerMenuState";
 
-export type RuntimeModeOption = { mode: RuntimeMode } & (typeof runtimeModeConfig)[RuntimeMode];
-const supervisedRuntimeModeOption = {
+export type RuntimeModeOption = {
+  mode: RuntimeMode;
+  disabledReason?: string;
+} & (typeof runtimeModeConfig)[RuntimeMode];
+const supervisedRuntimeModeOption: RuntimeModeOption = {
   mode: "approval-required" as const,
   ...runtimeModeConfig["approval-required"],
 };
@@ -36,13 +40,19 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
   iconOnly?: boolean;
   size?: "sm" | "xs";
   hidden?: boolean;
+  /** How the permissions chip shows: hidden while the thread matches the user's default. */
+  accessDisplay?: "label" | "icon" | "hidden";
+  /** Draw the icon in the label color, not muted (the mode differs from the user's default). */
+  emphasized?: boolean;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   const size = props.size ?? "sm";
   const floating = props.runtimePlacement === "floating";
+  const accessDisplay = props.accessDisplay ?? "label";
   const composerFloatingLayerProps = useComposerMenuProps();
   const [open, setOpen] = useComposerMenuState(props.hidden);
+  const permissionsChipRef = useRef<HTMLButtonElement>(null);
   const runtimeModeOption =
     props.runtimeModeOptions.find((option) => option.mode === props.runtimeMode) ??
     supervisedRuntimeModeOption;
@@ -79,7 +89,11 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
             opticalSize={size === "xs" ? "default" : "large"}
           />
         )}
-        <span data-composer-control-label className="sr-only sm:not-sr-only">
+        {/* The compacted row (xs) keeps this icon-only, like the other controls there. */}
+        <span
+          data-composer-control-label
+          className={size === "xs" ? "sr-only" : "sr-only sm:not-sr-only"}
+        >
           {props.interactionMode === "plan" ? "Plan" : "Build"}
         </span>
       </TooltipTrigger>
@@ -87,73 +101,159 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
     </Tooltip>
   ) : null;
 
+  // The chip opens the same Permissions toggle used in the model picker and the overflow menu.
+  const permissionsTooltip = `Permissions: ${runtimeModeOption.label}. ${runtimeModeOption.description}`;
+  const permissionsChip = (
+    <Menu
+      open={open}
+      onOpenChange={setOpen}
+      onOpenChangeComplete={(isOpen) =>
+        focusRequestedPermission(isOpen, permissionsChipRef.current)
+      }
+    >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <MenuTrigger
+              render={
+                <ComposerControl
+                  ref={permissionsChipRef}
+                  data-composer-shortcut="composer.mode"
+                  size={size}
+                  // Mirrors the model trigger's trailing pe-1 so the gaps on both sides of the chip match.
+                  className={floating ? chatComposerPresentation.runtimeTriggerClassName : "ps-1.5"}
+                  aria-label={`Permissions: ${runtimeModeOption.label}`}
+                />
+              }
+            />
+          }
+        >
+          <ComposerControlIcon
+            icon={RuntimeModeIcon}
+            size={size}
+            // Match the label, not full foreground: the chip's presence already marks the mode.
+            {...(props.emphasized ? { className: "text-current" } : {})}
+          />
+          <span
+            data-composer-control-label
+            className={
+              accessDisplay === "icon" || floating || props.iconOnly ? "sr-only" : undefined
+            }
+          >
+            {runtimeModeOption.label}
+          </span>
+        </TooltipTrigger>
+        <TooltipPopup side="top">{permissionsTooltip}</TooltipPopup>
+      </Tooltip>
+      <MenuPopup align="start" {...composerFloatingLayerProps}>
+        <ComposerPermissionsSection
+          runtimeMode={props.runtimeMode}
+          runtimeModeOptions={props.runtimeModeOptions}
+          onRuntimeModeChange={props.onRuntimeModeChange}
+        />
+      </MenuPopup>
+    </Menu>
+  );
+
   return (
     <>
-      {props.runtimePlacement === "hidden" ? null : (
-        <>
-          <Tooltip>
-            <Select
-              open={open}
-              onOpenChange={setOpen}
-              value={props.runtimeMode}
-              onValueChange={(value) => props.onRuntimeModeChange(value!)}
-            >
-              <TooltipTrigger
-                render={
-                  <ComposerSelectControl
-                    data-composer-shortcut="composer.mode"
-                    size={size}
-                    className={
-                      floating ? chatComposerPresentation.runtimeTriggerClassName : undefined
-                    }
-                    aria-label={
-                      props.iconOnly ? `Runtime mode: ${runtimeModeOption.label}` : "Runtime mode"
-                    }
-                  />
-                }
-              >
-                <ComposerControlIcon icon={RuntimeModeIcon} size={size} />
-                <SelectValue
-                  data-composer-control-label
-                  className={props.iconOnly || floating ? "sr-only" : undefined}
-                >
-                  {runtimeModeOption.label}
-                </SelectValue>
-              </TooltipTrigger>
-              <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>
-                {props.runtimeModeOptions.map((option) => {
-                  const OptionIcon = option.icon;
-                  return (
-                    <SelectItem
-                      key={option.mode}
-                      value={option.mode}
-                      hideIndicator
-                      className="min-w-64"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="grid min-w-0 flex-1 gap-0.5">
-                          <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                            <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                            {option.label}
-                          </span>
-                          <span className="text-muted-foreground text-xs leading-4">
-                            {option.description}
-                          </span>
-                        </div>
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectPopup>
-            </Select>
-            <TooltipPopup side="top">{runtimeModeOption.description}</TooltipPopup>
-          </Tooltip>
-        </>
-      )}
+      {/* Fork chat presentation: the floating permission control always shows its chip. */}
+      {props.runtimePlacement === "hidden" || (!floating && accessDisplay === "hidden")
+        ? null
+        : permissionsChip}
       {interactionModeToggle}
     </>
   );
 });
+
+/**
+ * Permission modes as one horizontal toggle, with the shown mode named below.
+ * Each segment is a real menu radio item, so arrow keys reach it from the rest of the menu
+ * and a pick closes the menu. Lives inside a Menu: the permissions chip, the model picker,
+ * or the overflow menu.
+ */
+export function ComposerPermissionsSection(props: {
+  runtimeMode: RuntimeMode;
+  runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
+  onRuntimeModeChange: (mode: RuntimeMode) => void;
+}) {
+  // Hover or keyboard focus previews a mode's name and description before a pick.
+  const [previewMode, setPreviewMode] = useState<RuntimeMode | null>(null);
+  const shownMode = previewMode ?? props.runtimeMode;
+  const shown =
+    props.runtimeModeOptions.find((option) => option.mode === shownMode) ??
+    supervisedRuntimeModeOption;
+  const descriptionId = useId();
+  return (
+    <div data-composer-permissions className="grid w-72 gap-1.5 px-2 py-1.5">
+      <div className="font-medium text-muted-foreground text-xs">Permissions</div>
+      <MenuPrimitive.RadioGroup
+        aria-label="Permissions"
+        value={props.runtimeMode}
+        onValueChange={(value: RuntimeMode) => {
+          if (value !== props.runtimeMode) props.onRuntimeModeChange(value);
+        }}
+        className="flex rounded-lg bg-input/40 p-0.5"
+        // Menus navigate with Up/Down only; the row reads horizontally, so Left/Right move too.
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          const items = Array.from(
+            event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitemradio"]'),
+          );
+          const index = items.findIndex((item) => item === document.activeElement);
+          const next = items[index + (event.key === "ArrowRight" ? 1 : -1)];
+          if (index < 0 || !next) return;
+          event.preventDefault();
+          event.stopPropagation();
+          next.focus();
+        }}
+      >
+        {props.runtimeModeOptions.map((option) => {
+          const OptionIcon = option.icon;
+          return (
+            <MenuPrimitive.RadioItem
+              key={option.mode}
+              value={option.mode}
+              disabled={option.disabledReason !== undefined}
+              label={option.label}
+              aria-label={option.label}
+              aria-describedby={`${descriptionId}-${option.mode}`}
+              closeOnClick
+              onPointerEnter={() => setPreviewMode(option.mode)}
+              onPointerLeave={() => setPreviewMode(null)}
+              onFocus={() => setPreviewMode(option.mode)}
+              onBlur={() => setPreviewMode(null)}
+              className="flex h-6 flex-1 cursor-pointer items-center justify-center text-muted-foreground outline-none first:rounded-l-md last:rounded-r-md data-disabled:cursor-not-allowed data-disabled:opacity-40 data-checked:bg-input/72 data-checked:text-foreground data-highlighted:text-foreground not-data-checked:data-highlighted:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            >
+              <OptionIcon aria-hidden="true" className="size-3.5" />
+            </MenuPrimitive.RadioItem>
+          );
+        })}
+      </MenuPrimitive.RadioGroup>
+      {/* Static per-mode descriptions for screen readers; the preview below is visual only. */}
+      {props.runtimeModeOptions.map((option) => (
+        <span key={option.mode} id={`${descriptionId}-${option.mode}`} className="sr-only">
+          {option.disabledReason ?? option.description}
+        </span>
+      ))}
+      <div className="grid gap-0.5" aria-hidden="true">
+        <span
+          className={
+            shownMode === props.runtimeMode
+              ? "text-foreground text-sm"
+              : "text-muted-foreground text-sm"
+          }
+        >
+          {shown.label}
+        </span>
+        {/* Two lines reserved so the menu does not shift while you preview modes. */}
+        <span className="min-h-8 text-muted-foreground text-xs leading-4">
+          {shown.disabledReason ?? shown.description}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(props: {
   compact: boolean;
@@ -178,7 +278,6 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   promptHasText: boolean;
   isSendBusy: boolean;
   sendDisabledReason: string | null;
-  isConnecting: boolean;
   isEnvironmentUnavailable: boolean;
   hasSendableContent: boolean;
   canResume: boolean;
@@ -222,7 +321,6 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         promptHasText={props.promptHasText}
         isSendBusy={props.isSendBusy}
         sendDisabledReason={props.sendDisabledReason}
-        isConnecting={props.isConnecting}
         isEnvironmentUnavailable={props.isEnvironmentUnavailable}
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}

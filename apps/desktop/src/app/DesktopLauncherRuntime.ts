@@ -40,7 +40,7 @@ export interface DesktopLauncherHandoffPaths {
   readonly ackPath: string;
 }
 
-export const DesktopLauncherProcessId = Context.Reference<number>(
+const DesktopLauncherProcessId = Context.Reference<number>(
   "@t3tools/desktop/app/DesktopLauncherProcessId",
   { defaultValue: () => NodeProcess.pid },
 );

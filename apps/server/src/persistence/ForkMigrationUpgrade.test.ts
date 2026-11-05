@@ -454,7 +454,7 @@ it.effect.each(forkMigrationStates)("upgrades the released historical %s prefix"
         return { migrationId, name: historicalNames.get(migrationId)! };
       }),
     );
-    assert.deepStrictEqual(latest, [{ migrationId: 96, name: "WaitingLinkRequestIndex" }]);
+    assert.deepStrictEqual(latest, [{ migrationId: 103, name: "DelegatedRecoveryIndexes" }]);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 

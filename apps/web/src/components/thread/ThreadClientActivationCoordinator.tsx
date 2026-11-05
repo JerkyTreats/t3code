@@ -25,7 +25,7 @@ import {
   resolveThreadClientProject,
 } from "../../fork/threadClientProject";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
-import { inferProjectTitleFromPath } from "../../lib/projectPaths";
+import { inferProjectTitleFromPath } from "@t3tools/client-runtime/state/projects";
 import { newProjectId } from "../../lib/utils";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { usePrimaryEnvironment } from "../../state/environments";

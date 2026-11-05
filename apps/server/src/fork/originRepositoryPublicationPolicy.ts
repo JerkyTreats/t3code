@@ -249,13 +249,19 @@ export function originCloneRetryUrl(input: {
   readonly validatedHttpsUrl: string | null;
 }): string | null {
   if (input.retryUrl === null) return null;
-  const original = remoteRepositoryTarget({ remoteUrl: input.cloneUrl, provider: input.provider });
-  const retry = remoteRepositoryTarget({ remoteUrl: input.retryUrl, provider: input.provider });
+  // A clone by URL names no provider; the URL's own provider spells its repository target, so
+  // an Azure SSH URL and its HTTPS rewrite compare as the same repository.
+  const provider =
+    input.provider === "unknown"
+      ? (sourceControlDefinitions.recognizeRemote(input.cloneUrl)?.kind ?? input.provider)
+      : input.provider;
+  const original = remoteRepositoryTarget({ remoteUrl: input.cloneUrl, provider });
+  const retry = remoteRepositoryTarget({ remoteUrl: input.retryUrl, provider });
   if (original === null || !publicationTargetMatchesRemote(original, retry)) return null;
   if (input.validatedHttpsUrl !== null) {
     const validated = remoteRepositoryTarget({
       remoteUrl: input.validatedHttpsUrl,
-      provider: input.provider,
+      provider,
     });
     if (validated === null || !publicationTargetMatchesRemote(validated, retry)) return null;
   }

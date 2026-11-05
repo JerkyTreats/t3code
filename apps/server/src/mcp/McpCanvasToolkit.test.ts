@@ -82,7 +82,7 @@ const layerHtmlRenderMock = Layer.mock(HtmlRender.HtmlRender)({
 });
 
 const layerTest = McpHttpServer.layerCanvasToolkit.pipe(
-  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
   Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
   Layer.provide(layerCanvasMock),
   Layer.provide(layerHtmlRenderMock),

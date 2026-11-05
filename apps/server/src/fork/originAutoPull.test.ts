@@ -1,9 +1,9 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Stream from "effect/Stream";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
@@ -14,7 +14,7 @@ import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 
 const driverLayer = GitVcsDriver.layer.pipe(
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "origin-auto-pull-config-" })),
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
 describe.each(["startup", "broadcaster"] as const)(
@@ -59,6 +59,11 @@ describe.each(["startup", "broadcaster"] as const)(
             });
           } else {
             const workflow = Layer.mock(GitWorkflowService.GitWorkflowService)({
+              currentBranch: (cwd) =>
+                driver.statusDetailsLocal(cwd).pipe(
+                  Effect.map((status) => status.branch),
+                  Effect.orDie,
+                ),
               localStatus: ({ cwd }) =>
                 driver.statusDetailsLocal(cwd).pipe(
                   Effect.map((status) => ({
@@ -98,7 +103,6 @@ describe.each(["startup", "broadcaster"] as const)(
                   ),
                   Layer.provide(
                     Layer.mock(BackgroundPolicy.BackgroundPolicy)({
-                      streamChanges: Stream.empty,
                       shouldRunScopeWork: () => Effect.succeed(true),
                     }),
                   ),

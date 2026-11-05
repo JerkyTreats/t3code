@@ -306,9 +306,10 @@ export function hasBridgeBoundPrimaryTarget(): boolean {
 
 /** Null only for desktop with its local environment disabled; other hosts fall back to page origin. */
 export function readPrimaryEnvironmentTarget(): PrimaryEnvironmentTarget | null {
-  if (isLocalEnvironmentDisabled()) return null;
+  // F27: the Thread bridge selects its origin before any desktop setting is consulted.
   const threadTarget = readThreadPrimaryTarget();
   if (threadTarget) return { source: "window-origin", target: threadTarget };
+  if (isLocalEnvironmentDisabled()) return null;
   if (isStandaloneDesktopPrimary()) return resolveWindowOriginPrimaryTarget();
   return (
     resolveDesktopPrimaryTarget() ??

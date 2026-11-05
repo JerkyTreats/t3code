@@ -188,29 +188,3 @@ export function azureDevOpsChangeRequestBelongsToTarget(
     return false;
   }
 }
-
-export function azureDevOpsThreadsUrlBelongsToTarget(
-  threadsUrl: string,
-  changeRequestNumber: number,
-  target: AzureDevOpsRepositoryTarget,
-): boolean {
-  try {
-    const organizationUrl = new URL(target.organization);
-    const threads = new URL(threadsUrl);
-    const expectedPath = [
-      organizationUrl.pathname.replace(/\/+$/u, ""),
-      encodeURIComponent(target.project),
-      "_apis/git/repositories",
-      encodeURIComponent(target.repository),
-      "pullRequests",
-      String(changeRequestNumber),
-      "threads",
-    ].join("/");
-    return (
-      threads.origin.toLowerCase() === organizationUrl.origin.toLowerCase() &&
-      threads.pathname.replace(/\/+$/u, "").toLowerCase() === expectedPath.toLowerCase()
-    );
-  } catch {
-    return false;
-  }
-}

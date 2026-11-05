@@ -1,3 +1,4 @@
+import { pipe } from "effect/Function";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -68,11 +69,11 @@ export function useStartTriage() {
     const scratch = await openScratch({ environmentId, input: {} });
     if (scratch._tag === "Failure") {
       if (!isAtomCommandInterrupted(scratch)) {
-        fail(
-          errorMessage(
-            squashAtomCommandFailure(scratch),
-            "This machine cannot start threads without a project.",
-          ),
+        pipe(
+          squashAtomCommandFailure(scratch),
+          (failure) =>
+            errorMessage(failure, "This machine cannot start threads without a project."),
+          fail,
         );
       }
       return;
@@ -83,7 +84,11 @@ export function useStartTriage() {
     });
     if (prepared._tag === "Failure") {
       if (!isAtomCommandInterrupted(prepared)) {
-        fail(errorMessage(squashAtomCommandFailure(prepared), "The server could not prepare it."));
+        pipe(
+          squashAtomCommandFailure(prepared),
+          (failure) => errorMessage(failure, "The server could not prepare it."),
+          fail,
+        );
       }
       return;
     }

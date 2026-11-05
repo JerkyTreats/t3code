@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
-export const OMARCHY_SCREENSHOT_COMMAND_NAMES = [
+const OMARCHY_SCREENSHOT_COMMAND_NAMES = [
   "omarchy-capture-screenshot",
   "omarchy-cmd-screenshot",
 ] as const;
@@ -42,7 +42,7 @@ export function defaultDesktopScreenshotCaptureHost(): DesktopScreenshotCaptureH
   };
 }
 
-export function findExecutableOnPath(
+function findExecutableOnPath(
   command: string,
   host: Pick<DesktopScreenshotCaptureHost, "pathValue" | "isExecutable">,
 ): string | null {

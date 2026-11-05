@@ -10,6 +10,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { afterEach, vi } from "vite-plus/test";
@@ -84,6 +85,8 @@ function makeBridge(
   },
 ): DesktopBridge {
   return {
+    getClientPlatform: () => "linux",
+    getLocalEnvironmentEnabled: () => true,
     ensureSshEnvironment: async (
       target: DesktopSshEnvironmentTarget,
       ensureOptions?: { issuePairingToken?: boolean },
@@ -479,6 +482,7 @@ describe("primary platform authentication", { concurrent: false }, () => {
     vi.stubGlobal("window", {
       location: new URL("https://standalone.example.test/"),
       desktopBridge: {
+        getLocalEnvironmentEnabled: () => true,
         getLocalEnvironmentBootstraps: () => [],
         getLocalEnvironmentBearerToken: getBearer,
       },
@@ -589,8 +593,12 @@ describe("primary platform authentication", { concurrent: false }, () => {
         expect(registration.target.environmentId).toBe("synthetic-thread-environment");
         const auth = makePrimaryEnvironmentAuth();
         expect(yield* auth.bearerToken).toEqual(Option.none());
-        expect((yield* auth.webSocketTicket!(registration.target)).ticket).toBe("one-use-1");
-        expect((yield* auth.webSocketTicket!(registration.target)).ticket).toBe("one-use-2");
+        expect(Redacted.value((yield* auth.webSocketTicket!(registration.target)).ticket)).toBe(
+          "one-use-1",
+        );
+        expect(Redacted.value((yield* auth.webSocketTicket!(registration.target)).ticket)).toBe(
+          "one-use-2",
+        );
         expect(requests.map((request) => request.path)).toEqual([
           "/api/auth/session",
           "/.well-known/t3/environment",

@@ -1,166 +1,241 @@
-import { describe, expect, it } from "@effect/vitest";
-import { vi } from "vite-plus/test";
-import * as Context from "effect/Context";
+import { assert, it } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as HttpClient from "effect/http/HttpClient";
+import * as NetService from "@t3tools/shared/Net";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
-import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as Stream from "effect/Stream";
+import { vi } from "vite-plus/test";
+
+vi.mock("electron", () => ({}));
+vi.mock("@clerk/electron", () => ({ createClerkBridge: vi.fn() }));
+vi.mock("@clerk/electron/storage", () => ({ storage: vi.fn() }));
+vi.mock("../ipc/DesktopIpcHandlers.ts", () => ({
+  installDesktopIpcHandlers: () => Effect.void,
+}));
+vi.mock("../updates/DesktopRemoteUpdates.ts", () => ({ listen: Effect.void }));
+vi.mock("./DesktopStartupRecovery.ts", () => ({ listen: Effect.void }));
+
 import * as DesktopApp from "./DesktopApp.ts";
-import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
-import * as DesktopLegacyLocalStorage from "./DesktopLegacyLocalStorage.ts";
-import * as DesktopState from "./DesktopState.ts";
-import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopAppActivation from "./DesktopAppActivation.ts";
-import * as DesktopWindow from "../window/DesktopWindow.ts";
+import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
+import * as DesktopClerk from "./DesktopClerk.ts";
+import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import * as DesktopLauncherRuntime from "./DesktopLauncherRuntime.ts";
+import * as DesktopLegacyLocalStorage from "./DesktopLegacyLocalStorage.ts";
+import * as DesktopLifecycle from "./DesktopLifecycle.ts";
+import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
+import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";
+import * as DesktopShutdown from "./DesktopShutdown.ts";
+import * as DesktopState from "./DesktopState.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
-import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
-import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
-import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
+import * as ElectronApp from "../electron/ElectronApp.ts";
+import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
+import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
+import * as PreviewPasskeys from "../preview/Passkeys.ts";
+import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
+import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
+import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
+import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+import * as DesktopApplicationMenu from "../window/DesktopApplicationMenu.ts";
+import * as DesktopWindow from "../window/DesktopWindow.ts";
+import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 
-const host = vi.hoisted(() => ({ events: [] as string[] }));
-vi.mock("../ipc/DesktopIpcHandlers.ts", async () => {
-  const Effect = await import("effect/Effect");
-  return {
-    installDesktopIpcHandlers: () =>
-      Effect.sync(() => {
-        host.events.push("ipc");
-      }),
-  };
-});
+import * as BrowserImport from "../preview/BrowserImport/BrowserImport.ts";
+import * as DesktopBackendConfiguration from "../backend/DesktopBackendConfiguration.ts";
+import * as DesktopCliCommand from "./DesktopCliCommand.ts";
+import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
+import * as DesktopConnectionCatalogStore from "./DesktopConnectionCatalogStore.ts";
+import * as DesktopIpc from "../ipc/DesktopIpc.ts";
+import * as DesktopLocalEnvironmentAuth from "../backend/DesktopLocalEnvironmentAuth.ts";
+import * as DesktopManagedPolicy from "./DesktopManagedPolicy.ts";
+import * as DesktopSshEnvironment from "../ssh/DesktopSshEnvironment.ts";
+import * as DesktopSshPasswordPrompts from "../ssh/DesktopSshPasswordPrompts.ts";
+import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
+import * as DesktopWebLinks from "./DesktopWebLinks.ts";
+import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
+import * as ElectronMenu from "../electron/ElectronMenu.ts";
+import * as ElectronShell from "../electron/ElectronShell.ts";
+import * as ElectronTheme from "../electron/ElectronTheme.ts";
+import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import * as MacPermissions from "../permissions/MacPermissions.ts";
+import * as PreviewManager from "../preview/Manager.ts";
 
-// Deliberately omit every unused service: any accidental allocation, port scan, protocol,
-// exposure or WSL acquisition in the standalone branch fails this actual host execution.
-const runHost = (context: Context.Context<never>) =>
-  Effect.scoped(DesktopApp.bootstrap.pipe(Effect.andThen(Effect.yieldNow))).pipe(
-    Effect.provide(context as Context.Context<Effect.Services<typeof DesktopApp.bootstrap>>),
-  );
-
-const hostContext = Effect.fn("test.hostContext")(function* (
-  standalone: boolean,
-  quitting = false,
-) {
-  host.events = [];
-  const url = new URL("https://code.example.test/");
-  const environment = {
-    standaloneServerUrl: standalone ? Option.some(url) : Option.none(),
-    isDevelopment: false,
-    configuredBackendPort: Option.some(3773),
-    defaultDesktopSettings: { serverExposureMode: "local-only" },
-  } as DesktopEnvironment.DesktopEnvironment["Service"];
-  return Context.make(DesktopState.DesktopState, {
-    backendReady: yield* Ref.make(false),
-    quitting: yield* Ref.make(quitting),
-    primaryBackendStartup: yield* SubscriptionRef.make<DesktopState.PrimaryBackendStartup>({
-      _tag: "Starting",
-    }),
-  }).pipe(
-    Context.add(DesktopEnvironment.DesktopEnvironment, environment),
-    Context.add(DesktopWindow.DesktopWindow, {
-      handleBackendReady: (target: URL) =>
-        Effect.sync(() => {
-          host.events.push(`window:${target.href}`);
-        }),
-    } as unknown as DesktopWindow.DesktopWindow["Service"]),
-    Context.add(DesktopAppActivation.DesktopAppActivation, {
-      start: Effect.sync(() => {
-        host.events.push("upstream-activation");
-      }),
-      complete: () => Effect.void,
-      setRendererReady: () => Effect.void,
-    }),
-  );
-});
-
-describe("current DesktopApp bootstrap", () => {
-  it.effect(
-    "opens standalone HTTPS without even acquiring backend, port, exposure, protocol or WSL services",
-    () =>
-      Effect.gen(function* () {
-        yield* runHost(yield* hostContext(true));
-        expect(host.events).toEqual([
-          "ipc",
-          "window:https://code.example.test/",
-          "upstream-activation",
-        ]);
-      }),
-  );
-  it.effect("does not open a standalone window while quitting", () =>
+it.effect(
+  "starts the backend and window while Linux registration is stalled and cancels it on shutdown",
+  () =>
     Effect.gen(function* () {
-      yield* runHost(yield* hostContext(true, true));
-      expect(host.events).toEqual(["ipc"]);
-    }),
-  );
-  it.effect(
-    "preserves ordinary local protocol, backend start, upstream activation and WSL reconciliation",
-    () =>
-      Effect.gen(function* () {
-        const context = (yield* hostContext(false)).pipe(
-          Context.add(DesktopAppIdentity.DesktopAppIdentity, {
-            resolveUserDataPath: Effect.succeed("/workspace/profile"),
+      const registrationStarted = yield* Deferred.make<void>();
+      const releaseRegistration = yield* Deferred.make<void>();
+      const registrationStopped = yield* Deferred.make<void>();
+      const windowStarted = yield* Deferred.make<void>();
+      const quitting = yield* Ref.make(false);
+      const events: string[] = [];
+      const record = (event: string) =>
+        Effect.sync(() => {
+          events.push(event);
+        });
+      const runApp = DesktopApp.program
+        .pipe(
+          Effect.provide(NodeCrypto.layer),
+          Effect.provideService(DesktopAppIdentity.DesktopAppIdentity, {
+            resolveUserDataPath: Effect.succeed("/isolated/userdata"),
+            configure: record("identity"),
+          } as DesktopAppIdentity.DesktopAppIdentity["Service"]),
+          Effect.provideService(ElectronApp.ElectronApp, {
+            setPath: () => Effect.void,
+            whenReady: record("ready"),
+          } as unknown as ElectronApp.ElectronApp["Service"]),
+          Effect.provideService(ElectronDialog.ElectronDialog, {
+            showErrorBox: () => Effect.die("unexpected fatal startup error"),
+          } as unknown as ElectronDialog.ElectronDialog["Service"]),
+          Effect.provideService(DesktopEnvironment.DesktopEnvironment, {
+            platform: "linux",
+            isDevelopment: false,
+            isPackaged: true,
+            configuredBackendPort: Option.some(3773),
+            defaultDesktopSettings: { serverExposureMode: "local-only" },
+          } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]),
+          Effect.provideService(DesktopPreReadyPlatform.DesktopPreReadyElectronOptions, {
+            linux: null,
+            linuxPasswordStoreCommandLine: "basic",
+          }),
+          Effect.provideService(DesktopShellEnvironment.DesktopShellEnvironment, {
+            installIntoProcess: Effect.succeed(true),
+            awaitDiscovery: Effect.succeed(true),
+            updates: Stream.empty,
+          }),
+          Effect.provideService(DesktopAppSettings.DesktopAppSettings, {
+            load: Effect.void,
+            get: Effect.succeed({
+              localEnvironmentEnabled: true,
+              serverExposureMode: "local-only",
+            }),
+          } as unknown as DesktopAppSettings.DesktopAppSettings["Service"]),
+          Effect.provideService(DesktopLauncherRuntime.DesktopLauncherRuntime, {
+            markBackendReady: Effect.void,
+            markBackendNotReady: Effect.void,
+            markRendererReady: Effect.void,
+            markRendererNotReady: Effect.void,
+            acceptSingleInstanceHandoff: () => Effect.succeed(false),
+          }),
+          Effect.provideService(DesktopLifecycle.DesktopLifecycle, {
+            register: Effect.void,
+            relaunch: () => Effect.void,
+          }),
+          Effect.provideService(DesktopClerk.DesktopClerk, {
+            configure: Effect.void,
+          } as DesktopClerk.DesktopClerk["Service"]),
+          Effect.provideService(ElectronSafeStorage.ElectronSafeStorage, {
+            selectedStorageBackend: Effect.succeedNone,
+          } as unknown as ElectronSafeStorage.ElectronSafeStorage["Service"]),
+          Effect.provideService(PreviewPasskeys.PreviewPasskeys, {
+            configure: Effect.void,
+          } as PreviewPasskeys.PreviewPasskeys["Service"]),
+          Effect.provideService(DesktopApplicationMenu.DesktopApplicationMenu, {
             configure: Effect.void,
           }),
-          Context.add(DesktopLegacyLocalStorage.DesktopLegacyLocalStorage, {
-            load: (path) =>
-              Effect.sync(() => {
-                host.events.push(`legacy-storage:${path}`);
-              }),
-            take: Effect.succeedNone,
-            complete: Effect.void,
+          Effect.provideService(DesktopUpdates.DesktopUpdates, {
+            configure: Effect.void,
+          } as unknown as DesktopUpdates.DesktopUpdates["Service"]),
+          Effect.provideService(DesktopLinuxUrlHandler.DesktopLinuxUrlHandler, {
+            register: Deferred.succeed(registrationStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseRegistration)),
+              Effect.ensuring(Deferred.succeed(registrationStopped, undefined)),
+            ),
           }),
-          Context.add(DesktopSnapShot.DesktopSnapShot, {
+        )
+        .pipe(
+          Effect.provideService(ElectronProtocol.ElectronProtocol, {
+            registerDesktopProtocol: () => Effect.void,
+          } as unknown as ElectronProtocol.ElectronProtocol["Service"]),
+          Effect.provideService(DesktopLegacyLocalStorage.DesktopLegacyLocalStorage, {
+            load: () => Effect.void,
+          } as unknown as DesktopLegacyLocalStorage.DesktopLegacyLocalStorage["Service"]),
+          Effect.provideService(DesktopSnapShot.DesktopSnapShot, {
             initialize: Effect.void,
           } as DesktopSnapShot.DesktopSnapShot["Service"]),
-          Context.add(DesktopBackendPool.DesktopBackendPool, {
-            primary: Effect.sync(() => {
-              host.events.push("allocate-primary");
-              return {
-                start: Effect.sync(() => {
-                  host.events.push("backend-start");
-                }),
-              };
+          Effect.provideService(DesktopState.DesktopState, {
+            quitting,
+          } as DesktopState.DesktopState["Service"]),
+          Effect.provideService(DesktopWindow.DesktopWindow, {
+            ensureMain: record("window").pipe(
+              Effect.andThen(Deferred.succeed(windowStarted, undefined)),
+            ),
+          } as unknown as DesktopWindow.DesktopWindow["Service"]),
+          Effect.provideService(DesktopBackendPool.DesktopBackendPool, {
+            primary: Effect.succeed({
+              start: record("backend"),
+              currentConfig: Effect.succeedSome({ preflightFailure: Option.none() }),
             }),
-          } as DesktopBackendPool.DesktopBackendPool["Service"]),
-          Context.add(DesktopAppSettings.DesktopAppSettings, {
-            get: Effect.succeed({
-              serverExposureMode: "local-only",
-              localEnvironmentEnabled: true,
-              wslOnly: false,
-              wslBackendEnabled: false,
-            }),
-          } as DesktopAppSettings.DesktopAppSettings["Service"]),
-          Context.add(DesktopServerExposure.DesktopServerExposure, {
-            configureFromSettings: () =>
-              Effect.sync(() => {
-                host.events.push("exposure");
-                return { endpointUrl: null };
-              }),
+            list: Effect.succeed([]),
+          } as unknown as DesktopBackendPool.DesktopBackendPool["Service"]),
+          Effect.provideService(DesktopServerExposure.DesktopServerExposure, {
+            configureFromSettings: () => Effect.succeed({ mode: "local-only" }),
             backendConfig: Effect.succeed({ httpBaseUrl: new URL("http://127.0.0.1:3773") }),
           } as unknown as DesktopServerExposure.DesktopServerExposure["Service"]),
-          Context.add(ElectronProtocol.ElectronProtocol, {
-            registerDesktopProtocol: () =>
-              Effect.sync(() => {
-                host.events.push("protocol");
-              }),
-          } as ElectronProtocol.ElectronProtocol["Service"]),
-          Context.add(DesktopWslBackend.DesktopWslBackend, {
-            reconcile: Effect.sync(() => {
-              host.events.push("wsl");
-            }),
+          Effect.provideService(DesktopWslBackend.DesktopWslBackend, {
+            reconcile: Effect.void,
           } as DesktopWslBackend.DesktopWslBackend["Service"]),
+          Effect.provideService(DesktopAppActivation.DesktopAppActivation, {
+            start: Effect.void,
+          } as unknown as DesktopAppActivation.DesktopAppActivation["Service"]),
+          Effect.provideService(DesktopRendererHistory.DesktopRendererHistory, {
+            shutdown: Effect.void,
+          } as DesktopRendererHistory.DesktopRendererHistory["Service"]),
         );
-        yield* runHost(context);
-        expect(host.events).toEqual([
-          "protocol",
-          "ipc",
-          "legacy-storage:/workspace/profile",
-          "allocate-primary",
-          "exposure",
-          "backend-start",
-          "upstream-activation",
-          "wsl",
-        ]);
-      }),
-  );
-});
+      const app = yield* runApp.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.mock(BrowserImport.BrowserImport, {}),
+            Layer.mock(DesktopBackendConfiguration.DesktopBackendConfiguration, {}),
+            Layer.mock(DesktopCliCommand.DesktopCliCommand, {}),
+            Layer.mock(DesktopClientSettings.DesktopClientSettings, {}),
+            Layer.mock(DesktopConnectionCatalogStore.DesktopConnectionCatalogStore, {}),
+            Layer.mock(DesktopIpc.DesktopIpc, {}),
+            Layer.mock(DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth, {}),
+            Layer.mock(DesktopManagedPolicy.DesktopManagedPolicy, {}),
+            Layer.mock(DesktopSshEnvironment.DesktopSshEnvironment, {}),
+            Layer.mock(DesktopSshPasswordPrompts.DesktopSshPasswordPrompts, {}),
+            Layer.mock(DesktopTelemetryPublisher.DesktopTelemetryPublisher, {}),
+            Layer.mock(DesktopWebLinks.DesktopWebLinks, {}),
+            Layer.mock(DesktopWslEnvironment.DesktopWslEnvironment, {}),
+            Layer.mock(ElectronMenu.ElectronMenu, {}),
+            Layer.mock(ElectronShell.ElectronShell, {}),
+            Layer.mock(ElectronTheme.ElectronTheme, {}),
+            Layer.mock(ElectronWindow.ElectronWindow, {}),
+            Layer.mock(MacPermissions.MacPermissions, {}),
+            Layer.mock(PreviewManager.PreviewManager, {
+              isBrowserPartition: () => {
+                throw new Error("unexpected browser partition lookup");
+              },
+            }),
+            FileSystem.layerNoop({}),
+            Layer.mock(NetService.NetService, {}),
+            Path.layer,
+            Layer.succeed(
+              HttpClient.HttpClient,
+              HttpClient.make(() => Effect.die("unexpected HTTP request")),
+            ),
+          ),
+        ),
+        Effect.forkScoped,
+      );
+      yield* Deferred.await(registrationStarted);
+      yield* Deferred.await(windowStarted);
+      assert.deepEqual(events, ["identity", "ready", "identity", "backend", "window"]);
+      assert.isFalse(yield* Deferred.isDone(registrationStopped));
+      yield* (yield* DesktopShutdown.DesktopShutdown).request;
+      yield* Fiber.join(app);
+      assert.isTrue(yield* Deferred.isDone(registrationStopped));
+    }).pipe(Effect.provide(DesktopShutdown.layer)),
+);

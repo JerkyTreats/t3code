@@ -1,18 +1,20 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { ServerSelfUpdateError, ThreadId } from "@t3tools/contracts";
-import * as Cause from "effect/Cause";
+import type { ManagedPolicyDocument } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
 import * as DesktopAppUpdate from "../desktopUpdate/DesktopAppUpdate.ts";
+import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as ServerSelfUpdate from "./selfUpdate.ts";
 
 interface HarnessOptions {
   readonly mode?: "web" | "desktop";
   readonly desktopAppUpdate?: DesktopAppUpdate.DesktopAppUpdate["Service"];
+  readonly policy?: ManagedPolicyDocument;
 }
 
 const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
@@ -32,159 +34,53 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
         commit: () => Effect.die("unexpected desktop app update commit"),
       },
     ),
-    Effect.provide(ServerConfig.layer({ ...config, mode: options.mode ?? "web" })),
+    Effect.provide(
+      Layer.merge(
+        ServerConfig.layer({ ...config, mode: options.mode ?? "web" }),
+        ManagedPolicy.layerTest(options.policy),
+      ),
+    ),
   );
   return { selfUpdate };
 });
 
 it.layer(NodeServices.layer)("server self update", (it) => {
-  it.effect("marks desktop threads only when the prepared update commits", () =>
+  it.effect("refuses desktop-managed updates when the managed policy turns updates off", () =>
     Effect.gen(function* () {
-      const threadId = ThreadId.make("thread-running-desktop");
-      const events: string[] = [];
-      const commitError = new ServerSelfUpdateError({ reason: "install failed" });
-      const selfUpdate = yield* ServerSelfUpdate.withRunningThreadContinuation({
+      const policy: ManagedPolicyDocument = {
+        schemaVersion: 1,
+        organization: "Example Corp",
+        limits: { updates: { mode: "off" } },
+      };
+      const { selfUpdate } = yield* makeHarness({
         mode: "desktop",
-        selfUpdate: {
-          update: (_input, reportProgress = () => Effect.void) =>
-            reportProgress("installing").pipe(
-              Effect.as({
-                targetVersion: "1.2.0",
-                method: "desktop-app" as const,
-                desktopUpdateToken: "desktop-token",
-              }),
-            ),
-          commitDesktopUpdate: () =>
-            Effect.sync(() => events.push("commit")).pipe(Effect.andThen(Effect.fail(commitError))),
+        policy,
+        desktopAppUpdate: {
+          available: true,
+          run: () => Effect.die("unexpected desktop app update run"),
+          commit: () => Effect.never,
         },
-        prepare: Effect.sync(() => {
-          events.push("prepare");
-          return [threadId];
-        }),
-        clear: (threadIds) => Effect.sync(() => void events.push(`clear:${threadIds.join(",")}`)),
       });
-
-      yield* selfUpdate.update({ targetVersion: "1.2.0", continueRunningThreads: true }, (stage) =>
-        Effect.sync(() => void events.push(stage)),
+      expect((yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason).toBe(
+        "Example Corp manages T3 Code updates.",
       );
-      expect(events).toEqual(["installing"]);
-      expect(yield* selfUpdate.commitDesktopUpdate("desktop-token").pipe(Effect.flip)).toBe(
-        commitError,
-      );
-      expect(events).toEqual(["installing", "prepare", "commit", `clear:${threadId}`]);
-      expect(yield* selfUpdate.commitDesktopUpdate("desktop-token").pipe(Effect.flip)).toBe(
-        commitError,
-      );
-      expect(events).toEqual([
-        "installing",
-        "prepare",
-        "commit",
-        `clear:${threadId}`,
-        "prepare",
-        "commit",
-        `clear:${threadId}`,
-      ]);
     }),
   );
 
-  it.effect("reports a failed continuation-marker cleanup", () =>
+  it.effect("refuses update track switches on the single fork release track", () =>
     Effect.gen(function* () {
-      const updateError = new ServerSelfUpdateError({ reason: "update failed" });
-      const clearError = new ServerSelfUpdateError({ reason: "marker cleanup failed" });
-      const selfUpdate = yield* ServerSelfUpdate.withRunningThreadContinuation({
-        mode: "web",
-        selfUpdate: {
-          update: (_input, reportProgress = () => Effect.void) =>
-            reportProgress("installing").pipe(Effect.andThen(Effect.fail(updateError))),
-          commitDesktopUpdate: () => Effect.never,
+      const { selfUpdate } = yield* makeHarness({
+        mode: "desktop",
+        desktopAppUpdate: {
+          available: true,
+          run: () => Effect.die("unexpected desktop app update run"),
+          commit: () => Effect.never,
         },
-        prepare: Effect.succeed([ThreadId.make("thread-cleanup-failure")]),
-        clear: () => Effect.fail(clearError),
       });
-
       expect(
-        yield* selfUpdate
-          .update({ targetVersion: "1.1.0", continueRunningThreads: true })
-          .pipe(Effect.flip),
-      ).toBe(clearError);
-    }),
-  );
-
-  it.effect("keeps continuation markers after the desktop handoff is accepted", () =>
-    Effect.gen(function* () {
-      const events: string[] = [];
-      const selfUpdate = yield* ServerSelfUpdate.withRunningThreadContinuation({
-        mode: "desktop",
-        selfUpdate: {
-          update: () =>
-            Effect.succeed({
-              targetVersion: "1.2.0",
-              method: "desktop-app" as const,
-              desktopUpdateToken: "accepted-desktop-token",
-            }),
-          commitDesktopUpdate: (_requestId, onHandoffAccepted = () => Effect.void) =>
-            onHandoffAccepted().pipe(Effect.andThen(Effect.interrupt)),
-        },
-        prepare: Effect.sync(() => {
-          events.push("prepare");
-          return [ThreadId.make("thread-accepted-desktop-handoff")];
-        }),
-        clear: () => Effect.sync(() => void events.push("clear")),
-      });
-
-      yield* selfUpdate.update({
-        targetVersion: "1.2.0",
-        continueRunningThreads: true,
-      });
-      const exit = yield* selfUpdate
-        .commitDesktopUpdate("accepted-desktop-token")
-        .pipe(Effect.exit);
-
-      expect(exit._tag).toBe("Failure");
-      expect(events).toEqual(["prepare"]);
-    }),
-  );
-
-  it.effect("clears continuation markers for mixed failure and interrupt causes", () =>
-    Effect.gen(function* () {
-      const events: string[] = [];
-      const commitError = new ServerSelfUpdateError({ reason: "install failed" });
-      const selfUpdate = yield* ServerSelfUpdate.withRunningThreadContinuation({
-        mode: "desktop",
-        selfUpdate: {
-          update: () =>
-            Effect.succeed({
-              targetVersion: "1.2.0",
-              method: "desktop-app" as const,
-              desktopUpdateToken: "failed-desktop-token",
-            }),
-          commitDesktopUpdate: (_requestId, onHandoffAccepted = () => Effect.void) =>
-            onHandoffAccepted().pipe(
-              Effect.andThen(
-                Effect.failCause(
-                  Cause.fromReasons([
-                    Cause.makeFailReason(commitError),
-                    Cause.makeInterruptReason(),
-                  ]),
-                ),
-              ),
-            ),
-        },
-        prepare: Effect.sync(() => [ThreadId.make("thread-failed-desktop-install")]),
-        clear: () => Effect.sync(() => void events.push("clear")),
-      });
-
-      yield* selfUpdate.update({
-        targetVersion: "1.2.0",
-        continueRunningThreads: true,
-      });
-      const exit = yield* selfUpdate.commitDesktopUpdate("failed-desktop-token").pipe(Effect.exit);
-      expect(exit._tag).toBe("Failure");
-      if (exit._tag === "Failure") {
-        expect(Cause.hasInterrupts(exit.cause)).toBe(true);
-        expect(Cause.hasInterruptsOnly(exit.cause)).toBe(false);
-      }
-      expect(events).toEqual(["clear"]);
+        (yield* selfUpdate.update({ targetVersion: "1.1.0", channel: "nightly" }).pipe(Effect.flip))
+          .reason,
+      ).toContain("single release track");
     }),
   );
 

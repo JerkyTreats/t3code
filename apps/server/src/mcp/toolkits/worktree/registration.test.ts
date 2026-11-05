@@ -8,6 +8,7 @@ import * as DeviceService from "../../../device/DeviceService.ts";
 import * as ServerConfig from "../../../config.ts";
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -43,6 +44,8 @@ import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
 import * as DocumentText from "../../../provider/DocumentText.ts";
+import * as AssetSigner from "../../../assets/AssetSigner.ts";
+import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 
 const layerStubServices = Layer.mergeAll(
   Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({}),
@@ -74,6 +77,10 @@ const layerStubServices = Layer.mergeAll(
   Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
   Layer.mock(PeerLinks.PeerLinks)({}),
   Layer.mock(DocumentText.DocumentText)({}),
+  // The MCP HTTP transport allocates session ids with SecureRandom.
+  NodeCrypto.layer,
+  Layer.mock(AssetSigner.AssetSigner)({}),
+  Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
 );
 
 const ToolsListPayload = Schema.fromJsonString(
@@ -104,7 +111,9 @@ it.effect("production mcp layer lists worktree tools over http", () =>
         getEnvironmentId: Effect.succeed("environment-scratch" as never),
       });
       const registryContext = yield* Layer.build(
-        McpSessionRegistry.layer.pipe(Layer.provide(layerEnvironment)),
+        McpSessionRegistry.layer.pipe(
+          Layer.provide(Layer.merge(layerEnvironment, NodeCrypto.layer)),
+        ),
       );
       const layerRoutes = McpHttpServer.layer.pipe(
         Layer.provide(Layer.succeedContext(registryContext)),

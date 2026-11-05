@@ -18,7 +18,7 @@ const CanvasBox = {
   height: Schema.Finite,
 };
 
-export const CanvasReadTool = Tool.make("canvas_read", {
+const CanvasReadTool = Tool.make("canvas_read", {
   description:
     "Read this thread's Excalidraw canvas, the whiteboard behind its turns. With no arguments it returns an overview: the spine (the column the turns stack in, from left to right, with nextTurnY where the next turn lands), each turn, each of your drawings as one box with its title and the turn it follows, and every mark the user drew or wrote, with turn (its index in turns) and on or beside (the id of your piece under or next to it). Pass drawingIds, ids or region for your shapes in full, card text included. Coordinates are current only as of this call: read again after the user may have moved things. Call it before answering about the canvas or the user's marks.",
   parameters: Schema.Struct({
@@ -83,7 +83,7 @@ export const CanvasReadTool = Tool.make("canvas_read", {
   .annotate(Tool.OpenWorld, false);
 
 // This affects only the caller's thread, not its workspace, so read-only sandboxes and plan mode may use it.
-export const CanvasUpdateTool = Tool.make("canvas_update", {
+const CanvasUpdateTool = Tool.make("canvas_update", {
   description:
     "Draw on this thread's Excalidraw canvas, the whiteboard behind its turns. Use it for diagrams, system designs, flows, and whiteboard notes the user may move, edit, or mark up. Shapes are live: the user can drag and change them. For a graph, set layout and leave out x, y and sizes: T3 places the boxes and sizes them to their labels. Use x and y only for freeform work. A drawingId names one drawing. To change one, call again with the same drawingId and patch: true, sending only the shapes that change and only their changed fields; list ids in remove to take shapes out. Without patch, the shapes sent are the whole drawing, and an empty list removes it. Shape x and y are relative to the drawing's origin, which canvas_read lists per drawing. Boxes the user dragged stay where they put them unless resetMoves is true, which is for when they ask you to re-lay it out. T3 places a new drawing beside the current turn. Label a box or arrow with text; connect shapes with arrow start and end. Omit colors unless they carry meaning. The result reports where it landed, crossings, arrows through boxes, clipped labels, and overlaps: fix what it reports rather than guessing.",
   parameters: Schema.Struct({

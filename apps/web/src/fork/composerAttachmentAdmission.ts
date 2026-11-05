@@ -16,7 +16,7 @@ export function composerAttachmentScope(input: {
   ]);
 }
 
-export const composerAttachmentCapacityError = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`;
+const composerAttachmentCapacityError = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message.`;
 
 export interface ComposerAttachmentReservation {
   readonly scope: string;

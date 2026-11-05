@@ -19,12 +19,13 @@ import {
   readFocusedPreviewHost,
 } from "../components/preview/previewHostActions";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
+import { shouldCreateNewThreadInCurrentProject } from "../components/Sidebar.logic";
 import { createNewThreadHandler, resolveDefaultProjectRef } from "../hooks/useHandleNewThread";
 import { createScratchProjectActions } from "../hooks/useScratchProject";
 import { getClientSettings } from "../hooks/useSettings";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
-import { selectProjectGroupingSettings } from "../logicalProject";
+import { selectProjectGroupingSettings } from "@t3tools/client-runtime/state/project-grouping";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
@@ -52,6 +53,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       [...appAtomRegistry.get(environmentPresentations.presentationsAtom)].map(
         ([environmentId, presentation]) => ({ ...presentation, environmentId }),
       ),
+    primaryEnvironmentId: () => appAtomRegistry.get(primaryEnvironmentIdAtom),
     registry: appAtomRegistry,
     handleNewThread,
   });
@@ -88,13 +90,15 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       handleNewThread,
     };
   };
-  const readProjectGroupCount = () =>
+  // Grouped like the sidebar, so the shortcut and the New thread button agree.
+  const readProjectGroups = () =>
     buildSidebarProjectSnapshots({
       projects: readProjects(),
+      groupScratchProjects: true,
       settings: selectProjectGroupingSettings(getClientSettings()),
       primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
       resolveEnvironmentLabel: () => null,
-    }).length;
+    });
   const canOperatePreview = (environmentId: EnvironmentId) =>
     readEnvironmentScope(environmentId, AuthPreviewOperateScope);
 
@@ -105,7 +109,10 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
 
   const startNewLocal: CommandHandler = (event) => {
     claim(event);
-    void startNewThreadFromContext(readThreadContext());
+    // With no current or open project, such as when every project is archived, pick one.
+    void startNewThreadFromContext(readThreadContext()).then((started) => {
+      if (!started) openCommandPalette({ open: "new-thread-in" });
+    });
   };
 
   // F23: browser commands act only on a focused preview; tab lifecycle needs a focused native guest.
@@ -130,7 +137,7 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
 
   // Guest browser chords arrive as typed actions, already prevented inside the guest (F23).
   const stopDesktopPreviewActions =
-    window.desktopBridge?.onPreviewBrowserAction?.((event) => {
+    globalThis.window?.desktopBridge?.onPreviewBrowserAction?.((event) => {
       if (!isChatRouteActive()) return;
       // Read router state inside the native callback, including before the next React render.
       const threadRef = readRouteThreadRef();
@@ -145,17 +152,23 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       "chat.newWithoutProject": (event) => {
         const { activeThread, activeDraftThread } = readThreadContext();
         const environmentId = scratch.scratchEnvironmentId(
-          activeThread?.environmentId ??
-            activeDraftThread?.environmentId ??
-            appAtomRegistry.get(primaryEnvironmentIdAtom),
+          activeThread?.environmentId ?? activeDraftThread?.environmentId ?? null,
         );
         if (environmentId === null) return;
         claim(event);
         void scratch.startScratchThread(environmentId);
       },
       "chat.new": (event) => {
-        // Pre-hydration settings are the defaults, where the legacy sidebar is off.
-        if (!getClientSettings().legacySidebarEnabled && readProjectGroupCount() > 1) {
+        const { legacySidebarEnabled } = getClientSettings();
+        const groups = readProjectGroups();
+        if (
+          !legacySidebarEnabled &&
+          !shouldCreateNewThreadInCurrentProject(
+            false,
+            groups.filter((group) => !group.archived).length,
+            groups.length,
+          )
+        ) {
           claim(event);
           openCommandPalette({ open: "new-thread-in" });
           return;

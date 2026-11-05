@@ -13,9 +13,11 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import {
   NonNegativeInt,
+  settingsSecretLiteral,
   SourceControlProviderKind,
   TrimmedNonEmptyString,
   type SourceControlProviderAuth,
+  type SourceControlProviderInfo,
   type SourceControlRepositoryCloneUrls,
   type SourceControlRepositoryVisibility,
 } from "@t3tools/contracts";
@@ -32,7 +34,10 @@ import {
 import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import { readSourceControlHostSettings } from "@t3tools/source-control-core/shared/definition";
+import {
+  readSourceControlHostSettings,
+  recognizeRemoteWith,
+} from "@t3tools/source-control-core/shared/definition";
 
 import * as BitbucketClient from "../shared/definition.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
@@ -52,6 +57,15 @@ const BitbucketApiEnvConfig = Config.all({
   email: Config.String("T3CODE_BITBUCKET_EMAIL").pipe(Config.option),
   apiToken: Config.String("T3CODE_BITBUCKET_API_TOKEN").pipe(Config.option),
 });
+
+// Server and Data Center use a different API; a custom Cloud endpoint must be explicit.
+export const BitbucketServesHost = Config.String("T3CODE_BITBUCKET_API_BASE_URL").pipe(
+  Config.option,
+  Config.map(
+    (baseUrl) => (host: string) =>
+      Option.isSome(baseUrl) || host === "bitbucket.org" || host.endsWith(".bitbucket.org"),
+  ),
+);
 
 const BitbucketApiOperation = Schema.Literals([
   "resolveRepository",
@@ -589,7 +603,11 @@ function resolveCredential(
   env: Config.Success<typeof BitbucketApiEnvConfig>,
 ): BitbucketCredential | null {
   return (
-    credentialFrom(settings) ??
+    credentialFrom({
+      accessToken: settingsSecretLiteral(settings.accessToken),
+      email: settings.email,
+      apiToken: settingsSecretLiteral(settings.apiToken),
+    }) ??
     credentialFrom({
       accessToken: Option.getOrElse(env.accessToken, () => ""),
       email: Option.getOrElse(env.email, () => ""),
@@ -681,6 +699,11 @@ export const make = Effect.gen(function* () {
     host: "bitbucket.org",
   };
 
+  const servesHost = yield* BitbucketServesHost;
+
+  const servesProvider = (provider: SourceControlProviderInfo | null) =>
+    provider?.kind === "bitbucket" && servesHost(URL.parse(provider.baseUrl)?.hostname ?? "");
+
   const apiUrl = (path: string) => `${config.baseUrl.replace(/\/+$/u, "")}${path}`;
   const apiOrigin = originOf(config.baseUrl);
   const apiHost = (() => {
@@ -713,7 +736,7 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  const currentCredential = host.settings.get.pipe(
+  const currentCredential = host.settings.getWithSecrets(BitbucketClient.definition.kind).pipe(
     Effect.map((settings) =>
       resolveCredential(
         readSourceControlHostSettings(
@@ -855,20 +878,37 @@ export const make = Effect.gen(function* () {
 
   const resolveRepository = Effect.fn("BitbucketApi.resolveRepository")(function* (input: {
     readonly cwd: string;
+    readonly reference?: string;
     readonly context?: SourceControlProvider.SourceControlProviderContext;
     readonly repository?: string;
   }) {
+    if (input.context?.provider.kind === "bitbucket" && !servesProvider(input.context.provider)) {
+      // Falling back to another remote could act on a different repository.
+      return yield* new BitbucketRepositoryRemoteNotFoundError({ cwd: input.cwd });
+    }
+    // Fork F06: every read authorizes the bound origin first; an explicit repository or a change
+    // request link never selects a repository outside it.
     const fromRepository =
       input.repository === undefined ? null : yield* requireRepositoryLocator(input.repository);
     const originUrl = yield* resolveBoundOriginUrl(input);
-    if (fromRepository) return fromRepository;
-
     const fromOrigin = parseBitbucketRemoteUrl(originUrl);
-    if (fromOrigin) return fromOrigin;
+    const resolved = fromRepository ?? fromOrigin;
+    if (resolved === null) {
+      return yield* new BitbucketRepositoryRemoteNotFoundError({ cwd: input.cwd });
+    }
 
-    return yield* new BitbucketRepositoryRemoteNotFoundError({
-      cwd: input.cwd,
-    });
+    const url = input.reference ? URL.parse(input.reference) : null;
+    const link = url ? BitbucketClient.definition.parseChangeRequestUrl(url) : null;
+    if (link) {
+      const linked = yield* requireRepositoryLocator(link.repository);
+      const sameRepository =
+        linked.workspace.toLowerCase() === resolved.workspace.toLowerCase() &&
+        linked.repoSlug.toLowerCase() === resolved.repoSlug.toLowerCase();
+      if (!sameRepository) {
+        return yield* new BitbucketRepositoryRemoteNotFoundError({ cwd: input.cwd });
+      }
+    }
+    return resolved;
   });
 
   const getRepositoryFromLocator = (repository: BitbucketRepositoryLocator) =>
@@ -932,19 +972,27 @@ export const make = Effect.gen(function* () {
     readonly sourceRepositoryName: string;
     readonly isCrossRepository: boolean;
   }) {
-    if (
-      input.context?.provider.kind === "bitbucket" &&
-      !input.isCrossRepository &&
-      parseBitbucketRemoteUrl(input.context.remoteUrl) !== null
-    ) {
-      return input.context.remoteName;
-    }
-
     if (!input.isCrossRepository) {
-      const remoteName = yield* git
-        .resolvePrimaryRemoteName(input.cwd)
-        .pipe(Effect.orElseSucceed(() => null));
-      if (remoteName) return remoteName;
+      const context = input.context?.provider.kind === "bitbucket" ? input.context : undefined;
+      const remoteName =
+        context?.remoteName ??
+        (yield* git.resolvePrimaryRemoteName(input.cwd).pipe(Effect.orElseSucceed(() => null)));
+      if (remoteName) {
+        const remoteUrl =
+          context?.remoteUrl ??
+          (yield* readConfigValueNullable(input.cwd, `remote.${remoteName}.url`));
+        const repository =
+          remoteUrl && (context || recognizeRemoteWith(BitbucketClient.definition, remoteUrl))
+            ? parseBitbucketRemoteUrl(remoteUrl)
+            : null;
+        if (
+          repository &&
+          `${repository.workspace}/${repository.repoSlug}`.toLowerCase() ===
+            input.sourceRepositoryName.toLowerCase()
+        ) {
+          return remoteName;
+        }
+      }
     }
 
     const cloneUrls = yield* getRepository({
@@ -1060,19 +1108,28 @@ export const make = Effect.gen(function* () {
     authorizeOriginHost,
     authorizeOrigin,
     request,
-    probeAuth: executeJson(
-      "probeAuth",
-      HttpClientRequest.get(apiUrl("/user")),
-      BitbucketUserSchema,
-    ).pipe(
-      Effect.map((user) => ({
-        status: "authenticated" as const,
-        account: nonEmpty(user.username ?? user.display_name ?? user.account_id),
-        host: Option.some(apiHost),
-        detail: Option.none<string>(),
-      })),
-      Effect.catch(() =>
-        currentCredential.pipe(Effect.map((credential) => authFromCredential(credential, apiHost))),
+    // Bitbucket answers anonymous /user with 401, so without a credential there is nothing to ask.
+    probeAuth: currentCredential.pipe(
+      Effect.flatMap((credential) =>
+        credential === null
+          ? Effect.succeed(authFromCredential(null, apiHost))
+          : executeJson(
+              "probeAuth",
+              HttpClientRequest.get(apiUrl("/user")),
+              BitbucketUserSchema,
+            ).pipe(
+              Effect.map((user) => ({
+                status: "authenticated" as const,
+                account: nonEmpty(user.username ?? user.display_name ?? user.account_id),
+                host: Option.some(apiHost),
+                detail: Option.none<string>(),
+              })),
+              Effect.catch(() =>
+                currentCredential.pipe(
+                  Effect.map((credential) => authFromCredential(credential, apiHost)),
+                ),
+              ),
+            ),
       ),
     ),
     listPullRequests: Effect.fn("BitbucketApi.listPullRequests")(function (input) {

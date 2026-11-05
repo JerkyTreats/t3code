@@ -26,7 +26,7 @@ export interface NestableThread {
 }
 
 /** A thread that can list children: active, ordinary and not nested itself. */
-export function canHostNestedThreads(thread: NestableThread): boolean {
+function canHostNestedThreads(thread: NestableThread): boolean {
   return (
     thread.archivedAt == null &&
     thread.lineage.relationshipToParent !== "subagent" &&
@@ -145,7 +145,7 @@ export function groupNestedThreads<T extends ScopedNestableThread & ThreadConver
 }
 
 /** Child icons shown after the parent's own provider icon. */
-export const NESTED_THREAD_BADGE_LIMIT = 2;
+const NESTED_THREAD_BADGE_LIMIT = 2;
 
 export interface NestedThreadBadge<P> {
   /**

@@ -81,6 +81,13 @@ import UpstreamMigration0069 from "./Migrations/069_ThreadMessageSearch.ts";
 import UpstreamMigration0070 from "./Migrations/070_PeerLinks.ts";
 import UpstreamMigration0071 from "./Migrations/071_PeerLinkFence.ts";
 import UpstreamMigration0072 from "./Migrations/072_WaitingLinkRequestIndex.ts";
+import UpstreamMigration0073 from "./Migrations/073_ActiveTurnItemIndexes.ts";
+import UpstreamMigration0074 from "./Migrations/074_ExcludeAttachmentPlaceholdersFromSearch.ts";
+import UpstreamMigration0075 from "./Migrations/075_SubagentDeliveryState.ts";
+import UpstreamMigration0076 from "./Migrations/076_ProjectionProjectsPinArchive.ts";
+import UpstreamMigration0077 from "./Migrations/077_RepairBooleanSettledOverride.ts";
+import UpstreamMigration0078 from "./Migrations/078_DropOrchestrationEventCorrelationIndex.ts";
+import UpstreamMigration0079 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
 
 import Migration0083 from "./Migrations/083_RetireBoardAndCollective.ts";
 import Migration0085 from "./Migrations/085_PublishedResponseActivityIndex.ts";
@@ -170,6 +177,14 @@ export const migrationEntries = [
   [94, "PeerLinks", UpstreamMigration0070],
   [95, "PeerLinkFence", UpstreamMigration0071],
   [96, "WaitingLinkRequestIndex", UpstreamMigration0072],
+  // Upstream 73 through 79 keep their source order after fork 96.
+  [97, "ActiveTurnItemIndexes", UpstreamMigration0073],
+  [98, "ExcludeAttachmentPlaceholdersFromSearch", UpstreamMigration0074],
+  [99, "SubagentDeliveryState", UpstreamMigration0075],
+  [100, "ProjectionProjectsPinArchive", UpstreamMigration0076],
+  [101, "RepairBooleanSettledOverride", UpstreamMigration0077],
+  [102, "DropOrchestrationEventCorrelationIndex", UpstreamMigration0078],
+  [103, "DelegatedRecoveryIndexes", UpstreamMigration0079],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

@@ -1,9 +1,6 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { PullRequestProviderError } from "../PullRequestProvider.ts";
-import {
-  azureDevOpsRepositoryTargetFromOrigin,
-  azureDevOpsThreadsUrlBelongsToTarget,
-} from "./AzureDevOpsRepositoryTarget.ts";
+import { azureDevOpsRepositoryTargetFromOrigin } from "./AzureDevOpsRepositoryTarget.ts";
 import { gitLabRepositoryTargetFromOrigin } from "./GitLabRepositoryTarget.ts";
 import { SourceControlProviderError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -254,27 +251,6 @@ export const requireAzurePullRequestMembership = <
           operation: input.operation,
           reason: "failed",
           detail: "Origin-only policy rejected an Azure DevOps pull request outside origin.",
-        }),
-      );
-
-export const requireAzureThreadsMembership = (input: {
-  readonly operation: string;
-  readonly target: AzureDevOpsRepositoryTarget;
-  readonly pullRequest: {
-    readonly number: number;
-    readonly url: string;
-    readonly location: { readonly project: string; readonly repository: string } | null;
-  };
-  readonly threadsUrl: string;
-}): Effect.Effect<string, PullRequestProviderError> =>
-  azureDevOpsThreadsUrlBelongsToTarget(input.threadsUrl, input.pullRequest.number, input.target)
-    ? Effect.succeed(input.threadsUrl)
-    : Effect.fail(
-        new PullRequestProviderError({
-          provider: SourceControlProviderKind.make("azure-devops"),
-          operation: input.operation,
-          reason: "failed",
-          detail: "Origin-only policy rejected Azure DevOps threads outside origin.",
         }),
       );
 

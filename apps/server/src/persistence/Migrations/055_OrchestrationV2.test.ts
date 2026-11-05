@@ -13,7 +13,7 @@ layer("055_OrchestrationV2", (it) => {
     Effect.sync(() => {
       assert.deepStrictEqual(
         migrationEntries.map(([id]) => id),
-        Array.from({ length: 96 }, (_, index) => index + 1).filter(
+        Array.from({ length: 103 }, (_, index) => index + 1).filter(
           (id) => (id < 43 || id > 49) && (id < 70 || id > 78),
         ),
       );
@@ -47,6 +47,13 @@ layer("055_OrchestrationV2", (it) => {
         [94, "PeerLinks"],
         [95, "PeerLinkFence"],
         [96, "WaitingLinkRequestIndex"],
+        [97, "ActiveTurnItemIndexes"],
+        [98, "ExcludeAttachmentPlaceholdersFromSearch"],
+        [99, "SubagentDeliveryState"],
+        [100, "ProjectionProjectsPinArchive"],
+        [101, "RepairBooleanSettledOverride"],
+        [102, "DropOrchestrationEventCorrelationIndex"],
+        [103, "DelegatedRecoveryIndexes"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
 
@@ -88,6 +95,13 @@ layer("055_OrchestrationV2", (it) => {
         { migration_id: 94, name: "PeerLinks" },
         { migration_id: 95, name: "PeerLinkFence" },
         { migration_id: 96, name: "WaitingLinkRequestIndex" },
+        { migration_id: 97, name: "ActiveTurnItemIndexes" },
+        { migration_id: 98, name: "ExcludeAttachmentPlaceholdersFromSearch" },
+        { migration_id: 99, name: "SubagentDeliveryState" },
+        { migration_id: 100, name: "ProjectionProjectsPinArchive" },
+        { migration_id: 101, name: "RepairBooleanSettledOverride" },
+        { migration_id: 102, name: "DropOrchestrationEventCorrelationIndex" },
+        { migration_id: 103, name: "DelegatedRecoveryIndexes" },
       ]);
 
       const tables = yield* sql<{ readonly name: string }>`
