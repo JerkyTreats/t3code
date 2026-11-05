@@ -42,7 +42,8 @@ const ROLES = new Set(["lead", "support", "aside"]);
 const GAP_PX = 40;
 const GROUP_PADDING_PX = 24;
 const GROUP_TITLE_PX = 44;
-const MAX_ROW_WIDTH_PX = 3400;
+// Two cards and a gap: a drawing beside the turn column reads without panning.
+const MAX_ROW_WIDTH_PX = 1100;
 const BAND_FONT_SIZES = [26, 22, 18, 16];
 const BASE_FONT_SIZE = 20;
 const LEAD_SCALE = 1.25;

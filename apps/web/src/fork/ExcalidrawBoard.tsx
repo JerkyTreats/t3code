@@ -1018,6 +1018,8 @@ export default function ExcalidrawBoard({
                     >
                       <ChatMarkdown
                         text={card.card.text}
+                        // Agents write one item per line in a card; keep those lines apart.
+                        lineBreaks
                         cwd={undefined}
                         environmentId={canvasThread.environmentId}
                         threadRef={canvasThread}
