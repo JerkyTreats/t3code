@@ -261,8 +261,9 @@ function followAnchors(placed: MutableBox[]) {
     box.y = at + anchor.dy;
     box.anchor = { ...anchor, at };
     if (box.card !== true) continue;
-    const region = `${anchor.turn}:${anchor.edge}`;
-    regions.set(region, [...(regions.get(region) ?? []), box]);
+    // One region for every anchored card: a card left beside an earlier turn can grow down into
+    // the space beside a later turn, where moveToLatestTurn put other cards.
+    regions.set("", [...(regions.get("") ?? []), box]);
   }
   for (const cards of regions.values()) {
     const settled: MutableBox[] = [];

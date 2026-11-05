@@ -256,4 +256,23 @@ describe("layoutTurns with a region beside a turn", () => {
     expect(boxFor(grown, "r/card").y).toBe(boxFor(grown, "b").y);
     expect(boxFor(grown, "r/card").y).toBe(b.y + 600);
   });
+
+  it("moves a card beside a later turn below an earlier turn's card that grew into its place", () => {
+    const start = layoutTurns([], [measured("a", 100), measured("b", 100)]);
+    const a = boxFor(start, "a");
+    const b = boxFor(start, "b");
+    const beside = (key: string, turn: BoardBox, height: number): BoardBox => ({
+      ...mark(key, 462, turn.y),
+      width: 480,
+      height,
+      card: true,
+      anchor: { turn: turn.key, edge: "top", at: turn.y, dy: 0, x: 462 },
+    });
+    // The earlier card's text fitted taller than the gap to the next turn.
+    const tall = beside("r/old", a, b.y - a.y + 300);
+    const moved = beside("r/moved", b, 200);
+    const laid = layoutTurns([...start, tall, moved], [measured("a", 100), measured("b", 100)]);
+    const old = boxFor(laid, "r/old");
+    expect(boxFor(laid, "r/moved").y).toBeGreaterThanOrEqual(old.y + old.height);
+  });
 });
