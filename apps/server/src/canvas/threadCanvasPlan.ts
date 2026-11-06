@@ -469,6 +469,38 @@ export function planDrawing(input: {
             height: CORRIDOR_DEPTH_PX,
           },
         ];
+  // A drawing sent whole again in a later turn is the answer to that turn: it comes beside the latest
+  // turn unless it already sits level with it, so an update never stays up by an older turn.
+  const sitsByLatestTurn =
+    latestTurn === undefined ||
+    existing.length === 0 ||
+    ((box, turn) => box.y < turn.y + turn.height && turn.y < box.y + box.height)(
+      boundsOf(existing.map(boxOf)),
+      boxOf(latestTurn),
+    );
+  // A drawing held below a turn is a response region that stays there; pieces the agent names to
+  // bring along are moved by moveToLatestTurn instead.
+  const heldBelow = existing.some((element) => turnAnchorOf(element)?.edge === "bottom");
+  const bringsPieces =
+    (draw.moveToLatestTurn?.length ?? 0) > 0 || (draw.moveBelowLatestTurn?.length ?? 0) > 0;
+  // A patch that sends every piece again is a rewrite too, as when an agent resends its whole card.
+  const sentIds = new Set(draw.shapes.map((shape) => shape.id));
+  const resendsAll =
+    draw.patch !== true ||
+    (sentIds.size > 0 &&
+      existing
+        .filter(isPiece)
+        .every((element) => sentIds.has(String(element.id).slice(drawingId.length + 1))));
+  const place =
+    draw.place ??
+    (resendsAll &&
+    origin !== null &&
+    holder === undefined &&
+    !heldBelow &&
+    !bringsPieces &&
+    !sitsByLatestTurn
+      ? ("besideLatestTurn" as const)
+      : undefined);
   const besideLatest = (size: { readonly width: number; readonly height: number }) =>
     besideSpine([...solidObstacles, ...corridor], spine, size);
   const belowLatest = (size: { readonly width: number; readonly height: number }) => {
@@ -490,9 +522,9 @@ export function planDrawing(input: {
   const spot =
     holder !== undefined
       ? { ...local, ...insideOf(holder, live) }
-      : draw.place === "belowLatestTurn"
+      : place === "belowLatestTurn"
         ? slideDown(solidObstacles, belowLatest(local))
-        : draw.place === "besideLatestTurn"
+        : place === "besideLatestTurn"
           ? besideLatest(local)
           : origin === null
             ? placeDrawing(
@@ -547,10 +579,10 @@ export function planDrawing(input: {
     holder !== undefined
       ? []
       : [
-          ...(draw.place === undefined
+          ...(place === undefined
             ? []
             : placedHere.map(
-                (id) => [id, draw.place === "besideLatestTurn" ? "top" : "bottom"] as const,
+                (id) => [id, place === "besideLatestTurn" ? "top" : "bottom"] as const,
               )),
           ...[...broughtBelow].map((id) => [id, "bottom"] as const),
           ...[...broughtBeside].map((id) => [id, "top"] as const),

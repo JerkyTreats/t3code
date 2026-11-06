@@ -469,6 +469,31 @@ describe("a drawing beside the turn spine", () => {
     expect(Number(report.placed?.x)).toBeGreaterThanOrEqual(430);
   });
 
+  it("brings a drawing sent whole again in a later turn beside that turn", () => {
+    const first = applied(empty, {
+      drawingId: "r",
+      shapes: [card("a")],
+      place: "besideLatestTurn",
+    });
+    const later: ThreadCanvasElement = {
+      ...turn,
+      id: "turn-box:2",
+      y: 2000,
+      customData: { t3Turn: "2", t3TurnTitle: "Later" },
+    };
+    const { report } = plan(
+      { ...empty, elements: [...first.elements, later] },
+      { drawingId: "r", shapes: [card("a")] },
+    );
+    expect(report.placed).toMatchObject({ y: 2000 });
+    // Resending every piece as a patch is the same rewrite.
+    const patched = plan(
+      { ...empty, elements: [...first.elements, later] },
+      { drawingId: "r", shapes: [card("a")], patch: true },
+    );
+    expect(patched.report.placed).toMatchObject({ y: 2000 });
+  });
+
   it("brings named cards beside the latest turn and leaves the rest", () => {
     const first = applied(empty, { drawingId: "r", shapes: [card("a"), card("b")] });
     const before = live(first.elements, "r/a")!;
