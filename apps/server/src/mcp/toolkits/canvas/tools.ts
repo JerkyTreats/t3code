@@ -55,8 +55,26 @@ const CanvasReadTool = Tool.make("canvas_read", {
         type: Schema.String,
         drawnBy: Schema.Literals(["user", "agent"]),
         drawingId: Schema.optional(Schema.String),
-        card: Schema.optional(Schema.Literals(["markdown", "html"])),
+        card: Schema.optional(Schema.Literals(["markdown", "html", "surface"])),
         attachmentId: Schema.optional(Schema.String),
+        surface: Schema.optional(
+          Schema.Struct({
+            kind: Schema.Literals(["file", "preview", "terminal", "pull-request"]),
+            title: Schema.String,
+            relativePath: Schema.optional(Schema.String),
+            revealLine: Schema.optional(Schema.Int),
+            tabId: Schema.optional(Schema.String),
+            url: Schema.optional(Schema.String),
+            resourceId: Schema.optional(Schema.String),
+            projectId: Schema.optional(Schema.String),
+            repository: Schema.optional(Schema.String),
+            number: Schema.optional(Schema.Int),
+            host: Schema.optional(Schema.String),
+          }),
+        ).annotate({
+          description:
+            "A right panel surface the user placed on the canvas: a workspace file, a browser preview, a terminal, or a pull request.",
+        }),
         text: Schema.optional(Schema.String),
         covers: Schema.optional(Schema.String),
         start: Schema.optional(Schema.String),

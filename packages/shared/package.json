@@ -7,6 +7,10 @@
       "types": "./src/threadCanvasDrawing.ts",
       "import": "./src/threadCanvasDrawing.ts"
     },
+    "./canvasSurfaceCard": {
+      "types": "./src/canvasSurfaceCard.ts",
+      "import": "./src/canvasSurfaceCard.ts"
+    },
     "./changedFileKind": {
       "types": "./src/changedFileKind.ts",
       "import": "./src/changedFileKind.ts"

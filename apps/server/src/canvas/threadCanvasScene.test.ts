@@ -122,6 +122,59 @@ describe("describeCanvas", () => {
     expect(described.elements[1]).not.toHaveProperty("text");
   });
 
+  it("names a placed panel surface by its kind, identity and title, and skips a bad ref", () => {
+    const surfaceCard = (id: string, x: number, t3Card: Record<string, unknown>) => ({
+      id,
+      type: "rectangle",
+      x,
+      y: 0,
+      width: 400,
+      height: 300,
+      customData: { t3Card },
+    });
+    const described = describeCanvas(
+      scene([
+        surfaceCard("file", 0, {
+          kind: "surface",
+          surface: { kind: "file", relativePath: "src/app.ts", revealLine: 12 },
+          title: "app.ts",
+        }),
+        surfaceCard("pr", 500, {
+          kind: "surface",
+          surface: { kind: "pull-request", projectId: "p1", repository: "acme/app", number: 7 },
+        }),
+        // A host path cannot resolve on another client, so it is no surface card.
+        surfaceCard("host", 1000, {
+          kind: "surface",
+          surface: { kind: "file", relativePath: "/etc/hosts" },
+          title: "hosts",
+        }),
+      ]),
+    );
+    expect(described.elements).toEqual([
+      expect.objectContaining({
+        id: "file",
+        card: "surface",
+        drawnBy: "user",
+        surface: { kind: "file", relativePath: "src/app.ts", revealLine: 12, title: "app.ts" },
+      }),
+      expect.objectContaining({
+        id: "pr",
+        card: "surface",
+        surface: {
+          kind: "pull-request",
+          projectId: "p1",
+          repository: "acme/app",
+          number: 7,
+          title: "acme/app#7",
+        },
+      }),
+      expect.objectContaining({ id: "host" }),
+    ]);
+    expect(described.elements[2]).not.toHaveProperty("card");
+    expect(described.elements[2]).not.toHaveProperty("surface");
+  });
+
   it("places a user mark on the agent's smallest piece under it, or beside the nearest", () => {
     const described = describeCanvas(
       scene([

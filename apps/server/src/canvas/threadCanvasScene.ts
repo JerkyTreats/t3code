@@ -1,4 +1,5 @@
 import type { ThreadCanvasElement, ThreadCanvasScene } from "@t3tools/contracts";
+import { canvasSurfaceCardOf } from "@t3tools/shared/canvasSurfaceCard";
 import { isStaleDrawingCopy, turnAnchorOf, turnSpineOf } from "@t3tools/shared/threadCanvasDrawing";
 
 import { originOf } from "./threadCanvasPlan.ts";
@@ -174,8 +175,15 @@ export function describeCanvas(
       null,
     );
     const card = recordOf(customData.t3Card);
-    const cardKind: "markdown" | "html" | undefined =
-      card.kind === "markdown" ? "markdown" : card.kind === "html" ? "html" : undefined;
+    const surfaceCard = canvasSurfaceCardOf(card);
+    const cardKind: "markdown" | "html" | "surface" | undefined =
+      card.kind === "markdown"
+        ? "markdown"
+        : card.kind === "html"
+          ? "html"
+          : surfaceCard !== null
+            ? "surface"
+            : undefined;
     const text =
       labels.get(id) ??
       (typeof element.text === "string"
@@ -191,7 +199,8 @@ export function describeCanvas(
       pieces.push({
         id,
         box,
-        ...(cardKind === undefined ? {} : { card: cardKind }),
+        // Only the user places surface cards, so an agent piece is never one.
+        ...(cardKind === undefined || cardKind === "surface" ? {} : { card: cardKind }),
         ...(text === undefined ? {} : { text }),
       });
     }
@@ -207,6 +216,9 @@ export function describeCanvas(
         ...(cardKind === "html" && typeof card.attachmentId === "string"
           ? { attachmentId: card.attachmentId }
           : {}),
+        ...(surfaceCard === null
+          ? {}
+          : { surface: { ...surfaceCard.surface, title: surfaceCard.title } }),
         ...(text === undefined ? {} : { text }),
         ...(typeof covers === "string" ? { covers } : {}),
         ...(typeof start === "string" ? { start } : {}),
