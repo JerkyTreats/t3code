@@ -232,6 +232,84 @@ export function turnSpineOf(
   };
 }
 
+interface CanvasBox {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+const BESIDE_GAP_PX = 32;
+// How far the corridor below the latest turn reaches: past anything a canvas holds.
+const CORRIDOR_DEPTH_PX = 1_000_000;
+
+export function boxesOverlap(left: CanvasBox, right: CanvasBox) {
+  return (
+    left.x < right.x + right.width &&
+    right.x < left.x + left.width &&
+    left.y < right.y + right.height &&
+    right.y < left.y + left.height
+  );
+}
+
+/** Where the next turns land, below the latest turn. Only what is asked to go below it may sit there. */
+export function turnCorridorOf(spine: TurnSpine | null): ReadonlyArray<CanvasBox> {
+  return spine === null
+    ? []
+    : [
+        {
+          x: spine.left,
+          y: spine.latestTurn.y + spine.latestTurn.height,
+          width: spine.right - spine.left,
+          height: CORRIDOR_DEPTH_PX,
+        },
+      ];
+}
+
+/** Slides a box down past whatever it would cover. */
+export function slideDown<Spot extends CanvasBox>(obstacles: ReadonlyArray<CanvasBox>, spot: Spot) {
+  let { y } = spot;
+  for (;;) {
+    const blocker = obstacles.find((box) => boxesOverlap({ ...spot, y }, box));
+    if (blocker === undefined) return { ...spot, y };
+    y = blocker.y + blocker.height + BESIDE_GAP_PX;
+  }
+}
+
+/** Slides a box sideways, away from the spine, past whatever it would cover. */
+export function slideOut<Spot extends CanvasBox>(
+  obstacles: ReadonlyArray<CanvasBox>,
+  spot: Spot,
+  direction: 1 | -1,
+) {
+  let { x } = spot;
+  for (;;) {
+    const blocker = obstacles.find((box) => boxesOverlap({ ...spot, x }, box));
+    if (blocker === undefined) return { ...spot, x };
+    x =
+      direction === 1
+        ? blocker.x + blocker.width + BESIDE_GAP_PX
+        : blocker.x - spot.width - BESIDE_GAP_PX;
+  }
+}
+
+/**
+ * A spot level with the latest turn, to the right or left of the spine, whichever lies nearer
+ * once it slides clear of what is already there. Without turns, it goes where a first turn would.
+ * Agents' besideLatestTurn drawings and cards the user places from the panel both land here.
+ */
+export function besideSpine(
+  obstacles: ReadonlyArray<CanvasBox>,
+  spine: TurnSpine | null,
+  size: { readonly width: number; readonly height: number },
+) {
+  if (spine === null) return slideDown(obstacles, { ...size, x: -size.width / 2, y: 0 });
+  const y = spine.latestTurn.y;
+  const right = slideOut(obstacles, { ...size, x: spine.right + BESIDE_GAP_PX, y }, 1);
+  const left = slideOut(obstacles, { ...size, x: spine.left - BESIDE_GAP_PX - size.width, y }, -1);
+  return right.x - spine.right <= spine.left - (left.x + left.width) ? right : left;
+}
+
 /**
  * When the server last wrote an element: an agent's drawing (`t3Drawing`), a user's mark it
  * carried along with the card under it (`t3Follow`), or a user's box it grew to hold a drawing

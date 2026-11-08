@@ -3,6 +3,8 @@ import type { ThreadCanvasElement, ThreadCanvasScene, ThreadCanvasShape } from "
 import {
   anchorTo,
   arrowEnds,
+  besideSpine,
+  boxesOverlap,
   buildDrawingElements,
   drawingShapesOf,
   holdsTurnAnchor,
@@ -10,9 +12,12 @@ import {
   labelOverflows,
   type PlacedShape,
   shapeSize,
+  slideDown,
+  slideOut,
   TURN_ANCHOR_KEY,
   type TurnAnchor,
   turnAnchorOf,
+  turnCorridorOf,
   turnSpineOf,
 } from "@t3tools/shared/threadCanvasDrawing";
 
@@ -23,8 +28,6 @@ const TITLE_GAP_PX = 48;
 // The widest row of cards below a turn: three wide cards side by side.
 // Two cards and a gap, as in canvasDiagram: cards brought beside the turn read without panning.
 const MAX_ROW_WIDTH_PX = 1100;
-// How far the corridor below the latest turn reaches: past anything a canvas holds.
-const CORRIDOR_DEPTH_PX = 1_000_000;
 // How far a drawing sits inside a box the user drew for it, from its edges and its title.
 const HOLDER_PADDING_PX = 24;
 const HOLDER_TYPES = new Set(["rectangle", "ellipse", "diamond", "frame"]);
@@ -92,15 +95,6 @@ const drawingOf = (element: ThreadCanvasElement) => {
     : null;
 };
 const hasLines = (shape: ThreadCanvasShape) => shape.type === "arrow" || shape.type === "line";
-
-function overlaps(left: Box, right: Box) {
-  return (
-    left.x < right.x + right.width &&
-    right.x < left.x + left.width &&
-    left.y < right.y + right.height &&
-    right.y < left.y + left.height
-  );
-}
 
 function boundsOf(boxes: ReadonlyArray<Box>): Box {
   const left = Math.min(...boxes.map((box) => box.x));
@@ -247,42 +241,6 @@ function layoutShapes(shapes: ReadonlyArray<ThreadCanvasShape>, direction: "righ
   return positions;
 }
 
-/** Slides a box down past whatever it would cover. */
-function slideDown(obstacles: ReadonlyArray<Box>, spot: Box) {
-  let { y } = spot;
-  for (;;) {
-    const blocker = obstacles.find((box) => overlaps({ ...spot, y }, box));
-    if (blocker === undefined) return { ...spot, y };
-    y = blocker.y + blocker.height + GAP_PX;
-  }
-}
-
-/** Slides a box sideways, away from the spine, past whatever it would cover. */
-function slideOut(obstacles: ReadonlyArray<Box>, spot: Box, direction: 1 | -1) {
-  let { x } = spot;
-  for (;;) {
-    const blocker = obstacles.find((box) => overlaps({ ...spot, x }, box));
-    if (blocker === undefined) return { ...spot, x };
-    x = direction === 1 ? blocker.x + blocker.width + GAP_PX : blocker.x - spot.width - GAP_PX;
-  }
-}
-
-/**
- * A spot level with the latest turn, to the right or left of the spine, whichever lies nearer
- * once it slides clear of what is already there. Without turns, it goes where a first turn would.
- */
-function besideSpine(
-  obstacles: ReadonlyArray<Box>,
-  spine: ReturnType<typeof turnSpineOf>,
-  size: { readonly width: number; readonly height: number },
-) {
-  if (spine === null) return slideDown(obstacles, { ...size, x: -size.width / 2, y: 0 });
-  const y = spine.latestTurn.y;
-  const right = slideOut(obstacles, { ...size, x: spine.right + GAP_PX, y }, 1);
-  const left = slideOut(obstacles, { ...size, x: spine.left - GAP_PX - size.width, y }, -1);
-  return right.x - spine.right <= spine.left - (left.x + left.width) ? right : left;
-}
-
 /**
  * Cards in rows, left to right in the order given, each row as tall as its tallest card, so no
  * two overlap whatever sizes the agent picked.
@@ -319,7 +277,7 @@ function placeDrawing(
   size: Box,
 ) {
   if (near === null) return besideSpine(obstacles, spine, size);
-  const free = (spot: Box) => !obstacles.some((box) => overlaps(spot, box));
+  const free = (spot: Box) => !obstacles.some((box) => boxesOverlap(spot, box));
   const right = { ...size, x: near.x + near.width + GAP_PX, y: near.y };
   const left = { ...size, x: near.x - size.width - GAP_PX, y: near.y };
   const under = { ...size, x: near.x, y: near.y + near.height + GAP_PX };
@@ -458,17 +416,7 @@ export function planDrawing(input: {
     .map(boxOf);
   const spine = turnSpineOf(turns.map(boxOf));
   // Where the next turns land. Only a drawing asked to go below the turn may sit in it.
-  const corridor =
-    spine === null
-      ? []
-      : [
-          {
-            x: spine.left,
-            y: spine.latestTurn.y + spine.latestTurn.height,
-            width: spine.right - spine.left,
-            height: CORRIDOR_DEPTH_PX,
-          },
-        ];
+  const corridor = turnCorridorOf(spine);
   // A drawing sent whole again in a later turn is the answer to that turn: it comes beside the latest
   // turn unless it already sits level with it, so an update never stays up by an older turn.
   const sitsByLatestTurn =
@@ -932,7 +880,7 @@ function reportDrawing(input: {
     overlaps: [
       ...new Set(
         solid.flatMap((box) =>
-          obstacles.flatMap((other) => (overlaps(box, other) ? [other.name] : [])),
+          obstacles.flatMap((other) => (boxesOverlap(box, other) ? [other.name] : [])),
         ),
       ),
     ],
