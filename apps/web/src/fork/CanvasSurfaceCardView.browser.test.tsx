@@ -100,6 +100,11 @@ describe("a file placed on the canvas from the panel", () => {
       return found!;
     });
     expect(card.textContent).toContain("src/app.ts");
+    const sourceText = () =>
+      deepElements(card)
+        .map((element) => (element.childElementCount === 0 ? element.textContent : ""))
+        .join("");
+    await vi.waitFor(() => expect(sourceText()).toContain("answer = 42"));
     // Nothing in the card can be typed into: the panel's editor is the only editable copy.
     expect(
       deepElements(card).filter(
@@ -123,11 +128,11 @@ describe("a file placed on the canvas from the panel", () => {
     const canvas = document.querySelector(".excalidraw__canvas.interactive")!;
     const zoom = () => Number(/scale\(([\d.]+)\)/.exec(layer.style.transform)?.[1] ?? 1);
     // Excalidraw takes one wheel zoom per frame, so each step waits for the last to land.
-    while (zoom() >= 0.45) {
+    const wheelZoom = async (deltaY: number) => {
       const before = layer.style.transform;
       canvas.dispatchEvent(
         new WheelEvent("wheel", {
-          deltaY: 100,
+          deltaY,
           ctrlKey: true,
           clientX: 600,
           clientY: 350,
@@ -136,9 +141,17 @@ describe("a file placed on the canvas from the panel", () => {
         }),
       );
       await vi.waitFor(() => expect(layer.style.transform).not.toBe(before));
-    }
+    };
+    while (zoom() >= 0.45) await wheelZoom(100);
     await vi.waitFor(() => expect(card.querySelector("[data-surface-live-view]")).toBeNull());
     expect(card.textContent).toContain("Zoom in or scroll to read.");
+
+    // A same-length edit while the card is away must not come back with the old highlighting.
+    state.file = { ...state.file, contents: "export const answer = 43;\n" };
+    while (zoom() < 0.5) await wheelZoom(-100);
+    await vi.waitFor(() => expect(card.querySelector("[data-surface-live-view]")).not.toBeNull());
+    await vi.waitFor(() => expect(sourceText()).toContain("answer = 43"));
+    expect(sourceText()).not.toContain("answer = 42");
 
     card.querySelector<HTMLButtonElement>("button")!.click();
     const panel = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef);

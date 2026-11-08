@@ -14,6 +14,7 @@ import {
 import { FileText, Globe2, TerminalSquare } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
 
+import { projectFileCacheKey } from "../components/files/fileContentRevision";
 import { useProjectFileQuery } from "../components/files/projectFilesQueryState";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Button } from "../components/ui/button";
@@ -157,7 +158,7 @@ function FileCardBody(props: {
         <ReadOnlySourcePreview
           name={props.surface.relativePath}
           text={file.data.contents}
-          cacheKey={`canvas:${props.threadRef.environmentId}:${workspace.cwd}:${props.surface.relativePath}:${file.data.contents.length}`}
+          cacheKey={`canvas:${props.threadRef.environmentId}:${projectFileCacheKey(workspace.cwd ?? "", props.surface.relativePath, file.data.contents)}`}
         />
       </Suspense>
       {/* Wheel and drag over the source pan the board until a click lifts this cover to scroll
@@ -179,18 +180,23 @@ function usePullRequestAvailability(
   surface: Extract<CanvasSurfaceRef, { kind: "pull-request" }>,
   live: boolean,
 ) {
+  // The board's own thread arrives in the same snapshot as the projects, so until it does the
+  // project list is not yet known; after it, a missing project is gone, not loading.
+  const known = useQuietThreadShell(threadRef) !== null;
   const projects = useProjects();
-  const environmentProjects = projects.filter(
-    (project) => project.environmentId === threadRef.environmentId,
+  const member = projects.some(
+    (project) =>
+      project.environmentId === threadRef.environmentId && project.id === surface.projectId,
   );
   const reference = {
     projectId: surface.projectId as ProjectId,
     repository: surface.repository,
     number: surface.number,
   };
-  // Fetched only while the card is in view; the summary cache answers otherwise.
-  useEnvironmentQuery(
-    live
+  // Fetched only while the card is in view and its project exists; the summary cache answers
+  // otherwise.
+  const detail = useEnvironmentQuery(
+    live && member
       ? pullRequestEnvironment.detail({
           environmentId: threadRef.environmentId,
           input: {
@@ -202,13 +208,14 @@ function usePullRequestAvailability(
       : null,
   );
   const summary = useSharedPullRequestSummary(threadRef.environmentId, reference);
-  const availability: Availability =
-    environmentProjects.length === 0
-      ? LOADING
-      : environmentProjects.some((project) => project.id === surface.projectId)
-        ? READY
-        : { state: "unavailable", reason: "Its project was removed." };
-  return { availability, title: summary?.title ?? null };
+  const availability: Availability = !known
+    ? LOADING
+    : !member
+      ? { state: "unavailable", reason: "Its project was removed." }
+      : detail.error !== null
+        ? { state: "error", reason: detail.error }
+        : READY;
+  return { availability, title: summary?.title ?? detail.data?.title ?? null };
 }
 
 function useTerminalAvailability(
