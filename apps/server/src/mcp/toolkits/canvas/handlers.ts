@@ -17,6 +17,8 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { CanvasEditToolkit, CanvasPreviewToolkit, type CanvasToolkit } from "./tools.ts";
 
+const isDiagramError = Schema.is(DiagramError);
+
 const toFailure = (error: ThreadCanvasError) =>
   new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message });
 
@@ -134,7 +136,7 @@ const handlers = {
               catch: (error) =>
                 new OrchestratorMcpFailure({
                   code: "invalid_request",
-                  message: `Could not read the diagram: ${error instanceof DiagramError ? error.message : String(error)}`,
+                  message: `Could not read the diagram: ${isDiagramError(error) ? error.message : String(error)}`,
                 }),
             });
       const shapes = yield* Effect.forEach(diagram ?? input.shapes ?? [], (shape) => {

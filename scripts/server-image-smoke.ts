@@ -6,6 +6,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
+import * as Schema from "effect/Schema";
 import { forkReleaseVersion } from "./lib/fork-release-version.mjs";
 
 const MAX_CAPTURE_BYTES = 64_000;
@@ -74,15 +75,16 @@ export interface SmokeSignalSource {
   readonly remove: (signal: SmokeSignal, handler: () => void) => void;
 }
 
-export class ServerImageSmokeInterruptedError extends Error {
-  readonly signal: SmokeSignal;
-
-  constructor(signal: SmokeSignal) {
-    super(`Server image smoke interrupted by ${signal} after bounded cleanup.`);
-    this.name = "ServerImageSmokeInterruptedError";
-    this.signal = signal;
+export class ServerImageSmokeInterruptedError extends Schema.TaggedError<ServerImageSmokeInterruptedError>()(
+  "ServerImageSmokeInterruptedError",
+  { signal: Schema.Literals(["SIGINT", "SIGTERM"]) },
+) {
+  override get message(): string {
+    return `Server image smoke interrupted by ${this.signal} after bounded cleanup.`;
   }
 }
+
+const isSmokeInterrupted = Schema.is(ServerImageSmokeInterruptedError);
 
 function appendBounded(current: string, chunk: Uint8Array | string): string {
   return `${current}${chunk.toString()}`.slice(-MAX_CAPTURE_BYTES);
@@ -644,7 +646,7 @@ export async function runServerImageSmokeWithSignals(
     const handler = () => {
       if (interruptedBy !== undefined) return;
       interruptedBy = signal;
-      controller.abort(new ServerImageSmokeInterruptedError(signal));
+      controller.abort(new ServerImageSmokeInterruptedError({ signal }));
     };
     handlers.set(signal, handler);
     signalSource.add(signal, handler);
@@ -661,10 +663,12 @@ export async function runServerImageSmokeWithSignals(
       },
       dependencies,
     );
-    if (interruptedBy !== undefined) throw new ServerImageSmokeInterruptedError(interruptedBy);
+    if (interruptedBy !== undefined)
+      throw new ServerImageSmokeInterruptedError({ signal: interruptedBy });
     return result;
   } catch (error) {
-    if (interruptedBy !== undefined) throw new ServerImageSmokeInterruptedError(interruptedBy);
+    if (interruptedBy !== undefined)
+      throw new ServerImageSmokeInterruptedError({ signal: interruptedBy });
     throw error;
   } finally {
     for (const [signal, handler] of handlers) signalSource.remove(signal, handler);
@@ -714,7 +718,7 @@ if (import.meta.main) {
       `Server image artifact ${result.digest} passed the non-root runtime and Codex provider smoke.`,
     );
   } catch (error) {
-    if (error instanceof ServerImageSmokeInterruptedError) {
+    if (isSmokeInterrupted(error)) {
       console.error(error.message);
       process.exitCode = error.signal === "SIGINT" ? 130 : 143;
     } else {

@@ -7,6 +7,7 @@ import {
   type DesktopSshEnvironmentTarget,
   type DesktopUpdateState,
   type DesktopWslState,
+  type EnvironmentId,
 } from "@t3tools/contracts";
 import {
   getDesktopUpdateDownloadedVersion,
@@ -262,4 +263,23 @@ export function endpointDefaultPreferenceKey(endpoint: AdvertisedEndpoint): stri
   } catch {}
 
   return `${endpoint.provider.id}:${endpoint.reachability}:${scheme}:${endpoint.label}`;
+}
+
+/** An explicit choice while it is listed, else the primary, else a connected environment. */
+export function resolveAccessEnvironmentId(input: {
+  readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly environments: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly connected: boolean;
+  }>;
+  readonly selected: EnvironmentId | null;
+}): EnvironmentId | null {
+  const isListed = (environmentId: EnvironmentId | null) =>
+    input.environments.some((environment) => environment.environmentId === environmentId);
+  if (isListed(input.selected)) return input.selected;
+  if (isListed(input.primaryEnvironmentId)) return input.primaryEnvironmentId;
+  return (
+    (input.environments.find((environment) => environment.connected) ?? input.environments[0])
+      ?.environmentId ?? null
+  );
 }

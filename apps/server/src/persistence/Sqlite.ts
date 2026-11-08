@@ -11,7 +11,7 @@ import { runMigrations } from "./Migrations.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
 import * as ServerConfig from "../config.ts";
 
-const WAL_SIZE_LIMIT_BYTES = 32 * 1024 * 1024;
+const WAL_SIZE_LIMIT_BYTES = 128 * 1024 * 1024;
 
 // The fork setup hook runs the pre-42 rollback backup (F17-D06) before migrations.
 const setup = <E, R>(beforeMigrations: Effect.Effect<void, E, R>) =>

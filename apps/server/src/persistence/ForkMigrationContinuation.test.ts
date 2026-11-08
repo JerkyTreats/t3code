@@ -437,6 +437,7 @@ layer("fork migration continuation", (it) => {
           [101, "RepairBooleanSettledOverride"],
           [102, "DropOrchestrationEventCorrelationIndex"],
           [103, "DelegatedRecoveryIndexes"],
+          [104, "ScheduledTaskThreadMode"],
         ],
       );
 

@@ -9,8 +9,6 @@ export {
   __resetServerAuthBootstrapForTests,
 } from "./auth";
 
-export { usePrimarySessionState } from "./sessionState";
-
 export {
   DesktopEnvironmentBootstrapIncompleteError,
   PrimaryEnvironmentProtocolUnsupportedError,

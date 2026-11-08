@@ -1,3 +1,5 @@
+import * as Schema from "effect/Schema";
+
 import dagre from "@dagrejs/dagre";
 import type { ThreadCanvasShape } from "@t3tools/contracts";
 import { shapeSize } from "@t3tools/shared/threadCanvasDrawing";
@@ -8,7 +10,9 @@ import { shapeSize } from "@t3tools/shared/threadCanvasDrawing";
  * and a "`markdown`" label is a card. Positions, sizes and colours are decided here, not by the agent.
  */
 
-export class DiagramError extends Error {}
+export class DiagramError extends Schema.TaggedError<DiagramError>()("DiagramError", {
+  message: Schema.String,
+}) {}
 
 type Direction = "down" | "right";
 type Role = "lead" | "support" | "aside";
@@ -135,14 +139,15 @@ export function parseDiagram(source: string) {
   const nodeRef = (text: string, at: number) => {
     const rest = text.slice(at);
     const id = ID.exec(rest)?.[0];
-    if (id === undefined) throw new DiagramError(`Expected a node id at "${rest.slice(0, 30)}".`);
+    if (id === undefined)
+      throw new DiagramError({ message: `Expected a node id at "${rest.slice(0, 30)}".` });
     let end = at + id.length;
     let label: { text: string; markdown: boolean } | null = null;
     let shape: DiagramNode["shape"] = "rectangle";
     for (const [open, close, kind] of SHAPES) {
       if (!text.startsWith(open, end)) continue;
       const closeAt = text.indexOf(close, end + open.length);
-      if (closeAt < 0) throw new DiagramError(`Unclosed ${open} after ${id}.`);
+      if (closeAt < 0) throw new DiagramError({ message: `Unclosed ${open} after ${id}.` });
       label = unquote(text.slice(end + open.length, closeAt));
       shape = kind;
       end = closeAt + close.length;
@@ -214,20 +219,22 @@ export function parseDiagram(source: string) {
         children: [],
         classes: [],
       };
-      if (nodes.has(id)) throw new DiagramError(`${id} is both a node and a subgraph.`);
+      if (nodes.has(id))
+        throw new DiagramError({ message: `${id} is both a node and a subgraph.` });
       groups.set(id, group);
       stack.at(-1)!.children.push(group);
       stack.push(group);
       continue;
     }
     if (head === "end") {
-      if (stack.length === 1) throw new DiagramError("An end with no subgraph open.");
+      if (stack.length === 1) throw new DiagramError({ message: "An end with no subgraph open." });
       stack.pop();
       continue;
     }
     if (head === "class") {
       const [, ids = "", name] = words;
-      if (name === undefined) throw new DiagramError(`class needs ids and a name: "${statement}".`);
+      if (name === undefined)
+        throw new DiagramError({ message: `class needs ids and a name: "${statement}".` });
       for (const id of ids.split(",")) pendingClasses.push([id.trim(), name]);
       continue;
     }
@@ -239,7 +246,8 @@ export function parseDiagram(source: string) {
       const rest = statement.slice(end);
       if (rest.trim() === "") break;
       const edge = EDGE.exec(rest);
-      if (edge === null) throw new DiagramError(`Could not read "${rest.trim().slice(0, 40)}".`);
+      if (edge === null)
+        throw new DiagramError({ message: `Could not read "${rest.trim().slice(0, 40)}".` });
       const label = edge[2] ?? edge[3] ?? edge[4] ?? edge[5] ?? null;
       const line = edge[1] === "---" || edge[1] === "===" || edge[1] === "-.-";
       const next = nodeList(statement, end + edge[0].length);
@@ -257,16 +265,18 @@ export function parseDiagram(source: string) {
       end = next.end;
     }
   }
-  if (stack.length > 1) throw new DiagramError(`Subgraph ${stack.at(-1)!.id} has no end.`);
+  if (stack.length > 1)
+    throw new DiagramError({ message: `Subgraph ${stack.at(-1)!.id} has no end.` });
   for (const [id, name] of pendingClasses) {
     const target = nodes.get(id) ?? groups.get(id);
-    if (target === undefined) throw new DiagramError(`class names ${id}, which is not drawn.`);
+    if (target === undefined)
+      throw new DiagramError({ message: `class names ${id}, which is not drawn.` });
     target.classes.push(name);
   }
   for (const edge of edges) {
     for (const id of [edge.from, edge.to]) {
       if (!nodes.has(id) && !groups.has(id))
-        throw new DiagramError(`Edge names ${id}, which is not drawn.`);
+        throw new DiagramError({ message: `Edge names ${id}, which is not drawn.` });
     }
   }
   return { root, nodes, groups, edges };
@@ -565,6 +575,7 @@ export function compileDiagram(source: string): ReadonlyArray<ThreadCanvasShape>
     );
     x += 32 + Math.ceil(words.length * 16 * 0.6) + GAP_PX;
   }
-  if (nodes.size === 0 && groups.size === 1) throw new DiagramError("The diagram draws nothing.");
+  if (nodes.size === 0 && groups.size === 1)
+    throw new DiagramError({ message: "The diagram draws nothing." });
   return [...body.shapes, ...arrows, ...legend];
 }

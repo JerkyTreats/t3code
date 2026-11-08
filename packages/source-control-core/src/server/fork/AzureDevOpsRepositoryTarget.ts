@@ -104,6 +104,14 @@ export function azureDevOpsRepositoryTargetFromOrigin(
 export function azureDevOpsRepositoryTargetFromRemoteUrl(
   remoteUrl: string,
 ): AzureDevOpsRepositoryTarget | null {
+  const target = parseAzureDevOpsRemoteUrl(remoteUrl);
+  // `az` replaces any argument value starting with `@` by the contents of that local file.
+  return target === null || target.project.startsWith("@") || target.repository.startsWith("@")
+    ? null
+    : target;
+}
+
+function parseAzureDevOpsRemoteUrl(remoteUrl: string): AzureDevOpsRepositoryTarget | null {
   const normalizedRemoteUrl = remoteUrl.trim();
   const scpMatch = /^[^@\s]+@([^:/\s]+):v3\/([^/\s]+)\/([^/\s]+)\/(.+)$/iu.exec(
     normalizedRemoteUrl,

@@ -1,12 +1,80 @@
 import { describe, expect, it } from "@effect/vitest";
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
 import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubMediaFetch from "./gitHubMediaFetch.ts";
+import * as GitHubRest from "./GitHubRest.ts";
+
+const PR_REPOSITORY = "enterprise/private";
+
+/** An SSO organization: the upload URL answers with a sign-in page, a rendered signed URL with bytes. */
+const makeSsoFixture = (uploadUrl: string) => {
+  const state = { account: "account-a", expired: new Set<string>() };
+  const rendered: Array<GitHubRest.GitHubRestInput> = [];
+  const signedUrls: Array<string> = [];
+  const requests: Array<{ url: string; authorization?: string; range?: string }> = [];
+  const credential = (host: string) =>
+    Effect.sync(() => ({
+      host,
+      token: Redacted.make(state.account),
+      fingerprint: state.account,
+      source: "gh" as const,
+    }));
+  const layer = Layer.mergeAll(
+    Layer.mock(GitHubCredentials.GitHubCredentials)({ get: credential }),
+    Layer.mock(GitHubRest.GitHubRest)({
+      rest: (input) =>
+        Effect.sync(() => {
+          rendered.push(input);
+          const signed = `https://private-user-images.githubusercontent.com/1/upload.mp4?jwt=${state.account}-${rendered.length}&x=1`;
+          const inRepository =
+            (input.body as { readonly context?: string } | undefined)?.context === PR_REPOSITORY;
+          if (inRepository) signedUrls.push(signed);
+          return {
+            status: 200,
+            headers: {},
+            body: `<p><img src="${inRepository ? signed.replaceAll("&", "&amp;") : uploadUrl}" alt=""></p>`,
+            truncated: false,
+            invalidUtf8: false,
+          };
+        }),
+    }),
+    Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make((request) =>
+        Effect.sync(() => {
+          requests.push({
+            url: request.url,
+            ...(request.headers.authorization
+              ? { authorization: request.headers.authorization }
+              : {}),
+            ...(request.headers.range ? { range: request.headers.range } : {}),
+          });
+          if (request.url === uploadUrl) {
+            return HttpClientResponse.fromWeb(
+              request,
+              new Response("<html>Sign in with SSO</html>", {
+                headers: { "content-type": "text/html; charset=utf-8" },
+              }),
+            );
+          }
+          expect(signedUrls).toContain(request.url);
+          const status = state.expired.has(request.url) ? 403 : request.headers.range ? 206 : 200;
+          return HttpClientResponse.fromWeb(
+            request,
+            new Response(null, { status, headers: { "content-type": "video/mp4" } }),
+          );
+        }),
+      ),
+    ),
+  );
+  return { layer, state, rendered, signedUrls, requests };
+};
 
 const origin = {
   provider: {
@@ -18,19 +86,25 @@ const origin = {
   remoteUrl: "git@github.com:owner/repo.git",
 };
 
+/** The exact origin of the checkout that shows `PR_REPOSITORY`'s pull request. */
+const prOrigin = { ...origin, remoteUrl: `https://github.com/${PR_REPOSITORY}.git` };
+
 const signedIn = (onLookup: () => void = () => {}) =>
-  Layer.mock(GitHubCredentials.GitHubCredentials)({
-    get: (host) =>
-      Effect.sync(() => {
-        onLookup();
-        return {
-          host,
-          token: Redacted.make("signed-in"),
-          source: "gh" as const,
-          fingerprint: "fingerprint",
-        };
-      }),
-  });
+  Layer.merge(
+    Layer.mock(GitHubRest.GitHubRest)({}),
+    Layer.mock(GitHubCredentials.GitHubCredentials)({
+      get: (host) =>
+        Effect.sync(() => {
+          onLookup();
+          return {
+            host,
+            token: Redacted.make("signed-in"),
+            source: "gh" as const,
+            fingerprint: "fingerprint",
+          };
+        }),
+    }),
+  );
 
 describe("GitHubMediaFetch", () => {
   it.effect("loads private media immediately after login with the GitHub credential", () => {
@@ -50,17 +124,20 @@ describe("GitHubMediaFetch", () => {
       expect(authorizations).toEqual([undefined, "Bearer signed-in", "Bearer signed-in"]);
     }).pipe(
       Effect.provide(
-        Layer.mock(GitHubCredentials.GitHubCredentials)({
-          get: (host) =>
-            ++lookups === 1
-              ? Effect.fail(new GitHubCredentials.GitHubNotSignedInError({ host }))
-              : Effect.succeed({
-                  host,
-                  token: Redacted.make("signed-in"),
-                  source: "gh" as const,
-                  fingerprint: "fingerprint",
-                }),
-        }),
+        Layer.merge(
+          Layer.mock(GitHubRest.GitHubRest)({}),
+          Layer.mock(GitHubCredentials.GitHubCredentials)({
+            get: (host) =>
+              ++lookups === 1
+                ? Effect.fail(new GitHubCredentials.GitHubNotSignedInError({ host }))
+                : Effect.succeed({
+                    host,
+                    token: Redacted.make("signed-in"),
+                    source: "gh" as const,
+                    fingerprint: "fingerprint",
+                  }),
+          }),
+        ),
       ),
       Effect.provideService(
         HttpClient.HttpClient,
@@ -98,15 +175,18 @@ describe("GitHubMediaFetch", () => {
       ]);
     }).pipe(
       Effect.provide(
-        Layer.mock(GitHubCredentials.GitHubCredentials)({
-          get: (host) =>
-            Effect.succeed({
-              host,
-              token: Redacted.make("signed-in"),
-              source: "gh" as const,
-              fingerprint: "fingerprint",
-            }),
-        }),
+        Layer.merge(
+          Layer.mock(GitHubRest.GitHubRest)({}),
+          Layer.mock(GitHubCredentials.GitHubCredentials)({
+            get: (host) =>
+              Effect.succeed({
+                host,
+                token: Redacted.make("signed-in"),
+                source: "gh" as const,
+                fingerprint: "fingerprint",
+              }),
+          }),
+        ),
       ),
       Effect.provideService(
         HttpClient.HttpClient,
@@ -212,5 +292,93 @@ describe("GitHubMediaFetch", () => {
       ),
       Effect.scoped,
     );
+  });
+
+  it.effect(
+    "renders SSO uploads in the PR repository and reuses the signed URL for a range",
+    () => {
+      const url = "https://github.com/user-attachments/assets/explicit-pr-context";
+      const fixture = makeSsoFixture(url);
+      return Effect.gen(function* () {
+        const fetchMedia = yield* GitHubMediaFetch.make;
+        const request = { url, headers: {}, repository: PR_REPOSITORY, origin: prOrigin };
+        expect((yield* fetchMedia(request))?.status).toBe(200);
+        expect((yield* fetchMedia({ ...request, headers: { range: "bytes=2-5" } }))?.status).toBe(
+          206,
+        );
+        expect(fixture.rendered).toHaveLength(1);
+        expect(fixture.rendered[0]).toMatchObject({
+          host: "github.com",
+          method: "POST",
+          path: "markdown",
+          accept: "text/html",
+          body: { text: `![](${url})`, mode: "gfm", context: PR_REPOSITORY },
+        });
+        expect(fixture.requests).toEqual([
+          { url, authorization: "Bearer account-a" },
+          { url: fixture.signedUrls[0] },
+          { url: fixture.signedUrls[0], range: "bytes=2-5" },
+        ]);
+      }).pipe(Effect.provide(fixture.layer), Effect.scoped);
+    },
+  );
+
+  it.effect("renders a legacy upload in the repository its path names", () => {
+    const url = `https://github.com/${PR_REPOSITORY}/assets/123/legacy`;
+    const fixture = makeSsoFixture(url);
+    return Effect.gen(function* () {
+      const fetchMedia = yield* GitHubMediaFetch.make;
+      const response = yield* fetchMedia({
+        url,
+        headers: {},
+        repository: "personal/unrelated",
+        origin: prOrigin,
+      });
+      expect(response?.status).toBe(200);
+      expect(fixture.rendered.map((input) => input.body)).toEqual([
+        { text: `![](${url})`, mode: "gfm", context: PR_REPOSITORY },
+      ]);
+    }).pipe(Effect.provide(fixture.layer), Effect.scoped);
+  });
+
+  it.effect("renders a fresh signed URL after an account switch, early expiry, or its TTL", () => {
+    const url = "https://github.com/user-attachments/assets/cache-lifecycle";
+    const fixture = makeSsoFixture(url);
+    const request = { url, headers: {}, repository: PR_REPOSITORY, origin: prOrigin };
+    return Effect.gen(function* () {
+      const fetchMedia = yield* GitHubMediaFetch.make;
+      yield* fetchMedia(request);
+      fixture.state.account = "account-b";
+      yield* fetchMedia(request);
+      expect(fixture.rendered).toHaveLength(2);
+
+      fixture.state.expired.add(fixture.signedUrls.at(-1)!);
+      expect((yield* fetchMedia(request))?.status).toBe(200);
+      expect(fixture.rendered).toHaveLength(3);
+
+      yield* TestClock.adjust("6 minutes");
+      yield* fetchMedia(request);
+      expect(fixture.rendered).toHaveLength(4);
+      expect(fixture.requests.at(-1)?.url).toBe(fixture.signedUrls.at(-1));
+    }).pipe(Effect.provide(fixture.layer), Effect.scoped);
+  });
+
+  // Fork F06: the credential renders an upload's signed URL only in the exact origin repository.
+  it.effect("renders an SSO upload only in the exact origin repository", () => {
+    const url = "https://github.com/user-attachments/assets/outside-origin";
+    const fixture = makeSsoFixture(url);
+    return Effect.gen(function* () {
+      const fetchMedia = yield* GitHubMediaFetch.make;
+      for (const requestOrigin of [origin, null, { ...prOrigin, remoteName: "upstream" }]) {
+        const response = yield* fetchMedia({
+          url,
+          headers: {},
+          repository: PR_REPOSITORY,
+          origin: requestOrigin,
+        });
+        expect(response?.headers["content-type"]).toContain("text/html");
+      }
+      expect(fixture.rendered).toEqual([]);
+    }).pipe(Effect.provide(fixture.layer), Effect.scoped);
   });
 });

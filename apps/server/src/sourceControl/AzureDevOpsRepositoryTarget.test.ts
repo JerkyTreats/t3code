@@ -25,6 +25,16 @@ describe("azureDevOpsRepositoryTargetFromRemoteUrl", () => {
     });
   });
 
+  it("rejects a project or repository az would read from a local file", () => {
+    for (const remoteUrl of [
+      "https://dev.azure.com/acme/platform/_git/@.env",
+      "https://dev.azure.com/acme/@platform/_git/web",
+      "git@ssh.dev.azure.com:v3/acme/platform/@.env",
+    ]) {
+      expect(azureDevOpsRepositoryTargetFromRemoteUrl(remoteUrl), remoteUrl).toBeNull();
+    }
+  });
+
   it("rejects an Azure-shaped SCP path on a neutral host", () => {
     expect(
       azureDevOpsRepositoryTargetFromRemoteUrl("git@git.example.test:v3/acme/platform/web.git"),

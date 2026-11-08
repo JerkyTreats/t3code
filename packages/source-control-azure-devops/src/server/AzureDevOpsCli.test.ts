@@ -225,7 +225,7 @@ describe("AzureDevOpsCli.layer", () => {
           "--repository",
           "repo",
           "--source-branch",
-          "feature/merged",
+          "feature%2Fmerged",
           "--status",
           "completed",
           "--top",
@@ -497,6 +497,44 @@ describe("AzureDevOpsCli.layer", () => {
         notFoundDetail: "Pull request not found.",
         timeoutMs: 30_000,
       });
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("percent-encodes the source branch while preserving recognized ref prefixes", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(Effect.succeed(processOutput("[]")));
+
+      const az = yield* AzureDevOpsCli.AzureDevOpsCli;
+      yield* az.listPullRequests({
+        cwd: "/somewhere",
+        organization: "https://dev.azure.com/fork",
+        project: "project",
+        repository: "repository",
+        headSelector: "user/feat/1-(#2)-slug",
+        state: "open",
+      });
+
+      const args = mockRun.mock.calls.at(-1)?.[0].args ?? [];
+      assert.strictEqual(args[args.indexOf("--source-branch") + 1], "user%2Ffeat%2F1-(%232)-slug");
+
+      for (const prefix of ["refs/heads/", "refs/pull/", "refs/tags/"]) {
+        mockRun.mockReturnValueOnce(Effect.succeed(processOutput("[]")));
+        yield* az.listPullRequests({
+          cwd: "/somewhere",
+          organization: "https://dev.azure.com/fork",
+          project: "project",
+          repository: "repository",
+          headSelector: "fallback",
+          source: { refName: `${prefix}user/feat/1-(#2)-slug` },
+          state: "open",
+        });
+
+        const refArgs = mockRun.mock.calls.at(-1)?.[0].args ?? [];
+        assert.strictEqual(
+          refArgs[refArgs.indexOf("--source-branch") + 1],
+          `${prefix}user%2Ffeat%2F1-(%232)-slug`,
+        );
+      }
     }).pipe(Effect.provide(layer)),
   );
 

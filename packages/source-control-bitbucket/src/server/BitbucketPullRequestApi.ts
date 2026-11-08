@@ -256,7 +256,7 @@ export class BitbucketPullRequestApi extends Context.Service<
         readonly action: PullRequestAction;
         readonly mergeMethod?: PullRequestMergeMethod;
       },
-    ) => Effect.Effect<void, BitbucketPullRequestApiError>;
+    ) => Effect.Effect<BitbucketPullRequest | void, BitbucketPullRequestApiError>;
 
     readonly updateChangeRequest: (
       input: BitbucketRepositoryTarget & {
@@ -788,6 +788,11 @@ export const make = Effect.gen(function* () {
     runAction: Effect.fn("BitbucketPullRequestApi.runAction")(function (input) {
       return withRepository(input, (path) => {
         const pullRequest = `${path}/pullrequests/${input.number}`;
+        // Both reply with the pull request; a merge that runs long replies with a task instead.
+        const reply = Effect.map((response: { readonly body: string }) => {
+          const decoded = decodePullRequestJson(response.body);
+          return Result.isSuccess(decoded) ? decoded.success : undefined;
+        });
         if (input.action === "merge") {
           return bitbucket
             .request({
@@ -795,11 +800,9 @@ export const make = Effect.gen(function* () {
               url: `${pullRequest}/merge`,
               body: JSON.stringify({ merge_strategy: mergeStrategy(input.mergeMethod) }),
             })
-            .pipe(Effect.asVoid);
+            .pipe(reply);
         }
-        return bitbucket
-          .request({ method: "POST", url: `${pullRequest}/decline` })
-          .pipe(Effect.asVoid);
+        return bitbucket.request({ method: "POST", url: `${pullRequest}/decline` }).pipe(reply);
       });
     }),
 

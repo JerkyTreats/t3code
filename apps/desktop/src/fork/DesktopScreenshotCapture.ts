@@ -7,6 +7,7 @@ import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
 
 import type { DesktopScreenshotCapture } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 
 import {
   defaultDesktopScreenshotCaptureHost,
@@ -22,6 +23,8 @@ import {
   captureOmarchyScreenshot,
   OmarchyScreenshotTerminationError,
 } from "./OmarchyScreenshotCapture.ts";
+
+const isOmarchyScreenshotTermination = Schema.is(OmarchyScreenshotTerminationError);
 
 const CAPTURE_COMMAND_TIMEOUT_MS = 30_000;
 const TOOL_FAILURE_SEPARATOR = " | ";
@@ -193,7 +196,7 @@ export async function captureDesktopScreenshot(
         if (!capture) throw new Error("Screenshot capture contract validation failed.");
         return capture;
       } catch (error) {
-        if (error instanceof OmarchyScreenshotTerminationError) throw error;
+        if (isOmarchyScreenshotTermination(error)) throw error;
         failures.push(`${adapterName(adapter)} failed: ${errorMessage(error)}`);
       }
     }

@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 // module load; this host only exercises the local system theme.
 vi.mock("../state/server", async () => {
   const { Atom } = await import("effect/reactivity");
-  return { primaryServerEnvironmentThemesAtom: Atom.make([]) };
+  return {
+    primaryServerEnvironmentThemesAtom: Atom.make([]),
+    themeServerEnvironmentThemesAtom: Atom.make([]),
+  };
 });
 
 function createStorage(overrides: Partial<Storage> = {}): Storage {

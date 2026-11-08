@@ -1472,11 +1472,37 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("preserves the change request repository through RPC decoding and signed media", () =>
+    Effect.gen(function* () {
+      const decodeAssetCreateUrlInput = Schema.decodeEffect(AssetCreateUrlInput);
+      const resource = {
+        _tag: SOURCE_CONTROL_MEDIA_ASSET,
+        cwd: "/personal-fork",
+        url: "https://github.com/user-attachments/assets/1a1842fb-6383-492f-873c-57aa0033fa6c",
+        repository: "enterprise/private",
+      };
+      const input = yield* decodeAssetCreateUrlInput({ resource });
+      const issued = yield* issueAssetUrl(input);
+      const suffix = issued.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const separator = suffix.indexOf("/");
+      const resolved = yield* resolveAsset(suffix.slice(0, separator), suffix.slice(separator + 1));
+
+      expect(resolved).toEqual({
+        kind: "source-control-media",
+        url: resource.url,
+        cwd: resource.cwd,
+        repository: resource.repository,
+        expiresAt: issued.expiresAt,
+      });
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("serves a host's credentialed media through that host's driver", () => {
     const fetched: Array<{
       url: string;
       headers: Readonly<Record<string, string>>;
       origin: unknown;
+      repository?: string;
     }> = [];
     const url = "https://github.com/owner/repo/blob/main/docs/shot.png";
     const media = sourceControlDefinitions.mediaUrl(url)!;
@@ -1497,6 +1523,7 @@ describe("AssetAccess", () => {
       },
     ]);
     // Fork F06: the driver is told the exact origin of the repository at the claim's `cwd`.
+    // Clients that predate `repository` get the checkout's.
     const layerIdentities = Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
       resolve: (cwd) =>
         Effect.succeed(
@@ -1508,6 +1535,9 @@ describe("AssetAccess", () => {
                   remoteName: "origin",
                   remoteUrl: "git@github.com:owner/repo.git",
                 },
+                provider: media.definition.kind,
+                owner: "owner",
+                name: "repo",
               }
             : null,
         ),
@@ -1544,6 +1574,7 @@ describe("AssetAccess", () => {
             remoteName: "origin",
             remoteUrl: "git@github.com:owner/repo.git",
           },
+          repository: "owner/repo",
         },
       ]);
       expect(response.status).toBe(206);
@@ -1554,6 +1585,11 @@ describe("AssetAccess", () => {
       // A checkout with no origin identity gives the driver nothing to admit repository media for.
       yield* sourceControlMediaResponse({ ...asset, cwd: "/elsewhere" }, {});
       expect(fetched.at(-1)?.origin).toBeNull();
+      expect(fetched.at(-1)?.repository).toBeUndefined();
+
+      // A pull request's own repository reaches the driver, which admits it only for origin.
+      yield* sourceControlMediaResponse({ ...asset, repository: "enterprise/private" }, {});
+      expect(fetched.at(-1)?.repository).toBe("enterprise/private");
     }).pipe(
       Effect.provide(Layer.mergeAll(layerTest, layerDrivers, layerIdentities)),
       Effect.scoped,

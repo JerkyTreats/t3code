@@ -362,6 +362,10 @@ fails with that reason.
 environments, network reachability, Tailscale, SSH, and T3 Connect. They are not
 an embedded Admin product and do not own managed-device lifecycle.
 
+When the app connects to more than one environment, choose one at the top of
+these pages; Settings then shows that environment's reachability and T3 Connect
+link.
+
 Use `t3 pair` for an ordinary one-time pairing link. A headless operator can
 inspect or revoke pending ordinary pairing credentials without revealing their
 secret values:

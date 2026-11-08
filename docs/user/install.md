@@ -148,14 +148,17 @@ you can install the recommendation there. Otherwise use the provider's installer
 on the environment's machine. An unlisted version is unverified.
 
 When a provider CLI is behind its latest release, its provider card shows the
-available version. **Update now** uses the installer that owns the CLI, such as
-Homebrew or a global npm, pnpm, Yarn, Bun, Volta or Vite+ installation. Supported
-providers can also use their own update command when installer ownership is unknown.
-Update a CLI installed with mise through mise. Managed Cursor and Antigravity runtimes
-update with T3 Code. Homebrew installations compare against the version Homebrew
-offers, which can lag the npm release. These provider updates do not install or update
-T3 Code itself; replace the fork runtime only through its exact-origin distribution.
-Chocolatey installations also compare against the version Chocolatey offers; update Claude installed with Chocolatey through Chocolatey.
+available version. **Update now** runs the installer that owns the CLI
+(Homebrew, mise, or a global npm, pnpm, Yarn, Bun, Volta, or Vite+ install), or
+the CLI's own update command when T3 Code cannot tell. T3 Code runs `mise upgrade`
+only for a tool your mise config requests as `latest` when the provider's binary
+path is a mise shim or under the tool's `installs/<tool>/latest` link; update a
+pinned version, or a path into one version's directory, through mise yourself.
+Cursor and Antigravity update with T3 Code. Homebrew and Chocolatey installs
+compare against the version their package manager offers, which can trail the
+npm release; update Claude installed with Chocolatey through Chocolatey.
+These provider updates do not install or update T3 Code itself; replace the fork
+runtime only through its exact-origin distribution.
 
 Add another provider instance for a separate account or configuration. Each
 instance can have its own environment variables, such as API keys or a custom

@@ -399,3 +399,15 @@ export function originAdmitsGitHubMedia(
   const expected = repositoryFromContext(origin ?? undefined);
   return expected !== null && expected === `github.com/${repository.join("/")}`.toLowerCase();
 }
+
+/**
+ * Fork F06: whether a GitHub upload may be rendered in `owner/name` with the github.com credential
+ * to obtain its signed URL. Only the exact github.com origin repository qualifies.
+ */
+export function originAdmitsGitHubMediaRepository(
+  origin: SourceControlProvider.SourceControlProviderContext | null | undefined,
+  repository: string,
+): boolean {
+  const expected = repositoryFromContext(origin ?? undefined);
+  return expected !== null && expected === `github.com/${repository}`.toLowerCase();
+}

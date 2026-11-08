@@ -36,7 +36,7 @@ const REVIEWED_LOCAL_ACTIONS: ReadonlyMap<string, string> = new Map([
   ],
   [
     "./.github/actions/setup-ci-deps",
-    "4f2fe98bc719ef0bb61d9dbfdf88b54bb6bea51a271468760611a0af2bcf0b38",
+    "7b053094c2976c0e74634d68b2aa9f0481b27d6e273a563249fc5a1c4e44a7ca",
   ],
   [
     "./.github/actions/ci-changes",
@@ -82,6 +82,8 @@ const READ_ONLY_RUN_SOURCES = new Set([
   "node scripts/lib/server-image-workflow-safety.ts",
   "node scripts/server-image-smoke.ts",
   "node apps/desktop/scripts/verify-preload-bundle.mjs",
+  // Upstream production web boot check: local build, headless Chromium, no network.
+  "node apps/web/scripts/verify-built-boot.ts",
   "pnpm test:quattro",
   'pnpm screenshots:mobile --platform android --appearance "${{ inputs.appearance }}" --theme "${{ inputs.theme }}" --validate-only',
   'pnpm screenshots:mobile --platform ios --appearance "${{ inputs.appearance }}" --theme "${{ inputs.theme }}"',
@@ -132,8 +134,6 @@ const READ_ONLY_MULTILINE_RUN_DIGESTS = new Set([
   "afc5bf24b4f6c3ca8a44268d757d011e4e019405d4d16609af4b5bf3680ab41a",
   "e7f6223a07c059b512271135e03dc4a830ef815c375ce0e5dc70ba7084f52660",
   "f4b1bb27f25f1dd05c1561c913f12c1423ccd17a98f6b6b21b55db641877374d",
-  // Upstream production web boot check: local build, headless Chromium, no network.
-  "5b3aca75750a8ae6fbd015619f7d38f1e7da32c918cc3a5f741d367a3ebad4ee",
 ]);
 const FORBIDDEN_COMMAND_PATTERNS = [
   /\bgit\s+push\b/iu,

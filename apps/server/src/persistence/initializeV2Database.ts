@@ -17,6 +17,8 @@ export class V2DatabaseImportError extends Schema.TaggedError<V2DatabaseImportEr
   }
 }
 
+const isV2DatabaseImportError = Schema.is(V2DatabaseImportError);
+
 const isProcessAlive = (pid: number): boolean => {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -61,13 +63,16 @@ export const initializeV2Database = Effect.fn("initializeV2Database")(function* 
       prefix: `.v2-import-${process.pid}-`,
     });
     const snapshotPath = path.join(temporaryDirectory, "snapshot.sqlite");
-    yield* Effect.tryPromise(async () => {
-      const database = new NodeSqlite.DatabaseSync(sourcePath, { readOnly: true });
-      try {
-        await NodeSqlite.backup(database, snapshotPath);
-      } finally {
-        database.close();
-      }
+    yield* Effect.tryPromise({
+      try: async () => {
+        const database = new NodeSqlite.DatabaseSync(sourcePath, { readOnly: true });
+        try {
+          await NodeSqlite.backup(database, snapshotPath);
+        } finally {
+          database.close();
+        }
+      },
+      catch: (cause) => new V2DatabaseImportError({ sourcePath, destinationPath, cause }),
     });
     // Validate the copied journal through the same owner used by startup. Unknown
     // histories must not become the permanent V2 seed, even when SQLite can read them.
@@ -84,6 +89,10 @@ export const initializeV2Database = Effect.fn("initializeV2Database")(function* 
     );
   }).pipe(
     Effect.scoped,
-    Effect.mapError((cause) => new V2DatabaseImportError({ sourcePath, destinationPath, cause })),
+    Effect.mapError((cause) =>
+      isV2DatabaseImportError(cause)
+        ? cause
+        : new V2DatabaseImportError({ sourcePath, destinationPath, cause }),
+    ),
   );
 });

@@ -416,6 +416,11 @@ export const make = Effect.gen(function* () {
   return AzureDevOpsCli.of({
     execute,
     listPullRequests: Effect.fn("AzureDevOpsCli.listPullRequests")(function (input) {
+      const branch = SourceControlProvider.sourceBranch(input);
+      // az checks literal ref prefixes before constructing the request URL.
+      const refPrefix =
+        ["refs/heads/", "refs/pull/", "refs/tags/"].find((prefix) => branch.startsWith(prefix)) ??
+        "";
       return executeJson({
         cwd: input.cwd,
         args: [
@@ -429,7 +434,8 @@ export const make = Effect.gen(function* () {
           "--repository",
           input.repository,
           "--source-branch",
-          SourceControlProvider.sourceBranch(input),
+          // az puts this in the query string unescaped; a `#` would cut the request.
+          refPrefix + encodeURIComponent(branch.slice(refPrefix.length)),
           "--status",
           toAzureStatus(input.state),
           "--top",

@@ -13,6 +13,7 @@ import {
   type DesktopScreenshotCapture,
 } from "@t3tools/contracts";
 import { clipboard } from "electron";
+import * as Schema from "effect/Schema";
 
 import {
   buildDesktopScreenshotCapture,
@@ -47,12 +48,12 @@ export type OmarchyScreenshotCaptureOptions = Readonly<{
   forceKillTimeoutMs?: number;
 }>;
 
-export class OmarchyScreenshotTerminationError extends Error {
-  readonly _tag = "OmarchyScreenshotTerminationError";
-
-  constructor() {
-    super("Omarchy screenshot process did not exit after bounded termination.");
-    this.name = "OmarchyScreenshotTerminationError";
+export class OmarchyScreenshotTerminationError extends Schema.TaggedError<OmarchyScreenshotTerminationError>()(
+  "OmarchyScreenshotTerminationError",
+  {},
+) {
+  override get message(): string {
+    return "Omarchy screenshot process did not exit after bounded termination.";
   }
 }
 

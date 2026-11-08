@@ -27,7 +27,12 @@ const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inlin
 export const sourceControlMediaResponse = Effect.fn(
   "SourceControlMediaResponse.sourceControlMediaResponse",
 )(function* (
-  asset: { readonly url: string; readonly cwd: string; readonly expiresAt: number },
+  asset: {
+    readonly url: string;
+    readonly cwd: string;
+    readonly repository?: string;
+    readonly expiresAt: number;
+  },
   requestHeaders: Record<string, string | undefined>,
 ) {
   const remainingSeconds = Math.floor((asset.expiresAt - (yield* Clock.currentTimeMillis)) / 1000);
@@ -48,10 +53,23 @@ export const sourceControlMediaResponse = Effect.fn(
     const value = requestHeaders[name];
     if (value !== undefined) forwarded[name] = value;
   }
-  // Fork F06: the driver admits repository-scoped media only for this checkout's exact origin.
+  // Fork F06: the driver admits repository-scoped media only for this checkout's exact origin,
+  // and renders an upload only in that origin repository.
   const identities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
-  const origin = originContextOfIdentity(yield* identities.resolve(asset.cwd));
-  const response = yield* fetchMedia({ url: asset.url, headers: forwarded, origin });
+  const identity = yield* identities.resolve(asset.cwd);
+  const origin = originContextOfIdentity(identity);
+  // Clients that predate `repository` fall back to the repository checked out at `cwd`.
+  const repository =
+    asset.repository ??
+    (identity?.provider === media.definition.kind && identity.owner && identity.name
+      ? `${identity.owner}/${identity.name}`
+      : undefined);
+  const response = yield* fetchMedia({
+    url: asset.url,
+    headers: forwarded,
+    origin,
+    ...(repository === undefined ? {} : { repository }),
+  });
   if (response === null) return HttpServerResponse.empty({ status: 502, headers });
   // It carries none of the upstream entity headers: a `content-length` with no body behind it
   // holds the connection open until the browser gives up on it.

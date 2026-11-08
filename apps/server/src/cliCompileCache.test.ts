@@ -7,13 +7,23 @@ import * as FileSystem from "effect/FileSystem";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-it.live("enables CLI caching while respecting overrides and unavailable storage", () =>
+it.live("loads the CLI with its cache settings only when the command needs it", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cli-cache-test-" });
-    const report = `import { getCompileCacheDir, registerHooks } from 'node:module'; registerHooks({ resolve(specifier, context, nextResolve) { if (specifier === './binCli.ts') console.error('CACHE=' + (getCompileCacheDir() ?? 'disabled')); return nextResolve(specifier, context); } });`;
-    const run = Effect.fn("cliCompileCache.test.run")(function* (env: Record<string, string>) {
+    const report = `
+      import { getCompileCacheDir, registerHooks } from 'node:module';
+      registerHooks({ resolve(specifier, context, nextResolve) {
+        if (specifier === './binMain.ts') console.error('LOADED_CLI_MAIN');
+        if (specifier === './binCli.ts') console.error('CACHE=' + (getCompileCacheDir() ?? 'disabled'));
+        return nextResolve(specifier, context);
+      } });
+    `;
+    const run = Effect.fn("cliCompileCache.test.run")(function* (
+      env: Record<string, string>,
+      args: ReadonlyArray<string> = ["--help"],
+    ) {
       const child = yield* spawner.spawn(
         ChildProcess.make(
           process.execPath,
@@ -22,7 +32,7 @@ it.live("enables CLI caching while respecting overrides and unavailable storage"
             "--import",
             `data:text/javascript,${encodeURIComponent(report)}`,
             NodeURL.fileURLToPath(new URL("./bin.ts", import.meta.url)),
-            "--help",
+            ...args,
           ],
           {
             env: {
@@ -47,6 +57,7 @@ it.live("enables CLI caching while respecting overrides and unavailable storage"
     }, Effect.scoped);
     const normal = yield* run({});
     expect(normal.exitCode).toBe(0);
+    expect(normal.stderr).toContain("LOADED_CLI_MAIN");
     expect(normal.stderr.replaceAll("\\", "/")).toContain(
       `CACHE=${root}/cache/t3code/compile-cache`.replaceAll("\\", "/"),
     );

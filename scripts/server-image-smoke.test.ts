@@ -1,4 +1,5 @@
 // @effect-diagnostics globalDate:off -- The injected clock uses one fixed UTC fixture timestamp.
+import * as Schema from "effect/Schema";
 import { assert, expect, it } from "@effect/vitest";
 
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
@@ -16,6 +17,8 @@ import {
   type SmokeCommandRunner,
   type SmokeSignalSource,
 } from "./server-image-smoke.ts";
+
+const isSmokeInterrupted = Schema.is(ServerImageSmokeInterruptedError);
 
 interface RecordedCommand {
   readonly command: string;
@@ -273,8 +276,7 @@ it.each(["SIGINT", "SIGTERM"] as const)(
     signalSource.emit(signal);
 
     await expect(run).rejects.toSatisfy(
-      (error: unknown) =>
-        error instanceof ServerImageSmokeInterruptedError && error.signal === signal,
+      (error: unknown) => isSmokeInterrupted(error) && error.signal === signal,
     );
     assert.lengthOf(cleanupCommands(commands), 6);
     assert.strictEqual(signalSource.listenerCount(), 0);

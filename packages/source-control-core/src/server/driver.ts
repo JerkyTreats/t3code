@@ -25,6 +25,8 @@ export interface SourceControlMediaRequest {
   readonly url: string;
   /** Request headers to forward, such as `range`. */
   readonly headers: Readonly<Record<string, string>>;
+  /** `owner/name` of the change request the media is in, else of the checkout it was shown in. */
+  readonly repository?: string;
   /**
    * Fork F06: the exact origin context of the repository at the media claim's `cwd`, or null
    * when it has none. Repository-scoped media is fetched with a credential only for this origin.

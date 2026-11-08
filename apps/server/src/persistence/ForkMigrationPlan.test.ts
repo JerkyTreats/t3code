@@ -150,6 +150,7 @@ it.effect("rolls back the V2 schema and baseline events together before retry", 
       [101, "RepairBooleanSettledOverride"],
       [102, "DropOrchestrationEventCorrelationIndex"],
       [103, "DelegatedRecoveryIndexes"],
+      [104, "ScheduledTaskThreadMode"],
     ]);
     assert.deepStrictEqual(yield* runMigrations(), []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -204,6 +205,7 @@ it.effect("continues the current journal with stable upstream identities", () =>
       [101, "RepairBooleanSettledOverride"],
       [102, "DropOrchestrationEventCorrelationIndex"],
       [103, "DelegatedRecoveryIndexes"],
+      [104, "ScheduledTaskThreadMode"],
     ]);
     assert.deepStrictEqual(
       yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 70 ORDER BY migration_id`,

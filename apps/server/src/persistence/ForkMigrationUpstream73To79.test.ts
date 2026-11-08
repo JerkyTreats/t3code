@@ -58,7 +58,8 @@ const schemaNames = Effect.fn("readSchemaNames")(function* () {
 
 it("appends upstream 73 through 79 in source order after fork 96", () => {
   const ids = migrationManifest.map(([id]) => id);
-  assert.deepStrictEqual(migrationManifest.slice(-7), [...appended]);
+  const start = ids.indexOf(97);
+  assert.deepStrictEqual(migrationManifest.slice(start, start + 7), [...appended]);
   assert.isBelow(ids.indexOf(96), ids.indexOf(97));
 });
 
@@ -77,7 +78,7 @@ it.effect("continues fork 96 through 103, retains data, and reopens without new 
 
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      assert.deepStrictEqual(yield* runMigrations(), appended);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 103 }), appended);
       assert.deepStrictEqual(yield* readRetainedData(), before);
       const names = yield* schemaNames();
       for (const added of [
@@ -108,11 +109,11 @@ it.effect("continues fork 96 through 103, retains data, and reopens without new 
         readonly name: string;
       }>`PRAGMA table_info(orchestration_v2_projection_subagents)`;
       assert.isTrue(subagentColumns.some((entry) => entry.name === "completion_delivery_state"));
-      assert.deepStrictEqual(yield* runMigrations(), []);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 103 }), []);
     }).pipe(Effect.provide(rawLayer));
 
     yield* Effect.gen(function* () {
-      assert.deepStrictEqual(yield* runMigrations(), []);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 103 }), []);
       assert.deepStrictEqual(yield* readRetainedData(), before);
     }).pipe(Effect.provide(layerFromPath(filename)));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
@@ -122,7 +123,10 @@ it.effect("carries 97 through 103 through a replacement migration runner", () =>
   Effect.gen(function* () {
     const independentRunner = Migrator.make({});
     yield* independentRunner({ loader: makeMigrationLoader(96) });
-    assert.deepStrictEqual(yield* independentRunner({ loader: makeMigrationLoader() }), appended);
-    assert.deepStrictEqual(yield* independentRunner({ loader: makeMigrationLoader() }), []);
+    assert.deepStrictEqual(
+      yield* independentRunner({ loader: makeMigrationLoader(103) }),
+      appended,
+    );
+    assert.deepStrictEqual(yield* independentRunner({ loader: makeMigrationLoader(103) }), []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );

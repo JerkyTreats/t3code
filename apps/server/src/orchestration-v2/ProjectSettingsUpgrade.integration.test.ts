@@ -215,6 +215,7 @@ it.live("keeps project settings through the V2 migrations and the first V2 boot"
           [101, "RepairBooleanSettledOverride"],
           [102, "DropOrchestrationEventCorrelationIndex"],
           [103, "DelegatedRecoveryIndexes"],
+          [104, "ScheduledTaskThreadMode"],
         ]);
         assert.deepEqual(yield* readSettings, expectedSettings);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));

@@ -42,9 +42,10 @@ The page names the agent and where its access goes:
 
 Only approve a sign-in you just started. A browser paired with the standard permissions, including one enrolled through the Admin portal, includes access management and can approve without a code. A browser paired with narrower permissions, or paired before access management joined the standard permissions, needs a pairing code from an authorized host operator, issued with `t3 auth pairing create`, or a fresh pairing. The app has no controls for issuing or managing credentials. The external Admin portal remains responsible for enrolled browser and Electron devices, and disabling or deleting a device there ends its access at once.
 
-Then choose what the agent may do:
+Then choose what the agent may do. **Auto** is selected by default, or the
+closest lower mode allowed by your organization’s policy:
 
-- **Read only** is the default. The agent can read projects and threads and see
+- **Read only** lets the agent read projects and threads and see
   the available providers and models. It cannot change anything.
 - **Supervised** through **Full access** also let it start, message and stop
   threads in every project. A thread it starts or steers cannot run with more

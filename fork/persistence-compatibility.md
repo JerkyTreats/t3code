@@ -31,6 +31,10 @@ Migrations 97 through 103 append upstream migrations 73 through 79 in upstream s
 `DropOrchestrationEventCorrelationIndex` and `DelegatedRecoveryIndexes`. Upstream-numbered 73
 through 79 rows collide with fork identities or are unknown names, so they fail before
 continuation writes.
+
+Migration 104 appends upstream migration 80, `ScheduledTaskThreadMode`, after fork 103. It adds
+the scheduled-task `thread_mode` column and keeps a task that already had a thread in that thread.
+An upstream-numbered 80 row is an unknown name, so it fails before continuation writes.
 Upstream's preview-migration reconciliation and V2 skip assertion are not adopted; the fork
 lineage selector already owns both checks.
 
@@ -115,8 +119,8 @@ receipt scan and imported-thread deletion are absent. Thread deletion keeps atta
 still referenced by the legacy transcript (`ResourceCleanupService.cleanupUnretainedAttachments`).
 
 A runtime built before migration 87 rejects the 87 through 92 journal identities on reopen, a
-runtime built before migration 93 rejects 93 through 96, and a runtime built before migration 97
-rejects 97 through 103.
+runtime built before migration 93 rejects 93 through 96, a runtime built before migration 97
+rejects 97 through 103, and a runtime built before migration 104 rejects 104.
 Binary rollback across this intake therefore needs the matching pre-upgrade `statev2.sqlite`
 copy or the retained `state.sqlite` reconciliation path below.
 
