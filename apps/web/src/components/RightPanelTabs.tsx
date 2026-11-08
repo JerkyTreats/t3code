@@ -104,6 +104,11 @@ import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { observeResize } from "~/lib/observeResize";
 import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
+import {
+  canvasBoardMounted,
+  canvasSurfaceCardFor,
+  placeSurfaceOnCanvas,
+} from "~/fork/canvasSurfaceCards";
 
 export interface RightPanelTabsProps {
   mode: PreviewPanelMode;
@@ -117,6 +122,8 @@ export interface RightPanelTabsProps {
   layoutControls?: ReactNode;
   surfaces: readonly RightPanelSurface[];
   environmentId: EnvironmentId | null;
+  /** The thread whose canvas "Place on canvas" puts a tab on; absent where no canvas exists. */
+  threadId?: ThreadId | undefined;
   activeSurfaceId: string | null;
   pendingSurfaceIds: ReadonlySet<string>;
   previewSessions: Readonly<Record<string, PreviewSessionSnapshot>>;
@@ -208,6 +215,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
 } as const;
 
 type TabContextMenuAction =
+  | "place-on-canvas"
   | "rename"
   | "copy-path"
   | "toggle-mute"
@@ -1181,6 +1189,21 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     if (surfaceIndex < 0) return;
 
     const items: ContextMenuItem<TabContextMenuAction>[] = [];
+    const canvasThreadRef =
+      props.environmentId !== null && props.threadId !== undefined
+        ? scopeThreadRef(props.environmentId, props.threadId)
+        : null;
+    const canvasCard = canvasSurfaceCardFor(surface, {
+      previewSessions: props.previewSessions,
+      title: surfaceTitle(surface, props.previewSessions, props.terminalLabelsById),
+    });
+    if (canvasCard !== null) {
+      items.push({
+        id: "place-on-canvas",
+        label: "Place on canvas",
+        disabled: canvasThreadRef === null || !canvasBoardMounted(canvasThreadRef),
+      });
+    }
     if (surface.kind === "device" && props.onRenameDevice)
       items.push({ id: "rename", label: "Rename" });
     if (surface.kind === "file" && surface.attachment === undefined) {
@@ -1219,6 +1242,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
     const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
     switch (action) {
+      case "place-on-canvas":
+        if (canvasThreadRef !== null && canvasCard !== null) {
+          placeSurfaceOnCanvas(canvasThreadRef, canvasCard);
+        }
+        break;
       case "rename":
         setRenamingDevice(surface.id);
         break;

@@ -51,6 +51,8 @@ import {
   sameCanvasCards,
 } from "./canvasCards";
 import { CANVAS_CARD_REMARK_PLUGINS } from "./canvasStateChips";
+import { CanvasSurfaceCardView, placeSurfaceCard } from "./CanvasSurfaceCardView";
+import { createSurfaceActivation, registerCanvasBoard } from "./canvasSurfaceCards";
 import { forwardCardMiddleDrag } from "./cardMiddleDrag";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
@@ -435,6 +437,7 @@ function placeCards(
   turnBoard: TurnBoard,
   board: HTMLElement,
   view: BoardView,
+  surfaces: ReturnType<typeof createSurfaceActivation>,
 ) {
   const layer = turnBoard.layer();
   const origin = layer?.parentElement;
@@ -453,6 +456,7 @@ function placeCards(
     card.element.style.width = `${box.width - 2 * TURN_INSET_PX}px`;
     card.element.dataset.placed = "true";
   }
+  surfaces.update(api.getSceneElements(), view, boardRect);
 }
 
 /** The camera that shows the latest turn: its top under the toolbar, or its end if it overflows. */
@@ -547,6 +551,8 @@ export default function ExcalidrawBoard({
   const seenByAgent = useRef<Readonly<Record<string, number>>>({});
   const pendingNotes = useRef(0);
   const [cards, setCards] = useState<ReadonlyArray<CanvasCard>>([]);
+  const [liveSurfaces, setLiveSurfaces] = useState<ReadonlySet<string>>(() => new Set());
+  const [surfaceActivation] = useState(() => createSurfaceActivation(setLiveSurfaces));
   const coveredCache = useRef(new Map<string, string | null>());
   const lastSketch = useRef("");
   const [noteAction, setNoteAction] = useState<{
@@ -615,7 +621,7 @@ export default function ExcalidrawBoard({
     if (!api || !board || !root || api.getAppState().isLoading) return;
     reconcileTurns(api, turnBoard);
     const view = api.getAppState();
-    placeCards(api, turnBoard, board, view);
+    placeCards(api, turnBoard, board, view, surfaceActivation);
     const latest = turnBoard.cards().at(-1)?.id ?? null;
     if (latest !== camera.current.latestTurn) {
       const opening = camera.current.latestTurn === null;
@@ -774,7 +780,7 @@ export default function ExcalidrawBoard({
           waitingScene.current = null;
           applyScene(scene);
         } else if (camera.current.latestTurn === null) syncTurns();
-        else placeCards(api, turnBoard, board, appState);
+        else placeCards(api, turnBoard, board, appState, surfaceActivation);
         // Moving a turn is the reader taking over, so the camera stops chasing it.
         if (appState.selectedElementsAreBeingDragged) setFollowing(false);
         // Every tool but select draws or pans, so it reaches through the cards to the canvas.
@@ -809,7 +815,7 @@ export default function ExcalidrawBoard({
       publishFrames(api.getSceneElements(), root, view);
       return;
     }
-    placeCards(api, turnBoard, board, view);
+    placeCards(api, turnBoard, board, view, surfaceActivation);
     const { set } = camera.current;
     if (set?.scrollX === scrollX && set.scrollY === scrollY) return;
     cancelPan();
@@ -919,6 +925,21 @@ export default function ExcalidrawBoard({
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a citation chip asks for this through a window event, outside React
   useEffect(() => (draft ? undefined : onCanvasReveal(revealElement)), [draft, revealElement]);
 
+  // The panel places surfaces through this board while it shows the thread.
+  const canvasEnvironmentId = canvasThread?.environmentId ?? null;
+  const canvasThreadId = canvasThread?.threadId ?? null;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the mounted board with the panel's module-level placement action until unmount
+  useEffect(
+    () =>
+      canvasEnvironmentId === null || canvasThreadId === null || !api
+        ? undefined
+        : registerCanvasBoard(
+            { environmentId: canvasEnvironmentId, threadId: canvasThreadId },
+            (card) => placeSurfaceCard(api, card),
+          ),
+    [api, canvasEnvironmentId, canvasThreadId],
+  );
+
   // Cards float above the canvas, so wheel and middle-button gestures over them still pan and zoom it.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- binds a non-passive wheel listener to the card layer, which React cannot do
   useEffect(() => {
@@ -1010,7 +1031,16 @@ export default function ExcalidrawBoard({
                     height,
                   }}
                 >
-                  {card.card.kind === "markdown" ? (
+                  {card.card.kind === "surface" ? (
+                    <CanvasSurfaceCardView
+                      threadRef={canvasThread}
+                      card={card.card}
+                      live={liveSurfaces.has(card.id)}
+                      onInteract={(interacting) =>
+                        surfaceActivation.setInteracting(interacting ? card.id : null)
+                      }
+                    />
+                  ) : card.card.kind === "markdown" ? (
                     // A card is the agent's writing, so selecting in it offers the timeline's Cite.
                     <div
                       data-assistant-citation-source={card.id}

@@ -4169,6 +4169,7 @@ export default function ChatView(props: ChatViewProps) {
           }
           surfaces={renderedRightPanelSurfaces}
           environmentId={activeThreadRef.environmentId}
+          threadId={activeThreadRef.threadId}
           activeSurfaceId={renderedRightPanelSurface?.id ?? null}
           pendingSurfaceIds={pendingFileSurfaceIds}
           previewSessions={activePreviewState.sessions}

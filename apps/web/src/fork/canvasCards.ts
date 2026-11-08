@@ -1,3 +1,5 @@
+import { type CanvasSurfaceCard, canvasSurfaceCardOf } from "@t3tools/shared/canvasSurfaceCard";
+
 import type { CanvasMark } from "./canvasMarks";
 
 /** A T3 reading block the agent placed on the canvas, rendered by the app over its box. */
@@ -10,7 +12,8 @@ export interface CanvasCard {
   readonly height: number;
   readonly card:
     | { readonly kind: "markdown"; readonly text: string }
-    | { readonly kind: "html"; readonly attachmentId: string; readonly title: string };
+    | { readonly kind: "html"; readonly attachmentId: string; readonly title: string }
+    | CanvasSurfaceCard;
 }
 
 function cardOf(data: Record<string, unknown> | undefined): CanvasCard["card"] | null {
@@ -21,7 +24,7 @@ function cardOf(data: Record<string, unknown> | undefined): CanvasCard["card"] |
   if (kind === "html" && typeof attachmentId === "string" && attachmentId !== "") {
     return { kind, attachmentId, title: typeof title === "string" ? title : "HTML" };
   }
-  return null;
+  return canvasSurfaceCardOf(card);
 }
 
 /** The live cards in the scene, in scene order. */
