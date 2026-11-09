@@ -10,6 +10,7 @@ import {
 } from "../../../canvas/canvasPreviewPage.ts";
 import { compileDiagram, DiagramError } from "../../../canvas/canvasDiagram.ts";
 import { readCanvas } from "../../../canvas/threadCanvasScene.ts";
+import { canvasSurfaceRefOfSpec } from "@t3tools/shared/canvasSurfaceCard";
 import { resolveCanvas, sharedDrawingId } from "../../../canvas/sharedCanvas.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
@@ -48,6 +49,18 @@ const canvasOf = Effect.fn("canvas.canvasOf")(function* (threadId: ThreadId) {
     canvas.chatCardOf,
   );
 });
+
+const CARD_NEEDS = {
+  file: "path, relative to the project root or absolute.",
+  files: "nothing; path optionally opens a folder.",
+  browser: "tabId, from preview_open.",
+  terminal: "terminalId of an open terminal.",
+  diff: "nothing.",
+  "pull-request": "repository (owner/name) and number.",
+  "pull-requests": "nothing.",
+  chat: "threadId.",
+  device: "nothing; device optionally picks one.",
+} as const;
 
 const handlers = {
   canvas_preview: McpToolAccess.readsAsCaller((input) =>
@@ -175,7 +188,35 @@ const handlers = {
                   message: `Could not read the diagram: ${isDiagramError(error) ? error.message : String(error)}`,
                 }),
             });
+      // A pull request card resolves through the project of the board it lands on.
+      const projectId = yield* ThreadManagementService.ThreadManagementService.pipe(
+        Effect.flatMap((threads) => threads.getThreadShell(canvasThreadId)),
+        Effect.map((shell) => shell?.projectId),
+        Effect.orElseSucceed(() => undefined),
+      );
       const shapes = yield* Effect.forEach(diagram ?? input.shapes ?? [], (shape) => {
+        if (shape.type === "card") {
+          if (shape.card === undefined) {
+            return input.patch === true
+              ? Effect.succeed(shape)
+              : Effect.fail(
+                  new OrchestratorMcpFailure({
+                    code: "invalid_request",
+                    message: `card shape ${shape.id} needs card.`,
+                  }),
+                );
+          }
+          const card =
+            shape.card.kind === "pull-request" ? { ...shape.card, projectId } : shape.card;
+          return canvasSurfaceRefOfSpec(card) === null
+            ? Effect.fail(
+                new OrchestratorMcpFailure({
+                  code: "invalid_request",
+                  message: `card shape ${shape.id} is missing what a ${card.kind} card needs: ${CARD_NEEDS[card.kind]}`,
+                }),
+              )
+            : Effect.succeed({ ...shape, card });
+        }
         if (shape.type !== "html" || shape.attachmentId !== undefined) return Effect.succeed(shape);
         if (shape.html === undefined) {
           return Effect.fail(

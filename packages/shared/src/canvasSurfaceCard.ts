@@ -1,3 +1,5 @@
+import { isHostPath } from "./path.ts";
+
 /**
  * A right panel tab placed on a thread's canvas, stored on its Excalidraw box as
  * `customData.t3Card`. The card names the resource the tab shows, never a copy of it, and resolves
@@ -56,9 +58,17 @@ const positiveInt = (value: unknown) =>
 const optional = <Key extends string, Value>(key: Key, value: Value | undefined) =>
   (value === undefined ? {} : { [key]: value }) as { [K in Key]?: Value };
 
-/** A host path names a file outside the workspace, which a card cannot resolve on another client. */
-export function isWorkspaceRelativePath(path: string) {
+/** A path inside the workspace, relative to its root and never climbing out of it. */
+function isWorkspaceRelativePath(path: string) {
   return !/^(?:[/\\~]|[A-Za-z]:)/.test(path) && !path.split(/[/\\]/).includes("..");
+}
+
+/**
+ * A path a file card can show: one inside the workspace, or a host path (absolute or under `~/`),
+ * which the environment's server resolves the same way for every client of that board.
+ */
+export function isCanvasFilePath(path: string) {
+  return isWorkspaceRelativePath(path) || isHostPath(path);
 }
 
 const workspacePath = (value: unknown) => {
@@ -72,7 +82,8 @@ export function canvasSurfaceRefOf(value: unknown): CanvasSurfaceRef | null {
   const ref = value as Record<string, unknown>;
   switch (ref.kind) {
     case "file": {
-      const relativePath = workspacePath(ref.relativePath);
+      const path = text(ref.relativePath);
+      const relativePath = path !== undefined && isCanvasFilePath(path) ? path : undefined;
       if (relativePath === undefined) return null;
       return {
         kind: "file",
@@ -183,4 +194,119 @@ export function canvasSurfaceCardOf(card: unknown): CanvasSurfaceCard | null {
   const ref = canvasSurfaceRefOf(surface);
   if (ref === null) return null;
   return { kind, surface: ref, title: text(title) ?? canvasSurfaceTitle(ref) };
+}
+
+/**
+ * What an agent asks for when it places a card: the panel kind and the resource it shows, in the
+ * agent's own words. `canvasSurfaceRefOfSpec` turns it into the stored ref.
+ */
+export interface CanvasCardSpec {
+  readonly kind:
+    | "file"
+    | "files"
+    | "browser"
+    | "terminal"
+    | "diff"
+    | "pull-request"
+    | "pull-requests"
+    | "chat"
+    | "device";
+  readonly path?: string | undefined;
+  readonly line?: number | undefined;
+  readonly tabId?: string | undefined;
+  readonly terminalId?: string | undefined;
+  readonly repository?: string | undefined;
+  readonly number?: number | undefined;
+  readonly host?: string | undefined;
+  readonly projectId?: string | undefined;
+  readonly threadId?: string | undefined;
+  readonly device?:
+    | {
+        readonly hostId: string;
+        readonly deviceId: string;
+        readonly platform: "ios" | "android";
+        readonly name?: string | undefined;
+      }
+    | undefined;
+}
+
+/** The ref an agent's card spec names, or null when it lacks what that kind needs. */
+export function canvasSurfaceRefOfSpec(spec: CanvasCardSpec): CanvasSurfaceRef | null {
+  switch (spec.kind) {
+    case "file":
+      return canvasSurfaceRefOf({ kind: "file", relativePath: spec.path, revealLine: spec.line });
+    case "files":
+      return canvasSurfaceRefOf({ kind: "files", folderTrail: spec.path });
+    case "browser":
+      return canvasSurfaceRefOf({ kind: "preview", tabId: spec.tabId });
+    case "terminal":
+      return canvasSurfaceRefOf({ kind: "terminal", resourceId: spec.terminalId });
+    case "diff":
+    case "pull-requests":
+      return { kind: spec.kind };
+    case "pull-request":
+      return canvasSurfaceRefOf({
+        kind: "pull-request",
+        projectId: spec.projectId,
+        repository: spec.repository,
+        number: spec.number,
+        host: spec.host,
+      });
+    case "chat":
+      return canvasSurfaceRefOf({ kind: "side-chat", threadId: spec.threadId });
+    case "device":
+      return canvasSurfaceRefOf({ kind: "device", target: spec.device });
+  }
+}
+
+/** The spec that places a stored ref again, as an agent would have asked for it. */
+export function canvasCardSpecOf(ref: CanvasSurfaceRef): CanvasCardSpec {
+  switch (ref.kind) {
+    case "file":
+      return {
+        kind: "file",
+        path: ref.relativePath,
+        ...(ref.revealLine === undefined ? {} : { line: ref.revealLine }),
+      };
+    case "files":
+      return { kind: "files", ...(ref.folderTrail === undefined ? {} : { path: ref.folderTrail }) };
+    case "preview":
+      return { kind: "browser", tabId: ref.tabId };
+    case "terminal":
+      return { kind: "terminal", terminalId: ref.resourceId };
+    case "diff":
+    case "pull-requests":
+      return { kind: ref.kind };
+    case "pull-request":
+      return {
+        kind: "pull-request",
+        projectId: ref.projectId,
+        repository: ref.repository,
+        number: ref.number,
+        ...(ref.host === undefined ? {} : { host: ref.host }),
+      };
+    case "side-chat":
+      return { kind: "chat", threadId: ref.threadId };
+    case "device":
+      return { kind: "device", ...(ref.target === undefined ? {} : { device: ref.target }) };
+  }
+}
+
+/** The size a card starts at when the agent leaves it out, by the panel it shows. */
+export function canvasCardDefaultSize(ref: CanvasSurfaceRef) {
+  switch (ref.kind) {
+    case "file":
+    case "diff":
+      return { width: 720, height: 800 };
+    case "preview":
+      return { width: 960, height: 720 };
+    case "terminal":
+      return { width: 720, height: 440 };
+    case "side-chat":
+      return { width: 460, height: 600 };
+    case "device":
+      return { width: 420, height: 800 };
+    default:
+      return { width: 560, height: 640 };
+  }
 }

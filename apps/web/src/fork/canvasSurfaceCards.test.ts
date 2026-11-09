@@ -168,7 +168,7 @@ describe("canvasSurfaceRefFor and panelSurfaceOf", () => {
     },
   );
 
-  it("places a browser tab with its page, and refuses what only this client could resolve", () => {
+  it("places a browser tab with its page and a host file, and refuses what only this client could resolve", () => {
     expect(
       canvasSurfaceRefFor(
         { id: "browser:tab-1", kind: "preview", resourceId: "tab-1" },
@@ -191,9 +191,10 @@ describe("canvasSurfaceRefFor and panelSurfaceOf", () => {
       },
     } as RightPanelSurface;
     expect(canvasSurfaceRefFor(attachment)).toBeNull();
+    // A host file resolves on the environment's server, the same for every client of the board.
     expect(
       canvasSurfaceRefFor({ ...surfaces[0], relativePath: "/home/user/notes.txt" } as never),
-    ).toBeNull();
+    ).toMatchObject({ kind: "file", relativePath: "/home/user/notes.txt" });
     expect(
       canvasSurfaceRefFor({ id: "browser:new", kind: "preview", resourceId: null }),
     ).toBeNull();

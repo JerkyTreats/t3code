@@ -5,7 +5,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
-import { isWorkspaceRelativePath } from "@t3tools/shared/canvasSurfaceCard";
+import { isCanvasFilePath } from "@t3tools/shared/canvasSurfaceCard";
 import { memo, type MouseEvent as ReactMouseEvent } from "react";
 
 import {
@@ -255,10 +255,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
     try {
       const copyItems = markdownFileCopyMenuItems({ targetPath, workspaceRelativePath });
       const canvasPath =
-        threadRef &&
-        panelPath &&
-        isWorkspaceRelativePath(panelPath) &&
-        canvasBoardMounted(threadRef)
+        threadRef && panelPath && isCanvasFilePath(panelPath) && canvasBoardMounted(threadRef)
           ? panelPath
           : null;
       const clicked = await api.contextMenu.show(

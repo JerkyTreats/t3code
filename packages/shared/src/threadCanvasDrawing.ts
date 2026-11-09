@@ -1,4 +1,11 @@
 import type { ThreadCanvasElement, ThreadCanvasShape } from "@t3tools/contracts";
+import {
+  canvasCardDefaultSize,
+  canvasCardSpecOf,
+  canvasSurfaceRefOf,
+  canvasSurfaceRefOfSpec,
+  canvasSurfaceTitle,
+} from "./canvasSurfaceCard.ts";
 
 const DEFAULT_BOX_WIDTH_PX = 200;
 const DEFAULT_BOX_HEIGHT_PX = 80;
@@ -38,6 +45,14 @@ export interface BuildDrawingInput {
   readonly now: number;
 }
 
+/** The stored `t3Card` of a card shape: the live panel it names, titled as its tab would be. */
+function panelCardOf(shape: ThreadCanvasShape) {
+  const ref = shape.card === undefined ? null : canvasSurfaceRefOfSpec(shape.card);
+  return ref === null
+    ? { kind: "markdown", text: "This card names no panel T3 can show." }
+    : { kind: "surface", surface: ref, title: canvasSurfaceTitle(ref) };
+}
+
 /** Ids are scoped to the drawing, so two drawings can both have a box called `api`. */
 const drawingElementId = (drawingId: string, shapeId: string) => `${drawingId}/${shapeId}`;
 const labelId = (elementId: string) => `${elementId}/label`;
@@ -45,7 +60,7 @@ const labelId = (elementId: string) => `${elementId}/label`;
 const hasLines = (shape: ThreadCanvasShape) => shape.type === "arrow" || shape.type === "line";
 /** A T3 reading block on the canvas, rendered by the client rather than drawn by Excalidraw. */
 export const isCardShape = (shape: ThreadCanvasShape) =>
-  shape.type === "markdown" || shape.type === "html";
+  shape.type === "markdown" || shape.type === "html" || shape.type === "card";
 
 function estimateTextSize(text: string, fontSize: number) {
   const lines = text.split("\n");
@@ -78,6 +93,14 @@ function wrapText(text: string, fontSize: number, width: number) {
 /** The size a shape takes when the agent leaves it out: big enough for its label. */
 export function shapeSize(shape: ThreadCanvasShape) {
   const fontSize = shape.fontSize ?? DEFAULT_FONT_SIZE_PX;
+  if (shape.type === "card") {
+    const ref = shape.card === undefined ? null : canvasSurfaceRefOfSpec(shape.card);
+    const size = ref === null ? null : canvasCardDefaultSize(ref);
+    return {
+      width: shape.width ?? size?.width ?? DEFAULT_CARD_WIDTH_PX,
+      height: shape.height ?? size?.height ?? DEFAULT_CARD_HEIGHT_PX,
+    };
+  }
   if (isCardShape(shape)) {
     return {
       width: shape.width ?? DEFAULT_CARD_WIDTH_PX,
@@ -534,11 +557,13 @@ export function buildDrawingElements(input: BuildDrawingInput): ReadonlyArray<Th
             t3Card:
               shape.type === "markdown"
                 ? { kind: "markdown", text: shape.text ?? "" }
-                : {
-                    kind: "html",
-                    attachmentId: shape.attachmentId ?? "",
-                    title: shape.title ?? "HTML",
-                  },
+                : shape.type === "card"
+                  ? panelCardOf(shape)
+                  : {
+                      kind: "html",
+                      attachmentId: shape.attachmentId ?? "",
+                      title: shape.title ?? "HTML",
+                    },
           },
         },
       ];
@@ -602,12 +627,15 @@ export function drawingShapesOf(
         : typeof label?.text === "string"
           ? label.text
           : undefined;
+    const surface = record(card.surface);
     const type: ThreadCanvasShape["type"] =
       card.kind === "markdown"
         ? "markdown"
         : card.kind === "html"
           ? "html"
-          : (String(element.type) as ThreadCanvasShape["type"]);
+          : card.kind === "surface"
+            ? "card"
+            : (String(element.type) as ThreadCanvasShape["type"]);
     const size = { width: numberOf(element.width), height: numberOf(element.height) };
     const position = { x: numberOf(data.localX), y: numberOf(data.localY) };
     const strokeDefault = card.kind === undefined ? STROKE : CARD_STROKE;
@@ -621,6 +649,19 @@ export function drawingShapesOf(
         ? { backgroundColor: element.backgroundColor }
         : {}),
     };
+    if (type === "card") {
+      const ref = canvasSurfaceRefOf(surface);
+      return [
+        {
+          id,
+          type,
+          ...position,
+          ...size,
+          ...(ref === null ? {} : { card: canvasCardSpecOf(ref) }),
+          ...colors,
+        },
+      ];
+    }
     if (type === "markdown" || type === "html") {
       return [
         {

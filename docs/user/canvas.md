@@ -7,6 +7,7 @@ At Comfortable chat width on web and desktop, a thread shows its canvas behind t
 - **From the panel.** Right-click a tab and choose **Place on canvas**. The card lands beside the latest turn.
 - **From empty canvas.** Right-click an empty spot to get the same new tabs the panel offers. The card opens with its corner where you clicked. A new terminal, browser tab or side chat starts for the card; a device card opens on the device picker. **Canvas options…** at the bottom opens the canvas's own menu.
 - **From a reply.** Right-click a file link in a turn and choose **Preview in canvas**. The card lands beside that turn.
+- **From the agent.** Ask an agent to put a file, Files, a browser tab, a terminal, Diff, a pull request, Linked pull requests, a chat or a device on the canvas and it places the same live card, beside its reply. A file card can also show a file outside the project by its full path.
 - **From the sidebar.** Right-click any other thread and choose **Place on canvas** to put its chat on the canvas you have open, at a free spot in view. Its card is titled with the thread's name, and only a side chat of the open thread offers **Bring back** and delete there.
 
 ## Use a card

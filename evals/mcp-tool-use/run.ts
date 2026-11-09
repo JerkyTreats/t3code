@@ -51,6 +51,7 @@ import { buildCodexAdditionalContext } from "../../apps/server/src/provider/Code
 import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
 import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
 import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment/tools.ts";
+import { CanvasEditToolkit } from "../../apps/server/src/mcp/toolkits/canvas/tools.ts";
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
 import { HtmlToolkit } from "../../apps/server/src/mcp/toolkits/html/tools.ts";
@@ -436,6 +437,7 @@ const t3SourceTools: ReadonlyArray<Tool.Any> = [
   PreviewToolkit,
   DeviceToolkit,
   HtmlToolkit,
+  CanvasEditToolkit,
 ].flatMap((toolkit): ReadonlyArray<Tool.Any> => Object.values(toolkit.tools));
 // McpHttpServer decodes arguments with each tool's JSON codec, which drops undeclared keys.
 const t3InputDecoders = new Map(

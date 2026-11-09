@@ -10,9 +10,9 @@ describe("canvasSurfaceRefOf", () => {
       { kind: "file", relativePath: "a.ts", revealLine: 0 },
       true,
     ],
-    ["a host path", { kind: "file", relativePath: "/home/user/a.ts" }, false],
-    ["a home path", { kind: "file", relativePath: "~/a.ts" }, false],
-    ["a drive path", { kind: "file", relativePath: "C:\\a.ts" }, false],
+    ["a host path", { kind: "file", relativePath: "/home/user/a.ts" }, true],
+    ["a home path", { kind: "file", relativePath: "~/a.ts" }, true],
+    ["a drive path", { kind: "file", relativePath: "C:\\a.ts" }, true],
     ["a path out of the workspace", { kind: "file", relativePath: "src/../../a.ts" }, false],
     [
       "a preview with its url",

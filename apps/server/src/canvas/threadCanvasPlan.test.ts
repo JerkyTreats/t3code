@@ -85,6 +85,54 @@ describe("planDrawing", () => {
     });
   });
 
+  it("places any panel as a live card, sized for it, and patches keep what it shows", () => {
+    const first = applied(empty, {
+      drawingId: "d",
+      shapes: [
+        {
+          id: "contract",
+          type: "card",
+          card: { kind: "file", path: "/home/user/gym/contracts/platform.json" },
+        },
+        { id: "tab", type: "card", card: { kind: "browser", tabId: "tab_1" } },
+        { id: "chat", type: "card", card: { kind: "chat", threadId: "thread-2" } },
+        { id: "bad", type: "card", card: { kind: "browser" } },
+      ],
+    });
+    expect(live(first.elements, "d/contract")).toMatchObject({
+      width: 720,
+      height: 800,
+      customData: {
+        t3Card: {
+          kind: "surface",
+          surface: { kind: "file", relativePath: "/home/user/gym/contracts/platform.json" },
+          title: "platform.json",
+        },
+      },
+    });
+    expect(live(first.elements, "d/tab")?.customData).toMatchObject({
+      t3Card: { kind: "surface", surface: { kind: "preview", tabId: "tab_1" } },
+    });
+    expect(live(first.elements, "d/chat")).toMatchObject({
+      width: 460,
+      customData: { t3Card: { surface: { kind: "side-chat", threadId: "thread-2" } } },
+    });
+    expect(live(first.elements, "d/bad")?.customData).toMatchObject({
+      t3Card: { kind: "markdown" },
+    });
+    const patched = plan(first, {
+      drawingId: "d",
+      patch: true,
+      shapes: [{ id: "contract", type: "card", height: 1200 }],
+    });
+    expect(live(patched.elements, "d/contract")).toMatchObject({
+      height: 1200,
+      customData: {
+        t3Card: { surface: { relativePath: "/home/user/gym/contracts/platform.json" } },
+      },
+    });
+  });
+
   it("lands a new drawing beside the latest turn and ties it to that turn", () => {
     const { elements, report } = plan(empty, {
       drawingId: "d",

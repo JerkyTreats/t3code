@@ -168,11 +168,11 @@ describe("describeCanvas", () => {
           kind: "surface",
           surface: { kind: "files", folderTrail: "src/app" },
         }),
-        // A host path cannot resolve on another client, so it is no surface card.
+        // A path that climbs out of the workspace is no surface card.
         surfaceCard("host", 1000, {
           kind: "surface",
-          surface: { kind: "file", relativePath: "/etc/hosts" },
-          title: "hosts",
+          surface: { kind: "file", relativePath: "../outside.txt" },
+          title: "outside",
         }),
       ]),
     );
