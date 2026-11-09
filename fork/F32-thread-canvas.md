@@ -42,12 +42,17 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   Excalidraw box: a workspace file, Files, a browser tab, a terminal group, Diff, a pull request,
   Linked pull requests, a device and a side chat. The box's `t3Card` holds a reference, never a
   copy, parsed by one shared reader. A card runs the same component and header the panel shows,
-  live at any zoom; only cards off screen or past a cap of six show a face. Where the panel keys
+  live at any zoom; only cards off screen or past a cap of six show a face, and cards join or
+  leave that set only once the camera rests, so a pan never mounts a panel mid-gesture. Once the
+  zoom rests above 100%, a card lays out with CSS zoom at that level and scales back, so it
+  renders at screen resolution; terminals refit their backing store to it. A streamed browser
+  lays out at its card's own size, and only a device card has a click-to-lift cover. Wheel over
+  content that scrolls, including scrollers inside shadow roots, scrolls it. Where the panel keys
   tab state by surface id, a card passes its own `show`, `place` and `close`, so a card's own
-  navigation changes that card: Files and file moves, linked pull request rows and Back, the
-  device picker, terminal splits and closes. Links inside a card's content, such as a pull
-  request link in a description or a pull request in another environment, still open as panel
-  tabs. A browser tab, terminal, side chat or device the panel or floating player already shows
+  navigation changes that card: Files, file moves and every breadcrumb, linked pull request rows
+  and Back, the device picker, terminal splits and closes. Links inside a card's content, such
+  as a pull request link in a description or a pull request in another environment, still open
+  as panel tabs. A browser tab, terminal, side chat or device the panel or floating player already shows
   in this client stays on its face with "Show here"; among live cards naming the same one, the
   card chosen with "Show here" shows it, then the lowest element id. The terminal drawer leaves
   card terminals alone. A card whose board unmounted while its resource started opens as the
@@ -91,6 +96,14 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   `useSideChat.ts` and `components/preview/addBrowserSurface.ts`: a `place` option that mounts a
   new terminal, browser tab or side chat in a card instead of a panel tab (D7).
 - `apps/web/src/components/PersistentThreadTerminals.tsx`: the drawer skips card terminals (D7).
+- `apps/web/src/components/pullRequest/ThreadPullRequestsPanel.tsx` and
+  `lib/openPullRequestLink.ts`: an optional callback that shows a resolved pull request in the
+  card (D7).
+- `apps/web/src/browser/BrowserSurfaceSlot.tsx`: `presentBrowserSurfaceSlots`, which the board
+  calls while a browser card moves (D7); `browser/ServerBrowserSurface.tsx`: sizes the streamed
+  page by layout size, not the zoomed rect (D7).
+- `apps/web/src/terminal/ghostty/surface.ts` with `lib/rasterScale.ts`: sizes the terminal's
+  backing store by its CSS zoom and refits when a card's raster zoom changes (D7).
 - `apps/web/src/components/chat/MarkdownFileLink.tsx`: "Preview in canvas" (D7).
 - `apps/web/src/components/chat/AssistantCitationChip.tsx`: reveals any cited board element (D5).
 - `apps/web/src/components/chat/MessagesTimeline.tsx`: renders turn cards instead of the list
@@ -158,4 +171,6 @@ naming each item's action, on the element menu rendering `li[data-testid]` per i
 
 Known limits: a save sends and broadcasts the whole scene, and every turn card, markdown card and
 html card stays mounted however far off screen it is. A terminal chord such as split, pressed in a
-card's terminal, acts on the panel's active terminal tab.
+card's terminal, acts on the panel's active terminal tab. A card's terminal maps the pointer
+with unscaled cell metrics, so selection at a board zoom other than 100% lands off target, and a
+streamed browser's frames stay at layout resolution above 100%.
