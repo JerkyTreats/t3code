@@ -6,7 +6,6 @@ import {
   coveredText,
   isUserMark,
   renderedCardsIn,
-  selectedNotes,
   toSavableElements,
   unseenMarks,
   unseenSketchMarks,
@@ -106,16 +105,6 @@ describe("marks", () => {
     expect(isUserMark(mark({ customData: { t3Drawing: { id: "a" } } }))).toBe(false);
     expect(isUserMark(mark({ containerId: "box" }))).toBe(false);
     expect(isUserMark(mark({ isDeleted: true }))).toBe(false);
-  });
-
-  it("selects notes top to bottom, skipping empty text and shapes", () => {
-    const low = mark({ id: "low", type: "text", text: "low", y: 50 });
-    const high = mark({ id: "high", type: "text", text: "high", y: 10 });
-    const empty = mark({ id: "empty", type: "text", text: "  " });
-    const shape = mark({ id: "shape" });
-    const selected = { low: true, high: true, empty: true, shape: true };
-    const notes = selectedNotes([low, high, empty, shape], selected);
-    expect(notes.map((note) => note.id)).toEqual(["high", "low"]);
   });
 
   it("wants a picture only for wordless marks the agent has not seen", () => {

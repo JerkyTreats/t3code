@@ -3084,7 +3084,6 @@ export default function ChatView(props: ChatViewProps) {
     }
     requestAnimationFrame(() => void onComposerSendStable());
   };
-  const sendCanvasNoteStable = useStableCallback(sendCanvasNote);
   // The server lists the unseen marks for the agent; this prompt only has to open the turn.
   const sendCanvasNotesStable = useStableCallback(() => sendCanvasNote(CANVAS_NOTES_PROMPT));
   const [canvasPendingNotes, setCanvasPendingNotes] = useState(0);
@@ -3434,7 +3433,6 @@ export default function ChatView(props: ChatViewProps) {
                   ? { environmentId: activeThread.environmentId, threadId: activeThread.id }
                   : null
               }
-              onSendNote={sendCanvasNoteStable}
             />
           </Suspense>
         ) : null}

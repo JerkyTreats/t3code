@@ -29,8 +29,9 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   beside that turn. A delegated task draws on its parent's canvas. `canvas_preview` renders a region
   so the agent can see it, including which cards are cut off.
 - `F32.D4` User marks reach the agent. Anything the user draws or writes is a mark. Marks the agent
-  has not seen are summarised into the next turn, the send button sends them with nothing typed,
-  and a selected note can be sent directly. `canvas_read` reports marks with the text they cover.
+  has not seen are summarised into the next turn, and the send button sends them with nothing
+  typed. A note is never sent on its own from the board. `canvas_read` reports marks with the text
+  they cover.
 - `F32.D5` Card presentation. Markdown cards keep single line breaks; a capitalised state word that
   starts a line, list item or table cell renders as a coloured chip, with the chip span admitted by
   the shared Markdown sanitizer; a card holding a table widens to fit it. html cards are agent

@@ -18,7 +18,6 @@ import { createPortal } from "react-dom";
 
 import ChatMarkdown from "../components/ChatMarkdown";
 import { HtmlRenderFrame } from "../components/chat/HtmlRenderFrame";
-import { Button } from "../components/ui/button";
 import { observeResize } from "../lib/observeResize";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useTheme } from "../hooks/useTheme";
@@ -32,7 +31,6 @@ import {
   renderedCardsIn,
   drawingTurnOf,
   isUserMark,
-  selectedNotes,
   toSavableElements,
   unseenSketchMarks,
   unseenMarks,
@@ -88,7 +86,6 @@ const TURN_STROKE_OPACITY = 40;
 const PAN_DURATION_MS = 280;
 // How far the camera may sit from the latest turn and still count as following it.
 const FOLLOW_TOLERANCE_PX = 48;
-const NOTE_ACTION_GAP_PX = 10;
 const SKETCH_MAX_EDGE_PX = 1600;
 // Base64 costs a third more, and a larger picture would be refused by the save.
 const SKETCH_MAX_BYTES = 5_000_000;
@@ -518,15 +515,12 @@ export default function ExcalidrawBoard({
   storageId,
   turnBoard,
   canvasThread,
-  onSendNote,
 }: {
   draft: boolean;
   storageId: string;
   turnBoard: TurnBoard;
   /** The server thread whose canvas this board shows, once the thread exists there. */
   canvasThread: ThreadCanvasTarget | null;
-  /** Sends the words of a note to the thread's agent as a user message. */
-  onSendNote: (text: string) => void;
 }) {
   const { resolvedTheme } = useTheme();
   const storageKey = draft ? DRAFT_STORAGE_KEY : `${TURN_STORAGE_PREFIX}${storageId}`;
@@ -549,13 +543,6 @@ export default function ExcalidrawBoard({
   const [cards, setCards] = useState<ReadonlyArray<CanvasCard>>([]);
   const coveredCache = useRef(new Map<string, string | null>());
   const lastSketch = useRef("");
-  const [noteAction, setNoteAction] = useState<{
-    readonly key: string;
-    readonly x: number;
-    readonly y: number;
-    readonly zoom: number;
-    readonly ids: ReadonlyArray<string>;
-  } | null>(null);
   const camera = useRef({
     following: true,
     latestTurn: null as string | null,
@@ -675,51 +662,10 @@ export default function ExcalidrawBoard({
     await saveCanvas.current?.([], await readBase64(blob));
   };
 
-  /** Saves first, so the server knows the note by the time the turn it starts is prepared. */
-  const sendNotes = useStableCallback(async (notes: ReadonlyArray<BoardElement>) => {
-    if (!api) return;
-    await pushScene();
-    const text = notes
-      .flatMap((note) => (note.type === "text" ? [note.text.trim()] : []))
-      .join("\n");
-    if (text === "") return;
-    onSendNote(text);
-    api.updateScene({
-      appState: { selectedElementIds: {} },
-      captureUpdate: CaptureUpdateAction.NEVER,
-    });
-  });
-
   const reportPendingNotes = (count: number) => {
     if (count === pendingNotes.current) return;
     pendingNotes.current = count;
     turnBoard.reportPendingNotes(count);
-  };
-
-  const trackNoteAction = (elements: BoardElements, appState: Parameters<BoardChange>[1]) => {
-    const notes = selectedNotes(elements, appState.selectedElementIds);
-    const idle =
-      appState.activeTool.type === "selection" &&
-      !appState.editingTextElement &&
-      !appState.selectedElementsAreBeingDragged;
-    const zoom = appState.zoom.value;
-    const x = notes.length === 0 ? 0 : Math.min(...notes.map((note) => note.x));
-    const y = Math.max(...notes.map((note) => note.y + note.height), 0);
-    const ids = notes.map((note) => note.id);
-    const key = `${ids.join()}:${x}:${y}:${zoom}`;
-    const next = idle && ids.length > 0 ? { key, x, y, zoom, ids } : null;
-    setNoteAction((current) => (current?.key === next?.key ? current : next));
-  };
-
-  // Excalidraw commits the text on this same keypress, so the note is read after it has.
-  const sendEditedNote = (event: React.KeyboardEvent) => {
-    if (event.key !== "Enter" || !(event.ctrlKey || event.metaKey) || !api) return;
-    const editing = api.getAppState().editingTextElement;
-    if (!editing) return;
-    window.setTimeout(() => {
-      const note = api.getSceneElements().find((element) => element.id === editing.id);
-      if (note) void sendNotes([note]);
-    }, 0);
   };
 
   /** Takes in whatever is newer on the server. */
@@ -779,7 +725,6 @@ export default function ExcalidrawBoard({
         if (appState.selectedElementsAreBeingDragged) setFollowing(false);
         // Every tool but select draws or pans, so it reaches through the cards to the canvas.
         root.toggleAttribute("data-board-marking", appState.activeTool.type !== "selection");
-        trackNoteAction(elements, appState);
         if (versions !== lastVersions.current) {
           reportPendingNotes(unseenMarks(elements, seenByAgent.current).length);
           const nextCards = canvasCardsOf(elements);
@@ -967,7 +912,6 @@ export default function ExcalidrawBoard({
       className="excalidraw-board pointer-events-auto absolute inset-0"
       data-excalidraw-board
       onPointerDownCapture={takeFocus}
-      onKeyDownCapture={draft ? undefined : sendEditedNote}
     >
       {canvasThread === null ? null : (
         <ThreadCanvasSync target={canvasThread} onScene={applyScene} saveRef={saveCanvas} />
@@ -1053,31 +997,6 @@ export default function ExcalidrawBoard({
                 </div>
               );
             }),
-            noteLayer,
-          )}
-      {noteLayer === null || noteAction === null
-        ? null
-        : createPortal(
-            <div
-              className="pointer-events-auto absolute top-0 left-0 origin-top-left"
-              style={{
-                transform: `translate(${noteAction.x}px, ${noteAction.y + NOTE_ACTION_GAP_PX}px) scale(${1 / noteAction.zoom})`,
-              }}
-            >
-              <Button
-                size="xs"
-                onClick={() => {
-                  const ids = new Set(noteAction.ids);
-                  void sendNotes(
-                    (api?.getSceneElements() ?? [])
-                      .filter((element) => ids.has(element.id))
-                      .toSorted((left, right) => left.y - right.y),
-                  );
-                }}
-              >
-                Send to agent
-              </Button>
-            </div>,
             noteLayer,
           )}
     </div>

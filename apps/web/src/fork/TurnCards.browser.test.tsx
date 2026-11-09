@@ -22,7 +22,6 @@ function Fixture(props: {
   board: ReturnType<typeof createTurnBoard>;
   rows: ReadonlyArray<MessagesTimelineRow>;
   onFollowChange: (following: boolean) => void;
-  onSendNote?: (text: string) => void;
 }) {
   return (
     <div
@@ -35,7 +34,6 @@ function Fixture(props: {
         storageId="fixture"
         turnBoard={props.board}
         canvasThread={null}
-        onSendNote={props.onSendNote ?? (() => {})}
       />
       <div
         style={{
@@ -152,78 +150,5 @@ describe("TurnCards on the board", () => {
     await vi.waitFor(() =>
       expect(localStorage.getItem("t3code:demo:turn-board:fixture")).toContain("t3Turn"),
     );
-  });
-
-  it("sends a selected note to the agent from the board", async () => {
-    localStorage.setItem(
-      "t3code:demo:turn-board:fixture",
-      JSON.stringify([
-        {
-          id: "note",
-          type: "text",
-          x: 500,
-          y: 100,
-          width: 160,
-          height: 25,
-          angle: 0,
-          strokeColor: "#000000",
-          backgroundColor: "transparent",
-          fillStyle: "solid",
-          strokeWidth: 1,
-          strokeStyle: "solid",
-          roughness: 0,
-          opacity: 100,
-          groupIds: [],
-          frameId: null,
-          roundness: null,
-          seed: 1,
-          version: 2,
-          versionNonce: 1,
-          index: "a0",
-          isDeleted: false,
-          boundElements: null,
-          updated: 1,
-          link: null,
-          locked: false,
-          text: "Show me timings",
-          fontSize: 20,
-          fontFamily: 5,
-          textAlign: "left",
-          verticalAlign: "top",
-          containerId: null,
-          originalText: "Show me timings",
-          autoResize: true,
-          lineHeight: 1.25,
-        },
-      ]),
-    );
-    const onSendNote = vi.fn();
-    const board = createTurnBoard();
-    await using _ = await render(
-      <Fixture
-        board={board}
-        rows={[userRow("a")]}
-        onFollowChange={() => {}}
-        onSendNote={onSendNote}
-      />,
-    );
-    await vi.waitFor(() => expect(cardRect("a")?.width).toBeGreaterThan(0));
-    await vi.waitFor(() => expect(interactiveCanvas()).not.toBeNull());
-    const layer = board.layer()!.getBoundingClientRect();
-    const zoom = board.layer()!.style.transform.match(/scale\((.+)\)/)?.[1] ?? "1";
-    const canvas = interactiveCanvas()!;
-    const rect = canvas.getBoundingClientRect();
-    await userEvent.click(page.elementLocator(canvas), {
-      position: {
-        x: layer.left + 580 * Number(zoom) - rect.left,
-        y: layer.top + 112 * Number(zoom) - rect.top,
-      },
-      force: true,
-    });
-
-    await page.getByRole("button", { name: "Send to agent" }).click();
-
-    await vi.waitFor(() => expect(onSendNote).toHaveBeenCalledWith("Show me timings"));
-    await vi.waitFor(() => expect(document.body.textContent).not.toContain("Send to agent"));
   });
 });
