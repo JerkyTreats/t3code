@@ -220,3 +220,37 @@ describe("ServerBrowserSurface history", () => {
     expect(mouseInputs()).not.toEqual([]);
   });
 });
+
+describe("ServerBrowserSurface sizing", () => {
+  it("sizes the page to its layout box, not its on-screen size under a scaled canvas", async () => {
+    setup();
+    const container = document.createElement("div");
+    // A canvas card zoomed out to half size on the board.
+    container.style.cssText =
+      "width: 400px; height: 300px; display: flex; transform: scale(0.5); transform-origin: 0 0;";
+    await using screen = await render(
+      <ServerBrowserSurface
+        environmentId={EnvironmentId.make("environment-size")}
+        threadId="thread-size"
+        tabId="tab-size"
+        visible
+        className="flex-1"
+      />,
+      { container },
+    );
+    await vi.waitFor(() => expect(mocks.createClient).toHaveBeenCalled());
+    const handlers = mocks.createClient.mock.calls.at(-1)![1];
+    await act(() =>
+      handlers.onControl?.({ canOperate: true, controller: "you", generation: 1, dialog: null }),
+    );
+    const box = screen.container.querySelector("canvas")!.parentElement!;
+    await vi.waitFor(() =>
+      expect(mocks.sent.filter((input) => input.type === "resize").at(-1)).toEqual({
+        type: "resize",
+        width: box.clientWidth,
+        height: box.clientHeight,
+      }),
+    );
+    expect(box.clientWidth).toBe(400);
+  });
+});

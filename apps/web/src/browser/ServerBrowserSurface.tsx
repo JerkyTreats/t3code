@@ -341,9 +341,12 @@ export function ServerBrowserSurface(props: {
     };
     const measure = () => {
       timer = null;
-      const rect = element.getBoundingClientRect();
-      if (rect.width < 1 || rect.height < 1) return;
-      const size = { width: Math.round(rect.width), height: Math.round(rect.height) };
+      // Layout size, not the on-screen rect: a canvas card is scaled by the board's zoom, and the
+      // page must lay out at the card's own size, as in the panel, whatever the zoom.
+      const width = element.clientWidth;
+      const height = element.clientHeight;
+      if (width < 1 || height < 1) return;
+      const size = { width, height };
       const previous = sizeRef.current;
       if (previous?.width === size.width && previous.height === size.height) return;
       sizeRef.current = size;
