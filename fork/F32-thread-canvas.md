@@ -36,8 +36,24 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   starts a line, list item or table cell renders as a coloured chip, with the chip span admitted by
   the shared Markdown sanitizer; a card holding a table widens to fit it. html cards are agent
   attachments shown behind a cover that lets wheel and drag pan the board until clicked. Citation
-  chips in a reply pan the board to the cited card. `html_render` with `displayWidth` widens that
-  turn's card on the board.
+  chips pan the board to the cited card, shape or note. `html_render` with `displayWidth` widens
+  that turn's card on the board.
+- `F32.D7` Surface cards. Every right panel tab kind can be placed on the board as its own
+  Excalidraw box: a workspace file, Files, a browser tab, a terminal group, Diff, a pull request,
+  Linked pull requests, a device and a side chat. The box's `t3Card` holds a reference, never a
+  copy, parsed by one shared reader. A card runs the same component and header the panel shows,
+  live at any zoom; only cards off screen or past a cap of six show a face. Where the panel keys
+  tab state by surface id, a card passes its own `show`, `place` and `close`, so navigating in a
+  card changes that card and never the panel tab. A browser tab, terminal, side chat or device the
+  panel or floating player already shows in this client stays on its face with "Show here", and
+  the terminal drawer leaves card terminals alone. Showing another surface in a card stays out of
+  undo; placing and closing are undoable. Entry points: the tab's "Place on canvas", T3's menu on
+  an empty-canvas right-click with the panel's new tabs and "Canvas options…" that reopens
+  Excalidraw's own menu, "Preview in canvas" on a file link in a turn, which places beside that
+  turn, and Cite atop Excalidraw's element menu, which quotes any element through the composer.
+  Scene sync is unchanged: two editors of one file can overwrite each other, and the raw or
+  rendered file view stays the panel's global preference. `canvas_read` names each card's kind and
+  resource.
 - `F32.D6` Agent guidance. The orchestration instructions carry a Canvas section, delivered to
   Claude and Codex, that tells agents when and how to draw. Its byte size is part of the committed
   agent context budget.
@@ -51,12 +67,26 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
 - `apps/server/src/canvas/ThreadCanvasStore.ts`, `threadCanvasScene.ts`, `threadCanvasPlan.ts`,
   `canvasDiagram.ts`, `canvasPreviewPage.ts`, `sharedCanvas.ts`
 - `apps/server/src/mcp/toolkits/canvas/tools.ts` and `handlers.ts`
-- `packages/shared/src/threadCanvasDrawing.ts`
+- `apps/web/src/fork/canvasSurfaceCards.ts`, `CanvasSurfaceCardView.tsx`, `CanvasCardTerminal.tsx`,
+  `canvasContextMenus.ts`
+- `packages/shared/src/threadCanvasDrawing.ts`, `canvasSurfaceCard.ts`
 - `packages/contracts/src/threadCanvas.ts`
 
 ## Upstream Sensitive Adapters
 
-- `apps/web/src/components/ChatView.tsx`: mounts the board and decides when it shows (D1).
+- `apps/web/src/components/ChatView.tsx`: mounts the board and decides when it shows (D1); hands
+  the board `renderPanelSurface`, the new-tab menu items and Cite (D7).
+- `apps/web/src/components/chat/RightPanelSurfaceContent.tsx` and
+  `components/device/DevicePanel.tsx`: the optional `card` prop that routes tab writes to the
+  card (D7).
+- `apps/web/src/components/RightPanelTabs.tsx`: "Place on canvas" and the exported
+  `rightPanelNewSurfaceActions` both menus share (D7).
+- `apps/web/src/components/chat/useChatTerminalActions.ts`, `useRightPanelActions.ts`,
+  `useSideChat.ts` and `components/preview/addBrowserSurface.ts`: a `place` option that mounts a
+  new terminal, browser tab or side chat in a card instead of a panel tab (D7).
+- `apps/web/src/components/PersistentThreadTerminals.tsx`: the drawer skips card terminals (D7).
+- `apps/web/src/components/chat/MarkdownFileLink.tsx`: "Preview in canvas" (D7).
+- `apps/web/src/components/chat/AssistantCitationChip.tsx`: reveals any cited board element (D5).
 - `apps/web/src/components/chat/MessagesTimeline.tsx`: renders turn cards instead of the list
   while a board is mounted.
 - `apps/web/src/components/chat/ChatComposer.tsx`: sends unseen marks (D4).
@@ -96,7 +126,17 @@ behavior, or give agents any file, network or command authority beyond upstream'
 - `apps/server/src/provider/AgentContextBudget.test.ts`: the guidance budget.
 - `apps/web/src/fork/*.test.ts(x)`: turn layout and settling, cards, marks, chips, middle drag,
   draft handoff, citation reveal and server drawings loading into Excalidraw.
-- `packages/shared/src/threadCanvasDrawing.test.ts`: shape and card construction.
+- `apps/web/src/fork/canvasSurfaceCards.test.ts`: refs round-trip to the panel's surfaces, the
+  live cap, and the one-live-view check.
+- `apps/web/src/fork/CanvasSurfaceCardView.browser.test.tsx`: a card runs the panel component and
+  its navigation rewrites the card; the empty-canvas menu and "Canvas options…"; Cite atop
+  Excalidraw 0.18's element menu.
+- `apps/web/src/fork/canvasCards.browser.test.ts`: the wheel rule that leaves a terminal's wheel
+  alone.
+- `apps/web/src/components/chat/RightPanelSurfaceContent.browser.test.tsx`: Files navigation in a
+  card never moves the panel tab.
+- `packages/shared/src/threadCanvasDrawing.test.ts`, `canvasSurfaceCard.test.ts`: shape and card
+  construction, and which surface refs resolve.
 
 ## Replay Notes
 
@@ -106,5 +146,9 @@ adapters above routing to these owners. An optional field can disappear without 
 the evidence tests above, not compilation, are the check that `displayWidth`, the save scope and
 the Canvas section survived.
 
-Known limits: a save sends and broadcasts the whole scene, and every turn card and canvas card stays
-mounted however far off screen it is.
+Upgrading Excalidraw must keep the Cite test passing: it depends on the element menu rendering
+`li[data-testid]` per item and on `handleCanvasContextMenu` reading only an event's position.
+
+Known limits: a save sends and broadcasts the whole scene, and every turn card, markdown card and
+html card stays mounted however far off screen it is. A terminal chord such as split, pressed in a
+card's terminal, acts on the panel's active terminal tab.
