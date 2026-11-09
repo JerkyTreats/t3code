@@ -68,6 +68,7 @@ import {
   type PreviewAnnotationPayload,
   ProviderInstanceId,
   type ServerProvider,
+  type ThreadPullRequestLink,
   type ScopedThreadRef,
   type ThreadId,
   ProviderInteractionMode,
@@ -117,7 +118,7 @@ import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
 import {
   lazy,
-  type ReactNode,
+  type ComponentProps,
   type SetStateAction,
   Suspense,
   use,
@@ -415,6 +416,7 @@ const EMPTY_AUTO_UPDATE_ENVIRONMENTS: ReadonlyArray<EnvironmentPresentation> = [
 const EMPTY_COMPOSER_BANNER_ITEMS: ReadonlyArray<ComposerBannerStackItem> = [];
 
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
+const EMPTY_PULL_REQUESTS: ReadonlyArray<ThreadPullRequestLink> = [];
 
 const ExcalidrawBoard = lazy(() => import("../fork/ExcalidrawBoard"));
 
@@ -1195,7 +1197,6 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
   const handleFilePendingChangeStable = useStableCallback(handleFilePendingChange);
-  const configuredPreviewUrls = getConfiguredPreviewUrls(activeProjectScripts);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drops file surfaces from the right panel store once bootstrap shows the thread has no workspace
   useEffect(() => {
@@ -3307,69 +3308,91 @@ export default function ChatView(props: ChatViewProps) {
     runShellCommand: runSideChatShellCommandStable,
   };
 
+  // What the panel and the canvas cards render a surface with, beside the surface itself.
+  // Built unconditionally, as React Compiler memoizes it here but not inside a conditional.
+  // Worked out after the last hook, so React Compiler can keep this list's identity.
+  const configuredPreviewUrls = getConfiguredPreviewUrls(
+    activeProject ? resolveProjectScripts(settings, activeProject) : undefined,
+  );
+  const panelSurfaceProps = {
+    composerDraftTarget,
+    keybindings,
+    configuredPreviewUrls,
+    workspaceMutationId,
+    getShortcutContext: getShortcutContextStable,
+    onSendAnnotation: sendPreviewAnnotationStable,
+    onCloseSurface: closeRightPanelSurface,
+    sideChatParentPanel,
+    terminal: {
+      launchContext: activeTerminalLaunchContext ?? null,
+      keybindings,
+      onAddTerminalContext: addTerminalContextToDraftStable,
+      onSplitTerminal: splitPanelTerminalStable,
+      onSplitTerminalVertical: splitPanelTerminalVerticalStable,
+      onNewTerminal: addTerminalSurfaceStable,
+      onActiveTerminalChange: activatePanelTerminalStable,
+      onCloseTerminal: closePanelTerminalStable,
+      splitShortcutLabel: splitTerminalShortcutLabel ?? undefined,
+      splitVerticalShortcutLabel: splitTerminalVerticalShortcutLabel ?? undefined,
+      newShortcutLabel: newTerminalShortcutLabel ?? undefined,
+      closeShortcutLabel: closeTerminalShortcutLabel ?? undefined,
+    },
+    pullRequest: {
+      capabilityKnown: pullRequestsCapabilityKnown,
+      supported: supportsPullRequests,
+      projectId: activeThread?.projectId ?? null,
+      // The detail panel filters these itself; the raw list keeps its identity across renders.
+      pullRequests: (activeThreadShell ?? activeThread)?.pullRequests ?? EMPTY_PULL_REQUESTS,
+      linkedPullRequest: linkedThreadPullRequest,
+      branchPullRequest: activeThreadShell?.branchPullRequest ?? activeThread?.branchPullRequest,
+      onBack:
+        pullRequestsSurfaceAvailable && visiblePullRequestCount > 1
+          ? addPullRequestsSurfaceStable
+          : undefined,
+    },
+    files: {
+      projectId: activeProject?.id,
+      projectName: activeProject?.title ?? null,
+      workspaceRoot: activeWorkspaceRoot,
+      availableEditors,
+      pendingSurfaceIds: pendingFileSurfaceIds,
+      onOpenFile: openFileSurfaceStable,
+      onPendingChange: handleFilePendingChangeStable,
+    },
+  } satisfies Omit<
+    ComponentProps<typeof RightPanelSurfaceContent>,
+    "surface" | "card" | "activeSurfaceId" | "visible" | "threadRef" | "environmentId"
+  >;
+  // A live card always shows its surface. Above the early return, where React Compiler keeps
+  // its identity until a surface input changes, so streaming re-renders no card.
+  const renderCardSurface = (surface: RightPanelSurface, card: PanelSurfaceCard) =>
+    activeThreadRef ? (
+      <RightPanelSurfaceContent
+        {...panelSurfaceProps}
+        threadRef={activeThreadRef}
+        environmentId={activeThreadRef.environmentId}
+        surface={surface}
+        card={card}
+        activeSurfaceId={null}
+        visible
+      />
+    ) : null;
+
   if (!activeThread) {
     return embedded ? null : <NoActiveThreadState />;
   }
 
-  // The panel renders its active surface here, and each canvas card renders its own with `card`.
-  const renderPanelSurface = (
-    surface: RightPanelSurface | null,
-    card?: PanelSurfaceCard,
-  ): ReactNode =>
-    activeThreadRef ? (
-      <RightPanelSurfaceContent
-        surface={surface}
-        card={card}
-        activeSurfaceId={activeRightPanelSurface?.id ?? null}
-        threadRef={activeThreadRef}
-        environmentId={activeThread.environmentId}
-        visible={card !== undefined || rightPanelOpen}
-        composerDraftTarget={composerDraftTarget}
-        keybindings={keybindings}
-        configuredPreviewUrls={configuredPreviewUrls}
-        workspaceMutationId={workspaceMutationId}
-        getShortcutContext={getShortcutContextStable}
-        onSendAnnotation={sendPreviewAnnotationStable}
-        onCloseSurface={closeRightPanelSurface}
-        sideChatParentPanel={sideChatParentPanel}
-        terminal={{
-          launchContext: activeTerminalLaunchContext ?? null,
-          keybindings,
-          onAddTerminalContext: addTerminalContextToDraftStable,
-          onSplitTerminal: splitPanelTerminalStable,
-          onSplitTerminalVertical: splitPanelTerminalVerticalStable,
-          onNewTerminal: addTerminalSurfaceStable,
-          onActiveTerminalChange: activatePanelTerminalStable,
-          onCloseTerminal: closePanelTerminalStable,
-          splitShortcutLabel: splitTerminalShortcutLabel ?? undefined,
-          splitVerticalShortcutLabel: splitTerminalVerticalShortcutLabel ?? undefined,
-          newShortcutLabel: newTerminalShortcutLabel ?? undefined,
-          closeShortcutLabel: closeTerminalShortcutLabel ?? undefined,
-        }}
-        pullRequest={{
-          capabilityKnown: pullRequestsCapabilityKnown,
-          supported: supportsPullRequests,
-          projectId: activeThread.projectId,
-          pullRequests: visiblePullRequests,
-          linkedPullRequest: linkedThreadPullRequest,
-          branchPullRequest: activeThreadShell?.branchPullRequest ?? activeThread.branchPullRequest,
-          onBack:
-            pullRequestsSurfaceAvailable && visiblePullRequestCount > 1
-              ? addPullRequestsSurfaceStable
-              : undefined,
-        }}
-        files={{
-          projectId: activeProject?.id,
-          projectName: activeProject?.title ?? null,
-          workspaceRoot: activeWorkspaceRoot,
-          availableEditors,
-          pendingSurfaceIds: pendingFileSurfaceIds,
-          onOpenFile: openFileSurfaceStable,
-          onPendingChange: handleFilePendingChangeStable,
-        }}
-      />
-    ) : null;
-  const rightPanelContent = renderPanelSurface(renderedRightPanelSurface);
+  const rightPanelContent = activeThreadRef ? (
+    <RightPanelSurfaceContent
+      {...panelSurfaceProps}
+      threadRef={activeThreadRef}
+      environmentId={activeThreadRef.environmentId}
+      surface={renderedRightPanelSurface}
+      activeSurfaceId={activeRightPanelSurface?.id ?? null}
+      visible={rightPanelOpen}
+    />
+  ) : null;
+
   const newSurfaceAvailability = {
     browserAvailable: canOperatePreview && browserAvailable,
     terminalAvailable: activeProject !== null && canOperateTerminal,
@@ -3481,7 +3504,7 @@ export default function ChatView(props: ChatViewProps) {
                   ? { environmentId: activeThread.environmentId, threadId: activeThread.id }
                   : null
               }
-              renderPanelSurface={renderPanelSurface}
+              renderPanelSurface={renderCardSurface}
               newSurfaces={canvasNewSurfaces}
               onCite={citeAssistantTextStable}
             />
