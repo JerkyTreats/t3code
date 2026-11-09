@@ -43,14 +43,20 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   Linked pull requests, a device and a side chat. The box's `t3Card` holds a reference, never a
   copy, parsed by one shared reader. A card runs the same component and header the panel shows,
   live at any zoom; only cards off screen or past a cap of six show a face. Where the panel keys
-  tab state by surface id, a card passes its own `show`, `place` and `close`, so navigating in a
-  card changes that card and never the panel tab. A browser tab, terminal, side chat or device the
-  panel or floating player already shows in this client stays on its face with "Show here", and
-  the terminal drawer leaves card terminals alone. Showing another surface in a card stays out of
-  undo; placing and closing are undoable. Entry points: the tab's "Place on canvas", T3's menu on
-  an empty-canvas right-click with the panel's new tabs and "Canvas options…" that reopens
-  Excalidraw's own menu, "Preview in canvas" on a file link in a turn, which places beside that
-  turn, and Cite atop Excalidraw's element menu, which quotes any element through the composer.
+  tab state by surface id, a card passes its own `show`, `place` and `close`, so a card's own
+  navigation changes that card: Files and file moves, linked pull request rows and Back, the
+  device picker, terminal splits and closes. Links inside a card's content, such as a pull
+  request link in a description or a pull request in another environment, still open as panel
+  tabs. A browser tab, terminal, side chat or device the panel or floating player already shows
+  in this client stays on its face with "Show here"; among live cards naming the same one, the
+  card chosen with "Show here" shows it, then the lowest element id. The terminal drawer leaves
+  card terminals alone. A card whose board unmounted while its resource started opens as the
+  thread's panel tab. Showing another surface in a card stays out of undo; placing and closing are
+  undoable. Entry points: the tab's "Place on canvas"; a right-click where Excalidraw's own hit
+  test opens its canvas menu, which T3's menu replaces with the panel's new tabs and "Canvas
+  options…" that reopens Excalidraw's menu; "Preview in canvas" on a file link in a turn, which
+  places beside that turn; and Cite atop Excalidraw's element menu, which quotes any element
+  through the composer with an anchor that follows the element.
   Scene sync is unchanged: two editors of one file can overwrite each other, and the raw or
   rendered file view stays the panel's global preference. `canvas_read` names each card's kind and
   resource.
@@ -146,8 +152,9 @@ adapters above routing to these owners. An optional field can disappear without 
 the evidence tests above, not compilation, are the check that `displayWidth`, the save scope and
 the Canvas section survived.
 
-Upgrading Excalidraw must keep the Cite test passing: it depends on the element menu rendering
-`li[data-testid]` per item and on `handleCanvasContextMenu` reading only an event's position.
+Upgrading Excalidraw must keep the menu tests passing: they depend on its context menu state
+naming each item's action, on the element menu rendering `li[data-testid]` per item, and on
+`handleCanvasContextMenu` reading only an event's position.
 
 Known limits: a save sends and broadcasts the whole scene, and every turn card, markdown card and
 html card stays mounted however far off screen it is. A terminal chord such as split, pressed in a
