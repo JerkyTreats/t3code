@@ -24,6 +24,7 @@ import { useStableCallback } from "../hooks/useStableCallback";
 import { useTheme } from "../hooks/useTheme";
 import { presentBrowserSurfaceSlots } from "../browser/BrowserSurfaceSlot";
 import { isElectron } from "../env";
+import { announceRasterScaleChange } from "../lib/rasterScale";
 import {
   type AssistantCitationSourceAnchor,
   createAssistantTextSelector,
@@ -111,6 +112,8 @@ const TOOLBAR_CLEARANCE_PX = 64;
 const COMPOSER_CLEARANCE_PX = 24;
 const TURN_STROKE_OPACITY = 40;
 const PAN_DURATION_MS = 280;
+// How long the zoom must rest before surface cards lay out again at it.
+const RASTER_SETTLE_MS = 200;
 // How far the camera may sit from the latest turn and still count as following it.
 const FOLLOW_TOLERANCE_PX = 48;
 const SKETCH_MAX_EDGE_PX = 1600;
@@ -597,6 +600,34 @@ export default function ExcalidrawBoard({
   const [surfaceActivation] = useState(() => createSurfaceActivation(setLiveSurfaces));
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- stops the activation's pending settle timer when the board unmounts
   useEffect(() => () => surfaceActivation.dispose(), [surfaceActivation]);
+  // The zoom surface cards lay out at once the camera rests above 100%, so they render crisp.
+  const [rasterZoom, setRasterZoom] = useState(1);
+  const rasterSettle = useRef<{ zoom: number; timer: number | null }>({ zoom: 1, timer: null });
+  const settleRasterZoom = useStableCallback((zoom: number) => {
+    const settle = rasterSettle.current;
+    if (zoom === settle.zoom) return;
+    settle.zoom = zoom;
+    if (settle.timer !== null) window.clearTimeout(settle.timer);
+    settle.timer = window.setTimeout(() => {
+      settle.timer = null;
+      setRasterZoom(Math.max(1, Math.round(zoom * 100) / 100));
+    }, RASTER_SETTLE_MS);
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- stops a pending raster zoom timer when the board unmounts
+  useEffect(
+    () => () => {
+      const { timer } = rasterSettle.current;
+      if (timer !== null) window.clearTimeout(timer);
+    },
+    [],
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- tells canvases sized by device pixels, such as terminals, that their on-screen scale changed
+  useEffect(() => {
+    announceRasterScaleChange();
+  }, [
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A new raster zoom has committed to the cards, which is what the canvases must refit to.
+    rasterZoom,
+  ]);
   // The card the user asked to show a resource that another live card also shows.
   const [preferredCard, setPreferredCard] = useState<string | null>(null);
   // Elements cited from the board, each with a quote the composer's citation anchors to.
@@ -663,6 +694,7 @@ export default function ExcalidrawBoard({
     reconcileTurns(api, turnBoard);
     const view = api.getAppState();
     placeCards(api, turnBoard, board, view, surfaceActivation);
+    settleRasterZoom(view.zoom.value);
     const latest = turnBoard.cards().at(-1)?.id ?? null;
     if (latest !== camera.current.latestTurn) {
       const opening = camera.current.latestTurn === null;
@@ -780,7 +812,10 @@ export default function ExcalidrawBoard({
           waitingScene.current = null;
           applyScene(scene);
         } else if (camera.current.latestTurn === null) syncTurns();
-        else placeCards(api, turnBoard, board, appState, surfaceActivation);
+        else {
+          placeCards(api, turnBoard, board, appState, surfaceActivation);
+          settleRasterZoom(appState.zoom.value);
+        }
         // Moving a turn is the reader taking over, so the camera stops chasing it.
         if (appState.selectedElementsAreBeingDragged) setFollowing(false);
         // Every tool but select draws or pans, so it reaches through the cards to the canvas.
@@ -848,6 +883,7 @@ export default function ExcalidrawBoard({
       return;
     }
     placeCards(api, turnBoard, board, view, surfaceActivation);
+    settleRasterZoom(zoom.value);
     const { set } = camera.current;
     if (set?.scrollX === scrollX && set.scrollY === scrollY) return;
     cancelPan();
@@ -1211,17 +1247,30 @@ export default function ExcalidrawBoard({
                 >
                   {card.card.kind === "surface" ? (
                     api && renderPanelSurface ? (
-                      <CanvasSurfaceCardView
-                        environmentId={canvasThread.environmentId}
-                        threadId={canvasThread.threadId}
-                        elementId={card.id}
-                        cardJson={JSON.stringify(card.card)}
-                        live={liveSurfaces.has(card.id)}
-                        api={api}
-                        renderPanelSurface={renderPanelSurface}
-                        inAnotherCard={yieldedCards.has(card.id)}
-                        onShowHere={setPreferredCard}
-                      />
+                      // Laid out at the settled zoom and scaled back, so the board's scale
+                      // leaves it at its size while it rasterizes at screen resolution.
+                      <div
+                        className="canvas-card-raster"
+                        style={{
+                          width,
+                          height,
+                          ...(rasterZoom > 1
+                            ? { zoom: rasterZoom, transform: `scale(${1 / rasterZoom})` }
+                            : {}),
+                        }}
+                      >
+                        <CanvasSurfaceCardView
+                          environmentId={canvasThread.environmentId}
+                          threadId={canvasThread.threadId}
+                          elementId={card.id}
+                          cardJson={JSON.stringify(card.card)}
+                          live={liveSurfaces.has(card.id)}
+                          api={api}
+                          renderPanelSurface={renderPanelSurface}
+                          inAnotherCard={yieldedCards.has(card.id)}
+                          onShowHere={setPreferredCard}
+                        />
+                      </div>
                     ) : null
                   ) : card.card.kind === "markdown" ? (
                     // A card is the agent's writing, so selecting in it offers the timeline's Cite.

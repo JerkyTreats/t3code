@@ -133,6 +133,53 @@ describe("a right panel tab placed on the canvas", () => {
   });
 });
 
+describe("a surface card zoomed in past 100%", () => {
+  it("lays out at the settled zoom and scales back, keeping its size on the board", async () => {
+    const { screen, layer } = await renderBoard({});
+    await using _ = screen;
+    placeSurfaceOnCanvas(
+      threadRef,
+      { kind: "surface", surface: { kind: "diff" }, title: "Diff" },
+      { at: { x: 100, y: 100 } },
+    );
+    const raster = await vi.waitFor(() => {
+      const found = layer.querySelector<HTMLElement>(".canvas-card-raster");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const card = raster.parentElement!;
+    expect(raster.style.zoom).toBe("");
+    const canvas = document.querySelector(".excalidraw__canvas.interactive")!;
+    const zoom = () => Number(/scale\(([\d.]+)\)/.exec(layer.style.transform)?.[1] ?? 1);
+    // Excalidraw takes one wheel zoom per frame, so each step waits for the last to land.
+    while (zoom() < 1.5) {
+      const before = layer.style.transform;
+      canvas.dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaY: -100,
+          ctrlKey: true,
+          clientX: 600,
+          clientY: 350,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await vi.waitFor(() => expect(layer.style.transform).not.toBe(before));
+    }
+    const settled = Math.round(zoom() * 100) / 100;
+    await vi.waitFor(() => expect(Number(raster.style.zoom)).toBe(settled));
+    expect(Number(/scale\(([\d.]+)\)/.exec(raster.style.transform)?.[1])).toBeCloseTo(
+      1 / settled,
+      5,
+    );
+    const cardBox = card.getBoundingClientRect();
+    const rasterBox = raster.getBoundingClientRect();
+    expect(rasterBox.width).toBeCloseTo(cardBox.width, 0);
+    expect(rasterBox.height).toBeCloseTo(cardBox.height, 0);
+    layer.remove();
+  });
+});
+
 describe("the board's right-click menus", () => {
   it("offers the panel's new tabs on empty canvas, and Canvas options opens Excalidraw's menu", async () => {
     const placed: Array<{ x: number; y: number }> = [];

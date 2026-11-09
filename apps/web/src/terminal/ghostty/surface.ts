@@ -19,6 +19,7 @@ import {
 import symbolsFontUrl from "./fonts/SymbolsNerdFontMono-Regular.woff2?url";
 import { isMonospaceFamily } from "../../appearanceFonts";
 import { observeResize } from "../../lib/observeResize";
+import { cssZoomOf, onRasterScaleChange } from "../../lib/rasterScale";
 
 const DEFAULT_TERMINAL_FONT_SIZE = 12;
 const MIN_TERMINAL_FONT_SIZE = 6;
@@ -557,6 +558,7 @@ export class GhosttyTerminalSurface {
   private fontEpoch = 0;
   private pendingFontEpoch: number | null = null;
   private readonly stopObservingResize: () => void;
+  private readonly stopObservingRasterScale: () => void;
   private readonly scrollbarThumb: HTMLDivElement;
   private snapshot: GhosttySnapshot | null = null;
   private frame = 0;
@@ -675,6 +677,7 @@ export class GhosttyTerminalSurface {
     this.reducedMotionMedia?.addEventListener("change", this.onReducedMotionChange);
     document.fonts.addEventListener("loadingdone", this.onFontsLoaded);
     this.stopObservingResize = observeResize(mount, () => this.fit());
+    this.stopObservingRasterScale = onRasterScaleChange(() => this.fit());
   }
 
   static async create(
@@ -876,7 +879,8 @@ export class GhosttyTerminalSurface {
       return false;
     }
     this.hasSize = true;
-    const ratio = window.devicePixelRatio || 1;
+    // A zoomed ancestor, such as a canvas card at a raised zoom, shows each CSS pixel larger.
+    const ratio = (window.devicePixelRatio || 1) * cssZoomOf(this.mount);
     const pixelWidth = Math.max(1, Math.round(width * ratio));
     const pixelHeight = Math.max(1, Math.round(height * ratio));
     let shouldRender = false;
@@ -1080,6 +1084,7 @@ export class GhosttyTerminalSurface {
     this.disposed = true;
     this.clearHoveredLink();
     this.stopObservingResize();
+    this.stopObservingRasterScale();
     document.fonts.removeEventListener("loadingdone", this.onFontsLoaded);
     this.dprMedia?.removeEventListener("change", this.onDevicePixelRatioChange);
     this.dprMedia = null;
