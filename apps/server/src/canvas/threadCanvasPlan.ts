@@ -58,6 +58,11 @@ export interface DrawInput {
   readonly moveBelowLatestTurn?: ReadonlyArray<string> | undefined;
   /** Id of a box the user drew to hold this drawing: it lands inside, and the box grows to fit. */
   readonly inside?: string | undefined;
+  /**
+   * Id of the drawing chat's own card, when it is a chat placed on another thread's board. The card
+   * stands in for the latest turn: new drawings and every latest-turn place land beside or below it.
+   */
+  readonly anchor?: string | undefined;
 }
 
 interface Box {
@@ -411,6 +416,10 @@ export function planDrawing(input: {
   const turns = others.filter((element) => typeof recordOf(element.customData).t3Turn === "string");
   // The newest turn lands at the bottom of the column, whatever its place in the scene.
   const latestTurn = turns.toSorted((left, right) => boxOf(left).y - boxOf(right).y).at(-1);
+  const anchorCard =
+    draw.anchor === undefined ? undefined : live.find((element) => element.id === draw.anchor);
+  // What "the latest turn" means for this drawing: its chat's card, when it draws from one.
+  const here = anchorCard ?? latestTurn;
   const solidObstacles = others
     .filter((element) => element.type !== "arrow" && element.type !== "line")
     .map(boxOf);
@@ -420,11 +429,11 @@ export function planDrawing(input: {
   // A drawing sent whole again in a later turn is the answer to that turn: it comes beside the latest
   // turn unless it already sits level with it, so an update never stays up by an older turn.
   const sitsByLatestTurn =
-    latestTurn === undefined ||
+    here === undefined ||
     existing.length === 0 ||
     ((box, turn) => box.y < turn.y + turn.height && turn.y < box.y + box.height)(
       boundsOf(existing.map(boxOf)),
-      boxOf(latestTurn),
+      boxOf(here),
     );
   // A drawing held below a turn is a response region that stays there; pieces the agent names to
   // bring along are moved by moveToLatestTurn instead.
@@ -449,14 +458,30 @@ export function planDrawing(input: {
     !sitsByLatestTurn
       ? ("besideLatestTurn" as const)
       : undefined);
+  const besideHere = (
+    obstacles: ReadonlyArray<Box>,
+    size: { readonly width: number; readonly height: number },
+  ) =>
+    anchorCard === undefined
+      ? besideSpine(obstacles, spine, size)
+      : placeDrawing(obstacles, spine, boxOf(anchorCard), { x: 0, y: 0, ...size });
   const besideLatest = (size: { readonly width: number; readonly height: number }) =>
-    besideSpine([...solidObstacles, ...corridor], spine, size);
+    besideHere([...solidObstacles, ...corridor], size);
   const belowLatest = (size: { readonly width: number; readonly height: number }) => {
+    if (anchorCard !== undefined) {
+      const card = boxOf(anchorCard);
+      return {
+        x: card.x,
+        y: card.y + card.height + GAP_PX,
+        width: size.width,
+        height: size.height,
+      };
+    }
     const top =
       latestTurn === undefined ? 0 : boxOf(latestTurn).y + boxOf(latestTurn).height + GAP_PX;
     return { x: -size.width / 2, y: top, width: size.width, height: size.height };
   };
-  const nearElement = live.find((element) => element.id === draw.near);
+  const nearElement = live.find((element) => element.id === (draw.near ?? draw.anchor));
   // A drawing whose every shape is new is a new drawing: it starts where the old one sat,
   // but clear of the user's marks rather than over them.
   const previousShapes = new Set(
@@ -516,15 +541,16 @@ export function planDrawing(input: {
       slideDown([...solidObstacles, ...staying], belowLatest(block)),
     ),
     broughtBeside,
-    (block, staying) => besideSpine([...solidObstacles, ...corridor, ...staying], spine, block),
+    (block, staying) => besideHere([...solidObstacles, ...corridor, ...staying], block),
   );
   // What lands against the latest turn is anchored to it: beside it, to its top edge, so it stays
   // level with the turn; below it, to its bottom edge, so it stays below as the turn grows.
   const placedHere = placed
     .filter((piece) => !pins.has(piece.shape.id))
     .map((piece) => piece.shape.id);
+  // A chat drawing from its card has no turn of its own on this board to anchor to.
   const anchoredShapes = new Map<string, TurnAnchor["edge"]>(
-    holder !== undefined
+    holder !== undefined || anchorCard !== undefined
       ? []
       : [
           ...(place === undefined

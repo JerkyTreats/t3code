@@ -511,6 +511,34 @@ describe("a drawing beside the turn spine", () => {
     expect(live(elements, "r/b")).toMatchObject({ y: 2000 });
     expect(anchorOf(elements, "r/b")).toMatchObject({ turn: "2", edge: "top", at: 2000, dy: 0 });
   });
+
+  it("lands a chat's drawing beside its card, not the turns, even when resent in a later turn", () => {
+    const chat: ThreadCanvasElement = {
+      id: "chat-card",
+      type: "rectangle",
+      version: 1,
+      x: 5000,
+      y: 3000,
+      width: 800,
+      height: 600,
+      customData: { t3Card: { kind: "surface", surface: { kind: "side-chat", threadId: "t" } } },
+    };
+    const scene = { ...empty, elements: [turn, chat] };
+    const first = plan(scene, { drawingId: "r", shapes: [card("a")], anchor: "chat-card" });
+    expect(first.report.placed).toMatchObject({ x: 5000 + 800 + 32, y: 3000 });
+    expect(anchorOf(first.elements, "r/a")).toBeUndefined();
+    const later: ThreadCanvasElement = {
+      ...turn,
+      id: "turn-box:2",
+      y: 2000,
+      customData: { t3Turn: "2", t3TurnTitle: "Later" },
+    };
+    const resent = plan(
+      { ...scene, elements: [...first.elements, later] },
+      { drawingId: "r", shapes: [card("a")], place: "besideLatestTurn", anchor: "chat-card" },
+    );
+    expect(resent.report.placed).toMatchObject({ x: 5000 + 800 + 32, y: 3000 });
+  });
 });
 
 describe("a box the user drew to hold a drawing", () => {

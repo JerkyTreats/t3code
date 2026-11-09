@@ -14,6 +14,8 @@ Drag a card by its outline to move it, pull a corner to resize it, and delete or
 
 Navigating inside a card changes that card, not the panel: opening a file from a Files card shows the file there, and a new terminal from a terminal card opens as its own card beside it. A browser tab, terminal, side chat or device shows in one place at a time on each screen. While the panel or the floating player shows it, its card says so and offers **Show here**.
 
+A side chat placed on the canvas draws on this canvas too. Ask it for a drawing and the drawing appears beside its card.
+
 Over a browser or device card, the wheel pans the canvas until you click into the page. Everyone in the thread sees the same cards. Two people editing one file in different cards can overwrite each other, and the rendered or raw file view follows your panel setting.
 
 ## Cite something on the canvas

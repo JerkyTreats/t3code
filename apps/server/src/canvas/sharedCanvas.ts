@@ -1,9 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import type { ThreadId } from "@t3tools/contracts";
+import type { ThreadCanvasElement, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as NodeCrypto from "node:crypto";
 
-import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+const recordOf = (value: unknown): Record<string, unknown> =>
+  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 
 /** How a thread relates to its parent, as much of the shell as the canvas needs. */
 export interface CanvasLineage {
@@ -15,37 +16,60 @@ export interface CanvasLineage {
 const MAX_DELEGATION_DEPTH = 8;
 const DRAWING_OWNER_HASH_CHARS = 8;
 
+/** Where a thread's agent draws: the canvas thread, and its own card there when it has one. */
+export interface CanvasTarget {
+  readonly threadId: ThreadId;
+  /** Id of the caller's chat card on that canvas; its drawings land beside it. */
+  readonly card: string | null;
+}
+
 /**
- * The thread whose canvas this thread's agent draws on. A delegated task shares the canvas of the
- * thread that delegated it, however deep the delegation goes. A fork keeps its own: it is a
- * separate conversation, not work handed back. Only the agent's tools follow this; a child
- * thread's own board keeps its private scene, so its turn boxes never land on the parent's.
+ * The canvas this thread's agent draws on. A delegated task, however deep, shares its delegator's.
+ * A fork keeps its own unless its chat card sits on its parent's board: then it draws there, beside
+ * that card. Only agent tools follow this; a child's own board keeps its private scene.
  */
-export const resolveCanvasThread = Effect.fn("sharedCanvas.resolveCanvasThread")(function* <E>(
+export const resolveCanvas = Effect.fn("sharedCanvas.resolveCanvas")(function* <E, F>(
   threadId: ThreadId,
   lineageOf: (threadId: ThreadId) => Effect.Effect<CanvasLineage | null, E>,
+  cardOn: (canvasThreadId: ThreadId, chatThreadId: ThreadId) => Effect.Effect<string | null, F>,
 ) {
   let current = threadId;
   for (let depth = 0; depth < MAX_DELEGATION_DEPTH; depth += 1) {
     const lineage = yield* lineageOf(current);
-    if (lineage?.relationshipToParent !== "subagent" || lineage.parentThreadId === null) break;
-    current = lineage.parentThreadId;
+    if (lineage === null || lineage.parentThreadId === null) break;
+    if (lineage.relationshipToParent === "subagent") {
+      current = lineage.parentThreadId;
+      continue;
+    }
+    if (lineage.relationshipToParent !== "fork") break;
+    const card = yield* cardOn(lineage.parentThreadId, current);
+    // Its card is on this board and nowhere further up, so the walk ends here.
+    if (card !== null) return { threadId: lineage.parentThreadId, card } satisfies CanvasTarget;
+    break;
   }
-  return current;
+  return { threadId: current, card: null } satisfies CanvasTarget;
 });
 
-/** The canvas thread for a caller, falling back to the caller's own canvas if lineage is unreadable. */
-export const canvasThreadOf = Effect.fn("sharedCanvas.canvasThreadOf")(function* (
-  threadId: ThreadId,
-) {
-  const threads = yield* ThreadManagementService.ThreadManagementService;
-  return yield* resolveCanvasThread(threadId, (id) =>
-    threads.getThreadShell(id).pipe(
-      Effect.map((shell) => (shell === null ? null : shell.lineage)),
-      Effect.orElseSucceed(() => null),
-    ),
-  );
-});
+/** The live chat card that shows this thread on a board, if the user placed one. */
+export function chatCardOf(
+  elements: ReadonlyArray<ThreadCanvasElement>,
+  chatThreadId: ThreadId,
+): string | null {
+  for (const element of elements) {
+    if (element.isDeleted === true) continue;
+    const card = recordOf(recordOf(element.customData).t3Card);
+    const surface = recordOf(card.surface);
+    if (
+      card.kind === "surface" &&
+      surface.kind === "side-chat" &&
+      surface.threadId === chatThreadId &&
+      typeof element.id === "string"
+    ) {
+      return element.id;
+    }
+  }
+  return null;
+}
 
 /**
  * The drawing id as stored on a shared canvas. A child's drawing carries a short mark of its

@@ -2,7 +2,9 @@ import { assert, describe, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
-import { type CanvasLineage, resolveCanvasThread, sharedDrawingId } from "./sharedCanvas.ts";
+import type { ThreadCanvasElement } from "@t3tools/contracts";
+
+import { type CanvasLineage, chatCardOf, resolveCanvas, sharedDrawingId } from "./sharedCanvas.ts";
 
 const root = ThreadId.make("thread-root");
 const child = ThreadId.make("thread:delegated-task:child");
@@ -16,31 +18,40 @@ const lineages: Record<string, CanvasLineage> = {
   [fork]: { parentThreadId: root, relationshipToParent: "fork" },
 };
 const lineageOf = (threadId: ThreadId) => Effect.succeed(lineages[threadId] ?? null);
+const noCards = () => Effect.succeed<string | null>(null);
+const canvasOf = (threadId: ThreadId, cardOn = noCards) =>
+  resolveCanvas(threadId, lineageOf, cardOn).pipe(Effect.map((target) => target.threadId));
 
-describe("resolveCanvasThread", () => {
+describe("resolveCanvas", () => {
   it.effect("keeps a root thread on its own canvas", () =>
     Effect.gen(function* () {
-      assert.strictEqual(yield* resolveCanvasThread(root, lineageOf), root);
+      assert.strictEqual(yield* canvasOf(root), root);
     }),
   );
 
   it.effect("sends a delegated task, however deep, to the canvas of the delegating thread", () =>
     Effect.gen(function* () {
-      assert.strictEqual(yield* resolveCanvasThread(child, lineageOf), root);
-      assert.strictEqual(yield* resolveCanvasThread(grandchild, lineageOf), root);
+      assert.strictEqual(yield* canvasOf(child), root);
+      assert.strictEqual(yield* canvasOf(grandchild), root);
     }),
   );
 
-  it.effect("keeps a fork on its own canvas", () =>
+  it.effect("keeps a fork on its own canvas until its chat is placed on the parent's board", () =>
     Effect.gen(function* () {
-      assert.strictEqual(yield* resolveCanvasThread(fork, lineageOf), fork);
+      assert.strictEqual(yield* canvasOf(fork), fork);
+      const cardOn = (canvasThreadId: ThreadId, chatThreadId: ThreadId) =>
+        Effect.succeed(canvasThreadId === root && chatThreadId === fork ? "chat-card" : null);
+      assert.deepStrictEqual(yield* resolveCanvas(fork, lineageOf, cardOn), {
+        threadId: root,
+        card: "chat-card",
+      });
     }),
   );
 
   it.effect("keeps an unknown thread on its own canvas", () =>
     Effect.gen(function* () {
       const unknown = ThreadId.make("thread-unknown");
-      assert.strictEqual(yield* resolveCanvasThread(unknown, lineageOf), unknown);
+      assert.strictEqual(yield* canvasOf(unknown), unknown);
     }),
   );
 
@@ -51,7 +62,7 @@ describe("resolveCanvasThread", () => {
           parentThreadId: threadId === root ? child : root,
           relationshipToParent: "subagent",
         });
-      const resolved = yield* resolveCanvasThread(root, cycle);
+      const resolved = (yield* resolveCanvas(root, cycle, noCards)).threadId;
       assert.include([root, child], resolved);
     }),
   );
@@ -67,5 +78,19 @@ describe("sharedDrawingId", () => {
     assert.match(first, /^design~[0-9a-f]{8}$/);
     assert.strictEqual(sharedDrawingId("design", child, root), first);
     assert.notStrictEqual(sharedDrawingId("design", grandchild, root), first);
+  });
+});
+
+describe("chatCardOf", () => {
+  const chatCard = (id: string, threadId: string, isDeleted = false): ThreadCanvasElement => ({
+    id,
+    type: "rectangle",
+    isDeleted,
+    customData: { t3Card: { kind: "surface", surface: { kind: "side-chat", threadId } } },
+  });
+
+  it("finds the live card that shows the chat, and nothing for a deleted one", () => {
+    assert.strictEqual(chatCardOf([chatCard("a", "other"), chatCard("b", fork)], fork), "b");
+    assert.isNull(chatCardOf([chatCard("b", fork, true)], fork));
   });
 });

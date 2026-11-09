@@ -1,4 +1,4 @@
-import { OrchestratorMcpFailure, type ThreadCanvasError } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, type ThreadCanvasError, type ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -10,7 +10,8 @@ import {
 } from "../../../canvas/canvasPreviewPage.ts";
 import { compileDiagram, DiagramError } from "../../../canvas/canvasDiagram.ts";
 import { readCanvas } from "../../../canvas/threadCanvasScene.ts";
-import { canvasThreadOf, sharedDrawingId } from "../../../canvas/sharedCanvas.ts";
+import { chatCardOf, resolveCanvas, sharedDrawingId } from "../../../canvas/sharedCanvas.ts";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
 import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -33,6 +34,25 @@ const decodeClippedCards = Schema.decodeUnknownOption(
 const previewFailure = (error: { readonly _tag: string; readonly message: string }) =>
   new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message });
 
+/** The canvas for a caller, falling back to the caller's own canvas if lineage is unreadable. */
+const canvasOf = Effect.fn("sharedCanvas.canvasOf")(function* (threadId: ThreadId) {
+  const threads = yield* ThreadManagementService.ThreadManagementService;
+  const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
+  return yield* resolveCanvas(
+    threadId,
+    (id) =>
+      threads.getThreadShell(id).pipe(
+        Effect.map((shell) => (shell === null ? null : shell.lineage)),
+        Effect.orElseSucceed(() => null),
+      ),
+    (canvasThreadId, chatThreadId) =>
+      canvas.read(canvasThreadId).pipe(
+        Effect.map((scene) => chatCardOf(scene.elements, chatThreadId)),
+        Effect.orElseSucceed(() => null),
+      ),
+  );
+});
+
 const handlers = {
   canvas_preview: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
@@ -40,7 +60,8 @@ const handlers = {
       const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "canvas_preview");
       const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
       const htmlRender = yield* HtmlRender.HtmlRender;
-      const canvasThreadId = yield* canvasThreadOf(thread.threadId);
+      const target = yield* canvasOf(thread.threadId);
+      const canvasThreadId = target.threadId;
       const scene = yield* canvas.read(canvasThreadId).pipe(Effect.mapError(toFailure));
       const region = previewRegion(scene, {
         drawingId:
@@ -99,7 +120,8 @@ const handlers = {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "canvas_read");
       const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
-      const canvasThreadId = yield* canvasThreadOf(thread.threadId);
+      const target = yield* canvasOf(thread.threadId);
+      const canvasThreadId = target.threadId;
       const scene = yield* canvas.read(canvasThreadId).pipe(Effect.mapError(toFailure));
       // A delegated task reads its parent's canvas but leaves the user's marks unseen, so the
       // parent still hears about them on its next turn.
@@ -110,7 +132,24 @@ const handlers = {
         yield* delivery.acknowledge.pipe(Effect.mapError(toFailure));
       }
       // A drawing id also matches a delegated task's copy of it, `<id>~<owner>`.
-      return readCanvas(scene, input);
+      const read = readCanvas(scene, input);
+      const card =
+        target.card === null
+          ? undefined
+          : scene.elements.find((element) => element.id === target.card);
+      if (card === undefined) return read;
+      // A chat placed on another thread's board answers from its card, not from the turns.
+      return {
+        ...read,
+        yourCard: {
+          id: target.card,
+          x: Math.round(Number(card.x)),
+          y: Math.round(Number(card.y)),
+          width: Math.round(Number(card.width)),
+          height: Math.round(Number(card.height)),
+        },
+        note: `${read.note} You are a chat placed on this board as the card yourCard; the turns are another chat's. Your drawings land beside your card, and besideLatestTurn, belowLatestTurn and moveToLatestTurn mean beside or below your card.`,
+      };
     }),
   ),
   canvas_update: McpToolAccess.actsAsCaller((input) =>
@@ -119,7 +158,8 @@ const handlers = {
       const { thread } = yield* McpInvocationContext.requireThreadScope(scope, "canvas_update");
       const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
       const htmlRender = yield* HtmlRender.HtmlRender;
-      const canvasThreadId = yield* canvasThreadOf(thread.threadId);
+      const target = yield* canvasOf(thread.threadId);
+      const canvasThreadId = target.threadId;
       // An html card's page becomes an attachment of the canvas thread, so every client of that
       // thread can load it. A card that names an existing attachment keeps it.
       if (input.diagram !== undefined && input.shapes !== undefined) {
@@ -169,6 +209,7 @@ const handlers = {
           arranged: diagram !== undefined,
           threadId: canvasThreadId,
           drawingId: sharedDrawingId(input.drawingId, thread.threadId, canvasThreadId),
+          anchor: target.card ?? undefined,
         })
         .pipe(Effect.mapError(toFailure));
     }),
