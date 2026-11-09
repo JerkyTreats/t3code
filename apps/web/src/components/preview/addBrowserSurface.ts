@@ -13,7 +13,7 @@ export async function addBrowserSurface<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly openPreview: OpenPreviewMutation<E>;
   readonly profileId?: string | undefined;
-  /** Mounts the new tab instead of opening it in the panel, which keeps it as a background tab. */
+  /** Mounts the new tab somewhere else, such as a canvas card, instead of opening it in the panel. */
   readonly place?: ((tabId: string) => void) | undefined;
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
   const result = await openPreviewSession({

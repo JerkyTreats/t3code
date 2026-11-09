@@ -1,14 +1,20 @@
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import type { RightPanelSurface } from "../rightPanelStore";
+import {
+  type RightPanelSurface,
+  selectThreadRightPanelState,
+  useRightPanelStore,
+} from "../rightPanelStore";
 import {
   canvasSurfaceCardFor,
+  canvasSurfaceAdders,
   canvasSurfaceRefFor,
   cardsShowingElsewhere,
   createSurfaceActivation,
   liveSurfaceCards,
   panelSurfaceOf,
+  registerCanvasBoard,
   surfaceShownElsewhere,
   type SurfaceCardBox,
 } from "./canvasSurfaceCards";
@@ -280,5 +286,38 @@ describe("cardsShowingElsewhere", () => {
       { id: "e", ref: { kind: "diff" } as const },
     ];
     expect([...cardsShowingElsewhere(cards, null)]).toEqual([["b", "a"]]);
+  });
+});
+
+describe("canvasSurfaceAdders", () => {
+  it("opens a browser tab in the panel when its board is gone by the time the tab starts", () => {
+    const threadRef = {
+      environmentId: "adders-test" as never,
+      threadId: ThreadId.make("thread"),
+    };
+    useRightPanelStore.getState().removeThread(threadRef);
+    const placed = vi.fn();
+    const started: Array<(tabId: string) => void> = [];
+    const adders = canvasSurfaceAdders(threadRef, {
+      browser: (place) => started.push(place),
+      terminal: () => {},
+      sideChat: () => {},
+      pullRequest: null,
+    });
+    const unregister = registerCanvasBoard(threadRef, placed);
+    adders.onAddBrowser({ x: 10, y: 20 });
+    adders.onAddBrowser({ x: 30, y: 40 });
+    started[0]!("tab-1");
+    unregister();
+    started[1]!("tab-2");
+    expect(placed.mock.calls).toEqual([
+      [
+        { kind: "surface", surface: { kind: "preview", tabId: "tab-1" }, title: "Browser" },
+        { at: { x: 10, y: 20 } },
+      ],
+    ]);
+    const panel = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef);
+    expect(panel.activeSurfaceId).toBe("browser:tab-2");
+    expect(panel.surfaces.map((surface) => surface.id)).toEqual(["browser:tab-2"]);
   });
 });

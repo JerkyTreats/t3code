@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
 import { create } from "zustand";
 
 import type { PreviewMiniPlayerSource } from "../previewMiniPlayerStore";
-import { pullRequestSurface, type RightPanelSurface } from "../rightPanelStore";
+import { pullRequestSurface, type RightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 
 /**
  * Right panel tabs placed on the thread canvas as cards. A card renders the panel's own component
@@ -300,6 +300,31 @@ export function placeSurfaceOnCanvas(
 
 type Place<Id> = (place: (id: Id) => void) => void;
 
+/** Opens a ref as the thread's own panel tab, for a card that has no board to land on. */
+function openRefInPanel(threadRef: ScopedThreadRef, ref: CanvasSurfaceRef) {
+  const panel = useRightPanelStore.getState();
+  switch (ref.kind) {
+    case "file":
+      return panel.openFile(threadRef, ref.relativePath, ref.revealLine);
+    case "preview":
+      return panel.openBrowser(threadRef, ref.tabId);
+    case "terminal":
+      return panel.openTerminal(threadRef, ref.resourceId);
+    case "side-chat":
+      return panel.openSideChat(threadRef, ref.threadId as ThreadId);
+    case "pull-request":
+      return panel.openPullRequest(threadRef, ref);
+    case "device":
+      return ref.target === undefined
+        ? panel.open(threadRef, "device")
+        : panel.openDevice(threadRef, ref.target);
+    case "files":
+    case "diff":
+    case "pull-requests":
+      return panel.open(threadRef, ref.kind);
+  }
+}
+
 /**
  * What the empty-canvas menu runs for each new tab kind: it starts the resource where the kind
  * needs one, then places its card with its top-left corner at the scene point.
@@ -315,8 +340,13 @@ export function canvasSurfaceAdders(
   },
 ) {
   type At = { readonly x: number; readonly y: number };
-  const place = (ref: CanvasSurfaceRef, at: At) =>
-    void placeSurfaceOnCanvas(threadRef, canvasSurfaceCardOfRef(ref), { at });
+  // A browser tab or side chat lands after it starts, by when its board may be gone; the
+  // resource then opens as the thread's panel tab rather than being lost.
+  const place = (ref: CanvasSurfaceRef, at: At) => {
+    if (!placeSurfaceOnCanvas(threadRef, canvasSurfaceCardOfRef(ref), { at })) {
+      openRefInPanel(threadRef, ref);
+    }
+  };
   return {
     onAddBrowser: (at: At) => start.browser((tabId) => place({ kind: "preview", tabId }, at)),
     onAddTerminal: (at: At) =>
