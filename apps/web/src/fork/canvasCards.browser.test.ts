@@ -4,8 +4,9 @@ import {
   canvasCardsOf,
   fittedCardHeights,
   onCanvasReveal,
-  revealCanvasCard,
+  revealCanvasElement,
   sameCanvasCards,
+  wheelPansBoard,
 } from "./canvasCards";
 import type { CanvasMark } from "./canvasMarks";
 
@@ -54,19 +55,47 @@ describe("sameCanvasCards", () => {
   });
 });
 
-describe("revealCanvasCard", () => {
-  it("asks the board for a card a citation quotes, and declines anything else", () => {
+describe("revealCanvasElement", () => {
+  it("asks each mounted board for the element a citation quotes, and declines when none has it", () => {
     const asked: string[] = [];
-    const stop = onCanvasReveal((id) => asked.push(id));
-    const card = document.createElement("div");
-    card.className = "canvas-card";
-    const source = document.createElement("div");
-    card.append(source);
-    expect(revealCanvasCard(source, "map/asks")).toBe(true);
-    expect(revealCanvasCard(document.createElement("div"), "msg-1")).toBe(false);
-    expect(revealCanvasCard(null, "msg-2")).toBe(false);
+    const stop = onCanvasReveal((id) => {
+      asked.push(id);
+      return id === "map/asks";
+    });
+    expect(revealCanvasElement("map/asks")).toBe(true);
+    expect(revealCanvasElement("msg-1")).toBe(false);
     stop();
-    expect(asked).toEqual(["map/asks"]);
+    expect(revealCanvasElement("map/asks")).toBe(false);
+    expect(asked).toEqual(["map/asks", "msg-1"]);
+  });
+});
+
+describe("wheelPansBoard", () => {
+  it("leaves the wheel to content that scrolls or already took it, and pans otherwise", () => {
+    const layer = document.createElement("div");
+    const scroller = document.createElement("div");
+    scroller.style.cssText = "overflow-y: auto; height: 40px";
+    const tall = document.createElement("div");
+    tall.style.height = "400px";
+    scroller.append(tall);
+    const plain = document.createElement("div");
+    layer.append(scroller, plain);
+    document.body.append(layer);
+    const wheel = (target: Element, take = false) => {
+      const event = new WheelEvent("wheel", { deltaY: 20, bubbles: true, cancelable: true });
+      let pans = false;
+      layer.addEventListener("wheel", (seen) => (pans = wheelPansBoard(seen, layer)), {
+        once: true,
+      });
+      if (take) target.addEventListener("wheel", (seen) => seen.preventDefault(), { once: true });
+      target.dispatchEvent(event);
+      return pans;
+    };
+    expect(wheel(plain)).toBe(true);
+    expect(wheel(tall)).toBe(false);
+    // A terminal scrolls its buffer without any overflow, and takes the wheel to say so.
+    expect(wheel(plain, true)).toBe(false);
+    layer.remove();
   });
 });
 

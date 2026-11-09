@@ -26,6 +26,7 @@ import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../termina
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { resolveTerminalWorktreePath } from "./ChatView.logic";
+import { useCanvasTerminalIds } from "../fork/canvasSurfaceCards";
 
 /** Where a drawer or panel opens new terminals when a script run overrides the thread's own. */
 export type PersistentTerminalLaunchContext = {
@@ -121,9 +122,12 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   const panelSurfaces = useRightPanelStore(
     (state) => selectThreadRightPanelState(state.byThreadKey, threadRef).surfaces,
   );
-  const panelTerminalIds = new Set(
-    panelSurfaces.flatMap((surface) => (surface.kind === "terminal" ? surface.terminalIds : [])),
-  );
+  // Canvas cards mount their own terminals, as panel tabs do, so the drawer leaves both alone.
+  const canvasTerminalIds = useCanvasTerminalIds(threadRef);
+  const panelTerminalIds = new Set([
+    ...panelSurfaces.flatMap((surface) => (surface.kind === "terminal" ? surface.terminalIds : [])),
+    ...canvasTerminalIds,
+  ]);
   const drawerTerminalSessions =
     knownTerminalSessions?.filter((session) => !panelTerminalIds.has(session.target.terminalId)) ??
     [];

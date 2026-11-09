@@ -323,15 +323,20 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     );
   };
   const runShellCommandStable = useStableCallback(runShellCommand);
-  const addTerminalSurface = () => {
+  /** Starts a terminal that `place` mounts, such as a panel tab or a canvas card. */
+  const launchPlacedTerminal = (place: (terminalId: string) => void) => {
     if (!activeThreadRef) return;
-    const launched = terminalActions.launchTerminal({
-      place: (terminalId) =>
-        useRightPanelStore.getState().openTerminal(activeThreadRef, terminalId),
-    });
+    const launched = terminalActions.launchTerminal({ place });
     if (!launched) return;
     focusTerminal(activeThreadRef, launched.terminalId);
     void launched.result;
+  };
+  const launchPlacedTerminalStable = useStableCallback(launchPlacedTerminal);
+  const addTerminalSurface = () => {
+    if (!activeThreadRef) return;
+    launchPlacedTerminal((terminalId) =>
+      useRightPanelStore.getState().openTerminal(activeThreadRef, terminalId),
+    );
   };
   const addTerminalSurfaceStable = useStableCallback(addTerminalSurface);
   const splitPanelTerminal = (direction: "horizontal" | "vertical" = "horizontal") => {
@@ -447,6 +452,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     addTerminalSurfaceStable,
     closePanelTerminalStable,
     createNewTerminalStable,
+    launchPlacedTerminalStable,
     lastInvokedScriptByProjectId,
     requestClosePanelTerminalStable,
     requestCloseTerminalStable,

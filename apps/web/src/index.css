@@ -2732,6 +2732,18 @@ code {
   --canvas-state-color: #74c0fc;
 }
 
+/* The quote a citation of a board element points at: invisible text over the element. */
+.canvas-cite-anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
+}
+
 .canvas-card-cover {
   position: absolute;
   inset: 0;

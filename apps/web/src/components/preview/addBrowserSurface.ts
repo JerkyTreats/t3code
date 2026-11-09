@@ -13,6 +13,8 @@ export async function addBrowserSurface<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly openPreview: OpenPreviewMutation<E>;
   readonly profileId?: string | undefined;
+  /** Mounts the new tab instead of opening it in the panel, which keeps it as a background tab. */
+  readonly place?: ((tabId: string) => void) | undefined;
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
   const result = await openPreviewSession({
     openPreview: input.openPreview,
@@ -20,6 +22,7 @@ export async function addBrowserSurface<E>(input: {
     ...(input.profileId === undefined ? {} : { profileId: input.profileId }),
   });
   return mapAtomCommandResult(result, (snapshot) => {
-    useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
+    if (input.place) input.place(snapshot.tabId);
+    else useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
   });
 }

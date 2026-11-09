@@ -124,7 +124,8 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     }
   };
   const onToggleDiffStable = useStableCallback(onToggleDiff);
-  const createBrowserSurface = (profileId?: string) => {
+  /** `place` mounts the new tab somewhere else than the panel, such as a canvas card. */
+  const createBrowserSurface = (profileId?: string, place?: (tabId: string) => void) => {
     if (!activeThreadRef || !canOperatePreview || !isCurrentPreviewHost() || !browserAvailable)
       return;
     const sameLifetime = previewStateLifetimeIsCurrent(activeThreadRef);
@@ -136,6 +137,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
         sameLifetime,
       ),
       ...(profileId === undefined ? {} : { profileId }),
+      ...(place === undefined ? {} : { place }),
     }).then((result) => {
       if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
       const error = squashAtomCommandFailure(result);

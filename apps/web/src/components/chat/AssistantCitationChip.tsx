@@ -21,7 +21,7 @@ import {
   assistantCitationNavigation,
 } from "../../lib/assistantCitationNavigation";
 import { cn } from "~/lib/utils";
-import { revealCanvasCard } from "../../fork/canvasCards";
+import { revealCanvasElement } from "../../fork/canvasCards";
 import { ContextChip, ContextChipAction, ContextChipLabel } from "../ContextChip";
 import { ContextChipPopover } from "../contextChipParts";
 import { Button } from "../ui/button";
@@ -123,8 +123,7 @@ export function AssistantCitationChip({
         return;
       }
       event.preventDefault();
-      const anchor = findAssistantCitationSourceAnchor(document, citation);
-      if (revealCanvasCard(anchor?.source ?? null, citation.messageId)) return;
+      if (revealCanvasElement(citation.messageId)) return;
       void navigate(assistantCitationNavigation(citation));
     },
   };

@@ -40,6 +40,7 @@ import {
 } from "./DeviceSetup";
 import { DeviceWorkspace } from "./DeviceWorkspace";
 import { PreviewPanelShell, type PreviewPanelMode } from "../preview/PreviewPanelShell";
+import type { PanelSurfaceCard } from "../../fork/canvasSurfaceCards";
 
 const platformLabel = (platform: DevicePlatform) =>
   platform === "ios" ? "iOS Simulators" : "Android Emulators";
@@ -53,6 +54,8 @@ export function DevicePanel(props: {
   readonly surface: Extract<RightPanelSurface, { kind: "device" }>;
   readonly visible: boolean;
   readonly onDismissSetup: () => void;
+  /** Set when the panel runs in a canvas card, which shows and closes its own device. */
+  readonly card?: PanelSurfaceCard | undefined;
 }) {
   const { environmentId, threadId } = props.threadRef;
   const { state, loaded, error: stateError, refresh: refreshState } = useDeviceState(environmentId);
@@ -123,13 +126,15 @@ export function DevicePanel(props: {
     });
     if (result._tag === "Failure") settleOperation(formatEnvironmentQueryError(result.cause));
     else {
-      // The server opened the device for the starting thread, so its tab opens there.
-      useRightPanelStore.getState().openDevice(props.threadRef, {
+      const target = {
         hostId: result.value.hostId,
         deviceId: result.value.deviceId,
         platform: device.platform,
         name: device.name,
-      });
+      };
+      // The server opened the device for the starting thread, so its tab opens there.
+      if (props.card) props.card.show({ kind: "device", target });
+      else useRightPanelStore.getState().openDevice(props.threadRef, target);
       settleOperation(null);
     }
   };
@@ -143,10 +148,15 @@ export function DevicePanel(props: {
       platform: activeDevice.platform,
       name: activeDevice.name,
     });
-    useRightPanelStore.getState().close(props.threadRef);
+    // A card stays on the board and shows its face while the floating player has the device.
+    if (!props.card) useRightPanelStore.getState().close(props.threadRef);
   };
 
   const closeSurface = () => {
+    if (props.card) {
+      props.card.close();
+      return;
+    }
     const store = useRightPanelStore.getState();
     const { activeSurfaceId } = selectThreadRightPanelState(store.byThreadKey, props.threadRef);
     store.closeSurface(props.threadRef, props.surface.id);

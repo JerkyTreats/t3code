@@ -1,43 +1,28 @@
 import "../index.css";
 
-import { EnvironmentId, type ProjectReadFileResult, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { page } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../test/render";
-import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 
 const state = vi.hoisted(() => ({
-  file: null as ProjectReadFileResult | null,
-  reads: [] as Array<{ relativePath: string | null; enabled: boolean | undefined }>,
+  menus: [] as Array<ReadonlyArray<{ id: string; label: string; disabled?: boolean }>>,
+  pick: null as string | null,
 }));
 
 vi.mock("./ThreadCanvasSync", () => ({ ThreadCanvasSync: () => null }));
-vi.mock(import("../components/files/projectFilesQueryState"), async (original) => ({
+vi.mock(import("../localApi"), async (original) => ({
   ...(await original()),
-  useProjectFileQuery: (
-    _environmentId: unknown,
-    _cwd: string,
-    relativePath: string | null,
-    enabled?: boolean,
-  ) => {
-    state.reads.push({ relativePath, enabled });
-    return {
-      data: enabled ? state.file : null,
-      error: null,
-      isPending: false,
-      readError: null,
-      isNotFile: false,
-      isFile: true,
-      refresh: () => {},
-    };
-  },
-}));
-vi.mock(import("../state/entities"), async (original) => ({
-  ...(await original()),
-  useQuietThreadShell: () =>
-    ({ projectId: "project", worktreePath: "/workspace", latestRun: null }) as never,
-  useProject: () => null,
+  readLocalApi: () =>
+    ({
+      contextMenu: {
+        show: async (items: ReadonlyArray<{ id: string; label: string; disabled?: boolean }>) => {
+          state.menus.push(items);
+          return state.pick;
+        },
+      },
+    }) as never,
 }));
 
 import ExcalidrawBoard from "./ExcalidrawBoard";
@@ -50,112 +35,169 @@ const threadRef = {
 };
 const STORAGE_KEY = "t3code:demo:turn-board:surface-cards";
 
-/** Every element under `root`, through open shadow roots, as the file view renders into one. */
-function deepElements(root: Element): Element[] {
-  return [...root.querySelectorAll("*")].flatMap((element) => [
-    element,
-    ...(element.shadowRoot ? [...element.shadowRoot.children].flatMap(deepElements) : []),
-  ]);
+const savedCards = () =>
+  (
+    JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]") as ReadonlyArray<{
+      id: string;
+      x: number;
+      y: number;
+      customData?: { t3Card?: unknown };
+    }>
+  ).filter((element) => element.customData?.t3Card !== undefined);
+
+const rightClick = (target: Element, clientX: number, clientY: number) =>
+  target.dispatchEvent(
+    new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX, clientY }),
+  );
+
+async function renderBoard(options: {
+  readonly onCite?: Parameters<typeof ExcalidrawBoard>[0]["onCite"];
+  readonly placed?: Array<{ x: number; y: number }>;
+}) {
+  localStorage.removeItem(STORAGE_KEY);
+  state.menus = [];
+  await page.viewport(1300, 800);
+  const turnBoard = createTurnBoard();
+  const layer = document.createElement("div");
+  // The board's cards sit in the timeline's citation viewport, as in the chat.
+  layer.dataset.assistantCitationViewport = "true";
+  document.body.append(layer);
+  turnBoard.publish(layer, []);
+  const screen = await render(
+    <div data-board-root style={{ position: "relative", width: 1200, height: 700 }}>
+      <ExcalidrawBoard
+        draft={false}
+        storageId="surface-cards"
+        turnBoard={turnBoard}
+        canvasThread={threadRef}
+        renderPanelSurface={(surface, card) => (
+          <button
+            type="button"
+            data-testid="panel-surface"
+            onClick={() => card.show({ kind: "file", relativePath: "README.md" })}
+          >
+            {surface.id}
+          </button>
+        )}
+        newSurfaces={[
+          { label: "Browser", available: false, place: () => {} },
+          { label: "Files", available: true, place: (at) => options.placed?.push(at) },
+        ]}
+        onCite={options.onCite}
+      />
+    </div>,
+  );
+  await vi.waitFor(() => expect(canvasBoardMounted(threadRef)).toBe(true));
+  return { screen, layer };
 }
 
-describe("a file placed on the canvas from the panel", () => {
-  it("shows its source read-only, falls back to its face zoomed out, and reopens in the panel", async () => {
-    localStorage.removeItem(STORAGE_KEY);
-    state.file = {
-      relativePath: "src/app.ts",
-      contents: "export const answer = 42;\n",
-      byteLength: 26,
-      truncated: false,
-    };
-    await page.viewport(1300, 800);
-    const turnBoard = createTurnBoard();
-    const layer = document.createElement("div");
-    document.body.append(layer);
-    turnBoard.publish(layer, []);
-    await using _ = await render(
-      <div data-board-root style={{ position: "relative", width: 1200, height: 700 }}>
-        <ExcalidrawBoard
-          draft={false}
-          storageId="surface-cards"
-          turnBoard={turnBoard}
-          canvasThread={threadRef}
-          onSendNote={() => {}}
-        />
-      </div>,
-    );
-    await vi.waitFor(() => expect(canvasBoardMounted(threadRef)).toBe(true));
-
+describe("a right panel tab placed on the canvas", () => {
+  it("runs the panel's component, whose navigation changes the card and not the panel", async () => {
+    const { screen, layer } = await renderBoard({});
+    await using _ = screen;
     expect(
       placeSurfaceOnCanvas(threadRef, {
         kind: "surface",
-        surface: { kind: "file", relativePath: "src/app.ts" },
-        title: "app.ts",
+        surface: { kind: "files" },
+        title: "Files",
       }),
     ).toBe(true);
-
-    const card = await vi.waitFor(() => {
-      const found = document.querySelector('[data-canvas-card="surface"]');
-      expect(found).not.toBeNull();
-      expect(found!.querySelector("[data-surface-live-view]")).not.toBeNull();
+    const panel = await vi.waitFor(() => {
+      const found = layer.querySelector<HTMLButtonElement>('[data-testid="panel-surface"]');
+      expect(found?.textContent).toBe("files");
       return found!;
     });
-    expect(card.textContent).toContain("src/app.ts");
-    const sourceText = () =>
-      deepElements(card)
-        .map((element) => (element.childElementCount === 0 ? element.textContent : ""))
-        .join("");
-    await vi.waitFor(() => expect(sourceText()).toContain("answer = 42"));
-    // Nothing in the card can be typed into: the panel's editor is the only editable copy.
-    expect(
-      deepElements(card).filter(
-        (element) =>
-          element instanceof HTMLElement &&
-          (element.isContentEditable || element.matches("input, textarea")),
-      ),
-    ).toEqual([]);
-    // The card is saved as a reference, never a copy of the file.
+    // The card is saved as a reference, never a copy of what it shows.
+    await vi.waitFor(() =>
+      expect(savedCards().map((element) => element.customData?.t3Card)).toEqual([
+        { kind: "surface", surface: { kind: "files" }, title: "Files" },
+      ]),
+    );
+    panel.click();
     await vi.waitFor(() => {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]") as ReadonlyArray<{
-        customData?: { t3Card?: unknown };
-      }>;
-      expect(saved.map((element) => element.customData?.t3Card)).toContainEqual({
-        kind: "surface",
-        surface: { kind: "file", relativePath: "src/app.ts" },
-        title: "app.ts",
-      });
-    });
-
-    const canvas = document.querySelector(".excalidraw__canvas.interactive")!;
-    const zoom = () => Number(/scale\(([\d.]+)\)/.exec(layer.style.transform)?.[1] ?? 1);
-    // Excalidraw takes one wheel zoom per frame, so each step waits for the last to land.
-    const wheelZoom = async (deltaY: number) => {
-      const before = layer.style.transform;
-      canvas.dispatchEvent(
-        new WheelEvent("wheel", {
-          deltaY,
-          ctrlKey: true,
-          clientX: 600,
-          clientY: 350,
-          bubbles: true,
-          cancelable: true,
-        }),
+      expect(layer.querySelector('[data-testid="panel-surface"]')?.textContent).toBe(
+        "file:README.md",
       );
-      await vi.waitFor(() => expect(layer.style.transform).not.toBe(before));
-    };
-    while (zoom() >= 0.45) await wheelZoom(100);
-    await vi.waitFor(() => expect(card.querySelector("[data-surface-live-view]")).toBeNull());
-    expect(card.textContent).toContain("Zoom in or scroll to read.");
+      expect(savedCards().map((element) => element.customData?.t3Card)).toEqual([
+        {
+          kind: "surface",
+          surface: { kind: "file", relativePath: "README.md" },
+          title: "README.md",
+        },
+      ]);
+    });
+    layer.remove();
+  });
+});
 
-    // A same-length edit while the card is away must not come back with the old highlighting.
-    state.file = { ...state.file, contents: "export const answer = 43;\n" };
-    while (zoom() < 0.5) await wheelZoom(-100);
-    await vi.waitFor(() => expect(card.querySelector("[data-surface-live-view]")).not.toBeNull());
-    await vi.waitFor(() => expect(sourceText()).toContain("answer = 43"));
-    expect(sourceText()).not.toContain("answer = 42");
+describe("the board's right-click menus", () => {
+  it("offers the panel's new tabs on empty canvas, and Canvas options opens Excalidraw's menu", async () => {
+    const placed: Array<{ x: number; y: number }> = [];
+    const { screen, layer } = await renderBoard({ placed });
+    await using _ = screen;
+    const board = document.querySelector<HTMLElement>("[data-excalidraw-board]")!;
+    const canvas = document.querySelector(".excalidraw__canvas.interactive")!;
 
-    card.querySelector<HTMLButtonElement>("button")!.click();
-    const panel = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef);
-    expect(panel.activeSurfaceId).toBe("file:src/app.ts");
+    state.pick = "surface:1";
+    rightClick(canvas, 600, 400);
+    await vi.waitFor(() => expect(placed).toHaveLength(1));
+    expect(state.menus[0]).toEqual([
+      { id: "surface:0", label: "Browser", disabled: true },
+      { id: "surface:1", label: "Files", disabled: false },
+      { id: "canvas-options", label: "Canvas options…", separatorBefore: true },
+    ]);
+    expect(board.querySelector("ul.context-menu")).toBeNull();
+
+    state.pick = "canvas-options";
+    rightClick(canvas, 600, 400);
+    await vi.waitFor(() =>
+      expect(board.querySelector('ul.context-menu [data-testid="selectAll"]')).not.toBeNull(),
+    );
+    expect(board.querySelector('[data-testid="t3-cite"]')).toBeNull();
+    layer.remove();
+  });
+
+  it("puts Cite atop Excalidraw's element menu, quoting the element through the composer", async () => {
+    const cited: Array<{ messageId: string; text: string; source: string | undefined }> = [];
+    const { screen, layer } = await renderBoard({
+      onCite: (citation, anchor) => {
+        cited.push({
+          messageId: citation.messageId,
+          text: citation.text,
+          source: anchor.source.dataset.assistantCitationSource,
+        });
+        return true;
+      },
+    });
+    await using _ = screen;
+    placeSurfaceOnCanvas(
+      threadRef,
+      { kind: "surface", surface: { kind: "diff" }, title: "Diff" },
+      { at: { x: 100, y: 100 } },
+    );
+    const [element] = await vi.waitFor(() => {
+      const found = savedCards();
+      expect(found).toHaveLength(1);
+      return found;
+    });
+    const board = document.querySelector<HTMLElement>("[data-excalidraw-board]")!;
+    const canvas = document.querySelector(".excalidraw__canvas.interactive")!;
+    const cardBox = layer.querySelector(".canvas-card")!.getBoundingClientRect();
+    const zoom = Number(/scale\(([\d.]+)\)/.exec(layer.style.transform)?.[1] ?? 1);
+    // On the card's outline, which is the Excalidraw box's edge around the card's view.
+    rightClick(canvas, cardBox.left + cardBox.width / 2, cardBox.top - 12 * zoom);
+    const cite = await vi.waitFor(() => {
+      const items = [...board.querySelectorAll("ul.context-menu > li")];
+      expect(items[0]?.getAttribute("data-testid")).toBe("t3-cite");
+      expect(
+        items.some((item) => item.getAttribute("data-testid") === "deleteSelectedElements"),
+      ).toBe(true);
+      return items[0] as HTMLElement;
+    });
+    expect(state.menus).toEqual([]);
+    cite.click();
+    expect(cited).toEqual([{ messageId: element!.id, text: "Diff", source: element!.id }]);
+    await vi.waitFor(() => expect(board.querySelector("ul.context-menu")).toBeNull());
     layer.remove();
   });
 });

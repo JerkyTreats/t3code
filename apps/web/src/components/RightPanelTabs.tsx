@@ -320,18 +320,8 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
-function RightPanelEmptyState(props: {
-  onAddBrowser: () => void;
-  onAddBrowserInProfile: (profileId: string) => void;
-  browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
-  onAddTerminal: () => void;
-  onAddDiff: () => void;
-  onAddFiles: () => void;
-  onAddPullRequest: () => void;
-  onAddPullRequests: () => void;
-  onAddDevice: () => void;
-  /** Absent where side chats are not offered. */
-  onAddSideChat?: (() => void) | undefined;
+/** Whether each kind of tab can open, and why a side chat cannot. */
+export interface NewSurfaceAvailability {
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -341,10 +331,26 @@ function RightPanelEmptyState(props: {
   deviceAvailable: boolean;
   sideChatAvailable: boolean;
   sideChatDisabledReason: string | null;
-}) {
-  const [highlight, setHighlight] = useState(-1);
+}
 
-  const actions = [
+/**
+ * The tabs a new surface can open as, with their availability and disabled reasons. The panel's
+ * launcher runs them with no argument; the canvas menu runs them with the point to place a card.
+ */
+export function rightPanelNewSurfaceActions<Run>(
+  props: NewSurfaceAvailability & {
+    onAddBrowser: Run;
+    onAddTerminal: Run;
+    onAddFiles: Run;
+    onAddDiff: Run;
+    onAddPullRequest: Run;
+    onAddPullRequests: Run;
+    onAddDevice: Run;
+    /** Absent where side chats are not offered. */
+    onAddSideChat?: Run | undefined;
+  },
+) {
+  return [
     {
       label: "Browser",
       icon: Globe2,
@@ -415,7 +421,34 @@ function RightPanelEmptyState(props: {
           },
         ]
       : []),
-  ] as const;
+  ];
+}
+
+function RightPanelEmptyState(props: {
+  onAddBrowser: () => void;
+  onAddBrowserInProfile: (profileId: string) => void;
+  browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+  onAddTerminal: () => void;
+  onAddDiff: () => void;
+  onAddFiles: () => void;
+  onAddPullRequest: () => void;
+  onAddPullRequests: () => void;
+  onAddDevice: () => void;
+  /** Absent where side chats are not offered. */
+  onAddSideChat?: (() => void) | undefined;
+  browserAvailable: boolean;
+  terminalAvailable: boolean;
+  diffAvailable: boolean;
+  filesAvailable: boolean;
+  pullRequestAvailable: boolean;
+  pullRequestsAvailable: boolean;
+  deviceAvailable: boolean;
+  sideChatAvailable: boolean;
+  sideChatDisabledReason: string | null;
+}) {
+  const [highlight, setHighlight] = useState(-1);
+
+  const actions = rightPanelNewSurfaceActions(props);
 
   type SurfaceAction = (typeof actions)[number];
 

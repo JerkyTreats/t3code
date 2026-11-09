@@ -5,8 +5,14 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { isWorkspaceRelativePath } from "@t3tools/shared/canvasSurfaceCard";
 import { memo, type MouseEvent as ReactMouseEvent } from "react";
 
+import {
+  canvasBoardMounted,
+  canvasSurfaceCardOfRef,
+  placeSurfaceOnCanvas,
+} from "../../fork/canvasSurfaceCards";
 import { readLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
 import { shouldOpenMarkdownFileLinkInEditor } from "../../markdown-links";
@@ -241,15 +247,26 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
     );
   };
 
-  const showFileContextMenu = async (position: { x: number; y: number }) => {
+  /** `turnId` is the turn card the link sits in on the board, where its canvas card goes. */
+  const showFileContextMenu = async (position: { x: number; y: number }, turnId: string | null) => {
     const api = readLocalApi();
     if (!api) return;
 
     try {
       const copyItems = markdownFileCopyMenuItems({ targetPath, workspaceRelativePath });
+      const canvasPath =
+        threadRef &&
+        panelPath &&
+        isWorkspaceRelativePath(panelPath) &&
+        canvasBoardMounted(threadRef)
+          ? panelPath
+          : null;
       const clicked = await api.contextMenu.show(
         [
           ...(onOpenMedia ? ([{ id: "preview-media", label: "Preview media" }] as const) : []),
+          ...(canvasPath
+            ? ([{ id: "preview-in-canvas", label: "Preview in canvas" }] as const)
+            : []),
           ...(onOpen ? ([{ id: "open", label: openInEditorMenuLabel }] as const) : []),
           ...(onOpenInBrowser
             ? ([{ id: "open-in-browser", label: "Open in integrated browser" }] as const)
@@ -262,6 +279,18 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
 
       if (clicked === "preview-media") {
         onOpenMedia?.();
+        return;
+      }
+      if (clicked === "preview-in-canvas" && threadRef && canvasPath) {
+        placeSurfaceOnCanvas(
+          threadRef,
+          canvasSurfaceCardOfRef({
+            kind: "file",
+            relativePath: canvasPath,
+            ...(line === undefined ? {} : { revealLine: line }),
+          }),
+          turnId === null ? undefined : { besideTurn: turnId },
+        );
         return;
       }
       if (clicked === "open") {
@@ -303,7 +332,9 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
             return { x: bounds.left, y: bounds.bottom };
           })()
         : { x: event.clientX, y: event.clientY };
-    void showFileContextMenu(position);
+    const turnId =
+      event.currentTarget.closest<HTMLElement>("[data-turn-card]")?.dataset.turnCard ?? null;
+    void showFileContextMenu(position, turnId);
   };
 
   const canOpenInEditor = onOpen !== undefined;

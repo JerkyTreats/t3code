@@ -2,7 +2,7 @@ import { type CanvasSurfaceCard, canvasSurfaceCardOf } from "@t3tools/shared/can
 
 import type { CanvasMark } from "./canvasMarks";
 
-/** A T3 reading block the agent placed on the canvas, rendered by the app over its box. */
+/** A T3 card over its canvas box: the agent's writing, or a panel tab the user placed. */
 export interface CanvasCard {
   readonly id: string;
   readonly version: number;
@@ -66,26 +66,52 @@ export function sameCanvasCards(left: ReadonlyArray<CanvasCard>, right: Readonly
   );
 }
 
-const CANVAS_REVEAL_EVENT = "t3:canvas-reveal";
+type RevealElement = (elementId: string) => boolean;
+const revealers = new Set<RevealElement>();
 
 /**
- * Pans the open canvas to the card a citation quotes. A card is keyed by its canvas element id,
- * which no message in the thread history has, so a citation of one is found on the board.
- * Returns false when no board shows that card, so the caller can fall back.
+ * Pans the open canvas to the element a citation quotes: a card, a shape or a note. An element is
+ * keyed by its canvas element id, which no message in the thread history has, so a citation of
+ * one is found on a mounted board. Returns false when no board shows that element, so the caller
+ * can fall back to the thread's history.
  */
-export function revealCanvasCard(source: Element | null, elementId: string) {
-  if (source?.closest(".canvas-card") == null) return false;
-  window.dispatchEvent(new CustomEvent(CANVAS_REVEAL_EVENT, { detail: elementId }));
-  return true;
+export function revealCanvasElement(elementId: string) {
+  for (const reveal of revealers) if (reveal(elementId)) return true;
+  return false;
 }
 
-/** Calls `reveal` with each element id a citation asks the board to show. */
-export function onCanvasReveal(reveal: (elementId: string) => void) {
-  const listener = (event: Event) => {
-    if (event instanceof CustomEvent && typeof event.detail === "string") reveal(event.detail);
+/** Registers a mounted board, whose `reveal` shows an element it holds and reports whether it did. */
+export function onCanvasReveal(reveal: RevealElement) {
+  revealers.add(reveal);
+  return () => {
+    revealers.delete(reveal);
   };
-  window.addEventListener(CANVAS_REVEAL_EVENT, listener);
-  return () => window.removeEventListener(CANVAS_REVEAL_EVENT, listener);
+}
+
+function scrollsInside(event: WheelEvent, layer: HTMLElement) {
+  let node = event.target instanceof Element ? event.target : null;
+  while (node !== null && node !== layer) {
+    const { overflowY } = getComputedStyle(node);
+    if (
+      (overflowY === "auto" || overflowY === "scroll") &&
+      node.scrollHeight > node.clientHeight &&
+      (event.deltaY < 0
+        ? node.scrollTop > 0
+        : node.scrollTop + node.clientHeight < node.scrollHeight - 1)
+    ) {
+      return true;
+    }
+    node = node.parentElement;
+  }
+  return false;
+}
+
+/**
+ * Whether a wheel over the card layer pans the board. Content that scrolls keeps the wheel, and
+ * so does content that took it already, such as a terminal scrolling its own buffer.
+ */
+export function wheelPansBoard(event: WheelEvent, layer: HTMLElement) {
+  return !event.defaultPrevented && !scrollsInside(event, layer);
 }
 
 /** The height each rendered markdown card needs to show all of its text, by element id. */

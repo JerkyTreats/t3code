@@ -24,6 +24,8 @@ import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
 import { ThreadPullRequestsPanel } from "../pullRequest/ThreadPullRequestsPanel";
+import { CanvasCardTerminal } from "../../fork/CanvasCardTerminal";
+import type { PanelSurfaceCard } from "../../fork/canvasSurfaceCards";
 
 const PreviewPanel = lazy(() =>
   import("../preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
@@ -79,8 +81,13 @@ export function RightPanelSurfaceContent(props: {
   readonly pullRequest: RightPanelPullRequestProps;
   readonly files: RightPanelFileProps;
   readonly sideChatParentPanel: SideChatParentPanel;
+  /**
+   * Set when the surface runs in a canvas card rather than the panel. The panel keys its tab
+   * state by surface id, which a card shares, so these call sites use the card's own actions.
+   */
+  readonly card?: PanelSurfaceCard | undefined;
 }) {
-  const { surface, threadRef, visible, onCloseSurface } = props;
+  const { surface, threadRef, visible, onCloseSurface, card } = props;
   if (surface === null) return null;
   switch (surface.kind) {
     case "preview":
@@ -97,6 +104,25 @@ export function RightPanelSurfaceContent(props: {
         </Suspense>
       );
     case "terminal":
+      if (card) {
+        const {
+          onSplitTerminal: _split,
+          onSplitTerminalVertical: _splitVertical,
+          onNewTerminal: _new,
+          onActiveTerminalChange: _activate,
+          onCloseTerminal: _close,
+          ...terminal
+        } = props.terminal;
+        return (
+          <CanvasCardTerminal
+            {...terminal}
+            visible={visible}
+            threadRef={threadRef}
+            surface={surface}
+            card={card}
+          />
+        );
+      }
       return (
         <PersistentThreadTerminalPanel
           {...props.terminal}
@@ -131,10 +157,20 @@ export function RightPanelSurfaceContent(props: {
       return (
         <PullRequestDetailPanel
           getShortcutContext={props.getShortcutContext}
-          shortcutsEnabled={visible && props.activeSurfaceId === surface.id}
+          shortcutsEnabled={!card && visible && props.activeSurfaceId === surface.id}
           key={`${scopedThreadKey(threadRef)}:${surface.id}`}
           environmentId={props.environmentId}
           onSelectPullRequest={(reference) => {
+            if (card) {
+              card.show({
+                kind: "pull-request",
+                projectId: reference.projectId,
+                repository: reference.repository,
+                number: reference.number,
+                ...(reference.host ? { host: reference.host } : {}),
+              });
+              return;
+            }
             useRightPanelStore.getState().openPullRequest(threadRef, {
               projectId: reference.projectId,
               repository: reference.repository,
@@ -150,9 +186,13 @@ export function RightPanelSurfaceContent(props: {
             number: surface.number,
           }}
           initialTab={surface.detailTab ?? "summary"}
-          onTabChange={(tab) => {
-            useRightPanelStore.getState().setPullRequestDetailTab(threadRef, surface.id, tab);
-          }}
+          onTabChange={
+            card
+              ? undefined
+              : (tab) => {
+                  useRightPanelStore.getState().setPullRequestDetailTab(threadRef, surface.id, tab);
+                }
+          }
           context={pullRequestPanelContext(
             {
               projectId: pullRequest.projectId,
@@ -163,7 +203,7 @@ export function RightPanelSurfaceContent(props: {
             surface,
           )}
           composerDraftTarget={props.composerDraftTarget}
-          onBack={pullRequest.onBack}
+          onBack={card ? undefined : pullRequest.onBack}
         />
       );
     }
@@ -177,7 +217,7 @@ export function RightPanelSurfaceContent(props: {
           parentRef={threadRef}
           threadId={surface.threadId}
           parentPanel={props.sideChatParentPanel}
-          onClose={() => onCloseSurface(surface)}
+          onClose={() => (card ? card.close() : onCloseSurface(surface))}
         />
       );
     case "device":
@@ -189,7 +229,12 @@ export function RightPanelSurfaceContent(props: {
             key={surface.id}
             surface={surface}
             visible={visible}
+            card={card}
             onDismissSetup={() => {
+              if (card) {
+                card.close();
+                return;
+              }
               props.onCloseSurface(surface);
               useRightPanelStore.getState().show(threadRef);
             }}
@@ -215,17 +260,29 @@ export function RightPanelSurfaceContent(props: {
             composerDraftTarget={props.composerDraftTarget}
             keybindings={props.keybindings}
             availableEditors={files.availableEditors}
-            openInShortcutEnabled={visible}
+            openInShortcutEnabled={!card && visible}
             relativePath={surface.kind === "file" ? surface.relativePath : null}
             {...(attachment ? { attachment } : {})}
             revealLine={surface.kind === "file" ? (surface.revealLine ?? null) : null}
             revealRequestId={surface.kind === "file" ? surface.revealRequestId : 0}
-            onOpenFile={files.onOpenFile}
-            onNavigateFolder={(relativePath, folderTrail, keepSource) =>
+            onOpenFile={
+              card ? (relativePath) => card.show({ kind: "file", relativePath }) : files.onOpenFile
+            }
+            onNavigateFolder={(relativePath, folderTrail, keepSource) => {
+              if (card) {
+                const trail = folderTrail === relativePath ? {} : { folderTrail };
+                const target =
+                  relativePath === ""
+                    ? { kind: "files" as const, ...trail }
+                    : { kind: "file" as const, relativePath, ...trail };
+                if (keepSource) card.place(target);
+                else card.show(target);
+                return;
+              }
               useRightPanelStore
                 .getState()
-                .navigateFolder(threadRef, surface.id, relativePath, folderTrail, keepSource)
-            }
+                .navigateFolder(threadRef, surface.id, relativePath, folderTrail, keepSource);
+            }}
             folderTrail={surface.folderTrail}
             onPendingChange={files.onPendingChange}
             selectedFilePending={surface.kind === "file" && files.pendingSurfaceIds.has(surface.id)}

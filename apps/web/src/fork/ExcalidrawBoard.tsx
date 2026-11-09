@@ -6,21 +6,28 @@ import {
   MainMenu,
   newElementWith,
   restoreElements,
+  viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
-import type { ThreadCanvasScene } from "@t3tools/contracts";
+import { type AssistantCitation, MessageId, type ThreadCanvasScene } from "@t3tools/contracts";
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 
 import ChatMarkdown from "../components/ChatMarkdown";
 import { HtmlRenderFrame } from "../components/chat/HtmlRenderFrame";
 import { observeResize } from "../lib/observeResize";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useTheme } from "../hooks/useTheme";
+import { isElectron } from "../env";
+import {
+  type AssistantCitationSourceAnchor,
+  createAssistantTextSelector,
+} from "../lib/assistantTextSelection";
+import { readLocalApi } from "../localApi";
 import {
   ThreadCanvasSync,
   type SaveThreadCanvas,
@@ -47,10 +54,25 @@ import {
   fittedCardHeights,
   onCanvasReveal,
   sameCanvasCards,
+  wheelPansBoard,
 } from "./canvasCards";
+import {
+  canvasCitationText,
+  canvasPointHitsElement,
+  insertCiteMenuItem,
+  isElementContextMenu,
+  isHandedToExcalidraw,
+  openExcalidrawCanvasMenu,
+} from "./canvasContextMenus";
 import { CANVAS_CARD_REMARK_PLUGINS } from "./canvasStateChips";
 import { CanvasSurfaceCardView, placeSurfaceCard } from "./CanvasSurfaceCardView";
-import { createSurfaceActivation, registerCanvasBoard } from "./canvasSurfaceCards";
+import {
+  canvasTerminalIdsOf,
+  createSurfaceActivation,
+  publishCanvasTerminals,
+  registerCanvasBoard,
+  type RenderPanelSurface,
+} from "./canvasSurfaceCards";
 import { forwardCardMiddleDrag } from "./cardMiddleDrag";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
@@ -454,6 +476,18 @@ function placeCards(
     card.element.dataset.placed = "true";
   }
   surfaces.update(api.getSceneElements(), view, boardRect);
+  // A desktop browser is a native view over its slot, which re-presents only on resize or scroll,
+  // so a live browser card asks for one after the card has moved.
+  if (isElectron && surfaces.showsLive("preview")) requestSlotPresent();
+}
+
+let slotPresentFrame: number | null = null;
+function requestSlotPresent() {
+  if (slotPresentFrame !== null) return;
+  slotPresentFrame = requestAnimationFrame(() => {
+    slotPresentFrame = null;
+    window.dispatchEvent(new Event("scroll"));
+  });
 }
 
 /** The camera that shows the latest turn: its top under the toolbar, or its end if it overflows. */
@@ -492,24 +526,6 @@ function latestTurnCamera(
   };
 }
 
-function scrollsInside(event: WheelEvent, layer: HTMLElement) {
-  let node = event.target instanceof Element ? event.target : null;
-  while (node !== null && node !== layer) {
-    const { overflowY } = getComputedStyle(node);
-    if (
-      (overflowY === "auto" || overflowY === "scroll") &&
-      node.scrollHeight > node.clientHeight &&
-      (event.deltaY < 0
-        ? node.scrollTop > 0
-        : node.scrollTop + node.clientHeight < node.scrollHeight - 1)
-    ) {
-      return true;
-    }
-    node = node.parentElement;
-  }
-  return false;
-}
-
 /**
  * Fills the chat column with a local Excalidraw board. A draft's boxes position the composer and
  * hero. A thread's boxes are its turns, which land down the board while the camera pans to follow.
@@ -519,12 +535,27 @@ export default function ExcalidrawBoard({
   storageId,
   turnBoard,
   canvasThread,
+  renderPanelSurface,
+  newSurfaces = [],
+  onCite,
 }: {
   draft: boolean;
   storageId: string;
   turnBoard: TurnBoard;
   /** The server thread whose canvas this board shows, once the thread exists there. */
   canvasThread: ThreadCanvasTarget | null;
+  /** Renders a right panel surface in a card, as the panel renders it. */
+  renderPanelSurface?: RenderPanelSurface | undefined;
+  /** The panel's new tabs, offered by the empty-canvas menu to place at a scene point. */
+  newSurfaces?: ReadonlyArray<{
+    readonly label: string;
+    readonly available: boolean;
+    readonly place: (at: { readonly x: number; readonly y: number }) => void;
+  }>;
+  /** The timeline's Cite, which quotes an element through the composer. */
+  onCite?:
+    | ((citation: AssistantCitation, sourceAnchor: AssistantCitationSourceAnchor) => boolean)
+    | undefined;
 }) {
   const { resolvedTheme } = useTheme();
   const storageKey = draft ? DRAFT_STORAGE_KEY : `${TURN_STORAGE_PREFIX}${storageId}`;
@@ -547,6 +578,10 @@ export default function ExcalidrawBoard({
   const [cards, setCards] = useState<ReadonlyArray<CanvasCard>>([]);
   const [liveSurfaces, setLiveSurfaces] = useState<ReadonlySet<string>>(() => new Set());
   const [surfaceActivation] = useState(() => createSurfaceActivation(setLiveSurfaces));
+  // Elements cited from the board, each with a quote the composer's citation anchors to.
+  const [citeAnchors, setCiteAnchors] = useState<
+    ReadonlyArray<{ id: string; text: string; x: number; y: number; width: number; height: number }>
+  >([]);
   const coveredCache = useRef(new Map<string, string | null>());
   const lastSketch = useRef("");
   const camera = useRef({
@@ -735,6 +770,13 @@ export default function ExcalidrawBoard({
           reportPendingNotes(unseenMarks(elements, seenByAgent.current).length);
           const nextCards = canvasCardsOf(elements);
           setCards((current) => (sameCanvasCards(current, nextCards) ? current : nextCards));
+          if (canvasThread !== null) {
+            publishCanvasTerminals(canvasThread, canvasTerminalIdsOf(nextCards));
+          }
+        }
+        // Excalidraw has committed its menu by now, so Cite goes in at its top.
+        if (onCite && canvasThread !== null && isElementContextMenu(appState.contextMenu)) {
+          insertCiteMenuItem(board, citeSelection);
         }
       }
     }
@@ -854,7 +896,7 @@ export default function ExcalidrawBoard({
   const revealElement = useStableCallback((elementId: string) => {
     const root = boardRootOf(boardRef.current);
     const element = api?.getSceneElements().find((candidate) => candidate.id === elementId);
-    if (!api || !root || element === undefined) return;
+    if (!api || !root || element === undefined) return false;
     cancelPan();
     setFollowing(false);
     const zoom = api.getAppState().zoom.value;
@@ -866,24 +908,130 @@ export default function ExcalidrawBoard({
         TOPBAR_FALLBACK_PX / zoom - element.y,
       ),
     });
+    return true;
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a citation chip asks for this through a window event, outside React
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the board with the module-level reveal a citation chip calls, outside React
   useEffect(() => (draft ? undefined : onCanvasReveal(revealElement)), [draft, revealElement]);
+
+  /**
+   * Quotes the selected elements through the composer, as Cite on selected text does. Each quote
+   * gets an anchor over its element, which the citation's comment editor points at.
+   */
+  const citeSelection = useStableCallback(() => {
+    if (!api || canvasThread === null || !onCite) return;
+    const elements = api.getSceneElements();
+    const { selectedElementIds } = api.getAppState();
+    const cited = elements
+      .filter(
+        (element) =>
+          selectedElementIds[element.id] && !(element.type === "text" && element.containerId),
+      )
+      .map((element) => ({
+        id: element.id,
+        text: canvasCitationText(element, elements),
+        x: element.x,
+        y: element.y,
+        width: element.width,
+        height: element.height,
+      }));
+    api.updateScene({ appState: { contextMenu: null }, captureUpdate: CaptureUpdateAction.NEVER });
+    if (cited.length === 0) return;
+    const ids = new Set(cited.map((entry) => entry.id));
+    flushSync(() =>
+      setCiteAnchors((current) => [...current.filter((entry) => !ids.has(entry.id)), ...cited]),
+    );
+    for (const entry of cited) {
+      const source = turnBoard
+        .layer()
+        ?.querySelector<HTMLElement>(`[data-canvas-cite-anchor="${CSS.escape(entry.id)}"]`);
+      const viewport = source?.closest<HTMLElement>("[data-assistant-citation-viewport]");
+      const text = source?.firstChild;
+      const selector = createAssistantTextSelector(entry.text, 0, entry.text.length);
+      if (!source || !viewport || !text || selector === null) continue;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      onCite(
+        { version: 1, ...canvasThread, messageId: MessageId.make(entry.id), ...selector },
+        { source, range, viewport },
+      );
+    }
+  });
+
+  // Right-click on empty canvas shows the panel's new tabs, then Excalidraw's canvas menu on ask.
+  const showCanvasMenu = useStableCallback(async (event: MouseEvent) => {
+    const canvas = event.target;
+    if (!api || !(canvas instanceof Element)) return;
+    const at = { clientX: event.clientX, clientY: event.clientY };
+    const point = viewportCoordsToSceneCoords(at, api.getAppState());
+    const localApi = readLocalApi();
+    if (!localApi) {
+      openExcalidrawCanvasMenu(canvas, at);
+      return;
+    }
+    const picked = await localApi.contextMenu.show(
+      [
+        ...newSurfaces.map((surface, index) => ({
+          id: `surface:${index}`,
+          label: surface.label,
+          disabled: !surface.available,
+        })),
+        { id: "canvas-options", label: "Canvas options…", separatorBefore: true },
+      ],
+      { x: event.clientX, y: event.clientY },
+    );
+    if (picked === "canvas-options") {
+      openExcalidrawCanvasMenu(canvas, at);
+      return;
+    }
+    const surface =
+      picked === null ? undefined : newSurfaces[Number(picked.slice("surface:".length))];
+    if (surface?.available) surface.place(point);
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a capture listener runs before Excalidraw's own right-click handler, which React cannot order
+  useEffect(() => {
+    const board = boardRef.current;
+    if (draft || !api || !board || canvasThread === null || newSurfaces.length === 0) return;
+    const intercept = (event: MouseEvent) => {
+      if (isHandedToExcalidraw(event)) return;
+      const target = event.target;
+      if (!(target instanceof Element) || !target.matches(".excalidraw__canvas.interactive"))
+        return;
+      const appState = api.getAppState();
+      const point = viewportCoordsToSceneCoords(event, appState);
+      if (
+        canvasPointHitsElement(
+          api.getSceneElements(),
+          appState.selectedElementIds,
+          point,
+          appState.zoom.value,
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      void showCanvasMenu(event);
+    };
+    board.addEventListener("contextmenu", intercept, true);
+    return () => board.removeEventListener("contextmenu", intercept, true);
+  }, [api, canvasThread, draft, newSurfaces.length, showCanvasMenu]);
 
   // The panel places surfaces through this board while it shows the thread.
   const canvasEnvironmentId = canvasThread?.environmentId ?? null;
   const canvasThreadId = canvasThread?.threadId ?? null;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the mounted board with the panel's module-level placement action until unmount
-  useEffect(
-    () =>
-      canvasEnvironmentId === null || canvasThreadId === null || !api
-        ? undefined
-        : registerCanvasBoard(
-            { environmentId: canvasEnvironmentId, threadId: canvasThreadId },
-            (card) => placeSurfaceCard(api, card),
-          ),
-    [api, canvasEnvironmentId, canvasThreadId],
-  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the mounted board with the panel's module-level placement action and terminal list until unmount
+  useEffect(() => {
+    if (canvasEnvironmentId === null || canvasThreadId === null || !api) return;
+    const threadRef = { environmentId: canvasEnvironmentId, threadId: canvasThreadId };
+    const unregister = registerCanvasBoard(threadRef, (card, where) =>
+      placeSurfaceCard(api, card, where),
+    );
+    return () => {
+      unregister();
+      // Without a board, its cards' terminals belong to the drawer again.
+      publishCanvasTerminals(threadRef, []);
+    };
+  }, [api, canvasEnvironmentId, canvasThreadId]);
 
   // Cards float above the canvas, so wheel and middle-button gestures over them still pan and zoom it.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- binds a non-passive wheel listener to the card layer, which React cannot do
@@ -897,7 +1045,7 @@ export default function ExcalidrawBoard({
       const forward = (event: WheelEvent) => {
         // Excalidraw mounts its canvas after handing over the api, so it is read per gesture.
         const canvas = boardRef.current?.querySelector(".excalidraw__canvas.interactive");
-        if (!canvas || scrollsInside(event, layer)) return;
+        if (!canvas || !wheelPansBoard(event, layer)) return;
         event.preventDefault();
         cancelPan();
         canvas.dispatchEvent(new WheelEvent("wheel", event));
@@ -952,6 +1100,28 @@ export default function ExcalidrawBoard({
           <MainMenu.Item onSelect={resetLayout}>Reset layout</MainMenu.Item>
         </MainMenu>
       </Excalidraw>
+      {noteLayer === null || canvasThread === null || citeAnchors.length === 0
+        ? null
+        : createPortal(
+            citeAnchors.map((entry) => (
+              <div
+                key={entry.id}
+                className="canvas-cite-anchor"
+                data-canvas-cite-anchor={entry.id}
+                data-assistant-citation-source={entry.id}
+                data-assistant-citation-environment={canvasThread.environmentId}
+                data-assistant-citation-thread={canvasThread.threadId}
+                style={{
+                  transform: `translate(${entry.x}px, ${entry.y}px)`,
+                  width: entry.width,
+                  height: entry.height,
+                }}
+              >
+                {entry.text}
+              </div>
+            )),
+            noteLayer,
+          )}
       {noteLayer === null || canvasThread === null || cards.length === 0
         ? null
         : createPortal(
@@ -964,10 +1134,17 @@ export default function ExcalidrawBoard({
                   className="canvas-card bg-background text-foreground rounded-lg"
                   data-canvas-card={card.card.kind}
                   data-canvas-card-id={card.id}
+                  // A card being used stays live past the cap until the pointer leaves it.
+                  onPointerDownCapture={
+                    card.card.kind === "surface"
+                      ? () => surfaceActivation.setInteracting(card.id)
+                      : undefined
+                  }
                   onPointerLeave={(event) => {
                     const cover =
                       event.currentTarget.querySelector<HTMLElement>(".canvas-card-cover");
                     if (cover) cover.hidden = false;
+                    if (card.card.kind === "surface") surfaceActivation.setInteracting(null);
                   }}
                   style={{
                     transform: `translate(${card.x + TURN_INSET_PX}px, ${card.y + TURN_INSET_PX}px)`,
@@ -976,14 +1153,17 @@ export default function ExcalidrawBoard({
                   }}
                 >
                   {card.card.kind === "surface" ? (
-                    <CanvasSurfaceCardView
-                      threadRef={canvasThread}
-                      card={card.card}
-                      live={liveSurfaces.has(card.id)}
-                      onInteract={(interacting) =>
-                        surfaceActivation.setInteracting(interacting ? card.id : null)
-                      }
-                    />
+                    api && renderPanelSurface ? (
+                      <CanvasSurfaceCardView
+                        environmentId={canvasThread.environmentId}
+                        threadId={canvasThread.threadId}
+                        elementId={card.id}
+                        cardJson={JSON.stringify(card.card)}
+                        live={liveSurfaces.has(card.id)}
+                        api={api}
+                        renderPanelSurface={renderPanelSurface}
+                      />
+                    ) : null
                   ) : card.card.kind === "markdown" ? (
                     // A card is the agent's writing, so selecting in it offers the timeline's Cite.
                     <div
