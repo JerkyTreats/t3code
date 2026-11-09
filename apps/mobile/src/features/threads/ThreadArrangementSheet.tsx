@@ -34,7 +34,6 @@ import {
 } from "./threadOrder";
 import {
   getThreadListV2OrderedSection,
-  nestedThreadListChildKeys,
   THREAD_LIST_V2_SETTLED_INITIAL_COUNT,
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   threadListInboxReturns,
@@ -190,11 +189,8 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
     visibleCount: settledVisibleCount,
   });
   const sections = useMemo(() => {
-    // Nested children list under their parent, so they are never arranged.
-    const nestedChildKeys = nestedThreadListChildKeys(threads);
     const shared = {
       threads,
-      nestedChildKeys,
       now,
       queuedThreadKeys,
       pendingOrder,
@@ -205,10 +201,7 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
     const active = getThreadListV2OrderedSection({ ...shared, section: "active" });
     const visible = new Set([...pinned, ...active].map(keyOf));
     const parked = threads.filter(
-      (thread) =>
-        thread.archivedAt === null &&
-        !visible.has(keyOf(thread)) &&
-        !nestedChildKeys.has(keyOf(thread)),
+      (thread) => thread.archivedAt === null && !visible.has(keyOf(thread)),
     );
     return {
       pinned,

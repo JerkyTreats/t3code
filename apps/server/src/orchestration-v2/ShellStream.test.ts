@@ -316,22 +316,6 @@ describe("omitOlderSettledShells", () => {
     ]);
     expect(result.olderSettled.counts).toEqual([{ projectId: "project-a", count: 5 }]);
   });
-
-  it("keeps an older settled nested parent while its nested child is kept (F31)", () => {
-    const threads = [
-      ...newest,
-      row("manager", 30),
-      row("nested-active", null, { nestedUnderThreadId: ThreadId.make("manager") }),
-      row("old-manager", 40),
-      row("old-nested", 45, { nestedUnderThreadId: ThreadId.make("old-manager") }),
-    ];
-    const result = omit(threads);
-    expect(result.threads.map((thread) => thread.id).slice(25)).toEqual([
-      "manager",
-      "nested-active",
-    ]);
-    expect(result.olderSettled.counts).toEqual([{ projectId: "project-a", count: 3 }]);
-  });
 });
 
 describe("shellStreamItemsFromInitialSnapshot", () => {

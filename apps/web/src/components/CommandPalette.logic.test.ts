@@ -163,18 +163,6 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
 }
 
 describe("buildThreadActionItems", () => {
-  it("titles a thread through resolveTitle, as nested threads use for parent › child", () => {
-    const [item] = buildThreadActionItems({
-      threads: [makeThread({ title: "Child" })],
-      projectByKey: new Map(),
-      icon: null,
-      resolveTitle: (thread) => `Parent › ${thread.title}`,
-      runThread: async (_thread) => undefined,
-    });
-    expect(item?.title).toBe("Parent › Child");
-    expect(item?.searchTerms[0]).toBe("Child");
-  });
-
   it("keeps threads apart when two environments share a thread ID", async () => {
     const local = makeThread();
     const remote = makeThread({ environmentId: EnvironmentId.make("remote-copy") });
@@ -960,7 +948,7 @@ describe("newThreadNoProjectIndex", () => {
   });
 
   it("goes after the pinned projects and the first unpinned one", () => {
-    expect(newThreadNoProjectIndex([entry(true), entry(true), entry(false, true), entry()])).toBe(
+    expect(newThreadNoProjectIndex([entry(false, true), entry(true), entry(true), entry()])).toBe(
       3,
     );
     expect(newThreadNoProjectIndex([entry(false, true), entry(), entry(false, false, true)])).toBe(

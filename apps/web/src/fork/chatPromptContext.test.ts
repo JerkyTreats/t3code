@@ -5,7 +5,6 @@ import {
   formatReferencedChatPrompt,
   hasRetainedChatPromptContext,
   normalizeReferencedChatPrompt,
-  resolveReferencedPlanFollowUpSubmission,
 } from "./chatPromptContext";
 
 describe("referenced prompt context composition", () => {
@@ -71,38 +70,5 @@ describe("V2 contextual send paths", () => {
     );
     expect(hasRetainedChatPromptContext(undefined)).toBe(false);
     expect(hasRetainedChatPromptContext({ version: 1, records: [] })).toBe(false);
-  });
-
-  it("preserves contextual plan refinements through upstream intent and effort formatting", () => {
-    const prompt = "\n  refine the plan\r\n\t ";
-    const followUp = resolveReferencedPlanFollowUpSubmission({
-      draftText: prompt,
-      planMarkdown: "# Synthetic plan",
-      hasRetainedContext: true,
-    });
-    expect(followUp).toEqual({ text: prompt, interactionMode: "plan" });
-    expect(formatReferencedChatPrompt(followUp.text, "ultrathink", true)).toBe(
-      `Ultrathink:\n${prompt}`,
-    );
-  });
-
-  it("keeps upstream ordinary refinement trimming and empty plan approval", () => {
-    expect(
-      resolveReferencedPlanFollowUpSubmission({
-        draftText: "  refine  ",
-        planMarkdown: "# Synthetic plan",
-        hasRetainedContext: false,
-      }),
-    ).toEqual({ text: "refine", interactionMode: "plan" });
-    expect(
-      resolveReferencedPlanFollowUpSubmission({
-        draftText: " \n\t ",
-        planMarkdown: "  # Synthetic plan ",
-        hasRetainedContext: true,
-      }),
-    ).toEqual({
-      text: " \n\t PLEASE IMPLEMENT THIS PLAN:\n# Synthetic plan",
-      interactionMode: "default",
-    });
   });
 });

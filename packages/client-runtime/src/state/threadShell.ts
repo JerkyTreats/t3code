@@ -16,7 +16,6 @@ import { Atom } from "effect/reactivity";
 
 import type { EnvironmentThreadShell, PendingSubagentRequest } from "./models.ts";
 import { presentThreadShell, threadRuntimeIsActive } from "./models.ts";
-import { isNestedUnder } from "./fork/threadNesting.ts";
 import { hiddenThreadKeys, NO_HIDDEN_THREADS } from "./threadTagFilter.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 import {
@@ -86,13 +85,6 @@ function subagentRequest(thread: OrchestrationV2ThreadShell): PendingSubagentReq
   return kind === "user_input" ? "user_input" : "approval";
 }
 
-/** What a nested child waits on the user for, read like its own row. */
-function nestedChildRequest(thread: OrchestrationV2ThreadShell): PendingSubagentRequest | null {
-  const kind = thread.pendingRuntimeRequest?.kind;
-  if (kind === undefined || kind === "auth_refresh") return null;
-  return kind === "user_input" ? "user_input" : "approval";
-}
-
 /** A side chat asks its user directly, so questions roll up to the parent as well as approvals. */
 function sideChatRequest(thread: OrchestrationV2ThreadShell): PendingSubagentRequest | null {
   const kind = thread.pendingRuntimeRequest?.kind;
@@ -153,32 +145,6 @@ function pendingSubagentRequestsByThread(
   return requests.size === 0 ? EMPTY_SUBAGENT_REQUESTS : requests;
 }
 
-/**
- * Adds, on each nested parent (F31), what a nested child waits on: its own
- * request or one bubbled up to it. The parent may be collapsed, so its row
- * shows the request. An approval outranks a question. The notifier reads the
- * requests without this layer, so a child notifies once, for itself.
- */
-function withNestedChildRequests(
-  threads: ReadonlyArray<OrchestrationV2ThreadShell>,
-  requests: ReadonlyMap<ThreadId, PendingSubagentRequest>,
-): ReadonlyMap<ThreadId, PendingSubagentRequest> {
-  let byId: ReadonlyMap<ThreadId, OrchestrationV2ThreadShell> | undefined;
-  let next: Map<ThreadId, PendingSubagentRequest> | undefined;
-  for (const child of threads) {
-    if (child.nestedUnderThreadId == null) continue;
-    const own = nestedChildRequest(child);
-    const request = own === "approval" ? own : (requests.get(child.id) ?? own);
-    if (request === null) continue;
-    byId ??= new Map(threads.map((thread) => [thread.id, thread] as const));
-    const parent = byId.get(child.nestedUnderThreadId);
-    if (parent === undefined || !isNestedUnder(child, parent)) continue;
-    next ??= new Map(requests);
-    if (next.get(parent.id) !== "approval") next.set(parent.id, request);
-  }
-  return next ?? requests;
-}
-
 const sameRequests = (
   left: ReadonlyMap<ThreadId, PendingSubagentRequest>,
   right: ReadonlyMap<ThreadId, PendingSubagentRequest>,
@@ -186,25 +152,16 @@ const sameRequests = (
   left.size === right.size &&
   [...right].every(([threadId, request]) => left.get(threadId) === request);
 
-/** Banner title for the subagents and nested threads `childThreadInputsAtom` lists. */
 export function childThreadInputsTitle(
   children: ReadonlyArray<Pick<EnvironmentThreadShell, "hasPendingApprovals" | "lineage">>,
 ): string {
   const approvals = children.filter((child) => child.hasPendingApprovals).length;
   const need = approvals === 0 ? "input" : approvals === children.length ? "approval" : "you";
   const sideChats = children.filter((child) => child.lineage.sideChat === true).length;
-  const subagents = children.filter(
-    (child) => child.lineage.relationshipToParent === "subagent",
-  ).length;
-  // Nested threads (F31) and mixed children read as threads.
   const noun =
-    sideChats === children.length
-      ? "side chat"
-      : subagents === children.length
-        ? "subagent"
-        : "thread";
+    sideChats === children.length ? "side chat" : sideChats === 0 ? "subagent" : "thread";
   return children.length === 1
-    ? `${noun === "side chat" ? "Side chat" : noun === "subagent" ? "Subagent" : "Thread"} needs ${need}`
+    ? `${noun === "side chat" ? "Side chat" : "Subagent"} needs ${need}`
     : `${children.length} ${noun}s need ${need}`;
 }
 
@@ -387,21 +344,6 @@ export function createEnvironmentThreadShellAtoms(input: {
     }).pipe(Atom.withLabel(`environment-pending-subagent-requests:${environmentId}`));
   });
 
-  // What shells show: the requests above plus each nested child's on its parent
-  // (F31). pendingSubagentRequestsAtom stays without nesting for the notifier.
-  const shellSubagentRequestsAtom = Atom.family((environmentId: EnvironmentId) => {
-    let previous = EMPTY_SUBAGENT_REQUESTS;
-    return Atom.make((get) => {
-      const next = withNestedChildRequests(
-        get(environmentThreadsAtom(environmentId)),
-        get(pendingSubagentRequestsAtom(environmentId)),
-      );
-      if (sameRequests(previous, next)) return previous;
-      previous = next;
-      return next;
-    }).pipe(Atom.withLabel(`environment-shell-subagent-requests:${environmentId}`));
-  });
-
   const environmentThreadRefsAtom = Atom.family((environmentId: EnvironmentId) => {
     let previous: ReadonlyArray<ScopedThreadRef> = [];
     return Atom.make((get) => {
@@ -469,7 +411,7 @@ export function createEnvironmentThreadShellAtoms(input: {
         : scopedThread(
             ref.environmentId,
             source,
-            get(shellSubagentRequestsAtom(ref.environmentId)),
+            get(pendingSubagentRequestsAtom(ref.environmentId)),
           );
     }).pipe(Atom.withLabel(`environment-thread-shell:${key}`));
   });
@@ -489,20 +431,16 @@ export function createEnvironmentThreadShellAtoms(input: {
     }).pipe(Atom.withLabel(`environment-quiet-thread-shell:${key}`));
   });
 
-  // Child approvals and questions are hidden with their sidebar rows, and
-  // nested children may sit under a collapsed parent. Read their shell
-  // summaries, without subscribing to every child transcript. A task
+  // Child approvals and questions are hidden with their sidebar rows. Read their
+  // shell summaries, without subscribing to every child transcript. A task
   // delegated to a linked environment is a child too, with its own subagents.
   const childThreadInputsAtomFamily = Atom.family((key: string) => {
     let previous: ReadonlyArray<EnvironmentThreadShell> = [];
     return Atom.make((get) => {
-      const rootRef = parseThreadKey(key);
-      const root = get(environmentThreadIndexAtom(rootRef.environmentId)).get(rootRef.threadId);
       const children = new Map<
         string,
         Array<{ environmentId: EnvironmentId; thread: OrchestrationV2ThreadShell }>
       >();
-      const nestedChildKeys = new Set<string>();
       const addChild = (
         parent: ScopedThreadRef,
         environmentId: EnvironmentId,
@@ -522,13 +460,6 @@ export function createEnvironmentThreadShellAtoms(input: {
             addChild({ environmentId, threadId: parent }, environmentId, thread);
           } else if (thread.delegatedFrom !== undefined) {
             addChild(thread.delegatedFrom, environmentId, thread);
-          } else if (
-            root !== undefined &&
-            environmentId === rootRef.environmentId &&
-            isNestedUnder(thread, root)
-          ) {
-            addChild(rootRef, environmentId, thread);
-            nestedChildKeys.add(threadKey({ environmentId, threadId: thread.id }));
           }
         }
       }
@@ -541,12 +472,9 @@ export function createEnvironmentThreadShellAtoms(input: {
           if (seen.has(childKey)) continue;
           seen.add(childKey);
           pending.push(childKey);
-          const request = nestedChildKeys.has(childKey)
-            ? nestedChildRequest(thread)
-            : (subagentRequest(thread) ?? sideChatRequest(thread));
-          if (request !== null) {
+          if (subagentRequest(thread) !== null || sideChatRequest(thread) !== null) {
             next.push(
-              scopedThread(environmentId, thread, get(shellSubagentRequestsAtom(environmentId))),
+              scopedThread(environmentId, thread, get(pendingSubagentRequestsAtom(environmentId))),
             );
           }
         }
@@ -616,7 +544,7 @@ export function createEnvironmentThreadShellAtoms(input: {
           ) ?? EMPTY_SCOPED_THREAD_REFS;
         if (refs.length === 0) continue;
         const threads = get(environmentThreadIndexAtom(projectRef.environmentId));
-        const subagentRequests = get(shellSubagentRequestsAtom(projectRef.environmentId));
+        const subagentRequests = get(pendingSubagentRequestsAtom(projectRef.environmentId));
         for (const ref of refs) {
           const key = threadKey(ref);
           if (seen.has(key)) {
@@ -654,7 +582,7 @@ export function createEnvironmentThreadShellAtoms(input: {
   const threadShellsAtom = Atom.make((get) => {
     const next: EnvironmentThreadShell[] = [];
     for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
-      const subagentRequests = get(shellSubagentRequestsAtom(environmentId));
+      const subagentRequests = get(pendingSubagentRequestsAtom(environmentId));
       for (const thread of get(environmentThreadsAtom(environmentId))) {
         next.push(scopedThread(environmentId, thread, subagentRequests));
       }
@@ -769,7 +697,7 @@ export function createEnvironmentThreadShellAtoms(input: {
     const underParent = get(delegatedUnderParentAtom);
     const hidden = get(hiddenThreadKeysAtom);
     for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
-      const subagentRequests = get(shellSubagentRequestsAtom(environmentId));
+      const subagentRequests = get(pendingSubagentRequestsAtom(environmentId));
       for (const thread of get(environmentThreadsAtom(environmentId))) {
         if (
           thread.archivedAt !== null ||

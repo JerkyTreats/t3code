@@ -1,11 +1,4 @@
-import type {
-  EnvironmentProject,
-  EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/shell";
-import {
-  nestedThreadPaletteLabel,
-  resolveNestedThreadParent,
-} from "@t3tools/client-runtime/state/thread-nesting";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   foldSearchQuery,
   PALETTE_SECONDARY_LIMIT,
@@ -112,16 +105,4 @@ export function filterCommandPaletteItems(
 
 export function nextPaletteIndex(index: number, direction: -1 | 1, count: number) {
   return count === 0 ? 0 : (index + direction + count) % count;
-}
-
-/** A nested thread reads `parent › child`, so either title finds it. */
-export function commandPaletteThreadTitle(
-  thread: EnvironmentThreadShell,
-  threadsByKey: ReadonlyMap<string, EnvironmentThreadShell>,
-): string {
-  const title = thread.title || "Untitled thread";
-  const parent = resolveNestedThreadParent(thread, threadsByKey);
-  return parent === null
-    ? title
-    : nestedThreadPaletteLabel(parent.title || "Untitled thread", title);
 }

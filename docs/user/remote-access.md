@@ -33,16 +33,8 @@ not disconnect an otherwise healthy conversation.
 
 ### Scripts and agents
 
-`t3 up` asks nothing when you name a choice: `--connect`, `--lan`, or their
-`--no-` forms. Choices you do not name keep their settings, and `--yes` takes
-the defaults. Without a terminal:
-
-- T3 Connect sign-in prints a URL and a code. Approve it on any device.
-- A needed restart runs without asking, and stops running agent turns.
-- With nothing set up and no choice named, `t3 up` stops and names the flags.
-
-`t3 status --json` prints the settings. `t3 up --help` lists every flag with
-examples.
+`t3 connect` and `t3 pair` run without a terminal. T3 Connect sign-in then prints
+a URL and a code; approve it on any device.
 
 ### More machines with T3 Chat
 
@@ -65,10 +57,11 @@ Changing network access restarts the desktop app. You can turn it off in the
 same place. Generate a pairing link with the installed command-line runtime on
 the host, as described below.
 
-For a command-line host, choose the local network in `t3 up`, or run:
+For a command-line host, replace `<private-ip>` with the host's LAN or tailnet
+address:
 
 ```bash
-t3 up --lan
+t3 serve --host <private-ip>
 ```
 
 For an already-running desktop or command-line server, use the installed
@@ -115,8 +108,8 @@ machine's current LAN and Tailscale addresses and adds them as routes, so
 pairing once through T3 Connect is enough to use the LAN at home. When the
 machine's LAN address changes, for example after it joins another Wi-Fi network,
 the learned route follows it. The machine must allow network access for its LAN
-address to be learned: **Network access** in the desktop app, or the
-[local network](./background-service.md#local-network-access) choice in `t3 up`.
+address to be learned: **Network access** in the desktop app, or a reachable
+`--host` for `t3 serve`.
 You can reorder a learned route, but not remove it; it
 goes away with the route it was learned through, or when the machine stops
 reporting that address.

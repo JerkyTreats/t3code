@@ -28,11 +28,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
 import { useProjects, useNavigationThreadShells } from "../../state/entities";
 import { useThreadSearch } from "../../state/queries";
-import {
-  useClearNestedExpansionOnSelection,
-  useThreadListV2NestedExpansion,
-  useThreadListV2ShelfPreferences,
-} from "./use-thread-list-v2-shelf-preferences";
+import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-preferences";
 import { useThreadListNow } from "./use-thread-list-now";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { threadListEnvironmentsAtom } from "../../state/presentation";
@@ -139,7 +135,6 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     moveThread,
     renameThread,
     regenerateThreadTitle,
-    moveThreadToTopLevel,
   } = useThreadListActions();
   const pendingTasks = usePendingNewTasks();
   const activeNewTask = useActiveNewTask();
@@ -248,15 +243,6 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     toggleSnoozedShelf,
     toggleWorkingShelf,
   } = useThreadListV2ShelfPreferences();
-  const { nestedExpansion, setNestedExpansion } = useThreadListV2NestedExpansion(threads);
-  useClearNestedExpansionOnSelection(
-    props.selectedThreadKey ?? null,
-    threads,
-    nestedExpansion,
-    setNestedExpansion,
-  );
-  const handleToggleNested = (thread: EnvironmentThreadShell, expanded: boolean) =>
-    setNestedExpansion(scopedThreadKey(thread.environmentId, thread.id), expanded);
   const now = useThreadListNow(threads);
   const listEnvironments = useAtomValue(threadListEnvironmentsAtom);
   const {
@@ -295,7 +281,6 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     snoozedShelfExpanded,
     settledShelfExpanded,
     selectedThreadKey: props.selectedThreadKey ?? null,
-    nestedExpansion,
   });
   const listItems: readonly SidebarListItem[] =
     settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0
@@ -413,16 +398,11 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
           />
         );
       }
-      case "v2-thread":
-      case "v2-nested-thread": {
+      case "v2-thread": {
         const thread = item.item.thread;
         const scopeKey = scopedProjectKey(thread.environmentId, thread.projectId);
         return (
           <ThreadListV2Row
-            nested={item.type === "v2-thread" ? item.nested : null}
-            nestedChild={item.type === "v2-nested-thread"}
-            onToggleNested={handleToggleNested}
-            onMoveThreadToTopLevel={moveThreadToTopLevel}
             onNewThreadOnBranch={props.onNewThreadOnBranch}
             thread={thread}
             variant={item.item.variant}

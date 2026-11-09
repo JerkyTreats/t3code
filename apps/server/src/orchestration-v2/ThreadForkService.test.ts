@@ -86,12 +86,9 @@ function makeSourceRun(status: OrchestrationV2Run["status"]): OrchestrationV2Run
   };
 }
 
-function makeSourceProjection(
-  sourceRun: OrchestrationV2Run,
-  thread = makeSourceThread(),
-): OrchestrationV2ThreadProjection {
+function makeSourceProjection(sourceRun: OrchestrationV2Run): OrchestrationV2ThreadProjection {
   return {
-    thread,
+    thread: makeSourceThread(),
     runs: [sourceRun],
     attempts: [],
     nodes: [],
@@ -293,21 +290,6 @@ it.effect("rejects in-progress and rolled-back fork sources", () =>
       assert.equal(error.targetThreadId, targetThreadId);
       assert.equal(error.cause, ThreadForkService.forkableSourceRunStatusError(sourceRun));
     }
-  }),
-);
-
-it.effect("starts a fork of a nested thread at top level", () =>
-  Effect.gen(function* () {
-    const sourceRun = makeSourceRun("completed");
-    const result = yield* planFork(
-      sourceRun,
-      makeSourceProjection(sourceRun, {
-        ...makeSourceThread(),
-        nestedUnderThreadId: ThreadId.make("thread:fork-nesting-parent"),
-      }),
-    );
-    assert.notProperty(result.targetThread, "nestedUnderThreadId");
-    assert.equal(result.targetThread.lineage.relationshipToParent, "fork");
   }),
 );
 

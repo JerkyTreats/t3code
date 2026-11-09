@@ -164,18 +164,14 @@ function omitOlderSettledShellsWith(
   const nowMs = DateTime.toEpochMillis(input.now);
   const beforeMs = facts.olderSettledBeforeMs ?? nowMs;
   const ancestorIds = hiddenChildAncestorIds(input.threads);
-  const kept = (thread: OrchestrationV2ThreadShell) =>
-    !isOlderSettledThreadShell(thread, beforeMs) ||
-    thread.pinnedAt != null ||
-    (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs) ||
-    isLiveSubagentShell(thread) ||
-    ancestorIds.has(thread.id);
-  // Fork F31: a kept nested child keeps its one-level parent, or the child would render top-level.
-  const nestedParentIds = new Set<string>();
-  for (const thread of input.threads) {
-    if (thread.nestedUnderThreadId && kept(thread)) nestedParentIds.add(thread.nestedUnderThreadId);
-  }
-  const threads = input.threads.filter((thread) => kept(thread) || nestedParentIds.has(thread.id));
+  const threads = input.threads.filter(
+    (thread) =>
+      !isOlderSettledThreadShell(thread, beforeMs) ||
+      thread.pinnedAt != null ||
+      (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs) ||
+      isLiveSubagentShell(thread) ||
+      ancestorIds.has(thread.id),
+  );
   return {
     threads,
     olderSettled: {
@@ -272,10 +268,6 @@ function shellSubscriberThreadIds(
     ...index.filter((entry) => entry.lineage.sideChat === true),
   ]);
   const keptSubagentIds = new Set(subagents.map((entry) => entry.id));
-  // Fork F31: every nested parent is a candidate, since a kept nested child keeps its parent.
-  const nestedParentIds = new Set(
-    index.flatMap((entry) => (entry.nestedUnderThreadId ? [entry.nestedUnderThreadId] : [])),
-  );
   const beforeMs = facts.olderSettledBeforeMs;
   return index.flatMap((entry) =>
     entry.lineage.relationshipToParent === "subagent"
@@ -288,8 +280,7 @@ function shellSubscriberThreadIds(
           entry.pinnedAt != null ||
           entry.snoozedUntil != null ||
           entry.mayBeLive ||
-          ancestorIds.has(entry.id) ||
-          nestedParentIds.has(entry.id)
+          ancestorIds.has(entry.id)
         ? [entry.id]
         : [],
   );

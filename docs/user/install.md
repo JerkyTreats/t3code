@@ -59,12 +59,14 @@ user service together. Source checks and installed acceptance are recorded again
 
 ### The `t3` command
 
-The desktop app includes the `t3` command-line tool. To run it from any
-terminal, open **Settings → About** and choose **Install** next to
-**t3 command**. On macOS and Linux it adds a `t3` link to a folder on your
-`PATH`; on Windows it adds the app's command folder to your `PATH`. Open a new
-terminal afterwards. **Remove** takes it off again. If you already have `t3`
-from npm, it stays as it is.
+The desktop app includes the `t3` command-line tool. A new install sets it up
+on first launch; after an update, or any time, choose **Install** next to
+**t3 command** in **Settings → About**. On macOS and Linux it adds a `t3` link
+in `~/.local/bin` (or `~/bin`); on Windows it adds the app's command folder to
+your `PATH`. Open a new terminal afterwards. If the folder is not on your
+`PATH`, **Add to PATH** on the Welcome page or in **Settings → About** adds one
+line to your shell's startup file. **Remove** takes it off, and the app does not
+add it again. If you already have another `t3`, it stays as it is.
 
 ### Windows Subsystem for Linux
 

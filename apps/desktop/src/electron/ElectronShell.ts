@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Detached external handlers need Node's spawn event; waiting for process exit can wait until the browser closes.
 import { MAC_PERMISSION_SETTINGS_URLS } from "../permissions/MacPermission.ts";
 import {
+  isLocalEditorFileUrl,
   REMOTE_CAPABLE_EDITOR_IDS,
   remoteSchemeForEditor,
   type SystemSettingsPane,
@@ -18,7 +19,7 @@ import * as Electron from "electron";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { isStandaloneDesktop } from "../fork/StandaloneDesktopPolicy.ts";
 
-// Remote editor deep links must reach the OS handler.
+// Remote editor deep links and local editor file links must reach the OS handler.
 const SAFE_WEB_PROTOCOLS = new Set(["http:", "https:"]);
 const REMOTE_EDITOR_PROTOCOLS = new Set(
   REMOTE_CAPABLE_EDITOR_IDS.flatMap((id) => {
@@ -51,7 +52,9 @@ export function parseSafeExternalUrl(rawUrl: unknown): Option.Option<string> {
 
   try {
     const url = new URL(rawUrl);
-    return SAFE_WEB_PROTOCOLS.has(url.protocol) || isRemoteEditorUrl(url)
+    return SAFE_WEB_PROTOCOLS.has(url.protocol) ||
+      isRemoteEditorUrl(url) ||
+      isLocalEditorFileUrl(url)
       ? Option.some(url.href)
       : Option.none();
   } catch {

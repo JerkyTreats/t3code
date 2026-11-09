@@ -6,6 +6,24 @@ check which providers and models are available. This covers Claude Code or
 Codex in your own terminal, ChatGPT, and bots that support MCP. Each agent signs
 in once, and you choose what it may do.
 
+## Add T3 Code to an assistant app
+
+Open the command palette (`Cmd/Ctrl+K`) and choose **Use T3 Code in another
+app (MCP)**, or use the button in **Settings → Sharing & access**. Pick the
+app, choose what it may do, and follow the step for that app. Assistants like
+Poke and Claude run in the cloud, so the wizard first asks you to sign in to T3
+Connect and turn it on for the environment. To reach your other machines through
+the same connection, turn on **Linked environments** in Labs and
+[link them](./remote-access.md#link-another-environment).
+
+When the app opens the sign-in page, choose **Get code** in the wizard and paste
+the code there. A code works once, for 5 minutes, and approves only the level
+you chose.
+
+For an app that is not listed, choose **Something else…**, add a remote MCP
+server with OAuth in that app, and paste the URL. Apps that require their own
+client ID cannot connect.
+
 ## Get the MCP URL
 
 In **Settings → Environments**, open a saved environment's menu and choose
@@ -16,8 +34,9 @@ example:
 https://<environment-address>/mcp
 ```
 
-The copied URL uses the route this device is connected over, so an agent on the
-same device can reach it.
+When T3 Connect serves the environment, the copied URL is its T3 Connect
+address, which agents can reach from anywhere. Otherwise it uses the route this
+device is connected over, so an agent on the same device can reach it.
 
 - **An agent on your own computers** can use `localhost` on the host, T3
   Connect, or any `https` address, such as
@@ -42,8 +61,10 @@ The page names the agent and where its access goes:
 
 Only approve a sign-in you just started. A browser paired with the standard permissions, including one enrolled through the Admin portal, includes access management and can approve without a code. A browser paired with narrower permissions, or paired before access management joined the standard permissions, needs a pairing code from an authorized host operator, issued with `t3 auth pairing create`, or a fresh pairing. The app has no controls for issuing or managing credentials. The external Admin portal remains responsible for enrolled browser and Electron devices, and disabling or deleting a device there ends its access at once.
 
-Then choose what the agent may do. **Auto** is selected by default, or the
-closest lower mode allowed by your organization’s policy:
+A code from **Use T3 Code in another app (MCP)** already carries the level you
+picked there. With another code, choose what the agent may do here: **Auto** is
+selected by default, or the closest lower mode allowed by your organization’s
+policy. Approving without a code starts at **Read only**:
 
 - **Read only** lets the agent read projects and threads and see
   the available providers and models. It cannot change anything.

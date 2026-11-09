@@ -1,4 +1,3 @@
-import { presentPotetoMessage } from "./fork/potetoMessage.ts";
 import {
   type ChatAttachment,
   type ChatFileAttachment,
@@ -89,7 +88,7 @@ export function resolveUserMessagePresentation(message: {
   }
   if (message.scheduledTaskId !== undefined) {
     return {
-      text: presentPotetoMessage(message.text),
+      text: message.text,
       attribution: "automation",
       scheduledTaskId: message.scheduledTaskId,
     };
@@ -100,14 +99,14 @@ export function resolveUserMessagePresentation(message: {
     : undefined;
   if (legacyPrefix !== null && (legacyTaskId !== undefined || message.createdBy === "agent")) {
     return {
-      text: presentPotetoMessage(message.text.slice(legacyPrefix[0].length)),
+      text: message.text.slice(legacyPrefix[0].length),
       attribution: "automation",
       scheduledTaskId: legacyTaskId === undefined ? undefined : ScheduledTaskId.make(legacyTaskId),
     };
   }
   return {
     // The agent needs words to start a turn; people sent only the attachments.
-    text: isAttachmentOnlyBootstrapPrompt(message.text) ? "" : presentPotetoMessage(message.text),
+    text: isAttachmentOnlyBootstrapPrompt(message.text) ? "" : message.text,
     attribution:
       message.createdBy !== "agent"
         ? null

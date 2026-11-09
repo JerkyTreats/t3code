@@ -18,7 +18,6 @@ export type ThreadActionMenuId =
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
-  | "move-to-top-level"
   | "rename"
   | "regenerate-title"
   | "mark-unread"
@@ -85,10 +84,6 @@ export interface ThreadActionMenuState {
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects attached providers, so disable it while running. */
   readonly isRunning: boolean;
-  /** The thread is nested under another and can list on its own again. */
-  readonly canMoveToTopLevel?: boolean;
-  /** False for nested threads, which pin only after moving to top level. */
-  readonly canPin?: boolean;
   readonly supports: {
     readonly settlement: boolean;
     readonly autoSettleOptOut: boolean;
@@ -141,11 +136,13 @@ export function buildThreadActionMenuItems(
     ...(state.canPlaceOnCanvas
       ? [{ id: "place-on-canvas" as const, label: "Place on canvas", icon: "message-square" }]
       : []),
-    ...(state.supports.pinning && state.isPinned
-      ? [{ id: "unpin" as const, label: "Unpin thread", icon: "pin-off" }]
-      : state.supports.pinning && state.canPin !== false
-        ? [{ id: "pin" as const, label: "Pin thread", icon: "pin" }]
-        : []),
+    ...(state.supports.pinning
+      ? [
+          state.isPinned
+            ? { id: "unpin" as const, label: "Unpin thread", icon: "pin-off" }
+            : { id: "pin" as const, label: "Pin thread", icon: "pin" },
+        ]
+      : []),
     ...(state.supports.settlement
       ? [
           state.isSettled
@@ -174,15 +171,6 @@ export function buildThreadActionMenuItems(
                   },
                 ],
               },
-        ]
-      : []),
-    ...(state.canMoveToTopLevel === true
-      ? [
-          {
-            id: "move-to-top-level" as const,
-            label: "Move to top level",
-            icon: "corner-left-up",
-          },
         ]
       : []),
     { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },
@@ -230,12 +218,12 @@ export function buildThreadActionMenuItems(
             children: [
               {
                 id: "auto-settle:enabled" as const,
-                label: "Enabled",
+                label: "Follow settings",
                 checked: state.autoSettleEnabled,
               },
               {
                 id: "auto-settle:disabled" as const,
-                label: "Disabled",
+                label: "Never",
                 checked: !state.autoSettleEnabled,
               },
             ],

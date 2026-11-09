@@ -1,5 +1,4 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { indexThreadsByNestingKey } from "@t3tools/client-runtime/state/thread-nesting";
 import { findForMessageMatch, openThreadFindOnQuery } from "./chat/threadFindStore";
 import {
   claimThreadOpen,
@@ -19,7 +18,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { MessageSquareIcon } from "lucide-react";
 import { useState } from "react";
 
-import { nestedThreadPaletteTitle } from "../fork/sidebarThreadNesting";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -102,7 +100,6 @@ export function useCommandPaletteThreadItems(input: {
   const { activeThread, threadSearchQuery } = input;
   const navigate = useNavigate();
   const threads = useVisibleThreadShells();
-  const threadsByNestingKey = indexThreadsByNestingKey(threads);
   const { projectEnvironmentLocationById } = useEnvironmentLookups();
   const providerEntryByEnvironmentAndInstanceId = useProviderEntryByEnvironmentAndInstanceId();
   const messageSearch = useConnectedThreadSearch(threadSearchQuery);
@@ -161,7 +158,6 @@ export function useCommandPaletteThreadItems(input: {
         />
       );
     },
-    resolveTitle: (thread) => nestedThreadPaletteTitle(thread, threadsByNestingKey),
     runThread: async (thread) => {
       // A pick sends its open with the query, always, so the server records
       // it; the thread view then skips its own open. The open thread is no pick.

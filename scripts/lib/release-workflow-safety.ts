@@ -40,7 +40,7 @@ const REVIEWED_LOCAL_ACTIONS: ReadonlyMap<string, string> = new Map([
   ],
   [
     "./.github/actions/ci-changes",
-    "bdfc779581d689f5dba2282a3c08e55dd1802ce5e35331de71997b1d7026fa1a",
+    "3db52e27cd8ac616b0ce75bf98e29a74ccb180a342257fe9c6594539817f1229",
   ],
 ]);
 const UPSTREAM_TARGET_PATTERN = /(?:github\.com\/|ghcr\.io\/)?pingdotgg\/t3code/iu;
@@ -112,7 +112,9 @@ const READ_ONLY_MULTILINE_RUN_DIGESTS = new Set([
   "2620bce32ad637da57217092480e8ddca985812cf0dbf8ae8a891ca8fd658290",
   "085a0164f4dbe086b88f9dea1af1a201350d28446f9f925c5ab123c13b3bda99",
   "e6151ae3575267412eeda576be63bdbe8b8c71c20fbeb807b98bdf617921c29c",
-  "89eea0392c3a2ca5b50c6b208ac1f058bcefda46d75111266391cf9e933a353c",
+  "4e67118401fcbcd34869cc327c61a894f7a6c3b52f21a6db070e75685846b8ad",
+  "b4f762a8d2a14e55bd1e6f425314e0517b17dc25ae8455e997c297a47f3b4479",
+  "ded2b9646d2e7a9c558b624278e5a7cbbf19b94bfb7d57c146f9d50998a63adb",
   "ae568dbbce1f1dc910a7835bfce0ea9cbc2eb67b8d5a50dd0401ba866e4139ae",
   "c21bd18295ed6471015ac5afd3b5377edc2a957005be63c47ba82d2c5f9528d2",
   "23e155c1bdfb5dda3d99db1d69f8d8d844a0bc3f5de3cf1de388406a528e49c7",

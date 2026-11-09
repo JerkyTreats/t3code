@@ -37,6 +37,8 @@ const theme = {
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
+  // The preload reports the document's fullscreen state as it loads.
+  vi.stubGlobal("document", { fullscreenElement: null, addEventListener: vi.fn() });
   host.sendSync.mockReturnValue(false);
   host.invoke.mockResolvedValue(null);
 });
@@ -137,7 +139,12 @@ describe("standalone preload and launcher contract", () => {
       const bridge = await loadBridge();
       expect(host.clerk).not.toHaveBeenCalled();
       expect(bridge.getLocalEnvironmentBootstraps()).toEqual([]);
-      expect(host.invoke).not.toHaveBeenCalled();
+      // Only the document's own fullscreen report goes out as the preload loads.
+      expect(
+        host.invoke.mock.calls.filter(
+          ([channel]) => channel !== Channels.SYNC_HTML_FULLSCREEN_CHANNEL,
+        ),
+      ).toEqual([]);
     } finally {
       vi.unstubAllGlobals();
     }

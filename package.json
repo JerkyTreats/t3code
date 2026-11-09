@@ -71,7 +71,7 @@
     "doctor:production:linux": "node scripts/install-linux-production-topology.mjs doctor"
   },
   "devDependencies": {
-    "@coderabbitai/config": "1.1.0",
+    "@coderabbitai/config": "1.2.0",
     "@effect/tsgo": "0.67.1",
     "@shadcn/lint": "0.1.5",
     "@types/node": "catalog:",

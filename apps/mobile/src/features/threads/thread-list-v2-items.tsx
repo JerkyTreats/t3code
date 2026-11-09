@@ -28,15 +28,10 @@ import {
 import { AuthOrchestrationOperateScope, type EnvironmentMachineKind } from "@t3tools/contracts";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
 import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
-import {
-  canMoveNestedThreadToTopLevel,
-  canPinThread,
-  resolveNestedRowClick,
-} from "@t3tools/client-runtime/state/thread-nesting";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import type { MenuAction } from "@react-native-menu/menu";
 import { memo, useCallback, useMemo, useState, type ComponentProps } from "react";
-import { Platform, Pressable, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, Text as RNText, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
@@ -78,20 +73,19 @@ import {
   resolveThreadListV2Status,
   resolveThreadListV2ProviderDrivers,
   resolveThreadListV2SwipeActions,
-  type ThreadListV2NestedSummary,
   layoutThreadListV2RowMenuActions,
   type ThreadListV2Status,
 } from "./threadListV2";
 import { QueuedMessageIcon } from "./queued-message-icon";
 import { shouldRecedeThreadRow } from "./thread-row-emphasis";
 import { ThreadSearchMatchExcerpt } from "./thread-search-match";
-import { ThreadListV2NestedBadge } from "./thread-list-v2-nested-badge";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { pullRequestStatus } from "../pull-requests/pullRequestStatus";
 
 interface StatusLabel {
-  readonly label: string;
+  // Null when the icon and timer carry the status on their own.
+  readonly label: string | null;
   readonly icon: AppSymbolName;
   readonly className: string;
   readonly iconTintClassName: string;
@@ -116,13 +110,13 @@ const STATUS_LABEL_BY_STATUS: Partial<Record<ThreadListV2Status, StatusLabel>> =
     iconTintClassName: "accent-adaptive-fuchsia-600-300",
   },
   working: {
-    label: "Working",
+    label: null,
     icon: "circle.dashed",
     className: "text-adaptive-sky-600-400",
     iconTintClassName: "accent-adaptive-sky-600-400",
   },
   waiting: {
-    label: "Waiting",
+    label: null,
     icon: "circle.dashed.inset.filled",
     className: "text-foreground-muted",
     iconTintClassName: "accent-foreground-muted",
@@ -147,11 +141,28 @@ const DONE_STATUS_LABEL: StatusLabel = {
   iconTintClassName: "accent-adaptive-emerald-700-300",
 };
 
-function ThreadListV2Duration(props: { readonly startedAt: string | null }) {
+// DM Sans has no tabular figures, so a ticking timer in it reflows the row every second.
+const TABULAR_DURATION_STYLE = {
+  fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+  fontWeight: "700",
+  fontVariant: ["tabular-nums"],
+} as const;
+
+function ThreadListV2Duration(props: {
+  readonly startedAt: string | null;
+  readonly leadingSpace: boolean;
+}) {
   const startedAtMs = Date.parse(props.startedAt ?? "");
   const nowMs = useVisibleSecondClock(Number.isFinite(startedAtMs));
   if (!Number.isFinite(startedAtMs)) return null;
-  return ` ${formatWorkingDurationLabel(nowMs - startedAtMs)}`;
+  return (
+    <>
+      {props.leadingSpace ? " " : null}
+      <RNText style={TABULAR_DURATION_STYLE}>
+        {formatWorkingDurationLabel(nowMs - startedAtMs)}
+      </RNText>
+    </>
+  );
 }
 
 const CARD_MENU_ACTIONS: MenuAction[] = [
@@ -173,15 +184,6 @@ const LEGACY_MENU_ACTIONS: MenuAction[] = [
   { id: "archive", title: "Archive", image: "archivebox" },
   { id: "delete", title: "Delete", image: "trash", attributes: { destructive: true } },
 ];
-
-/** Leading inset that sets a nested child row under its parent. */
-const NESTED_CHILD_INDENT = 16;
-
-const MOVE_TO_TOP_LEVEL_ACTION: MenuAction = {
-  id: "move-to-top-level",
-  title: "Move to top level",
-  image: "arrow.turn.left.up",
-};
 
 function ThreadListV2Section(props: {
   readonly label: string;
@@ -673,14 +675,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly onPinThread: (thread: EnvironmentThreadShell) => void;
   readonly onUnpinThread: (thread: EnvironmentThreadShell) => void;
   readonly onSetThreadAutoSettle: (thread: EnvironmentThreadShell, enabled: boolean) => void;
-  /** Set on a parent row: its chevron and badge. */
-  readonly nested?: ThreadListV2NestedSummary | null;
-  /** Renders the row indented under its parent. */
-  readonly nestedChild?: boolean;
-  /** Stores a parent row's next expansion. */
-  readonly onToggleNested?: (thread: EnvironmentThreadShell, expanded: boolean) => void;
-  /** Clears the thread's nesting; offered while it carries one. */
-  readonly onMoveThreadToTopLevel?: (thread: EnvironmentThreadShell) => void;
   readonly settlementSupported: boolean;
   readonly snoozeSupported: boolean;
   readonly snoozePresets: ReadonlyArray<SnoozePresetSetting> | undefined;
@@ -730,14 +724,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     onUnpinThread,
     onSetThreadAutoSettle,
     onMoveThread,
-    onToggleNested,
-    onMoveThreadToTopLevel,
   } = props;
-  const nested = props.nested ?? null;
   const snoozedRow = props.snoozed === true;
   const pinnedRow = props.pinned === true;
   const dormant = useSwipeRowDormant(props.activationKey);
 
+  const selectThread = () => onSelectThread(thread);
   const { providerDrivers, providerIconUrl } = useMemo(() => {
     const provider = props.providers?.find(
       (candidate) =>
@@ -823,30 +815,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleMoveUp = useCallback(() => onMoveThread?.(thread, "up"), [onMoveThread, thread]);
   const handleMoveDown = useCallback(() => onMoveThread?.(thread, "down"), [onMoveThread, thread]);
   const handleArchive = useCallback(() => onArchiveThread(thread), [onArchiveThread, thread]);
-  const nestedExpanded = nested?.expanded === true;
-  const handleToggleNested = useCallback(
-    () => onToggleNested?.(thread, !nestedExpanded),
-    [nestedExpanded, onToggleNested, thread],
-  );
-  // A parent with children toggles when it is already open; any other tap opens the row.
-  const handlePressRow = useCallback(
-    (close: () => void) => {
-      close();
-      if (
-        onToggleNested !== undefined &&
-        resolveNestedRowClick({ isActive: selected, hasChildren: nested !== null }) === "toggle"
-      ) {
-        onToggleNested(thread, !nestedExpanded);
-        return;
-      }
-      onSelectThread(thread);
-    },
-    [nested, nestedExpanded, onSelectThread, onToggleNested, selected, thread],
-  );
-  // Nested threads cannot be pinned; Move to top level comes first.
-  const pinnable = canPinThread(thread);
-  const showMoveToTopLevel =
-    onMoveThreadToTopLevel !== undefined && canMoveNestedThreadToTopLevel(thread);
 
   const canUnsettle = variant === "slim";
   // The gate's only time-dependent edge is the queued-turn grace window, so its
@@ -902,15 +870,16 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         : [],
     [props.canMoveDown, props.canMoveUp, props.reorderSupported],
   );
-  // Nested threads cannot be pinned; an already pinned thread can still be unpinned.
   const pinMenuItems = useMemo<MenuAction[]>(
     () =>
-      props.pinningSupported && thread.pinnedAt != null
-        ? [{ id: "unpin", title: "Unpin", image: "pin.slash" }]
-        : props.pinningSupported && pinnable
-          ? [{ id: "pin", title: "Pin", image: "pin" }]
-          : [],
-    [pinnable, props.pinningSupported, thread.pinnedAt],
+      props.pinningSupported
+        ? [
+            thread.pinnedAt != null
+              ? { id: "unpin", title: "Unpin", image: "pin.slash" }
+              : { id: "pin", title: "Pin", image: "pin" },
+          ]
+        : [],
+    [props.pinningSupported, thread.pinnedAt],
   );
   const autoSettleMenuItems = useMemo<MenuAction[]>(
     () =>
@@ -923,12 +892,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               subactions: [
                 {
                   id: "auto-settle:enabled",
-                  title: "Enabled",
+                  title: "Follow settings",
                   state: thread.autoSettleDisabledAt == null ? "on" : "off",
                 },
                 {
                   id: "auto-settle:disabled",
-                  title: "Disabled",
+                  title: "Never",
                   state: thread.autoSettleDisabledAt == null ? "off" : "on",
                 },
               ],
@@ -958,11 +927,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     ],
     [canTurnIntoProject, props.titleRegenerationSupported, thread.runtime, isRegeneratingTitle],
   );
-  // Follows the lifecycle actions, as on web.
-  const nestingMenuItems = useMemo<MenuAction[]>(
-    () => (showMoveToTopLevel ? [MOVE_TO_TOP_LEVEL_ACTION] : []),
-    [showMoveToTopLevel],
-  );
   const menuActions = useMemo<MenuAction[]>(() => {
     const nested = Platform.OS === "ios";
     const direct: MenuAction[] = [
@@ -981,7 +945,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     if (snoozedRow) {
       return layoutThreadListV2RowMenuActions({
         nested,
-        direct: [...direct, SNOOZED_MENU_ACTIONS[0]!, ...nestingMenuItems],
+        direct: [...direct, SNOOZED_MENU_ACTIONS[0]!],
         reorder: [],
         pin: [],
         secondary: [
@@ -995,7 +959,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     if (!props.settlementSupported) {
       return layoutThreadListV2RowMenuActions({
         nested,
-        direct: [...direct, LEGACY_MENU_ACTIONS[0]!, ...nestingMenuItems],
+        direct: [...direct, LEGACY_MENU_ACTIONS[0]!],
         reorder: reorderMenuItems,
         pin: pinMenuItems,
         secondary: [...titleMenuItems, LEGACY_MENU_ACTIONS[1]!],
@@ -1004,7 +968,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     if (canUnsettle) {
       return layoutThreadListV2RowMenuActions({
         nested,
-        direct: [...direct, SLIM_MENU_ACTIONS[0]!, ...nestingMenuItems],
+        direct: [...direct, SLIM_MENU_ACTIONS[0]!],
         reorder: reorderMenuItems.filter(
           (action) => action.id !== "move-up" && action.id !== "move-down",
         ),
@@ -1025,7 +989,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ...(swipeActions.secondary === "snooze"
           ? [{ id: "snooze", title: "Snooze", image: "clock", subactions: snoozePresetActions }]
           : []),
-        ...nestingMenuItems,
       ],
       reorder: reorderMenuItems,
       pin: pinMenuItems,
@@ -1039,7 +1002,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   }, [
     autoSettleMenuItems,
     canUnsettle,
-    nestingMenuItems,
     pinMenuItems,
     props.settlementSupported,
     reorderMenuItems,
@@ -1063,7 +1025,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "move-up") handleMoveUp();
       if (nativeEvent.event === "move-down") handleMoveDown();
       if (nativeEvent.event === "archive") handleArchive();
-      if (nativeEvent.event === "move-to-top-level") onMoveThreadToTopLevel?.(thread);
       if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "turn-into-project") void turnThreadIntoProject(thread);
@@ -1101,7 +1062,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     },
     [
       onNewThreadOnBranch,
-      onMoveThreadToTopLevel,
       thread,
       handleArchive,
       handleDelete,
@@ -1181,32 +1141,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     : secondaryAction === null
       ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
-
-  const nestedBadge =
-    nested !== null ? (
-      <ThreadListV2NestedBadge
-        summary={nested}
-        title={thread.title}
-        parentProvider={
-          providerInstance
-            ? {
-                iconUrl: providerIconUrl,
-                driverKind: providerInstance.driverKind,
-                displayName: providerInstance.displayName,
-                accentColor: providerInstance.accentColor,
-                surfaceColor: rowAppearance.providerIconSurfaceColor,
-              }
-            : null
-        }
-        providers={props.providers}
-        textClassName={
-          selected
-            ? selectedThreadRowColors.mutedForegroundClassName
-            : rowAppearance.mutedForegroundClassName
-        }
-        {...(onToggleNested === undefined ? {} : { onToggle: handleToggleNested })}
-      />
-    ) : null;
 
   const titleTextInset = props.project ? projectIconSize + 8 : 0;
   const cardContent = (
@@ -1302,15 +1236,20 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               <Text
                 className={cn(
                   "text-xs font-t3-bold",
-                  (status === "working" || status === "waiting") && "tabular-nums",
                   selected ? selectedThreadRowColors.foregroundClassName : statusLabel.className,
                 )}
               >
                 {statusLabel.label}
                 {status === "working" ? (
-                  <ThreadListV2Duration startedAt={resolveThreadWorkingStartedAt(thread)} />
+                  <ThreadListV2Duration
+                    startedAt={resolveThreadWorkingStartedAt(thread)}
+                    leadingSpace={statusLabel.label !== null}
+                  />
                 ) : status === "waiting" ? (
-                  <ThreadListV2Duration startedAt={thread.latestRun?.completedAt ?? null} />
+                  <ThreadListV2Duration
+                    startedAt={thread.latestRun?.completedAt ?? null}
+                    leadingSpace={statusLabel.label !== null}
+                  />
                 ) : null}
               </Text>
             </View>
@@ -1421,30 +1360,29 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             </Text>
           </Pressable>
         ) : null}
-        {nestedBadge ??
-          (providerInstance ? (
-            <View className="flex-row items-center">
-              {providerDrivers.slice(0, -1).map(
-                (driver, index) => (
-                  /* oxlint-disable react/no-array-index-key -- Provider history can repeat a driver; these decorative icons have no local state. */ <View
-                    key={`${driver}:${index}`}
-                    className="-mr-1 opacity-30"
-                  >
-                    <ProviderIcon provider={driver} size={12} />
-                  </View>
-                ) /* oxlint-enable react/no-array-index-key */,
-              )}
-              <ProviderInstanceIcon
-                iconUrl={providerIconUrl}
-                provider={providerInstance.driverKind}
-                size={14}
-                displayName={providerInstance.displayName}
-                accentColor={providerInstance.accentColor}
-                showBadge={providerInstance.showBadge}
-                surfaceColor={rowAppearance.providerIconSurfaceColor}
-              />
-            </View>
-          ) : null)}
+        {providerInstance ? (
+          <View className="flex-row items-center">
+            {providerDrivers.slice(0, -1).map(
+              (driver, index) => (
+                /* oxlint-disable react/no-array-index-key -- Provider history can repeat a driver; these decorative icons have no local state. */ <View
+                  key={`${driver}:${index}`}
+                  className="-mr-1 opacity-30"
+                >
+                  <ProviderIcon provider={driver} size={12} />
+                </View>
+              ) /* oxlint-enable react/no-array-index-key */,
+            )}
+            <ProviderInstanceIcon
+              iconUrl={providerIconUrl}
+              provider={providerInstance.driverKind}
+              size={14}
+              displayName={providerInstance.displayName}
+              accentColor={providerInstance.accentColor}
+              showBadge={providerInstance.showBadge}
+              surfaceColor={rowAppearance.providerIconSurfaceColor}
+            />
+          </View>
+        ) : null}
       </View>
     </>
   );
@@ -1471,7 +1409,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           if (event.nativeEvent.actionName === "openPullRequests") handleOpenPullRequests();
           if (event.nativeEvent.actionName === "dismissWoke") handleAcknowledgeWoke();
         }}
-        onPress={() => handlePressRow(close)}
+        onPress={() => {
+          close();
+          selectThread();
+        }}
         style={rowAppearance.cardStyle}
       >
         {sidebarPane ? (
@@ -1495,7 +1436,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         accessibilityRole="button"
         accessibilityState={{ selected }}
         className={rowAppearance.className}
-        onPress={() => handlePressRow(close)}
+        onPress={() => {
+          close();
+          selectThread();
+        }}
         style={rowAppearance.style}
       >
         <View
@@ -1539,7 +1483,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               />
             ) : null}
           </View>
-          {nestedBadge}
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
           <Text
             className={cn(
@@ -1560,16 +1503,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       </RowPressable>
     );
 
-  const indentStyle = props.nestedChild === true ? { paddingLeft: NESTED_CHILD_INDENT } : undefined;
   if (!canOperateThread)
-    return (
-      <View style={indentStyle}>
-        <View style={rowAppearance.swipeContainerStyle}>{rowContent(() => {})}</View>
-      </View>
-    );
+    return <View style={rowAppearance.swipeContainerStyle}>{rowContent(() => {})}</View>;
 
   return (
-    <View collapsable={false} style={indentStyle}>
+    <View collapsable={false}>
       {customSnoozeOpen && (
         <CustomSnoozeSheet onClose={() => setCustomSnoozeOpen(false)} onSnooze={handleSnooze} />
       )}

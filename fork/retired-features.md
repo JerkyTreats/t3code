@@ -47,3 +47,14 @@ On upgrade, migration 83 deletes the retired posts, revisions, events, receipts,
 Collective tables. Supported migration journal identities remain evidence under the surviving
 persistence owner. Fresh databases omit the retired schemas and migration bodies. This source
 retirement does not inspect or migrate a running installation.
+
+## F30 Poteto Mode and F31 nested threads
+
+Retired by user instruction on 2026-11-09, during the upstream intake of `3e4d449308`. Poteto Mode's
+`$poteto-mode` skill, composer toggle, send-formatter invocation and history display owner are
+removed; ordinary sends no longer carry an invocation line, and older messages that do show it as
+typed. Nested threads lose their optional `nestedUnderThreadId`, server validation, client grouping,
+sidebar and palette presentation and mobile list grouping; every thread lists at top level, as older
+peers already showed them. The field lived only in stored JSON payloads, with no column or migration; records that still
+carry it decode with the key dropped, as `Orchestrator.retiredNesting.test.ts` proves. Neither feature
+creates an active replay, preservation, compatibility or verification obligation.

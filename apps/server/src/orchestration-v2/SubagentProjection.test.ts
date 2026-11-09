@@ -127,29 +127,6 @@ it("keeps a subagent child awake when its parent thread is snoozed", () => {
   });
 });
 
-it("starts a subagent child at top level even when its parent is nested", () => {
-  const parentThread = {
-    ...makeParentThread(),
-    nestedUnderThreadId: ThreadId.make("thread:subagent-nesting-target"),
-  };
-  const childThread = makeSubagentChildThread({
-    parentThread,
-    childThreadId,
-    parentNodeId: NodeId.make("node:subagent-nested-parent"),
-    activeProviderThreadId: null,
-    providerInstanceId: childProviderInstanceId,
-    modelSelection: childModelSelection,
-    title: "Top-level child",
-    now: childCreatedAt,
-    createdBy: "agent",
-    creationSource: "provider",
-  });
-
-  assert.isFalse("nestedUnderThreadId" in childThread);
-  assert.equal(childThread.lineage.parentThreadId, parentThreadId);
-  assert.equal(childThread.lineage.relationshipToParent, "subagent");
-});
-
 it("uses only explicitly admitted creation surface for app-owned subagents", () => {
   const childThread = makeSubagentChildThread({
     parentThread: makeParentThread(),
@@ -455,6 +432,14 @@ it("orders a task's assistant messages by turn item, not by timestamps", () => {
   assert.equal(result.text, "All steps passed.");
   assert.equal(result.messageId, report.message.id);
   assert.equal(result.turnItemId, report.turnItem.id);
+  const reported = { runAttemptId: run.activeAttemptId, ordinal: 1, model: "gpt-5.4-mini" };
+  assert.equal(
+    subagentResultForRun(
+      { ...projection, messages: [report.message], providerTurns: [reported as never] },
+      run,
+    ).text,
+    "Requested model gpt-5.4; the provider reported running gpt-5.4-mini.\n\nAll steps passed.",
+  );
 });
 
 it.effect("ends an orphaned native subagent's node when only its record already ended", () =>

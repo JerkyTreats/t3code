@@ -8,7 +8,6 @@ import {
   type EnvironmentThreadSearchMatch,
   type ShownOrder,
 } from "@t3tools/client-runtime/state/thread-search";
-import { indexThreadsByNestingKey } from "@t3tools/client-runtime/state/thread-nesting";
 import { isListedThreadLineage, THREAD_JUMP_KEYBINDING_COMMANDS } from "@t3tools/contracts";
 import {
   foldSearchQuery,
@@ -63,7 +62,6 @@ import { useStartTriage } from "../triage/useStartTriage";
 import { useNewTaskFlow } from "../threads/new-task-flow-provider";
 import { useActiveNewTask } from "../../state/active-new-task";
 import {
-  commandPaletteThreadTitle,
   filterCommandPaletteItems,
   nextPaletteIndex,
   type CommandPaletteItem,
@@ -427,29 +425,23 @@ export function CommandPalette(props: {
           },
         }),
     }));
-    const threadsByKey = indexThreadsByNestingKey(threads);
     const threadItems: CommandPaletteItem[] = threads
       .filter((thread) => thread.archivedAt === null && isListedThreadLineage(thread.lineage))
       .map((thread) => {
         const project = projectByKey.get(scopedProjectKey(thread.environmentId, thread.projectId));
         const environment =
           savedConnectionsById[thread.environmentId]?.environmentLabel ?? thread.environmentId;
-        const title = commandPaletteThreadTitle(thread, threadsByKey);
         return {
           key: scopedThreadKey(thread.environmentId, thread.id),
           kind: "thread",
-          title,
+          title: thread.title || "Untitled thread",
           detail: [project?.title, environment].filter(Boolean).join(" · "),
           searchTerms: [],
-          // Ranked by the shown label, so a parent title finds its children and highlights line up.
-          threadSearch: {
-            ...threadSearchSubject(
-              thread,
-              project?.title,
-              environments.length > 1 ? environment : null,
-            ),
-            title,
-          },
+          threadSearch: threadSearchSubject(
+            thread,
+            project?.title,
+            environments.length > 1 ? environment : null,
+          ),
           // Last among threads: picking the thread already open does nothing.
           ...(thread.environmentId === activeThread?.environmentId && thread.id === activeThread.id
             ? { secondary: true }

@@ -6,6 +6,8 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as DesktopApp from "./DesktopApp.ts";
+import * as DesktopCliCommand from "./DesktopCliCommand.ts";
+import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopAppIdentity from "./DesktopAppIdentity.ts";
 import * as DesktopLegacyLocalStorage from "./DesktopLegacyLocalStorage.ts";
 import * as DesktopState from "./DesktopState.ts";
@@ -117,6 +119,12 @@ describe("current DesktopApp bootstrap", () => {
           Context.add(DesktopSnapShot.DesktopSnapShot, {
             initialize: Effect.void,
           } as DesktopSnapShot.DesktopSnapShot["Service"]),
+          Context.add(DesktopCliCommand.DesktopCliCommand, {
+            installOnFirstLaunch: Effect.void,
+          } as unknown as DesktopCliCommand.DesktopCliCommand["Service"]),
+          Context.add(DesktopShellEnvironment.DesktopShellEnvironment, {
+            awaitUserShellDiscovery: Effect.succeed(false),
+          } as unknown as DesktopShellEnvironment.DesktopShellEnvironment["Service"]),
           Context.add(DesktopBackendPool.DesktopBackendPool, {
             primary: Effect.sync(() => {
               host.events.push("allocate-primary");

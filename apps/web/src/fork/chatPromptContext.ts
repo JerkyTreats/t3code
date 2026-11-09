@@ -1,6 +1,5 @@
 import type { OrchestrationMessageContext } from "@t3tools/contracts";
 import { applyClaudePromptEffortPrefix } from "@t3tools/shared/model";
-import { resolvePlanFollowUpSubmission } from "../proposedPlan";
 
 /** Keep authored bytes when structured terminal or preview context travels beside the message. */
 export function normalizeReferencedChatPrompt(prompt: string, hasRetainedContext: boolean): string {
@@ -31,21 +30,4 @@ export function hasRetainedChatPromptContext(
         record.kind === "preview-annotation",
     ) === true
   );
-}
-
-/** Preserve contextual authored bytes before upstream refinement or generated plan approval. */
-export function resolveReferencedPlanFollowUpSubmission(input: {
-  draftText: string;
-  planMarkdown: string;
-  hasRetainedContext: boolean;
-}) {
-  const submission = resolvePlanFollowUpSubmission(input);
-  if (!input.hasRetainedContext) return submission;
-  return {
-    ...submission,
-    text:
-      submission.interactionMode === "plan"
-        ? input.draftText
-        : `${input.draftText}${submission.text}`,
-  };
 }

@@ -41,7 +41,6 @@ import { makeProviderFailureTurnItem } from "@t3tools/provider-core/server/failu
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
 import { boundFileChangeForStorage } from "./WireProjection.ts";
-import { withoutThreadNesting } from "./threadNesting.ts";
 
 export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
   "ProviderEventNormalizeError",
@@ -463,8 +462,7 @@ export const layer: Layer.Layer<
         function* (input) {
           switch (input.event.type) {
             case "app_thread.created": {
-              // Provider-created threads copy their parent thread but never its nesting.
-              const offered = withoutThreadNesting(input.event.appThread);
+              const offered = input.event.appThread;
               const existing = yield* projections.getThread(offered.id).pipe(
                 Effect.catchTags({
                   ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
@@ -621,7 +619,8 @@ export const layer: Layer.Layer<
             case "background_work.updated":
               return [];
             case "command_output.delta":
-              // Live output is routed to the command output hub before ingestion.
+            case "prompt_suggestion.updated":
+              // The session manager serves these to clients before ingestion.
               return [];
             case "turn.terminal":
               const dismissed = yield* dismissNativeUserInputs(input, input.event.providerTurnId);

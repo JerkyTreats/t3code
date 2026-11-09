@@ -300,14 +300,6 @@ describe("fork timeline message presentation", () => {
     expect(copiedText(screen.container).startsWith(authoredPrompt)).toBe(true);
   });
 
-  it("hides a leading Poteto invocation line while keeping the authored body", async () => {
-    await using screen = await renderTimeline([userEntry("$poteto-mode\nShip the fix")]);
-    const rendered = screen.container.textContent ?? "";
-
-    expect(rendered).toContain("Ship the fix");
-    expect(rendered).not.toContain("$poteto-mode");
-  });
-
   it("spaces the conversation top independently of the titlebar fade depth", async () => {
     const byClass = (root: HTMLElement, className: string) =>
       [...root.querySelectorAll("div")].filter((node) => node.className === className);

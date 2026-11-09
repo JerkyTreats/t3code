@@ -19,8 +19,6 @@ function renderActions(input: { promptHasText: boolean; sendDisabledReason: stri
       pendingAction: null,
       isRunning: false,
       canInterrupt: false,
-      showPlanFollowUpPrompt: false,
-      promptHasText: input.promptHasText,
       isSendBusy: false,
       sendDisabledReason: input.sendDisabledReason,
       isEnvironmentUnavailable: false,
@@ -30,7 +28,6 @@ function renderActions(input: { promptHasText: boolean; sendDisabledReason: stri
       onResume: () => {},
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
-      onImplementPlanInNewThread: () => {},
     }),
   );
 }
