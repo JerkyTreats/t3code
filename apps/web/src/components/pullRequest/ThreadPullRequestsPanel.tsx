@@ -26,7 +26,7 @@ import {
 } from "~/components/chat/composerMentionDrag";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { findProjectForChangeRequest } from "@t3tools/client-runtime/change-request-links";
-import { useOpenPrLink } from "~/lib/openPullRequestLink";
+import { type ResolvedPullRequestTarget, useOpenPrLink } from "~/lib/openPullRequestLink";
 import { cn } from "~/lib/utils";
 import { useShortcutModifierState } from "~/shortcutModifierState";
 import { useProjects, useServerConfigs, useThreadShell } from "~/state/entities";
@@ -92,6 +92,7 @@ function LinkRowImpl({
   speedMode,
   onUnlink,
   onSetWatching,
+  onOpenPullRequest,
 }: {
   line: PullRequestListLine;
   threadRef: ScopedThreadRef;
@@ -99,8 +100,9 @@ function LinkRowImpl({
   speedMode: boolean;
   onUnlink: (link: ThreadPullRequestLink) => void;
   onSetWatching: ((link: ThreadPullRequestLink, watching: boolean) => void) | null;
+  onOpenPullRequest: ((target: ResolvedPullRequestTarget) => void) | undefined;
 }) {
-  const openPrLink = useOpenPrLink(threadRef);
+  const openPrLink = useOpenPrLink(threadRef, onOpenPullRequest);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const menuAnchor = menuPosition
@@ -361,7 +363,14 @@ function latestSyncedAt(links: ReadonlyArray<ThreadPullRequestLink>): string | n
 const lineKey = (line: PullRequestListLine) =>
   `${line.link.host}/${line.link.repository}#${line.link.number}`;
 
-export function ThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
+/** `onOpenPullRequest` shows a row's pull request somewhere else than the panel's tab. */
+export function ThreadPullRequestsPanel({
+  threadRef,
+  onOpenPullRequest,
+}: {
+  threadRef: ScopedThreadRef;
+  onOpenPullRequest?: ((target: ResolvedPullRequestTarget) => void) | undefined;
+}) {
   const configs = useServerConfigs();
   if (configs.get(threadRef.environmentId) === undefined) {
     return (
@@ -371,10 +380,18 @@ export function ThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
       />
     );
   }
-  return <EnabledThreadPullRequestsPanel threadRef={threadRef} />;
+  return (
+    <EnabledThreadPullRequestsPanel threadRef={threadRef} onOpenPullRequest={onOpenPullRequest} />
+  );
 }
 
-function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
+function EnabledThreadPullRequestsPanel({
+  threadRef,
+  onOpenPullRequest,
+}: {
+  threadRef: ScopedThreadRef;
+  onOpenPullRequest: ((target: ResolvedPullRequestTarget) => void) | undefined;
+}) {
   const thread = useThreadShell(threadRef);
   const projects = useProjects();
   const environmentProjects = projects
@@ -423,7 +440,14 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
   };
 
   // Legend rows update only for data/extraData changes; include all external inputs.
-  const rowInputs = { speedMode, environmentProjects, capabilities, supportsWatch, thread };
+  const rowInputs = {
+    speedMode,
+    environmentProjects,
+    capabilities,
+    supportsWatch,
+    thread,
+    onOpenPullRequest,
+  };
 
   if (linkCount === 0) {
     return (
@@ -465,6 +489,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
               speedMode={speedMode}
               onUnlink={handleUnlink}
               onSetWatching={supportsWatch ? handleSetWatching : null}
+              onOpenPullRequest={onOpenPullRequest}
             />
           )}
           estimatedItemSize={44}

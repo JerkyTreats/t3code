@@ -203,12 +203,23 @@ export function RightPanelSurfaceContent(props: {
             surface,
           )}
           composerDraftTarget={props.composerDraftTarget}
-          onBack={card ? undefined : pullRequest.onBack}
+          onBack={
+            card && pullRequest.onBack
+              ? () => card.show({ kind: "pull-requests" })
+              : pullRequest.onBack
+          }
         />
       );
     }
     case "pull-requests":
-      return <ThreadPullRequestsPanel threadRef={threadRef} />;
+      return (
+        <ThreadPullRequestsPanel
+          threadRef={threadRef}
+          onOpenPullRequest={
+            card ? (target) => card.show({ kind: "pull-request", ...target }) : undefined
+          }
+        />
+      );
     case "side-chat":
       // Not lazy: revealing a suspended tiptap editor tears down its view and crashes the composer.
       return (

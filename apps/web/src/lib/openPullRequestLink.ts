@@ -46,9 +46,22 @@ function shouldOpenPullRequestExternally(
   return event.metaKey || event.ctrlKey || event.button === 1;
 }
 
+/** A pull request a link resolved to in the panel's own environment. */
+export interface ResolvedPullRequestTarget {
+  readonly projectId: string;
+  readonly repository: string;
+  readonly number: number;
+  readonly host?: string;
+}
+
+/**
+ * `onOpenPullRequest` shows a resolved pull request somewhere else than the panel's tab, such as
+ * the canvas card the link sits in. A pull request in another environment still opens a tab.
+ */
 export function useOpenChangeRequestLink(
   threadRef?: ScopedThreadRef,
   panelRef?: ScopedThreadRef,
+  onOpenPullRequest?: (target: ResolvedPullRequestTarget) => void,
 ): (
   event: Pick<
     MouseEvent<HTMLElement>,
@@ -96,6 +109,15 @@ export function useOpenChangeRequestLink(
         selectedProjectId: project.id,
         selectedEnvironmentId: project.environmentId,
       };
+      if (onOpenPullRequest && resolvedPanelRef?.environmentId === project.environmentId) {
+        onOpenPullRequest({
+          projectId: project.id,
+          repository,
+          number,
+          ...(host === undefined ? {} : { host }),
+        });
+        return true;
+      }
       if (resolvedPanelRef) {
         useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
           // The standalone PR panel has a synthetic ref; each tab keeps its real environment.
@@ -229,8 +251,11 @@ export function useOpenChangeRequestLink(
   };
 }
 
-export function useOpenPrLink(threadRef?: ScopedThreadRef) {
-  const openChangeRequest = useOpenChangeRequestLink(threadRef);
+export function useOpenPrLink(
+  threadRef?: ScopedThreadRef,
+  onOpenPullRequest?: (target: ResolvedPullRequestTarget) => void,
+) {
+  const openChangeRequest = useOpenChangeRequestLink(threadRef, undefined, onOpenPullRequest);
   const openLink = useOpenLink(threadRef);
   return (event: MouseEvent<HTMLElement>, prUrl: string, targetThreadRef?: ScopedThreadRef) => {
     if (event.button > 1) return false;

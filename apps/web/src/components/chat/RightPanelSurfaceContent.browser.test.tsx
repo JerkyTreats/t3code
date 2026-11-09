@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
@@ -26,17 +26,43 @@ vi.mock("../files/FilePreviewPanel", () => ({
   ),
 }));
 
+vi.mock("../pullRequest/ThreadPullRequestsPanel", () => ({
+  ThreadPullRequestsPanel: (props: {
+    onOpenPullRequest?: (target: { projectId: string; repository: string; number: number }) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() =>
+        props.onOpenPullRequest?.({ projectId: "p", repository: "acme/app", number: 7 })
+      }
+    >
+      Open row
+    </button>
+  ),
+}));
+vi.mock("../pullRequest/PullRequestDetailPanel", () => ({
+  PullRequestDetailPanel: (props: { onBack?: () => void }) => (
+    <button type="button" disabled={!props.onBack} onClick={() => props.onBack?.()}>
+      Back
+    </button>
+  ),
+}));
+
 import { RightPanelSurfaceContent } from "./RightPanelSurfaceContent";
+import type { RightPanelSurface } from "../../rightPanelStore";
 
 const threadRef = {
   environmentId: EnvironmentId.make("surface-content-test"),
   threadId: ThreadId.make("thread"),
 };
 
-function renderFiles(card?: Parameters<typeof RightPanelSurfaceContent>[0]["card"]) {
+function renderSurface(
+  surface: RightPanelSurface,
+  card?: Parameters<typeof RightPanelSurfaceContent>[0]["card"],
+) {
   return render(
     <RightPanelSurfaceContent
-      surface={{ id: "files", kind: "files" }}
+      surface={surface}
       card={card}
       activeSurfaceId="files"
       threadRef={threadRef}
@@ -51,7 +77,16 @@ function renderFiles(card?: Parameters<typeof RightPanelSurfaceContent>[0]["card
       onCloseSurface={() => {}}
       sideChatParentPanel={{} as never}
       terminal={{} as never}
-      pullRequest={{} as never}
+      pullRequest={{
+        capabilityKnown: true,
+        supported: true,
+        projectId: ProjectId.make("p"),
+        pullRequests: [],
+        linkedPullRequest: null,
+        branchPullRequest: null,
+        // The panel offers Back to the list when the thread links more than one pull request.
+        onBack: () => useRightPanelStore.getState().open(threadRef, "pull-requests"),
+      }}
       files={{
         projectName: "Project",
         workspaceRoot: "/workspace",
@@ -62,9 +97,11 @@ function renderFiles(card?: Parameters<typeof RightPanelSurfaceContent>[0]["card
         onPendingChange: () => {},
       }}
     />,
-    { router: false }, // The stubbed file panel has no links to route.
+    { router: false }, // The stubbed panels have no links to route.
   );
 }
+
+const FILES = { id: "files", kind: "files" } as const;
 
 const panel = () =>
   selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef);
@@ -76,7 +113,7 @@ describe("RightPanelSurfaceContent in a canvas card", () => {
     const show = vi.fn();
     const place = vi.fn();
     {
-      await using screen = await renderFiles({ show, place, close: vi.fn() });
+      await using screen = await renderSurface(FILES, { show, place, close: vi.fn() });
       await screen.getByText("Open app").click();
       await screen.getByText("Up beside").click();
       await screen.getByText("Open readme").click();
@@ -89,8 +126,41 @@ describe("RightPanelSurfaceContent in a canvas card", () => {
     expect(panel().surfaces.map((surface) => surface.id)).toEqual(["files"]);
 
     // The panel itself moves its tab in place.
-    await using screen = await renderFiles();
+    await using screen = await renderSurface(FILES);
     await screen.getByText("Open app").click();
     expect(panel().activeSurfaceId).toBe("file:src/app.ts");
+  });
+
+  it("moves a card from the linked pull requests to one and back, leaving the panel alone", async () => {
+    useRightPanelStore.getState().removeThread(threadRef);
+    useRightPanelStore.getState().open(threadRef, "files");
+    const show = vi.fn();
+    const card = { show, place: vi.fn(), close: vi.fn() };
+    {
+      await using screen = await renderSurface(
+        { id: "pull-requests", kind: "pull-requests" },
+        card,
+      );
+      await screen.getByText("Open row").click();
+    }
+    expect(show).toHaveBeenLastCalledWith({
+      kind: "pull-request",
+      projectId: "p",
+      repository: "acme/app",
+      number: 7,
+    });
+    await using screen = await renderSurface(
+      {
+        id: "pull-request:p:acme%2Fapp:7",
+        kind: "pull-request",
+        projectId: "p",
+        repository: "acme/app",
+        number: 7,
+      },
+      card,
+    );
+    await screen.getByText("Back").click();
+    expect(show).toHaveBeenLastCalledWith({ kind: "pull-requests" });
+    expect(panel().surfaces.map((surface) => surface.id)).toEqual(["files"]);
   });
 });

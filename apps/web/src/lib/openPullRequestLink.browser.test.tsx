@@ -158,3 +158,35 @@ it("opens an available commit in the closed Diff pane without the pane resetting
   // ChatView resets a pane opened without an explicit request to Changes unless this is set.
   expect(useDiffPanelStore.getState().consumeKeepSelectionOnOpen(threadRef)).toBe(true);
 });
+
+it("hands a resolved pull request to the card that asked, keeping modified clicks native", async () => {
+  setup();
+  const opened: unknown[] = [];
+  const url = "https://github.com/Effect-TS/effect/pull/7";
+  function PullRequestLink() {
+    const open = useOpenChangeRequestLink(threadRef, undefined, (target) => opened.push(target));
+    return (
+      <a href={url} onClick={(event) => open(event, url)}>
+        Pull request
+      </a>
+    );
+  }
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PullRequestLink />
+    </AppAtomRegistryProvider>,
+  );
+  const link = screen.getByRole("link", { name: "Pull request" }).element();
+  const defaults: boolean[] = [];
+  screen.container.addEventListener("click", (nativeEvent) => {
+    defaults.push(nativeEvent.defaultPrevented);
+    nativeEvent.preventDefault();
+  });
+  await act(() => link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
+  await act(() =>
+    link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true })),
+  );
+  expect(opened).toEqual([expect.objectContaining({ projectId: "project", number: 7 })]);
+  expect(defaults).toEqual([true, false]);
+  expect(useRightPanelStore.getState().byThreadKey).toEqual({});
+});
