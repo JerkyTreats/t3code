@@ -17,7 +17,7 @@ vi.mock("../files/FilePreviewPanel", () => ({
         Open app
       </button>
       <button type="button" onClick={() => props.onNavigateFolder("", "src/app", true)}>
-        Up beside
+        Up from a file
       </button>
       <button type="button" onClick={() => props.onOpenFile("README.md")}>
         Open readme
@@ -115,14 +115,16 @@ describe("RightPanelSurfaceContent in a canvas card", () => {
     {
       await using screen = await renderSurface(FILES, { show, place, close: vi.fn() });
       await screen.getByText("Open app").click();
-      await screen.getByText("Up beside").click();
+      await screen.getByText("Up from a file").click();
       await screen.getByText("Open readme").click();
     }
+    // A breadcrumb above a file moves the card too, where the panel would keep the file's tab.
     expect(show.mock.calls).toEqual([
       [{ kind: "file", relativePath: "src/app.ts" }],
+      [{ kind: "files", folderTrail: "src/app" }],
       [{ kind: "file", relativePath: "README.md" }],
     ]);
-    expect(place.mock.calls).toEqual([[{ kind: "files", folderTrail: "src/app" }]]);
+    expect(place).not.toHaveBeenCalled();
     expect(panel().surfaces.map((surface) => surface.id)).toEqual(["files"]);
 
     // The panel itself moves its tab in place.

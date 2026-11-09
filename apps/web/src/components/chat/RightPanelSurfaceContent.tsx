@@ -280,14 +280,15 @@ export function RightPanelSurfaceContent(props: {
               card ? (relativePath) => card.show({ kind: "file", relativePath }) : files.onOpenFile
             }
             onNavigateFolder={(relativePath, folderTrail, keepSource) => {
+              // The panel keeps a file's tab and opens its folder beside it; a card is one view,
+              // so every breadcrumb moves the card itself.
               if (card) {
                 const trail = folderTrail === relativePath ? {} : { folderTrail };
                 const target =
                   relativePath === ""
                     ? { kind: "files" as const, ...trail }
                     : { kind: "file" as const, relativePath, ...trail };
-                if (keepSource) card.place(target);
-                else card.show(target);
+                card.show(target);
                 return;
               }
               useRightPanelStore
