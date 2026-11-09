@@ -95,6 +95,16 @@ describe("wheelPansBoard", () => {
     expect(wheel(tall)).toBe(false);
     // A terminal scrolls its buffer without any overflow, and takes the wheel to say so.
     expect(wheel(plain, true)).toBe(false);
+    // The file tree and source view scroll inside a shadow root, behind their host.
+    const host = document.createElement("div");
+    const shadowScroller = document.createElement("div");
+    shadowScroller.style.cssText = "overflow-y: auto; height: 40px";
+    const shadowTall = document.createElement("div");
+    shadowTall.style.height = "400px";
+    shadowScroller.append(shadowTall);
+    host.attachShadow({ mode: "open" }).append(shadowScroller);
+    layer.append(host);
+    expect(wheel(shadowTall)).toBe(false);
     layer.remove();
   });
 });

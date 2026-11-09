@@ -88,20 +88,32 @@ export function onCanvasReveal(reveal: RevealElement) {
   };
 }
 
+const canScroll = (overflow: string) =>
+  overflow === "auto" || overflow === "scroll" || overflow === "overlay";
+
+/**
+ * Whether anything the wheel passes through on its way to the layer can still scroll its way.
+ * The path, not the parent chain, so a scroller inside a shadow root counts: the file tree and
+ * the source view render into one, and the event reaches the layer retargeted to their host.
+ */
 function scrollsInside(event: WheelEvent, layer: HTMLElement) {
-  let node = event.target instanceof Element ? event.target : null;
-  while (node !== null && node !== layer) {
-    const { overflowY } = getComputedStyle(node);
-    if (
-      (overflowY === "auto" || overflowY === "scroll") &&
-      node.scrollHeight > node.clientHeight &&
-      (event.deltaY < 0
-        ? node.scrollTop > 0
-        : node.scrollTop + node.clientHeight < node.scrollHeight - 1)
-    ) {
-      return true;
-    }
-    node = node.parentElement;
+  const vertical = Math.abs(event.deltaY) >= Math.abs(event.deltaX);
+  for (const node of event.composedPath()) {
+    if (node === layer) break;
+    if (!(node instanceof Element)) continue;
+    const style = getComputedStyle(node);
+    const scrolls = vertical
+      ? canScroll(style.overflowY) &&
+        node.scrollHeight > node.clientHeight &&
+        (event.deltaY < 0
+          ? node.scrollTop > 0
+          : node.scrollTop + node.clientHeight < node.scrollHeight - 1)
+      : canScroll(style.overflowX) &&
+        node.scrollWidth > node.clientWidth &&
+        (event.deltaX < 0
+          ? node.scrollLeft > 0
+          : node.scrollLeft + node.clientWidth < node.scrollWidth - 1);
+    if (scrolls) return true;
   }
   return false;
 }
