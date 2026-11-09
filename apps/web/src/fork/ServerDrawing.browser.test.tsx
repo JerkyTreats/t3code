@@ -79,7 +79,6 @@ describe("a drawing built on the server", () => {
           storageId="server-drawing"
           turnBoard={createTurnBoard()}
           canvasThread={{ environmentId: "e", threadId: "t" } as never}
-          onSendNote={() => {}}
         />
       </div>,
     );
@@ -140,7 +139,6 @@ describe("an html card on the board", () => {
           storageId="server-drawing"
           turnBoard={turnBoard}
           canvasThread={{ environmentId: "e", threadId: "t" } as never}
-          onSendNote={() => {}}
         />
       </div>,
     );

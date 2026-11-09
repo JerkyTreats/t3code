@@ -49,22 +49,6 @@ export function toSavableElements(elements: ReadonlyArray<unknown>) {
   return JSON.parse(JSON.stringify(elements)) as ReadonlyArray<ThreadCanvasElement>;
 }
 
-/** The selected notes in reading order, which is the order they are sent to the agent. */
-export function selectedNotes<Element extends CanvasMark>(
-  elements: ReadonlyArray<Element>,
-  selectedIds: Readonly<Record<string, unknown>>,
-) {
-  return elements
-    .filter(
-      (element) =>
-        selectedIds[element.id] === true &&
-        isUserMark(element) &&
-        element.type === "text" &&
-        element.text?.trim(),
-    )
-    .toSorted((left, right) => left.y - right.y);
-}
-
 /** Matches the server's stamp: a shape changes when it or its label does. */
 function stampsOf(elements: ReadonlyArray<CanvasMark>) {
   const stamps = new Map<string, number>();
