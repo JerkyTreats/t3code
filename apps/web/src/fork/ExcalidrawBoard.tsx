@@ -477,10 +477,24 @@ function placeCards(
     card.element.style.width = `${box.width - 2 * TURN_INSET_PX}px`;
     card.element.dataset.placed = "true";
   }
+  placeCiteAnchors(layer, api.getSceneElements());
   surfaces.update(api.getSceneElements(), view, boardRect);
   // A desktop browser is a native view over its slot, which re-presents only on resize or scroll,
   // so a live browser card asks for one after the card has moved.
   if (isElectron && surfaces.showsLive("preview")) requestSlotPresent();
+}
+
+/** Keeps each citation anchor over its element as the element moves, and hides it once gone. */
+function placeCiteAnchors(layer: HTMLElement, elements: ReadonlyArray<BoardElement>) {
+  for (const anchor of layer.children) {
+    if (!(anchor instanceof HTMLElement) || anchor.dataset.canvasCiteAnchor === undefined) continue;
+    const element = elements.find((candidate) => candidate.id === anchor.dataset.canvasCiteAnchor);
+    anchor.hidden = element === undefined;
+    if (element === undefined) continue;
+    anchor.style.transform = `translate(${element.x}px, ${element.y}px)`;
+    anchor.style.width = `${element.width}px`;
+    anchor.style.height = `${element.height}px`;
+  }
 }
 
 let slotPresentFrame: number | null = null;
@@ -583,9 +597,7 @@ export default function ExcalidrawBoard({
   // The card the user asked to show a resource that another live card also shows.
   const [preferredCard, setPreferredCard] = useState<string | null>(null);
   // Elements cited from the board, each with a quote the composer's citation anchors to.
-  const [citeAnchors, setCiteAnchors] = useState<
-    ReadonlyArray<{ id: string; text: string; x: number; y: number; width: number; height: number }>
-  >([]);
+  const [citeAnchors, setCiteAnchors] = useState<ReadonlyArray<{ id: string; text: string }>>([]);
   const coveredCache = useRef(new Map<string, string | null>());
   const lastSketch = useRef("");
   const camera = useRef({
@@ -777,6 +789,13 @@ export default function ExcalidrawBoard({
           if (canvasThread !== null) {
             publishCanvasTerminals(canvasThread, canvasTerminalIdsOf(nextCards));
           }
+          // A deleted element's citation has nothing left to point at.
+          setCiteAnchors((current) => {
+            const kept = current.filter((entry) =>
+              elements.some((element) => element.id === entry.id && !element.isDeleted),
+            );
+            return kept.length === current.length ? current : kept;
+          });
         }
         // Excalidraw has committed its menu by now, before paint: Cite goes in at the top of
         // its element menu, and T3's menu replaces its canvas menu.
@@ -949,14 +968,7 @@ export default function ExcalidrawBoard({
         (element) =>
           selectedElementIds[element.id] && !(element.type === "text" && element.containerId),
       )
-      .map((element) => ({
-        id: element.id,
-        text: canvasCitationText(element, elements),
-        x: element.x,
-        y: element.y,
-        width: element.width,
-        height: element.height,
-      }));
+      .map((element) => ({ id: element.id, text: canvasCitationText(element, elements) }));
     api.updateScene({ appState: { contextMenu: null }, captureUpdate: CaptureUpdateAction.NEVER });
     if (cited.length === 0) return;
     const ids = new Set(cited.map((entry) => entry.id));
@@ -1134,23 +1146,34 @@ export default function ExcalidrawBoard({
       {noteLayer === null || canvasThread === null || citeAnchors.length === 0
         ? null
         : createPortal(
-            citeAnchors.map((entry) => (
-              <div
-                key={entry.id}
-                className="canvas-cite-anchor"
-                data-canvas-cite-anchor={entry.id}
-                data-assistant-citation-source={entry.id}
-                data-assistant-citation-environment={canvasThread.environmentId}
-                data-assistant-citation-thread={canvasThread.threadId}
-                style={{
-                  transform: `translate(${entry.x}px, ${entry.y}px)`,
-                  width: entry.width,
-                  height: entry.height,
-                }}
-              >
-                {entry.text}
-              </div>
-            )),
+            citeAnchors.map((entry) => {
+              // Placed here for its first paint; placeCards keeps it over the element after.
+              const element = api
+                ?.getSceneElements()
+                .find((candidate) => candidate.id === entry.id);
+              return (
+                <div
+                  key={entry.id}
+                  className="canvas-cite-anchor"
+                  data-canvas-cite-anchor={entry.id}
+                  data-assistant-citation-source={entry.id}
+                  data-assistant-citation-environment={canvasThread.environmentId}
+                  data-assistant-citation-thread={canvasThread.threadId}
+                  hidden={element === undefined}
+                  style={
+                    element === undefined
+                      ? undefined
+                      : {
+                          transform: `translate(${element.x}px, ${element.y}px)`,
+                          width: element.width,
+                          height: element.height,
+                        }
+                  }
+                >
+                  {entry.text}
+                </div>
+              );
+            }),
             noteLayer,
           )}
       {noteLayer === null || canvasThread === null || cards.length === 0

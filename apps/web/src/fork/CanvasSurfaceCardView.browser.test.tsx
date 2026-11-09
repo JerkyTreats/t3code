@@ -267,6 +267,23 @@ describe("the board's right-click menus", () => {
     cite.click();
     expect(cited).toEqual([{ messageId: element!.id, text: "Diff", source: element!.id }]);
     await vi.waitFor(() => expect(board.querySelector("ul.context-menu")).toBeNull());
+
+    // The anchor the citation points at follows its element, and goes with it.
+    const anchor = () =>
+      layer.querySelector<HTMLElement>(`[data-canvas-cite-anchor="${element!.id}"]`);
+    const before = anchor()!.style.transform;
+    expect(before).toBe(`translate(${element!.x}px, ${element!.y}px)`);
+    // Excalidraw reads keys only while focus is inside it, as the board gives it on a press.
+    const container = board.querySelector<HTMLElement>(".excalidraw-container")!;
+    container.focus();
+    const press = (key: string) =>
+      container.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      );
+    await act(() => press("ArrowRight"));
+    await vi.waitFor(() => expect(anchor()!.style.transform).not.toBe(before));
+    await act(() => press("Delete"));
+    await vi.waitFor(() => expect(anchor()).toBeNull());
     layer.remove();
   });
 });
