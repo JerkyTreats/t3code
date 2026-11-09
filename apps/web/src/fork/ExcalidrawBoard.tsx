@@ -22,6 +22,7 @@ import { HtmlRenderFrame } from "../components/chat/HtmlRenderFrame";
 import { observeResize } from "../lib/observeResize";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useTheme } from "../hooks/useTheme";
+import { presentBrowserSurfaceSlots } from "../browser/BrowserSurfaceSlot";
 import { isElectron } from "../env";
 import {
   type AssistantCitationSourceAnchor,
@@ -480,7 +481,7 @@ function placeCards(
   placeCiteAnchors(layer, api.getSceneElements());
   surfaces.update(api.getSceneElements(), view, boardRect);
   // A desktop browser is a native view over its slot, which re-presents only on resize or scroll,
-  // so a live browser card asks for one after the card has moved.
+  // so a live browser card asks its slot directly after the card has moved, waking nothing else.
   if (isElectron && surfaces.showsLive("preview")) requestSlotPresent();
 }
 
@@ -502,7 +503,7 @@ function requestSlotPresent() {
   if (slotPresentFrame !== null) return;
   slotPresentFrame = requestAnimationFrame(() => {
     slotPresentFrame = null;
-    window.dispatchEvent(new Event("scroll"));
+    presentBrowserSurfaceSlots();
   });
 }
 
@@ -594,6 +595,8 @@ export default function ExcalidrawBoard({
   const [cards, setCards] = useState<ReadonlyArray<CanvasCard>>([]);
   const [liveSurfaces, setLiveSurfaces] = useState<ReadonlySet<string>>(() => new Set());
   const [surfaceActivation] = useState(() => createSurfaceActivation(setLiveSurfaces));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- stops the activation's pending settle timer when the board unmounts
+  useEffect(() => () => surfaceActivation.dispose(), [surfaceActivation]);
   // The card the user asked to show a resource that another live card also shows.
   const [preferredCard, setPreferredCard] = useState<string | null>(null);
   // Elements cited from the board, each with a quote the composer's citation anchors to.

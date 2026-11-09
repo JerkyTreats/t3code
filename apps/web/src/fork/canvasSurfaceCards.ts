@@ -459,21 +459,44 @@ export function liveSurfaceCards(input: {
 const sameMembers = (left: ReadonlySet<string>, right: ReadonlySet<string>) =>
   left.size === right.size && [...left].every((id) => right.has(id));
 
+// How long the camera must rest before cards that entered or left the view mount or unmount.
+const SURFACE_SETTLE_MS = 150;
+
 /**
  * Runs liveSurfaceCards on every camera move from boxes worked out once per scene, and publishes
- * only a change in membership, so panning re-renders nothing until a card goes live or leaves.
+ * only a change in membership, once the camera has rested, so a pan never mounts or unmounts a
+ * panel mid-gesture. The first set publishes at once, and so does the card the user engages.
  */
-export function createSurfaceActivation(publish: (live: ReadonlySet<string>) => void) {
+export function createSurfaceActivation(
+  publish: (live: ReadonlySet<string>) => void,
+  settleMs = SURFACE_SETTLE_MS,
+) {
   const boxesByScene = new WeakMap<object, ReadonlyArray<SurfaceCardBox>>();
   let live: ReadonlySet<string> = new Set();
   let interacting: string | null = null;
   let last: { cards: ReadonlyArray<SurfaceCardBox>; viewport: Box } | null = null;
-  const run = () => {
+  let published = false;
+  let settle: ReturnType<typeof setTimeout> | null = null;
+  const cancelSettle = () => {
+    if (settle !== null) clearTimeout(settle);
+    settle = null;
+  };
+  const commit = () => {
+    settle = null;
     if (last === null) return;
     const next = liveSurfaceCards({ ...last, live, interacting });
     if (sameMembers(next, live)) return;
     live = next;
+    published = true;
     publish(next);
+  };
+  const run = (immediate: boolean) => {
+    if (last === null) return;
+    const next = liveSurfaceCards({ ...last, live, interacting });
+    cancelSettle();
+    if (sameMembers(next, live)) return;
+    if (immediate || !published) commit();
+    else settle = setTimeout(commit, settleMs);
   };
   return {
     update(
@@ -522,13 +545,14 @@ export function createSurfaceActivation(publish: (live: ReadonlySet<string>) => 
           height: size.height / zoom,
         },
       };
-      run();
+      run(false);
     },
     setInteracting(id: string | null) {
       if (interacting === id) return;
       interacting = id;
-      run();
+      run(true);
     },
+    dispose: cancelSettle,
     /** Whether a live card shows this kind, read on every camera move. */
     showsLive(kind: CanvasSurfaceRef["kind"]) {
       return last?.cards.some((card) => card.kind === kind && live.has(card.id)) ?? false;

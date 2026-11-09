@@ -3,6 +3,16 @@ import { useLayoutEffect, useRef } from "react";
 import { acquireBrowserSurface } from "./browserSurfaceStore";
 import { observeResize } from "../lib/observeResize";
 
+const mountedSlots = new Set<() => void>();
+
+/**
+ * Re-presents every mounted slot at its current position. For a slot moved by an ancestor's
+ * transform, which neither resizes nor scrolls it, such as a canvas card while the board pans.
+ */
+export function presentBrowserSurfaceSlots() {
+  for (const present of mountedSlots) present();
+}
+
 export function BrowserSurfaceSlot(props: {
   readonly tabId: string;
   readonly visible: boolean;
@@ -68,7 +78,9 @@ export function BrowserSurfaceSlot(props: {
     const stopObserving = observeResize(observed, update);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
+    mountedSlots.add(update);
     return () => {
+      mountedSlots.delete(update);
       stopObserving();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);

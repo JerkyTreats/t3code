@@ -85,22 +85,38 @@ describe("createSurfaceActivation", () => {
   const view = (scrollX: number, zoom = 1) => ({ scrollX, scrollY: 0, zoom: { value: zoom } });
   const size = { width: 1000, height: 800 };
 
-  it("publishes only membership changes as the camera moves, and knows which kinds are live", () => {
+  it("publishes membership changes once the camera rests, never mid-pan", () => {
+    vi.useFakeTimers();
     const publish = vi.fn();
-    const activation = createSurfaceActivation(publish);
+    const activation = createSurfaceActivation(publish, 150);
     const scene = [element("a", 100), { id: "note", x: 0, y: 0, width: 10, height: 10 }];
     activation.update(scene, view(0), size);
+    // The board opening shows its cards at once.
     expect(publish).toHaveBeenLastCalledWith(new Set(["a"]));
     expect(activation.showsLive("preview")).toBe(true);
     // Small pans and any zoom that keeps it in view change nothing.
     for (const scroll of [-10, -20, -30]) activation.update(scene, view(scroll), size);
     for (const zoom of [0.2, 0.1, 2]) activation.update(scene, view(0, zoom), size);
-    expect(publish).toHaveBeenCalledTimes(1);
-    // Panned well away, the card leaves; panned back, it returns.
+    // A pan that sweeps the card out and back without resting leaves it mounted.
     activation.update(scene, view(-3000), size);
+    vi.advanceTimersByTime(100);
+    activation.update(scene, view(0), size);
+    vi.advanceTimersByTime(500);
+    expect(publish).toHaveBeenCalledTimes(1);
+    // Panned away and resting, the card leaves; panned back and resting, it returns.
+    activation.update(scene, view(-3000), size);
+    expect(activation.showsLive("preview")).toBe(true);
+    vi.advanceTimersByTime(150);
     expect(activation.showsLive("preview")).toBe(false);
     activation.update(scene, view(0), size);
+    vi.advanceTimersByTime(150);
     expect(publish.mock.calls.map(([members]) => [...members])).toEqual([["a"], [], ["a"]]);
+    // The card the user engages joins at once, past the wait.
+    activation.update([...scene, element("b", 5000)], view(0), size);
+    activation.setInteracting("b");
+    expect(publish).toHaveBeenLastCalledWith(new Set(["a", "b"]));
+    activation.dispose();
+    vi.useRealTimers();
   });
 });
 
