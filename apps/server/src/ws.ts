@@ -191,6 +191,7 @@ import * as DeviceService from "./device/DeviceService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
+import { readBrowserTrail } from "./canvas/browserTrail.ts";
 import {
   attachmentRelativePath,
   chatAttachmentStableKey,
@@ -3106,6 +3107,8 @@ export const layerWsRpc = (
         [WS_METHODS.threadCanvasSave]: (input) =>
           authorizeEffect(AuthOrchestrationOperateScope, threadCanvas.saveFromClient(input)),
         [WS_METHODS.subscribeThreadCanvas]: (input) => threadCanvas.follow(input.threadId),
+        [WS_METHODS.threadCanvasBrowserTrail]: (input) =>
+          readBrowserTrail(input.threadId, input.tabId),
         [WS_METHODS.agentSessionsScan]: () => agentSessionScanner.scan,
         [WS_METHODS.agentSessionsImport]: (input) =>
           agentSessionImporter.importRecentAgentThreads(input),

@@ -89,6 +89,25 @@ export const ThreadCanvasSaveInput = Schema.Struct({
   ),
 });
 
+export const ThreadCanvasBrowserTrailInput = Schema.Struct({
+  threadId: ThreadId,
+  tabId: Schema.String,
+});
+
+/** One saved screenshot of a browser card's tab, with the page it showed. */
+export const ThreadCanvasBrowserTrailFrame = Schema.Struct({
+  attachmentId: Schema.String,
+  url: Schema.String,
+  title: Schema.String,
+  at: Schema.String,
+});
+export type ThreadCanvasBrowserTrailFrame = typeof ThreadCanvasBrowserTrailFrame.Type;
+
+export const ThreadCanvasBrowserTrail = Schema.Struct({
+  frames: Schema.Array(ThreadCanvasBrowserTrailFrame),
+});
+export type ThreadCanvasBrowserTrail = typeof ThreadCanvasBrowserTrail.Type;
+
 export class ThreadCanvasError extends Schema.TaggedError<ThreadCanvasError>()(
   "ThreadCanvasError",
   { message: Schema.String },

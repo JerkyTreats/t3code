@@ -2721,6 +2721,16 @@ code {
   opacity: 0;
 }
 
+/* Covers a new piece in its chat's colour until the piece is revealed. */
+.canvas-agent-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: calc(6px * var(--canvas-presence-unscale));
+  background: color-mix(in srgb, var(--canvas-chat-color) 16%, var(--background));
+  opacity: 0;
+}
+
 .canvas-agent-cursor {
   position: absolute;
   top: 0;

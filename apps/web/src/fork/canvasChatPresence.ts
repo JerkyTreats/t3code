@@ -60,7 +60,19 @@ interface Box {
   readonly height: number;
 }
 
-const PRESENCE_MS = 1400;
+/** How long an agent's presence plays, from its cursor setting out to the last fade. */
+export const AGENT_PRESENCE_MS = 2000;
+// The cursor reaches the drawing here, then the pieces show one by one until REVEAL_END_MS.
+const GLIDE_MS = 700;
+const REVEAL_END_MS = 1300;
+const FADE_MS = 150;
+const OUTLINE_HOLD_END_MS = 1700;
+// Fading copies of the cursor that follow it on its glide, each a little later and fainter.
+const TRAIL_OPACITIES = [0.45, 0.3, 0.18] as const;
+const TRAIL_LAG_MS = 60;
+// The fill hides most of a piece until it is revealed, not all of it.
+const PLACEHOLDER_OPACITY = 0.85;
+const GLIDE_EASING = "cubic-bezier(0.3, 0.7, 0.2, 1)";
 // Past this many pieces, one outline around them all reads better than one each.
 const MAX_OUTLINES = 24;
 const OUTLINE_PAD_PX = 6;
@@ -68,11 +80,12 @@ const OUTLINE_PAD_PX = 6;
 const CURSOR_SVG =
   '<svg viewBox="0 0 16 20" width="16" height="20" aria-hidden="true"><path d="M1 1v15l4.2-4 2.8 6.5 2.6-1.1-2.8-6.4H14z" fill="currentColor" stroke="white" stroke-width="1.2" stroke-linejoin="round"/></svg>';
 
+const at = (ms: number) => ms / AGENT_PRESENCE_MS;
+
 /**
- * Plays an agent's cursor gliding from its chat to what it drew, with a short outline on each
- * piece, then removes it all. The board's card layer is in scene coordinates, so this follows the
- * camera without work of its own, and nothing reaches the saved scene. Plays nothing when the
- * reader asks for reduced motion. Returns a stop for when the board unmounts.
+ * Plays an agent's cursor, trailed by fading copies, from its chat to what it drew: a soft fill on
+ * each new piece lifts in drawing order, then outlines, then a fade. Overlay only, never the scene.
+ * Plays nothing under reduced motion. Returns a stop for when the board unmounts.
  */
 export function playAgentPresence(
   layer: HTMLElement,
@@ -87,22 +100,32 @@ export function playAgentPresence(
   if (input.pieces.length === 0) return () => {};
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return () => {};
   const bounds = boundsOf(input.pieces);
-  const outlines = input.pieces.length > MAX_OUTLINES ? [bounds] : input.pieces;
+  const boxes = input.pieces.length > MAX_OUTLINES ? [bounds] : input.pieces;
   // The layer scales with the zoom; the cursor and outline strokes stay at screen size.
   const unscale = 1 / input.zoom;
+  const pad = OUTLINE_PAD_PX * unscale;
   const root = document.createElement("div");
   root.className = "canvas-agent-presence";
   root.style.setProperty("--canvas-chat-color", input.color);
   root.style.setProperty("--canvas-presence-unscale", String(unscale));
-  for (const box of outlines) {
-    const outline = document.createElement("div");
-    outline.className = "canvas-agent-outline";
-    const pad = OUTLINE_PAD_PX * unscale;
-    outline.style.transform = `translate(${box.x - pad}px, ${box.y - pad}px)`;
-    outline.style.width = `${box.width + 2 * pad}px`;
-    outline.style.height = `${box.height + 2 * pad}px`;
-    root.append(outline);
-  }
+  const overBox = (className: string, box: Box) => {
+    const element = document.createElement("div");
+    element.className = className;
+    element.style.transform = `translate(${box.x - pad}px, ${box.y - pad}px)`;
+    element.style.width = `${box.width + 2 * pad}px`;
+    element.style.height = `${box.height + 2 * pad}px`;
+    root.append(element);
+    return element;
+  };
+  const placeholders = boxes.map((box) => overBox("canvas-agent-placeholder", box));
+  const outlines = boxes.map((box) => overBox("canvas-agent-outline", box));
+  const ghosts = TRAIL_OPACITIES.map(() => {
+    const ghost = document.createElement("div");
+    ghost.className = "canvas-agent-cursor";
+    ghost.innerHTML = CURSOR_SVG;
+    root.append(ghost);
+    return ghost;
+  });
   const cursor = document.createElement("div");
   cursor.className = "canvas-agent-cursor";
   cursor.innerHTML = CURSOR_SVG;
@@ -112,30 +135,56 @@ export function playAgentPresence(
   root.append(cursor);
   layer.append(root);
 
-  const at = (point: { readonly x: number; readonly y: number }) =>
+  const place = (point: { readonly x: number; readonly y: number }) =>
     `translate(${point.x}px, ${point.y}px) scale(${unscale})`;
   const to = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  const timing = { duration: AGENT_PRESENCE_MS, fill: "forwards" } as const;
+  const revealStep = (REVEAL_END_MS - GLIDE_MS) / placeholders.length;
   const animations = [
     cursor.animate(
       [
-        { transform: at(input.from), opacity: 0, easing: "cubic-bezier(0.3, 0.7, 0.2, 1)" },
-        { opacity: 1, offset: 0.1 },
-        { transform: at(to), opacity: 1, offset: 0.55 },
-        { transform: at(to), opacity: 1, offset: 0.75 },
-        { transform: at(to), opacity: 0 },
+        { transform: place(input.from), opacity: 0, easing: GLIDE_EASING },
+        { opacity: 1, offset: at(140) },
+        { transform: place(to), opacity: 1, offset: at(GLIDE_MS) },
+        { transform: place(to), opacity: 1, offset: at(OUTLINE_HOLD_END_MS) },
+        { transform: place(to), opacity: 0 },
       ],
-      { duration: PRESENCE_MS, fill: "forwards" },
+      timing,
     ),
-    ...[...root.querySelectorAll<HTMLElement>(".canvas-agent-outline")].map((outline) =>
+    // Each copy runs the same glide a little later and is gone once the cursor arrives.
+    ...ghosts.map((ghost, index) =>
+      ghost.animate(
+        [
+          { transform: place(input.from), opacity: 0, easing: GLIDE_EASING },
+          { opacity: TRAIL_OPACITIES[index], offset: 0.15 },
+          { transform: place(to), opacity: 0 },
+        ],
+        { duration: GLIDE_MS, delay: (index + 1) * TRAIL_LAG_MS, fill: "forwards" },
+      ),
+    ),
+    ...placeholders.map((placeholder, index) => {
+      const lift = GLIDE_MS + index * revealStep;
+      return placeholder.animate(
+        [
+          { opacity: 0 },
+          { opacity: PLACEHOLDER_OPACITY, offset: at(200) },
+          { opacity: PLACEHOLDER_OPACITY, offset: at(lift) },
+          { opacity: 0, offset: at(lift + FADE_MS) },
+          { opacity: 0 },
+        ],
+        timing,
+      );
+    }),
+    ...outlines.map((outline) =>
       outline.animate(
         [
           { opacity: 0 },
-          { opacity: 0, offset: 0.4 },
-          { opacity: 1, offset: 0.55 },
-          { opacity: 1, offset: 0.75 },
+          { opacity: 0, offset: at(REVEAL_END_MS) },
+          { opacity: 1, offset: at(REVEAL_END_MS + FADE_MS) },
+          { opacity: 1, offset: at(OUTLINE_HOLD_END_MS) },
           { opacity: 0 },
         ],
-        { duration: PRESENCE_MS, fill: "forwards" },
+        timing,
       ),
     ),
   ];
@@ -145,7 +194,7 @@ export function playAgentPresence(
     for (const animation of animations) animation.cancel();
     root.remove();
   };
-  timer = window.setTimeout(stop, PRESENCE_MS);
+  timer = window.setTimeout(stop, AGENT_PRESENCE_MS);
   return stop;
 }
 

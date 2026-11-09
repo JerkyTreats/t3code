@@ -40,6 +40,8 @@ import { useThreadPreviewState } from "../previewStateStore";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { useProjects, useQuietThreadShell } from "../state/entities";
 import { useKnownTerminalSessions } from "../state/terminalSessions";
+import { BrowserTrailPlayer } from "./BrowserTrailPlayer";
+import { ChatCardStatus } from "./CanvasChatStatus";
 import {
   freeSpotInView,
   type PanelSurfaceCard,
@@ -265,8 +267,19 @@ function TerminalGate(props: GateProps<Extract<CanvasSurfaceRef, { kind: "termin
   return gated(useTerminalAvailability(props.threadRef, props.surface), props);
 }
 
+/** A browser card whose tab is gone replays the screenshots kept while it was open. */
 function PreviewGate(props: GateProps<Extract<CanvasSurfaceRef, { kind: "preview" }>>) {
-  return gated(usePreviewAvailability(props.threadRef, props.surface), props);
+  const availability = usePreviewAvailability(props.threadRef, props.surface);
+  if (availability.state !== "unavailable") return gated(availability, props);
+  return (
+    <CardFace card={props.card}>
+      <BrowserTrailPlayer
+        threadRef={props.threadRef}
+        tabId={props.surface.tabId}
+        reason={availability.reason}
+      />
+    </CardFace>
+  );
 }
 
 function PullRequestGate(props: GateProps<Extract<CanvasSurfaceRef, { kind: "pull-request" }>>) {
@@ -409,8 +422,9 @@ export const CanvasSurfaceCardView = memo(function CanvasSurfaceCardView(props: 
   const card = canvasSurfaceCardOf(JSON.parse(props.cardJson));
   if (card === null) return null;
   const threadRef = { environmentId: props.environmentId, threadId: props.threadId };
-  if (!props.live) return <CardFace card={card} />;
-  return (
+  const view = !props.live ? (
+    <CardFace card={card} />
+  ) : (
     <AvailabilityGate threadRef={threadRef} surface={card.surface} card={card}>
       <LiveSurface
         threadRef={threadRef}
@@ -421,5 +435,15 @@ export const CanvasSurfaceCardView = memo(function CanvasSurfaceCardView(props: 
         onShowHere={() => props.onShowHere(props.elementId)}
       />
     </AvailabilityGate>
+  );
+  if (card.surface.kind !== "side-chat") return view;
+  return (
+    <ChatCardStatus
+      environmentId={props.environmentId}
+      threadId={card.surface.threadId as ThreadId}
+      live={props.live}
+    >
+      {view}
+    </ChatCardStatus>
   );
 });

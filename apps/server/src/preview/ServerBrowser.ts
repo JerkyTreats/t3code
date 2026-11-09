@@ -256,6 +256,12 @@ export class ServerBrowser extends Context.Service<
 
     readonly clearProfile: (profileId: string) => Effect.Effect<void, PreviewClearProfileError>;
 
+    /** A JPEG of an open tab's viewport, taken as a viewer's still is; null if it is not open. */
+    readonly captureStill: (input: {
+      readonly threadId: string;
+      readonly tabId: string;
+    }) => Effect.Effect<Buffer | null>;
+
     readonly profileReporter: Effect.Effect<ProfileReporter, never, Scope.Scope>;
   }
 >()("t3/preview/ServerBrowser") {}
@@ -2841,8 +2847,19 @@ const make = Effect.gen(function* () {
       catch: (cause) => new PreviewClearProfileError({ profileId, cause }),
     });
 
+  const captureStill: ServerBrowser["Service"]["captureStill"] = ({ threadId, tabId }) =>
+    Effect.promise(async () => {
+      const tab = tabs.get(tabKey(threadId, tabId));
+      if (!tab || tab.closing) return null;
+      const data = await withCaptureLock(tab, () =>
+        ServerBrowserPage.captureViewport(tab.cdp, { format: "jpeg", quality: 70 }),
+      ).catch(() => null);
+      return data === null ? null : Buffer.from(data, "base64");
+    });
+
   return ServerBrowser.of({
     attachViewer,
+    captureStill,
     clearProfile,
     profileReporter,
     openDownload,

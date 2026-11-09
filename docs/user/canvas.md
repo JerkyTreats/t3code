@@ -17,9 +17,13 @@ Navigating inside a card changes that card, not the panel: opening a file from a
 
 A side chat or any other chat placed on the canvas draws on this canvas too. Ask it for a drawing and the drawing appears beside its card. Its drawings move with its card, and a piece you drag away keeps following the card from where you put it.
 
-Each chat has its own colour, shown as a stripe along the top of its card. When an agent draws, its cursor glides in that colour from its chat to the new drawing and briefly outlines it. With reduced motion turned on, drawings simply appear.
+Each chat has its own colour, shown as a stripe along the top of its card. When an agent draws, its cursor glides in that colour from its chat to the new drawing, trailed by a few fading copies of itself. Each new piece first shows as a soft patch in the chat's colour, the pieces then appear one by one in the order they were drawn, and each is briefly outlined. With reduced motion turned on, drawings simply appear.
 
-Over a browser or device card, the wheel pans the canvas until you click into the page. Everyone in the thread sees the same cards. Two people editing one file in different cards can overwrite each other, and the rendered or raw file view follows your panel setting.
+A chat card shows the chat's state at the top: working, with how long it has been working, waiting for your approval or answer, idle, or failed. While the chat works and its composer is out of view, **Stop** there ends the turn.
+
+While any chat on the canvas is working or waiting, a strip in the lower left shows a dot in each such chat's colour and a count such as "2 working · 1 waiting". Click a dot to go to that chat's card, or to the latest turn for the thread itself.
+
+While a browser card's tab is open, T3 Code keeps a screenshot each time a page settles and every 30 seconds after. When the tab closes, the card becomes a recording: step through the screenshots with the arrows or the slider, and open any page from its link. Over a browser or device card, the wheel pans the canvas until you click into the page. Everyone in the thread sees the same cards. Two people editing one file in different cards can overwrite each other, and the rendered or raw file view follows your panel setting.
 
 ## Cite something on the canvas
 

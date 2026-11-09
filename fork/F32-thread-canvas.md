@@ -31,6 +31,10 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   `t3OnCard` so they move with the card, every piece carries `t3Drawing.by`, and `canvas_read`
   names the card as `yourCard`. `canvas_preview` renders a region
   so the agent can see it, including which cards are cut off.
+- `F32.D3a` Browser trail. While a browser card's tab is open, the server keeps a JPEG of it each
+  time a page settles and every 30 seconds after, skipping unchanged frames, up to 60 per tab, as
+  thread attachments indexed under the canvases directory. When the tab is gone the card replays
+  them through `threadCanvas.browserTrail`, a read-scoped RPC.
 - `F32.D4` User marks reach the agent. A mark nearer a chat card than any turn reaches that chat
   instead of the board's thread. Anything the user draws or writes is a mark. Marks the agent
   has not seen are summarised into the next turn, and the send button sends them with nothing

@@ -89,7 +89,13 @@ import {
 } from "./canvasSurfaceCards";
 import { forwardCardMiddleDrag } from "./cardMiddleDrag";
 import { followCards } from "./canvasCardFollow";
-import { agentStrokesOf, chatColorOf, playAgentPresence } from "./canvasChatPresence";
+import {
+  AGENT_PRESENCE_MS,
+  agentStrokesOf,
+  chatColorOf,
+  playAgentPresence,
+} from "./canvasChatPresence";
+import { BoardActivityStrip } from "./CanvasChatStatus";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
 import { tableWidthOf } from "./turnTableWidth";
@@ -767,6 +773,28 @@ export default function ExcalidrawBoard({
     camera.current.panFrame = requestAnimationFrame(step);
   });
 
+  /** Shows a chat: its card with the top under the toolbar, or the latest turn for this thread. */
+  const showChat = (threadId: ThreadId) => {
+    const root = boardRootOf(boardRef.current);
+    if (!api || !root) return;
+    if (threadId === canvasThread?.threadId) {
+      panToLatest(true);
+      return;
+    }
+    const card = chatCardOf(api.getSceneElements(), threadId)?.element;
+    if (card === undefined) return;
+    cancelPan();
+    setFollowing(false);
+    const headerHeight =
+      root.querySelector("[data-chat-header]")?.getBoundingClientRect().height ??
+      TOPBAR_FALLBACK_PX;
+    const zoom = api.getAppState().zoom.value;
+    moveCamera({
+      scrollX: root.getBoundingClientRect().width / 2 / zoom - (card.x + card.width / 2),
+      scrollY: (headerHeight + TOOLBAR_CLEARANCE_PX) / zoom - card.y,
+    });
+  };
+
   const syncTurns = useStableCallback(() => {
     const board = boardRef.current;
     const root = boardRootOf(board);
@@ -879,7 +907,7 @@ export default function ExcalidrawBoard({
         zoom,
       });
       stops.add(stop);
-      window.setTimeout(() => stops.delete(stop), 2_000);
+      window.setTimeout(() => stops.delete(stop), AGENT_PRESENCE_MS);
     }
   };
 
@@ -1314,6 +1342,23 @@ export default function ExcalidrawBoard({
           <MainMenu.Item onSelect={resetLayout}>Reset layout</MainMenu.Item>
         </MainMenu>
       </Excalidraw>
+      {canvasThread === null || draft ? null : (
+        <BoardActivityStrip
+          environmentId={canvasThread.environmentId}
+          // A chat shown in two cards is still one chat.
+          threadIds={[
+            ...new Set([
+              canvasThread.threadId,
+              ...cards.flatMap((card) =>
+                card.card.kind === "surface" && card.card.surface.kind === "side-chat"
+                  ? [card.card.surface.threadId as ThreadId]
+                  : [],
+              ),
+            ]),
+          ]}
+          onShowChat={showChat}
+        />
+      )}
       {noteLayer === null || canvasThread === null || citeAnchors.length === 0
         ? null
         : createPortal(

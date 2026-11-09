@@ -112,6 +112,30 @@ layer("ThreadCanvasStore", (it) => {
     }),
   );
 
+  it.effect("finds a chat placed on a board whose thread id is too long for a filename", () =>
+    Effect.gen(function* () {
+      const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
+      const board = ThreadId.make(`thread:${"x".repeat(400)}`);
+      const chat = ThreadId.make("thread-canvas-long-chat");
+      yield* canvas.saveFromClient({
+        threadId: board,
+        elements: [
+          {
+            id: "chat-card",
+            version: 1,
+            customData: {
+              t3Card: { kind: "surface", surface: { kind: "side-chat", threadId: chat } },
+            },
+          },
+        ],
+      });
+      assert.deepStrictEqual(yield* canvas.chatCardOf(chat), {
+        canvasThreadId: board,
+        card: "chat-card",
+      });
+    }),
+  );
+
   it.effect("attaches the saved sketch only for marks a note cannot describe", () =>
     Effect.gen(function* () {
       const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;

@@ -122,15 +122,21 @@ const make = Effect.gen(function* () {
       chatBoards.set(chatThreadId, boards);
     }
   };
-  // Boards saved under a hashed name cannot be traced back to their thread, so they stay unindexed.
+  // A board saved under a hashed name keeps its thread id beside it, in `<stem>.thread`.
   const indexed = yield* Effect.cached(
     Effect.gen(function* () {
       const names = yield* fileSystem.readDirectory(directory);
       for (const name of names) {
         if (!name.endsWith(".json")) continue;
-        const canvasThreadId = decodeURIComponent(name.slice(0, -".json".length)) as ThreadId;
-        if (fileStem(canvasThreadId) !== path.join(directory, name.slice(0, -".json".length)))
-          continue;
+        const stem = path.join(directory, name.slice(0, -".json".length));
+        const encoded = decodeURIComponent(name.slice(0, -".json".length)) as ThreadId;
+        const canvasThreadId =
+          fileStem(encoded) === stem
+            ? encoded
+            : ((yield* fileSystem
+                .readFileString(`${stem}.thread`)
+                .pipe(Effect.orElseSucceed(() => ""))) as ThreadId);
+        if (canvasThreadId === "" || fileStem(canvasThreadId) !== stem) continue;
         const scene = yield* read(canvasThreadId);
         indexBoard(canvasThreadId, scene.elements);
       }
@@ -152,6 +158,12 @@ const make = Effect.gen(function* () {
     return fileSystem.makeDirectory(directory, { recursive: true }).pipe(
       Effect.andThen(fileSystem.writeFileString(temp, JSON.stringify(scene))),
       Effect.andThen(fileSystem.rename(temp, file)),
+      Effect.andThen(
+        path.basename(fileStem(threadId)) === encodeURIComponent(threadId) ||
+          chatCardsIn(scene.elements).size === 0
+          ? Effect.void
+          : fileSystem.writeFileString(`${fileStem(threadId)}.thread`, threadId),
+      ),
       Effect.mapError(failure("Could not save the canvas")),
       Effect.tap(() => Effect.sync(() => indexBoard(threadId, scene.elements))),
       Effect.andThen(PubSub.publish(changes, { threadId, scene })),

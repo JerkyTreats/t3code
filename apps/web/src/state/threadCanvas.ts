@@ -15,3 +15,8 @@ export const threadCanvasSave = createEnvironmentRpcCommand(connectionAtomRuntim
   label: "environment-data:thread-canvas:save",
   tag: WS_METHODS.threadCanvasSave,
 });
+
+export const threadCanvasBrowserTrail = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:thread-canvas:browser-trail",
+  tag: WS_METHODS.threadCanvasBrowserTrail,
+});

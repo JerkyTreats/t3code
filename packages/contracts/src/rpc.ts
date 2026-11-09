@@ -1,6 +1,8 @@
 import {
   ThreadCanvasError,
   ThreadCanvasSaveInput,
+  ThreadCanvasBrowserTrail,
+  ThreadCanvasBrowserTrailInput,
   ThreadCanvasScene,
   ThreadCanvasSubscribeInput,
 } from "./threadCanvas.ts";
@@ -422,6 +424,7 @@ export const WS_METHODS = {
   filesystemBrowse: "filesystem.browse",
   filesystemGetMetadata: "filesystem.getMetadata",
   threadCanvasSave: "threadCanvas.save",
+  threadCanvasBrowserTrail: "threadCanvas.browserTrail",
   subscribeThreadCanvas: "subscribeThreadCanvas",
   agentSessionsScan: "agentSessions.scan",
   agentSessionsImport: "agentSessions.import",
@@ -1369,6 +1372,12 @@ const WsThreadCanvasSaveRpc = Rpc.make(WS_METHODS.threadCanvasSave, {
   error: Schema.Union([ThreadCanvasError, EnvironmentAuthorizationError]),
 });
 
+const WsThreadCanvasBrowserTrailRpc = Rpc.make(WS_METHODS.threadCanvasBrowserTrail, {
+  payload: ThreadCanvasBrowserTrailInput,
+  success: ThreadCanvasBrowserTrail,
+  error: Schema.Union([ThreadCanvasError, EnvironmentAuthorizationError]),
+});
+
 const WsSubscribeThreadCanvasRpc = Rpc.make(WS_METHODS.subscribeThreadCanvas, {
   payload: ThreadCanvasSubscribeInput,
   success: ThreadCanvasScene,
@@ -2119,6 +2128,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsFilesystemBrowseRpc,
   WsFilesystemGetMetadataRpc,
   WsThreadCanvasSaveRpc,
+  WsThreadCanvasBrowserTrailRpc,
   WsSubscribeThreadCanvasRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
