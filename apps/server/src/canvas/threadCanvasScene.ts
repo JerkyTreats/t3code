@@ -1,5 +1,5 @@
 import type { ThreadCanvasElement, ThreadCanvasScene } from "@t3tools/contracts";
-import { canvasSurfaceCardOf } from "@t3tools/shared/canvasSurfaceCard";
+import { type CanvasSurfaceCard, canvasSurfaceCardOf } from "@t3tools/shared/canvasSurfaceCard";
 import { isStaleDrawingCopy, turnAnchorOf, turnSpineOf } from "@t3tools/shared/threadCanvasDrawing";
 
 import { originOf } from "./threadCanvasPlan.ts";
@@ -141,6 +141,38 @@ function placeOnAgentPiece(reach: CanvasBox, pieces: ReadonlyArray<AgentPiece>):
       };
 }
 
+/** What names a placed panel tab for an agent: its resource, without the card's view state. */
+function surfaceForAgents({ surface, title }: CanvasSurfaceCard) {
+  switch (surface.kind) {
+    case "file":
+      return {
+        kind: surface.kind,
+        title,
+        relativePath: surface.relativePath,
+        ...(surface.revealLine === undefined ? {} : { revealLine: surface.revealLine }),
+      };
+    case "terminal":
+      return {
+        kind: surface.kind,
+        title,
+        resourceId: surface.resourceId,
+        terminalIds: surface.terminalIds ?? [surface.resourceId],
+      };
+    case "device":
+      return {
+        kind: surface.kind,
+        title,
+        ...(surface.target === undefined
+          ? {}
+          : { device: surface.target.name, platform: surface.target.platform }),
+      };
+    case "files":
+      return { kind: surface.kind, title };
+    default:
+      return { ...surface, title };
+  }
+}
+
 /** The scene as an agent reads it: turns by their opening words, everything else beside them. */
 export function describeCanvas(
   scene: ThreadCanvasScene,
@@ -216,9 +248,7 @@ export function describeCanvas(
         ...(cardKind === "html" && typeof card.attachmentId === "string"
           ? { attachmentId: card.attachmentId }
           : {}),
-        ...(surfaceCard === null
-          ? {}
-          : { surface: { ...surfaceCard.surface, title: surfaceCard.title } }),
+        ...(surfaceCard === null ? {} : { surface: surfaceForAgents(surfaceCard) }),
         ...(text === undefined ? {} : { text }),
         ...(typeof covers === "string" ? { covers } : {}),
         ...(typeof start === "string" ? { start } : {}),

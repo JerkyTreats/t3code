@@ -59,13 +59,27 @@ const CanvasReadTool = Tool.make("canvas_read", {
         attachmentId: Schema.optional(Schema.String),
         surface: Schema.optional(
           Schema.Struct({
-            kind: Schema.Literals(["file", "preview", "terminal", "pull-request"]),
+            kind: Schema.Literals([
+              "file",
+              "files",
+              "preview",
+              "terminal",
+              "diff",
+              "pull-request",
+              "pull-requests",
+              "side-chat",
+              "device",
+            ]),
             title: Schema.String,
             relativePath: Schema.optional(Schema.String),
             revealLine: Schema.optional(Schema.Int),
             tabId: Schema.optional(Schema.String),
             url: Schema.optional(Schema.String),
             resourceId: Schema.optional(Schema.String),
+            terminalIds: Schema.optional(Schema.Array(Schema.String)),
+            threadId: Schema.optional(Schema.String),
+            device: Schema.optional(Schema.String),
+            platform: Schema.optional(Schema.Literals(["ios", "android"])),
             projectId: Schema.optional(Schema.String),
             repository: Schema.optional(Schema.String),
             number: Schema.optional(Schema.Int),
@@ -73,7 +87,7 @@ const CanvasReadTool = Tool.make("canvas_read", {
           }),
         ).annotate({
           description:
-            "A right panel surface the user placed on the canvas: a workspace file, a browser preview, a terminal, or a pull request.",
+            "A right panel tab the user placed on the canvas, live as in the panel: a workspace file, the files browser, a browser preview, a terminal group, the diff, a pull request, the linked pull requests, a side chat (threadId), or a device.",
         }),
         text: Schema.optional(Schema.String),
         covers: Schema.optional(Schema.String),

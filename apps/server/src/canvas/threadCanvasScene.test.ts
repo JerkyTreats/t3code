@@ -143,6 +143,31 @@ describe("describeCanvas", () => {
           kind: "surface",
           surface: { kind: "pull-request", projectId: "p1", repository: "acme/app", number: 7 },
         }),
+        surfaceCard("term", 1500, {
+          kind: "surface",
+          surface: {
+            kind: "terminal",
+            resourceId: "t1",
+            terminalIds: ["t1", "t2"],
+            activeTerminalId: "t2",
+          },
+          title: "Terminal",
+        }),
+        surfaceCard("chat", 2000, {
+          kind: "surface",
+          surface: { kind: "side-chat", threadId: "side-1" },
+        }),
+        surfaceCard("phone", 2500, {
+          kind: "surface",
+          surface: {
+            kind: "device",
+            target: { hostId: "h", deviceId: "d", platform: "ios", name: "iPhone 17" },
+          },
+        }),
+        surfaceCard("files", 3000, {
+          kind: "surface",
+          surface: { kind: "files", folderTrail: "src/app" },
+        }),
         // A host path cannot resolve on another client, so it is no surface card.
         surfaceCard("host", 1000, {
           kind: "surface",
@@ -169,10 +194,28 @@ describe("describeCanvas", () => {
           title: "acme/app#7",
         },
       }),
+      expect.objectContaining({
+        id: "term",
+        surface: {
+          kind: "terminal",
+          title: "Terminal",
+          resourceId: "t1",
+          terminalIds: ["t1", "t2"],
+        },
+      }),
+      expect.objectContaining({
+        id: "chat",
+        surface: { kind: "side-chat", threadId: "side-1", title: "Side chat" },
+      }),
+      expect.objectContaining({
+        id: "phone",
+        surface: { kind: "device", title: "iPhone 17", device: "iPhone 17", platform: "ios" },
+      }),
+      expect.objectContaining({ id: "files", surface: { kind: "files", title: "Files" } }),
       expect.objectContaining({ id: "host" }),
     ]);
-    expect(described.elements[2]).not.toHaveProperty("card");
-    expect(described.elements[2]).not.toHaveProperty("surface");
+    expect(described.elements[6]).not.toHaveProperty("card");
+    expect(described.elements[6]).not.toHaveProperty("surface");
   });
 
   it("places a user mark on the agent's smallest piece under it, or beside the nearest", () => {
