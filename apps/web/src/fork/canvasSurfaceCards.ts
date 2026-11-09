@@ -215,6 +215,52 @@ export function surfaceShownElsewhere(
   }
 }
 
+/** The resources a ref mounts that allow one live view per client, by stable key. */
+function singleViewKeys(ref: CanvasSurfaceRef): ReadonlyArray<string> {
+  switch (ref.kind) {
+    case "preview":
+      return [`preview:${ref.tabId}`];
+    case "terminal":
+      return (ref.terminalIds ?? [ref.resourceId]).map((id) => `terminal:${id}`);
+    case "side-chat":
+      return [`side-chat:${ref.threadId}`];
+    case "device":
+      return ref.target === undefined
+        ? []
+        : [`device:${ref.target.hostId}\u0000${ref.target.deviceId}`];
+    default:
+      return [];
+  }
+}
+
+/**
+ * Which live cards yield a browser tab, terminal, side chat or device to another card showing
+ * it, by card id to the card that shows it. The card the user asked to show it wins, then the
+ * lowest element id, so every client picks the same card.
+ */
+export function cardsShowingElsewhere(
+  cards: ReadonlyArray<{ readonly id: string; readonly ref: CanvasSurfaceRef }>,
+  preferred: string | null,
+): ReadonlyMap<string, string> {
+  const owners = new Map<string, string>();
+  const yielded = new Map<string, string>();
+  const order = cards.toSorted(
+    (left, right) =>
+      Number(right.id === preferred) - Number(left.id === preferred) ||
+      (left.id < right.id ? -1 : 1),
+  );
+  for (const card of order) {
+    const keys = singleViewKeys(card.ref);
+    const owner = keys.map((key) => owners.get(key)).find((id) => id !== undefined);
+    if (owner !== undefined) {
+      yielded.set(card.id, owner);
+      continue;
+    }
+    for (const key of keys) owners.set(key, card.id);
+  }
+  return yielded;
+}
+
 /** Where a new card goes: beside the latest turn by default. */
 export type SurfacePlacement =
   | { readonly at: { readonly x: number; readonly y: number } }

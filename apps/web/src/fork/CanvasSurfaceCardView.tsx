@@ -297,6 +297,9 @@ function LiveSurface(props: {
   readonly card: CanvasSurfaceCard;
   readonly actions: PanelSurfaceCard;
   readonly renderPanelSurface: RenderPanelSurface;
+  /** Another live card on this board shows the same browser, terminal, side chat or device. */
+  readonly inAnotherCard: boolean;
+  readonly onShowHere: () => void;
 }) {
   const { threadRef, card } = props;
   const panel = useRightPanelStore((state) => {
@@ -308,24 +311,29 @@ function LiveSurface(props: {
   const miniPlayer = usePreviewMiniPlayerStore(
     (state) => selectThreadPreviewMiniPlayer(state.byThreadKey, threadRef)?.source ?? null,
   );
-  const elsewhere = surfaceShownElsewhere(card.surface, { panel, miniPlayer });
+  const elsewhere =
+    surfaceShownElsewhere(card.surface, { panel, miniPlayer }) ??
+    (props.inAnotherCard ? "card" : null);
   if (elsewhere !== null) {
     return (
       <CardFace card={card}>
         <p className="text-muted-foreground text-xs">
           {elsewhere === "panel"
             ? "Showing in the right panel."
-            : "Showing in the floating player."}
+            : elsewhere === "card"
+              ? "Showing in another card."
+              : "Showing in the floating player."}
         </p>
         <div>
           <Button
             size="xs"
             variant="outline"
-            onClick={() =>
-              elsewhere === "panel"
-                ? useRightPanelStore.getState().close(threadRef)
-                : usePreviewMiniPlayerStore.getState().close(threadRef)
-            }
+            onClick={() => {
+              if (elsewhere === "panel") useRightPanelStore.getState().close(threadRef);
+              else if (elsewhere === "mini-player") {
+                usePreviewMiniPlayerStore.getState().close(threadRef);
+              } else props.onShowHere();
+            }}
           >
             Show here
           </Button>
@@ -366,6 +374,10 @@ export const CanvasSurfaceCardView = memo(function CanvasSurfaceCardView(props: 
   readonly live: boolean;
   readonly api: ExcalidrawImperativeAPI;
   readonly renderPanelSurface: RenderPanelSurface;
+  /** Set while another live card shows this card's browser, terminal, side chat or device. */
+  readonly inAnotherCard: boolean;
+  /** Makes this card the one that shows its resource. */
+  readonly onShowHere: (elementId: string) => void;
 }) {
   const card = canvasSurfaceCardOf(JSON.parse(props.cardJson));
   if (card === null) return null;
@@ -378,6 +390,8 @@ export const CanvasSurfaceCardView = memo(function CanvasSurfaceCardView(props: 
         card={card}
         actions={surfaceCardActions(props.api, props.elementId)}
         renderPanelSurface={props.renderPanelSurface}
+        inAnotherCard={props.inAnotherCard}
+        onShowHere={() => props.onShowHere(props.elementId)}
       />
     </AvailabilityGate>
   );

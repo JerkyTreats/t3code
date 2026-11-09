@@ -69,6 +69,7 @@ import { CANVAS_CARD_REMARK_PLUGINS } from "./canvasStateChips";
 import { CanvasSurfaceCardView, placeSurfaceCard } from "./CanvasSurfaceCardView";
 import {
   canvasTerminalIdsOf,
+  cardsShowingElsewhere,
   createSurfaceActivation,
   publishCanvasTerminals,
   registerCanvasBoard,
@@ -579,6 +580,8 @@ export default function ExcalidrawBoard({
   const [cards, setCards] = useState<ReadonlyArray<CanvasCard>>([]);
   const [liveSurfaces, setLiveSurfaces] = useState<ReadonlySet<string>>(() => new Set());
   const [surfaceActivation] = useState(() => createSurfaceActivation(setLiveSurfaces));
+  // The card the user asked to show a resource that another live card also shows.
+  const [preferredCard, setPreferredCard] = useState<string | null>(null);
   // Elements cited from the board, each with a quote the composer's citation anchors to.
   const [citeAnchors, setCiteAnchors] = useState<
     ReadonlyArray<{ id: string; text: string; x: number; y: number; width: number; height: number }>
@@ -1089,6 +1092,14 @@ export default function ExcalidrawBoard({
   }, [api, cancelPan, draft, turnBoard]);
 
   const noteLayer = draft ? null : turnBoard.layer();
+  const yieldedCards = cardsShowingElsewhere(
+    cards.flatMap((card) =>
+      card.card.kind === "surface" && liveSurfaces.has(card.id)
+        ? [{ id: card.id, ref: card.card.surface }]
+        : [],
+    ),
+    preferredCard,
+  );
 
   // Excalidraw reads shortcuts only while focus is inside it, and the composer holds focus by default.
   const takeFocus = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -1182,6 +1193,8 @@ export default function ExcalidrawBoard({
                         live={liveSurfaces.has(card.id)}
                         api={api}
                         renderPanelSurface={renderPanelSurface}
+                        inAnotherCard={yieldedCards.has(card.id)}
+                        onShowHere={setPreferredCard}
                       />
                     ) : null
                   ) : card.card.kind === "markdown" ? (

@@ -5,6 +5,7 @@ import type { RightPanelSurface } from "../rightPanelStore";
 import {
   canvasSurfaceCardFor,
   canvasSurfaceRefFor,
+  cardsShowingElsewhere,
   createSurfaceActivation,
   liveSurfaceCards,
   panelSurfaceOf,
@@ -253,5 +254,31 @@ describe("surfaceShownElsewhere", () => {
         miniPlayer: null,
       }),
     ).toBeNull();
+  });
+});
+
+describe("cardsShowingElsewhere", () => {
+  const browser = { kind: "preview", tabId: "tab-1" } as const;
+
+  it("lets the lowest element id show a browser two cards name, unless the user picked one", () => {
+    const cards = [
+      { id: "b", ref: browser },
+      { id: "a", ref: browser },
+      { id: "c", ref: { kind: "preview", tabId: "tab-2" } as const },
+    ];
+    expect([...cardsShowingElsewhere(cards, null)]).toEqual([["b", "a"]]);
+    expect([...cardsShowingElsewhere(cards, "b")]).toEqual([["a", "b"]]);
+  });
+
+  it("yields a terminal group that shares any terminal with a group already shown", () => {
+    const cards = [
+      { id: "a", ref: { kind: "terminal", resourceId: "t1", terminalIds: ["t1", "t2"] } as const },
+      { id: "b", ref: { kind: "terminal", resourceId: "t2" } as const },
+      { id: "c", ref: { kind: "terminal", resourceId: "t3" } as const },
+      // Files and the diff can show twice.
+      { id: "d", ref: { kind: "diff" } as const },
+      { id: "e", ref: { kind: "diff" } as const },
+    ];
+    expect([...cardsShowingElsewhere(cards, null)]).toEqual([["b", "a"]]);
   });
 });
