@@ -341,13 +341,15 @@ function LiveSurface(props: {
       </CardFace>
     );
   }
-  const covered = card.surface.kind === "preview" || card.surface.kind === "device";
+  // A browser card has no cover: its streamed page takes pointer and wheel only while the user
+  // has control, and a cover would swallow the first click and every wheel while they do.
+  const covered = card.surface.kind === "device";
   return (
     <div className="relative flex h-full min-h-0 flex-col" data-surface-live-view>
       {props.renderPanelSurface(panelSurfaceOf(card.surface), props.actions)}
-      {/* A browser or device stream keeps every pointer and wheel event, so the board would
-          never pan over it. The cover passes those on; a click lifts it to use the page until
-          the pointer leaves the card. */}
+      {/* A device stream keeps every pointer and wheel event, so the board would never pan over
+          it. The cover passes those on; a click lifts it to use the device until the pointer
+          leaves the card. */}
       {covered ? (
         <div
           className="canvas-card-cover"
