@@ -58,8 +58,9 @@ import {
 } from "./canvasCards";
 import {
   canvasCitationText,
-  canvasPointHitsElement,
+  type CanvasRightClick,
   insertCiteMenuItem,
+  isCanvasContextMenu,
   isElementContextMenu,
   isHandedToExcalidraw,
   openExcalidrawCanvasMenu,
@@ -774,9 +775,28 @@ export default function ExcalidrawBoard({
             publishCanvasTerminals(canvasThread, canvasTerminalIdsOf(nextCards));
           }
         }
-        // Excalidraw has committed its menu by now, so Cite goes in at its top.
+        // Excalidraw has committed its menu by now, before paint: Cite goes in at the top of
+        // its element menu, and T3's menu replaces its canvas menu.
         if (onCite && canvasThread !== null && isElementContextMenu(appState.contextMenu)) {
           insertCiteMenuItem(board, citeSelection);
+        }
+        const rightClick = pendingRightClick.current;
+        const answered =
+          rightClick !== null &&
+          appState.contextMenu !== null &&
+          appState.contextMenu !== rightClick.menuBefore;
+        if (answered) pendingRightClick.current = null;
+        if (
+          answered &&
+          canvasThread !== null &&
+          newSurfaces.length > 0 &&
+          isCanvasContextMenu(appState.contextMenu)
+        ) {
+          api.updateScene({
+            appState: { contextMenu: null },
+            captureUpdate: CaptureUpdateAction.NEVER,
+          });
+          void showCanvasMenu(rightClick);
         }
       }
     }
@@ -958,14 +978,13 @@ export default function ExcalidrawBoard({
   });
 
   // Right-click on empty canvas shows the panel's new tabs, then Excalidraw's canvas menu on ask.
-  const showCanvasMenu = useStableCallback(async (event: MouseEvent) => {
-    const canvas = event.target;
-    if (!api || !(canvas instanceof Element)) return;
-    const at = { clientX: event.clientX, clientY: event.clientY };
+  const showCanvasMenu = useStableCallback(async (click: CanvasRightClick) => {
+    if (!api) return;
+    const at = { clientX: click.clientX, clientY: click.clientY };
     const point = viewportCoordsToSceneCoords(at, api.getAppState());
     const localApi = readLocalApi();
     if (!localApi) {
-      openExcalidrawCanvasMenu(canvas, at);
+      openExcalidrawCanvasMenu(click.canvas, at);
       return;
     }
     const picked = await localApi.contextMenu.show(
@@ -977,44 +996,45 @@ export default function ExcalidrawBoard({
         })),
         { id: "canvas-options", label: "Canvas options…", separatorBefore: true },
       ],
-      { x: event.clientX, y: event.clientY },
+      { x: click.clientX, y: click.clientY },
     );
     if (picked === "canvas-options") {
-      openExcalidrawCanvasMenu(canvas, at);
+      openExcalidrawCanvasMenu(click.canvas, at);
       return;
     }
     const surface =
       picked === null ? undefined : newSurfaces[Number(picked.slice("surface:".length))];
     if (surface?.available) surface.place(point);
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a capture listener runs before Excalidraw's own right-click handler, which React cannot order
+  /**
+   * Excalidraw's own hit test decides whether a right-click landed on an element, so the board
+   * only notes where it was; when Excalidraw opens its canvas menu for it, T3's menu replaces it.
+   */
+  const pendingRightClick = useRef<(CanvasRightClick & { readonly menuBefore: unknown }) | null>(
+    null,
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- notes each right-click on Excalidraw's canvas, outside React, before Excalidraw handles it
   useEffect(() => {
     const board = boardRef.current;
-    if (draft || !api || !board || canvasThread === null || newSurfaces.length === 0) return;
-    const intercept = (event: MouseEvent) => {
-      if (isHandedToExcalidraw(event)) return;
-      const target = event.target;
-      if (!(target instanceof Element) || !target.matches(".excalidraw__canvas.interactive"))
-        return;
-      const appState = api.getAppState();
-      const point = viewportCoordsToSceneCoords(event, appState);
-      if (
-        canvasPointHitsElement(
-          api.getSceneElements(),
-          appState.selectedElementIds,
-          point,
-          appState.zoom.value,
-        )
-      ) {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      void showCanvasMenu(event);
+    if (draft || !board || !api) return;
+    const note = (event: MouseEvent) => {
+      const canvas = event.target;
+      pendingRightClick.current =
+        canvas instanceof Element &&
+        canvas.matches(".excalidraw__canvas.interactive") &&
+        !isHandedToExcalidraw(event)
+          ? {
+              canvas,
+              clientX: event.clientX,
+              clientY: event.clientY,
+              // A menu still open from an earlier right-click is not this one's answer.
+              menuBefore: api.getAppState().contextMenu,
+            }
+          : null;
     };
-    board.addEventListener("contextmenu", intercept, true);
-    return () => board.removeEventListener("contextmenu", intercept, true);
-  }, [api, canvasThread, draft, newSurfaces.length, showCanvasMenu]);
+    board.addEventListener("contextmenu", note, true);
+    return () => board.removeEventListener("contextmenu", note, true);
+  }, [api, draft]);
 
   // The panel places surfaces through this board while it shows the thread.
   const canvasEnvironmentId = canvasThread?.environmentId ?? null;

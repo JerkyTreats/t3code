@@ -4,7 +4,7 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { page } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { render } from "../../test/render";
+import { act, render } from "../../test/render";
 
 const state = vi.hoisted(() => ({
   menus: [] as Array<ReadonlyArray<{ id: string; label: string; disabled?: boolean }>>,
@@ -53,8 +53,11 @@ const rightClick = (target: Element, clientX: number, clientY: number) =>
 async function renderBoard(options: {
   readonly onCite?: Parameters<typeof ExcalidrawBoard>[0]["onCite"];
   readonly placed?: Array<{ x: number; y: number }>;
+  /** Elements the board opens with, as a saved board would hold them. */
+  readonly scene?: ReadonlyArray<Record<string, unknown>>;
 }) {
   localStorage.removeItem(STORAGE_KEY);
+  if (options.scene) localStorage.setItem(STORAGE_KEY, JSON.stringify(options.scene));
   state.menus = [];
   await page.viewport(1300, 800);
   const turnBoard = createTurnBoard();
@@ -154,6 +157,72 @@ describe("the board's right-click menus", () => {
       expect(board.querySelector('ul.context-menu [data-testid="selectAll"]')).not.toBeNull(),
     );
     expect(board.querySelector('[data-testid="t3-cite"]')).toBeNull();
+    layer.remove();
+  });
+
+  it("leaves the element test to Excalidraw for rotated, outlined and linear shapes", async () => {
+    const shape = (id: string, overrides: Record<string, unknown>) => ({
+      id,
+      type: "rectangle",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 100,
+      angle: 0,
+      strokeColor: "#1e1e1e",
+      backgroundColor: "transparent",
+      fillStyle: "solid",
+      strokeWidth: 2,
+      roughness: 0,
+      opacity: 100,
+      version: 1,
+      isDeleted: false,
+      ...overrides,
+    });
+    const { screen, layer } = await renderBoard({
+      scene: [
+        // Turned upright, it covers x 350 to 450 and y 50 to 250.
+        shape("turned", { x: 300, y: 100, angle: Math.PI / 2, backgroundColor: "#a5d8ff" }),
+        shape("ring", { type: "ellipse", x: 600, y: 100 }),
+        shape("arrow", {
+          type: "arrow",
+          x: 300,
+          y: 350,
+          height: 200,
+          points: [
+            [0, 0],
+            [200, 200],
+          ],
+        }),
+      ],
+    });
+    await using _ = screen;
+    const board = document.querySelector<HTMLElement>("[data-excalidraw-board]")!;
+    const canvas = document.querySelector(".excalidraw__canvas.interactive")!;
+    const origin = canvas.getBoundingClientRect();
+    state.pick = null;
+    // Excalidraw answers a right-click within React's flush, so act settles it before reading.
+    const opensT3Menu = async (x: number, y: number) => {
+      const asked = state.menus.length;
+      await act(() => rightClick(canvas, origin.left + x, origin.top + y));
+      if (state.menus.length > asked) {
+        expect(board.querySelector("ul.context-menu")).toBeNull();
+        return true;
+      }
+      expect(board.querySelector('[data-testid="deleteSelectedElements"]')).not.toBeNull();
+      return false;
+    };
+    // Inside each shape's upright box, but off the shape: Excalidraw counts an ellipse's inside.
+    expect(await opensT3Menu(480, 150)).toBe(true);
+    expect(await opensT3Menu(605, 105)).toBe(true);
+    expect(await opensT3Menu(480, 370)).toBe(true);
+    // On the turned rectangle outside its upright box, the ring's outline, and the arrow's line,
+    // each asked while the last one's menu is still open.
+    expect(await opensT3Menu(400, 230)).toBe(false);
+    expect(await opensT3Menu(700, 100)).toBe(false);
+    expect(await opensT3Menu(400, 450)).toBe(false);
+    // And back on empty canvas with an element menu open.
+    expect(await opensT3Menu(480, 370)).toBe(true);
     layer.remove();
   });
 
