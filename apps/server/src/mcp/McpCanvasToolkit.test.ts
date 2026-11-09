@@ -40,6 +40,7 @@ const client = McpSchema.McpServerClient.of({
 
 const drawn: Array<Parameters<ThreadCanvasStore.ThreadCanvasStore["Service"]["draw"]>[0]> = [];
 const layerCanvasMock = Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({
+  chatCardOf: () => Effect.succeed(null),
   draw: (input) => {
     drawn.push(input);
     return Effect.succeed({

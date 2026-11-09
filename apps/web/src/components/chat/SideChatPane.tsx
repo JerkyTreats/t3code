@@ -55,6 +55,13 @@ export default function SideChatPane(props: {
   const [bringingBack, setBringingBack] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const mergeRun = projection ? resolveLatestMergeBackRun(projection) : null;
+  // Any thread can be placed on a board as a chat card; only the board thread's own side chat
+  // merges back into it, and only one is deleted from here.
+  const ownSideChat =
+    shell === null ||
+    (shell.forkedFrom?.type === "run"
+      ? shell.forkedFrom.threadId
+      : shell.lineage.parentThreadId) === parentRef.threadId;
   // A pending merge-back would fail the main thread's queued message, so the server refuses it.
   const bringBackBlockedReason = !canOperate
     ? "This connection cannot change threads."
@@ -128,32 +135,36 @@ export default function SideChatPane(props: {
         <span className="min-w-0 flex-1 truncate text-xs font-medium">
           {shell?.title ?? "Side chat"}
         </span>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="xs"
-                aria-disabled={bringBackBlockedReason !== null || bringingBack || undefined}
-                onClick={() => void bringBack()}
-              >
-                Bring back
-              </Button>
-            }
-          />
-          <TooltipPopup side="bottom">
-            {bringBackBlockedReason ?? "Adds this side chat to the main thread's next message."}
-          </TooltipPopup>
-        </Tooltip>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Delete side chat"
-          disabled={!canOperate || shell === null || deleting}
-          onClick={() => void deleteSideChat()}
-        >
-          <Trash2Icon />
-        </Button>
+        {ownSideChat ? (
+          <>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    aria-disabled={bringBackBlockedReason !== null || bringingBack || undefined}
+                    onClick={() => void bringBack()}
+                  >
+                    Bring back
+                  </Button>
+                }
+              />
+              <TooltipPopup side="bottom">
+                {bringBackBlockedReason ?? "Adds this side chat to the main thread's next message."}
+              </TooltipPopup>
+            </Tooltip>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Delete side chat"
+              disabled={!canOperate || shell === null || deleting}
+              onClick={() => void deleteSideChat()}
+            >
+              <Trash2Icon />
+            </Button>
+          </>
+        ) : null}
         <Button variant="ghost" size="icon-xs" aria-label="Close side chat" onClick={props.onClose}>
           <XIcon />
         </Button>

@@ -524,9 +524,18 @@ describe("a drawing beside the turn spine", () => {
       customData: { t3Card: { kind: "surface", surface: { kind: "side-chat", threadId: "t" } } },
     };
     const scene = { ...empty, elements: [turn, chat] };
-    const first = plan(scene, { drawingId: "r", shapes: [card("a")], anchor: "chat-card" });
+    const first = plan(scene, {
+      drawingId: "r",
+      shapes: [card("a")],
+      anchor: "chat-card",
+      author: "side",
+    });
     expect(first.report.placed).toMatchObject({ x: 5000 + 800 + 32, y: 3000 });
     expect(anchorOf(first.elements, "r/a")).toBeUndefined();
+    expect(live(first.elements, "r/a")?.customData).toMatchObject({
+      t3Drawing: { by: "side" },
+      t3OnCard: { card: "chat-card", dx: 800 + 32, dy: 0 },
+    });
     const later: ThreadCanvasElement = {
       ...turn,
       id: "turn-box:2",

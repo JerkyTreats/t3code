@@ -3,6 +3,7 @@ import {
   convertToExcalidrawElements,
   Excalidraw,
   exportToBlob,
+  getCommonBounds,
   MainMenu,
   newElementWith,
   restoreElements,
@@ -13,8 +14,15 @@ import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
-import { type AssistantCitation, MessageId, type ThreadCanvasScene } from "@t3tools/contracts";
-import { useEffect, useRef, useState } from "react";
+import {
+  type AssistantCitation,
+  MessageId,
+  type ThreadCanvasScene,
+  type ThreadId,
+} from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { canvasSurfaceCardOf } from "@t3tools/shared/canvasSurfaceCard";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 
 import ChatMarkdown from "../components/ChatMarkdown";
@@ -30,6 +38,7 @@ import {
   createAssistantTextSelector,
 } from "../lib/assistantTextSelection";
 import { readLocalApi } from "../localApi";
+import { readThreadShell } from "../state/entities";
 import {
   ThreadCanvasSync,
   type SaveThreadCanvas,
@@ -45,6 +54,7 @@ import {
   unseenMarks,
 } from "./canvasMarks";
 import {
+  CARD_ANCHOR_KEY,
   isStaleDrawingCopy,
   TURN_ANCHOR_KEY,
   type TurnAnchor,
@@ -78,6 +88,8 @@ import {
   type RenderPanelSurface,
 } from "./canvasSurfaceCards";
 import { forwardCardMiddleDrag } from "./cardMiddleDrag";
+import { followCards } from "./canvasCardFollow";
+import { agentStrokesOf, chatColorOf, playAgentPresence } from "./canvasChatPresence";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
 import { tableWidthOf } from "./turnTableWidth";
@@ -456,6 +468,61 @@ function turnBoxesOf(elements: ReadonlyArray<BoardElement>) {
   return boxes;
 }
 
+/**
+ * Moves each piece a chat drew from its card with that card, and keeps the offset of a piece the
+ * user moved. While a drag is under way only pieces following a moved card change, so the piece
+ * being dragged is left to Excalidraw; returns whether an offset still waits for the drag to end.
+ */
+function followCardMoves(
+  api: ExcalidrawImperativeAPI,
+  elements: BoardElements,
+  lastCards: { current: ReadonlyMap<string, { x: number; y: number }> },
+  dragging: boolean,
+) {
+  const followed = followCards(elements, lastCards.current);
+  if (followed === null) return false;
+  lastCards.current = followed.cards;
+  let deferred = false;
+  let changed = false;
+  const next = api.getSceneElementsIncludingDeleted().map((element) => {
+    const change = followed.changes.get(element.id);
+    if (change === undefined) return element;
+    if (change.kind === "anchor" && dragging) {
+      deferred = true;
+      return element;
+    }
+    changed = true;
+    return change.kind === "move"
+      ? newElementWith(element, { x: change.x, y: change.y })
+      : newElementWith(element, {
+          customData: { ...element.customData, [CARD_ANCHOR_KEY]: change.anchor },
+        });
+  });
+  if (changed) api.updateScene({ elements: next, captureUpdate: CaptureUpdateAction.NEVER });
+  return deferred;
+}
+
+/** The chat card on the board that shows a thread, if any. */
+function chatCardOf(elements: ReadonlyArray<BoardElement>, threadId: string) {
+  for (const element of elements) {
+    const card = canvasSurfaceCardOf(element.customData?.t3Card);
+    if (card?.surface.kind === "side-chat" && card.surface.threadId === threadId) {
+      return { element, title: card.title };
+    }
+  }
+  return null;
+}
+
+/** A chat card's accent colour, or none for any other card. */
+function chatAccentOf(card: CanvasCard): CSSProperties | undefined {
+  return card.card.kind === "surface" && card.card.surface.kind === "side-chat"
+    ? ({ "--canvas-chat-color": chatColorOf(card.card.surface.threadId) } as CSSProperties)
+    : undefined;
+}
+
+// Where an agent's cursor starts: inside the corner of its chat card or of the latest turn.
+const PRESENCE_START_INSET_PX = 40;
+
 /** Moves the card layer with the camera, and each card to its box, without touching React. */
 function placeCards(
   api: ExcalidrawImperativeAPI,
@@ -633,6 +700,19 @@ export default function ExcalidrawBoard({
   // Elements cited from the board, each with a quote the composer's citation anchors to.
   const [citeAnchors, setCiteAnchors] = useState<ReadonlyArray<{ id: string; text: string }>>([]);
   const coveredCache = useRef(new Map<string, string | null>());
+  // Where each card that pieces follow was at the last scene edit.
+  const followedCards = useRef<ReadonlyMap<string, { x: number; y: number }>>(new Map());
+  const followAfterDrag = useRef(false);
+  // The thread whose first scene this board took in; until then, drawings arrive without a cursor.
+  const presence = useRef({ thread: null as string | null, stops: new Set<() => void>() });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- removes any agent cursor still playing in the card layer when the board unmounts
+  useEffect(() => {
+    const { stops } = presence.current;
+    return () => {
+      for (const stop of stops) stop();
+      stops.clear();
+    };
+  }, []);
   const lastSketch = useRef("");
   const camera = useRef({
     following: true,
@@ -760,6 +840,49 @@ export default function ExcalidrawBoard({
     turnBoard.reportPendingNotes(count);
   };
 
+  /** Plays each drawing agent's cursor, from its chat card or the latest turn, to what it drew. */
+  const showAgentPresence = (strokes: ReadonlyMap<string, ReadonlyArray<BoardElement>>) => {
+    const layer = turnBoard.layer();
+    if (!api || !layer || canvasThread === null || strokes.size === 0) return;
+    const scene = api.getSceneElements();
+    const zoom = api.getAppState().zoom.value;
+    const latestTurn = turnBoxesOf(scene).get(turnBoard.cards().at(-1)?.id ?? "");
+    for (const [by, pieces] of strokes) {
+      // A label sits inside its shape, so the shape's outline covers it.
+      const shapes = pieces.filter((piece) => !(piece.type === "text" && piece.containerId));
+      const boxes = shapes.map((piece) => {
+        const [minX, minY, maxX, maxY] = getCommonBounds([piece]);
+        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+      });
+      const card = chatCardOf(scene, by);
+      const start = card?.element ?? latestTurn;
+      const target = boxes[0];
+      if (target === undefined) continue;
+      const from =
+        start === undefined
+          ? { x: target.x - PRESENCE_START_INSET_PX, y: target.y - PRESENCE_START_INSET_PX }
+          : {
+              x: start.x + start.width - PRESENCE_START_INSET_PX,
+              y: start.y + start.height - PRESENCE_START_INSET_PX,
+            };
+      // The server stamps the drawing chat's thread id, so it names a thread or nothing.
+      const name =
+        readThreadShell(scopeThreadRef(canvasThread.environmentId, by as ThreadId))?.title ??
+        card?.title ??
+        "Agent";
+      const stops = presence.current.stops;
+      const stop = playAgentPresence(layer, {
+        from,
+        pieces: boxes,
+        color: chatColorOf(by),
+        name,
+        zoom,
+      });
+      stops.add(stop);
+      window.setTimeout(() => stops.delete(stop), 2_000);
+    }
+  };
+
   /** Takes in whatever is newer on the server. */
   const applyScene = useStableCallback((scene: ThreadCanvasScene) => {
     if (!api || api.getAppState().isLoading) {
@@ -788,9 +911,14 @@ export default function ExcalidrawBoard({
       ...local.map((element) => incoming.get(element.id) ?? element),
       ...[...incoming.values()].filter((remote) => !byId.has(remote.id)),
     ];
+    const threadKey =
+      canvasThread === null ? null : `${canvasThread.environmentId}:${canvasThread.threadId}`;
+    const firstScene = presence.current.thread !== threadKey;
+    presence.current.thread = threadKey;
     if (incoming.size > 0) {
       api.updateScene({ elements, captureUpdate: CaptureUpdateAction.NEVER });
       syncTurns();
+      if (!firstScene) showAgentPresence(agentStrokesOf(incoming.values(), byId));
     }
     // The first scene also means saving works, so marks made before it, like a draft's, go now.
     pushScene();
@@ -806,6 +934,10 @@ export default function ExcalidrawBoard({
         syncFrames(api, root, elements, appState);
         reportDraftScene(elements);
       } else {
+        const dragging = appState.selectedElementsAreBeingDragged;
+        if (versions !== lastVersions.current || (followAfterDrag.current && !dragging)) {
+          followAfterDrag.current = followCardMoves(api, elements, followedCards, dragging);
+        }
         // The scene finishes loading after the cards mount, and only then can they be placed.
         if (waitingScene.current !== null) {
           const scene = waitingScene.current;
@@ -1227,6 +1359,7 @@ export default function ExcalidrawBoard({
                   className="canvas-card bg-background text-foreground rounded-lg"
                   data-canvas-card={card.card.kind}
                   data-canvas-card-id={card.id}
+                  data-canvas-chat={chatAccentOf(card) === undefined ? undefined : ""}
                   // A card being used stays live past the cap until the pointer leaves it.
                   onPointerDownCapture={
                     card.card.kind === "surface"
@@ -1240,6 +1373,7 @@ export default function ExcalidrawBoard({
                     if (card.card.kind === "surface") surfaceActivation.setInteracting(null);
                   }}
                   style={{
+                    ...chatAccentOf(card),
                     transform: `translate(${card.x + TURN_INSET_PX}px, ${card.y + TURN_INSET_PX}px)`,
                     width,
                     height,

@@ -2,6 +2,7 @@ import dagre from "@dagrejs/dagre";
 import type { ThreadCanvasElement, ThreadCanvasScene, ThreadCanvasShape } from "@t3tools/contracts";
 import {
   anchorTo,
+  CARD_ANCHOR_KEY,
   arrowEnds,
   besideSpine,
   boxesOverlap,
@@ -63,6 +64,8 @@ export interface DrawInput {
    * stands in for the latest turn: new drawings and every latest-turn place land beside or below it.
    */
   readonly anchor?: string | undefined;
+  /** The thread whose agent draws, stamped on each piece so clients can show who drew it. */
+  readonly author?: string | undefined;
 }
 
 interface Box {
@@ -590,6 +593,28 @@ export function planDrawing(input: {
           ? before.groupIds
           : (element.groupIds ?? []);
     element = { ...element, groupIds };
+    if (draw.author !== undefined || anchorCard !== undefined) {
+      const data = recordOf(element.customData);
+      const card = anchorCard === undefined ? undefined : boxOf(anchorCard);
+      element = {
+        ...element,
+        customData: {
+          ...data,
+          ...(draw.author === undefined
+            ? {}
+            : { t3Drawing: { ...recordOf(data.t3Drawing), by: draw.author } }),
+          ...(card === undefined || typeof element.containerId === "string"
+            ? {}
+            : {
+                [CARD_ANCHOR_KEY]: {
+                  card: String(anchorCard?.id),
+                  dx: numberOf(element.x) - card.x,
+                  dy: numberOf(element.y) - card.y,
+                },
+              }),
+        },
+      };
+    }
     const kept = before === undefined ? null : turnAnchorOf(before);
     const edge = anchoredShapes.get(piece);
     // A label moves with its shape, so only shapes carry anchors.

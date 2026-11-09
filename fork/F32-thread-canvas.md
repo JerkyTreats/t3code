@@ -26,11 +26,13 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   (bands, lead and aside roles, kinds coloured with a legend), markdown cards and html cards, and
   patches an existing drawing by id. Drawings placed `besideLatestTurn` go in the column beside the
   latest turn and stay out of the turns' own column; a drawing sent again in a later turn moves
-  beside that turn. A delegated task draws on its parent's canvas. A side chat placed as a card on
-  its parent's board draws there too, beside its card, and `canvas_read` names that card as
-  `yourCard`. `canvas_preview` renders a region
+  beside that turn. A delegated task draws on its parent's canvas. A chat placed as a card on another
+  thread's board, a side chat or any other thread, draws there beside its card; its pieces carry
+  `t3OnCard` so they move with the card, every piece carries `t3Drawing.by`, and `canvas_read`
+  names the card as `yourCard`. `canvas_preview` renders a region
   so the agent can see it, including which cards are cut off.
-- `F32.D4` User marks reach the agent. Anything the user draws or writes is a mark. Marks the agent
+- `F32.D4` User marks reach the agent. A mark nearer a chat card than any turn reaches that chat
+  instead of the board's thread. Anything the user draws or writes is a mark. Marks the agent
   has not seen are summarised into the next turn, and the send button sends them with nothing
   typed. A note is never sent on its own from the board. `canvas_read` reports marks with the text
   they cover.

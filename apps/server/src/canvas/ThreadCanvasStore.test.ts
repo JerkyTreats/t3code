@@ -73,6 +73,45 @@ layer("ThreadCanvasStore", (it) => {
     }),
   );
 
+  it.effect("finds the board a chat is placed on, and delivers that chat's marks from it", () =>
+    Effect.gen(function* () {
+      const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
+      const board = ThreadId.make("thread-canvas-board");
+      const chat = ThreadId.make("thread-canvas-chat");
+      const card = {
+        id: "chat-card",
+        version: 1,
+        type: "rectangle",
+        x: 0,
+        y: 0,
+        width: 400,
+        height: 500,
+        customData: { t3Card: { kind: "surface", surface: { kind: "side-chat", threadId: chat } } },
+      };
+      const note = { id: "note", version: 1, type: "text", text: "Here", x: 450, y: 0 };
+      yield* canvas.saveFromClient({ threadId: board, elements: [card, note] });
+      assert.deepStrictEqual(yield* canvas.chatCardOf(chat), {
+        canvasThreadId: board,
+        card: "chat-card",
+      });
+      const delivery = yield* canvas.deliverToAgent({
+        threadId: chat,
+        message: "",
+        picture: false,
+      });
+      assert.include(delivery.note, '"Here"');
+      yield* delivery.acknowledge;
+      const again = yield* canvas.deliverToAgent({ threadId: chat, message: "", picture: false });
+      assert.strictEqual(again.note, "");
+
+      yield* canvas.saveFromClient({
+        threadId: board,
+        elements: [{ ...card, version: 2, isDeleted: true }],
+      });
+      assert.isNull(yield* canvas.chatCardOf(chat));
+    }),
+  );
+
   it.effect("attaches the saved sketch only for marks a note cannot describe", () =>
     Effect.gen(function* () {
       const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;

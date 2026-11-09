@@ -23,7 +23,7 @@ import * as Stream from "effect/Stream";
 import * as ServerConfig from "../config.ts";
 import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import { type DrawInput, planDrawing } from "./threadCanvasPlan.ts";
-import { describeCanvasChanges, mergeCanvasElements } from "./threadCanvasScene.ts";
+import { chatCardsIn, describeCanvasChanges, mergeCanvasElements } from "./threadCanvasScene.ts";
 
 const EMPTY_SCENE: ThreadCanvasScene = { revision: 0, elements: [] };
 const decodeScene = Schema.decodeUnknownEffect(Schema.fromJsonString(ThreadCanvasScene));
@@ -63,6 +63,10 @@ export class ThreadCanvasStore extends Context.Service<
       readonly message: string;
       readonly picture: boolean;
     }) => Effect.Effect<ThreadCanvasDelivery, ThreadCanvasError>;
+    /** The board a chat's card sits on, and the card; null when no board shows it. */
+    readonly chatCardOf: (
+      chatThreadId: ThreadId,
+    ) => Effect.Effect<{ readonly canvasThreadId: ThreadId; readonly card: string } | null>;
     /** The current scene, then every later one. */
     readonly follow: (threadId: ThreadId) => Stream.Stream<ThreadCanvasScene, ThreadCanvasError>;
   }
@@ -107,19 +111,52 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  // Which boards show each chat as a card, by chat thread, the board written last at the end.
+  const chatBoards = new Map<string, Map<ThreadId, string>>();
+  const indexBoard = (canvasThreadId: ThreadId, elements: ReadonlyArray<ThreadCanvasElement>) => {
+    for (const boards of chatBoards.values()) boards.delete(canvasThreadId);
+    for (const [chatThreadId, card] of chatCardsIn(elements)) {
+      if (chatThreadId === canvasThreadId) continue;
+      const boards = chatBoards.get(chatThreadId) ?? new Map<ThreadId, string>();
+      boards.set(canvasThreadId, String(card.id));
+      chatBoards.set(chatThreadId, boards);
+    }
+  };
+  // Boards saved under a hashed name cannot be traced back to their thread, so they stay unindexed.
+  const indexed = yield* Effect.cached(
+    Effect.gen(function* () {
+      const names = yield* fileSystem.readDirectory(directory);
+      for (const name of names) {
+        if (!name.endsWith(".json")) continue;
+        const canvasThreadId = decodeURIComponent(name.slice(0, -".json".length)) as ThreadId;
+        if (fileStem(canvasThreadId) !== path.join(directory, name.slice(0, -".json".length)))
+          continue;
+        const scene = yield* read(canvasThreadId);
+        indexBoard(canvasThreadId, scene.elements);
+      }
+    }).pipe(Effect.ignore),
+  );
+
+  const chatCardOf: ThreadCanvasStore["Service"]["chatCardOf"] = Effect.fn(
+    "ThreadCanvasStore.chatCardOf",
+  )(function* (chatThreadId) {
+    yield* indexed;
+    const last = [...(chatBoards.get(chatThreadId) ?? [])].at(-1);
+    return last === undefined ? null : { canvasThreadId: last[0], card: last[1] };
+  });
+
   // Writes through a temp file so a crash cannot leave half a scene for the next read.
   const write = (threadId: ThreadId, scene: ThreadCanvasScene) => {
     const file = fileFor(threadId);
     const temp = `${file}.${scene.revision}.tmp`;
-    return fileSystem
-      .makeDirectory(directory, { recursive: true })
-      .pipe(
-        Effect.andThen(fileSystem.writeFileString(temp, JSON.stringify(scene))),
-        Effect.andThen(fileSystem.rename(temp, file)),
-        Effect.mapError(failure("Could not save the canvas")),
-        Effect.andThen(PubSub.publish(changes, { threadId, scene })),
-        Effect.asVoid,
-      );
+    return fileSystem.makeDirectory(directory, { recursive: true }).pipe(
+      Effect.andThen(fileSystem.writeFileString(temp, JSON.stringify(scene))),
+      Effect.andThen(fileSystem.rename(temp, file)),
+      Effect.mapError(failure("Could not save the canvas")),
+      Effect.tap(() => Effect.sync(() => indexBoard(threadId, scene.elements))),
+      Effect.andThen(PubSub.publish(changes, { threadId, scene })),
+      Effect.asVoid,
+    );
   };
 
   const saveFromClient: ThreadCanvasStore["Service"]["saveFromClient"] = (input) =>
@@ -188,10 +225,24 @@ const make = Effect.gen(function* () {
     Effect.orElseSucceed((): ReadonlyArray<ChatImageAttachment> => []),
   );
 
-  const acknowledge = (threadId: ThreadId, seen: Readonly<Record<string, number>>) =>
+  // Merged at write time, so each chat on a board records only the marks it was told about.
+  const acknowledge = (
+    threadId: ThreadId,
+    changes: {
+      readonly seen: Readonly<Record<string, number>>;
+      readonly forget: ReadonlyArray<string>;
+    },
+  ) =>
     writes.withPermits(1)(
       Effect.gen(function* () {
         const current = yield* read(threadId);
+        const forgotten = new Set(changes.forget);
+        const seen = {
+          ...Object.fromEntries(
+            Object.entries(current.seen ?? {}).filter(([id]) => !forgotten.has(id)),
+          ),
+          ...changes.seen,
+        };
         yield* write(threadId, { ...current, revision: current.revision + 1, seen });
       }),
     );
@@ -199,17 +250,24 @@ const make = Effect.gen(function* () {
   const deliverToAgent: ThreadCanvasStore["Service"]["deliverToAgent"] = Effect.fn(
     "ThreadCanvasStore.deliverToAgent",
   )(function* (input) {
-    const changes = describeCanvasChanges(yield* read(input.threadId), input.message);
+    // A chat placed on another thread's board hears the marks around its card there.
+    const placed = yield* chatCardOf(input.threadId);
+    const canvasThreadId = placed?.canvasThreadId ?? input.threadId;
+    const changes = describeCanvasChanges(
+      yield* read(canvasThreadId),
+      input.message,
+      placed === null ? null : input.threadId,
+    );
     if (changes.note === "") return EMPTY_CANVAS_DELIVERY;
     const attachments =
-      input.picture && changes.sketched ? yield* attachSketch(input.threadId) : [];
+      input.picture && changes.sketched ? yield* attachSketch(canvasThreadId) : [];
     return {
       note:
         attachments.length === 0
           ? changes.note
           : `${changes.note}\n\nThe attached canvas-sketch.png shows the marks that have no text.`,
       attachments,
-      acknowledge: acknowledge(input.threadId, changes.seen),
+      acknowledge: acknowledge(canvasThreadId, changes),
     };
   });
 
@@ -230,7 +288,7 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  return ThreadCanvasStore.of({ read, saveFromClient, draw, deliverToAgent, follow });
+  return ThreadCanvasStore.of({ read, saveFromClient, draw, deliverToAgent, chatCardOf, follow });
 });
 
 export const layer = Layer.effect(ThreadCanvasStore, make);
@@ -238,4 +296,5 @@ export const layer = Layer.effect(ThreadCanvasStore, make);
 /** For tests whose turns never touch a canvas. */
 export const layerNoChanges = Layer.mock(ThreadCanvasStore)({
   deliverToAgent: () => Effect.succeed(EMPTY_CANVAS_DELIVERY),
+  chatCardOf: () => Effect.succeed(null),
 });

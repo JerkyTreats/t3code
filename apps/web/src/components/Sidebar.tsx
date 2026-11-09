@@ -126,6 +126,7 @@ import {
 } from "../sidebarProjectGrouping";
 import { resolveProjectExpanded, useUiStateStore } from "../uiStateStore";
 import { isThreadInSidebarView, sidebarViewShowsDrafts } from "../fork/threadSidebarView";
+import { canPlaceThreadOnCanvas, placeThreadOnCanvas } from "../fork/canvasSurfaceCards";
 import type { SidebarView } from "../fork/threadSidebarView";
 import {
   collapsedShelfRows,
@@ -2729,6 +2730,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 canShareWithGuestAtom(threadRef.environmentId),
               ),
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+              canPlaceOnCanvas: canPlaceThreadOnCanvas(routeThreadRef, threadRef),
               supports: {
                 settlement: configLoaded,
                 autoSettleOptOut: supportsAutoSettleOptOut,
@@ -2794,6 +2796,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             }
             return;
           }
+          case "place-on-canvas":
+            if (routeThreadRef !== null) {
+              placeThreadOnCanvas(routeThreadRef, { threadId: thread.id, title: thread.title });
+            }
+            return;
           case "settle":
             attemptSettle(threadRef);
             return;

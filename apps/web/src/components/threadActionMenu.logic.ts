@@ -4,6 +4,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 export type ThreadActionMenuId =
   | "find"
   | "new-thread-on-branch"
+  | "place-on-canvas"
   | "filter-by-project"
   | "turn-into-project"
   | "project-settings"
@@ -100,6 +101,8 @@ export interface ThreadActionMenuState {
   readonly canShareWithGuest?: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
+  /** Another thread's canvas board is showing, so this thread's chat can go on it as a card. */
+  readonly canPlaceOnCanvas?: boolean;
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
@@ -107,6 +110,7 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
   return ![
     "find",
     "new-thread-on-branch",
+    "place-on-canvas",
     "project-settings",
     "mark-unread",
     "share-guest",
@@ -133,6 +137,9 @@ export function buildThreadActionMenuItems(
             icon: "message-square-plus",
           },
         ]
+      : []),
+    ...(state.canPlaceOnCanvas
+      ? [{ id: "place-on-canvas" as const, label: "Place on canvas", icon: "message-square" }]
       : []),
     ...(state.supports.pinning && state.isPinned
       ? [{ id: "unpin" as const, label: "Unpin thread", icon: "pin-off" }]

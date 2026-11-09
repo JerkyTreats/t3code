@@ -10,7 +10,7 @@ import {
 } from "../../../canvas/canvasPreviewPage.ts";
 import { compileDiagram, DiagramError } from "../../../canvas/canvasDiagram.ts";
 import { readCanvas } from "../../../canvas/threadCanvasScene.ts";
-import { chatCardOf, resolveCanvas, sharedDrawingId } from "../../../canvas/sharedCanvas.ts";
+import { resolveCanvas, sharedDrawingId } from "../../../canvas/sharedCanvas.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
 import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
@@ -35,7 +35,7 @@ const previewFailure = (error: { readonly _tag: string; readonly message: string
   new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message });
 
 /** The canvas for a caller, falling back to the caller's own canvas if lineage is unreadable. */
-const canvasOf = Effect.fn("sharedCanvas.canvasOf")(function* (threadId: ThreadId) {
+const canvasOf = Effect.fn("canvas.canvasOf")(function* (threadId: ThreadId) {
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
   return yield* resolveCanvas(
@@ -45,11 +45,7 @@ const canvasOf = Effect.fn("sharedCanvas.canvasOf")(function* (threadId: ThreadI
         Effect.map((shell) => (shell === null ? null : shell.lineage)),
         Effect.orElseSucceed(() => null),
       ),
-    (canvasThreadId, chatThreadId) =>
-      canvas.read(canvasThreadId).pipe(
-        Effect.map((scene) => chatCardOf(scene.elements, chatThreadId)),
-        Effect.orElseSucceed(() => null),
-      ),
+    canvas.chatCardOf,
   );
 });
 
@@ -124,8 +120,8 @@ const handlers = {
       const canvasThreadId = target.threadId;
       const scene = yield* canvas.read(canvasThreadId).pipe(Effect.mapError(toFailure));
       // A delegated task reads its parent's canvas but leaves the user's marks unseen, so the
-      // parent still hears about them on its next turn.
-      if (canvasThreadId === thread.threadId) {
+      // parent still hears about them; a placed chat takes in the marks addressed to it.
+      if (canvasThreadId === thread.threadId || target.card !== null) {
         const delivery = yield* canvas
           .deliverToAgent({ threadId: thread.threadId, message: "", picture: false })
           .pipe(Effect.mapError(toFailure));
@@ -210,6 +206,7 @@ const handlers = {
           threadId: canvasThreadId,
           drawingId: sharedDrawingId(input.drawingId, thread.threadId, canvasThreadId),
           anchor: target.card ?? undefined,
+          author: thread.threadId,
         })
         .pipe(Effect.mapError(toFailure));
     }),

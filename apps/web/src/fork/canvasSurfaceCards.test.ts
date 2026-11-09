@@ -12,6 +12,7 @@ import {
   canvasSurfaceRefFor,
   cardsShowingElsewhere,
   createSurfaceActivation,
+  freeSpotInView,
   liveSurfaceCards,
   panelSurfaceOf,
   registerCanvasBoard,
@@ -335,5 +336,18 @@ describe("canvasSurfaceAdders", () => {
     const panel = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef);
     expect(panel.activeSurfaceId).toBe("browser:tab-2");
     expect(panel.surfaces.map((surface) => surface.id)).toEqual(["browser:tab-2"]);
+  });
+});
+
+describe("freeSpotInView", () => {
+  it("takes the free spot in view nearest its centre, or none when the box fits nowhere", () => {
+    const viewport = { x: 0, y: 0, width: 1000, height: 400 };
+    const size = { width: 200, height: 200 };
+    expect(freeSpotInView([], viewport, size)).toEqual({ x: 400, y: 80 });
+    // A column across the middle pushes the card to the nearer free side, a gap away.
+    const column = { x: 250, y: -1000, width: 400, height: 3000 };
+    expect(freeSpotInView([column], viewport, size)).toEqual({ x: 720, y: 80 });
+    expect(freeSpotInView([{ ...column, x: -100, width: 1200 }], viewport, size)).toBeNull();
+    expect(freeSpotInView([], viewport, { width: 1200, height: 200 })).toBeNull();
   });
 });

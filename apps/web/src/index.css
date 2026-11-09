@@ -2690,6 +2690,64 @@ code {
   transform-origin: 0 0;
 }
 
+/* A chat card's stripe in its chat's colour, the same colour its agent's cursor draws in. */
+.canvas-card[data-canvas-chat]::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 2;
+  height: 3px;
+  background: var(--canvas-chat-color);
+  pointer-events: none;
+}
+
+/* An agent's cursor and outlines while it draws; removed once they fade. */
+.canvas-agent-presence {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.canvas-agent-outline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  border: calc(1.5px * var(--canvas-presence-unscale)) solid var(--canvas-chat-color);
+  border-radius: calc(6px * var(--canvas-presence-unscale));
+  opacity: 0;
+}
+
+.canvas-agent-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  color: var(--canvas-chat-color);
+  transform-origin: 0 0;
+  opacity: 0;
+}
+
+.canvas-agent-cursor > span {
+  margin-top: 14px;
+  max-width: 180px;
+  overflow: hidden;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--canvas-chat-color);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .canvas-card[data-canvas-card="markdown"] {
   padding: 12px 16px;
   /* The board fits a card's height to its text. A scrollbar that came and went would change

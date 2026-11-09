@@ -72,6 +72,61 @@ function distanceBetween(left: CanvasBox, right: CanvasBox) {
   return Math.hypot(dx, dy);
 }
 
+/** Each chat card on the board, by the thread it shows. */
+export function chatCardsIn(elements: ReadonlyArray<ThreadCanvasElement>) {
+  const cards = new Map<string, ThreadCanvasElement>();
+  for (const element of elements) {
+    if (element.isDeleted === true || typeof element.id !== "string") continue;
+    const card = recordOf(recordOf(element.customData).t3Card);
+    const surface = recordOf(card.surface);
+    if (
+      card.kind === "surface" &&
+      surface.kind === "side-chat" &&
+      typeof surface.threadId === "string"
+    )
+      cards.set(surface.threadId, element);
+  }
+  return cards;
+}
+
+/**
+ * Which chat a user mark is addressed to: the chat whose card it sits nearest, or null for the
+ * board's own thread when a turn is as near. A chat card itself belongs to the board's thread.
+ */
+function markOwnersOf(elements: ReadonlyArray<ThreadCanvasElement>) {
+  const chats = [...chatCardsIn(elements)].map(([threadId, card]) => ({
+    threadId,
+    card,
+    box: boxOf(card),
+  }));
+  const owners = new Map<string, string | null>();
+  if (chats.length === 0) return owners;
+  const turns = elements
+    .filter(
+      (element) =>
+        element.isDeleted !== true && typeof recordOf(element.customData).t3Turn === "string",
+    )
+    .map(boxOf);
+  const cardIds = new Set(chats.map((chat) => chat.card.id));
+  for (const element of elements) {
+    const id = idOf(element);
+    if (id === undefined || cardIds.has(id)) continue;
+    const box = reachOf(element, boxOf(element));
+    const nearestTurn = Math.min(Infinity, ...turns.map((turn) => distanceBetween(box, turn)));
+    let owner: string | null = null;
+    let nearest = nearestTurn;
+    for (const chat of chats) {
+      const distance = distanceBetween(box, chat.box);
+      if (distance < nearest) {
+        nearest = distance;
+        owner = chat.threadId;
+      }
+    }
+    owners.set(id, owner);
+  }
+  return owners;
+}
+
 const ARROW_TIP_REACH = 12;
 const BESIDE_REACH = 120;
 
@@ -305,8 +360,15 @@ function describeMark(mark: ReturnType<typeof describeCanvas>["elements"][number
  * What the user did on the canvas since the agent last knew about it. `seen` is the state to save
  * once the agent has this note, and `sketched` says a mark exists that only a picture can show.
  */
-export function describeCanvasChanges(scene: ThreadCanvasScene, message: string) {
+export function describeCanvasChanges(
+  scene: ThreadCanvasScene,
+  message: string,
+  reader: string | null = null,
+) {
   const previous = scene.seen ?? {};
+  // Each chat on the board hears only the marks addressed to it; the board's thread is null.
+  const owners = markOwnersOf(scene.elements);
+  const addressed = (id: string) => (owners.get(id) ?? null) === reader;
   const stamps = new Map<string, number>();
   for (const element of scene.elements) {
     const owner = typeof element.containerId === "string" ? element.containerId : idOf(element);
@@ -314,7 +376,7 @@ export function describeCanvasChanges(scene: ThreadCanvasScene, message: string)
     stamps.set(owner, (stamps.get(owner) ?? 0) + versionOf(element));
   }
   const marks = describeCanvas(scene)
-    .elements.filter((element) => element.drawnBy === "user")
+    .elements.filter((element) => element.drawnBy === "user" && addressed(element.id))
     .toSorted((left, right) => left.y - right.y);
   const isFresh = (mark: (typeof marks)[number]) => previous[mark.id] !== stamps.get(mark.id);
   const asked = message.trim();
@@ -329,12 +391,15 @@ export function describeCanvasChanges(scene: ThreadCanvasScene, message: string)
   const sentIds = new Set(sentNotes.map((mark) => mark.id));
   const fresh = marks.filter((mark) => isFresh(mark) && !sentIds.has(mark.id));
   const liveIds = new Set(marks.map((mark) => mark.id));
+  const forget: Array<string> = [];
   const removed = scene.elements.flatMap((element) => {
     const id = idOf(element);
     return id !== undefined &&
       element.isDeleted === true &&
+      addressed(id) &&
       previous[id] !== undefined &&
-      !liveIds.has(id)
+      !liveIds.has(id) &&
+      forget.push(id) > 0
       ? [
           typeof element.text === "string"
             ? `- removed ${quoted(element.text)}`
@@ -351,7 +416,7 @@ export function describeCanvasChanges(scene: ThreadCanvasScene, message: string)
     ...(shown.length === 0
       ? []
       : [
-          `The user changed this thread's Excalidraw canvas since you last looked. A note addressed to you is a request from them.\n${shown.join("\n")}`,
+          `${reader === null ? "The user changed this thread's Excalidraw canvas" : "The user changed the canvas around your chat card"} since you last looked. A note addressed to you is a request from them.\n${shown.join("\n")}`,
         ]),
     ...sentNotes
       .slice(0, 1)
@@ -362,7 +427,9 @@ export function describeCanvasChanges(scene: ThreadCanvasScene, message: string)
   ];
   return {
     note: sections.join("\n\n"),
+    // The reader's marks only, merged into what the other chats on the board have seen.
     seen: Object.fromEntries(marks.map((mark) => [mark.id, stamps.get(mark.id) ?? 0])),
+    forget,
     sketched: fresh.some((mark) => mark.text === undefined),
   };
 }

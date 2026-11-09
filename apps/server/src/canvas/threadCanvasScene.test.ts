@@ -368,6 +368,36 @@ describe("describeCanvasChanges", () => {
     );
   });
 
+  it("tells each chat on the board only the marks nearest its card", () => {
+    const chat = {
+      id: "chat-card",
+      version: 1,
+      type: "rectangle",
+      x: 3000,
+      y: 0,
+      width: 400,
+      height: 500,
+      customData: { t3Card: { kind: "surface", surface: { kind: "side-chat", threadId: "side" } } },
+    };
+    const chatNote = {
+      id: "chat-note",
+      version: 1,
+      type: "text",
+      text: "Draw it here",
+      x: 3450,
+      y: 0,
+    };
+    const board = scene([turn, note, chat, chatNote]);
+    const owner = describeCanvasChanges(board, "Hello");
+    expect(owner.note).toContain("Show me this");
+    expect(owner.note).not.toContain("Draw it here");
+    const side = describeCanvasChanges(board, "Hello", "side");
+    expect(side.note).toContain("Draw it here");
+    expect(side.note).not.toContain("Show me this");
+    expect(side.note).not.toContain("[chat-card]");
+    expect(Object.keys(side.seen)).toEqual(["chat-note"]);
+  });
+
   it("notices a label edit on an already seen shape", () => {
     const box = { id: "box", version: 1, type: "rectangle" };
     const label = { id: "label", version: 1, type: "text", text: "old", containerId: "box" };

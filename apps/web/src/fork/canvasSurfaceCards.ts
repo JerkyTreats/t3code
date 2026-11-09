@@ -265,7 +265,9 @@ export function cardsShowingElsewhere(
 export type SurfacePlacement =
   | { readonly at: { readonly x: number; readonly y: number } }
   | { readonly besideTurn: string }
-  | { readonly besideElement: string };
+  | { readonly besideElement: string }
+  /** At a free spot in the part of the board the reader sees. */
+  | { readonly inView: true };
 
 type PlaceCard = (card: CanvasSurfaceCard, where?: SurfacePlacement) => void;
 const mountedBoards = new Map<string, PlaceCard>();
@@ -296,6 +298,80 @@ export function placeSurfaceOnCanvas(
   if (place === undefined) return false;
   place(card, where);
   return true;
+}
+
+/** Whether a thread's chat can go on the board of the thread open now: a board shows, and not its own. */
+export function canPlaceThreadOnCanvas(boardRef: ScopedThreadRef | null, thread: ScopedThreadRef) {
+  return (
+    boardRef !== null &&
+    boardRef.environmentId === thread.environmentId &&
+    boardRef.threadId !== thread.threadId &&
+    canvasBoardMounted(boardRef)
+  );
+}
+
+/**
+ * Places any thread's chat as a card on the board of the thread open now, at a free spot in view.
+ * The card names the thread, so the chat need not be a side chat of the board's thread.
+ */
+export function placeThreadOnCanvas(
+  boardRef: ScopedThreadRef,
+  thread: { readonly threadId: ThreadId; readonly title: string },
+) {
+  return placeSurfaceOnCanvas(
+    boardRef,
+    {
+      kind: "surface",
+      surface: { kind: "side-chat", threadId: thread.threadId },
+      title: thread.title,
+    },
+    { inView: true },
+  );
+}
+
+const FREE_SPOT_STEP_PX = 40;
+const FREE_SPOT_GAP_PX = 32;
+
+/**
+ * The free spot for a box in a viewport nearest the viewport's centre, kept a gap from every
+ * obstacle, or null when the box fits nowhere in view.
+ */
+export function freeSpotInView(
+  obstacles: ReadonlyArray<Box>,
+  viewport: Box,
+  size: { readonly width: number; readonly height: number },
+): { readonly x: number; readonly y: number } | null {
+  const spanX = viewport.width - size.width;
+  const spanY = viewport.height - size.height;
+  if (spanX < 0 || spanY < 0) return null;
+  const centre = { x: viewport.x + spanX / 2, y: viewport.y + spanY / 2 };
+  const spots: Array<{ x: number; y: number }> = [];
+  for (let dy = 0; dy <= spanY; dy += FREE_SPOT_STEP_PX) {
+    for (let dx = 0; dx <= spanX; dx += FREE_SPOT_STEP_PX) {
+      spots.push({ x: viewport.x + dx, y: viewport.y + dy });
+    }
+  }
+  const distance = (spot: { x: number; y: number }) =>
+    (spot.x - centre.x) ** 2 + (spot.y - centre.y) ** 2;
+  const gap = FREE_SPOT_GAP_PX;
+  return (
+    spots
+      .toSorted((left, right) => distance(left) - distance(right))
+      .find((spot) =>
+        obstacles.every(
+          (box) =>
+            !intersects(
+              {
+                x: spot.x - gap,
+                y: spot.y - gap,
+                width: size.width + 2 * gap,
+                height: size.height + 2 * gap,
+              },
+              box,
+            ),
+        ),
+      ) ?? null
+  );
 }
 
 type Place<Id> = (place: (id: Id) => void) => void;

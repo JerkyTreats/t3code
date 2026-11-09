@@ -41,6 +41,7 @@ import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelSt
 import { useProjects, useQuietThreadShell } from "../state/entities";
 import { useKnownTerminalSessions } from "../state/terminalSessions";
 import {
+  freeSpotInView,
   type PanelSurfaceCard,
   type RenderPanelSurface,
   type SurfacePlacement,
@@ -66,6 +67,22 @@ const CARD_SIZES: Record<CanvasSurfaceRef["kind"], { width: number; height: numb
 
 type Element = ReturnType<ExcalidrawImperativeAPI["getSceneElements"]>[number];
 
+// The board's header and toolbar cover its top, and the composer its bottom.
+const VIEW_CLEAR_TOP_PX = 112;
+const VIEW_CLEAR_BOTTOM_PX = 200;
+const VIEW_CLEAR_SIDE_PX = 24;
+
+/** The part of the board the reader sees past T3's own chrome, in scene coordinates. */
+function visibleSceneOf(view: ReturnType<ExcalidrawImperativeAPI["getAppState"]>) {
+  const zoom = view.zoom.value;
+  return {
+    x: -view.scrollX + VIEW_CLEAR_SIDE_PX / zoom,
+    y: -view.scrollY + VIEW_CLEAR_TOP_PX / zoom,
+    width: (view.width - 2 * VIEW_CLEAR_SIDE_PX) / zoom,
+    height: (view.height - VIEW_CLEAR_TOP_PX - VIEW_CLEAR_BOTTOM_PX) / zoom,
+  };
+}
+
 /**
  * Adds a surface card as one undoable step: at a scene point, beside a turn or another card, or by
  * default beside the latest turn, where an agent's besideLatestTurn drawing lands. A card beside a
@@ -83,6 +100,14 @@ export function placeSurfaceCard(
   const turns = scene.filter((element) => typeof element.customData?.t3Turn === "string");
   const spot = ((): { x: number; y: number; turn: Element | null } => {
     if (where !== undefined && "at" in where) return { ...where.at, turn: null };
+    if (where !== undefined && "inView" in where) {
+      const spot = freeSpotInView(
+        [...solid, ...turnCorridorOf(turnSpineOf(turns))],
+        visibleSceneOf(api.getAppState()),
+        size,
+      );
+      if (spot !== null) return { ...spot, turn: null };
+    }
     if (where !== undefined && "besideElement" in where) {
       const beside = scene.find((element) => element.id === where.besideElement);
       if (beside !== undefined) {

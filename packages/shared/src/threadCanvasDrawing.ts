@@ -188,6 +188,38 @@ export function anchorTo(
   return { turn, edge, at, dy: element.y - at, x: element.x };
 }
 
+/**
+ * A piece a chat drew from its card on the board: it sits `dx`, `dy` from the card's top left and
+ * moves with the card. A piece the user drags keeps following at its new offset.
+ */
+export interface CardAnchor {
+  readonly card: string;
+  readonly dx: number;
+  readonly dy: number;
+}
+
+export const CARD_ANCHOR_KEY = "t3OnCard";
+
+export function cardAnchorOf(element: { readonly customData?: unknown }): CardAnchor | null {
+  const data = element.customData;
+  const anchor =
+    typeof data === "object" && data !== null ? Reflect.get(data, CARD_ANCHOR_KEY) : null;
+  if (typeof anchor !== "object" || anchor === null) return null;
+  const { card, dx, dy } = anchor as Record<string, unknown>;
+  return typeof card === "string" && typeof dx === "number" && typeof dy === "number"
+    ? { card, dx, dy }
+    : null;
+}
+
+/** The thread whose agent drew a piece, stamped as `t3Drawing.by`; null for older drawings. */
+export function drawnByOf(element: { readonly customData?: unknown }): string | null {
+  const data = element.customData;
+  const drawing = typeof data === "object" && data !== null ? Reflect.get(data, "t3Drawing") : null;
+  const by =
+    typeof drawing === "object" && drawing !== null ? Reflect.get(drawing, "by") : undefined;
+  return typeof by === "string" ? by : null;
+}
+
 /** A turn's edge that an anchor follows. */
 export function turnEdgeY(
   turn: { readonly y: number; readonly height: number },
