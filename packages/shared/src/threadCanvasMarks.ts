@@ -1,9 +1,11 @@
 /**
  * What makes the user's marks on a thread canvas news to an agent. A mark is stamped by what it
- * says, how it is drawn and what it sits on, never by where it sits or how often it was written:
- * the board moves marks with the turns as they re-measure, and that is not the user changing
- * anything.
+ * says, how it is drawn and the turn it is anchored to with its offset from that turn, never by
+ * where layout puts it or how often it was written: the board moves marks with the turns as they
+ * re-measure, and that is not the user changing anything.
  */
+
+import { contentAnchorOf, holdsTurnAnchor, turnAnchorOf } from "./threadCanvasDrawing.ts";
 
 type Fields = Readonly<Record<string, unknown>>;
 
@@ -16,7 +18,8 @@ const rounded = (value: unknown, places = 0) => {
   return Math.round(value * scale) / scale;
 };
 
-// The turn that opens a loaded window of history grows as more loads, so it names nothing.
+// Stamps recorded before anchors named what a mark sat on by overlap. The turn that opens a loaded
+// window of history grows as more loads, so it named nothing.
 const THREAD_START_TURN = "thread-start";
 const ARROW_TIP_REACH = 12;
 
@@ -90,14 +93,10 @@ function hashOf(text: string) {
 
 /**
  * What a mark is, as the user would describe it. Position, version and the board's own
- * bookkeeping (anchors, what text lies under it, a held drawing's size) are left out; so are a
- * bound arrow's bends and a text's measured size, which the board redoes on its own.
+ * bookkeeping (what text lies under it, a held drawing's size) are left out; so are a bound
+ * arrow's bends and a text's measured size, which the board redoes on its own.
  */
-function contentOf(
-  fields: Fields,
-  labels: ReadonlyArray<string>,
-  on: { readonly turn: string | null; readonly piece: string | null },
-) {
+function contentOf(fields: Fields, labels: ReadonlyArray<string>): Array<unknown> {
   const customData = fieldsOf(fields.customData);
   const text = fields.type === "text";
   const start = bindingOf(fields.startBinding);
@@ -136,10 +135,10 @@ function contentOf(
     isLine(fields) ? [start, end] : null,
     customData.t3Card ?? null,
     labels,
-    on.turn,
-    on.piece,
   ];
 }
+
+const numberOf = (value: unknown) => (typeof value === "number" ? value : 0);
 
 const isLive = (fields: Fields) => fields.isDeleted !== true && typeof fields.id === "string";
 
@@ -154,9 +153,14 @@ function isMark(fields: Fields) {
   );
 }
 
-/** Each of the user's marks by id, stamped with what it is, its labels and what it sits on. */
+/** Each of the user's marks by id, stamped with what it is, its labels and its turn anchor. */
 export function canvasMarkStamps(elements: ReadonlyArray<object>): ReadonlyMap<string, string> {
+  return markStamps(elements, false);
+}
+
+function markStamps(elements: ReadonlyArray<object>, byOverlap: boolean) {
   const labels = new Map<string, Array<string>>();
+  const anchorTurns: Array<{ readonly id: string; readonly y: number }> = [];
   const turns: Array<{ readonly name: string; box: Box }> = [];
   const pieces: Array<{ readonly name: string; box: Box }> = [];
   for (const element of elements) {
@@ -169,6 +173,7 @@ export function canvasMarkStamps(elements: ReadonlyArray<object>): ReadonlyMap<s
         labels.set(fields.containerId, [...(labels.get(fields.containerId) ?? []), words]);
       }
     } else if (typeof customData.t3Turn === "string") {
+      anchorTurns.push({ id: customData.t3Turn, y: numberOf(fields.y) });
       if (customData.t3Turn !== THREAD_START_TURN) {
         turns.push({ name: customData.t3Turn, box: boxOf(fields) });
       }
@@ -181,11 +186,18 @@ export function canvasMarkStamps(elements: ReadonlyArray<object>): ReadonlyMap<s
     const fields = fieldsOf(element);
     if (!isMark(fields)) continue;
     const id = String(fields.id);
-    const reach = reachOf(fields);
-    const content = contentOf(fields, [...(labels.get(id) ?? [])].sort(), {
-      turn: smallestUnder(reach, turns),
-      piece: smallestUnder(reach, pieces),
-    });
+    const content = contentOf(fields, [...(labels.get(id) ?? [])].sort());
+    if (byOverlap) {
+      const reach = reachOf(fields);
+      content.push(smallestUnder(reach, turns), smallestUnder(reach, pieces));
+    } else {
+      // The anchor the board saved while the mark still sits on it, else the one it will save.
+      const at = { x: numberOf(fields.x), y: numberOf(fields.y) };
+      const kept = turnAnchorOf(fields);
+      const anchor =
+        kept !== null && holdsTurnAnchor(at, kept) ? kept : contentAnchorOf(at, anchorTurns);
+      content.push(anchor === null ? null : [anchor.turn, anchor.edge, rounded(anchor.dy)]);
+    }
     stamps.set(id, hashOf(JSON.stringify(content)));
   }
   return stamps;
@@ -221,12 +233,14 @@ export function unseenCanvasMarkIds(
   const current = known.seenMarks ?? {};
   const legacy = known.seen ?? {};
   const versions = Object.keys(legacy).length === 0 ? null : canvasMarkVersionStamps(elements);
+  // A stamp recorded before anchors still counts until the next note records the mark again.
+  let byOverlap: ReadonlyMap<string, string> | null = null;
   const unseen = new Set<string>();
   for (const [id, stamp] of stamps) {
     const recorded = current[id];
     const fresh =
       recorded !== undefined
-        ? recorded !== stamp
+        ? recorded !== stamp && recorded !== (byOverlap ??= markStamps(elements, true)).get(id)
         : legacy[id] === undefined || legacy[id] !== versions?.get(id);
     if (fresh) unseen.add(id);
   }

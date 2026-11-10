@@ -79,6 +79,20 @@ const edit = (id: string, change: Record<string, unknown>) =>
     element.id === id ? { ...element, ...change, version: element.version + 1 } : element,
   );
 
+// A note off the pixel grid, before and after the board saves the anchor it worked out for it.
+const offGrid = board.map((e) =>
+  e.id === "note" ? { ...e, y: 40.6 } : e.id === "turn-box:1" ? { ...e, y: 0.4 } : e,
+);
+const anchored = offGrid.map((e) =>
+  e.id === "note"
+    ? {
+        ...e,
+        version: 3,
+        customData: { t3Below: { turn: "1", edge: "top", at: 0.4, dy: 40.6 - 0.4, x: 900 } },
+      }
+    : e,
+);
+
 describe("canvasMarkStamps", () => {
   it("stamps only the user's own marks, a labelled shape as one", () => {
     expect([...canvasMarkStamps(board).keys()].toSorted()).toEqual(
@@ -110,7 +124,15 @@ describe("canvasMarkStamps", () => {
       holding,
       holding.map((e) => (e.id === "box" ? { ...e, height: 900, version: e.version + 1 } : e)),
     ],
-    ["a note dragged within empty space", board, edit("note", { x: 1000, y: 120 })],
+    ["a note dragged sideways", board, edit("note", { x: 1000 })],
+    [
+      "a turn shrinking out from under a mark",
+      board,
+      board.map((e) =>
+        e.id === "turn-box:1" ? { ...e, height: 40 } : e.id === "turn-box:2" ? { ...e, y: 100 } : e,
+      ),
+    ],
+    ["the board saving the anchor it worked out", offGrid, anchored],
     [
       "the words under a mark being noted",
       board,
@@ -136,6 +158,7 @@ describe("canvasMarkStamps", () => {
       },
     ],
     ["an arrow pointed at another card", "arrow", { endBinding: { elementId: "box" } }],
+    ["a note dragged within its turn", "note", { y: 120 }],
     ["a note dragged onto a turn", "note", { x: 100, y: 300 }],
     ["a stroke dragged onto the agent's drawing", "stroke", { x: 2050, y: 50 }],
     ["a placed panel shown another file", "card", { customData: { t3Card: { kind: "surface" } } }],
@@ -159,6 +182,11 @@ describe("unseenCanvasMarkIds", () => {
     const legacy = { note: 2, box: 5, card: 5, arrow: 6, stroke: 7 };
     expect(unseenCanvasMarkIds(board, { seen: legacy }).size).toBe(0);
     expect([...unseenCanvasMarkIds(edit("note", { y: 41 }), { seen: legacy })]).toEqual(["note"]);
+    // Stamps recorded before anchors, when a mark was named by what it overlapped.
+    const byOverlap = { note: "zhsqaq.12swnqs", box: "1xf81bp.17nl6pk" };
+    expect(unseenCanvasMarkIds(board, { seenMarks: byOverlap }).has("note")).toBe(false);
+    expect(unseenCanvasMarkIds(board, { seenMarks: byOverlap }).has("box")).toBe(false);
+    expect([...unseenCanvasMarkIds(edit("note", { y: 120 }), { seenMarks })]).toEqual(["note"]);
     expect([...unseenCanvasMarkIds(board, {})].toSorted()).toEqual(
       ["arrow", "box", "card", "note", "stroke"].toSorted(),
     );
