@@ -190,11 +190,14 @@ describe("layoutTurns with a response region", () => {
     const top = { ...card("top", -200, bottom + 32, 300, bottom), height: 700, grew: true };
     const under = card("under", -200, bottom + 32 + 300 + 32, 200, bottom);
     const beside = card("beside", 400, bottom + 32 + 300 + 32, 200, bottom);
-    const boxes = layoutTurns([turn!, top, under, beside], [measured("a", 100)]);
+    const lower = card("lower", -200, bottom + 32 + 300 + 32 + 200 + 32, 200, bottom);
+    const boxes = layoutTurns([turn!, top, under, beside, lower], [measured("a", 100)]);
     expect(boxFor(boxes, "under")).toMatchObject({
       y: bottom + 32 + 700 + 32,
       anchor: { dy: 32 + 700 + 32 },
     });
+    // The card pushed down pushes the one under it in turn.
+    expect(boxFor(boxes, "lower").y).toBe(bottom + 32 + 700 + 32 + 200 + 32);
     expect(boxFor(boxes, "beside").y).toBe(bottom + 32 + 300 + 32);
   });
 

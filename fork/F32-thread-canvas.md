@@ -46,9 +46,10 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   instead of the board's thread. Anything the user draws or writes is a mark. Marks the agent
   has not seen are summarised into the next turn, and the send button sends them with nothing
   typed. A note is never sent on its own from the board. A mark is seen by what it is, how it is
-  drawn, its labels and its anchor (turn and rounded offset), never by where layout puts it or by
-  version, so the board moving it with the turns is not news and the user moving it is. A mark
-  recorded before anchors, by what it overlapped, stays seen until the next note records it again. `canvas_read` reports marks with the text they cover.
+  drawn, its labels and its anchor (turn, rounded offset and x), never by where layout puts it or by
+  version, so the board moving it with the turns is not news and the user moving it is. When the
+  server loads a scene, records made before anchors (version sums, or stamps by what a mark
+  overlapped) that still match the saved scene are restated as anchor stamps. `canvas_read` reports marks with the text they cover.
 - `F32.D5` Card presentation. Markdown cards keep single line breaks; a capitalised state word that
   starts a line, list item or table cell renders as a coloured chip, with the chip span admitted by
   the shared Markdown sanitizer; a card holding a table widens to fit it. html cards are agent

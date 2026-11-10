@@ -1,4 +1,5 @@
 import type { ThreadCanvasScene } from "@t3tools/contracts";
+import { canvasMarksSeenOnLoad } from "@t3tools/shared/threadCanvasMarks";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -438,14 +439,16 @@ describe("describeCanvasChanges", () => {
   });
 
   it("takes in a board's version record without reporting marks unchanged since", () => {
+    // The store restates the record when it loads the scene.
+    const loaded = (saved: ThreadCanvasScene) => ({ ...saved, ...canvasMarksSeenOnLoad(saved) });
     const legacy = { ...scene([turn, note, stroke]), seen: { note: 2, stroke: 4 } };
-    const adopted = describeCanvasChanges(legacy, "");
+    const adopted = describeCanvasChanges(loaded(legacy), "");
     expect(adopted.note).toBe("");
     expect(Object.keys(adopted.seenMarks).toSorted()).toEqual(["note", "stroke"]);
     // What changed after the board last recorded it is still news.
     const edited = { ...note, version: 3, text: "Show me that" };
     expect(
-      describeCanvasChanges({ ...legacy, elements: [turn, edited, stroke] }, "").note,
+      describeCanvasChanges(loaded({ ...legacy, elements: [turn, edited, stroke] }), "").note,
     ).toContain("Show me that");
   });
 

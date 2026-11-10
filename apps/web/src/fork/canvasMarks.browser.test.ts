@@ -1,4 +1,5 @@
 import { ThreadCanvasSaveInput } from "@t3tools/contracts";
+import { canvasMarksSeenOnLoad } from "@t3tools/shared/threadCanvasMarks";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -113,7 +114,11 @@ describe("marks", () => {
     const box = mark({ id: "box", type: "rectangle" });
     const label = mark({ id: "label", type: "text", text: "api", containerId: "box" });
     const note = mark({ id: "note", type: "text", text: "hi" });
-    const marks = unseenSketchMarks([stroke, seenStroke, box, label, note], { seen: { seen: 2 } });
+    const elements = [stroke, seenStroke, box, label, note];
+    const marks = unseenSketchMarks(
+      elements,
+      canvasMarksSeenOnLoad({ elements, seen: { seen: 2 } }),
+    );
     expect(marks.map((element) => element.id)).toEqual(["stroke"]);
   });
 
@@ -124,9 +129,11 @@ describe("marks", () => {
     const label = mark({ id: "label", type: "text", text: "api", containerId: "box", version: 4 });
     const note = mark({ id: "note", type: "text", text: "hi" });
     const agent = mark({ id: "drawn", type: "rectangle", customData: { t3Drawing: { id: "d" } } });
-    const marks = unseenMarks([stroke, seenStroke, box, label, note, agent], {
-      seen: { seen: 2, box: 5 },
-    });
+    const elements = [stroke, seenStroke, box, label, note, agent];
+    const marks = unseenMarks(
+      elements,
+      canvasMarksSeenOnLoad({ elements, seen: { seen: 2, box: 5 } }),
+    );
     expect(marks.map((element) => element.id)).toEqual(["stroke", "note"]);
   });
 });

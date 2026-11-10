@@ -196,7 +196,9 @@ function markStamps(elements: ReadonlyArray<object>, byOverlap: boolean) {
       const kept = turnAnchorOf(fields);
       const anchor =
         kept !== null && holdsTurnAnchor(at, kept) ? kept : contentAnchorOf(at, anchorTurns);
-      content.push(anchor === null ? null : [anchor.turn, anchor.edge, rounded(anchor.dy)]);
+      content.push(
+        anchor === null ? null : [anchor.turn, anchor.edge, rounded(anchor.dy), rounded(anchor.x)],
+      );
     }
     stamps.set(id, hashOf(JSON.stringify(content)));
   }
@@ -205,7 +207,7 @@ function markStamps(elements: ReadonlyArray<object>, byOverlap: boolean) {
 
 /**
  * What the agent knows of the user's marks. `seenMarks` holds content stamps; `seen` holds the
- * version sums boards recorded before them, read until each mark is seen again.
+ * version sums boards recorded before them, which only `canvasMarksSeenOnLoad` reads.
  */
 export interface CanvasMarksSeen {
   readonly seen?: Readonly<Record<string, number>> | undefined;
@@ -224,6 +226,38 @@ export function canvasMarkVersionStamps(elements: ReadonlyArray<object>) {
   return stamps;
 }
 
+/**
+ * The record restated in today's stamps, worked out on the scene as saved, which is how the agent
+ * saw it: an entry made before anchors (a version sum, or a stamp named by what the mark
+ * overlapped) that still matches takes the mark's anchor stamp. One that no longer matches stays,
+ * so the mark reads as changed.
+ */
+export function canvasMarksSeenOnLoad(
+  scene: CanvasMarksSeen & { readonly elements: ReadonlyArray<object> },
+): CanvasMarksSeen {
+  if (scene.seen === undefined && scene.seenMarks === undefined) return {};
+  const stamps = canvasMarkStamps(scene.elements);
+  let byOverlap: ReadonlyMap<string, string> | null = null;
+  const seenMarks: Record<string, string> = {};
+  for (const [id, recorded] of Object.entries(scene.seenMarks ?? {})) {
+    const now = stamps.get(id);
+    const old =
+      now === undefined || now === recorded
+        ? undefined
+        : (byOverlap ??= markStamps(scene.elements, true)).get(id);
+    seenMarks[id] = now !== undefined && recorded === old ? now : recorded;
+  }
+  const versions = canvasMarkVersionStamps(scene.elements);
+  const seen: Record<string, number> = {};
+  for (const [id, version] of Object.entries(scene.seen ?? {})) {
+    const now = stamps.get(id);
+    if (now !== undefined && seenMarks[id] === undefined && version === versions.get(id)) {
+      seenMarks[id] = now;
+    } else seen[id] = version;
+  }
+  return Object.keys(seen).length === 0 ? { seenMarks } : { seen, seenMarks };
+}
+
 /** The marks the agent has not seen as they are now. */
 export function unseenCanvasMarkIds(
   elements: ReadonlyArray<object>,
@@ -231,18 +265,7 @@ export function unseenCanvasMarkIds(
   stamps: ReadonlyMap<string, string> = canvasMarkStamps(elements),
 ) {
   const current = known.seenMarks ?? {};
-  const legacy = known.seen ?? {};
-  const versions = Object.keys(legacy).length === 0 ? null : canvasMarkVersionStamps(elements);
-  // A stamp recorded before anchors still counts until the next note records the mark again.
-  let byOverlap: ReadonlyMap<string, string> | null = null;
   const unseen = new Set<string>();
-  for (const [id, stamp] of stamps) {
-    const recorded = current[id];
-    const fresh =
-      recorded !== undefined
-        ? recorded !== stamp && recorded !== (byOverlap ??= markStamps(elements, true)).get(id)
-        : legacy[id] === undefined || legacy[id] !== versions?.get(id);
-    if (fresh) unseen.add(id);
-  }
+  for (const [id, stamp] of stamps) if (current[id] !== stamp) unseen.add(id);
   return unseen;
 }

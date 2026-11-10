@@ -256,7 +256,8 @@ function growHolders(placed: MutableBox[]) {
 
 /**
  * Puts each anchored box its anchor's distance from its turn's top or bottom edge, wherever that
- * edge now lies, then moves a region's cards down past any card above them that grew this pass.
+ * edge now lies, then moves a region's cards down past any card above them that grew or was pushed
+ * this pass.
  */
 function followAnchors(placed: MutableBox[]) {
   const turnBoxes = new Map(
@@ -277,11 +278,15 @@ function followAnchors(placed: MutableBox[]) {
   }
   for (const cards of regions.values()) {
     const settled: MutableBox[] = [];
+    // A card pushed down makes room below it in turn, as if it grew.
+    const pushed = new Set<MutableBox>();
     for (const card of cards.toSorted((left, right) => left.y - right.y)) {
       for (const above of settled) {
         const beside = card.x >= above.x + above.width || above.x >= card.x + card.width;
-        if (!beside && above.grew === true && card.y < above.y + above.height + TURN_GAP_PX) {
+        const moving = above.grew === true || pushed.has(above);
+        if (!beside && moving && card.y < above.y + above.height + TURN_GAP_PX) {
           card.y = above.y + above.height + TURN_GAP_PX;
+          pushed.add(card);
         }
       }
       if (card.anchor != null) card.anchor = { ...card.anchor, dy: card.y - card.anchor.at };

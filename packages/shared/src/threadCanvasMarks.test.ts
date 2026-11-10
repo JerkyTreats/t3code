@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { canvasMarkStamps, unseenCanvasMarkIds } from "./threadCanvasMarks.ts";
+import {
+  canvasMarkStamps,
+  canvasMarksSeenOnLoad,
+  unseenCanvasMarkIds,
+} from "./threadCanvasMarks.ts";
 
 const turn = (id: string, y: number, height = 200) => ({
   id: `turn-box:${id}`,
@@ -124,7 +128,6 @@ describe("canvasMarkStamps", () => {
       holding,
       holding.map((e) => (e.id === "box" ? { ...e, height: 900, version: e.version + 1 } : e)),
     ],
-    ["a note dragged sideways", board, edit("note", { x: 1000 })],
     [
       "a turn shrinking out from under a mark",
       board,
@@ -159,6 +162,7 @@ describe("canvasMarkStamps", () => {
     ],
     ["an arrow pointed at another card", "arrow", { endBinding: { elementId: "box" } }],
     ["a note dragged within its turn", "note", { y: 120 }],
+    ["a note dragged sideways onto its turn", "note", { x: 100 }],
     ["a note dragged onto a turn", "note", { x: 100, y: 300 }],
     ["a stroke dragged onto the agent's drawing", "stroke", { x: 2050, y: 50 }],
     ["a placed panel shown another file", "card", { customData: { t3Card: { kind: "surface" } } }],
@@ -175,20 +179,46 @@ describe("canvasMarkStamps", () => {
 });
 
 describe("unseenCanvasMarkIds", () => {
-  it("knows a mark by its content stamp, and by its old version stamp until then", () => {
-    const seenMarks = Object.fromEntries(canvasMarkStamps(board));
+  const seenMarks = Object.fromEntries(canvasMarkStamps(board));
+  // What boards recorded before anchors: version sums, then stamps named by what a mark overlapped.
+  const legacy = { note: 2, box: 5, card: 5, arrow: 6, stroke: 7 };
+  const byOverlap = { note: "zhsqaq.12swnqs", box: "1xf81bp.17nl6pk" };
+
+  it("knows a mark by its content stamp", () => {
     expect(unseenCanvasMarkIds(board, { seenMarks }).size).toBe(0);
-    // Boards recorded each mark's version plus its labels' before content stamps.
-    const legacy = { note: 2, box: 5, card: 5, arrow: 6, stroke: 7 };
-    expect(unseenCanvasMarkIds(board, { seen: legacy }).size).toBe(0);
-    expect([...unseenCanvasMarkIds(edit("note", { y: 41 }), { seen: legacy })]).toEqual(["note"]);
-    // Stamps recorded before anchors, when a mark was named by what it overlapped.
-    const byOverlap = { note: "zhsqaq.12swnqs", box: "1xf81bp.17nl6pk" };
-    expect(unseenCanvasMarkIds(board, { seenMarks: byOverlap }).has("note")).toBe(false);
-    expect(unseenCanvasMarkIds(board, { seenMarks: byOverlap }).has("box")).toBe(false);
     expect([...unseenCanvasMarkIds(edit("note", { y: 120 }), { seenMarks })]).toEqual(["note"]);
     expect([...unseenCanvasMarkIds(board, {})].toSorted()).toEqual(
       ["arrow", "box", "card", "note", "stroke"].toSorted(),
     );
+  });
+
+  it("keeps a legacy-seen mark seen through a turn shrinking under it", () => {
+    const known = canvasMarksSeenOnLoad({ elements: board, seenMarks: byOverlap });
+    const shrunk = board.map((e) =>
+      e.id === "turn-box:1" ? { ...e, height: 40 } : e.id === "turn-box:2" ? { ...e, y: 100 } : e,
+    );
+    expect(unseenCanvasMarkIds(shrunk, known).has("box")).toBe(false);
+    expect(unseenCanvasMarkIds(shrunk, known).has("note")).toBe(false);
+  });
+
+  it("keeps a legacy-seen mark seen after the board saves its anchor and bumps its version", () => {
+    const known = canvasMarksSeenOnLoad({ elements: board, seen: legacy });
+    const saved = edit("note", {
+      customData: { t3Below: { turn: "1", edge: "top", at: 0, dy: 40, x: 900 } },
+    });
+    expect(unseenCanvasMarkIds(saved, known).size).toBe(0);
+  });
+
+  it("still reports a mark the user edited before the migration", () => {
+    const edited = edit("note", { text: "Show me that", originalText: "Show me that" });
+    const known = canvasMarksSeenOnLoad({
+      elements: edited,
+      seen: legacy,
+      seenMarks: { box: byOverlap.box, note: byOverlap.note },
+    });
+    expect([...unseenCanvasMarkIds(edited, known)]).toEqual(["note"]);
+    expect([
+      ...unseenCanvasMarkIds(edited, canvasMarksSeenOnLoad({ elements: edited, seen: legacy })),
+    ]).toEqual(["note"]);
   });
 });

@@ -24,6 +24,7 @@ import * as ServerConfig from "../config.ts";
 import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
 import { type DrawInput, planDrawing } from "./threadCanvasPlan.ts";
 import { chatCardsIn, describeCanvasChanges, mergeCanvasElements } from "./threadCanvasScene.ts";
+import { canvasMarksSeenOnLoad } from "@t3tools/shared/threadCanvasMarks";
 
 const EMPTY_SCENE: ThreadCanvasScene = { revision: 0, elements: [] };
 
@@ -119,7 +120,14 @@ const make = Effect.gen(function* () {
       Effect.flatMap((contents) =>
         contents === null
           ? Effect.succeed(EMPTY_SCENE)
-          : decodeScene(contents).pipe(Effect.mapError(failure("The saved canvas is invalid"))),
+          : decodeScene(contents).pipe(
+              Effect.mapError(failure("The saved canvas is invalid")),
+              // Records made before anchors are restated against the scene they were made on.
+              Effect.map((scene) => {
+                const { seen, seenMarks } = canvasMarksSeenOnLoad(scene);
+                return withSeen(scene, seen, seenMarks);
+              }),
+            ),
       ),
     );
 
