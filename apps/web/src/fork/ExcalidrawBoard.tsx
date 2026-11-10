@@ -55,6 +55,7 @@ import {
 } from "./canvasMarks";
 import {
   CARD_ANCHOR_KEY,
+  cardAnchorOf,
   isStaleDrawingCopy,
   TURN_ANCHOR_KEY,
   type TurnAnchor,
@@ -291,6 +292,7 @@ function asBoardBox(element: BoardElement): BoardBox {
     key: element.id,
     group: drawingGroupOf(element.customData),
     anchor: turnAnchorOf(element),
+    onCard: cardAnchorOf(element) !== null,
     card: t3Card !== undefined,
     // The box's title carries the same stamp, but only the box grows.
     holds: element.type === "text" ? null : holdsOf(element.customData),
@@ -407,7 +409,7 @@ function reconcileTurns(api: ExcalidrawImperativeAPI, turnBoard: TurnBoard) {
     // A small shrink is left alone, so no measurement that wavers can set off a loop of saves.
     const grows = height - box.height >= 1;
     const shrinks = box.height - height >= CARD_SHRINK_SLACK_PX;
-    return grows || shrinks ? { ...box, height } : box;
+    return grows || shrinks ? { ...box, height, grew: grows } : box;
   });
   const titles = new Map(turnBoard.cards().map((card) => [card.id, card.title]));
   const placed = layoutTurns(boxes, measureCards(turnBoard));

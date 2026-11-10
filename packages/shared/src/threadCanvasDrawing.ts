@@ -211,6 +211,32 @@ export function anchorTo(
   return { turn, edge, at, dy: element.y - at, x: element.x };
 }
 
+// The turn that opens a loaded window of history grows as more loads, so nothing anchors to it.
+const THREAD_START_TURN = "thread-start";
+
+/**
+ * The anchor of content that has none, or that someone moved off its own: the turn it sits beside
+ * now, which is the lowest turn whose top is at or above it (the first turn for content above them
+ * all), and its offset from that turn's top. Board and server both work it out this way.
+ */
+export function contentAnchorOf(
+  element: { readonly x: number; readonly y: number },
+  turns: ReadonlyArray<{ readonly id: string; readonly y: number }>,
+): TurnAnchor | null {
+  let found: { readonly id: string; readonly y: number } | null = null;
+  for (const turn of turns) {
+    if (turn.id === THREAD_START_TURN) continue;
+    const above = turn.y <= element.y;
+    const foundAbove = found !== null && found.y <= element.y;
+    if (
+      found === null ||
+      (above ? !foundAbove || turn.y > found.y : !foundAbove && turn.y < found.y)
+    )
+      found = turn;
+  }
+  return found === null ? null : anchorTo(element, found.id, "top", found.y);
+}
+
 /**
  * A piece a chat drew from its card on the board: it sits `dx`, `dy` from the card's top left and
  * moves with the card. A piece the user drags keeps following at its new offset.

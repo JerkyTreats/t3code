@@ -20,7 +20,11 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   tombstones. Clients save through `threadCanvas.save`, guarded by its client RPC scope, and follow
   changes through `subscribeThreadCanvas`; every client and the agent see the same scene. Moving
   or zooming the camera never saves. The server treats element data as opaque apart from `id` and
-  `version`.
+  `version`. Everything but turn boxes and labels keeps a `t3Below` anchor: the turn it sits
+  beside and its offset from that turn's top (an agent drawing placed below a turn keeps the
+  bottom edge). Layout puts content at its anchor and never re-anchors it; content takes a new
+  anchor only when someone moves it, and content without one takes the turn it sits beside now
+  through the shared `contentAnchorOf`. The same rule holds whoever drew it.
 - `F32.D3` Agent tools. The orchestration MCP endpoint offers `canvas_read`, `canvas_update` and
   `canvas_preview`. `canvas_update` takes shapes, a Mermaid flowchart that the server lays out
   (bands, lead and aside roles, kinds coloured with a legend), markdown cards, html cards and live panel cards

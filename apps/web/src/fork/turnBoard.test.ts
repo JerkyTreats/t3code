@@ -1,3 +1,4 @@
+import { TURN_ANCHOR_KEY, turnAnchorOf } from "@t3tools/shared/threadCanvasDrawing";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -83,8 +84,40 @@ describe("layoutTurns", () => {
   });
 });
 
+describe("layoutTurns keeps content beside the turn it sits by", () => {
+  const settle = (boxes: ReadonlyArray<BoardBox>, bHeight: number) =>
+    layoutTurns(boxes, [measured("a", 100), measured("b", bHeight)]);
+  const start = settle([], 1000);
+  const b = boxFor(start, "b");
+  const note = mark("note", 700, b.y + 900);
+
+  it("puts a note beside a turn's lower part back where it was after the turn shrinks and grows", () => {
+    const grown = settle(settle([...start, note], 555), 1000);
+    expect(boxFor(grown, "note").y).toBe(note.y);
+  });
+
+  it("restores the note when the shrunk layout was saved and reloaded before the turn grew", () => {
+    const reloaded = settle([...start, note], 555).map((box) => ({
+      ...box,
+      anchor: turnAnchorOf({
+        customData: JSON.parse(JSON.stringify({ [TURN_ANCHOR_KEY]: box.anchor ?? undefined })),
+      }),
+    }));
+    expect(boxFor(settle(reloaded, 1000), "note").y).toBe(note.y);
+  });
+
+  it("keeps a map of the agent's pieces and the user's notes beside one turn together as an earlier turn grows", () => {
+    const piece = (key: string, y: number): BoardBox => ({ ...mark(key, 600, y), group: "map" });
+    const map = [piece("map/high", 10), piece("map/low", b.y + 300), mark("note", 700, b.y + 300)];
+    const grown = layoutTurns([...start, ...map], [measured("a", 250), measured("b", 1000)]);
+    expect(boxFor(grown, "map/low").y).toBe(b.y + 450);
+    expect(boxFor(grown, "note").y).toBe(b.y + 450);
+    expect(boxFor(grown, "map/high").y).toBe(10);
+  });
+});
+
 describe("layoutTurns with drawings", () => {
-  it("moves a drawing whole when the turn above it grows, even if it starts beside the turn", () => {
+  it("keeps a drawing and a loose mark beside and below a turn in place as that turn grows", () => {
     const start = layoutTurns([], [measured("a", 100)]);
     const turnBottom = boxFor(start, "a").y + boxFor(start, "a").height;
     const piece = (key: string, y: number): BoardBox => ({ ...mark(key, 600, y), group: "map" });
@@ -97,22 +130,9 @@ describe("layoutTurns with drawings", () => {
       ],
       [measured("a", 300)],
     );
-    // The drawing starts above the old bottom, so it stays together where it was.
     expect(boxFor(grown, "map/top").y).toBe(turnBottom - 20);
     expect(boxFor(grown, "map/low").y).toBe(turnBottom + 200);
     expect(boxFor(grown, "loose").y).toBe(turnBottom - 20);
-  });
-
-  it("pushes a drawing below the turn down as one", () => {
-    const start = layoutTurns([], [measured("a", 100)]);
-    const turnBottom = boxFor(start, "a").y + boxFor(start, "a").height;
-    const piece = (key: string, y: number): BoardBox => ({ ...mark(key, 0, y), group: "map" });
-    const grown = layoutTurns(
-      [...start, piece("map/one", turnBottom + 40), piece("map/two", turnBottom + 400)],
-      [measured("a", 300)],
-    );
-    expect(boxFor(grown, "map/one").y).toBe(turnBottom + 40 + 200);
-    expect(boxFor(grown, "map/two").y).toBe(turnBottom + 400 + 200);
   });
 });
 
@@ -152,18 +172,22 @@ describe("layoutTurns with a response region", () => {
     expect(boxFor(shrunk, "c").y).toBe(50 + 2 * TURN_INSET_PX + 32);
   });
 
-  it("leaves a card the user dragged off its anchor", () => {
+  it("leaves a card the user dragged off its anchor, anchored where they put it", () => {
     const [turn] = layoutTurns([], [measured("a", 100)]);
     const bottom = 100 + 2 * TURN_INSET_PX;
     const dragged = { ...card("c", -200, bottom + 32, 300, bottom), x: 1500, y: 40 };
     const boxes = layoutTurns([turn!, dragged], [measured("a", 500)]);
-    expect(boxFor(boxes, "c")).toMatchObject({ x: 1500, y: 40, anchor: null });
+    expect(boxFor(boxes, "c")).toMatchObject({
+      x: 1500,
+      y: 40,
+      anchor: { turn: "a", edge: "top", dy: 40 },
+    });
   });
 
   it("moves a card down past a card above it that grew", () => {
     const [turn] = layoutTurns([], [measured("a", 100)]);
     const bottom = 100 + 2 * TURN_INSET_PX;
-    const top = { ...card("top", -200, bottom + 32, 300, bottom), height: 700 };
+    const top = { ...card("top", -200, bottom + 32, 300, bottom), height: 700, grew: true };
     const under = card("under", -200, bottom + 32 + 300 + 32, 200, bottom);
     const beside = card("beside", 400, bottom + 32 + 300 + 32, 200, bottom);
     const boxes = layoutTurns([turn!, top, under, beside], [measured("a", 100)]);
@@ -269,10 +293,16 @@ describe("layoutTurns with a region beside a turn", () => {
       anchor: { turn: turn.key, edge: "top", at: turn.y, dy: 0, x: 462 },
     });
     // The earlier card's text fitted taller than the gap to the next turn.
-    const tall = beside("r/old", a, b.y - a.y + 300);
+    const tall = { ...beside("r/old", a, b.y - a.y + 300), grew: true };
     const moved = beside("r/moved", b, 200);
     const laid = layoutTurns([...start, tall, moved], [measured("a", 100), measured("b", 100)]);
     const old = boxFor(laid, "r/old");
     expect(boxFor(laid, "r/moved").y).toBeGreaterThanOrEqual(old.y + old.height);
+    // A card that already sat against one that did not grow is where someone put it.
+    const kept = layoutTurns(
+      [...start, { ...tall, grew: false }, moved],
+      [measured("a", 100), measured("b", 100)],
+    );
+    expect(boxFor(kept, "r/moved").y).toBe(b.y);
   });
 });

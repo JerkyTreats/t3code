@@ -1,4 +1,9 @@
-import { holdsTurnAnchor, type TurnAnchor, turnEdgeY } from "@t3tools/shared/threadCanvasDrawing";
+import {
+  contentAnchorOf,
+  holdsTurnAnchor,
+  type TurnAnchor,
+  turnEdgeY,
+} from "@t3tools/shared/threadCanvasDrawing";
 
 // T3's turn content sits inside its box, so the stroke and handles stay grabbable.
 export const TURN_INSET_PX = 12;
@@ -87,12 +92,16 @@ export interface BoardBox {
   readonly y: number;
   readonly width: number;
   readonly height: number;
-  /** The agent drawing a box belongs to, which moves as one when a turn above it grows. */
+  /** The agent drawing a box belongs to; a box the user drew around it grows to hold it. */
   readonly group?: string | null;
-  /** Where the agent put the box below a turn; it follows that turn's bottom edge. */
+  /** The turn the box sits beside or below, and how far from that turn's edge; it follows the edge. */
   readonly anchor?: TurnAnchor | null;
+  /** A piece a chat drew from its card, which follows the card instead of a turn. */
+  readonly onCard?: boolean;
   /** A card's height fits its content, so cards below it in the same region make room. */
   readonly card?: boolean;
+  /** The card's content fitted taller in this pass, so the cards below it make room. */
+  readonly grew?: boolean;
   /** The agent drawing this box of the user's holds: it grows to keep that drawing inside. */
   readonly holds?: string | null;
   /** The shape or arrow a label is bound to; the label moves with it, not on its own. */
@@ -129,21 +138,29 @@ function landingY(boxes: ReadonlyArray<BoardBox>) {
 }
 
 /**
- * Places every turn. Boxes the reader moved stay put. A turn still in the column inserts space
- * when it changes height, so everything below it, marks included, moves with it. Earlier turns
- * loaded from history land above the turns they precede. Boxes anchored below a turn follow its
- * bottom edge, however late they arrive.
+ * Places every turn. Turns the reader moved stay put. A turn still in the column inserts space
+ * when it changes height, so the turns below it move with it. Earlier turns loaded from history
+ * land above the turns they precede. Everything else follows the turn edge it is anchored to,
+ * whoever drew it, however late it arrives; layout never re-anchors it.
  */
 export function layoutTurns(
   boxes: ReadonlyArray<BoardBox>,
   turns: ReadonlyArray<MeasuredTurn>,
 ): ReadonlyArray<BoardBox> {
-  // Checked before anything moves: a box off its anchor was dragged there. A label has no anchor
-  // of its own: the board refits its text to the real font, which moves it a little.
+  // Checked before anything moves: content off its anchor was moved there, and content with none
+  // is new, so either takes the turn it sits beside now. A label follows its shape, and the board
+  // refits its text to the real font, which moves it a little.
+  const turnsNow = boxes.flatMap((box) =>
+    box.turnId === null ? [] : [{ id: box.turnId, y: box.y }],
+  );
   const placed: MutableBox[] = boxes.map((box) =>
-    box.anchor != null && (box.container != null || !holdsTurnAnchor(box, box.anchor))
-      ? { ...box, anchor: null }
-      : { ...box },
+    box.turnId !== null
+      ? { ...box }
+      : box.container != null || box.onCard === true
+        ? { ...box, anchor: null }
+        : box.anchor != null && holdsTurnAnchor(box, box.anchor)
+          ? { ...box }
+          : { ...box, anchor: contentAnchorOf(box, turnsNow) },
   );
   const before = new Map(placed.map((box) => [box.key, { x: box.x, y: box.y }]));
   // A new turn lands below the regions as they stand, not where a stale copy left them.
@@ -181,15 +198,8 @@ export function layoutTurns(
     const previousBottom = box.y + box.height;
     box.height = height;
     if (!inColumn(box)) continue;
-    // A drawing moves whole: splitting it would read as the reader having dragged its pieces.
-    const groupTops = new Map<string, number>();
     for (const other of placed) {
-      if (other.group == null) continue;
-      groupTops.set(other.group, Math.min(groupTops.get(other.group) ?? Infinity, other.y));
-    }
-    for (const other of placed) {
-      const top = other.group == null ? other.y : (groupTops.get(other.group) ?? other.y);
-      if (other !== box && top >= previousBottom - 1) other.y += delta;
+      if (other !== box && other.turnId !== null && other.y >= previousBottom - 1) other.y += delta;
     }
   }
   followAnchors(placed);
@@ -246,7 +256,7 @@ function growHolders(placed: MutableBox[]) {
 
 /**
  * Puts each anchored box its anchor's distance from its turn's top or bottom edge, wherever that
- * edge now lies, then moves a region's cards down past any card above them that grew.
+ * edge now lies, then moves a region's cards down past any card above them that grew this pass.
  */
 function followAnchors(placed: MutableBox[]) {
   const turnBoxes = new Map(
@@ -270,7 +280,7 @@ function followAnchors(placed: MutableBox[]) {
     for (const card of cards.toSorted((left, right) => left.y - right.y)) {
       for (const above of settled) {
         const beside = card.x >= above.x + above.width || above.x >= card.x + card.width;
-        if (!beside && card.y < above.y + above.height + TURN_GAP_PX) {
+        if (!beside && above.grew === true && card.y < above.y + above.height + TURN_GAP_PX) {
           card.y = above.y + above.height + TURN_GAP_PX;
         }
       }
