@@ -1,5 +1,6 @@
 import type { ThreadCanvasElement, ThreadCanvasScene, ThreadCanvasShape } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import { canvasMarkStamps } from "@t3tools/shared/threadCanvasMarks";
 
 import { type DrawInput, planDrawing } from "./threadCanvasPlan.ts";
 
@@ -636,7 +637,7 @@ describe("a box the user drew to hold a drawing", () => {
   });
 
   it("lands inside under the title, grows the box to fit, and groups them", () => {
-    const { elements, seen } = plan(scene, {
+    const { elements, seen, seenMarks } = plan(scene, {
       drawingId: "org",
       shapes: [card("a", 700), card("b", 700)],
       inside: "frame",
@@ -659,8 +660,10 @@ describe("a box the user drew to hold a drawing", () => {
     expect(a.groupIds).toEqual([group]);
     expect(live(elements, "frame-title")!.groupIds).toEqual([group]);
     expect(a.customData).not.toHaveProperty("t3Below");
-    // The agent grew the box itself, so the box is not news to it.
-    expect(seen).toEqual({ frame: 8 });
+    // The agent grew the box itself, so the box is not news to it, and its old version record
+    // gives way to a stamp of what it is now.
+    expect(seen).toBeUndefined();
+    expect(seenMarks).toEqual({ frame: canvasMarkStamps(elements).get("frame") });
   });
 
   it("ignores an agent shape or a missing id and places the drawing as usual", () => {

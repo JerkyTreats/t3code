@@ -360,7 +360,7 @@ describe("describeCanvasChanges", () => {
 
   it("stays silent once the agent has seen the marks, until one changes", () => {
     const first = describeCanvasChanges(scene([turn, note]), "Hello");
-    const seen = { ...scene([turn, note]), seen: first.seen };
+    const seen = { ...scene([turn, note]), seenMarks: first.seenMarks };
     expect(describeCanvasChanges(seen, "Hello").note).toBe("");
     const edited = { ...note, version: 3, text: "Show me that" };
     expect(describeCanvasChanges({ ...seen, elements: [turn, edited] }, "Hello").note).toContain(
@@ -395,15 +395,15 @@ describe("describeCanvasChanges", () => {
     expect(side.note).toContain("Draw it here");
     expect(side.note).not.toContain("Show me this");
     expect(side.note).not.toContain("[chat-card]");
-    expect(Object.keys(side.seen)).toEqual(["chat-note"]);
+    expect(Object.keys(side.seenMarks)).toEqual(["chat-note"]);
   });
 
   it("notices a label edit on an already seen shape", () => {
     const box = { id: "box", version: 1, type: "rectangle" };
     const label = { id: "label", version: 1, type: "text", text: "old", containerId: "box" };
-    const seen = describeCanvasChanges(scene([box, label]), "").seen;
+    const seenMarks = describeCanvasChanges(scene([box, label]), "").seenMarks;
     const edited = { ...label, version: 2, text: "new" };
-    const changes = describeCanvasChanges({ ...scene([box, edited]), seen }, "");
+    const changes = describeCanvasChanges({ ...scene([box, edited]), seenMarks }, "");
     expect(changes.note).toContain('rectangle "new" [box]');
   });
 
@@ -414,11 +414,39 @@ describe("describeCanvasChanges", () => {
   });
 
   it("reports what the user removed", () => {
-    const seen = describeCanvasChanges(scene([turn, note]), "").seen;
+    const seenMarks = describeCanvasChanges(scene([turn, note]), "").seenMarks;
     const removed = { ...note, version: 3, isDeleted: true };
-    expect(describeCanvasChanges({ ...scene([turn, removed]), seen }, "").note).toContain(
+    expect(describeCanvasChanges({ ...scene([turn, removed]), seenMarks }, "").note).toContain(
       'removed "Show me this"',
     );
+    // A board from before content stamps still reports a removal it knew by version.
+    expect(
+      describeCanvasChanges({ ...scene([turn, removed]), seen: { note: 2 } }, "").note,
+    ).toContain('removed "Show me this"');
+  });
+
+  it("is silent when the board only moved the marks with a growing turn", () => {
+    const board = [turn, note, stroke, agentBox];
+    const { seenMarks } = describeCanvasChanges(scene(board), "");
+    // A turn re-measured 22px taller above them all: everything shifts and is written again.
+    const shifted = board.map((element) => ({
+      ...element,
+      version: element.version + 1,
+      y: ("y" in element ? element.y : 0) + 22,
+    }));
+    expect(describeCanvasChanges({ ...scene(shifted), seenMarks }, "").note).toBe("");
+  });
+
+  it("takes in a board's version record without reporting marks unchanged since", () => {
+    const legacy = { ...scene([turn, note, stroke]), seen: { note: 2, stroke: 4 } };
+    const adopted = describeCanvasChanges(legacy, "");
+    expect(adopted.note).toBe("");
+    expect(Object.keys(adopted.seenMarks).toSorted()).toEqual(["note", "stroke"]);
+    // What changed after the board last recorded it is still news.
+    const edited = { ...note, version: 3, text: "Show me that" };
+    expect(
+      describeCanvasChanges({ ...legacy, elements: [turn, edited, stroke] }, "").note,
+    ).toContain("Show me that");
   });
 
   it("caps a long list and points at canvas_read for the rest", () => {

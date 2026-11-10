@@ -11,6 +11,10 @@
       "types": "./src/canvasSurfaceCard.ts",
       "import": "./src/canvasSurfaceCard.ts"
     },
+    "./threadCanvasMarks": {
+      "types": "./src/threadCanvasMarks.ts",
+      "import": "./src/threadCanvasMarks.ts"
+    },
     "./changedFileKind": {
       "types": "./src/changedFileKind.ts",
       "import": "./src/changedFileKind.ts"

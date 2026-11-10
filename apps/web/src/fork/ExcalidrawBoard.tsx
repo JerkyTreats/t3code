@@ -60,6 +60,7 @@ import {
   type TurnAnchor,
   turnAnchorOf,
 } from "@t3tools/shared/threadCanvasDrawing";
+import { type CanvasMarksSeen, canvasMarkStamps } from "@t3tools/shared/threadCanvasMarks";
 import {
   type CanvasCard,
   canvasCardsOf,
@@ -666,7 +667,7 @@ export default function ExcalidrawBoard({
   const savedVersions = useRef(0);
   // A scene that arrived before Excalidraw finished loading.
   const waitingScene = useRef<ThreadCanvasScene | null>(null);
-  const seenByAgent = useRef<Readonly<Record<string, number>>>({});
+  const seenByAgent = useRef<CanvasMarksSeen>({});
   const pendingNotes = useRef(0);
   const [cards, setCards] = useState<ReadonlyArray<CanvasCard>>([]);
   const [liveSurfaces, setLiveSurfaces] = useState<ReadonlySet<string>>(() => new Set());
@@ -854,7 +855,9 @@ export default function ExcalidrawBoard({
   const pushSketch = async (elements: BoardElements) => {
     if (!api) return;
     const marks = unseenSketchMarks(elements, seenByAgent.current);
-    const key = marks.map((mark) => `${mark.id}:${mark.version}`).join();
+    // Keyed by content, so marks the board only moved with the turns are not drawn again.
+    const stamps = canvasMarkStamps(marks);
+    const key = marks.map((mark) => `${mark.id}:${stamps.get(mark.id)}`).join();
     if (marks.length === 0 || key === lastSketch.current) return;
     lastSketch.current = key;
     const blob = await renderSketch(api, marks);
@@ -918,7 +921,7 @@ export default function ExcalidrawBoard({
       return;
     }
     syncTurns();
-    seenByAgent.current = scene.seen ?? {};
+    seenByAgent.current = { seen: scene.seen, seenMarks: scene.seenMarks };
     const local = api.getSceneElementsIncludingDeleted();
     const byId = new Map(local.map((element) => [element.id, element]));
     // The agent's newer write wins over a copy this client only shifted with the turns.

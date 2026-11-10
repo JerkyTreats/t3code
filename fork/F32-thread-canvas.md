@@ -39,8 +39,9 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
 - `F32.D4` User marks reach the agent. A mark nearer a chat card than any turn reaches that chat
   instead of the board's thread. Anything the user draws or writes is a mark. Marks the agent
   has not seen are summarised into the next turn, and the send button sends them with nothing
-  typed. A note is never sent on its own from the board. `canvas_read` reports marks with the text
-  they cover.
+  typed. A note is never sent on its own from the board. A mark is seen by what it is, how it is
+  drawn, its labels and what it sits on, never by position or version, so the board moving it with
+  a growing turn is not news. `canvas_read` reports marks with the text they cover.
 - `F32.D5` Card presentation. Markdown cards keep single line breaks; a capitalised state word that
   starts a line, list item or table cell renders as a coloured chip, with the chip span admitted by
   the shared Markdown sanitizer; a card holding a table widens to fit it. html cards are agent
@@ -89,7 +90,7 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
 - `apps/server/src/mcp/toolkits/canvas/tools.ts` and `handlers.ts`
 - `apps/web/src/fork/canvasSurfaceCards.ts`, `CanvasSurfaceCardView.tsx`, `CanvasCardTerminal.tsx`,
   `canvasContextMenus.ts`
-- `packages/shared/src/threadCanvasDrawing.ts`, `canvasSurfaceCard.ts`
+- `packages/shared/src/threadCanvasDrawing.ts`, `canvasSurfaceCard.ts`, `threadCanvasMarks.ts`
 - `packages/contracts/src/threadCanvas.ts`
 
 ## Upstream Sensitive Adapters
@@ -165,6 +166,8 @@ behavior, or give agents any file, network or command authority beyond upstream'
   card never moves the panel tab.
 - `packages/shared/src/threadCanvasDrawing.test.ts`, `canvasSurfaceCard.test.ts`: shape and card
   construction, and which surface refs resolve.
+- `packages/shared/src/threadCanvasMarks.test.ts`: which mark edits read as news and which board
+  moves do not, and older version records still honored.
 
 ## Replay Notes
 

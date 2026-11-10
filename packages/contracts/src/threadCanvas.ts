@@ -132,7 +132,12 @@ export type ThreadCanvasShape = typeof ThreadCanvasShape.Type;
 export const ThreadCanvasScene = Schema.Struct({
   revision: Schema.Int,
   elements: Schema.Array(ThreadCanvasElement),
-  /** The version of each user mark the agent already knows about. */
+  /**
+   * Each user mark as the agent last saw it, by a stamp of its content and what it sits on, so
+   * the board moving it with the turns is not news.
+   */
+  seenMarks: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  /** Version sums boards recorded before `seenMarks`, read until each mark is seen again. */
   seen: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
 });
 export type ThreadCanvasScene = typeof ThreadCanvasScene.Type;

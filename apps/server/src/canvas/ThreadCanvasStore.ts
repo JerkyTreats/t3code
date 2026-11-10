@@ -26,6 +26,18 @@ import { type DrawInput, planDrawing } from "./threadCanvasPlan.ts";
 import { chatCardsIn, describeCanvasChanges, mergeCanvasElements } from "./threadCanvasScene.ts";
 
 const EMPTY_SCENE: ThreadCanvasScene = { revision: 0, elements: [] };
+
+/** The scene with the agent's record of the user's marks replaced; an absent one is left out. */
+const withSeen = (
+  scene: ThreadCanvasScene,
+  seen: ThreadCanvasScene["seen"],
+  seenMarks: ThreadCanvasScene["seenMarks"],
+): ThreadCanvasScene => ({
+  revision: scene.revision,
+  elements: scene.elements,
+  ...(seen === undefined ? {} : { seen }),
+  ...(seenMarks === undefined ? {} : { seenMarks }),
+});
 const decodeScene = Schema.decodeUnknownEffect(Schema.fromJsonString(ThreadCanvasScene));
 // Subagent thread ids embed their ancestors, so nested ones outgrow a filename.
 const MAX_ENCODED_THREAD_ID_CHARS = 200;
@@ -195,17 +207,16 @@ const make = Effect.gen(function* () {
     writes.withPermits(1)(
       Effect.gen(function* () {
         const current = yield* read(threadId);
-        const { elements, seen, report } = planDrawing({
+        const { elements, seen, seenMarks, report } = planDrawing({
           scene: current,
           draw: input,
           randomInt: () => NodeCrypto.randomInt(2 ** 31),
           now: yield* Clock.currentTimeMillis,
         });
         yield* write(threadId, {
-          ...current,
+          ...withSeen(current, seen, seenMarks),
           revision: current.revision + 1,
           elements,
-          ...(seen === undefined ? {} : { seen }),
         });
         return report;
       }),
@@ -241,7 +252,7 @@ const make = Effect.gen(function* () {
   const acknowledge = (
     threadId: ThreadId,
     changes: {
-      readonly seen: Readonly<Record<string, number>>;
+      readonly seenMarks: Readonly<Record<string, string>>;
       readonly forget: ReadonlyArray<string>;
     },
   ) =>
@@ -249,13 +260,21 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const current = yield* read(threadId);
         const forgotten = new Set(changes.forget);
-        const seen = {
+        const keep = (id: string) => !forgotten.has(id) && changes.seenMarks[id] === undefined;
+        // A mark's old version stamp goes once its content stamp is recorded.
+        const seen = Object.fromEntries(
+          Object.entries(current.seen ?? {}).filter(([id]) => keep(id)),
+        );
+        const seenMarks = {
           ...Object.fromEntries(
-            Object.entries(current.seen ?? {}).filter(([id]) => !forgotten.has(id)),
+            Object.entries(current.seenMarks ?? {}).filter(([id]) => !forgotten.has(id)),
           ),
-          ...changes.seen,
+          ...changes.seenMarks,
         };
-        yield* write(threadId, { ...current, revision: current.revision + 1, seen });
+        yield* write(threadId, {
+          ...withSeen(current, Object.keys(seen).length === 0 ? undefined : seen, seenMarks),
+          revision: current.revision + 1,
+        });
       }),
     );
 

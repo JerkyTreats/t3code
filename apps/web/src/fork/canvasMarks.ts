@@ -1,4 +1,5 @@
 import type { ThreadCanvasElement } from "@t3tools/contracts";
+import { type CanvasMarksSeen, unseenCanvasMarkIds } from "@t3tools/shared/threadCanvasMarks";
 
 import type { TurnCard } from "./turnBoard";
 
@@ -49,42 +50,29 @@ export function toSavableElements(elements: ReadonlyArray<unknown>) {
   return JSON.parse(JSON.stringify(elements)) as ReadonlyArray<ThreadCanvasElement>;
 }
 
-/** Matches the server's stamp: a shape changes when it or its label does. */
-function stampsOf(elements: ReadonlyArray<CanvasMark>) {
-  const stamps = new Map<string, number>();
-  for (const element of elements) {
-    if (element.isDeleted) continue;
-    const owner = element.containerId ?? element.id;
-    stamps.set(owner, (stamps.get(owner) ?? 0) + element.version);
-  }
-  return stamps;
-}
-
 /** Marks with no words, which an agent can only see in a picture, and that it has not seen yet. */
 export function unseenSketchMarks<Element extends CanvasMark>(
   elements: ReadonlyArray<Element>,
-  seen: Readonly<Record<string, number>>,
+  known: CanvasMarksSeen,
 ) {
-  const stamps = stampsOf(elements);
+  const unseen = unseenCanvasMarkIds(elements, known);
   const labelled = new Set(elements.flatMap((element) => element.containerId ?? []));
   return elements.filter(
     (element) =>
       isUserMark(element) &&
       element.type !== "text" &&
       !labelled.has(element.id) &&
-      seen[element.id] !== stamps.get(element.id),
+      unseen.has(element.id),
   );
 }
 
 /** Every mark of the reader's the agent has not seen, words or not, so a send can carry them. */
 export function unseenMarks<Element extends CanvasMark>(
   elements: ReadonlyArray<Element>,
-  seen: Readonly<Record<string, number>>,
+  known: CanvasMarksSeen,
 ) {
-  const stamps = stampsOf(elements);
-  return elements.filter(
-    (element) => isUserMark(element) && seen[element.id] !== stamps.get(element.id),
-  );
+  const unseen = unseenCanvasMarkIds(elements, known);
+  return elements.filter((element) => isUserMark(element) && unseen.has(element.id));
 }
 
 /** The part of a mark that points at something: an arrow's tip, anything else's whole box. */

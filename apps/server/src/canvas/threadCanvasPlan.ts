@@ -21,6 +21,7 @@ import {
   turnCorridorOf,
   turnSpineOf,
 } from "@t3tools/shared/threadCanvasDrawing";
+import { canvasMarkStamps, canvasMarkVersionStamps } from "@t3tools/shared/threadCanvasMarks";
 
 const GAP_PX = 32;
 const NODE_GAP_PX = 60;
@@ -672,7 +673,7 @@ export function planDrawing(input: {
   const elements = [...withoutOld, ...built];
   return {
     elements,
-    seen: seenAfter(scene, elements),
+    ...seenAfter(scene, elements),
     report: reportDrawing({
       draw,
       placed,
@@ -682,33 +683,32 @@ export function planDrawing(input: {
   };
 }
 
-/** Each mark's stamp: its version plus its label's, as the user's changes are tracked. */
-function markStamps(elements: ReadonlyArray<ThreadCanvasElement>) {
-  const stamps = new Map<string, number>();
-  for (const element of elements) {
-    if (element.isDeleted === true) continue;
-    const owner = String(
-      typeof element.containerId === "string" ? element.containerId : element.id,
-    );
-    stamps.set(owner, (stamps.get(owner) ?? 0) + numberOf(element.version));
-  }
-  return stamps;
-}
-
 /**
  * The agent's own edits to the user's marks, like carrying one with a card or growing a box it
- * filled, are not news to the agent: a mark it had seen stays seen.
+ * filled, are not news to the agent: a mark it had seen stays seen. A mark still known only by its
+ * old version stamp takes its content stamp here when it is unchanged.
  */
-function seenAfter(scene: ThreadCanvasScene, elements: ReadonlyArray<ThreadCanvasElement>) {
-  const seen = scene.seen;
-  if (seen === undefined) return undefined;
-  const before = markStamps(scene.elements);
-  const after = markStamps(elements);
-  return Object.fromEntries(
-    Object.entries(seen).map(([id, stamp]) =>
-      stamp === before.get(id) && after.has(id) ? [id, after.get(id)!] : [id, stamp],
-    ),
-  );
+function seenAfter(
+  scene: ThreadCanvasScene,
+  elements: ReadonlyArray<ThreadCanvasElement>,
+): Pick<ThreadCanvasScene, "seen" | "seenMarks"> {
+  if (scene.seen === undefined && scene.seenMarks === undefined) return {};
+  const before = canvasMarkStamps(scene.elements);
+  const after = canvasMarkStamps(elements);
+  const seenMarks: Record<string, string> = {};
+  for (const [id, stamp] of Object.entries(scene.seenMarks ?? {})) {
+    const moved = after.get(id);
+    seenMarks[id] = stamp === before.get(id) && moved !== undefined ? moved : stamp;
+  }
+  const versions = canvasMarkVersionStamps(scene.elements);
+  const seen: Record<string, number> = {};
+  for (const [id, stamp] of Object.entries(scene.seen ?? {})) {
+    const moved = after.get(id);
+    if (stamp === versions.get(id) && moved !== undefined && seenMarks[id] === undefined) {
+      seenMarks[id] = moved;
+    } else seen[id] = stamp;
+  }
+  return Object.keys(seen).length === 0 ? { seenMarks } : { seen, seenMarks };
 }
 
 /** Where a drawing starts inside a box the user drew for it: under the box's title, if any. */

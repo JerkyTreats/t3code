@@ -1,6 +1,7 @@
 import type { ThreadCanvasElement, ThreadCanvasScene } from "@t3tools/contracts";
 import { type CanvasSurfaceCard, canvasSurfaceCardOf } from "@t3tools/shared/canvasSurfaceCard";
 import { isStaleDrawingCopy, turnAnchorOf, turnSpineOf } from "@t3tools/shared/threadCanvasDrawing";
+import { canvasMarkStamps, unseenCanvasMarkIds } from "@t3tools/shared/threadCanvasMarks";
 
 import { originOf } from "./threadCanvasPlan.ts";
 
@@ -357,28 +358,26 @@ function describeMark(mark: ReturnType<typeof describeCanvas>["elements"][number
 }
 
 /**
- * What the user did on the canvas since the agent last knew about it. `seen` is the state to save
- * once the agent has this note, and `sketched` says a mark exists that only a picture can show.
+ * What the user did on the canvas since the agent last knew about it. `seenMarks` is the state to
+ * save once the agent has this note, and `sketched` says a mark exists that only a picture can
+ * show. A mark is news when what it is changes, not when the board moves it.
  */
 export function describeCanvasChanges(
   scene: ThreadCanvasScene,
   message: string,
   reader: string | null = null,
 ) {
-  const previous = scene.seen ?? {};
+  const known = (id: string) =>
+    scene.seenMarks?.[id] !== undefined || scene.seen?.[id] !== undefined;
   // Each chat on the board hears only the marks addressed to it; the board's thread is null.
   const owners = markOwnersOf(scene.elements);
   const addressed = (id: string) => (owners.get(id) ?? null) === reader;
-  const stamps = new Map<string, number>();
-  for (const element of scene.elements) {
-    const owner = typeof element.containerId === "string" ? element.containerId : idOf(element);
-    if (owner === undefined || element.isDeleted === true) continue;
-    stamps.set(owner, (stamps.get(owner) ?? 0) + versionOf(element));
-  }
+  const stamps = canvasMarkStamps(scene.elements);
+  const unseen = unseenCanvasMarkIds(scene.elements, scene, stamps);
   const marks = describeCanvas(scene)
     .elements.filter((element) => element.drawnBy === "user" && addressed(element.id))
     .toSorted((left, right) => left.y - right.y);
-  const isFresh = (mark: (typeof marks)[number]) => previous[mark.id] !== stamps.get(mark.id);
+  const isFresh = (mark: (typeof marks)[number]) => unseen.has(mark.id);
   const asked = message.trim();
   const sentNotes = marks.filter((mark) => {
     const text = mark.text?.trim();
@@ -397,7 +396,7 @@ export function describeCanvasChanges(
     return id !== undefined &&
       element.isDeleted === true &&
       addressed(id) &&
-      previous[id] !== undefined &&
+      known(id) &&
       !liveIds.has(id) &&
       forget.push(id) > 0
       ? [
@@ -428,7 +427,12 @@ export function describeCanvasChanges(
   return {
     note: sections.join("\n\n"),
     // The reader's marks only, merged into what the other chats on the board have seen.
-    seen: Object.fromEntries(marks.map((mark) => [mark.id, stamps.get(mark.id) ?? 0])),
+    seenMarks: Object.fromEntries(
+      marks.flatMap((mark) => {
+        const stamp = stamps.get(mark.id);
+        return stamp === undefined ? [] : [[mark.id, stamp]];
+      }),
+    ),
     forget,
     sketched: fresh.some((mark) => mark.text === undefined),
   };
