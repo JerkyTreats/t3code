@@ -654,7 +654,11 @@ export function planDrawing(input: {
     if (holding !== undefined) return [holding];
     const moved = carried.get(String(element.id));
     if (moved !== undefined) return [moved];
-    if (!existing.includes(element)) return [element];
+    // Only the drawing's own `<drawing>/<shape>` ids go: a copy the user made keeps the tag but
+    // not the id, and stays whatever the agent sends.
+    if (!existing.includes(element) || !String(element.id).startsWith(`${drawingId}/`)) {
+      return [element];
+    }
     const customData = recordOf(element.customData);
     return [
       {

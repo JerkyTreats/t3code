@@ -809,6 +809,16 @@ describe("patching a drawing", () => {
     expect(at(after, "p/a")).toEqual(at(drawn, "p/a"));
   });
 
+  it("keeps a box the user copied from the drawing through a redraw and a patch", () => {
+    const copy = { ...live(drawn.elements, "p/a")!, id: "user-copy", x: 2000 };
+    const withCopy = { ...drawn, elements: [...drawn.elements, copy] };
+    const redrawn = applied(withCopy, { drawingId: "p", shapes: [card("a"), card("b")] });
+    expect(live(redrawn.elements, "user-copy")).toBeDefined();
+    expect(live(redrawn.elements, "p/x")).toBeUndefined();
+    const patched = applied(withCopy, { drawingId: "p", shapes: [], remove: ["x"], patch: true });
+    expect(live(patched.elements, "user-copy")).toBeDefined();
+  });
+
   it("puts a new shape sent without a place in a row under the rest", () => {
     const after = applied(drawn, { drawingId: "p", shapes: [card("c")], patch: true });
     const bottom = Math.max(

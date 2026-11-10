@@ -29,7 +29,9 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   `canvas_preview`. `canvas_update` takes shapes, a Mermaid flowchart that the server lays out
   (bands, lead and aside roles, kinds coloured with a legend), markdown cards, html cards and live panel cards
   (`card`: a file, Files, a browser tab, a terminal, the diff, a pull request, the linked pull
-  requests, a chat or a device), and patches an existing drawing by id. Drawings placed `besideLatestTurn` go in the column beside the
+  requests, a chat or a device), and patches an existing drawing by id. A redraw deletes only the drawing's own `<drawing>/<shape>`
+  ids it did not send again, and a patch only the shapes it removes with the arrows joining them;
+  an element carrying the drawing's tag under any other id is never deleted. Drawings placed `besideLatestTurn` go in the column beside the
   latest turn and stay out of the turns' own column; a drawing sent again in a later turn moves
   beside that turn. A delegated task draws on its parent's canvas. A chat placed as a card on another
   thread's board, a side chat or any other thread, draws there beside its card; its pieces carry
