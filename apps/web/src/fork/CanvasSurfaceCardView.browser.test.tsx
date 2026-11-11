@@ -28,7 +28,11 @@ vi.mock(import("../localApi"), async (original) => ({
 import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
 import { AssistantSelectionToolbar } from "../components/chat/AssistantSelectionToolbar";
 import ExcalidrawBoard from "./ExcalidrawBoard";
-import { canvasBoardMounted, placeSurfaceOnCanvas } from "./canvasSurfaceCards";
+import {
+  canvasBoardMounted,
+  canvasPlacementStore,
+  placeSurfaceOnCanvas,
+} from "./canvasSurfaceCards";
 import { createTurnBoard } from "./turnBoard";
 
 const threadRef = {
@@ -404,6 +408,26 @@ describe("a selection placed on the canvas", () => {
     });
     expect(box.left).toBeCloseTo(600, 0);
     expect(box.top).toBeCloseTo(400, 0);
+    // Only the placing press's mouse click is swallowed, never a later keyboard click.
+    const button = document.createElement("button");
+    let clicks = 0;
+    button.addEventListener("click", () => (clicks += 1));
+    document.body.append(button);
+    button.click();
+    expect(clicks).toBe(1);
+    button.remove();
+    layer.remove();
+  });
+
+  it("ends the placement when the board goes away", async () => {
+    const { screen, layer } = await renderBoard({ selectionToolbar: true });
+    await selectQuote(layer);
+    await page.getByRole("button", { name: "Place on canvas" }).click();
+    await vi.waitFor(() => expect(canvasPlacementStore.get()).not.toBeNull());
+    await screen.unmount();
+    expect(canvasPlacementStore.get()).toBeNull();
+    expect(document.querySelector("[data-canvas-placement]")).toBeNull();
+    await screen[Symbol.asyncDispose]();
     layer.remove();
   });
 

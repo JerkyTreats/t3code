@@ -11,15 +11,33 @@ import { canvasPlacementStore } from "./canvasSurfaceCards";
 import { NOTE_CARD_SIZE, placeSurfaceCard } from "./CanvasSurfaceCardView";
 import { TURN_INSET_PX } from "./turnBoard";
 
-const swallowClick = (event: MouseEvent) => {
-  event.preventDefault();
-  event.stopPropagation();
-};
+const ENDS_PRESS = ["pointerdown", "pointercancel", "blur"] as const;
+
+/**
+ * Swallows the mouse click that ends a placing press, which would otherwise act on whatever lies
+ * under the new card. A keyboard click, another press, a cancelled press or leaving the window
+ * ends it unswallowed; the returned function ends it early.
+ */
+function swallowPressClick() {
+  const stop = () => {
+    window.removeEventListener("click", swallow, true);
+    for (const type of ENDS_PRESS) window.removeEventListener(type, stop, true);
+  };
+  const swallow = (event: MouseEvent) => {
+    stop();
+    if (event.detail === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  window.addEventListener("click", swallow, true);
+  for (const type of ENDS_PRESS) window.addEventListener(type, stop, true);
+  return stop;
+}
 
 /**
  * The card being placed on this board: a faded copy follows the pointer at the board's zoom, and a
- * click on the board or a card on it drops the card with its top-left at the pointer. Escape, or a
- * click anywhere else, cancels with nothing placed.
+ * click on the board or a card on it drops the card with its top-left at the pointer. Escape, a
+ * click anywhere else, or the board leaving its thread cancels with nothing placed.
  */
 export function CanvasPlacement({
   api,
@@ -32,9 +50,20 @@ export function CanvasPlacement({
   boardRef: RefObject<HTMLDivElement | null>;
   layer: HTMLElement | null;
 }) {
+  const threadKey = scopedThreadKey(threadRef);
   const current = useSyncExternalStore(canvasPlacementStore.subscribe, canvasPlacementStore.get);
-  const placement = current?.threadKey === scopedThreadKey(threadRef) ? current : null;
+  const placement = current?.threadKey === threadKey ? current : null;
   const ghostRef = useRef<HTMLDivElement>(null);
+  const endPressRef = useRef<(() => void) | null>(null);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a placement belongs to the board showing its thread; it ends when the board leaves that thread
+  useEffect(
+    () => () => {
+      endPressRef.current?.();
+      if (canvasPlacementStore.get()?.threadKey === threadKey) canvasPlacementStore.end();
+    },
+    [threadKey],
+  );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- follows the pointer and takes the next click or Escape on the window, ahead of Excalidraw's own handlers
   useEffect(() => {
@@ -53,13 +82,8 @@ export function CanvasPlacement({
       if (!onBoard || event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
-      // The click that ends this press would act on whatever lies under the new card.
-      window.addEventListener("click", swallowClick, { capture: true, once: true });
-      window.addEventListener(
-        "pointerdown",
-        () => window.removeEventListener("click", swallowClick, { capture: true }),
-        { capture: true, once: true },
-      );
+      endPressRef.current?.();
+      endPressRef.current = swallowPressClick();
       const point = viewportCoordsToSceneCoords(event, api.getAppState());
       placeSurfaceCard(api, placement.card, {
         at: { x: point.x - TURN_INSET_PX, y: point.y - TURN_INSET_PX },

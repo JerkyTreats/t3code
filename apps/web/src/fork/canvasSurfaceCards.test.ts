@@ -1,4 +1,4 @@
-import { ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -8,6 +8,7 @@ import {
 } from "../rightPanelStore";
 import {
   canvasSurfaceCardFor,
+  canvasQuoteCardOf,
   canvasSurfaceAdders,
   canvasSurfaceRefFor,
   cardsShowingElsewhere,
@@ -350,5 +351,24 @@ describe("freeSpotInView", () => {
     expect(freeSpotInView([column], viewport, size)).toEqual({ x: 720, y: 80 });
     expect(freeSpotInView([{ ...column, x: -100, width: 1200 }], viewport, size)).toBeNull();
     expect(freeSpotInView([], viewport, { width: 1200, height: 200 })).toBeNull();
+  });
+});
+
+describe("canvasQuoteCardOf", () => {
+  const citation = (text: string) => ({
+    version: 1 as const,
+    environmentId: EnvironmentId.make("env"),
+    threadId: ThreadId.make("thread"),
+    messageId: MessageId.make("message"),
+    text,
+    start: 0,
+    end: text.length,
+    prefix: "",
+    suffix: "",
+  });
+
+  it("keeps a quote's rendered text literal instead of reading it as Markdown", () => {
+    const { text } = canvasQuoteCardOf(citation("<Widget /> *literal*\n> value\n1. step"));
+    expect(text.split("\n\n")[0]).toBe("> \\<Widget /\\> \\*literal\\*\n> \\> value\n> 1\\. step");
   });
 });

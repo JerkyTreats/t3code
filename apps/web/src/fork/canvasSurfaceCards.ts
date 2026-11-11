@@ -312,6 +312,11 @@ export interface CanvasNoteCard {
   readonly text: string;
 }
 
+/** Rendered text kept literal in Markdown: no emphasis, HTML, links, quotes or list markers. */
+function escapeMarkdownText(line: string) {
+  return line.replace(/[\\`*_{}[\]<>#+\-!|~&]/g, "\\$&").replace(/^(\s*\d+)([.)])/, "$1\\$2");
+}
+
 /**
  * The card a quote makes on the board: the quoted text over the chip that leads back to its
  * source. A file's lines stay code; anything else reads as a block quote.
@@ -324,7 +329,7 @@ export function canvasQuoteCardOf(citation: AssistantCitation): CanvasNoteCard {
     file === undefined
       ? text
           .split("\n")
-          .map((line) => `> ${line}`)
+          .map((line) => `> ${escapeMarkdownText(line)}`)
           .join("\n")
       : `${fence}\n${text}\n${fence}`;
   return { kind: "markdown", text: `${body}\n\n${serializeAssistantCitation(citation)}` };
