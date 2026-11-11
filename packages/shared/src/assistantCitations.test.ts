@@ -95,6 +95,9 @@ describe("assistant citation references", () => {
     "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&text=other",
     "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&unknown=value",
     "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&comment=one&comment=two",
+    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&path=a.ts",
+    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&path=a.ts&lines=5-3",
+    "t3-citation://v1/a/b/c?text=quote&start=0&end=5&prefix=&suffix=&path=&lines=1-2",
   ])("leaves invalid or unsupported references unchanged: %s", (href) => {
     expect(parseAssistantCitationHref(href)).toBeNull();
     const prompt = `[Assistant quote](${href})`;
@@ -184,6 +187,26 @@ describe("assistant citation references", () => {
       expect(original.comment).toBe("Please change this");
     },
   );
+
+  it("carries a file quote's path and lines through its link to the provider", () => {
+    const fileQuote: AssistantCitation = {
+      ...legacyCitation,
+      text: "const a = 1;\nconst b = 2;",
+      end: 25,
+      suffix: "",
+      file: { path: "src/a b.ts", startLine: 12, endLine: 13 },
+    };
+    const marker = serializeAssistantCitation(fileQuote);
+    expect(parseAssistantCitationHref(formatAssistantCitationHref(fileQuote))).toStrictEqual(
+      fileQuote,
+    );
+    const expanded = expandAssistantCitationsForProvider(marker);
+    expect(readProviderContext(expanded)).toStrictEqual([
+      { id: "assistant-quote-1", citation: fileQuote },
+    ]);
+    expect(expanded).toContain("citation.file");
+    expect(renderAssistantCitationsAsText(marker)).toContain("> src/a b\\.ts lines 12-13:\n");
+  });
 
   it("decodes provider context once per source and keeps instruction-looking text inside JSON", () => {
     const marker = serializeAssistantCitation(citation);

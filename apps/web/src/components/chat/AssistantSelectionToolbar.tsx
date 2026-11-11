@@ -17,6 +17,7 @@ import {
   resolveSelectionActionPosition,
   type SelectionActionPoint,
 } from "~/lib/selectionActions";
+import { captureFileTextSelection } from "../../fork/fileTextSelection";
 import { Button } from "../ui/button";
 import { BackgroundThreadContext } from "./backgroundThread";
 
@@ -53,8 +54,11 @@ export function AssistantSelectionToolbar({
     const clear = () => setSelection(null);
     const update = (pointer: SelectionActionPoint | null) => {
       const nativeSelection = window.getSelection();
-      const captured = captureAssistantTextSelection(viewport, nativeSelection);
-      const messageId = captured?.source.dataset.assistantCitationSource;
+      const assistant = captureAssistantTextSelection(viewport, nativeSelection);
+      // A file card's code is not assistant text, but cites the same way with its path and lines.
+      const file = assistant ? null : captureFileTextSelection(viewport, nativeSelection);
+      const captured = assistant ?? file;
+      const messageId = file?.messageId ?? assistant?.source.dataset.assistantCitationSource;
       if (!captured || !messageId) {
         clear();
         return;
@@ -122,7 +126,12 @@ export function AssistantSelectionToolbar({
             pointer.y <= line.bottom + 8,
         );
       setSelection({
-        sourceAnchor: { source: captured.source, range: captured.range, viewport },
+        sourceAnchor: {
+          source: captured.source,
+          range: captured.range,
+          // The code is behind a shadow root, which the viewport cannot see into.
+          viewport: file?.source ?? viewport,
+        },
         citation: {
           version: 1,
           ...threadRef,
