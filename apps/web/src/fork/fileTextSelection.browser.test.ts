@@ -16,7 +16,8 @@ function fileCard(editable: boolean) {
   root.innerHTML = `
     <pre><code data-code>
       <div data-gutter><div data-column-number="11">11</div><div data-column-number="12">12</div></div>
-      <div data-content ${editable ? 'contenteditable="true"' : ""}><div data-line="11"><span>const a = 1;</span></div><div data-line="12"><span>const b = 2;</span></div><div data-line="13"><span>return a + b;</span></div></div>
+      <div data-content ${editable ? 'contenteditable="true"' : ""}><div data-line="11"><span>const a = 1;</span></div><div data-line="12"><span>const b = 2;</span></div><div data-line="13"><span>return a + b;</span></div><div data-line="14"><span>
+</span></div></div>
     </code></pre>`;
   document.body.append(viewport);
   const line = (number: number) => root.querySelector(`[data-line="${number}"] span`)!.firstChild!;
@@ -49,6 +50,12 @@ describe("captureFileTextSelection", () => {
         expect(captureFileTextSelection(viewport, selection)?.selector).toMatchObject({
           text: "const b = 2;",
           file: { path: "src/app.ts", startLine: 12, endLine: 12 },
+        });
+        // A selected blank final line stays in the quote.
+        selection.setBaseAndExtent(line(13), 0, line(14), 1);
+        expect(captureFileTextSelection(viewport, selection)?.selector).toMatchObject({
+          text: "return a + b;\n",
+          file: { path: "src/app.ts", startLine: 13, endLine: 14 },
         });
         selection.setBaseAndExtent(outside, 0, outside, 7);
         expect(captureFileTextSelection(viewport, selection)).toBeNull();
