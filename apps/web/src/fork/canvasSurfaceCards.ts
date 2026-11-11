@@ -312,9 +312,19 @@ export interface CanvasNoteCard {
   readonly text: string;
 }
 
-/** Rendered text kept literal in Markdown: no emphasis, HTML, links, quotes or list markers. */
+/**
+ * Rendered text kept literal in Markdown: no emphasis, HTML, headings, quotes, list markers or
+ * indented code. URLs stay as written so they still read and link.
+ */
 function escapeMarkdownText(line: string) {
-  return line.replace(/[\\`*_{}[\]<>#+\-!|~&]/g, "\\$&").replace(/^(\s*\d+)([.)])/, "$1\\$2");
+  return line
+    .trimStart()
+    .split(/(https?:\/\/\S+)/)
+    .map((part, index) =>
+      index % 2 === 1 ? part : part.replace(/[\\`*_{}[\]<>#+\-!|~&=]/g, "\\$&"),
+    )
+    .join("")
+    .replace(/^(\d+)([.)])/, "$1\\$2");
 }
 
 /**

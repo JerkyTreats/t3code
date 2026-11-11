@@ -371,4 +371,13 @@ describe("canvasQuoteCardOf", () => {
     const { text } = canvasQuoteCardOf(citation("<Widget /> *literal*\n> value\n1. step"));
     expect(text.split("\n\n")[0]).toBe("> \\<Widget /\\> \\*literal\\*\n> \\> value\n> 1\\. step");
   });
+
+  it("leaves URLs as written and keeps headings and indented code from forming", () => {
+    const { text } = canvasQuoteCardOf(
+      citation("see https://example.test/a-b?q=x&y=z now\nheading\n===\n    *literal*"),
+    );
+    expect(text.split("\n\n")[0]).toBe(
+      "> see https://example.test/a-b?q=x&y=z now\n> heading\n> \\=\\=\\=\n> \\*literal\\*",
+    );
+  });
 });
