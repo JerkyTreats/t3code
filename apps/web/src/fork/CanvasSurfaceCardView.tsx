@@ -43,6 +43,7 @@ import { useKnownTerminalSessions } from "../state/terminalSessions";
 import { BrowserTrailPlayer } from "./BrowserTrailPlayer";
 import { ChatCardStatus } from "./CanvasChatStatus";
 import {
+  type CanvasNoteCard,
   freeSpotInView,
   type PanelSurfaceCard,
   type RenderPanelSurface,
@@ -66,6 +67,8 @@ const CARD_SIZES: Record<CanvasSurfaceRef["kind"], { width: number; height: numb
   "side-chat": { width: 460, height: 600 },
   device: { width: 420, height: 780 },
 };
+/** A hand-placed note opens this size; the board then fits its height to the text. */
+export const NOTE_CARD_SIZE = { width: 360, height: 120 };
 
 type Element = ReturnType<ExcalidrawImperativeAPI["getSceneElements"]>[number];
 
@@ -86,17 +89,17 @@ function visibleSceneOf(view: ReturnType<ExcalidrawImperativeAPI["getAppState"]>
 }
 
 /**
- * Adds a surface card as one undoable step: at a scene point, beside a turn or another card, or by
+ * Adds a card, a surface or a hand-placed note, as one undoable step: at a scene point, beside a turn or another card, or by
  * default beside the latest turn, where an agent's besideLatestTurn drawing lands. A card beside a
  * turn is anchored to that turn's top edge so it stays level as turns grow.
  */
 export function placeSurfaceCard(
   api: ExcalidrawImperativeAPI,
-  card: CanvasSurfaceCard,
+  card: CanvasSurfaceCard | CanvasNoteCard,
   where?: SurfacePlacement,
 ) {
   const scene = api.getSceneElements();
-  const inner = CARD_SIZES[card.surface.kind];
+  const inner = card.kind === "surface" ? CARD_SIZES[card.surface.kind] : NOTE_CARD_SIZE;
   const size = { width: inner.width + 2 * TURN_INSET_PX, height: inner.height + 2 * TURN_INSET_PX };
   const solid = scene.filter((element) => element.type !== "arrow" && element.type !== "line");
   const turns = scene.filter((element) => typeof element.customData?.t3Turn === "string");

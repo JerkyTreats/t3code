@@ -80,6 +80,7 @@ import {
   openExcalidrawCanvasMenu,
 } from "./canvasContextMenus";
 import { CANVAS_CARD_REMARK_PLUGINS } from "./canvasStateChips";
+import { CanvasPlacement } from "./CanvasPlacement";
 import { CanvasSurfaceCardView, placeSurfaceCard } from "./CanvasSurfaceCardView";
 import {
   canvasTerminalIdsOf,
@@ -1347,6 +1348,9 @@ export default function ExcalidrawBoard({
           <MainMenu.Item onSelect={resetLayout}>Reset layout</MainMenu.Item>
         </MainMenu>
       </Excalidraw>
+      {canvasThread === null || draft || !api ? null : (
+        <CanvasPlacement api={api} threadRef={canvasThread} boardRef={boardRef} layer={noteLayer} />
+      )}
       {canvasThread === null || draft ? null : (
         <BoardActivityStrip
           environmentId={canvasThread.environmentId}

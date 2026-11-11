@@ -1,5 +1,11 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { PreviewSessionSnapshot, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type {
+  AssistantCitation,
+  PreviewSessionSnapshot,
+  ScopedThreadRef,
+  ThreadId,
+} from "@t3tools/contracts";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import {
   type CanvasSurfaceCard,
   type CanvasSurfaceRef,
@@ -297,6 +303,71 @@ export function placeSurfaceOnCanvas(
   const place = mountedBoards.get(scopedThreadKey(threadRef));
   if (place === undefined) return false;
   place(card, where);
+  return true;
+}
+
+/** A markdown card the user places by hand, such as a quote. */
+export interface CanvasNoteCard {
+  readonly kind: "markdown";
+  readonly text: string;
+}
+
+/**
+ * The card a quote makes on the board: the quoted text over the chip that leads back to its
+ * source. A file's lines stay code; anything else reads as a block quote.
+ */
+export function canvasQuoteCardOf(citation: AssistantCitation): CanvasNoteCard {
+  const { text, file } = citation;
+  const ticks = Math.max(2, ...Array.from(text.matchAll(/`+/g), (run) => run[0].length));
+  const fence = "`".repeat(ticks + 1);
+  const body =
+    file === undefined
+      ? text
+          .split("\n")
+          .map((line) => `> ${line}`)
+          .join("\n")
+      : `${fence}\n${text}\n${fence}`;
+  return { kind: "markdown", text: `${body}\n\n${serializeAssistantCitation(citation)}` };
+}
+
+/** A card waiting for a click on its thread's board, previewed from the client point `at`. */
+export interface CanvasPlacement {
+  readonly threadKey: string;
+  readonly card: CanvasNoteCard;
+  readonly at: { readonly x: number; readonly y: number };
+}
+
+let placement: CanvasPlacement | null = null;
+const placementListeners = new Set<() => void>();
+
+export const canvasPlacementStore = {
+  get: () => placement,
+  subscribe(listener: () => void) {
+    placementListeners.add(listener);
+    return () => {
+      placementListeners.delete(listener);
+    };
+  },
+  /** Ends the placement in progress, placed or cancelled. */
+  end: () => setPlacement(null),
+};
+
+function setPlacement(next: CanvasPlacement | null) {
+  placement = next;
+  for (const listener of placementListeners) listener();
+}
+
+/**
+ * Hands a card to the thread's board to place where the user clicks next; one placement at a
+ * time, so a new one replaces any in progress. Returns false when no board shows the thread.
+ */
+export function startCanvasPlacement(
+  threadRef: ScopedThreadRef,
+  card: CanvasNoteCard,
+  at: CanvasPlacement["at"],
+) {
+  if (!canvasBoardMounted(threadRef)) return false;
+  setPlacement({ threadKey: scopedThreadKey(threadRef), card, at });
   return true;
 }
 

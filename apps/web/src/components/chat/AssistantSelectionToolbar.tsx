@@ -4,7 +4,7 @@ import {
   type AssistantCitation,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import { QuoteIcon } from "lucide-react";
+import { PinIcon, QuoteIcon } from "lucide-react";
 import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -17,8 +17,14 @@ import {
   resolveSelectionActionPosition,
   type SelectionActionPoint,
 } from "~/lib/selectionActions";
+import {
+  canvasBoardMounted,
+  canvasQuoteCardOf,
+  startCanvasPlacement,
+} from "../../fork/canvasSurfaceCards";
 import { captureFileTextSelection } from "../../fork/fileTextSelection";
 import { Button } from "../ui/button";
+import { Group } from "../ui/group";
 import { BackgroundThreadContext } from "./backgroundThread";
 
 export function AssistantSelectionToolbar({
@@ -35,7 +41,7 @@ export function AssistantSelectionToolbar({
     position: SelectionActionPoint;
     sourceAnchor: AssistantCitationSourceAnchor;
   } | null>(null);
-  const toolbarRef = useRef<HTMLButtonElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
   const backgroundThread = use(BackgroundThreadContext);
 
@@ -169,10 +175,11 @@ export function AssistantSelectionToolbar({
       ) {
         return;
       }
-      if (toolbar.disabled) return;
+      const action = toolbar.querySelector<HTMLButtonElement>("button:enabled");
+      if (!action) return;
       event.preventDefault();
       event.stopPropagation();
-      toolbar.focus({ preventScroll: true });
+      action.focus({ preventScroll: true });
     };
     // Tab belongs to the foreground chat; a background timeline only follows its selection.
     if (!backgroundThread) document.addEventListener("keydown", focusActions, true);
@@ -197,18 +204,19 @@ export function AssistantSelectionToolbar({
     dismiss();
     return true;
   };
+  // The quote goes on the board as a card, which follows the pointer until a click places it.
+  const place = () => {
+    if (!startCanvasPlacement(threadRef, canvasQuoteCardOf(selection.citation), selection.position))
+      return;
+    window.getSelection()?.removeAllRanges();
+    dismiss();
+  };
   return createPortal(
-    <Button
+    <div
       ref={toolbarRef}
-      type="button"
-      size="xs"
-      variant="glass"
-      disabled={tooLong}
-      aria-label={tooLong ? "Selection is too long to cite" : "Cite selection in composer"}
       className="fixed z-50 max-w-[calc(100vw-1rem)]"
       style={{ left: selection.position.x, top: selection.position.y }}
       onPointerDown={(event) => event.preventDefault()}
-      onClick={cite}
       onKeyDown={(event) => {
         event.stopPropagation();
         if (event.key === "Escape" && !event.nativeEvent.isComposing) {
@@ -217,9 +225,26 @@ export function AssistantSelectionToolbar({
         }
       }}
     >
-      <QuoteIcon aria-hidden="true" className="size-3.5" />
-      {tooLong ? "Shorten selection" : "Cite"}
-    </Button>,
+      <Group aria-label="Selection actions">
+        <Button
+          type="button"
+          size="xs"
+          variant="glass"
+          disabled={tooLong}
+          aria-label={tooLong ? "Selection is too long to cite" : "Cite selection in composer"}
+          onClick={cite}
+        >
+          <QuoteIcon aria-hidden="true" className="size-3.5" />
+          {tooLong ? "Shorten selection" : "Cite"}
+        </Button>
+        {canvasBoardMounted(threadRef) ? (
+          <Button type="button" size="xs" variant="glass" disabled={tooLong} onClick={place}>
+            <PinIcon aria-hidden="true" className="size-3.5" />
+            Place on canvas
+          </Button>
+        ) : null}
+      </Group>
+    </div>,
     document.body,
   );
 }

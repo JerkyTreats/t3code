@@ -25,6 +25,8 @@ vi.mock(import("../localApi"), async (original) => ({
     }) as never,
 }));
 
+import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
+import { AssistantSelectionToolbar } from "../components/chat/AssistantSelectionToolbar";
 import ExcalidrawBoard from "./ExcalidrawBoard";
 import { canvasBoardMounted, placeSurfaceOnCanvas } from "./canvasSurfaceCards";
 import { createTurnBoard } from "./turnBoard";
@@ -55,6 +57,8 @@ async function renderBoard(options: {
   readonly placed?: Array<{ x: number; y: number }>;
   /** Elements the board opens with, as a saved board would hold them. */
   readonly scene?: ReadonlyArray<Record<string, unknown>>;
+  /** Renders the timeline's selection actions over the card layer, which holds an agent's words. */
+  readonly selectionToolbar?: boolean;
 }) {
   localStorage.removeItem(STORAGE_KEY);
   if (options.scene) localStorage.setItem(STORAGE_KEY, JSON.stringify(options.scene));
@@ -66,6 +70,12 @@ async function renderBoard(options: {
   layer.dataset.assistantCitationViewport = "true";
   document.body.append(layer);
   turnBoard.publish(layer, []);
+  if (options.selectionToolbar) {
+    layer.insertAdjacentHTML(
+      "beforeend",
+      `<p data-assistant-citation-source="agent-card" data-assistant-citation-environment="${threadRef.environmentId}" data-assistant-citation-thread="${threadRef.threadId}">the answer is 42</p>`,
+    );
+  }
   const screen = await render(
     <div data-board-root style={{ position: "relative", width: 1200, height: 700 }}>
       <ExcalidrawBoard
@@ -88,6 +98,9 @@ async function renderBoard(options: {
         ]}
         onCite={options.onCite}
       />
+      {options.selectionToolbar ? (
+        <AssistantSelectionToolbar viewport={layer} threadRef={threadRef} onCite={() => true} />
+      ) : null}
     </div>,
   );
   await vi.waitFor(() => expect(canvasBoardMounted(threadRef)).toBe(true));
@@ -331,6 +344,89 @@ describe("the board's right-click menus", () => {
     await vi.waitFor(() => expect(anchor()!.style.transform).not.toBe(before));
     await act(() => press("Delete"));
     await vi.waitFor(() => expect(anchor()).toBeNull());
+    layer.remove();
+  });
+});
+
+describe("a selection placed on the canvas", () => {
+  /** Selects the agent's words from the keyboard and waits for the selection's actions. */
+  async function selectQuote(layer: HTMLElement) {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift" }));
+    document.getSelection()!.selectAllChildren(layer.querySelector("p")!);
+    await expect
+      .element(page.getByRole("button", { name: "Cite selection in composer" }))
+      .toBeVisible();
+  }
+  const press = (target: Element, clientX: number, clientY: number) =>
+    target.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        isPrimary: true,
+        button: 0,
+        clientX,
+        clientY,
+      }),
+    );
+  const quoteCards = () =>
+    savedCards().filter(
+      (element) =>
+        (element.customData?.t3Card as { kind?: string } | undefined)?.kind === "markdown",
+    );
+
+  it("offers Cite beside Place on canvas, which drops the quote where the board is clicked", async () => {
+    const { screen, layer } = await renderBoard({ selectionToolbar: true });
+    await using _ = screen;
+    await selectQuote(layer);
+    await page.getByRole("button", { name: "Place on canvas" }).click();
+    await vi.waitFor(() => {
+      expect(document.querySelector("[data-canvas-placement]")).not.toBeNull();
+      expect(document.querySelector('[aria-label="Cite selection in composer"]')).toBeNull();
+    });
+    press(document.querySelector(".excalidraw__canvas.interactive")!, 600, 400);
+
+    const [card] = await vi.waitFor(() => {
+      const found = quoteCards();
+      expect(found).toHaveLength(1);
+      return found;
+    });
+    expect(document.querySelector("[data-canvas-placement]")).toBeNull();
+    const text = (card!.customData!.t3Card as { text: string }).text;
+    expect(text.startsWith("> the answer is 42\n\n")).toBe(true);
+    expect(collectAssistantCitations(text).map(({ citation }) => citation)).toMatchObject([
+      { ...threadRef, messageId: "agent-card", text: "the answer is 42" },
+    ]);
+    // The card's top-left lands under the pointer.
+    const box = await vi.waitFor(() => {
+      const found = layer.querySelector(`[data-canvas-card-id="${card!.id}"]`);
+      expect(found).not.toBeNull();
+      return found!.getBoundingClientRect();
+    });
+    expect(box.left).toBeCloseTo(600, 0);
+    expect(box.top).toBeCloseTo(400, 0);
+    layer.remove();
+  });
+
+  it("places nothing when Escape cancels", async () => {
+    const { screen, layer } = await renderBoard({ selectionToolbar: true });
+    await using _ = screen;
+    const canvas = document.querySelector(".excalidraw__canvas.interactive")!;
+    await selectQuote(layer);
+    await page.getByRole("button", { name: "Place on canvas" }).click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-canvas-placement]")).not.toBeNull(),
+    );
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+    await vi.waitFor(() => expect(document.querySelector("[data-canvas-placement]")).toBeNull());
+
+    // A second placement is the only card the board then holds.
+    await selectQuote(layer);
+    await page.getByRole("button", { name: "Place on canvas" }).click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("[data-canvas-placement]")).not.toBeNull(),
+    );
+    press(canvas, 300, 300);
+    await vi.waitFor(() => expect(quoteCards()).toHaveLength(1));
     layer.remove();
   });
 });
