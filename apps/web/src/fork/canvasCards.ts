@@ -119,10 +119,12 @@ function scrollsInside(event: WheelEvent, layer: HTMLElement) {
 }
 
 /**
- * Whether a wheel over the card layer pans the board. Content that scrolls keeps the wheel, and
- * so does content that took it already, such as a terminal scrolling its own buffer.
+ * Whether a wheel over the card layer pans or zooms the board. Content that scrolls keeps the
+ * wheel, and so does content that took it already, such as a terminal scrolling its own buffer.
+ * Ctrl/Cmd+wheel and a trackpad pinch always zoom the board, or the browser zooms the whole app.
  */
 export function wheelPansBoard(event: WheelEvent, layer: HTMLElement) {
+  if (event.ctrlKey || event.metaKey) return true;
   return !event.defaultPrevented && !scrollsInside(event, layer);
 }
 

@@ -2636,10 +2636,12 @@ code {
   z-index: 3;
 }
 
+/* Clip, not hidden: a hidden box still scrolls when a card's content is revealed, such as a file
+   card's breadcrumbs, which would slide every card off its box. */
 .board-chrome [data-chat-canvas] > .board-chat-card {
   position: absolute;
   inset: 0;
-  overflow: hidden;
+  overflow: clip;
   display: flex;
   flex-direction: column;
   pointer-events: none;
@@ -2690,9 +2692,10 @@ code {
   pointer-events: auto;
 }
 
-/* A panel scrolls inside itself; the card's own box must not scroll as its raster zoom changes. */
+/* A panel scrolls inside itself; the card's own box must not scroll as its raster zoom changes,
+   nor when a panel reveals its content (clip, unlike hidden, cannot be scrolled by script). */
 .canvas-card[data-canvas-card="surface"] {
-  overflow: hidden;
+  overflow: clip;
 }
 
 .canvas-card-raster {

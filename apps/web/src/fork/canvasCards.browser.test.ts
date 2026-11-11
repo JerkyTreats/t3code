@@ -1,3 +1,5 @@
+import "~/index.css";
+
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -81,8 +83,13 @@ describe("wheelPansBoard", () => {
     const plain = document.createElement("div");
     layer.append(scroller, plain);
     document.body.append(layer);
-    const wheel = (target: Element, take = false) => {
-      const event = new WheelEvent("wheel", { deltaY: 20, bubbles: true, cancelable: true });
+    const wheel = (target: Element, take = false, zoom = false) => {
+      const event = new WheelEvent("wheel", {
+        deltaY: 20,
+        ctrlKey: zoom,
+        bubbles: true,
+        cancelable: true,
+      });
       let pans = false;
       layer.addEventListener("wheel", (seen) => (pans = wheelPansBoard(seen, layer)), {
         once: true,
@@ -95,6 +102,9 @@ describe("wheelPansBoard", () => {
     expect(wheel(tall)).toBe(false);
     // A terminal scrolls its buffer without any overflow, and takes the wheel to say so.
     expect(wheel(plain, true)).toBe(false);
+    // Ctrl+wheel, and a trackpad pinch, zoom the board over any card instead of the app.
+    expect(wheel(tall, false, true)).toBe(true);
+    expect(wheel(plain, true, true)).toBe(true);
     // The file tree and source view scroll inside a shadow root, behind their host.
     const host = document.createElement("div");
     const shadowScroller = document.createElement("div");
@@ -106,6 +116,38 @@ describe("wheelPansBoard", () => {
     layer.append(host);
     expect(wheel(shadowTall)).toBe(false);
     layer.remove();
+  });
+});
+
+describe("the board's card layer", () => {
+  it("never scrolls to bring a card's content into view, so cards and the composer stay put", () => {
+    const root = document.createElement("div");
+    root.className = "board-chrome";
+    root.innerHTML = `
+      <div data-chat-canvas style="position: relative; width: 400px; height: 300px">
+        <div class="board-chat-card">
+          <div class="turn-layer">
+            <div class="canvas-card" data-canvas-card="surface"
+              style="transform: translate(900px, 900px); width: 200px; height: 100px">
+              <div style="width: 600px; height: 20px"><span data-crumb style="margin-left: 500px">a</span></div>
+            </div>
+          </div>
+          <div data-chat-composer-overlay style="position: absolute; bottom: 0">draft</div>
+        </div>
+      </div>`;
+    document.body.append(root);
+    try {
+      const composer = root.querySelector("[data-chat-composer-overlay]")!;
+      const composerTop = composer.getBoundingClientRect().top;
+      // A file card's breadcrumbs reveal their crumb when it goes live as the board pans onto it.
+      root.querySelector("[data-crumb]")!.scrollIntoView({ block: "nearest", inline: "end" });
+      expect(composer.getBoundingClientRect().top).toBe(composerTop);
+      for (const box of root.querySelectorAll(".board-chat-card, .canvas-card")) {
+        expect([box.scrollLeft, box.scrollTop]).toEqual([0, 0]);
+      }
+    } finally {
+      root.remove();
+    }
   });
 });
 
