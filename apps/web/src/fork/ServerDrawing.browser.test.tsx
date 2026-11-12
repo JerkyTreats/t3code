@@ -59,6 +59,7 @@ interface SavedElement {
   readonly width: number;
   readonly containerId?: string | null;
   readonly text?: string;
+  readonly fontFamily?: number;
   readonly points?: ReadonlyArray<readonly [number, number]>;
   readonly endBinding?: { readonly elementId: string } | null;
 }
@@ -120,6 +121,40 @@ describe("a drawing built on the server", () => {
     const after = saved("d/ab")!;
     expect(after.points?.at(-1)).not.toEqual(before.points?.at(-1));
     expect(saved("d/b/label")?.x).toBeLessThan(800);
+  });
+
+  it("keeps a font picked from the font list while the text is being edited", async () => {
+    localStorage.removeItem(STORAGE_KEY);
+    await page.viewport(1300, 800);
+    await using _ = await render(
+      <div data-board-root style={{ position: "relative", width: 1200, height: 700 }}>
+        <ExcalidrawBoard
+          draft={false}
+          storageId="server-drawing"
+          turnBoard={createTurnBoard()}
+          canvasThread={{ environmentId: "e", threadId: "t" } as never}
+        />
+      </div>,
+    );
+    const interactive = () => document.querySelector(".excalidraw__canvas.interactive");
+    await vi.waitFor(() => expect(interactive()).not.toBeNull());
+    sync.onScene?.({ revision: 1, elements: serverElements() });
+    await vi.waitFor(() => expect(saved("d/a/label")).toBeDefined());
+
+    const label = saved("d/a/label")!;
+    await userEvent.dblClick(page.elementLocator(interactive()!), {
+      position: { x: label.x + label.width / 2, y: label.y + 10 },
+      force: true,
+    });
+    await vi.waitFor(() => expect(document.querySelector(".excalidraw-wysiwyg")).not.toBeNull());
+    await userEvent.click(page.getByTestId("font-family-show-fonts"));
+    await userEvent.click(page.getByText("Lilita One", { exact: false }));
+    await vi.waitFor(() => expect(document.querySelector(".QuickSearch__input")).toBeNull());
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() => expect(document.querySelector(".excalidraw-wysiwyg")).toBeNull());
+
+    // Lilita One is Excalidraw's font family 7.
+    await vi.waitFor(() => expect(saved("d/a/label")?.fontFamily).toBe(7));
   });
 });
 

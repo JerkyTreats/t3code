@@ -1319,8 +1319,11 @@ export default function ExcalidrawBoard({
   );
 
   // Excalidraw reads shortcuts only while focus is inside it, and the composer holds focus by default.
+  // Focus already inside Excalidraw stays: text being edited ends, and a popup like the font list
+  // closes, when focus leaves it.
   const takeFocus = (event: React.PointerEvent<HTMLDivElement>) => {
-    event.currentTarget.querySelector<HTMLElement>(".excalidraw-container")?.focus();
+    const container = event.currentTarget.querySelector<HTMLElement>(".excalidraw-container");
+    if (container && !container.contains(document.activeElement)) container.focus();
   };
 
   return (
