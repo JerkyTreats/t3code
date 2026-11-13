@@ -440,8 +440,25 @@ export function describeCanvasChanges(
 
 /** Whole card text in a detailed read, up to this much per card. */
 const DETAIL_CARD_TEXT_CHARS = 4000;
-/** A detailed read stops listing elements past this much JSON, so it fits one tool result. */
-const DETAIL_BUDGET_CHARS = 40_000;
+/** A read stays within this much JSON, about 16k tokens, so it fits one tool result. */
+const READ_BUDGET_CHARS = 40_000;
+/** Room kept for the spine, the note and what canvas_read adds for a chat placed on the board. */
+const READ_ENVELOPE_CHARS = 1_500;
+/** Turns and drawings give way past this much, oldest first, so the elements keep some room. */
+const READ_LAYOUT_CHARS = 24_000;
+
+/** The leading items that fit within this much JSON, and how much they take. */
+function fitting<T>(items: ReadonlyArray<T>, budget: number) {
+  let spent = 0;
+  let count = 0;
+  for (const item of items) {
+    const size = JSON.stringify(item).length + 1;
+    if (spent + size > budget) break;
+    spent += size;
+    count += 1;
+  }
+  return { kept: items.slice(0, count), spent };
+}
 
 export interface CanvasReadQuery {
   readonly drawingIds?: ReadonlyArray<string> | undefined;
@@ -473,9 +490,10 @@ function drawingTitle(elements: ReadonlyArray<{ readonly card?: string; readonly
 }
 
 /**
- * The canvas as canvas_read returns it. With no query it is an overview that fits one tool
- * result however full the canvas gets: the turn spine, each agent drawing as one box, and every
- * user mark. A query lists the matching elements in full, up to a size budget.
+ * The canvas as canvas_read returns it: with no query an overview (the turn spine, each drawing
+ * as one box, the user's marks), with one the matching elements in full. It always fits one tool
+ * result: the earliest turns and drawings go first, then the overview keeps unseen marks, then
+ * the newest, and a query its first matches. The note counts what was left out.
  */
 export function readCanvas(scene: ThreadCanvasScene, query: CanvasReadQuery = {}) {
   const detailed =
@@ -533,6 +551,11 @@ export function readCanvas(scene: ThreadCanvasScene, query: CanvasReadQuery = {}
       ...(besideTurn === undefined ? {} : { followsTurn: clippedTo(besideTurn, TITLE_CHARS) }),
     };
   });
+  const recentTurns = fitting(described.turns.toReversed(), READ_LAYOUT_CHARS);
+  const turns = recentTurns.kept.toReversed();
+  const droppedTurns = described.turns.length - turns.length;
+  const recentDrawings = fitting(drawings.toReversed(), READ_LAYOUT_CHARS - recentTurns.spent);
+  const keptDrawings = recentDrawings.kept.toReversed();
   const wanted = (element: (typeof described.elements)[number]) =>
     !detailed
       ? element.drawnBy === "user"
@@ -548,27 +571,45 @@ export function readCanvas(scene: ThreadCanvasScene, query: CanvasReadQuery = {}
     on,
     beside,
     covers,
+    turn,
     ...element
   }: (typeof described.elements)[number]) => ({
     ...element,
+    ...(turn === undefined || turn < droppedTurns ? {} : { turn: turn - droppedTurns }),
     ...(covers === undefined
       ? {}
       : { covers: detailed ? covers : clippedTo(covers, COVERS_CHARS) }),
     ...(on === undefined ? {} : { on: on.id }),
     ...(beside === undefined ? {} : { beside: beside.id }),
   });
-  const elements: ReturnType<typeof compact>[] = [];
-  let spent = 0;
-  let omitted = 0;
-  for (const element of described.elements.filter(wanted).map(compact)) {
-    const size = JSON.stringify(element).length;
-    if (detailed && spent + size > DETAIL_BUDGET_CHARS) {
-      omitted += 1;
-      continue;
-    }
-    spent += size;
-    elements.push(element);
-  }
+  const matching = described.elements.filter(wanted).map(compact);
+  const unseen = unseenCanvasMarkIds(scene.elements, scene);
+  const updatedAt = new Map(
+    live.map((element) => [idOf(element), numberOf(element.updated)] as const),
+  );
+  const unseenThenNewest = (left: { id: string }, right: { id: string }) =>
+    Number(unseen.has(right.id)) - Number(unseen.has(left.id)) ||
+    (updatedAt.get(right.id) ?? 0) - (updatedAt.get(left.id) ?? 0);
+  const kept = new Set(
+    fitting(
+      detailed ? matching : matching.toReversed().toSorted(unseenThenNewest),
+      READ_BUDGET_CHARS - READ_ENVELOPE_CHARS - recentTurns.spent - recentDrawings.spent,
+    ).kept,
+  );
+  const elements = matching.filter((element) => kept.has(element));
+  const omitted = matching.length - elements.length;
+  const leftOut = [
+    ...(droppedTurns === 0
+      ? []
+      : [
+          `The ${droppedTurns} earliest turns are left out to fit; turn counts from the first listed.`,
+        ]),
+    ...(drawings.length === keptDrawings.length
+      ? []
+      : [
+          `The ${drawings.length - keptDrawings.length} earliest drawings are left out to fit; pass a region to see what is there.`,
+        ]),
+  ];
   return {
     spine:
       spine === null
@@ -578,13 +619,21 @@ export function readCanvas(scene: ThreadCanvasScene, query: CanvasReadQuery = {}
             right: spine.right,
             nextTurnY: spine.latestTurn.y + spine.latestTurn.height,
           },
-    turns: described.turns,
-    drawings,
+    turns,
+    drawings: keptDrawings,
     elements,
-    note: detailed
-      ? omitted === 0
-        ? "Elements matching the query, card text in full."
-        : `${omitted} more matching elements left out to fit; ask for fewer drawings or a smaller region.`
-      : "Your drawings appear as one box each; elements lists only the user's marks. Pass drawingIds, ids or region for your shapes and full card text. Coordinates are current: read again rather than reuse ones from earlier.",
+    note: [
+      detailed
+        ? omitted === 0
+          ? "Elements matching the query, card text in full."
+          : `${omitted} more matching elements left out to fit; ask for fewer drawings or a smaller region.`
+        : "Your drawings appear as one box each; elements lists only the user's marks. Pass drawingIds, ids or region for your shapes and full card text. Coordinates are current: read again rather than reuse ones from earlier.",
+      ...(detailed || omitted === 0
+        ? []
+        : [
+            `Elements lists the marks you have not seen, then the newest; ${omitted} older marks are left out to fit. Pass a region or ids to list them.`,
+          ]),
+      ...leftOut,
+    ].join(" "),
   };
 }

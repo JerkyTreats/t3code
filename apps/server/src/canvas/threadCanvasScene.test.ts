@@ -1,5 +1,5 @@
 import type { ThreadCanvasScene } from "@t3tools/contracts";
-import { canvasMarksSeenOnLoad } from "@t3tools/shared/threadCanvasMarks";
+import { canvasMarkStamps, canvasMarksSeenOnLoad } from "@t3tools/shared/threadCanvasMarks";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -564,5 +564,74 @@ describe("readCanvas", () => {
     expect(JSON.stringify(read).length).toBeLessThan(45_000);
     expect(read.elements.length).toBeLessThan(30);
     expect(read.note).toContain(`${30 - read.elements.length} more matching elements left out`);
+  });
+
+  it("keeps an overview of a busy board within one tool result, unseen and newest marks first", () => {
+    const turns = Array.from({ length: 83 }, (_, index) => ({
+      id: `turn-${index}`,
+      type: "rectangle",
+      x: -430,
+      y: index * 400,
+      width: 860,
+      height: 300,
+      customData: { t3Turn: `t${index}`, t3TurnTitle: `Synthetic turn ${index} ${"t".repeat(30)}` },
+    }));
+    const drawings = Array.from({ length: 50 }, (_, index) =>
+      card(`drawing-${index}`, "only", 600, `## Synthetic drawing ${index}\n\nbody`),
+    ).map((element, index) => ({ ...element, y: index * 600 }));
+    const marks = Array.from({ length: 282 }, (_, index) => ({
+      id: `mark-${index}`,
+      type: "text",
+      version: 1,
+      updated: 1_000 + index,
+      x: -900,
+      y: index * 120,
+      width: 300,
+      height: 40,
+      text: `synthetic note ${index} ${"n".repeat(24)}`,
+      customData: { t3Covers: "c".repeat(48) },
+    }));
+    const all = [...turns, ...drawings, ...marks];
+    // The agent has seen every mark but the ten oldest.
+    const stamps = canvasMarkStamps(all);
+    const unseen = marks.slice(0, 10).map((mark) => mark.id);
+    const seenMarks = Object.fromEntries([...stamps].filter(([id]) => !unseen.includes(id)));
+    const read = readCanvas({ ...scene(all), seenMarks });
+
+    expect(JSON.stringify(read).length).toBeLessThanOrEqual(40_000);
+    expect(read.turns).toHaveLength(83);
+    expect(read.drawings).toHaveLength(50);
+    const kept = read.elements.map((element) => element.id);
+    expect(kept).toEqual(expect.arrayContaining(unseen));
+    const keptSeen = kept.filter((id) => !unseen.includes(id));
+    expect(keptSeen.length).toBeGreaterThan(0);
+    // Past the unseen marks, the newest come first: the seen marks kept are the newest seen ones.
+    expect(keptSeen).toEqual(marks.slice(282 - keptSeen.length).map((mark) => mark.id));
+    expect(read.note).toContain(`${282 - kept.length} older marks are left out`);
+  });
+
+  it("drops the earliest turns past the budget and counts mark turns from the first kept", () => {
+    const turns = Array.from({ length: 400 }, (_, index) => ({
+      id: `turn-${index}`,
+      type: "rectangle",
+      x: -430,
+      y: index * 400,
+      width: 860,
+      height: 300,
+      customData: { t3Turn: `t${index}`, t3TurnTitle: `Synthetic turn ${index}` },
+    }));
+    const read = readCanvas(
+      scene([
+        ...turns,
+        { id: "late", type: "text", x: -700, y: 399 * 400, width: 100, height: 20, text: "here" },
+        { id: "early", type: "text", x: -700, y: 0, width: 100, height: 20, text: "there" },
+      ]),
+    );
+    expect(read.turns.at(-1)?.title).toBe("Synthetic turn 399");
+    expect(read.turns.length).toBeLessThan(400);
+    const late = read.elements.find((element) => element.id === "late");
+    expect(read.turns[late?.turn ?? -1]?.title).toBe("Synthetic turn 399");
+    expect(read.elements.find((element) => element.id === "early")).not.toHaveProperty("turn");
+    expect(read.note).toContain(`The ${400 - read.turns.length} earliest turns are left out`);
   });
 });
