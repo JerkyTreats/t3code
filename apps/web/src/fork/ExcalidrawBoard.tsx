@@ -1158,22 +1158,23 @@ export default function ExcalidrawBoard({
     placeOverElements(layer, api.getSceneElements());
   }, [api, cards, draft, turnBoard]);
 
+  // The layer cards render into. The chat publishes it, so it can arrive after the board's cards.
+  const noteLayer = draft ? null : turnBoard.layer();
   // A card's text settles after it renders, as fonts and code load, so its box follows it. Only a
-  // new or removed card changes what is observed; its text element stays as the text changes.
+  // new or removed card, or the layer arriving, changes what is observed.
   const markdownCardKey = cards
     .flatMap((card) => (card.card.kind === "markdown" ? [card.id] : []))
     .join("\n");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes rendered cards and writes their fitted heights to the external scene
   useEffect(() => {
-    const layer = turnBoard.layer();
-    if (draft || !api || !layer || markdownCardKey === "") return;
+    if (!api || !noteLayer || markdownCardKey === "") return;
     const stops = [
-      ...layer.querySelectorAll<HTMLElement>('.canvas-card[data-canvas-card="markdown"] > *'),
+      ...noteLayer.querySelectorAll<HTMLElement>('.canvas-card[data-canvas-card="markdown"] > *'),
     ].map((content) => observeResize(content, () => syncTurns()));
     return () => {
       for (const stop of stops) stop();
     };
-  }, [api, draft, markdownCardKey, syncTurns, turnBoard]);
+  }, [api, markdownCardKey, noteLayer, syncTurns]);
 
   // A citation of a card shows that card: the board stops following turns and centres on it.
   const revealElement = useStableCallback((elementId: string) => {
@@ -1344,7 +1345,6 @@ export default function ExcalidrawBoard({
     };
   }, [api, cancelPan, draft, turnBoard]);
 
-  const noteLayer = draft ? null : turnBoard.layer();
   const yieldedCards = cardsShowingElsewhere(
     cards.flatMap((card) =>
       card.card.kind === "surface" && liveSurfaces.has(card.id)
