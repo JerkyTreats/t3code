@@ -1,16 +1,19 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
 import * as NodeFS from "node:fs";
+import * as NodeModule from "node:module";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
 import * as NodePath from "node:path";
-import * as NodeURL from "node:url";
 
 import type { Plugin } from "vite-plus";
 
 // ExcalidrawBoard sets window.EXCALIDRAW_ASSET_PATH to "/excalidraw/", and Excalidraw asks
 // for "fonts/<family>/<file>.woff2" below it.
 const FONTS_URL_PATH = "/excalidraw/fonts";
-const FONTS_DIR = NodeURL.fileURLToPath(
-  new URL("../node_modules/@excalidraw/excalidraw/dist/prod/fonts", import.meta.url),
+// Resolved like any import, so it holds however the package was installed. The package's
+// default entry is dist/prod/index.js, beside its fonts.
+const FONTS_DIR = NodePath.join(
+  NodePath.dirname(NodeModule.createRequire(import.meta.url).resolve("@excalidraw/excalidraw")),
+  "fonts",
 );
 
 // Serves Excalidraw's fonts from the dev server and emits them into the build, which the
