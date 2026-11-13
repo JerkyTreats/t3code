@@ -141,7 +141,8 @@ const SKETCH_MAX_EDGE_PX = 1600;
 // Base64 costs a third more, and a larger picture would be refused by the save.
 const SKETCH_MAX_BYTES = 5_000_000;
 
-// Fonts are copied into public/excalidraw so the board never reaches a CDN.
+// The app serves the board's fonts here (vite/excalidrawFonts.ts). Excalidraw still lists
+// esm.sh after this path, but only asks it for a font the app failed to serve.
 window.EXCALIDRAW_ASSET_PATH = "/excalidraw/";
 
 function readSavedBoard(storageKey: string): ExcalidrawInitialDataState {
