@@ -22,7 +22,14 @@ import {
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { canvasSurfaceCardOf } from "@t3tools/shared/canvasSurfaceCard";
-import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { createPortal, flushSync } from "react-dom";
 
 import ChatMarkdown from "../components/ChatMarkdown";
@@ -1151,16 +1158,17 @@ export default function ExcalidrawBoard({
     };
   }, [api, cancelPan, draft, panToLatest, syncTurns, turnBoard]);
 
+  // The layer cards render into. The chat publishes it, so it can arrive after the board's cards,
+  // and a remounted timeline publishes a new one; the board re-renders into whichever is current.
+  const publishedLayer = useSyncExternalStore(turnBoard.subscribe, turnBoard.layer);
+  const noteLayer = draft ? null : publishedLayer;
   // A card mounts without a box, so it is placed before it first paints; placeCards keeps it there.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- places the cards React just mounted in the card layer, which it never positions
   useLayoutEffect(() => {
-    const layer = turnBoard.layer();
-    if (draft || !api || !layer || cards.length === 0) return;
-    placeOverElements(layer, api.getSceneElements());
-  }, [api, cards, draft, turnBoard]);
+    if (!api || !noteLayer || cards.length === 0) return;
+    placeOverElements(noteLayer, api.getSceneElements());
+  }, [api, cards, noteLayer]);
 
-  // The layer cards render into. The chat publishes it, so it can arrive after the board's cards.
-  const noteLayer = draft ? null : turnBoard.layer();
   // A card's text settles after it renders, as fonts and code load, so its box follows it. Only a
   // new or removed card, or the layer arriving, changes what is observed.
   const markdownCardKey = cards

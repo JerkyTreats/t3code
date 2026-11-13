@@ -57,6 +57,7 @@ interface SavedElement {
   readonly x: number;
   readonly y: number;
   readonly width: number;
+  readonly height: number;
   readonly containerId?: string | null;
   readonly text?: string;
   readonly fontFamily?: number;
@@ -290,5 +291,59 @@ describe("a markdown card on the board", () => {
     expect(card.style.transform).toBe("translate(412px, 212px)");
     expect(observe).not.toHaveBeenCalled();
     layer.remove();
+  });
+
+  it("sits on its box when the chat's card layer arrives after the board's cards", async () => {
+    localStorage.removeItem(STORAGE_KEY);
+    await page.viewport(1300, 800);
+    const turnBoard = createTurnBoard();
+    const board = () => (
+      <div data-board-root style={{ position: "relative", width: 1200, height: 700 }}>
+        <ExcalidrawBoard
+          draft={false}
+          storageId="server-drawing"
+          turnBoard={turnBoard}
+          canvasThread={{ environmentId: "e", threadId: "t" } as never}
+        />
+      </div>
+    );
+    await using screen = await render(board(), { router: false });
+    await vi.waitFor(() =>
+      expect(document.querySelector(".excalidraw__canvas.interactive")).not.toBeNull(),
+    );
+    const note: ThreadCanvasShape = { id: "note", type: "markdown", text: "Synthetic note" };
+    sync.onScene?.({
+      revision: 1,
+      elements: buildDrawingElements({
+        drawingId: "m",
+        turn: null,
+        placed: [{ shape: note, ...shapeSize(note), x: 100, y: 100, localX: 0, localY: 0 }],
+        versionOf: () => 0,
+        randomInt: () => 7,
+        now: 1,
+      }),
+    });
+    await vi.waitFor(() => expect(saved("m/note")).toBeDefined());
+    const expectPlacedIn = async (layer: HTMLElement) =>
+      vi.waitFor(() => {
+        const card = layer.querySelector<HTMLElement>('[data-canvas-card-id="m/note"]');
+        const { width, height } = saved("m/note")!;
+        expect(card?.textContent).toContain("Synthetic note");
+        expect(card?.style.transform).toBe("translate(112px, 112px)");
+        expect(card?.style.width).toBe(`${width - 24}px`);
+        expect(card?.style.height).toBe(`${height - 24}px`);
+      });
+
+    // The chat publishes its layer once its timeline mounts, and again if the timeline remounts.
+    for (const _ of [1, 2]) {
+      const previous = turnBoard.layer();
+      const layer = document.createElement("div");
+      document.body.append(layer);
+      turnBoard.publish(layer, []);
+      await screen.rerender(board());
+      await expectPlacedIn(layer);
+      previous?.remove();
+    }
+    turnBoard.layer()?.remove();
   });
 });
