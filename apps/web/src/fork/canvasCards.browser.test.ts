@@ -44,15 +44,17 @@ describe("canvasCardsOf", () => {
 });
 
 describe("sameCanvasCards", () => {
-  it("treats a moved or edited card as a change and an identical scene as none", () => {
+  it("treats an edited card as a change and a moved or identical one as none", () => {
     const [card] = canvasCardsOf([
       element({ id: "md", customData: { t3Card: { kind: "markdown", text: "x" } } }),
     ]);
     expect(card).toBeDefined();
     if (card === undefined) return;
     expect(sameCanvasCards([card], [{ ...card }])).toBe(true);
-    expect(sameCanvasCards([card], [{ ...card, x: 10 }])).toBe(false);
-    expect(sameCanvasCards([card], [{ ...card, version: 2 }])).toBe(false);
+    expect(sameCanvasCards([card], [{ ...card, x: 10, width: 9, version: 2 }])).toBe(true);
+    expect(sameCanvasCards([card], [{ ...card, card: { kind: "markdown", text: "y" } }])).toBe(
+      false,
+    );
     expect(sameCanvasCards([card], [])).toBe(false);
   });
 });

@@ -47,7 +47,15 @@ export function canvasCardsOf(elements: ReadonlyArray<CanvasMark>): ReadonlyArra
   });
 }
 
-/** Whether a scene change left every card where and what it was, so React can skip it. */
+const sameContent = (left: CanvasCard["card"], right: CanvasCard["card"]) =>
+  left.kind === "markdown" && right.kind === "markdown"
+    ? left.text === right.text
+    : JSON.stringify(left) === JSON.stringify(right);
+
+/**
+ * Whether a scene change left every card what it was, so React can skip it. Where a card sits is
+ * placeCards' to keep, so a drag or resize re-renders nothing; only an html card renders its height.
+ */
 export function sameCanvasCards(left: ReadonlyArray<CanvasCard>, right: ReadonlyArray<CanvasCard>) {
   return (
     left.length === right.length &&
@@ -56,11 +64,8 @@ export function sameCanvasCards(left: ReadonlyArray<CanvasCard>, right: Readonly
       return (
         other !== undefined &&
         card.id === other.id &&
-        card.version === other.version &&
-        card.x === other.x &&
-        card.y === other.y &&
-        card.width === other.width &&
-        card.height === other.height
+        sameContent(card.card, other.card) &&
+        (card.card.kind !== "html" || card.height === other.height)
       );
     })
   );

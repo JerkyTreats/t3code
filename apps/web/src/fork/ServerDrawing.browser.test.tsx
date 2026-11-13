@@ -237,3 +237,58 @@ describe("an html card on the board", () => {
     layer.remove();
   });
 });
+
+describe("a markdown card on the board", () => {
+  it("follows a drag of its box without re-rendering the board each move", async () => {
+    localStorage.removeItem(STORAGE_KEY);
+    await page.viewport(1300, 800);
+    const turnBoard = createTurnBoard();
+    const layer = document.createElement("div");
+    document.body.append(layer);
+    turnBoard.publish(layer, []);
+    await using _ = await render(
+      <div data-board-root style={{ position: "relative", width: 1200, height: 700 }}>
+        <ExcalidrawBoard
+          draft={false}
+          storageId="server-drawing"
+          turnBoard={turnBoard}
+          canvasThread={{ environmentId: "e", threadId: "t" } as never}
+        />
+      </div>,
+    );
+    const interactive = () => document.querySelector(".excalidraw__canvas.interactive");
+    await vi.waitFor(() => expect(interactive()).not.toBeNull());
+    const note: ThreadCanvasShape = { id: "note", type: "markdown", text: "Moves with its box" };
+    sync.onScene?.({
+      revision: 1,
+      elements: buildDrawingElements({
+        drawingId: "m",
+        turn: null,
+        placed: [{ shape: note, ...shapeSize(note), x: 100, y: 100, localX: 0, localY: 0 }],
+        versionOf: () => 0,
+        randomInt: () => 7,
+        now: 1,
+      }),
+    });
+    const card = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-canvas-card-id="m/note"]');
+      expect(found?.style.transform).toBe("translate(112px, 112px)");
+      return found!;
+    });
+
+    // Every re-render of the board's cards set their text observers up again.
+    using observe = vi.spyOn(ResizeObserver.prototype, "observe");
+    const canvas = page.elementLocator(interactive()!);
+    // The box's edge, outside the card, is the handle.
+    await userEvent.dragAndDrop(canvas, canvas, {
+      sourcePosition: { x: 102, y: 106 },
+      targetPosition: { x: 402, y: 206 },
+      steps: 12,
+    } as never);
+    await vi.waitFor(() => expect(saved("m/note")?.x).toBe(400));
+
+    expect(card.style.transform).toBe("translate(412px, 212px)");
+    expect(observe).not.toHaveBeenCalled();
+    layer.remove();
+  });
+});

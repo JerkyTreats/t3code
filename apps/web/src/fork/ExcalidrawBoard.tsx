@@ -22,7 +22,7 @@ import {
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { canvasSurfaceCardOf } from "@t3tools/shared/canvasSurfaceCard";
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal, flushSync } from "react-dom";
 
 import ChatMarkdown from "../components/ChatMarkdown";
@@ -550,7 +550,8 @@ function placeCards(
   const left = view.scrollX * zoom + boardRect.left - originRect.left;
   const top = view.scrollY * zoom + boardRect.top - originRect.top;
   layer.style.transform = `translate(${left}px, ${top}px) scale(${zoom})`;
-  const boxes = turnBoxesOf(api.getSceneElements());
+  const scene = api.getSceneElements();
+  const boxes = turnBoxesOf(scene);
   for (const card of turnBoard.cards()) {
     const box = boxes.get(card.id);
     if (box === undefined) continue;
@@ -558,23 +559,46 @@ function placeCards(
     card.element.style.width = `${box.width - 2 * TURN_INSET_PX}px`;
     card.element.dataset.placed = "true";
   }
-  placeCiteAnchors(layer, api.getSceneElements());
-  surfaces.update(api.getSceneElements(), view, boardRect);
+  placeOverElements(layer, scene);
+  surfaces.update(scene, view, boardRect);
   // A desktop browser is a native view over its slot, which re-presents only on resize or scroll,
   // so a live browser card asks its slot directly after the card has moved, waking nothing else.
   if (isElectron && surfaces.showsLive("preview")) requestSlotPresent();
 }
 
-/** Keeps each citation anchor over its element as the element moves, and hides it once gone. */
-function placeCiteAnchors(layer: HTMLElement, elements: ReadonlyArray<BoardElement>) {
-  for (const anchor of layer.children) {
-    if (!(anchor instanceof HTMLElement) || anchor.dataset.canvasCiteAnchor === undefined) continue;
-    const element = elements.find((candidate) => candidate.id === anchor.dataset.canvasCiteAnchor);
-    anchor.hidden = element === undefined;
+const sceneById = new WeakMap<object, ReadonlyMap<string, BoardElement>>();
+
+/**
+ * Keeps each card in its element's box, inset like a turn, and each citation anchor over its
+ * element, hiding the anchor once the element is gone. React renders a card but never places it,
+ * so dragging or resizing one re-renders nothing.
+ */
+function placeOverElements(layer: HTMLElement, elements: ReadonlyArray<BoardElement>) {
+  let byId = sceneById.get(elements);
+  if (byId === undefined) {
+    byId = new Map(elements.map((element) => [element.id, element]));
+    sceneById.set(elements, byId);
+  }
+  for (const child of layer.children) {
+    if (!(child instanceof HTMLElement)) continue;
+    const { canvasCiteAnchor: anchorId, canvasCardId: cardId } = child.dataset;
+    const id = anchorId ?? cardId;
+    if (id === undefined) continue;
+    const element = byId.get(id);
+    if (anchorId !== undefined) child.hidden = element === undefined;
     if (element === undefined) continue;
-    anchor.style.transform = `translate(${element.x}px, ${element.y}px)`;
-    anchor.style.width = `${element.width}px`;
-    anchor.style.height = `${element.height}px`;
+    const inset = cardId === undefined ? 0 : TURN_INSET_PX;
+    const width = `${element.width - 2 * inset}px`;
+    const height = `${element.height - 2 * inset}px`;
+    child.style.transform = `translate(${element.x + inset}px, ${element.y + inset}px)`;
+    child.style.width = width;
+    child.style.height = height;
+    // A panel lays out in its raster box, which the card's size sets.
+    const raster = child.firstElementChild;
+    if (raster instanceof HTMLElement && raster.classList.contains("canvas-card-raster")) {
+      raster.style.width = width;
+      raster.style.height = height;
+    }
   }
 }
 
@@ -1126,18 +1150,30 @@ export default function ExcalidrawBoard({
     };
   }, [api, cancelPan, draft, panToLatest, syncTurns, turnBoard]);
 
-  // A card's text settles after it renders, as fonts and code load, so its box follows it.
+  // A card mounts without a box, so it is placed before it first paints; placeCards keeps it there.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- places the cards React just mounted in the card layer, which it never positions
+  useLayoutEffect(() => {
+    const layer = turnBoard.layer();
+    if (draft || !api || !layer || cards.length === 0) return;
+    placeOverElements(layer, api.getSceneElements());
+  }, [api, cards, draft, turnBoard]);
+
+  // A card's text settles after it renders, as fonts and code load, so its box follows it. Only a
+  // new or removed card changes what is observed; its text element stays as the text changes.
+  const markdownCardKey = cards
+    .flatMap((card) => (card.card.kind === "markdown" ? [card.id] : []))
+    .join("\n");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes rendered cards and writes their fitted heights to the external scene
   useEffect(() => {
     const layer = turnBoard.layer();
-    if (draft || !api || !layer || cards.length === 0) return;
+    if (draft || !api || !layer || markdownCardKey === "") return;
     const stops = [
       ...layer.querySelectorAll<HTMLElement>('.canvas-card[data-canvas-card="markdown"] > *'),
     ].map((content) => observeResize(content, () => syncTurns()));
     return () => {
       for (const stop of stops) stop();
     };
-  }, [api, cards, draft, syncTurns, turnBoard]);
+  }, [api, draft, markdownCardKey, syncTurns, turnBoard]);
 
   // A citation of a card shows that card: the board stops following turns and centres on it.
   const revealElement = useStableCallback((elementId: string) => {
@@ -1408,8 +1444,6 @@ export default function ExcalidrawBoard({
         ? null
         : createPortal(
             cards.map((card) => {
-              const width = card.width - 2 * TURN_INSET_PX;
-              const height = card.height - 2 * TURN_INSET_PX;
               return (
                 <div
                   key={card.id}
@@ -1429,12 +1463,7 @@ export default function ExcalidrawBoard({
                     if (cover) cover.hidden = false;
                     if (card.card.kind === "surface") surfaceActivation.setInteracting(null);
                   }}
-                  style={{
-                    ...chatAccentOf(card),
-                    transform: `translate(${card.x + TURN_INSET_PX}px, ${card.y + TURN_INSET_PX}px)`,
-                    width,
-                    height,
-                  }}
+                  style={chatAccentOf(card)}
                 >
                   {card.card.kind === "surface" ? (
                     api && renderPanelSurface ? (
@@ -1442,13 +1471,11 @@ export default function ExcalidrawBoard({
                       // leaves it at its size while it rasterizes at screen resolution.
                       <div
                         className="canvas-card-raster"
-                        style={{
-                          width,
-                          height,
-                          ...(rasterZoom > 1
+                        style={
+                          rasterZoom > 1
                             ? { zoom: rasterZoom, transform: `scale(${1 / rasterZoom})` }
-                            : {}),
-                        }}
+                            : undefined
+                        }
                       >
                         <CanvasSurfaceCardView
                           environmentId={canvasThread.environmentId}
@@ -1488,7 +1515,7 @@ export default function ExcalidrawBoard({
                         htmlRender={{
                           attachmentId: card.card.attachmentId,
                           title: card.card.title,
-                          height,
+                          height: card.height - 2 * TURN_INSET_PX,
                         }}
                         threadRef={canvasThread}
                       />
