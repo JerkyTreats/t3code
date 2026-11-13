@@ -38,6 +38,23 @@ const client = McpSchema.McpServerClient.of({
   getClient: Effect.die("unused"),
 });
 
+// A synthetic busy board: more marks than one canvas_read result can hold.
+const busyThreadId = ThreadId.make("thread-canvas-busy");
+const busyScene = {
+  revision: 1,
+  elements: Array.from({ length: 300 }, (_, index) => ({
+    id: `mark-${index}`,
+    type: "text",
+    version: 1,
+    updated: index,
+    x: -900,
+    y: index * 120,
+    width: 300,
+    height: 40,
+    text: `synthetic note ${index} ${"n".repeat(60)}`,
+  })),
+};
+
 const drawn: Array<Parameters<ThreadCanvasStore.ThreadCanvasStore["Service"]["draw"]>[0]> = [];
 const layerCanvasMock = Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({
   chatCardOf: () => Effect.succeed(null),
@@ -53,21 +70,26 @@ const layerCanvasMock = Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({
       keptUserMoves: [],
     });
   },
-  read: () =>
-    Effect.succeed({
-      revision: 1,
-      elements: [
-        {
-          id: "turn-a",
-          type: "rectangle",
-          x: -430,
-          y: 0,
-          width: 860,
-          height: 400,
-          customData: { t3Turn: "a", t3TurnTitle: "Latest" },
-        },
-      ],
-    }),
+  deliverToAgent: () => Effect.succeed(ThreadCanvasStore.EMPTY_CANVAS_DELIVERY),
+  read: (id) =>
+    Effect.succeed(
+      id === busyThreadId
+        ? busyScene
+        : {
+            revision: 1,
+            elements: [
+              {
+                id: "turn-a",
+                type: "rectangle",
+                x: -430,
+                y: 0,
+                width: 860,
+                height: 400,
+                customData: { t3Turn: "a", t3TurnTitle: "Latest" },
+              },
+            ],
+          },
+    ),
 });
 const layerHtmlRenderMock = Layer.mock(HtmlRender.HtmlRender)({
   readStored: () => Effect.succeed(null),
@@ -151,6 +173,27 @@ it.effect("compiles a diagram into laid-out shapes, and says why it cannot read 
       const broken = yield* call("flowchart TB\n  subgraph S\n  a");
       expect(broken.isError).toBe(true);
       expect(JSON.stringify(broken.content)).toContain("Could not read the diagram");
+    }),
+  ).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps each copy of a busy board's canvas_read result within one tool result", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      const read = yield* server.callTool({ name: "canvas_read", arguments: {} }).pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...invocation,
+          thread: { ...invocation.thread, threadId: busyThreadId },
+        }),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+      expect(read.isError).toBe(false);
+      // The result carries it twice; Claude Code and Codex each take one copy, so each must fit.
+      const structured = JSON.stringify(read.structuredContent);
+      expect(structured.length).toBeLessThanOrEqual(40_000);
+      expect(read.content).toEqual([{ type: "text", text: structured }]);
+      expect(structured).toContain("older marks are left out");
     }),
   ).pipe(Effect.provide(layerTest)),
 );

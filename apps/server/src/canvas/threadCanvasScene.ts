@@ -56,6 +56,11 @@ const COVERS_CHARS = 160;
 
 const clippedTo = (text: string, chars: number) =>
   text.length > chars ? `${text.slice(0, chars)}…` : text;
+/** Text cut to this many characters, saying how many more there were. */
+const cutTo = (text: string, chars: number) =>
+  text.length > chars
+    ? `${text.slice(0, chars)}… [${text.length - chars} more characters cut]`
+    : text;
 
 const numberOf = (value: unknown) => (typeof value === "number" ? Math.round(value) : 0);
 const boxOf = (element: ThreadCanvasElement): CanvasBox => ({
@@ -360,12 +365,14 @@ function describeMark(mark: ReturnType<typeof describeCanvas>["elements"][number
 /**
  * What the user did on the canvas since the agent last knew about it. `seenMarks` is the state to
  * save once the agent has this note, and `sketched` says a mark exists that only a picture can
- * show. A mark is news when what it is changes, not when the board moves it.
+ * show. A mark is news when what it is changes, not when the board moves it. Only the marks the
+ * note names count as seen, or with `delivered` the marks a canvas_read result listed.
  */
 export function describeCanvasChanges(
   scene: ThreadCanvasScene,
   message: string,
   reader: string | null = null,
+  delivered?: ReadonlySet<string>,
 ) {
   const known = (id: string) =>
     scene.seenMarks?.[id] !== undefined || scene.seen?.[id] !== undefined;
@@ -406,6 +413,9 @@ export function describeCanvasChanges(
         ]
       : [];
   });
+  const told =
+    delivered ??
+    new Set([...fresh.slice(0, NOTE_MAX_CHANGES), ...sentNotes].map((mark) => mark.id));
   const lines = [...fresh.map(describeMark), ...removed];
   const shown = lines.slice(0, NOTE_MAX_CHANGES);
   if (lines.length > shown.length) {
@@ -430,16 +440,20 @@ export function describeCanvasChanges(
     seenMarks: Object.fromEntries(
       marks.flatMap((mark) => {
         const stamp = stamps.get(mark.id);
-        return stamp === undefined ? [] : [[mark.id, stamp]];
+        return stamp === undefined || (isFresh(mark) && !told.has(mark.id))
+          ? []
+          : [[mark.id, stamp]];
       }),
     ),
-    forget,
+    // A read lists no removals; the note names them after the fresh marks, up to its cap.
+    forget:
+      delivered === undefined ? forget.slice(0, Math.max(0, NOTE_MAX_CHANGES - fresh.length)) : [],
     sketched: fresh.some((mark) => mark.text === undefined),
   };
 }
 
-/** Whole card text in a detailed read, up to this much per card. */
-const DETAIL_CARD_TEXT_CHARS = 4000;
+/** An element's text in a read, up to this much; longer text is cut and says so. */
+const READ_TEXT_CHARS = 4000;
 /** A read stays within this much JSON, about 16k tokens, so it fits one tool result. */
 const READ_BUDGET_CHARS = 40_000;
 /** Room kept for the spine, the note and what canvas_read adds for a chat placed on the board. */
@@ -447,17 +461,23 @@ const READ_ENVELOPE_CHARS = 1_500;
 /** Turns and drawings give way past this much, oldest first, so the elements keep some room. */
 const READ_LAYOUT_CHARS = 24_000;
 
-/** The leading items that fit within this much JSON, and how much they take. */
-function fitting<T>(items: ReadonlyArray<T>, budget: number) {
+/**
+ * The items that fit within this much JSON, and how much they take. It stops at the first that
+ * does not fit, or with `skipping` passes over it and keeps filling.
+ */
+function fitting<T>(items: ReadonlyArray<T>, budget: number, skipping = false) {
   let spent = 0;
-  let count = 0;
+  const kept: T[] = [];
   for (const item of items) {
     const size = JSON.stringify(item).length + 1;
-    if (spent + size > budget) break;
+    if (spent + size > budget) {
+      if (skipping) continue;
+      break;
+    }
     spent += size;
-    count += 1;
+    kept.push(item);
   }
-  return { kept: items.slice(0, count), spent };
+  return { kept, spent };
 }
 
 export interface CanvasReadQuery {
@@ -499,7 +519,7 @@ export function readCanvas(scene: ThreadCanvasScene, query: CanvasReadQuery = {}
   const detailed =
     query.drawingIds !== undefined || query.ids !== undefined || query.region !== undefined;
   const described = describeCanvas(scene, {
-    cardTextChars: detailed ? DETAIL_CARD_TEXT_CHARS : CARD_TEXT_PREVIEW_CHARS,
+    cardTextChars: detailed ? Number.POSITIVE_INFINITY : CARD_TEXT_PREVIEW_CHARS,
   });
   const live = scene.elements.filter((element) => element.isDeleted !== true);
   const turnTitles = new Map<string, string>();
@@ -572,9 +592,11 @@ export function readCanvas(scene: ThreadCanvasScene, query: CanvasReadQuery = {}
     beside,
     covers,
     turn,
+    text,
     ...element
   }: (typeof described.elements)[number]) => ({
     ...element,
+    ...(text === undefined ? {} : { text: cutTo(text, READ_TEXT_CHARS) }),
     ...(turn === undefined || turn < droppedTurns ? {} : { turn: turn - droppedTurns }),
     ...(covers === undefined
       ? {}
@@ -594,6 +616,7 @@ export function readCanvas(scene: ThreadCanvasScene, query: CanvasReadQuery = {}
     fitting(
       detailed ? matching : matching.toReversed().toSorted(unseenThenNewest),
       READ_BUDGET_CHARS - READ_ENVELOPE_CHARS - recentTurns.spent - recentDrawings.spent,
+      true,
     ).kept,
   );
   const elements = matching.filter((element) => kept.has(element));

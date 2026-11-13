@@ -458,8 +458,10 @@ describe("describeCanvasChanges", () => {
       id: `note-${index}`,
       text: `note ${index}`,
     }));
-    const lines = describeCanvasChanges(scene(notes), "").note.split("\n");
-    expect(lines.at(-1)).toBe("- and 5 more; canvas_read lists them");
+    const changes = describeCanvasChanges(scene(notes), "");
+    expect(changes.note.split("\n").at(-1)).toBe("- and 5 more; canvas_read lists them");
+    // The five the note leaves out stay unseen, so the next turn names them.
+    expect(Object.keys(changes.seenMarks)).toHaveLength(20);
   });
 });
 
@@ -608,6 +610,56 @@ describe("readCanvas", () => {
     // Past the unseen marks, the newest come first: the seen marks kept are the newest seen ones.
     expect(keptSeen).toEqual(marks.slice(282 - keptSeen.length).map((mark) => mark.id));
     expect(read.note).toContain(`${282 - kept.length} older marks are left out`);
+  });
+
+  it("acknowledges only the marks a read lists, so the ones it left out come first next time", () => {
+    const board = scene(
+      Array.from({ length: 400 }, (_, index) => ({
+        id: `mark-${index}`,
+        type: "text",
+        version: 1,
+        updated: index,
+        x: -700,
+        y: index * 50,
+        width: 100,
+        height: 20,
+        text: `synthetic note ${index} ${"n".repeat(60)}`,
+      })),
+    );
+    const listed = readCanvas(board).elements.map((element) => element.id);
+    expect(listed).not.toContain("mark-0");
+    const { seenMarks } = describeCanvasChanges(board, "", null, new Set(listed));
+    expect(Object.keys(seenMarks).toSorted()).toEqual(listed.toSorted());
+    const next = readCanvas({ ...board, seenMarks }).elements.map((element) => element.id);
+    expect(next).toContain("mark-0");
+  });
+
+  it("cuts an oversized mark's text, still lists the other marks, and returns it by id", () => {
+    const huge = {
+      id: "huge",
+      type: "text",
+      updated: 2,
+      x: -700,
+      y: 80,
+      width: 100,
+      height: 20,
+      text: "h".repeat(40_000),
+    };
+    const short = {
+      id: "short",
+      type: "text",
+      updated: 1,
+      x: -700,
+      y: 40,
+      width: 100,
+      height: 20,
+      text: "ok",
+    };
+    const read = readCanvas(scene([turn, huge, short]));
+    expect(read.elements.map((element) => element.id)).toEqual(["huge", "short"]);
+    expect(read.elements[0]?.text).toBe(`${"h".repeat(4000)}… [36000 more characters cut]`);
+    const byId = readCanvas(scene([turn, huge, short]), { ids: ["huge"] });
+    expect(byId.elements.map((element) => element.id)).toEqual(["huge"]);
   });
 
   it("drops the earliest turns past the budget and counts mark turns from the first kept", () => {

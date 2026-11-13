@@ -70,11 +70,15 @@ export class ThreadCanvasStore extends Context.Service<
     readonly draw: (
       input: DrawInput & { readonly threadId: ThreadId },
     ) => Effect.Effect<ReturnType<typeof planDrawing>["report"], ThreadCanvasError>;
-    /** The user's unseen canvas changes for a turn. `picture` attaches a sketch of them. */
+    /**
+     * The user's unseen canvas changes for a turn. `picture` attaches a sketch of them, and
+     * `delivered` names the marks a canvas_read result listed, the only ones it acknowledges.
+     */
     readonly deliverToAgent: (input: {
       readonly threadId: ThreadId;
       readonly message: string;
       readonly picture: boolean;
+      readonly delivered?: ReadonlySet<string> | undefined;
     }) => Effect.Effect<ThreadCanvasDelivery, ThreadCanvasError>;
     /** The board a chat's card sits on, and the card; null when no board shows it. */
     readonly chatCardOf: (
@@ -296,6 +300,7 @@ const make = Effect.gen(function* () {
       yield* read(canvasThreadId),
       input.message,
       placed === null ? null : input.threadId,
+      input.delivered,
     );
     if (changes.note === "") return EMPTY_CANVAS_DELIVERY;
     const attachments =

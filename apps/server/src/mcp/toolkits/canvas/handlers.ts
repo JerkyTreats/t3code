@@ -132,16 +132,22 @@ const handlers = {
       const target = yield* canvasOf(thread.threadId);
       const canvasThreadId = target.threadId;
       const scene = yield* canvas.read(canvasThreadId).pipe(Effect.mapError(toFailure));
+      // A drawing id also matches a delegated task's copy of it, `<id>~<owner>`.
+      const read = readCanvas(scene, input);
       // A delegated task reads its parent's canvas but leaves the user's marks unseen, so the
-      // parent still hears about them; a placed chat takes in the marks addressed to it.
+      // parent still hears about them; a placed chat takes in the marks addressed to it. Only
+      // the marks this result lists count as seen.
       if (canvasThreadId === thread.threadId || target.card !== null) {
         const delivery = yield* canvas
-          .deliverToAgent({ threadId: thread.threadId, message: "", picture: false })
+          .deliverToAgent({
+            threadId: thread.threadId,
+            message: "",
+            picture: false,
+            delivered: new Set(read.elements.map((element) => element.id)),
+          })
           .pipe(Effect.mapError(toFailure));
         yield* delivery.acknowledge.pipe(Effect.mapError(toFailure));
       }
-      // A drawing id also matches a delegated task's copy of it, `<id>~<owner>`.
-      const read = readCanvas(scene, input);
       const card =
         target.card === null
           ? undefined
