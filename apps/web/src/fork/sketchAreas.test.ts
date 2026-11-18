@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { sketchAreas } from "./sketchAreas";
+import { sketchAreas, sketchFrame } from "./sketchAreas";
 
 const mark = (id: string, x: number, y: number, updated = 0, size = 100) => ({
   id,
@@ -31,5 +31,26 @@ describe("sketchAreas", () => {
       [0, 1, 2, 3, 4, 5].map((index) => mark(`m${index}`, 0, index * 1000, 10 - index)),
     );
     expect(areas.map((area) => area.ids)).toEqual([["m0"], ["m1"], ["m2"], ["m3"]]);
+  });
+
+  it("draws the words around an area, whole, and leaves far ones out", () => {
+    const element = (id: string, type: string, x: number, width = 100) => ({
+      id,
+      type,
+      box: { x, y: 0, width, height: 40 },
+    });
+    const ring = element("ring", "ellipse", 0);
+    const { crop, drawn } = sketchFrame(
+      [
+        ring,
+        element("label", "text", 150),
+        element("edge", "text", 200, 400),
+        element("far", "text", 2000),
+      ],
+      ring.box,
+      (each) => each.box,
+    );
+    expect(drawn.map((each) => each.id)).toEqual(["ring", "label", "edge"]);
+    expect(crop).toEqual({ x: -120, y: -120, width: 720, height: 280 });
   });
 });

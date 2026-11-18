@@ -107,13 +107,7 @@ import {
 } from "./canvasChatPresence";
 import { BoardActivityStrip } from "./CanvasChatStatus";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
-import {
-  boxesNear,
-  boxUnion,
-  SKETCH_AREA_GAP_PX,
-  type SketchBox,
-  sketchAreas,
-} from "./sketchAreas";
+import { type SketchBox, sketchAreas, sketchFrame } from "./sketchAreas";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
 import { tableWidthOf } from "./turnTableWidth";
 
@@ -154,8 +148,6 @@ const FOLLOW_TOLERANCE_PX = 48;
 const SKETCH_MAX_EDGE_PX = 1600;
 // A small area is drawn larger so its words stay legible, up to this much.
 const SKETCH_MAX_UPSCALE = 2;
-// Anything near enough to have joined an area's marks shows around them.
-const SKETCH_PADDING_PX = SKETCH_AREA_GAP_PX;
 // Base64 costs a third more, and a larger picture would be refused by the save.
 const SKETCH_MAX_BYTES = 5_000_000;
 
@@ -340,33 +332,30 @@ function boxOf(elements: ReadonlyArray<BoardElement>): SketchBox {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-/**
- * Renders one area of the board around marks an agent cannot read as data, with the reader's
- * other marks and words in it. T3's own elements stay out of the picture.
- */
-function renderSketch(api: ExcalidrawImperativeAPI, area: SketchBox) {
-  const scene = api.getSceneElements();
-  const users = new Set(scene.filter(isUserMark).map((element) => element.id));
-  const elements = scene.filter(
+/** The reader's marks and their labels, which sketches draw. T3's own elements stay out. */
+function sketchableOf(elements: BoardElements) {
+  const users = new Set(elements.filter(isUserMark).map((element) => element.id));
+  return elements.filter(
     (element) =>
-      users.has(element.id) || (element.type === "text" && users.has(element.containerId ?? "")),
+      users.has(element.id) ||
+      (element.type === "text" && !element.isDeleted && users.has(element.containerId ?? "")),
   );
-  const padded = {
-    x: area.x - SKETCH_PADDING_PX,
-    y: area.y - SKETCH_PADDING_PX,
-    width: area.width + 2 * SKETCH_PADDING_PX,
-    height: area.height + 2 * SKETCH_PADDING_PX,
-  };
-  // Words cut at the edge cannot be read, so text the crop touches comes in whole.
-  const cut = elements.filter(
-    (element) => element.type === "text" && boxesNear(boxOf([element]), padded, 0),
-  );
-  const crop = cut.length === 0 ? padded : boxUnion(padded, boxOf(cut));
+}
+
+/** Renders one area's picture: what `sketchFrame` chose, cropped to its box. */
+function renderSketch(
+  api: ExcalidrawImperativeAPI,
+  crop: SketchBox,
+  drawn: ReadonlyArray<BoardElement>,
+) {
   // Excalidraw sizes an export to its frame and draws what overlaps it, which crops to the area.
   // The skeleton's frame takes its children's bounds, so the crop is set after.
   const [skeleton] = convertToExcalidrawElements([{ type: "frame", children: [] }]);
   return exportToBlob({
-    elements,
+    // A frame export drops elements of any other frame, so marks in the reader's frames leave them.
+    elements: drawn.map((element) =>
+      element.frameId === null ? element : newElementWith(element, { frameId: null }),
+    ),
     exportingFrame: skeleton?.type === "frame" ? newElementWith(skeleton, crop) : null,
     files: api.getFiles(),
     mimeType: "image/png",
@@ -924,18 +913,26 @@ export default function ExcalidrawBoard({
   const pushSketch = async (elements: BoardElements) => {
     if (!api) return;
     const marks = unseenSketchMarks(elements, seenByAgent.current);
-    // Keyed by content, so marks the board only moved with the turns are not drawn again.
-    const stamps = canvasMarkStamps(marks);
-    const key = marks.map((mark) => `${mark.id}:${stamps.get(mark.id)}`).join();
-    if (marks.length === 0 || key === lastSketch.current) return;
-    lastSketch.current = key;
+    if (marks.length === 0) return;
     // One picture per area, so marks far apart do not shrink into one tall frame.
+    const sketchable = sketchableOf(elements);
     const areas = sketchAreas(
       marks.map((mark) => ({ id: mark.id, box: boxOf([mark]), updated: mark.updated })),
-    );
+    ).map((area) => ({
+      ...area,
+      ...sketchFrame(sketchable, area.box, (element) => boxOf([element])),
+    }));
+    // Keyed by the content of all each picture draws, so the board moving it with the turns
+    // does not draw it again, but a word added beside a mark does.
+    const stamps = canvasMarkStamps(elements);
+    const key = areas
+      .map((area) => area.drawn.map((element) => `${element.id}:${stamps.get(element.id)}`).join())
+      .join("|");
+    if (key === lastSketch.current) return;
+    lastSketch.current = key;
     const sketches = [];
     for (const area of areas) {
-      const blob = await renderSketch(api, area.box);
+      const blob = await renderSketch(api, area.crop, area.drawn);
       if (blob.size <= SKETCH_MAX_BYTES) {
         sketches.push({ png: await readBase64(blob), marks: area.ids });
       }

@@ -133,8 +133,9 @@ const make = Effect.gen(function* () {
   const fileFor = (threadId: ThreadId) => `${fileStem(threadId)}.json`;
   const sketchFor = (threadId: ThreadId, index: number) =>
     `${fileStem(threadId)}.sketch-${index + 1}.png`;
-  // The marks each saved sketch shows, which also says how many there are.
-  const sketchMarksFor = (threadId: ThreadId) => `${fileStem(threadId)}.sketches.json`;
+  // The marks each saved sketch shows, which also says how many there are. Not `.json`, which
+  // the startup scan reads as a scene.
+  const sketchMarksFor = (threadId: ThreadId) => `${fileStem(threadId)}.sketch-marks`;
   const failure = (message: string) => (cause: unknown) =>
     new ThreadCanvasError({ message: `${message}: ${String(cause)}` });
 
@@ -359,7 +360,11 @@ const make = Effect.gen(function* () {
       input.delivered,
     );
     if (changes.note === "") return EMPTY_CANVAS_DELIVERY;
-    const pictures = input.picture && changes.sketched ? yield* attachSketches(canvasThreadId) : [];
+    // Under the save's permit, so a save cannot swap the pictures between the marks and the copies.
+    const pictures =
+      input.picture && changes.sketched
+        ? yield* writes.withPermits(1)(attachSketches(canvasThreadId))
+        : [];
     return {
       note: pictures.length === 0 ? changes.note : `${changes.note}\n\n${sketchNote(pictures)}`,
       attachments: pictures.map((picture) => picture.attachment),

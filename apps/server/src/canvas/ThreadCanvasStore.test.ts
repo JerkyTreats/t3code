@@ -176,6 +176,49 @@ layer("ThreadCanvasStore", (it) => {
     }),
   );
 
+  it.effect("finds a placed chat after a restart, with saved sketches beside the boards", () =>
+    Effect.gen(function* () {
+      const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
+      const board = ThreadId.make("thread-canvas-restart-z-board");
+      const chat = ThreadId.make("thread-canvas-restart-chat");
+      const png = Buffer.from("png-bytes").toString("base64");
+      // Sketches saved before and after a board named to sort last, so one lists ahead of it.
+      const saveSketches = (from: number) =>
+        Effect.forEach(
+          [0, 1, 2, 3, 4, 5, 6, 7].map((index) => from + index),
+          (index) =>
+            canvas.saveFromClient({
+              threadId: ThreadId.make(`thread-canvas-restart-sketch-${index}`),
+              elements: [],
+              sketches: [{ png, marks: ["stroke"] }],
+            }),
+          { discard: true },
+        );
+      yield* saveSketches(0);
+      yield* canvas.saveFromClient({
+        threadId: board,
+        elements: [
+          {
+            id: "restart-card",
+            version: 1,
+            customData: {
+              t3Card: { kind: "surface", surface: { kind: "side-chat", threadId: chat } },
+            },
+          },
+        ],
+      });
+      yield* saveSketches(8);
+
+      const restarted = yield* ThreadCanvasStore.ThreadCanvasStore.pipe(
+        Effect.provide(Layer.fresh(ThreadCanvasStore.layer)),
+      );
+      assert.deepStrictEqual(yield* restarted.chatCardOf(chat), {
+        canvasThreadId: board,
+        card: "restart-card",
+      });
+    }),
+  );
+
   it.effect("stores a thread whose id would not fit in a filename", () =>
     Effect.gen(function* () {
       const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
