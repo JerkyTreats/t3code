@@ -258,16 +258,26 @@ layer("ThreadCanvasStore", (it) => {
           { id: "board", ...page, stateKeys: ["workflow"] },
           { id: "other", ...page, stateKeys: ["notes"] },
         ],
+        author: board,
+      });
+      // Another chat on this board keeps its own "workflow".
+      yield* canvas.draw({
+        threadId: board,
+        drawingId: "chat-status",
+        shapes: [{ id: "board", ...page, stateKeys: ["workflow"] }],
+        author: "thread-canvas-reveal-other-chat",
       });
       yield* canvas.saveFromClient({ threadId: board, elements: [turn("2", 3000)] });
 
-      const revealed = yield* canvas.revealPages({ threadId: board, key: "workflow" });
-      assert.deepStrictEqual(revealed, ["status/board"]);
+      const reveal = (key: string) =>
+        canvas.revealPages({ threadId: board, key, owner: board, ownerOf: Effect.succeed });
+      assert.deepStrictEqual(yield* reveal("workflow"), ["status/board"]);
       const { elements } = yield* canvas.read(board);
       const yOf = (id: string) => elements.find((element) => element.id === id)?.y;
       assert.strictEqual(yOf("status/board"), 3000);
       assert.isBelow(Number(yOf("status/other")), 3000);
-      assert.deepStrictEqual(yield* canvas.revealPages({ threadId: board, key: "unbound" }), []);
+      assert.isBelow(Number(yOf("chat-status/board")), 3000);
+      assert.deepStrictEqual(yield* reveal("unbound"), []);
     }),
   );
 });

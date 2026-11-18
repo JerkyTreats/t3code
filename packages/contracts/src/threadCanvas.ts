@@ -120,8 +120,7 @@ export const ThreadCanvasShape = Schema.Struct({
   title: Schema.optional(Schema.String.annotate({ description: "html only: the page's title." })),
   stateKeys: Schema.optional(
     Schema.Array(PageStateKey).annotate({
-      description:
-        "html only: the page_state keys the page reads with t3.state. page_state with reveal brings the card beside the latest turn.",
+      description: "html only: page_state keys the page reads, for page_state reveal.",
     }),
   ),
   card: Schema.optional(ThreadCanvasCardSpec),

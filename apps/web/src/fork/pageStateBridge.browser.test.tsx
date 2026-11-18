@@ -44,6 +44,12 @@ const threadRef = {
 // The page renders from t3.state and saves the reader's step back with merge.
 const page = injectHtmlRenderBootstrap(`<!doctype html><html><head></head><body><script>
   var load = Math.random();
+  try {
+    t3.state.subscribe("constructor", function () {});
+    parent.postMessage({ type: "prototype-key", ok: true }, "*");
+  } catch (error) {
+    parent.postMessage({ type: "prototype-key", ok: false }, "*");
+  }
   t3.state.subscribe("workflow", function (value, revision) {
     parent.postMessage({ type: "rendered", stage: value.stage, revision: revision, load: load }, "*");
     if (value.stage === "Research") {
@@ -114,4 +120,31 @@ it("serves t3.state to a page: values flow in without a reload, and its writes s
     }),
   );
   expect(screen.container.querySelector("iframe")).toBe(frame);
+  expect(messages).toContainEqual({ type: "prototype-key", ok: true });
+});
+
+it("answers a page with no thread at once: reads unavailable, writes refused", async () => {
+  setup();
+  const lone = injectHtmlRenderBootstrap(`<!doctype html><html><head></head><body><script>
+    function report(kind) {
+      return function (error) { parent.postMessage({ type: kind, code: error.code }, "*"); };
+    }
+    t3.state.get("workflow").then(null, report("get"));
+    t3.state.set("workflow", 1).then(null, report("set"));
+  </script></body></html>`);
+  const src = URL.createObjectURL(new Blob([lone], { type: "text/html" }));
+  using _url = { [Symbol.dispose]: () => URL.revokeObjectURL(src) };
+  const messages: Array<Record<string, unknown>> = [];
+  const listening = new AbortController();
+  using _listening = { [Symbol.dispose]: () => listening.abort() };
+  window.addEventListener("message", (event) => messages.push(event.data), {
+    signal: listening.signal,
+  });
+  await using _screen = await render(<HtmlRenderDocument src={src} title="Lone" />);
+
+  await vi.waitFor(() => {
+    expect(messages).toContainEqual({ type: "get", code: "unavailable" });
+    expect(messages).toContainEqual({ type: "set", code: "unavailable" });
+  });
+  expect(testState.write).not.toHaveBeenCalled();
 });

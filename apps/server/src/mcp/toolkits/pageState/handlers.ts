@@ -51,10 +51,14 @@ const handlers = {
       // The cards to reveal sit on the board this agent draws on.
       const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
       const target = yield* canvasOf(thread.threadId);
+      const owner = yield* pageState.ownerOf(thread.threadId).pipe(Effect.mapError(toFailure));
       const revealed = yield* canvas
         .revealPages({
           threadId: target.threadId,
           key: input.key,
+          owner,
+          // A card drawn by a thread that is gone still counts as that thread's.
+          ownerOf: (author) => pageState.ownerOf(author).pipe(Effect.orElseSucceed(() => author)),
           anchor: target.card ?? undefined,
         })
         .pipe(

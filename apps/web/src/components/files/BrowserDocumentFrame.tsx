@@ -182,13 +182,15 @@ export function HtmlRenderDocument(props: {
   readonly title: string;
   readonly className?: string;
   readonly threadRef?: ScopedThreadRef | undefined;
+  /** The thread whose page state the page reads, when not `threadRef`'s. */
+  readonly stateThreadRef?: ScopedThreadRef | undefined;
   readonly onContentHeight?: (height: number) => void;
   /** Reports fullscreen changes so virtualized rows can stay mounted. */
   readonly onFullscreenChange?: ((fullscreen: boolean) => void) | undefined;
 }) {
   const theme = useHtmlRenderTheme();
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const pageState = usePageStateBridge(props.threadRef, frameRef);
+  const pageState = usePageStateBridge(props.stateThreadRef ?? props.threadRef, frameRef);
   const [src] = useState(() => `${props.src.split("#", 1)[0]}${htmlRenderThemeFragment(theme)}`);
   const [loaded, setLoaded] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);

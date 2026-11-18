@@ -4,6 +4,7 @@ import {
   HTML_RENDER_COLUMN_WIDTH,
   htmlRenderFrameHeight,
   htmlRenderResult,
+  htmlRenderStateWithoutHost,
   htmlRenderThemeFragment,
   htmlRenderThemeMessage,
   readHtmlRenderContentHeight,
@@ -59,6 +60,16 @@ export function GuestHtmlRender({
       const height = readHtmlRenderContentHeight(event.data);
       if (height !== undefined) {
         setContentHeight(height);
+        return;
+      }
+      // Guest links carry no page state, so a page's reads fail and its writes are refused at once.
+      const state = htmlRenderStateWithoutHost(
+        event.data,
+        "read_only",
+        "Live data is not shared on guest links.",
+      );
+      if (state !== undefined) {
+        frame.contentWindow?.postMessage(state, "*");
         return;
       }
       // Only while the reader is using this frame, so a page cannot open links on its own.

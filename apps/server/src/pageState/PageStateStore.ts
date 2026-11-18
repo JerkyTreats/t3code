@@ -31,16 +31,18 @@ const StoredDocument = Schema.fromJsonString(
 );
 const decodeStored = Schema.decodeUnknownEffect(StoredDocument);
 const encodeStored = Schema.encodeEffect(StoredDocument);
-// Subagent thread ids embed their ancestors, so nested ones outgrow a directory name.
-const MAX_ENCODED_THREAD_ID_CHARS = 200;
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** RFC 7386: objects merge key by key, null removes a key, anything else replaces. */
+/**
+ * RFC 7386: objects merge key by key, null removes a key, anything else replaces. Results have no
+ * prototype, so a "__proto__" key is data like any other.
+ */
 function applyJsonMergePatch(target: unknown, patch: unknown): unknown {
   if (!isObject(patch)) return patch;
-  const merged: Record<string, unknown> = isObject(target) ? { ...target } : {};
+  const merged: Record<string, unknown> = Object.create(null);
+  if (isObject(target)) for (const [key, value] of Object.entries(target)) merged[key] = value;
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) delete merged[key];
     else merged[key] = applyJsonMergePatch(merged[key], value);
@@ -64,6 +66,8 @@ export interface PageStateWrite {
 export class PageStateStore extends Context.Service<
   PageStateStore,
   {
+    /** The thread whose state a thread uses: its delegator's for a delegated task. */
+    readonly ownerOf: (threadId: ThreadId) => Effect.Effect<ThreadId, PageStateError>;
     readonly list: (
       threadId: ThreadId,
     ) => Effect.Effect<ReadonlyArray<PageStateDocument>, PageStateError>;
@@ -95,22 +99,29 @@ const make = Effect.gen(function* () {
   const storage = () =>
     new PageStateError({ reason: "storage", message: "Could not access page state." });
 
-  // Unreadable lineage leaves a thread its own state rather than failing the page.
-  const ownerOf = (threadId: ThreadId) =>
-    delegatorOf(threadId, (id) =>
-      orchestrator.getThreadShell(id).pipe(
-        Effect.map((shell) => (shell === null ? null : shell.lineage)),
-        Effect.orElseSucceed(() => null),
-      ),
+  // Only a thread that exists has state; past it, unreadable lineage leaves a thread its own.
+  const ownerOf = Effect.fn("PageStateStore.ownerOf")(function* (threadId: ThreadId) {
+    const shell = yield* orchestrator.getThreadShell(threadId).pipe(Effect.mapError(storage));
+    if (shell === null) {
+      return yield* new PageStateError({ reason: "invalid", message: "No such thread." });
+    }
+    return yield* delegatorOf(threadId, (id) =>
+      id === threadId
+        ? Effect.succeed(shell.lineage)
+        : orchestrator.getThreadShell(id).pipe(
+            Effect.map((parent) => (parent === null ? null : parent.lineage)),
+            Effect.orElseSucceed(() => null),
+          ),
     );
+  });
+  // A hash names each thread's directory, so no thread id can name another path.
   const threadDirectory = (threadId: ThreadId) => {
-    const encoded = encodeURIComponent(threadId);
-    return path.join(
+    const resolved = path.join(
       directory,
-      encoded.length <= MAX_ENCODED_THREAD_ID_CHARS
-        ? encoded
-        : NodeCrypto.createHash("sha256").update(threadId).digest("hex"),
+      NodeCrypto.createHash("sha256").update(threadId).digest("hex"),
     );
+    if (path.dirname(resolved) !== directory) throw new Error("Page state path escaped its store.");
+    return resolved;
   };
   const fileFor = (threadId: ThreadId, key: string) =>
     path.join(threadDirectory(threadId), `${key}.json`);
@@ -235,7 +246,7 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  return PageStateStore.of({ list, get, write, follow });
+  return PageStateStore.of({ ownerOf, list, get, write, follow });
 });
 
 export const layer = Layer.effect(PageStateStore, make);

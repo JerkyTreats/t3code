@@ -10,19 +10,16 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 // This affects only the caller's thread, not its workspace, so read-only sandboxes and plan mode may use it.
 const PageStateTool = Tool.make("page_state", {
   description:
-    "Read or write this thread's page state: named JSON documents that pages from html_render and canvas html cards read live with t3.state and the user edits through them. Write a page once to render from t3.state, then change its data here: open pages update in place. Delegated tasks share their delegator's state. No arguments lists documents; key alone returns one; set replaces it; merge applies an RFC 7386 merge patch (null removes a key). expectedRevision refuses to overwrite a newer edit.",
+    "This thread's page state: JSON documents by key that pages read with t3.state.subscribe(key, (value, revision) => ...) or t3.state.get(key) and edit with t3.state.set(key, value) or t3.state.merge(key, patch), each with an optional {expectedRevision}. No arguments lists them; key alone returns one; set replaces it; merge applies an RFC 7386 patch (null removes a key).",
   parameters: Schema.Struct({
     key: Schema.optional(PageStateKey),
-    set: Schema.optional(Schema.Json).annotate({ description: "The document's whole new value." }),
-    merge: Schema.optional(Schema.Json).annotate({
-      description: "Merged into the current value, such as {rows:{api:{stage:'Verification'}}}.",
-    }),
+    set: Schema.optional(Schema.Json),
+    merge: Schema.optional(Schema.Json),
     expectedRevision: Schema.optional(Schema.Int).annotate({
-      description: "Write only if the document is at this revision; 0 means not written yet.",
+      description: "Write only at this revision; 0 means unwritten.",
     }),
     reveal: Schema.optional(Schema.Boolean).annotate({
-      description:
-        "After writing, bring canvas html cards whose stateKeys name this key beside the latest turn.",
+      description: "Bring canvas html cards whose stateKeys name this key beside the latest turn.",
     }),
   }),
   success: Schema.Struct({

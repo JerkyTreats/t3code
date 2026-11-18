@@ -14,7 +14,7 @@ Previews can load public resources such as CDN scripts, but nothing on your loca
 
 A page can show data that keeps changing, such as a status board, an issue tracker or an app mockup, without the agent sending it again. The agent shows the page once and then updates its data; every open copy of the page, in the thread or on its canvas, changes in place on web and desktop. Helper agents a thread starts update the same data, so their progress shows as it happens.
 
-Edits you make in such a page, like moving a card or ticking an item, are saved to the thread and show in every other open copy. Agents read them when they next look. If an agent changed the same data since the page last updated, the page can refuse your edit instead of overwriting the agent's. Viewers of a guest link see the data change but cannot edit it. Mobile shows pages as they were sent, without live data.
+Edits you make in such a page, like moving a card or ticking an item, are saved to the thread and show in every other open copy. Agents read them when they next look. If an agent changed the same data since the page last updated, the page can refuse your edit instead of overwriting the agent's. On a guest link and on mobile, pages show what they were sent with: no live data and no saved edits.
 
 ## MCP apps
 

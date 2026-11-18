@@ -249,9 +249,6 @@ export const HTML_RENDER_LAYOUT_GUIDE = [
   `Where the thread is a canvas, displayWidth widens this turn up to ${HTML_RENDER_MAX_DISPLAY_WIDTH}px while its text stays at reply width. Set it whenever a chart, table, diagram, or mockup reads better wide. Make the page fluid so it still works at reply width.`,
 ].join(" ");
 
-export const HTML_RENDER_STATE_GUIDE =
-  "For data that changes (a status board, a tracker, an app mockup), render from t3.state, which every T3 page has: t3.state.subscribe(key, (value, revision) => ...) runs now and on each change; t3.state.get(key) resolves the value; t3.state.set(key, value) and t3.state.merge(key, patch) save the reader's edits, with {expectedRevision} to refuse a stale save. Show the page once, then change its data with page_state.";
-
 const HOST_CONTEXT_CHANGED_METHOD = "ui/notifications/host-context-changed";
 const OPEN_LINK_METHOD = "ui/open-link";
 const SIZE_CHANGED_METHOD = "ui/notifications/size-changed";
@@ -264,6 +261,7 @@ const OPEN_IMAGE_METHOD = "t3/notifications/open-image";
 const STATE_SUBSCRIBE_METHOD = "t3/state/subscribe";
 const STATE_WRITE_METHOD = "t3/state/write";
 const STATE_CHANGED_METHOD = "t3/state/changed";
+const STATE_UNAVAILABLE_METHOD = "t3/state/unavailable";
 const STATE_KEY = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 /** The key a page asks to follow. */
@@ -321,6 +319,32 @@ export function htmlRenderStateChanged(document: {
 
 export function htmlRenderStateWritten(id: string, revision: number) {
   return { jsonrpc: "2.0", id, result: { revision } } as const;
+}
+
+/** Tells a page a key it subscribed to has no state behind this frame; its pending reads fail. */
+function htmlRenderStateUnavailable(key: string, message: string) {
+  return {
+    jsonrpc: "2.0",
+    method: STATE_UNAVAILABLE_METHOD,
+    params: { key, code: "unavailable", message },
+  } as const;
+}
+
+/**
+ * The answer of a frame with no page state behind it, such as a guest link's, so a page never
+ * waits: reads are unavailable and writes are refused with `writeCode`.
+ */
+export function htmlRenderStateWithoutHost(
+  data: unknown,
+  writeCode: "unavailable" | "read_only",
+  message: string,
+) {
+  const key = readHtmlRenderStateSubscribe(data);
+  if (key !== undefined) return htmlRenderStateUnavailable(key, message);
+  const write = readHtmlRenderStateWrite(data);
+  return write === undefined
+    ? undefined
+    : htmlRenderStateRefused(write.id, { code: writeCode, message });
 }
 
 /** `code` is the page state error's reason, or `read_only` and `unavailable` from the host. */
@@ -492,7 +516,7 @@ function rootRule(theme: HtmlRenderTheme): string {
 const BOOTSTRAP_SCRIPT = `(function(){var s=document.getElementById("t3-theme"),n=0;if(!s)return;var b=${JSON.stringify(BASE_CSS)};function a(t){if(!t||typeof t!=="object"||!t.variables||typeof t.variables!=="object")return;var c=":root{color-scheme:"+(t.appearance==="light"?"light":"dark")+";";for(var k in t.variables){if(/^--[a-z0-9-]+$/.test(k))c+=k+":"+String(t.variables[k]).replace(/[;{}<>]/g,"")+";";}s.textContent=c+"}"+b;}try{var m=/[#&]${THEME_FRAGMENT_KEY}=([^&]*)/.exec(location.hash);if(m){a(JSON.parse(decodeURIComponent(m[1])));history.replaceState(history.state,"",location.pathname+location.search);}}catch(e){}window.addEventListener("message",function(e){var d=e.data,p=d&&d.params;if(d&&d.jsonrpc==="2.0"&&d.method===${JSON.stringify(HOST_CONTEXT_CHANGED_METHOD)}&&p&&p.styles)a({appearance:p.theme,variables:p.styles.variables});});document.addEventListener("click",function(e){var l=e.isTrusted?e.composedPath().find(function(t){return t&&t.matches&&t.matches("a[href]");}):null,u;if(!l)return;try{u=new URL(l.getAttribute("href"),document.baseURI);}catch(x){return;}if(!/^https?:$/.test(u.protocol)||u.href.split("#")[0]===location.href.split("#")[0])return;if(window.parent!==window){e.preventDefault();window.parent.postMessage({jsonrpc:"2.0",id:"t3-link-"+(++n),method:${JSON.stringify(OPEN_LINK_METHOD)},params:{url:u.href,metaKey:e.metaKey,ctrlKey:e.ctrlKey}},"*");}else{l.setAttribute("target","_blank");l.setAttribute("rel","noopener");}},true);if(window.parent!==window){var h,o,z=function(){var r=document.documentElement,v=Math.ceil(r.scrollHeight>r.clientHeight?r.scrollHeight:r.getBoundingClientRect().height);if(v===h)return;h=v;window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(SIZE_CHANGED_METHOD)},params:{height:v}},"*");};if(window.ResizeObserver){o=new ResizeObserver(z);o.observe(document.documentElement);}document.addEventListener("DOMContentLoaded",function(){if(o&&document.body)o.observe(document.body);z();});window.addEventListener("load",z);window.addEventListener("wheel",function(e){window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(WHEEL_METHOD)},params:{deltaX:e.deltaX,deltaY:e.deltaY,deltaMode:e.deltaMode,ctrlKey:e.ctrlKey,metaKey:e.metaKey,shiftKey:e.shiftKey}},"*");},{passive:true});window.addEventListener("click",function(e){var t=e.composedPath()[0],u;if(!e.isTrusted||e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||!t||t.tagName!=="IMG"||t.closest("a[href],button"))return;u=t.currentSrc||t.src;if(u)setTimeout(function(){if(!e.defaultPrevented)window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(OPEN_IMAGE_METHOD)},params:{src:u,name:t.alt||t.title||""}},"*");});});var K=[],B=[],C=${JSON.stringify(EVENT_CODE_SHORTCUT_KEYS)};window.addEventListener("message",function(e){var d=e.data,p=d&&d.params;if(e.source===window.parent&&d&&d.jsonrpc==="2.0"&&d.method===${JSON.stringify(SHORTCUTS_METHOD)}&&p&&Array.isArray(p.shortcuts)&&Array.isArray(p.blocked)){K=p.shortcuts;B=p.blocked;}});window.addEventListener("keydown",function(e){var t=e.composedPath()[0],c=e.code||"",l=e.key.toLowerCase(),x=/^[a-z]$/.test(l)?[l]:[l,/^Key[A-Z]$/.test(c)?c.slice(3).toLowerCase():"",C.hasOwnProperty(c)?C[c]:""],f,m=function(s){return s&&s.metaKey===e.metaKey&&s.ctrlKey===e.ctrlKey&&s.shiftKey===e.shiftKey&&s.altKey===e.altKey&&x.indexOf(s.key)>-1;};if(!e.isTrusted||e.isComposing||e.getModifierState("AltGraph")&&!/^[a-z0-9]$/i.test(e.key)||t&&(t.isContentEditable||/^(?:INPUT|TEXTAREA|SELECT)$/.test(t.tagName))||!K.some(m)||B.some(m))return;f=function(v){window.removeEventListener("keydown",f);if(v!==e||e.defaultPrevented)return;e.preventDefault();window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(KEY_DOWN_METHOD)},params:{key:e.key,code:e.code,metaKey:e.metaKey,ctrlKey:e.ctrlKey,shiftKey:e.shiftKey,altKey:e.altKey,repeat:e.repeat}},"*");};window.addEventListener("keydown",f);setTimeout(function(){window.removeEventListener("keydown",f);});},true);}})();`;
 
 // `t3.state` for every page, framed or not; writes and reads need a host frame to answer them.
-const STATE_SCRIPT = `(function(){var S={},W={},q=0,f=window.parent!==window;function P(m){window.parent.postMessage(m,"*");}function E(c,m,r){var x=new Error(m);x.code=c;if(typeof r==="number")x.revision=r;return x;}function U(k){k=String(k);var e=S[k];if(!e){e=S[k]={c:[],h:0};if(f)P({jsonrpc:"2.0",method:${JSON.stringify(STATE_SUBSCRIBE_METHOD)},params:{key:k}});}return e;}function R(k,p,o){if(!f)return Promise.reject(E("unavailable","No T3 page host."));try{p=JSON.parse(JSON.stringify(p));}catch(x){return Promise.reject(E("invalid","The value is not JSON."));}if(!("set"in p)&&!("merge"in p))return Promise.reject(E("invalid","The value is not JSON."));p.key=String(k);if(o&&typeof o.expectedRevision==="number")p.expectedRevision=o.expectedRevision;var id="t3-state-"+(++q);return new Promise(function(a,b){W[id]=[a,b];P({jsonrpc:"2.0",id:id,method:${JSON.stringify(STATE_WRITE_METHOD)},params:p});});}var t=window.t3=window.t3||{};t.state={subscribe:function(k,g){var e=U(k);e.c.push(g);if(e.h)g(e.v,e.r);return function(){var i=e.c.indexOf(g);if(i>-1)e.c.splice(i,1);};},get:function(k){var e=U(k);if(e.h)return Promise.resolve(e.v);if(!f)return Promise.reject(E("unavailable","No T3 page host."));return new Promise(function(a){var u=t.state.subscribe(k,function(v){u();a(v);});});},set:function(k,v,o){return R(k,{set:v},o);},merge:function(k,v,o){return R(k,{merge:v},o);}};window.addEventListener("message",function(m){var d=m.data,p=d&&d.params,e,w;if(m.source!==window.parent||!d||d.jsonrpc!=="2.0")return;if(d.method===${JSON.stringify(STATE_CHANGED_METHOD)}&&p&&(e=S[p.key])&&(!e.h||p.revision>e.r)){e.v=p.value;e.r=p.revision;e.h=1;e.c.slice().forEach(function(g){try{g(e.v,e.r);}catch(x){setTimeout(function(){throw x;});}});return;}if(typeof d.id==="string"&&(w=W[d.id])){delete W[d.id];if(d.error)w[1](E(d.error.code,d.error.message,d.error.revision));else w[0](d.result&&d.result.revision);}});})();`;
+const STATE_SCRIPT = `(function(){var S=Object.create(null),W=Object.create(null),q=0,f=window.parent!==window;function P(m){window.parent.postMessage(m,"*");}function E(c,m,r){var x=new Error(m);x.code=c;if(typeof r==="number")x.revision=r;return x;}function U(k){k=String(k);var e=S[k];if(!e){e=S[k]={c:[],g:[],h:0};if(f)P({jsonrpc:"2.0",method:${JSON.stringify(STATE_SUBSCRIBE_METHOD)},params:{key:k}});}return e;}function R(k,p,o){if(!f)return Promise.reject(E("unavailable","No T3 page host."));try{p=JSON.parse(JSON.stringify(p));}catch(x){return Promise.reject(E("invalid","The value is not JSON."));}if(!("set"in p)&&!("merge"in p))return Promise.reject(E("invalid","The value is not JSON."));p.key=String(k);if(o&&typeof o.expectedRevision==="number")p.expectedRevision=o.expectedRevision;var id="t3-state-"+(++q);return new Promise(function(a,b){W[id]=[a,b];P({jsonrpc:"2.0",id:id,method:${JSON.stringify(STATE_WRITE_METHOD)},params:p});});}var t=window.t3=window.t3||{};t.state={subscribe:function(k,g){var e=U(k);e.c.push(g);if(e.h)g(e.v,e.r);return function(){var i=e.c.indexOf(g);if(i>-1)e.c.splice(i,1);};},get:function(k){var e=U(k);if(e.h)return Promise.resolve(e.v);if(!f)return Promise.reject(E("unavailable","No T3 page host."));if(e.u)return Promise.reject(E(e.u.code,e.u.message));return new Promise(function(a,b){e.g.push([a,b]);});},set:function(k,v,o){return R(k,{set:v},o);},merge:function(k,v,o){return R(k,{merge:v},o);}};window.addEventListener("message",function(m){var d=m.data,p=d&&d.params,e,w;if(m.source!==window.parent||!d||d.jsonrpc!=="2.0")return;if(d.method===${JSON.stringify(STATE_CHANGED_METHOD)}&&p&&(e=S[p.key])&&(!e.h||p.revision>e.r)){e.v=p.value;e.r=p.revision;e.h=1;e.g.splice(0).forEach(function(w){w[0](e.v);});e.c.slice().forEach(function(g){try{g(e.v,e.r);}catch(x){setTimeout(function(){throw x;});}});return;}if(d.method===${JSON.stringify(STATE_UNAVAILABLE_METHOD)}&&p&&(e=S[p.key])){e.u=p;e.g.splice(0).forEach(function(w){w[1](E(p.code,p.message));});return;}if(typeof d.id==="string"&&(w=W[d.id])){delete W[d.id];if(d.error)w[1](E(d.error.code,d.error.message,d.error.revision));else w[0](d.result&&d.result.revision);}});})();`;
 
 function bootstrapMarkup(markup: string): string {
   const dark = htmlRenderTheme(T3_CODE_DARK_THEME_COLORS, "dark");

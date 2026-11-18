@@ -94,14 +94,17 @@ export class ThreadCanvasStore extends Context.Service<
       input: DrawInput & { readonly threadId: ThreadId },
     ) => Effect.Effect<ReturnType<typeof planDrawing>["report"], ThreadCanvasError>;
     /**
-     * Brings the html cards that read a page state key beside the latest turn, or beside `anchor`,
-     * a placed chat's card; returns their element ids.
+     * Brings the html cards that read `owner`'s page state `key` beside the latest turn, or beside
+     * `anchor`, a placed chat's card; returns their element ids. A card's page state is its drawing
+     * author's, as `ownerOf` resolves it; a card with no author is the board's.
      */
-    readonly revealPages: (input: {
+    readonly revealPages: <E>(input: {
       readonly threadId: ThreadId;
       readonly key: string;
+      readonly owner: ThreadId;
+      readonly ownerOf: (author: ThreadId) => Effect.Effect<ThreadId, E>;
       readonly anchor?: string | undefined;
-    }) => Effect.Effect<ReadonlyArray<string>, ThreadCanvasError>;
+    }) => Effect.Effect<ReadonlyArray<string>, ThreadCanvasError | E>;
     /**
      * The user's unseen canvas changes for a turn. `picture` attaches sketches of them, and
      * `delivered` names the marks a canvas_read result listed, the only ones it acknowledges.
@@ -282,7 +285,13 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const revealPages: ThreadCanvasStore["Service"]["revealPages"] = ({ threadId, key, anchor }) =>
+  const revealPages: ThreadCanvasStore["Service"]["revealPages"] = ({
+    threadId,
+    key,
+    owner,
+    ownerOf,
+    anchor,
+  }) =>
     writes.withPermits(1)(
       Effect.gen(function* () {
         const current = yield* read(threadId);
@@ -306,7 +315,9 @@ const make = Effect.gen(function* () {
           ) {
             continue;
           }
-          const entry = bound.get(drawingId) ?? { author: drawnByOf(element), shapes: [] };
+          const author = drawnByOf(element);
+          if ((yield* ownerOf((author ?? threadId) as ThreadId)) !== owner) continue;
+          const entry = bound.get(drawingId) ?? { author, shapes: [] };
           entry.shapes.push(String(element.id).slice(drawingId.length + 1));
           bound.set(drawingId, entry);
         }

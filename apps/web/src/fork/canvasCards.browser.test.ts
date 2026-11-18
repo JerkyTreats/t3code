@@ -35,10 +35,22 @@ describe("canvasCardsOf", () => {
       element({ id: "gone", isDeleted: true, customData: { t3Card: { kind: "markdown" } } }),
       element({ id: "broken", customData: { t3Card: { kind: "html", attachmentId: "" } } }),
       element({ id: "box", customData: { t3Drawing: { id: "d" } } }),
+      // A page another chat drew on this board keeps that chat's page state.
+      element({
+        id: "placed",
+        customData: {
+          t3Drawing: { id: "d", by: "thread-other-chat" },
+          t3Card: { kind: "html", attachmentId: "a-2-html", title: "Status" },
+        },
+      }),
     ]);
     expect(cards.map((card) => [card.id, card.card])).toEqual([
       ["md", { kind: "markdown", text: "# Hi" }],
       ["page", { kind: "html", attachmentId: "a-1-html", title: "Chart" }],
+      [
+        "placed",
+        { kind: "html", attachmentId: "a-2-html", title: "Status", owner: "thread-other-chat" },
+      ],
     ]);
   });
 });

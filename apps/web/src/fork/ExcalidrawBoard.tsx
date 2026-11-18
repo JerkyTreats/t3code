@@ -1567,6 +1567,12 @@ export default function ExcalidrawBoard({
                           height: card.height - 2 * TURN_INSET_PX,
                         }}
                         threadRef={canvasThread}
+                        // A page another chat drew keeps that chat's page state.
+                        stateThreadRef={
+                          card.card.owner === undefined
+                            ? undefined
+                            : { ...canvasThread, threadId: card.card.owner as ThreadId }
+                        }
                       />
                       {/* An iframe keeps every pointer and wheel event, so the board would never
                           pan over the page. The cover passes those on; a click lifts it to use

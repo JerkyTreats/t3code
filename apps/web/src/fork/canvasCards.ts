@@ -12,7 +12,13 @@ export interface CanvasCard {
   readonly height: number;
   readonly card:
     | { readonly kind: "markdown"; readonly text: string }
-    | { readonly kind: "html"; readonly attachmentId: string; readonly title: string }
+    | {
+        readonly kind: "html";
+        readonly attachmentId: string;
+        readonly title: string;
+        /** The thread that drew it, whose page state the page reads; the board's when absent. */
+        readonly owner?: string;
+      }
     | CanvasSurfaceCard;
 }
 
@@ -22,7 +28,15 @@ function cardOf(data: Record<string, unknown> | undefined): CanvasCard["card"] |
   const { kind, text, attachmentId, title } = card as Record<string, unknown>;
   if (kind === "markdown") return { kind, text: typeof text === "string" ? text : "" };
   if (kind === "html" && typeof attachmentId === "string" && attachmentId !== "") {
-    return { kind, attachmentId, title: typeof title === "string" ? title : "HTML" };
+    const drawing = data?.t3Drawing;
+    const owner =
+      typeof drawing === "object" && drawing !== null ? Reflect.get(drawing, "by") : undefined;
+    return {
+      kind,
+      attachmentId,
+      title: typeof title === "string" ? title : "HTML",
+      ...(typeof owner === "string" ? { owner } : {}),
+    };
   }
   return canvasSurfaceCardOf(card);
 }

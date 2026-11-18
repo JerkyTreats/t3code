@@ -10,6 +10,7 @@ import {
 import {
   htmlRenderStateChanged,
   htmlRenderStateRefused,
+  htmlRenderStateWithoutHost,
   htmlRenderStateWritten,
   readHtmlRenderStateSubscribe,
   readHtmlRenderStateWrite,
@@ -66,6 +67,11 @@ export function usePageStateBridge(
   });
 
   const onMessage = (data: unknown) => {
+    if (threadRef === undefined) {
+      const reply = htmlRenderStateWithoutHost(data, "unavailable", "This page has no thread.");
+      if (reply !== undefined) post(reply);
+      return reply !== undefined;
+    }
     const key = readHtmlRenderStateSubscribe(data);
     if (key !== undefined) {
       const known = documents.current.get(key);

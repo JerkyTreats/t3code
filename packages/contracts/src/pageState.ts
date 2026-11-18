@@ -14,7 +14,7 @@ export const PAGE_STATE_MAX_DOCUMENTS = 64;
 export const PageStateKey = Schema.String.check(
   Schema.isPattern(/^[a-z0-9][a-z0-9._-]{0,63}$/),
 ).annotate({
-  description: "The document's name: lowercase letters, digits, '.', '_' or '-', such as workflow.",
+  description: "Lowercase letters, digits, '.', '_' or '-'.",
 });
 
 /** One named JSON document of a thread's page state. Revision 0 means it was never written. */
