@@ -25,6 +25,7 @@ import { createAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts
 import { type DrawInput, planDrawing } from "./threadCanvasPlan.ts";
 import { chatCardsIn, describeCanvasChanges, mergeCanvasElements } from "./threadCanvasScene.ts";
 import { canvasMarksSeenOnLoad } from "@t3tools/shared/threadCanvasMarks";
+import { drawnByOf } from "@t3tools/shared/threadCanvasDrawing";
 
 const EMPTY_SCENE: ThreadCanvasScene = { revision: 0, elements: [] };
 
@@ -92,6 +93,15 @@ export class ThreadCanvasStore extends Context.Service<
     readonly draw: (
       input: DrawInput & { readonly threadId: ThreadId },
     ) => Effect.Effect<ReturnType<typeof planDrawing>["report"], ThreadCanvasError>;
+    /**
+     * Brings the html cards that read a page state key beside the latest turn, or beside `anchor`,
+     * a placed chat's card; returns their element ids.
+     */
+    readonly revealPages: (input: {
+      readonly threadId: ThreadId;
+      readonly key: string;
+      readonly anchor?: string | undefined;
+    }) => Effect.Effect<ReadonlyArray<string>, ThreadCanvasError>;
     /**
      * The user's unseen canvas changes for a turn. `picture` attaches sketches of them, and
      * `delivered` names the marks a canvas_read result listed, the only ones it acknowledges.
@@ -272,6 +282,59 @@ const make = Effect.gen(function* () {
       }),
     );
 
+  const revealPages: ThreadCanvasStore["Service"]["revealPages"] = ({ threadId, key, anchor }) =>
+    writes.withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* read(threadId);
+        const record = (value: unknown) =>
+          typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+        // Each bound card by its drawing, which moves it as moveToLatestTurn does.
+        const bound = new Map<
+          string,
+          { readonly author: string | null; readonly shapes: string[] }
+        >();
+        for (const element of current.elements) {
+          const data = record(element.customData);
+          const card = record(data.t3Card);
+          const drawingId = record(data.t3Drawing).id;
+          if (
+            element.isDeleted === true ||
+            card.kind !== "html" ||
+            typeof drawingId !== "string" ||
+            !Array.isArray(card.stateKeys) ||
+            !card.stateKeys.includes(key)
+          ) {
+            continue;
+          }
+          const entry = bound.get(drawingId) ?? { author: drawnByOf(element), shapes: [] };
+          entry.shapes.push(String(element.id).slice(drawingId.length + 1));
+          bound.set(drawingId, entry);
+        }
+        if (bound.size === 0) return [];
+        let scene = current;
+        for (const [drawingId, { author, shapes }] of bound) {
+          const { elements, seen, seenMarks } = planDrawing({
+            scene,
+            draw: {
+              drawingId,
+              shapes: [],
+              patch: true,
+              moveToLatestTurn: shapes,
+              anchor,
+              author: author ?? undefined,
+            },
+            randomInt: () => NodeCrypto.randomInt(2 ** 31),
+            now: yield* Clock.currentTimeMillis,
+          });
+          scene = { ...withSeen(scene, seen, seenMarks), elements };
+        }
+        yield* write(threadId, { ...scene, revision: current.revision + 1 });
+        return [...bound].flatMap(([drawingId, { shapes }]) =>
+          shapes.map((shape) => `${drawingId}/${shape}`),
+        );
+      }),
+    );
+
   // A missing or oversized sketch only costs the agent that picture, never its turn.
   const attachSketch = Effect.fn("ThreadCanvasStore.attachSketch")(
     function* (threadId: ThreadId, source: string, name: string) {
@@ -389,7 +452,15 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  return ThreadCanvasStore.of({ read, saveFromClient, draw, deliverToAgent, chatCardOf, follow });
+  return ThreadCanvasStore.of({
+    read,
+    saveFromClient,
+    draw,
+    revealPages,
+    deliverToAgent,
+    chatCardOf,
+    follow,
+  });
 });
 
 export const layer = Layer.effect(ThreadCanvasStore, make);

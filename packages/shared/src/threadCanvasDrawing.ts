@@ -589,6 +589,7 @@ export function buildDrawingElements(input: BuildDrawingInput): ReadonlyArray<Th
                       kind: "html",
                       attachmentId: shape.attachmentId ?? "",
                       title: shape.title ?? "HTML",
+                      ...(shape.stateKeys === undefined ? {} : { stateKeys: shape.stateKeys }),
                     },
           },
         },
@@ -702,6 +703,9 @@ export function drawingShapesOf(
                   ? { attachmentId: card.attachmentId }
                   : {}),
                 ...(typeof card.title === "string" ? { title: card.title } : {}),
+                ...(Array.isArray(card.stateKeys)
+                  ? { stateKeys: card.stateKeys.filter((key) => typeof key === "string") }
+                  : {}),
               }),
           ...colors,
         },

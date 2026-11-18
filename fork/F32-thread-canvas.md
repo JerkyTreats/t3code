@@ -37,7 +37,9 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   thread's board, a side chat or any other thread, draws there beside its card; its pieces carry
   `t3OnCard` so they move with the card, every piece carries `t3Drawing.by`, and `canvas_read`
   names the card as `yourCard`. `canvas_preview` renders a region, a drawing or the area around
-  given element ids so the agent can see it, including which cards are cut off.
+  given element ids so the agent can see it, including which cards are cut off. An html shape may
+  name the page state keys its page reads in `stateKeys`; `page_state` with `reveal` brings those
+  cards beside the latest turn through `ThreadCanvasStore.revealPages` (F33).
 - `F32.D3a` Browser trail. While a browser card's tab is open, the server keeps a JPEG of it each
   time a page settles and every 30 seconds after, skipping unchanged frames, up to 60 per tab, as
   thread attachments indexed under the canvases directory. When the tab is gone the card replays
@@ -161,6 +163,8 @@ behavior, or give agents any file, network or command authority beyond upstream'
 
 - `apps/server/src/canvas/*.test.ts`: scene merge and tombstones, placement, diagram layout,
   preview page, shared parent canvas and store delivery.
+- `apps/server/src/canvas/ThreadCanvasStore.test.ts`: page state reveal moves the bound html
+  cards.
 - `apps/server/src/mcp/McpCanvasToolkit.test.ts`: the three tools end to end on the orchestration
   endpoint, including diagram parse errors.
 - `apps/server/src/mcp/toolkits/core.test.ts`: `html_render` keeps `displayWidth`.

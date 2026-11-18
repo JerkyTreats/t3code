@@ -1,5 +1,6 @@
 import * as AssetSigner from "../assets/AssetSigner.ts";
 import * as ThreadCanvasStore from "../canvas/ThreadCanvasStore.ts";
+import * as PageStateStore from "../pageState/PageStateStore.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -142,6 +143,7 @@ const mcpRouteTestDependencies = Layer.mergeAll(
   Layer.mock(DeviceService.DeviceService)({}),
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({}),
+  Layer.mock(PageStateStore.PageStateStore)({}),
   Layer.mock(PreviewBrowser.PreviewBrowser)({}),
   Layer.mock(ProjectService.ProjectService)({}),
   Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),

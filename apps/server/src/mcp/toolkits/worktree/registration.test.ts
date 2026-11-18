@@ -1,4 +1,5 @@
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
+import * as PageStateStore from "../../../pageState/PageStateStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as PreviewManager from "../../../preview/Manager.ts";
@@ -49,6 +50,7 @@ import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
 
 const layerStubServices = Layer.mergeAll(
   Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({}),
+  Layer.mock(PageStateStore.PageStateStore)({}),
   IdAllocator.layer,
   McpProviderSessions.layer,
   Layer.mock(PreviewManager.PreviewManager)({}),

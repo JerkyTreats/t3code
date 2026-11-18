@@ -273,6 +273,7 @@ import {
 } from "@t3tools/shared/usageLimits";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as ThreadCanvasStore from "./canvas/ThreadCanvasStore.ts";
+import * as PageStateStore from "./pageState/PageStateStore.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import { requestUrl } from "./requestUrl.ts";
@@ -1584,6 +1585,7 @@ export const layerWsRpc = (
       const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
       const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
       const threadCanvas = yield* ThreadCanvasStore.ThreadCanvasStore;
+      const pageState = yield* PageStateStore.PageStateStore;
       const agentSessionImporter = yield* AgentSessionImporter.AgentSessionImporter;
       const checkpointDiffQuery = yield* CheckpointDiffQuery.CheckpointDiffQuery;
       const nativeChildWork = yield* NativeChildWorkQuery.NativeChildWorkQuery;
@@ -3136,6 +3138,12 @@ export const layerWsRpc = (
         [WS_METHODS.threadCanvasSave]: (input) =>
           authorizeEffect(AuthOrchestrationOperateScope, threadCanvas.saveFromClient(input)),
         [WS_METHODS.subscribeThreadCanvas]: (input) => threadCanvas.follow(input.threadId),
+        // A page's write is the reader's own action, as a canvas save is.
+        [WS_METHODS.pageStateWrite]: ({ threadId, key, set, merge, expectedRevision }) =>
+          pageState
+            .write({ threadId, key, set, merge, expectedRevision, by: "user" })
+            .pipe(Effect.map(({ revision }) => ({ key, revision }))),
+        [WS_METHODS.subscribePageState]: (input) => pageState.follow(input.threadId, input.key),
         [WS_METHODS.threadCanvasBrowserTrail]: (input) =>
           readBrowserTrail(input.threadId, input.tabId),
         [WS_METHODS.agentSessionsScan]: () => agentSessionScanner.scan,

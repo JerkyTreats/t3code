@@ -26,6 +26,10 @@ While any chat on the canvas is working or waiting, a strip in the lower left sh
 
 While a browser card's tab is open, T3 Code keeps a screenshot each time a page settles and every 30 seconds after. When the tab closes, the card becomes a recording: step through the screenshots with the arrows or the slider, and open any page from its link. Over a browser or device card, the wheel pans the canvas until you click into the page. Everyone in the thread sees the same cards. Two people editing one file in different cards can overwrite each other, and the rendered or raw file view follows your panel setting.
 
+## Live pages on the canvas
+
+An agent can put a page on the canvas whose data it keeps updating, such as a board of components moving from research to completed. The card changes in place as the agent or its helpers report progress; it does not reload. When an update matters, the agent can bring the card beside the latest turn so you see it. See [Live pages](html-renders.md#live-pages).
+
 ## Cite something on the canvas
 
 Right-click a shape, note or card and choose **Cite** at the top of the menu. The composer gets a citation of it, quoting its text, its label or the card's name, and you can add a comment. Clicking the citation later pans the canvas back to it.

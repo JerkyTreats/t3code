@@ -3,14 +3,10 @@ import type { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as NodeCrypto from "node:crypto";
 
-/** How a thread relates to its parent, as much of the shell as the canvas needs. */
-export interface CanvasLineage {
-  readonly parentThreadId: ThreadId | null;
-  readonly relationshipToParent: "fork" | "subagent" | null;
-}
+import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
+import { delegatorOf, type ThreadLineage } from "../pageState/delegator.ts";
+import * as ThreadCanvasStore from "./ThreadCanvasStore.ts";
 
-// Delegation nests, but a chain this deep is a runaway, not a drill-down.
-const MAX_DELEGATION_DEPTH = 8;
 const DRAWING_OWNER_HASH_CHARS = 8;
 
 /** Where a thread's agent draws: the canvas thread, and its own card there when it has one. */
@@ -27,21 +23,31 @@ export interface CanvasTarget {
  */
 export const resolveCanvas = Effect.fn("sharedCanvas.resolveCanvas")(function* <E, F>(
   threadId: ThreadId,
-  lineageOf: (threadId: ThreadId) => Effect.Effect<CanvasLineage | null, E>,
+  lineageOf: (threadId: ThreadId) => Effect.Effect<ThreadLineage | null, E>,
   chatCardOf: (
     chatThreadId: ThreadId,
   ) => Effect.Effect<{ readonly canvasThreadId: ThreadId; readonly card: string } | null, F>,
 ) {
-  let current = threadId;
-  for (let depth = 0; depth < MAX_DELEGATION_DEPTH; depth += 1) {
-    const lineage = yield* lineageOf(current);
-    if (lineage?.relationshipToParent !== "subagent" || lineage.parentThreadId === null) break;
-    current = lineage.parentThreadId;
-  }
+  const current = yield* delegatorOf(threadId, lineageOf);
   const placed = yield* chatCardOf(current);
   return placed === null || placed.canvasThreadId === current
     ? ({ threadId: current, card: null } satisfies CanvasTarget)
     : ({ threadId: placed.canvasThreadId, card: placed.card } satisfies CanvasTarget);
+});
+
+/** The canvas for an agent's thread, falling back to its own canvas if lineage is unreadable. */
+export const canvasOf = Effect.fn("sharedCanvas.canvasOf")(function* (threadId: ThreadId) {
+  const threads = yield* ThreadManagementService.ThreadManagementService;
+  const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
+  return yield* resolveCanvas(
+    threadId,
+    (id) =>
+      threads.getThreadShell(id).pipe(
+        Effect.map((shell) => (shell === null ? null : shell.lineage)),
+        Effect.orElseSucceed(() => null),
+      ),
+    canvas.chatCardOf,
+  );
 });
 
 /**

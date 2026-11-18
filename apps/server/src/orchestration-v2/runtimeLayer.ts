@@ -53,6 +53,7 @@ import * as RuntimePolicy from "./RuntimePolicy.ts";
 import * as RuntimeRequestService from "./RuntimeRequestService.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ThreadCanvasStore from "../canvas/ThreadCanvasStore.ts";
+import * as PageStateStore from "../pageState/PageStateStore.ts";
 import * as ThreadLaunchService from "./ThreadLaunchService.ts";
 import * as ThreadForkService from "./ThreadForkService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
@@ -365,6 +366,8 @@ const layerMcpAppRequestsProvided = McpAppRequests.layer.pipe(
 
 export const layer = Layer.mergeAll(
   ThreadCanvasStore.layer,
+  // Resolves a delegated task to its delegator through the orchestrator's thread shells.
+  PageStateStore.layer.pipe(Layer.provide(layerOrchestratorProvided)),
   IdAllocator.layer,
   layerCommandOutputHubProvided,
   layerOrchestratorProvided,

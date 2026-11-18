@@ -7,6 +7,13 @@ import {
   ThreadCanvasSubscribeInput,
 } from "./threadCanvas.ts";
 import {
+  PageStateDocument,
+  PageStateError,
+  PageStateSubscribeInput,
+  PageStateWriteInput,
+  PageStateWriteResult,
+} from "./pageState.ts";
+import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -431,6 +438,8 @@ export const WS_METHODS = {
   threadCanvasSave: "threadCanvas.save",
   threadCanvasBrowserTrail: "threadCanvas.browserTrail",
   subscribeThreadCanvas: "subscribeThreadCanvas",
+  pageStateWrite: "pageState.write",
+  subscribePageState: "subscribePageState",
   agentSessionsScan: "agentSessions.scan",
   agentSessionsImport: "agentSessions.import",
   assetsCreateUrl: "assets.createUrl",
@@ -1410,6 +1419,19 @@ const WsSubscribeThreadCanvasRpc = Rpc.make(WS_METHODS.subscribeThreadCanvas, {
   stream: true,
 });
 
+const WsPageStateWriteRpc = Rpc.make(WS_METHODS.pageStateWrite, {
+  payload: PageStateWriteInput,
+  success: PageStateWriteResult,
+  error: Schema.Union([PageStateError, EnvironmentAuthorizationError]),
+});
+
+const WsSubscribePageStateRpc = Rpc.make(WS_METHODS.subscribePageState, {
+  payload: PageStateSubscribeInput,
+  success: PageStateDocument,
+  error: Schema.Union([PageStateError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
 const WsAgentSessionsScanRpc = Rpc.make(WS_METHODS.agentSessionsScan, {
   payload: AgentSessionScanInput,
   success: AgentSessionScanResult,
@@ -2189,6 +2211,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsThreadCanvasSaveRpc,
   WsThreadCanvasBrowserTrailRpc,
   WsSubscribeThreadCanvasRpc,
+  WsPageStateWriteRpc,
+  WsSubscribePageStateRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
   WsAssetsCreateUrlRpc,

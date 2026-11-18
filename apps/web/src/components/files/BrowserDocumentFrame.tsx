@@ -45,6 +45,7 @@ import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
 import { primaryServerKeybindingsAtom, serverEnvironment } from "~/state/server";
+import { usePageStateBridge } from "~/fork/pageStateBridge";
 
 /**
  * The page reports the keys, and a page script can report any key it likes,
@@ -187,6 +188,7 @@ export function HtmlRenderDocument(props: {
 }) {
   const theme = useHtmlRenderTheme();
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const pageState = usePageStateBridge(props.threadRef, frameRef);
   const [src] = useState(() => `${props.src.split("#", 1)[0]}${htmlRenderThemeFragment(theme)}`);
   const [loaded, setLoaded] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
@@ -289,6 +291,8 @@ export function HtmlRenderDocument(props: {
       frame.dispatchEvent(new WheelEvent("wheel", { ...wheel, bubbles: true, cancelable: true }));
       return;
     }
+    // A page reads state as it loads and saves it from its own controls, focused or not.
+    if (pageState.onMessage(event.data)) return;
     if (document.activeElement !== frame || navigator.userActivation?.isActive === false) return;
     const linkRequest = readHtmlRenderLinkRequest(event.data);
     if (linkRequest !== undefined) {
@@ -345,6 +349,7 @@ export function HtmlRenderDocument(props: {
       {expandedImage !== null ? (
         <ExpandedImageDialog preview={expandedImage} onClose={() => setExpandedImage(null)} />
       ) : null}
+      {pageState.feeds}
     </>
   );
 }

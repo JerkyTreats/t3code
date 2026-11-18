@@ -2,14 +2,15 @@ import { assert, describe, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
-import { type CanvasLineage, resolveCanvas, sharedDrawingId } from "./sharedCanvas.ts";
+import type { ThreadLineage } from "../pageState/delegator.ts";
+import { resolveCanvas, sharedDrawingId } from "./sharedCanvas.ts";
 
 const root = ThreadId.make("thread-root");
 const child = ThreadId.make("thread:delegated-task:child");
 const grandchild = ThreadId.make("thread:delegated-task:grandchild");
 const fork = ThreadId.make("thread-fork");
 
-const lineages: Record<string, CanvasLineage> = {
+const lineages: Record<string, ThreadLineage> = {
   [root]: { parentThreadId: null, relationshipToParent: null },
   [child]: { parentThreadId: root, relationshipToParent: "subagent" },
   [grandchild]: { parentThreadId: child, relationshipToParent: "subagent" },
@@ -48,7 +49,7 @@ describe("resolveCanvas", () => {
       const forkChild = ThreadId.make("thread:delegated-task:fork-child");
       const childLineage = (threadId: ThreadId) =>
         threadId === forkChild
-          ? Effect.succeed<CanvasLineage | null>({
+          ? Effect.succeed<ThreadLineage | null>({
               parentThreadId: fork,
               relationshipToParent: "subagent",
             })
@@ -70,7 +71,7 @@ describe("resolveCanvas", () => {
   it.effect("stops a delegation cycle instead of looping", () =>
     Effect.gen(function* () {
       const cycle = (threadId: ThreadId) =>
-        Effect.succeed<CanvasLineage>({
+        Effect.succeed<ThreadLineage>({
           parentThreadId: threadId === root ? child : root,
           relationshipToParent: "subagent",
         });

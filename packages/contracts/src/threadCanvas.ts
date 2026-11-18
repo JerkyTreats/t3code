@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import { ThreadId } from "./baseSchemas.ts";
+import { PageStateKey } from "./pageState.ts";
 
 const THREAD_CANVAS_MAX_ELEMENTS = 5_000;
 export const THREAD_CANVAS_MAX_DRAWING_ELEMENTS = 500;
@@ -117,6 +118,12 @@ export const ThreadCanvasShape = Schema.Struct({
     }),
   ),
   title: Schema.optional(Schema.String.annotate({ description: "html only: the page's title." })),
+  stateKeys: Schema.optional(
+    Schema.Array(PageStateKey).annotate({
+      description:
+        "html only: the page_state keys the page reads with t3.state. page_state with reveal brings the card beside the latest turn.",
+    }),
+  ),
   card: Schema.optional(ThreadCanvasCardSpec),
   fontSize: Schema.optional(Schema.Finite),
   strokeColor: Schema.optional(Schema.String),

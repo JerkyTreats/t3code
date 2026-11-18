@@ -1,4 +1,6 @@
 import * as CanvasHandlers from "./toolkits/canvas/handlers.ts";
+import * as PageStateHandlers from "./toolkits/pageState/handlers.ts";
+import { PageStateToolkit } from "./toolkits/pageState/tools.ts";
 import {
   CanvasEditToolkit,
   CanvasPreviewTool,
@@ -1317,6 +1319,7 @@ const layerOrchestratorTools = Layer.mergeAll(
   layerHtmlToolkit,
   // Canvas cards store their pages through HtmlRender, as html_render does.
   layerCanvasToolkit.pipe(Layer.provide(HtmlRender.layer)),
+  toolkitRegistration(PageStateToolkit, PageStateHandlers.layer),
 );
 const layerPreviewTools = Layer.mergeAll(layerPreviewToolkit, layerPreviewControlsRegistration);
 

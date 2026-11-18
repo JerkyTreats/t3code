@@ -230,4 +230,44 @@ layer("ThreadCanvasStore", (it) => {
       assert.strictEqual((yield* canvas.read(nested)).elements.length, 1);
     }),
   );
+  it.effect("brings the html cards bound to a page state key beside the latest turn", () =>
+    Effect.gen(function* () {
+      const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
+      const board = ThreadId.make("thread-canvas-reveal");
+      const turn = (id: string, y: number) => ({
+        id: `turn-box:${id}`,
+        type: "rectangle",
+        version: 1,
+        x: -430,
+        y,
+        width: 860,
+        height: 300,
+        customData: { t3Turn: id, t3TurnTitle: `Turn ${id}` },
+      });
+      yield* canvas.saveFromClient({ threadId: board, elements: [turn("1", 0)] });
+      const page = {
+        type: "html" as const,
+        attachmentId: "page-attachment",
+        width: 400,
+        height: 300,
+      };
+      yield* canvas.draw({
+        threadId: board,
+        drawingId: "status",
+        shapes: [
+          { id: "board", ...page, stateKeys: ["workflow"] },
+          { id: "other", ...page, stateKeys: ["notes"] },
+        ],
+      });
+      yield* canvas.saveFromClient({ threadId: board, elements: [turn("2", 3000)] });
+
+      const revealed = yield* canvas.revealPages({ threadId: board, key: "workflow" });
+      assert.deepStrictEqual(revealed, ["status/board"]);
+      const { elements } = yield* canvas.read(board);
+      const yOf = (id: string) => elements.find((element) => element.id === id)?.y;
+      assert.strictEqual(yOf("status/board"), 3000);
+      assert.isBelow(Number(yOf("status/other")), 3000);
+      assert.deepStrictEqual(yield* canvas.revealPages({ threadId: board, key: "unbound" }), []);
+    }),
+  );
 });

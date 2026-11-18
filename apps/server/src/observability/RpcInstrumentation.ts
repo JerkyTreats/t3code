@@ -165,6 +165,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.threadCanvasSave]: "orchestration",
   [WS_METHODS.threadCanvasBrowserTrail]: "orchestration",
   [WS_METHODS.subscribeThreadCanvas]: "orchestration",
+  [WS_METHODS.pageStateWrite]: "orchestration",
+  [WS_METHODS.subscribePageState]: "orchestration",
   [WS_METHODS.agentSessionsScan]: "workspace",
   [WS_METHODS.agentSessionsImport]: "workspace",
   [WS_METHODS.assetsCreateUrl]: "workspace",

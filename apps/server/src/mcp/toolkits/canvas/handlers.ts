@@ -1,4 +1,4 @@
-import { OrchestratorMcpFailure, type ThreadCanvasError, type ThreadId } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, type ThreadCanvasError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -11,7 +11,7 @@ import {
 import { compileDiagram, DiagramError } from "../../../canvas/canvasDiagram.ts";
 import { readCanvas } from "../../../canvas/threadCanvasScene.ts";
 import { canvasSurfaceRefOfSpec } from "@t3tools/shared/canvasSurfaceCard";
-import { resolveCanvas, sharedDrawingId } from "../../../canvas/sharedCanvas.ts";
+import { canvasOf, sharedDrawingId } from "../../../canvas/sharedCanvas.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
 import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
@@ -34,21 +34,6 @@ const decodeClippedCards = Schema.decodeUnknownOption(
 
 const previewFailure = (error: { readonly _tag: string; readonly message: string }) =>
   new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message });
-
-/** The canvas for a caller, falling back to the caller's own canvas if lineage is unreadable. */
-const canvasOf = Effect.fn("canvas.canvasOf")(function* (threadId: ThreadId) {
-  const threads = yield* ThreadManagementService.ThreadManagementService;
-  const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
-  return yield* resolveCanvas(
-    threadId,
-    (id) =>
-      threads.getThreadShell(id).pipe(
-        Effect.map((shell) => (shell === null ? null : shell.lineage)),
-        Effect.orElseSucceed(() => null),
-      ),
-    canvas.chatCardOf,
-  );
-});
 
 const CARD_NEEDS = {
   file: "path, relative to the project root or absolute.",
