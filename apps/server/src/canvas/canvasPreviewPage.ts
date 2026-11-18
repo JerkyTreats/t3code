@@ -71,7 +71,11 @@ const intersects = (left: CanvasRegion, right: CanvasRegion) =>
  */
 export function previewRegion(
   scene: ThreadCanvasScene,
-  input: { readonly drawingId?: string | undefined; readonly region?: CanvasRegion | undefined },
+  input: {
+    readonly drawingId?: string | undefined;
+    readonly elements?: ReadonlyArray<string> | undefined;
+    readonly region?: CanvasRegion | undefined;
+  },
 ): CanvasRegion | null {
   const live = scene.elements.filter((element) => element.isDeleted !== true);
   const pad = (box: CanvasRegion | null) =>
@@ -94,6 +98,10 @@ export function previewRegion(
           .map(boxOf),
       ),
     );
+  }
+  if (input.elements !== undefined) {
+    const ids = new Set(input.elements);
+    return pad(boundsOf(live.filter((element) => ids.has(String(element.id))).map(boxOf)));
   }
   const turns = live.filter((element) => typeof recordOf(element.customData).t3Turn === "string");
   const latest = turns.toSorted((left, right) => boxOf(right).y - boxOf(left).y)[0];

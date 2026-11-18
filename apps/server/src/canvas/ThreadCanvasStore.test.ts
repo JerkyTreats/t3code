@@ -136,14 +136,21 @@ layer("ThreadCanvasStore", (it) => {
     }),
   );
 
-  it.effect("attaches the saved sketch only for marks a note cannot describe", () =>
+  it.effect("attaches one saved sketch per area only for marks a note cannot describe", () =>
     Effect.gen(function* () {
       const canvas = yield* ThreadCanvasStore.ThreadCanvasStore;
       const sketched = ThreadId.make("thread-canvas-sketch");
+      const png = Buffer.from("png-bytes").toString("base64");
       yield* canvas.saveFromClient({
         threadId: sketched,
-        elements: [{ id: "stroke", version: 1, type: "freedraw" }],
-        sketch: Buffer.from("png-bytes").toString("base64"),
+        elements: [
+          { id: "stroke", version: 1, type: "freedraw" },
+          { id: "ring", version: 1, type: "ellipse", y: 2000 },
+        ],
+        sketches: [
+          { png, marks: ["stroke"] },
+          { png, marks: ["ring"] },
+        ],
       });
 
       const delivery = yield* canvas.deliverToAgent({
@@ -151,8 +158,14 @@ layer("ThreadCanvasStore", (it) => {
         message: "Hello",
         picture: true,
       });
-      assert.strictEqual(delivery.attachments[0]?.name, "canvas-sketch.png");
-      assert.include(delivery.note, "canvas-sketch.png");
+      assert.deepStrictEqual(
+        delivery.attachments.map((attachment) => attachment.name),
+        ["canvas-sketch-1.png", "canvas-sketch-2.png"],
+      );
+      assert.include(
+        delivery.note,
+        "- canvas-sketch-1.png: [stroke]\n- canvas-sketch-2.png: [ring]",
+      );
 
       const textOnly = yield* canvas.deliverToAgent({
         threadId: sketched,

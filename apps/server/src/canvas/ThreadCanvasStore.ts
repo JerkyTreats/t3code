@@ -40,6 +40,26 @@ const withSeen = (
   ...(seenMarks === undefined ? {} : { seenMarks }),
 });
 const decodeScene = Schema.decodeUnknownEffect(Schema.fromJsonString(ThreadCanvasScene));
+const SketchMarksJson = Schema.fromJsonString(Schema.Array(Schema.Array(Schema.String)));
+const decodeSketchMarks = Schema.decodeUnknownEffect(SketchMarksJson);
+const encodeSketchMarks = Schema.encodeEffect(SketchMarksJson);
+// Enough ids for the agent to match a picture to the note's marks.
+const SKETCH_NOTE_MAX_IDS = 10;
+
+/** Says which marks each attached picture shows, by the ids the note gives them. */
+const sketchNote = (
+  pictures: ReadonlyArray<{
+    readonly attachment: { readonly name: string };
+    readonly marks: ReadonlyArray<string>;
+  }>,
+) =>
+  `Each attached picture shows one area of the board around marks that have no text:\n${pictures
+    .map(({ attachment, marks }) => {
+      const ids = marks.slice(0, SKETCH_NOTE_MAX_IDS).map((id) => `[${id}]`);
+      const more = marks.length - ids.length;
+      return `- ${attachment.name}: ${ids.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+    })
+    .join("\n")}`;
 // Subagent thread ids embed their ancestors, so nested ones outgrow a filename.
 const MAX_ENCODED_THREAD_ID_CHARS = 200;
 
@@ -64,14 +84,16 @@ export class ThreadCanvasStore extends Context.Service<
     readonly saveFromClient: (input: {
       readonly threadId: ThreadId;
       readonly elements: ReadonlyArray<ThreadCanvasElement>;
-      readonly sketch?: string | undefined;
+      readonly sketches?:
+        | ReadonlyArray<{ readonly png: string; readonly marks: ReadonlyArray<string> }>
+        | undefined;
     }) => Effect.Effect<void, ThreadCanvasError>;
     /** Builds a whole drawing into the scene, and reports where it landed and how it came out. */
     readonly draw: (
       input: DrawInput & { readonly threadId: ThreadId },
     ) => Effect.Effect<ReturnType<typeof planDrawing>["report"], ThreadCanvasError>;
     /**
-     * The user's unseen canvas changes for a turn. `picture` attaches a sketch of them, and
+     * The user's unseen canvas changes for a turn. `picture` attaches sketches of them, and
      * `delivered` names the marks a canvas_read result listed, the only ones it acknowledges.
      */
     readonly deliverToAgent: (input: {
@@ -109,7 +131,10 @@ const make = Effect.gen(function* () {
     return path.join(directory, stem);
   };
   const fileFor = (threadId: ThreadId) => `${fileStem(threadId)}.json`;
-  const sketchFor = (threadId: ThreadId) => `${fileStem(threadId)}.sketch.png`;
+  const sketchFor = (threadId: ThreadId, index: number) =>
+    `${fileStem(threadId)}.sketch-${index + 1}.png`;
+  // The marks each saved sketch shows, which also says how many there are.
+  const sketchMarksFor = (threadId: ThreadId) => `${fileStem(threadId)}.sketches.json`;
   const failure = (message: string) => (cause: unknown) =>
     new ThreadCanvasError({ message: `${message}: ${String(cause)}` });
 
@@ -198,14 +223,26 @@ const make = Effect.gen(function* () {
   const saveFromClient: ThreadCanvasStore["Service"]["saveFromClient"] = (input) =>
     writes.withPermits(1)(
       Effect.gen(function* () {
-        if (input.sketch !== undefined) {
-          const sketch = Buffer.from(input.sketch, "base64");
-          yield* fileSystem
-            .makeDirectory(directory, { recursive: true })
-            .pipe(
-              Effect.andThen(fileSystem.writeFile(sketchFor(input.threadId), sketch)),
-              Effect.mapError(failure("Could not save the canvas sketch")),
-            );
+        const sketches = input.sketches;
+        if (sketches !== undefined) {
+          yield* fileSystem.makeDirectory(directory, { recursive: true }).pipe(
+            Effect.andThen(
+              Effect.forEach(
+                sketches,
+                (sketch, index) =>
+                  fileSystem.writeFile(
+                    sketchFor(input.threadId, index),
+                    Buffer.from(sketch.png, "base64"),
+                  ),
+                { discard: true },
+              ),
+            ),
+            Effect.andThen(encodeSketchMarks(sketches.map((sketch) => sketch.marks))),
+            Effect.flatMap((marks) =>
+              fileSystem.writeFileString(sketchMarksFor(input.threadId), marks),
+            ),
+            Effect.mapError(failure("Could not save the canvas sketches")),
+          );
         }
         const current = yield* read(input.threadId);
         const { elements, changed } = mergeCanvasElements(current.elements, input.elements);
@@ -234,17 +271,16 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  // A missing or oversized sketch only costs the agent the picture, never its turn.
+  // A missing or oversized sketch only costs the agent that picture, never its turn.
   const attachSketch = Effect.fn("ThreadCanvasStore.attachSketch")(
-    function* (threadId: ThreadId) {
-      const source = sketchFor(threadId);
+    function* (threadId: ThreadId, source: string, name: string) {
       const { size } = yield* fileSystem.stat(source);
       const id = createAttachmentId(threadId, ".png");
       if (id === null || size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) return [];
       const attachment: ChatImageAttachment = {
         type: "image",
         id,
-        name: "canvas-sketch.png",
+        name,
         mimeType: "image/png",
         sizeBytes: Number(size),
       };
@@ -259,6 +295,26 @@ const make = Effect.gen(function* () {
     },
     Effect.orElseSucceed((): ReadonlyArray<ChatImageAttachment> => []),
   );
+
+  const attachSketches = Effect.fn("ThreadCanvasStore.attachSketches")(function* (
+    threadId: ThreadId,
+  ) {
+    const areas = yield* fileSystem.readFileString(sketchMarksFor(threadId)).pipe(
+      Effect.flatMap(decodeSketchMarks),
+      Effect.orElseSucceed((): ReadonlyArray<ReadonlyArray<string>> => []),
+    );
+    const pictures: Array<{
+      readonly attachment: ChatImageAttachment;
+      readonly marks: ReadonlyArray<string>;
+    }> = [];
+    for (const [index, marks] of areas.entries()) {
+      const name = `canvas-sketch-${pictures.length + 1}.png`;
+      for (const attachment of yield* attachSketch(threadId, sketchFor(threadId, index), name)) {
+        pictures.push({ attachment, marks });
+      }
+    }
+    return pictures;
+  });
 
   // Merged at write time, so each chat on a board records only the marks it was told about.
   const acknowledge = (
@@ -303,14 +359,10 @@ const make = Effect.gen(function* () {
       input.delivered,
     );
     if (changes.note === "") return EMPTY_CANVAS_DELIVERY;
-    const attachments =
-      input.picture && changes.sketched ? yield* attachSketch(canvasThreadId) : [];
+    const pictures = input.picture && changes.sketched ? yield* attachSketches(canvasThreadId) : [];
     return {
-      note:
-        attachments.length === 0
-          ? changes.note
-          : `${changes.note}\n\nThe attached canvas-sketch.png shows the marks that have no text.`,
-      attachments,
+      note: pictures.length === 0 ? changes.note : `${changes.note}\n\n${sketchNote(pictures)}`,
+      attachments: pictures.map((picture) => picture.attachment),
       acknowledge: acknowledge(canvasThreadId, changes),
     };
   });

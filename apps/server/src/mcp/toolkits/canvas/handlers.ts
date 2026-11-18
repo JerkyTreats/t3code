@@ -77,12 +77,13 @@ const handlers = {
           input.drawingId === undefined
             ? undefined
             : sharedDrawingId(input.drawingId, thread.threadId, canvasThreadId),
+        elements: input.elements,
         region: input.region,
       });
       if (region === null || region.width <= 0 || region.height <= 0) {
         return yield* new OrchestratorMcpFailure({
           code: "invalid_request",
-          message: "Nothing on the canvas matches that drawingId or region.",
+          message: "Nothing on the canvas matches that drawingId, elements or region.",
         });
       }
       const pages = new Map<string, string | null>();

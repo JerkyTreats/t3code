@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentId,
   ThreadCanvasElement,
+  ThreadCanvasSaveInput,
   ThreadCanvasScene,
   ThreadId,
 } from "@t3tools/contracts";
@@ -18,7 +19,7 @@ export interface ThreadCanvasTarget {
 
 export type SaveThreadCanvas = (
   elements: ReadonlyArray<ThreadCanvasElement>,
-  sketch?: string,
+  sketches?: (typeof ThreadCanvasSaveInput.Type)["sketches"],
 ) => Promise<unknown>;
 
 /** Keeps a board on its thread's server scene. Draft boards have no scene, so this mounts apart. */
@@ -35,13 +36,13 @@ export function ThreadCanvasSync(props: {
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands the save command to the board, whose scene lives outside React
   useEffect(() => {
-    saveRef.current = (elements, sketch) =>
+    saveRef.current = (elements, sketches) =>
       save({
         environmentId,
         input: {
           threadId,
           elements,
-          ...(sketch === undefined ? {} : { sketch }),
+          ...(sketches === undefined ? {} : { sketches }),
         },
       });
   }, [environmentId, save, saveRef, threadId]);

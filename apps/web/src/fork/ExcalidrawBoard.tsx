@@ -107,6 +107,13 @@ import {
 } from "./canvasChatPresence";
 import { BoardActivityStrip } from "./CanvasChatStatus";
 import { reportDraftScene, takeDraftMarks, withoutTakenMarks } from "./draftBoardHandoff";
+import {
+  boxesNear,
+  boxUnion,
+  SKETCH_AREA_GAP_PX,
+  type SketchBox,
+  sketchAreas,
+} from "./sketchAreas";
 import { layoutTurns, TURN_INSET_PX, type BoardBox, type TurnBoard } from "./turnBoard";
 import { tableWidthOf } from "./turnTableWidth";
 
@@ -145,6 +152,10 @@ const RASTER_SETTLE_MS = 200;
 // How far the camera may sit from the latest turn and still count as following it.
 const FOLLOW_TOLERANCE_PX = 48;
 const SKETCH_MAX_EDGE_PX = 1600;
+// A small area is drawn larger so its words stay legible, up to this much.
+const SKETCH_MAX_UPSCALE = 2;
+// Anything near enough to have joined an area's marks shows around them.
+const SKETCH_PADDING_PX = SKETCH_AREA_GAP_PX;
 // Base64 costs a third more, and a larger picture would be refused by the save.
 const SKETCH_MAX_BYTES = 5_000_000;
 
@@ -324,21 +335,44 @@ function readBase64(blob: Blob) {
   });
 }
 
-/** Renders marks an agent cannot read as data. T3's own elements stay out of the picture. */
-function renderSketch(api: ExcalidrawImperativeAPI, marks: BoardElements) {
-  const ids = new Set(marks.map((mark) => mark.id));
+function boxOf(elements: ReadonlyArray<BoardElement>): SketchBox {
+  const [minX, minY, maxX, maxY] = getCommonBounds(elements);
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/**
+ * Renders one area of the board around marks an agent cannot read as data, with the reader's
+ * other marks and words in it. T3's own elements stay out of the picture.
+ */
+function renderSketch(api: ExcalidrawImperativeAPI, area: SketchBox) {
+  const scene = api.getSceneElements();
+  const users = new Set(scene.filter(isUserMark).map((element) => element.id));
+  const elements = scene.filter(
+    (element) =>
+      users.has(element.id) || (element.type === "text" && users.has(element.containerId ?? "")),
+  );
+  const padded = {
+    x: area.x - SKETCH_PADDING_PX,
+    y: area.y - SKETCH_PADDING_PX,
+    width: area.width + 2 * SKETCH_PADDING_PX,
+    height: area.height + 2 * SKETCH_PADDING_PX,
+  };
+  // Words cut at the edge cannot be read, so text the crop touches comes in whole.
+  const cut = elements.filter(
+    (element) => element.type === "text" && boxesNear(boxOf([element]), padded, 0),
+  );
+  const crop = cut.length === 0 ? padded : boxUnion(padded, boxOf(cut));
+  // Excalidraw sizes an export to its frame and draws what overlaps it, which crops to the area.
+  // The skeleton's frame takes its children's bounds, so the crop is set after.
+  const [skeleton] = convertToExcalidrawElements([{ type: "frame", children: [] }]);
   return exportToBlob({
-    elements: api
-      .getSceneElements()
-      .filter(
-        (element) =>
-          ids.has(element.id) || (element.type === "text" && ids.has(element.containerId ?? "")),
-      ),
+    elements,
+    exportingFrame: skeleton?.type === "frame" ? newElementWith(skeleton, crop) : null,
     files: api.getFiles(),
     mimeType: "image/png",
     appState: { exportBackground: true, viewBackgroundColor: "#ffffff" },
     getDimensions: (width: number, height: number) => {
-      const scale = Math.min(1, SKETCH_MAX_EDGE_PX / Math.max(width, height));
+      const scale = Math.min(SKETCH_MAX_UPSCALE, SKETCH_MAX_EDGE_PX / Math.max(width, height));
       return { width: width * scale, height: height * scale, scale };
     },
   });
@@ -895,9 +929,18 @@ export default function ExcalidrawBoard({
     const key = marks.map((mark) => `${mark.id}:${stamps.get(mark.id)}`).join();
     if (marks.length === 0 || key === lastSketch.current) return;
     lastSketch.current = key;
-    const blob = await renderSketch(api, marks);
-    if (blob.size > SKETCH_MAX_BYTES) return;
-    await saveCanvas.current?.([], await readBase64(blob));
+    // One picture per area, so marks far apart do not shrink into one tall frame.
+    const areas = sketchAreas(
+      marks.map((mark) => ({ id: mark.id, box: boxOf([mark]), updated: mark.updated })),
+    );
+    const sketches = [];
+    for (const area of areas) {
+      const blob = await renderSketch(api, area.box);
+      if (blob.size <= SKETCH_MAX_BYTES) {
+        sketches.push({ png: await readBase64(blob), marks: area.ids });
+      }
+    }
+    if (sketches.length > 0) await saveCanvas.current?.([], sketches);
   };
 
   const reportPendingNotes = (count: number) => {

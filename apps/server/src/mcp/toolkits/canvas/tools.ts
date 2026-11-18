@@ -190,10 +190,13 @@ const CanvasUpdateTool = Tool.make("canvas_update", {
 
 export const CanvasPreviewTool = Tool.make("canvas_preview", {
   description:
-    "See this thread's canvas as a picture, as the user sees it: turns as titled boxes, your shapes, cards rendered, and the user's marks in yellow. By default it shows the latest turn and what lies just above and well below it; pass drawingId for one drawing, or region for a box in canvas coordinates. Call it after canvas_update when layout matters, and fix what it shows. clippedCards lists markdown cards whose text does not fit, with the height that would fit it. If it says the browser is still installing, call again in a minute.",
+    "See this thread's canvas as a picture, as the user sees it: turns as titled boxes, your shapes, cards rendered, and the user's marks in yellow. By default it shows the latest turn and what lies just above and well below it; pass drawingId for one drawing, elements for the area around those element ids (such as marks a canvas sketch names), or region for a box in canvas coordinates. Call it after canvas_update when layout matters, and fix what it shows. clippedCards lists markdown cards whose text does not fit, with the height that would fit it. If it says the browser is still installing, call again in a minute.",
   parameters: Schema.Struct({
     drawingId: Schema.optional(Schema.String).annotate({
       description: "Show just this drawing and a margin around it.",
+    }),
+    elements: Schema.optional(Schema.Array(Schema.String)).annotate({
+      description: "Show just these element ids and a margin around them.",
     }),
     region: Schema.optional(Schema.Struct(CanvasBox)).annotate({
       description:

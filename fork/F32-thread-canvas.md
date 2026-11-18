@@ -36,8 +36,8 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   beside that turn. A delegated task draws on its parent's canvas. A chat placed as a card on another
   thread's board, a side chat or any other thread, draws there beside its card; its pieces carry
   `t3OnCard` so they move with the card, every piece carries `t3Drawing.by`, and `canvas_read`
-  names the card as `yourCard`. `canvas_preview` renders a region
-  so the agent can see it, including which cards are cut off.
+  names the card as `yourCard`. `canvas_preview` renders a region, a drawing or the area around
+  given element ids so the agent can see it, including which cards are cut off.
 - `F32.D3a` Browser trail. While a browser card's tab is open, the server keeps a JPEG of it each
   time a page settles and every 30 seconds after, skipping unchanged frames, up to 60 per tab, as
   thread attachments indexed under the canvases directory. When the tab is gone the card replays
@@ -50,6 +50,10 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   version, so the board moving it with the turns is not news and the user moving it is. When the
   server loads a scene, records made before anchors (version sums, or stamps by what a mark
   overlapped) that still match the saved scene are restated as anchor stamps. `canvas_read` reports marks with the text they cover.
+  Marks with no text reach the agent as pictures: the board splits them into up to four areas
+  (marks within 120 canvas px join; past four, the most recently changed areas win) and renders
+  each area cropped with the user's other marks and words around it, and the note names the marks
+  each picture shows.
 - `F32.D5` Card presentation. Markdown cards keep single line breaks; a capitalised state word that
   starts a line, list item or table cell renders as a coloured chip, with the chip span admitted by
   the shared Markdown sanitizer; a card holding a table widens to fit it. html cards are agent
@@ -91,7 +95,7 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
 
 - `apps/web/src/fork/ExcalidrawBoard.tsx`, `turnBoard.ts`, `TurnCards.tsx`, `ThreadCanvasSync.tsx`
 - `apps/web/src/fork/canvasCards.ts`, `canvasMarks.ts`, `canvasStateChips.ts`, `cardMiddleDrag.ts`,
-  `draftBoardHandoff.ts`, `turnTableWidth.ts`
+  `draftBoardHandoff.ts`, `turnTableWidth.ts`, `sketchAreas.ts`
 - `apps/web/src/state/threadCanvas.ts`
 - `apps/server/src/canvas/ThreadCanvasStore.ts`, `threadCanvasScene.ts`, `threadCanvasPlan.ts`,
   `canvasDiagram.ts`, `canvasPreviewPage.ts`, `sharedCanvas.ts`
@@ -161,7 +165,7 @@ behavior, or give agents any file, network or command authority beyond upstream'
   endpoint, including diagram parse errors.
 - `apps/server/src/mcp/toolkits/core.test.ts`: `html_render` keeps `displayWidth`.
 - `apps/server/src/provider/AgentContextBudget.test.ts`: the guidance budget.
-- `apps/web/src/fork/*.test.ts(x)`: turn layout and settling, cards, marks, chips, middle drag,
+- `apps/web/src/fork/*.test.ts(x)`: turn layout and settling, cards, marks, sketch areas, chips, middle drag,
   draft handoff, citation reveal and server drawings loading into Excalidraw.
 - `apps/web/src/fork/canvasSurfaceCards.test.ts`: refs round-trip to the panel's surfaces, the
   live cap, and the one-live-view check.

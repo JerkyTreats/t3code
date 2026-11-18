@@ -137,6 +137,16 @@ it.effect("returns the canvas preview as image content", () =>
       });
       expect(JSON.stringify(shot.structuredContent)).not.toContain('"data"');
 
+      const around = yield* server
+        .callTool({ name: "canvas_preview", arguments: { elements: ["turn-a"] } })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+      expect(around.structuredContent).toMatchObject({
+        region: { x: -510, y: -80, width: 1020, height: 560 },
+      });
+
       const missing = yield* server
         .callTool({ name: "canvas_preview", arguments: { drawingId: "nope" } })
         .pipe(

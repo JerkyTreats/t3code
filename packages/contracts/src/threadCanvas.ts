@@ -5,6 +5,7 @@ import { ThreadId } from "./baseSchemas.ts";
 const THREAD_CANVAS_MAX_ELEMENTS = 5_000;
 export const THREAD_CANVAS_MAX_DRAWING_ELEMENTS = 500;
 const THREAD_CANVAS_MAX_SKETCH_BASE64_CHARS = 8_000_000;
+const THREAD_CANVAS_MAX_SKETCHES = 4;
 
 /** An Excalidraw element as the client stores it. The server only reads its id and version. */
 export const ThreadCanvasElement = Schema.Record(Schema.String, Schema.Unknown);
@@ -147,9 +148,17 @@ export const ThreadCanvasSubscribeInput = Schema.Struct({ threadId: ThreadId });
 export const ThreadCanvasSaveInput = Schema.Struct({
   threadId: ThreadId,
   elements: Schema.Array(ThreadCanvasElement).check(Schema.isMaxLength(THREAD_CANVAS_MAX_ELEMENTS)),
-  /** A base64 PNG of the marks the agent has not seen, which only a client can render. */
-  sketch: Schema.optional(
-    Schema.String.check(Schema.isMaxLength(THREAD_CANVAS_MAX_SKETCH_BASE64_CHARS)),
+  /**
+   * Pictures of the marks the agent has not seen, which only a client can render: one base64 PNG
+   * per area of the board, with the ids of the marks it shows.
+   */
+  sketches: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        png: Schema.String.check(Schema.isMaxLength(THREAD_CANVAS_MAX_SKETCH_BASE64_CHARS)),
+        marks: Schema.Array(Schema.String).check(Schema.isMaxLength(THREAD_CANVAS_MAX_ELEMENTS)),
+      }),
+    ).check(Schema.isMaxLength(THREAD_CANVAS_MAX_SKETCHES)),
   ),
 });
 
