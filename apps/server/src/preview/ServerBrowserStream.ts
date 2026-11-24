@@ -1,11 +1,16 @@
 import * as NodeHttpServerRequest from "@effect/platform-node/NodeHttpServerRequest";
 import {
   AuthOrchestrationReadScope,
+  type EnvironmentAuthInvalidError,
+  type EnvironmentInternalError,
+  type EnvironmentScopeRequiredError,
   AuthPreviewOperateScope,
   PREVIEW_STREAM_HOST_SETUP_CLOSE_CODE,
   PreviewStreamHostSetup,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import type * as Layer from "effect/Layer";
+import type * as PlatformError from "effect/PlatformError";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
@@ -20,7 +25,9 @@ import {
 } from "effect/http";
 import * as Socket from "effect/socket/Socket";
 
-import { authenticateMediaRequest } from "../auth/http.ts";
+import { authenticateMediaRequest, failEnvironmentInternal } from "../auth/http.ts";
+import type * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import * as SessionStore from "../auth/SessionStore.ts";
 import { assetResponseHeaders } from "../http.ts";
 import * as PreviewBrowserHost from "./PreviewBrowserHost.ts";
 import * as ServerBrowser from "./ServerBrowser.ts";
@@ -79,7 +86,8 @@ const makeHandler = Effect.fnUntraced(function* (browser: ServerBrowser.ServerBr
   if (threadId.length === 0 || tabId.length === 0) {
     return HttpServerResponse.text("Not Found", { status: 404 });
   }
-  return yield* Effect.scoped(
+  const sessions = yield* SessionStore.SessionStore;
+  const stream = Effect.scoped(
     Effect.gen(function* () {
       const attached = yield* browser
         .attachViewer({
@@ -198,7 +206,9 @@ const makeHandler = Effect.fnUntraced(function* (browser: ServerBrowser.ServerBr
       const receiveInput = reader.pull.pipe(
         Effect.flatMap((chunks) => Effect.forEach(chunks, receive, { discard: true })),
       );
-      return yield* Effect.raceFirst(Effect.forever(sendOutput), Effect.forever(receiveInput));
+      return yield* Effect.raceFirst(Effect.forever(sendOutput), Effect.forever(receiveInput)).pipe(
+        Effect.onInterrupt(() => Effect.sync(() => transport.destroy())),
+      );
     }),
   ).pipe(
     Effect.catchTags({
@@ -208,6 +218,16 @@ const makeHandler = Effect.fnUntraced(function* (browser: ServerBrowser.ServerBr
         ),
     }),
     Effect.orElseSucceed(() => HttpServerResponse.empty()),
+  );
+  return yield* Effect.raceFirst(
+    stream,
+    sessions.awaitInvalidation(session.sessionId).pipe(
+      Effect.as(HttpServerResponse.empty()),
+      Effect.catchTags({
+        SessionCredentialVerificationError: (error) =>
+          failEnvironmentInternal("internal_error", error),
+      }),
+    ),
   );
 });
 
@@ -285,7 +305,22 @@ const receiveUpload = Effect.fnUntraced(
   (effect, _browser, _params) => effect.pipe(Effect.scoped),
 );
 
-export const routeLayer = HttpRouter.use((router) =>
+export const routeLayer: Layer.Layer<
+  never,
+  never,
+  | HttpRouter.HttpRouter
+  | ServerBrowser.ServerBrowser
+  | HttpPlatform.HttpPlatform
+  | FileSystem.FileSystem
+  | Path.Path
+  | HttpRouter.Request<"Requires", EnvironmentAuth.EnvironmentAuth>
+  | HttpRouter.Request<"Requires", SessionStore.SessionStore>
+  | HttpRouter.Request<"Error", PlatformError.PlatformError>
+  | HttpRouter.Request<"Error", EnvironmentAuthInvalidError>
+  | HttpRouter.Request<"Error", EnvironmentInternalError>
+  | HttpRouter.Request<"Error", EnvironmentScopeRequiredError>
+  | HttpRouter.Request<"Error", Multipart.MultipartError>
+> = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const browser = yield* ServerBrowser.ServerBrowser;
     const platform = yield* Effect.context<

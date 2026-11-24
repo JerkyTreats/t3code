@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
   AuthAccessTokenType,
+  type AuthCreatePairingCredentialInput,
   AuthEnvironmentBootstrapTokenType,
   AuthTokenExchangeGrantType,
   EnvironmentHttpApi,
@@ -16,7 +17,7 @@ import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpServer } from "effect/http";
+import { HttpClient, HttpServer, HttpServerRequest } from "effect/http";
 import * as Etag from "effect/http/Etag";
 import * as HttpPlatform from "effect/http/HttpPlatform";
 import * as HttpRouter from "effect/http/HttpRouter";
@@ -40,10 +41,10 @@ import * as ConnectHttp from "./http.ts";
 import * as ConnectReachability from "./ConnectReachability.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import * as ServerSettings from "../serverSettings.ts";
 
 const DESKTOP_BOOTSTRAP_TOKEN = "test-desktop-bootstrap-token";
 const NON_LOOPBACK_ORIGIN = "http://172.24.162.233:3773";
-const LOOPBACK_ORIGIN = "http://127.0.0.1:3773";
 const proofRequest: RelayLinkProofRequest = {
   challenge: "test-challenge",
   relayIssuer: "https://relay.example.test",
@@ -76,15 +77,23 @@ const layerConfig = Layer.effect(
 ).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-link-proof-test-" })));
 
 // Fork F17 removes embedded pairing issuance over HTTP; this route stands in for the portal.
+// It issues the requested scopes, or the standard client scopes when none are named.
 const testPairingRoute = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const auth = yield* EnvironmentAuth.EnvironmentAuth;
     yield* router.add(
       "POST",
       "/test/pairing-credential",
-      auth
-        .issuePairingCredential({ scopes: ["relay:read", "relay:write"] })
-        .pipe(Effect.map((issued) => HttpServerResponse.jsonUnsafe(issued))),
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const body = (yield* request.json) as {
+          readonly scopes?: AuthCreatePairingCredentialInput["scopes"];
+        };
+        const issued = yield* auth.issuePairingCredential(
+          body.scopes ? { scopes: body.scopes } : undefined,
+        );
+        return HttpServerResponse.jsonUnsafe(issued);
+      }),
     );
   }),
 );
@@ -97,6 +106,7 @@ const layerLinkProofRoutes = Layer.mergeAll(
   Layer.provide([AuthHttp.layer, ConnectHttp.layer]),
   Layer.provide(AuthHttp.layerAuthenticatedAuth),
   Layer.provide(CloudLink.layer),
+  Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
   Layer.provide(EnvironmentKeys.layer),
   Layer.provide(
     Layer.mock(ConnectReachability.ConnectReachability)({ latest: Effect.succeedNone }),
@@ -115,7 +125,9 @@ const layerLinkProofRoutes = Layer.mergeAll(
         capabilities: { repositoryIdentity: false },
       }),
     }),
-    Layer.mock(ManagedEndpointRuntime.CloudManagedEndpointRuntime)({}),
+    Layer.mock(ManagedEndpointRuntime.CloudManagedEndpointRuntime)({
+      withLinkStateLock: (effect) => effect,
+    }),
     Layer.mock(CliTokenManager.CloudCliTokenManager)({}),
     Layer.mock(AgentAwarenessRelay.AgentAwarenessRelay)({}),
     Layer.mock(HttpServer.HttpServer)({
@@ -174,10 +186,10 @@ const linkProofClient = Effect.gen(function* () {
     const payload = (yield* responseJson(response)) as { access_token: string };
     return payload.access_token;
   });
-  const linkableHere = (token: string, origin = NON_LOOPBACK_ORIGIN) =>
+  const linkableHere = (token: string) =>
     Effect.promise(() =>
       handler(
-        new Request(`${origin}/api/connect/link-state`, {
+        new Request(`${NON_LOOPBACK_ORIGIN}/api/connect/link-state`, {
           headers: { authorization: `Bearer ${token}` },
         }),
       ),
@@ -188,16 +200,24 @@ const linkProofClient = Effect.gen(function* () {
   return { post, exchange, linkableHere };
 });
 
-describe("link proof over a non-loopback desktop transport", () => {
+describe("link proof over a non-loopback transport", () => {
   it.effect(
-    "signs a loopback tunnel origin after desktop bootstrap token exchange over a non-loopback host",
+    "signs this server's loopback origin for a remote client allowed to configure the relay",
     () =>
       Effect.gen(function* () {
         const { post, exchange } = yield* linkProofClient;
-        const token = yield* exchange(DESKTOP_BOOTSTRAP_TOKEN);
-        const response = yield* post("/api/connect/link-proof", proofRequest, {
-          authorization: `Bearer ${token}`,
+        const paired = yield* post("/test/pairing-credential", {
+          scopes: ["relay:read", "relay:configure"],
         });
+        expect(paired.status).toBe(200);
+        const { credential } = (yield* responseJson(paired)) as { credential: string };
+        const token = yield* exchange(credential);
+        // The caller's origin and forwarding headers must not steer the tunnel elsewhere.
+        const response = yield* post(
+          "/api/connect/link-proof",
+          { ...proofRequest, origin: { localHttpHost: "172.24.162.233", localHttpPort: 5432 } },
+          { authorization: `Bearer ${token}`, "x-forwarded-host": "evil.example.test" },
+        );
         expect(response.status).toBe(200);
         expect(response.headers.get("cache-control")).toBe("no-store");
         const proof = (yield* responseJson(response)) as string;
@@ -213,99 +233,47 @@ describe("link proof over a non-loopback desktop transport", () => {
           audience: proofRequest.relayIssuer,
         });
         expect(verified).toMatchObject({
-          origin: proofRequest.origin,
+          origin: { localHttpHost: "127.0.0.1", localHttpPort: 3773 },
           endpoint: proofRequest.endpoint,
           challenge: proofRequest.challenge,
         });
       }).pipe(Effect.provide(NodeCrypto.layerSignature)),
   );
 
-  it.effect(
-    "does not pass desktop trust to a paired client or accept client-supplied provenance",
-    () =>
-      Effect.gen(function* () {
-        const { post, exchange, linkableHere } = yield* linkProofClient;
-        const desktop = yield* exchange(DESKTOP_BOOTSTRAP_TOKEN);
-        const embedded = yield* post(
-          "/api/auth/pairing-token",
-          {
-            scopes: ["relay:read", "relay:write"],
-            label: "desktop-bootstrap",
-            subject: "desktop-bootstrap",
-          },
-          { authorization: `Bearer ${desktop}` },
-        );
-        expect(embedded.status).toBe(401);
-        const paired = yield* post("/test/pairing-credential", {});
-        expect(paired.status).toBe(200);
-        const { credential } = (yield* responseJson(paired)) as { credential: string };
-        const token = yield* exchange(credential);
-        const headers = { authorization: `Bearer ${token}`, "x-desktop-bootstrap": "true" };
-        const payload = {
-          ...proofRequest,
-          allowNonLoopbackRequestHost: true,
-          subject: "desktop-bootstrap",
-        };
-        const rejected = yield* post("/api/connect/link-proof", payload, headers);
-        expect(rejected.status).toBe(400);
-        expect(yield* responseJson(rejected)).toMatchObject({
-          message: "Invalid managed endpoint origin.",
-        });
-        const loopback = yield* post(
-          "/api/connect/link-proof",
-          proofRequest,
-          headers,
-          LOOPBACK_ORIGIN,
-        );
-        expect(loopback.status).toBe(200);
-        // Clients offer Turn on only to the desktop's own session; SSH forwards look like loopback.
-        expect(yield* linkableHere(desktop)).toBe(true);
-        expect(yield* linkableHere(token)).toBe(false);
-        expect(yield* linkableHere(token, LOOPBACK_ORIGIN)).toBe(false);
-      }),
-  );
-
-  it.effect.each([
-    {
-      name: "non-loopback tunnel origin",
-      origin: { localHttpHost: "172.24.162.233", localHttpPort: 3773 },
-      headers: {},
-    },
-    {
-      name: "mismatched port",
-      origin: { localHttpHost: "127.0.0.1", localHttpPort: 3774 },
-      headers: {},
-    },
-    {
-      name: "forwarded host",
-      origin: proofRequest.origin,
-      headers: { "x-forwarded-host": "127.0.0.1:3773" },
-    },
-    {
-      name: "forwarded protocol",
-      origin: proofRequest.origin,
-      headers: { "x-forwarded-proto": "http" },
-    },
-  ])("rejects $name even for desktop bootstrap", ({ origin, headers }) =>
+  it.effect("keeps pairing issuance out of the embedded HTTP surface", () =>
     Effect.gen(function* () {
       const { post, exchange } = yield* linkProofClient;
-      const token = yield* exchange(DESKTOP_BOOTSTRAP_TOKEN);
-      const response = yield* post(
-        "/api/connect/link-proof",
-        { ...proofRequest, origin },
-        { ...headers, authorization: `Bearer ${token}` },
+      const desktop = yield* exchange(DESKTOP_BOOTSTRAP_TOKEN);
+      const embedded = yield* post(
+        "/api/auth/pairing-token",
+        { scopes: ["relay:read", "relay:write", "relay:configure"] },
+        { authorization: `Bearer ${desktop}` },
       );
-      expect(response.status).toBe(400);
-      expect(yield* responseJson(response)).toMatchObject({
-        message: "Invalid managed endpoint origin.",
-      });
+      expect(embedded.status).toBe(401);
     }),
   );
 
-  it.effect("requires relay-write scope even for desktop bootstrap", () =>
+  it.effect("offers Turn on to any session allowed to configure the relay", () =>
+    Effect.gen(function* () {
+      const { post, exchange, linkableHere } = yield* linkProofClient;
+      const desktop = yield* exchange(DESKTOP_BOOTSTRAP_TOKEN);
+      const pair = (scopes: ReadonlyArray<string>) =>
+        post("/test/pairing-credential", { scopes }).pipe(
+          Effect.flatMap(responseJson),
+          Effect.flatMap((paired) => exchange((paired as { credential: string }).credential)),
+        );
+      expect(yield* linkableHere(desktop)).toBe(true);
+      const remote = yield* pair(["relay:read", "relay:write", "relay:configure"]);
+      expect(yield* linkableHere(remote)).toBe(true);
+      expect(yield* linkableHere(yield* pair(["relay:read", "relay:write"]))).toBe(false);
+      expect(yield* linkableHere(yield* pair(["relay:read", "relay:configure"]))).toBe(false);
+    }),
+  );
+
+  it.effect("requires relay configuration permission even for desktop bootstrap", () =>
     Effect.gen(function* () {
       const { post, exchange } = yield* linkProofClient;
-      const token = yield* exchange(DESKTOP_BOOTSTRAP_TOKEN, "relay:read");
+      const token = yield* exchange(DESKTOP_BOOTSTRAP_TOKEN, "relay:write");
       const response = yield* post("/api/connect/link-proof", proofRequest, {
         authorization: `Bearer ${token}`,
       });
@@ -313,6 +281,49 @@ describe("link proof over a non-loopback desktop transport", () => {
       expect(yield* responseJson(response)).toMatchObject({
         code: "insufficient_scope",
         requiredScope: "relay:write",
+        requiredPermission: "relay:configure",
+      });
+    }),
+  );
+
+  it.effect("allows relay writers to set preferences without creating a link", () =>
+    Effect.gen(function* () {
+      const { post, exchange } = yield* linkProofClient;
+      const path = "/api/connect/live-activity-preference";
+      const payload = { liveActivitiesEnabled: true };
+      const readToken = yield* exchange(DESKTOP_BOOTSTRAP_TOKEN, "relay:read");
+      const denied = yield* post(path, payload, { authorization: `Bearer ${readToken}` });
+      expect(denied.status).toBe(403);
+
+      const writeToken = yield* exchange(DESKTOP_BOOTSTRAP_TOKEN, "relay:write");
+      const unlinked = yield* post(path, payload, { authorization: `Bearer ${writeToken}` });
+      expect(unlinked.status).toBe(200);
+      expect(yield* responseJson(unlinked)).toEqual({ ok: false });
+    }),
+  );
+
+  it.effect("requires explicit permission to configure the relay", () =>
+    Effect.gen(function* () {
+      const { post, exchange } = yield* linkProofClient;
+      const paired = yield* post("/test/pairing-credential", {});
+      expect(paired.status).toBe(200);
+      const { credential } = (yield* responseJson(paired)) as { credential: string };
+      const token = yield* exchange(credential);
+      const response = yield* post(
+        "/api/connect/relay-config",
+        {
+          relayUrl: "https://relay.example.test",
+          cloudUserId: "test-link-owner",
+          environmentCredential: "test-environment-credential",
+          cloudMintPublicKey: "test-public-key",
+          endpointRuntime: null,
+        },
+        { authorization: `Bearer ${token}` },
+      );
+      expect(response.status).toBe(403);
+      expect(yield* responseJson(response)).toMatchObject({
+        code: "insufficient_scope",
+        requiredPermission: "relay:configure",
       });
     }),
   );

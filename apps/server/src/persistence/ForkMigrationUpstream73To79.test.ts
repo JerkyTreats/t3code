@@ -78,7 +78,7 @@ it.effect("continues fork 96 through 103, retains data, and reopens without new 
 
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 103 }), appended);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 103 }), [...appended]);
       assert.deepStrictEqual(yield* readRetainedData(), before);
       const names = yield* schemaNames();
       for (const added of [

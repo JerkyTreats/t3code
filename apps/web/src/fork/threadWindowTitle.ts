@@ -14,6 +14,7 @@ export function formatThreadWindowTitle(input: {
       ? "done"
       : "idle";
   const title = input.title.replace(/\s+/g, " ").trim().slice(0, 160) || "New thread";
+  // oxlint-disable-next-line t3code/no-untranslated-copy -- native T3 Thread window title format
   return `T3 Thread :: ${state} :: ${title}`;
 }
 

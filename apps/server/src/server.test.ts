@@ -566,7 +566,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, RpcSerialization.l
         const host = yield* buildAuthorityHost;
         const recorded: Array<string> = [];
         const analytics = AnalyticsService.AnalyticsService.of({
-          record: (event) => Effect.sync(() => void recorded.push(event)),
+          record: (event) =>
+            Effect.sync(() => {
+              recorded.push(event);
+              return true;
+            }),
           flush: Effect.void,
           recordOwners: (_owners, observedBy) =>
             Effect.sync(() => void recorded.push(`owners:${observedBy}`)),

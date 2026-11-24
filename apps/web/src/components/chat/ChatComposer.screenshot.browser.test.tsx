@@ -286,7 +286,7 @@ describe("ChatComposer screenshot admission", () => {
     },
   );
 
-  it("blocks synchronous send and compact commands throughout capture and image preparation", async () => {
+  it("blocks send during capture and compaction through image preparation", async () => {
     using _fixture = setup();
     useComposerDraftStore.getState().setPrompt(target, "Keep this prompt");
     const native = deferred<typeof pngCapture | null>();
@@ -305,17 +305,16 @@ describe("ChatComposer screenshot admission", () => {
     expect(draft()?.prompt).toBe("Keep this prompt");
     await expect.element(sendButton(screen)).toBeDisabled();
     await act(() => native.resolve(pngCapture));
-    await act(() => {
-      submit(screen);
-      input.composerRef.current!.compactContext();
-    });
-    expect(input.onSend).not.toHaveBeenCalled();
+    // Once the capture's placeholder takes its slot, a message send goes to ChatView, which holds
+    // it until the image is ready (upstream). Compaction still waits here.
+    await act(() => input.composerRef.current!.compactContext());
     expect(input.onCompactContext).not.toHaveBeenCalled();
     await act(() => preparation.resolve({ ok: true, file: image("capture.png") }));
+    // The send reads this context; the composer clears it once the send is handed off.
+    await expect.poll(() => input.composerRef.current!.getSendContext().images.length).toBe(1);
     await expect.element(sendButton(screen)).toBeEnabled();
     await act(() => submit(screen));
     expect(input.onSend).toHaveBeenCalledOnce();
-    expect(input.composerRef.current!.getSendContext().images).toHaveLength(1);
   });
 
   it("drops a native result after switching environments with the same ThreadId, even after returning", async () => {

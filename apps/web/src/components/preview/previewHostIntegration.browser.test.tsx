@@ -174,8 +174,11 @@ function setup(): Disposable {
   panel = document.createElement("div");
   panel.dataset.threadKey = scopedThreadKey(ref);
   panel.dataset.previewPanelMode = "";
+  // Mirrors PreviewView's marker, so the panel reads as a focused browser surface.
+  const view = document.createElement("div");
+  view.dataset.previewView = "";
   element = document.createElement("input");
-  panel.append(element);
+  panel.append(view, element);
   document.body.append(panel);
   element.focus();
   setDesktopBridge({
@@ -337,6 +340,7 @@ describe("preview route and current chat host", () => {
       using _state = setup();
       applyPreviewDesktopState(ref, "tab", {
         hasWebContents: true,
+        navStatus: { _tag: "Idle" as const },
         canGoBack: false,
         canGoForward: false,
         loading: false,

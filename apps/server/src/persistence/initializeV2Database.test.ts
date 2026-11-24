@@ -22,6 +22,7 @@ import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as LegacyV1ThreadImporter from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
+import { withConnectAuthColumns } from "./testkit/connectAuthColumns.ts";
 
 const retainedForkRows = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -82,7 +83,7 @@ it.effect(
       );
       yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        assert.deepStrictEqual(yield* retainedForkRows, retained);
+        assert.deepStrictEqual(yield* retainedForkRows, withConnectAuthColumns(retained));
         const legacy = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
         yield* legacy.reconcileShells;
         const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -129,7 +130,7 @@ it.effect(
       }
       yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        assert.deepStrictEqual(yield* retainedForkRows, retained);
+        assert.deepStrictEqual(yield* retainedForkRows, withConnectAuthColumns(retained));
         assert.deepStrictEqual(yield* runMigrations(), []);
         assert.equal((yield* sql`SELECT text FROM v2_work`)[0]?.text, "Keep V2 work");
         assert.equal((yield* sql`SELECT title FROM projection_threads`)[0]?.title, "V1 thread");
@@ -161,7 +162,7 @@ it.effect("includes committed WAL data and does not publish a failed snapshot", 
     const source = new NodeSqlite.DatabaseSync(sourcePath);
     try {
       source.exec(
-        "PRAGMA journal_mode=WAL; CREATE TABLE messages(text TEXT); INSERT INTO messages VALUES ('committed'); BEGIN; INSERT INTO messages VALUES ('uncommitted');",
+        "PRAGMA journal_mode=WAL; CREATE TABLE messages(text TEXT); INSERT INTO messages VALUES ('committed'); CREATE TABLE dropped(blob BLOB); INSERT INTO dropped VALUES (randomblob(65536)); DROP TABLE dropped; BEGIN; INSERT INTO messages VALUES ('uncommitted');",
       );
       yield* initializeV2Database(destinationPath);
       const copy = new NodeSqlite.DatabaseSync(destinationPath, { readOnly: true });
@@ -173,6 +174,8 @@ it.effect("includes committed WAL data and does not publish a failed snapshot", 
             .map((row) => row.text),
           ["committed"],
         );
+        assert.deepEqual(copy.prepare("PRAGMA auto_vacuum").get(), { auto_vacuum: 2 });
+        assert.deepEqual(copy.prepare("PRAGMA freelist_count").get(), { freelist_count: 0 });
       } finally {
         copy.close();
       }

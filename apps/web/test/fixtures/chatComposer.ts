@@ -9,6 +9,7 @@ import { vi } from "vite-plus/test";
 
 import type { ChatComposerProps } from "../../src/components/chat/ChatComposer";
 import type { ComposerImageAttachment } from "../../src/composerDraftStore";
+import type { ShortcutMatchContext } from "../../src/keybindings";
 
 // Synthetic ChatComposer host props for mounted composer browser tests.
 export const environmentId = EnvironmentId.make("environment-one");
@@ -76,6 +77,16 @@ export function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerP
     onCompactContext: vi.fn(),
     activeThreadId: threadId,
     activeThread: undefined,
+    activeThreadRuns: [],
+    canSteer: false,
+    getShortcutContext: (): ShortcutMatchContext => ({
+      terminalFocus: false,
+      terminalOpen: false,
+      previewFocus: false,
+      previewOpen: false,
+      isWeb: true,
+      isDesktop: false,
+    }),
     forceExpandedOnMobile: false,
     projectSelectionRequired: false,
     phase: "ready",
@@ -84,7 +95,6 @@ export function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerP
     editingQueuedAttachments: null,
     onRemoveEditingQueuedAttachment: vi.fn(),
     onResume: vi.fn(),
-    isCompacting: false,
     isSendBusy: false,
     sendDisabledReason: null,
     isPreparingWorktree: false,
@@ -93,11 +103,7 @@ export function props(overrides: Partial<ChatComposerProps> = {}): ChatComposerP
     activePendingApproval: null,
     pendingApprovals: [],
     pendingUserInputs: [],
-    activePendingProgress: null,
-    activePendingResolvedAnswers: null,
     activePendingIsResponding: false,
-    activePendingDraftAnswers: {},
-    activePendingQuestionIndex: 0,
     respondingRequestIds: [],
     runtimeMode: "full-access",
     lockedProvider: null,

@@ -28,6 +28,10 @@ const legacyReaderFiles: Record<
     tables: ["projection_thread_messages"],
     reason: "attachment deletion protects references in the immutable legacy recovery source",
   },
+  "persistence/DatabaseMaintenance.ts": {
+    tables: ["projection_threads"],
+    reason: "inspect counts threads that exist only in the retained legacy recovery source",
+  },
 };
 
 const retiredPaths = [

@@ -1,3 +1,4 @@
+import { T } from "gt-react";
 import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -62,19 +63,23 @@ function ReadyDesktopLauncherActivationCoordinator(props: {
   return (
     <div role="status" className="flex items-center gap-3 border-b px-4 py-2 text-sm">
       <span>
-        {submitState === "waiting"
-          ? "The launcher prompt is waiting for the composer to be ready."
-          : submitState === "sending"
-            ? "Submitting the launcher prompt."
-            : submitState === "refused"
-              ? "The composer did not submit the launcher prompt. Resolve the issue, then retry."
-              : submitState === "uncertain"
-                ? "The launcher could not confirm submission. Check the conversation before sending again."
-                : outcome === "target-not-found"
-                  ? "The launcher prompt is waiting for its project."
-                  : outcome === "completion-pending"
-                    ? "The launcher is waiting for confirmation."
-                    : "The launcher prompt could not be opened. Your existing draft is preserved."}
+        {submitState === "waiting" ? (
+          <T>The launcher prompt is waiting for the composer to be ready.</T>
+        ) : submitState === "sending" ? (
+          <T>Submitting the launcher prompt.</T>
+        ) : submitState === "refused" ? (
+          <T>The composer did not submit the launcher prompt. Resolve the issue, then retry.</T>
+        ) : submitState === "uncertain" ? (
+          <T>
+            The launcher could not confirm submission. Check the conversation before sending again.
+          </T>
+        ) : outcome === "target-not-found" ? (
+          <T>The launcher prompt is waiting for its project.</T>
+        ) : outcome === "completion-pending" ? (
+          <T>The launcher is waiting for confirmation.</T>
+        ) : (
+          <T>The launcher prompt could not be opened. Your existing draft is preserved.</T>
+        )}
       </span>
       {(submitState === null || submitState === "refused") && (
         <button
@@ -85,7 +90,7 @@ function ReadyDesktopLauncherActivationCoordinator(props: {
             else void owner.retryStaging(stage).then(setOutcome);
           }}
         >
-          Retry
+          <T>Retry</T>
         </button>
       )}
     </div>

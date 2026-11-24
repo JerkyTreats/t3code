@@ -1,3 +1,4 @@
+import { T, Var } from "gt-react";
 import {
   CaptureUpdateAction,
   convertToExcalidrawElements,
@@ -258,9 +259,13 @@ function gated(availability: Availability, props: GateProps<unknown>) {
   return (
     <CardFace card={props.card}>
       <p className="text-muted-foreground text-xs" data-surface-availability={availability.state}>
-        {availability.state === "loading"
-          ? "Connecting…"
-          : `No longer available. ${availability.reason}`}
+        {availability.state === "loading" ? (
+          <T>Connecting…</T>
+        ) : (
+          <T>
+            No longer available. <Var>{availability.reason}</Var>
+          </T>
+        )}
       </p>
     </CardFace>
   );
@@ -359,11 +364,13 @@ function LiveSurface(props: {
     return (
       <CardFace card={card}>
         <p className="text-muted-foreground text-xs">
-          {elsewhere === "panel"
-            ? "Showing in the right panel."
-            : elsewhere === "card"
-              ? "Showing in another card."
-              : "Showing in the floating player."}
+          {elsewhere === "panel" ? (
+            <T>Showing in the right panel.</T>
+          ) : elsewhere === "card" ? (
+            <T>Showing in another card.</T>
+          ) : (
+            <T>Showing in the floating player.</T>
+          )}
         </p>
         <div>
           <Button
@@ -376,7 +383,7 @@ function LiveSurface(props: {
               } else props.onShowHere();
             }}
           >
-            Show here
+            <T>Show here</T>
           </Button>
         </div>
       </CardFace>

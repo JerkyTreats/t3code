@@ -45,17 +45,30 @@ const REVIEWED_LOCAL_ACTIONS: ReadonlyMap<string, string> = new Map([
 ]);
 const UPSTREAM_TARGET_PATTERN = /(?:github\.com\/|ghcr\.io\/)?pingdotgg\/t3code/iu;
 const DYNAMIC_CONTAINER_NAMESPACE_PATTERN = /ghcr\.io\/[^\s"']*\$\{\{/iu;
+const ANDROID_EMULATOR_RUNNER_ACTIONS = new Set([
+  "reactivecircus/android-emulator-runner@v2",
+  "reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d",
+]);
+// Upstream pins read-only actions to immutable commits; each pin is the reviewed
+// revision of the tag listed beside it.
 const ALLOWED_NON_PUBLICATION_ACTIONS = new Set([
   CHECKOUT_ACTION,
+  SERVER_IMAGE_CHECKOUT_ACTION,
   "actions/cache@v6",
+  "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
   "actions/setup-java@v5",
+  "actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961",
   "actions/upload-artifact@v7",
+  "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
   "actions/download-artifact@v8",
+  "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
   "docker/setup-buildx-action@v4",
   "dtolnay/rust-toolchain@stable",
   "gradle/actions/setup-gradle@v5",
-  "reactivecircus/android-emulator-runner@v2",
+  "gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c",
+  ...ANDROID_EMULATOR_RUNNER_ACTIONS,
   "voidzero-dev/setup-vp@v1",
+  "voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb",
 ]);
 const SERVER_IMAGE_ACTIONS = new Set([
   SERVER_IMAGE_CHECKOUT_ACTION,
@@ -73,9 +86,11 @@ const READ_ONLY_RUN_SOURCES = new Set([
   'echo "version=$(node -p "require(\'./apps/server/node_modules/playwright-core/package.json\').version")" >> "$GITHUB_OUTPUT"',
   "node apps/web/node_modules/playwright/cli.js install --only-shell chromium",
   "node apps/server/node_modules/playwright-core/cli.js install --only-shell chromium",
-  "npm install --global agent-device@0.21.25",
+  "npm install --global agent-device@0.21.41",
   "vp run --filter @t3tools/source-control-github generate --check",
   "vp run --filter t3 generate --check",
+  "vp run --filter @t3tools/issue-tracker-linear generate --check",
+  "vp run i18n:check",
   "cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check",
   "cargo test --locked --manifest-path native/resource-monitor/Cargo.toml",
   "node scripts/lib/release-workflow-safety.ts",
@@ -96,7 +111,7 @@ const READ_ONLY_RUN_SOURCES = new Set([
   "vp run --filter t3 test --shard ${{ matrix.shard }}/${{ strategy.job-total }}",
   "vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' test",
   "vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test",
-  "vp run --filter @t3tools/web test",
+  "vp run --filter @t3tools/web test --shard ${{ matrix.shard }}/${{ strategy.job-total }}",
   "vp run build:desktop",
   "vp run dist:desktop:linux",
   "vp run lint:mobile",
@@ -113,9 +128,9 @@ const READ_ONLY_MULTILINE_RUN_DIGESTS = new Set([
   "085a0164f4dbe086b88f9dea1af1a201350d28446f9f925c5ab123c13b3bda99",
   "e6151ae3575267412eeda576be63bdbe8b8c71c20fbeb807b98bdf617921c29c",
   "4e67118401fcbcd34869cc327c61a894f7a6c3b52f21a6db070e75685846b8ad",
-  "b4f762a8d2a14e55bd1e6f425314e0517b17dc25ae8455e997c297a47f3b4479",
+  "43ed8d690b67258b201bcc5ee415b5ff07aab1467b55b77a59708993e7db3017",
   "ded2b9646d2e7a9c558b624278e5a7cbbf19b94bfb7d57c146f9d50998a63adb",
-  "ae568dbbce1f1dc910a7835bfce0ea9cbc2eb67b8d5a50dd0401ba866e4139ae",
+  "8d8306e3c132f9cacf0f0f8e1c70f1e38d8f101d37aa18162b8e1390ac8722d8",
   "c21bd18295ed6471015ac5afd3b5377edc2a957005be63c47ba82d2c5f9528d2",
   "23e155c1bdfb5dda3d99db1d69f8d8d844a0bc3f5de3cf1de388406a528e49c7",
   "f49051a371cf61458c754114be69308cd5a5f25b9a64ff62be406a734db1ca5e",
@@ -369,7 +384,7 @@ function assertAllowedStep(
     if (!allowed) {
       fail(`${label} uses a workflow action that is not allowlisted: ${action}.`);
     }
-    if (action === "reactivecircus/android-emulator-runner@v2") {
+    if (ANDROID_EMULATOR_RUNNER_ACTIONS.has(action)) {
       const withOptions = requireRecord(step.with, `${label}.with`);
       if (
         withOptions.script !==

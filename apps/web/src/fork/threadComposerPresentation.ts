@@ -1,3 +1,5 @@
+import { msg } from "gt-react";
+import { m } from "~/i18n/messages";
 import { ANTIGRAVITY_DEFAULT_MODEL } from "@t3tools/contracts";
 
 export function threadModelIdentifierPresentation(input: {
@@ -13,7 +15,7 @@ export function threadModelIdentifierPresentation(input: {
   return {
     title,
     label: `${title}${input.selectedModel?.isUnavailable ? " (Unavailable)" : ""}`,
-    ariaLabel: `Model: ${title}`,
+    ariaLabel: m(msg("Model: {title}", { title })),
   };
 }
 

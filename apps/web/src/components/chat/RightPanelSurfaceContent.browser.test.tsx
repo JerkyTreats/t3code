@@ -72,6 +72,8 @@ function renderSurface(
       keybindings={[]}
       configuredPreviewUrls={[]}
       workspaceMutationId={null}
+      workspaceRevision={null}
+      issuesSupported={false}
       getShortcutContext={() => ({}) as never}
       onSendAnnotation={() => {}}
       onCloseSurface={() => {}}

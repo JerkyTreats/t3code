@@ -85,6 +85,18 @@ describe("collectServerUpdateTargets", () => {
     ]);
   });
 
+  it("does not offer a Nightly build to a Stable desktop app, whose own feed has nothing newer", () => {
+    const { targets, skipped } = collectServerUpdateTargets(
+      [machine("stable-desktop", "0.1.9", "desktop-managed")],
+      "0.1.10-nightly.20261116.4761",
+    );
+
+    expect(targets.map((target) => target.serverLabel)).toEqual([]);
+    expect(skipped.map((entry) => [entry.label, entry.reason])).toEqual([
+      ["stable-desktop", "on the stable channel"],
+    ]);
+  });
+
   it("skips servers whose policy refuses the update, with the policy's message", () => {
     const managed = (
       id: string,
@@ -123,7 +135,10 @@ describe("collectServerUpdateTargets", () => {
           ...entry,
           serverConfig: {
             ...entry.serverConfig,
-            environment: { ...entry.serverConfig.environment, serverVersion: "0.0.49-nightly.1" },
+            environment: {
+              ...entry.serverConfig.environment,
+              serverVersion: "0.0.49-nightly.20261027.1",
+            },
           },
         })),
         "0.0.50-nightly.20261028.1",
@@ -186,6 +201,50 @@ describe("runUpdateEverything", () => {
 
     expect(calls).toEqual(["providers", "servers"]);
     expect(result.localReady).toBe(false);
+  });
+
+  it("stages servers while providers install and updates each once its own stage settles", async () => {
+    const calls: string[] = [];
+    const [slow, fast] = [EnvironmentId.make("slow"), EnvironmentId.make("fast")];
+    let finishProviders = () => {};
+    let failSlowStage = () => {};
+    const providers = new Promise<void>((resolve) => (finishProviders = resolve));
+    const run = runUpdateEverything({
+      updateProviders: () => {
+        calls.push("providers");
+        return providers.then(() => {
+          calls.push("providers done");
+        });
+      },
+      stageServers: () => {
+        calls.push("stage");
+        return new Map([
+          [slow, new Promise((_, reject) => (failSlowStage = () => reject(new Error("failed"))))],
+          [fast, Promise.resolve()],
+        ]);
+      },
+      updateServers: (staged) => {
+        calls.push("servers");
+        return Promise.all(
+          [slow, fast].map(async (id) => {
+            await staged.get(id);
+            calls.push(`server ${id}`);
+            if (id === fast) failSlowStage();
+          }),
+        );
+      },
+    });
+    finishProviders();
+    await run;
+
+    expect(calls).toEqual([
+      "stage",
+      "providers",
+      "providers done",
+      "servers",
+      "server fast",
+      "server slow",
+    ]);
   });
 });
 

@@ -48,6 +48,7 @@ describe("project source-control endpoint binding", () => {
     (host) => {
       const targets = getNewProjectPublishTargets(
         discovery(provider({ kind: "github", label: "GitHub", host })),
+        undefined,
       );
       expect(targets[0]?.providerBaseUrl).toBe(`https://${host}`);
       expect(targets[0]?.owner).toBe("example");
@@ -97,6 +98,6 @@ describe("project source-control endpoint binding", () => {
         discovery: missingHost,
       }),
     ).toBeNull();
-    expect(getNewProjectPublishTargets(missingHost)).toEqual([]);
+    expect(getNewProjectPublishTargets(missingHost, undefined)).toEqual([]);
   });
 });

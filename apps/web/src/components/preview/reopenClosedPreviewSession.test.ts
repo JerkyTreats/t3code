@@ -41,6 +41,7 @@ const rememberClosedPreviewTab = (
 ) => {
   const reservation = reserveClosedPreviewTab(threadRef, closedSnapshot, {
     hasWebContents: true,
+    navStatus: { _tag: "Idle" as const },
     canGoBack: false,
     canGoForward: false,
     loading: false,

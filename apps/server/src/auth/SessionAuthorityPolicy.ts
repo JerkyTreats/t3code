@@ -40,7 +40,24 @@ export interface SignedSessionAuthority {
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
   readonly exp: number;
   readonly jkt?: string;
+  /** Peer-link sessions keep their deadline on the persisted row while in use. */
+  readonly plk?: 1;
+  /** DPoP-renewable sessions keep a renewal window on the persisted row. */
+  readonly rnw?: 1;
 }
+
+/**
+ * Plain tokens are bound to the exact persisted expiry. Renewable and peer-link
+ * tokens may carry an earlier expiry than the row (the row holds the renewal
+ * window or the extended peer-link deadline) but never a later one.
+ */
+const expirationClaimMatchesState = (
+  claims: Pick<SignedSessionAuthority, "exp" | "plk" | "rnw">,
+  state: Pick<SessionAuthorityState, "expiresAt">,
+): boolean =>
+  claims.plk === 1 || claims.rnw === 1
+    ? claims.exp <= state.expiresAt.epochMilliseconds
+    : claims.exp === state.expiresAt.epochMilliseconds;
 
 export interface SessionIssuanceInput {
   readonly authorityClass?: AuthSessionAuthorityClass;
@@ -250,6 +267,15 @@ export const isSessionVisible = (
   isClientEnabled(state) &&
   (connected || !isExpired(state.expiresAt.epochMilliseconds, observedAt));
 
+export const decodeExpirationClaim = Effect.fn("SessionAuthorityPolicy.decodeExpirationClaim")(
+  function* (sessionId: AuthSessionId, expirationClaim: number) {
+    const expiresAt = DateTime.make(expirationClaim);
+    if (Option.isNone(expiresAt))
+      return yield* new InvalidSessionExpirationClaimError({ sessionId, expirationClaim });
+    return expiresAt.value;
+  },
+);
+
 export const verifyClaimExpiration = Effect.fn("SessionAuthorityPolicy.verifyClaimExpiration")(
   function* (
     sessionId: AuthSessionId,
@@ -297,7 +323,7 @@ export const verifySessionAuthority = Effect.fn("SessionAuthorityPolicy.verifySe
       authorityClass !== normalizeAuthority(state.authorityClass) ||
       claims.sub !== state.subject ||
       claims.method !== state.method ||
-      claims.exp !== state.expiresAt.epochMilliseconds ||
+      !expirationClaimMatchesState(claims, state) ||
       claims.scopes.length !== state.scopes.length ||
       claims.scopes.some((scope, index) => scope !== state.scopes[index]) ||
       (authorityClass === "device-administrator" &&

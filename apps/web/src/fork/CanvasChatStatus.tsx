@@ -1,3 +1,5 @@
+import { msg, T, useGT } from "gt-react";
+import { m } from "~/i18n/messages";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   formatWorkingDurationLabel,
@@ -80,7 +82,7 @@ export function ChatCardStatus(props: {
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
-        title: "Could not stop the chat",
+        title: m(msg("Could not stop the chat")),
         ...(error instanceof Error ? { description: error.message } : {}),
       });
     }
@@ -99,7 +101,7 @@ export function ChatCardStatus(props: {
         {canStop ? (
           <Button size="micro" variant="destructive-outline" onClick={() => void stop()}>
             <SquareIcon />
-            Stop
+            <T>Stop</T>
           </Button>
         ) : null}
       </div>
@@ -157,6 +159,7 @@ export function BoardActivityStrip(props: {
       ? []
       : [{ threadId, title: shell.title, activity: chatActivityOf(shell) }];
   });
+  const gt = useGT();
   const summary = boardActivityOf(chats);
   if (summary === null) return null;
   return (
@@ -171,7 +174,10 @@ export function BoardActivityStrip(props: {
               <button
                 type="button"
                 className="flex size-5 cursor-pointer items-center justify-center rounded-full hover:bg-accent"
-                aria-label={`Show ${chat.title}: ${chatActivityLabel(chat.activity)}`}
+                aria-label={gt("Show {title}: {status}", {
+                  title: chat.title,
+                  status: chatActivityLabel(chat.activity),
+                })}
                 onClick={() => props.onShowChat(chat.threadId)}
               />
             }

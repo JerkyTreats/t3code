@@ -4,6 +4,7 @@
  * Rehomed from the upstream-deleted AzureDevOpsSourceControlProvider.test.ts.
  */
 import { SourceControlProviderKind } from "@t3tools/contracts";
+import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -22,9 +23,34 @@ const originContext = {
   remoteUrl: "https://dev.azure.com/fork/project/_git/repository",
 };
 
+/** Git calls the provider made through the host, in order. */
+const gitCalls: Array<string> = [];
+
 function makeProvider(azure: Partial<AzureDevOpsCli.AzureDevOpsCli["Service"]>) {
+  gitCalls.length = 0;
   return AzureDevOpsSourceControlProvider.make.pipe(
-    Effect.provide(Layer.mock(AzureDevOpsCli.AzureDevOpsCli)(azure)),
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.mock(AzureDevOpsCli.AzureDevOpsCli)(azure),
+        TestSourceControlHost.layer({
+          git: {
+            listLocalBranchNames: () => Effect.succeed([]),
+            fetchRemoteBranch: (input) => {
+              gitCalls.push(`fetchRemoteBranch:${input.remoteName}/${input.remoteBranch}`);
+              return Effect.void;
+            },
+            fetchRemoteTrackingBranch: (input) => {
+              gitCalls.push(`fetchRemoteTrackingBranch:${input.remoteName}/${input.remoteBranch}`);
+              return Effect.void;
+            },
+            switchRef: (input) => {
+              gitCalls.push(`switchRef:${input.refName}`);
+              return Effect.succeed({ refName: input.refName });
+            },
+          },
+        }),
+      ),
+    ),
   );
 }
 
@@ -177,9 +203,6 @@ it.effect("pins Azure listing and checkout preflight to origin", () =>
       | null = null;
     let getInput: Parameters<AzureDevOpsCli.AzureDevOpsCli["Service"]["getPullRequest"]>[0] | null =
       null;
-    let checkoutInput:
-      | Parameters<AzureDevOpsCli.AzureDevOpsCli["Service"]["checkoutPullRequest"]>[0]
-      | null = null;
     const provider = yield* makeProvider({
       listPullRequests: (input) => {
         listInput = input;
@@ -197,10 +220,6 @@ it.effect("pins Azure listing and checkout preflight to origin", () =>
           state: "open",
           updatedAt: Option.none(),
         });
-      },
-      checkoutPullRequest: (input) => {
-        checkoutInput = input;
-        return Effect.void;
       },
     });
 
@@ -229,18 +248,15 @@ it.effect("pins Azure listing and checkout preflight to origin", () =>
       organization: "https://dev.azure.com/fork",
       reference: "42",
     });
-    assert.deepStrictEqual(checkoutInput, {
-      cwd: "/repo",
-      organization: "https://dev.azure.com/fork",
-      reference: "42",
-      remoteName: "origin",
-    });
+    assert.deepStrictEqual(gitCalls, [
+      "fetchRemoteBranch:origin/feature/origin",
+      "switchRef:feature/origin",
+    ]);
   }),
 );
 
 it.effect("rejects Azure checkout when the pull request belongs to another repository", () =>
   Effect.gen(function* () {
-    let checkoutCalls = 0;
     const provider = yield* makeProvider({
       getPullRequest: () =>
         Effect.succeed({
@@ -253,11 +269,6 @@ it.effect("rejects Azure checkout when the pull request belongs to another repos
           state: "open",
           updatedAt: Option.none(),
         }),
-      checkoutPullRequest: () => {
-        return Effect.sync(() => {
-          checkoutCalls += 1;
-        });
-      },
     });
 
     const error = yield* provider
@@ -265,6 +276,6 @@ it.effect("rejects Azure checkout when the pull request belongs to another repos
       .pipe(Effect.flip);
 
     assert.include(error.detail, "outside origin");
-    assert.strictEqual(checkoutCalls, 0);
+    assert.deepStrictEqual(gitCalls, []);
   }),
 );

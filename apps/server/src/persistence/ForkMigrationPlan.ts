@@ -89,6 +89,34 @@ import UpstreamMigration0077 from "./Migrations/077_RepairBooleanSettledOverride
 import UpstreamMigration0078 from "./Migrations/078_DropOrchestrationEventCorrelationIndex.ts";
 import UpstreamMigration0079 from "./Migrations/079_DelegatedRecoveryIndexes.ts";
 import UpstreamMigration0080 from "./Migrations/080_ScheduledTaskThreadMode.ts";
+import UpstreamMigration0081 from "./Migrations/081_ProjectionMessageSearchText.ts";
+import UpstreamMigration0082 from "./Migrations/082_TurnItemConversationIndex.ts";
+import UpstreamMigration0083 from "./Migrations/083_CommandReadIndexes.ts";
+import UpstreamMigration0084 from "./Migrations/084_LastExecutedRunIndex.ts";
+import UpstreamMigration0085 from "./Migrations/085_TurnItemCounts.ts";
+import UpstreamMigration0086 from "./Migrations/086_QueuedTurnInputIndex.ts";
+import UpstreamMigration0087 from "./Migrations/087_ProjectionProjectsCustomTitle.ts";
+import UpstreamMigration0088 from "./Migrations/088_TurnItemTypeStatusIndex.ts";
+import UpstreamMigration0089 from "./Migrations/089_ShellThreadReadIndexes.ts";
+import UpstreamMigration0090 from "./Migrations/090_AuthConnectDevices.ts";
+import UpstreamMigration0091 from "./Migrations/091_AuthConnectDeniedRequests.ts";
+import UpstreamMigration0092 from "./Migrations/092_QueuedTurnInputIndexJsonValid.ts";
+import UpstreamMigration0093 from "./Migrations/093_ProviderTurnAttemptIndex.ts";
+import UpstreamMigration0094 from "./Migrations/094_TurnItemMessageOrdinalIndex.ts";
+import UpstreamMigration0095 from "./Migrations/095_TurnItemInlineWorkOutput.ts";
+import UpstreamMigration0096 from "./Migrations/096_RepairStaleTitleRegeneration.ts";
+import UpstreamMigration0097 from "./Migrations/097_IssueTrackerBindings.ts";
+import UpstreamMigration0098 from "./Migrations/098_ActiveShellIndexIndexes.ts";
+import UpstreamMigration0099 from "./Migrations/099_BackgroundRecoveryIndexes.ts";
+import UpstreamMigration0100 from "./Migrations/100_TurnStartReadIndexes.ts";
+import UpstreamMigration0101 from "./Migrations/101_DelegatedTaskReadIndexes.ts";
+import UpstreamMigration0102 from "./Migrations/102_ThreadItemCounts.ts";
+import UpstreamMigration0103 from "./Migrations/103_IssueTrackerAdditionalScopes.ts";
+import UpstreamMigration0104 from "./Migrations/104_ProjectionProjectsTrackedFolders.ts";
+import UpstreamMigration0105 from "./Migrations/105_TaskFolders.ts";
+import UpstreamMigration0106 from "./Migrations/106_WorktreePathKeyIndex.ts";
+import UpstreamMigration0107 from "./Migrations/107_DeferredSlashCommandIndex.ts";
+import UpstreamMigration0108 from "./Migrations/108_AgentFeedback.ts";
 
 import Migration0083 from "./Migrations/083_RetireBoardAndCollective.ts";
 import Migration0085 from "./Migrations/085_PublishedResponseActivityIndex.ts";
@@ -188,6 +216,35 @@ export const migrationEntries = [
   [103, "DelegatedRecoveryIndexes", UpstreamMigration0079],
   // Upstream 80 continues after fork 103.
   [104, "ScheduledTaskThreadMode", UpstreamMigration0080],
+  // Upstream 81 through 108 keep their source order after fork 104 (constant +24 offset).
+  [105, "ProjectionMessageSearchText", UpstreamMigration0081],
+  [106, "TurnItemConversationIndex", UpstreamMigration0082],
+  [107, "CommandReadIndexes", UpstreamMigration0083],
+  [108, "LastExecutedRunIndex", UpstreamMigration0084],
+  [109, "TurnItemCounts", UpstreamMigration0085],
+  [110, "QueuedTurnInputIndex", UpstreamMigration0086],
+  [111, "ProjectionProjectsCustomTitle", UpstreamMigration0087],
+  [112, "TurnItemTypeStatusIndex", UpstreamMigration0088],
+  [113, "ShellThreadReadIndexes", UpstreamMigration0089],
+  [114, "AuthConnectDevices", UpstreamMigration0090],
+  [115, "AuthConnectDeniedRequests", UpstreamMigration0091],
+  [116, "QueuedTurnInputIndexJsonValid", UpstreamMigration0092],
+  [117, "ProviderTurnAttemptIndex", UpstreamMigration0093],
+  [118, "TurnItemMessageOrdinalIndex", UpstreamMigration0094],
+  [119, "TurnItemInlineWorkOutput", UpstreamMigration0095],
+  [120, "RepairStaleTitleRegeneration", UpstreamMigration0096],
+  [121, "IssueTrackerBindings", UpstreamMigration0097],
+  [122, "ActiveShellIndexIndexes", UpstreamMigration0098],
+  [123, "BackgroundRecoveryIndexes", UpstreamMigration0099],
+  [124, "TurnStartReadIndexes", UpstreamMigration0100],
+  [125, "DelegatedTaskReadIndexes", UpstreamMigration0101],
+  [126, "ThreadItemCounts", UpstreamMigration0102],
+  [127, "IssueTrackerAdditionalScopes", UpstreamMigration0103],
+  [128, "ProjectionProjectsTrackedFolders", UpstreamMigration0104],
+  [129, "TaskFolders", UpstreamMigration0105],
+  [130, "WorktreePathKeyIndex", UpstreamMigration0106],
+  [131, "DeferredSlashCommandIndex", UpstreamMigration0107],
+  [132, "AgentFeedback", UpstreamMigration0108],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

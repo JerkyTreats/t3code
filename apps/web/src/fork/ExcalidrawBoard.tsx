@@ -9,6 +9,8 @@ import {
   restoreElements,
   viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
+import { msg, T } from "gt-react";
+import { m } from "~/i18n/messages";
 import "@excalidraw/excalidraw/index.css";
 import type {
   ExcalidrawImperativeAPI,
@@ -86,7 +88,7 @@ import {
   isHandedToExcalidraw,
   openExcalidrawCanvasMenu,
 } from "./canvasContextMenus";
-import { CANVAS_CARD_REMARK_PLUGINS } from "./canvasStateChips";
+import { CANVAS_CARD_MARKDOWN_EXTENSIONS } from "./canvasStateChips";
 import { CanvasPlacement } from "./CanvasPlacement";
 import { CanvasSurfaceCardView, placeSurfaceCard } from "./CanvasSurfaceCardView";
 import {
@@ -1300,7 +1302,7 @@ export default function ExcalidrawBoard({
           label: surface.label,
           disabled: !surface.available,
         })),
-        { id: "canvas-options", label: "Canvas options…", separatorBefore: true },
+        { id: "canvas-options", label: m(msg("Canvas options…")), separatorBefore: true },
       ],
       { x: click.clientX, y: click.clientY },
     );
@@ -1433,7 +1435,9 @@ export default function ExcalidrawBoard({
           <MainMenu.DefaultItems.LoadScene />
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.DefaultItems.ClearCanvas />
-          <MainMenu.Item onSelect={resetLayout}>Reset layout</MainMenu.Item>
+          <MainMenu.Item onSelect={resetLayout}>
+            <T>Reset layout</T>
+          </MainMenu.Item>
         </MainMenu>
       </Excalidraw>
       {canvasThread === null || draft || !api ? null : (
@@ -1550,7 +1554,7 @@ export default function ExcalidrawBoard({
                         text={card.card.text}
                         // Agents write one item per line in a card; keep those lines apart.
                         lineBreaks
-                        extraRemarkPlugins={CANVAS_CARD_REMARK_PLUGINS}
+                        extensions={CANVAS_CARD_MARKDOWN_EXTENSIONS}
                         cwd={undefined}
                         environmentId={canvasThread.environmentId}
                         threadRef={canvasThread}

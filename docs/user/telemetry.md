@@ -12,6 +12,12 @@ are sent only when they appear in a provider's public model list.
 Product events do not include prompts, responses, file contents, authentication tokens, conversation IDs,
 raw provider events, or child-agent output.
 
+## Agent feedback
+
+Agent feedback is turned off in this build and cannot be turned on. Agents do
+not see the feedback tools, `t3 feedback` sends nothing, and no problem report
+leaves your machine for the T3 team.
+
 ## Relay connection diagnostics
 
 T3 Code sends relay connection traces to Axiom to diagnose T3 Connect connectivity. These are

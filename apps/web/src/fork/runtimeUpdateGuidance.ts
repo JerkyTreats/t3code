@@ -1,3 +1,5 @@
+import { msg } from "gt-react";
+import { m } from "~/i18n/messages";
 import type { ServerSelfUpdateCapability } from "@t3tools/contracts";
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 
@@ -9,7 +11,9 @@ export function supportedRuntimeUpdateCapability(
 }
 
 export function manualRuntimeUpdateGuidance(targetVersion: string): string {
-  return `Update this server to ${targetVersion} through its deployment manager.`;
+  return m(
+    msg("Update this server to {targetVersion} through its deployment manager.", { targetVersion }),
+  );
 }
 
 /** Infer a lost update only for a runtime that can perform a desktop update. */

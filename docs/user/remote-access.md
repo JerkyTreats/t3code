@@ -90,6 +90,8 @@ Android app then trusts it.
 Pairing authorizes that device for future connections. Use a fresh one-time link
 for each new device. You do not need the original token to reconnect. If a link
 expires or has already been used, run `t3 pair` again to create another.
+A device stays signed in while you keep using it. One unused for 30 days, or
+paired with a host older than this release, has to pair again.
 
 ### Reach one machine several ways
 
@@ -118,7 +120,9 @@ T3 Code connects over the first route that answers. Away from home, a LAN
 address that does not answer is checked briefly and skipped. It is only tried
 again, after the other routes, if none of them connect. While connected over a
 later route, T3 Code checks the earlier ones when your network changes, when you
-return to the app, and every minute, and moves back as soon as one works.
+return to the app, and every minute, and moves back as soon as one works. A
+route whose machine refused this device's sign-in is marked **Sign-in
+refused**; pair that address again with **Add route** to use it.
 
 On web and desktop, select the route count under the machine's name in
 **Settings → Environments** to see its routes. Drag a route to change the order,
@@ -155,6 +159,13 @@ Mobile keeps its manual environment selection.
 
 Join both devices to the same tailnet. In the desktop app, enable **Tailscale
 HTTPS** in **Settings → Sharing & access**. Turn it off there to remove that route.
+
+Your tailnet needs MagicDNS and HTTPS certificates enabled; see
+[Tailscale's HTTPS setup](https://tailscale.com/docs/how-to/set-up-https-certificates).
+On Linux, T3 Code also needs permission to manage Tailscale; see
+[operator permission](https://tailscale.com/docs/reference/troubleshooting/linux/linux-operator-permission)
+for non-root users. If any of these is missing, T3 Code still starts but can't
+add the HTTPS route.
 
 To start a command-line server with Tailscale HTTPS:
 
@@ -211,6 +222,18 @@ Configure your version manager for non-interactive shells if this differs from
 your normal terminal. With nvm, setting a compatible default, such as
 `nvm alias default 24`, can resolve the problem.
 
+T3 Code cannot answer a second sign-in prompt such as a Duo code. On macOS and
+Linux it can reuse a connection you signed in to in a terminal instead: turn on
+connection sharing for the host in `~/.ssh/config`, run `ssh <alias>`, then
+connect. When that connection closes, sign in again in a terminal and retry.
+
+```sshconfig
+Host <alias>
+  ControlMaster auto
+  ControlPath ~/.ssh/cm-%C
+  ControlPersist 8h
+```
+
 If SSH reconnecting fails after an app update, update the preinstalled runtime
 on the remote host through its exact-origin installation method, then retry the
 launch. Removing the connection stops a server that T3 Code launched. A server
@@ -233,9 +256,56 @@ devices, and the desktop app for other environments, stream them from the host.
 Agents keep using them while no device is connected, and `localhost` addresses
 reach servers on that host.
 
-The first tab downloads headless Chrome, about 120 MB, into the T3 home. It is the
-same browser used for [HTML renders](./html-renders.md), so a host downloads it once.
-Some Linux hosts need [setup](#browser-host-setup) before it can start.
+A tab you open yourself in the desktop app for another environment loads on
+your computer instead, so the element picker, screenshots, and annotations work
+as they do locally. Its `localhost` addresses still reach servers on the host,
+over the connection the app already has, whichever way you connected. If the
+host cannot be reached, the tab shows a connection error; a `localhost`,
+`127.0.0.1`, or `[::1]` address never opens a server on your own computer.
+Other names that point at your computer, such as `/etc/hosts` entries, still
+do. These tabs ignore your system proxy settings, so they can't reach a host
+you connect to only through a proxy or over HTTPS with a privately issued
+certificate. The web app keeps streaming.
+
+The desktop app can also forward a port on the host to your computer, so any
+app there, such as your own browser, `curl`, or a database client, reaches it
+at `localhost`. Use the forward button on a server in the thread's **Servers**
+list, or **Forwarded ports** in the command palette, where you can also type
+any port number and stop forwards. A forward keeps the host's port number
+unless that port is taken on your computer, in which case it uses a free one
+and shows it. Forwards end when you stop them or quit the app. ⌘-click
+(Ctrl-click on Windows and Linux) on a remote server forwards it and opens it
+in your browser.
+
+A forwarded port behaves like a server running on your computer: anything on
+your computer can reach it, including web pages open in your browser, so a
+forwarded service is exposed the same way a local dev server is. Forwards
+listen only on your computer's loopback, never on your network. On Linux they
+accept only apps running as your user; on macOS and Windows, other users signed
+in to the same computer can reach them too.
+
+On iPhone, iPad, and Android, a tab showing one of the host's `localhost` pages
+has **Open on this device** in its menu. So does a long press on a `localhost`
+link in a chat. It opens the page in the phone's own browser view, at the same
+`localhost` address, so it scrolls and responds to touch natively. Like the
+desktop app, it never opens a server on the phone itself. The streamed tab
+stays where it was, and agents keep using it. Each host keeps its own cookies
+and site data on the phone. On iPhone and iPad the page runs under a stand-in
+address while the address bar shows `localhost`, so browser features that need
+a secure page, such as the clipboard or service workers, aren't available there.
+
+All of this rides the host's preview tunnel. Turn off **Settings → Sharing &
+access → Preview tunnel** on the host to stop other devices from loading its
+`localhost` pages themselves: port forwarding and **Open on this device** go
+away, and open tunnels close. Tabs keep working by streaming from the host, so
+anyone who can use the host's browser tabs can still view its `localhost` pages
+there. An administrator can also turn it off with a
+[managed policy](./managed-policy.md#other-capabilities).
+
+The first tab downloads a headless Chrome, about 120 MB, into the T3 home. It
+is the same browser [HTML renders](html-renders.md) use, so a host downloads it
+only once. Some Linux hosts need [setup](#browser-host-setup) before it can
+start.
 
 Agent tabs have separate storage and share a Chromium process. Take control before
 typing into an agent's tab, then release control when the agent should continue.
@@ -278,9 +348,12 @@ Use the exact command the server displays for the installed runtime. Where Node 
 available only in your user environment, it preserves the required `PATH`. Where
 `t3` is not on your path, it uses the installed application's executable or the quoted
 current executable and entry. It does not acquire T3 Code from a public package registry.
-Setup installs an AppArmor profile that permits Chrome's sandbox and uses apt to
-install missing libraries. It can be run again; without `sudo`, it reports the
-changes it would make.
+Setup allows Chrome's sandbox with an AppArmor profile and installs any missing
+libraries and system fonts with apt; pages that load without text can mean the
+host has no fonts. It is safe to run again, and each run reloads the AppArmor
+profile: run it again if the browser reports a blocked sandbox on a host restored
+from an image or snapshot, where the profile can be on disk without being loaded.
+Without `sudo`, it only reports what it would change.
 
 The browser runs in Chrome's sandbox by default. Chrome cannot start that sandbox
 as root. If your T3 server runs as root, run it as a nonroot user to keep
@@ -313,7 +386,11 @@ the other: launch, message, wait on and stop its threads, answer their
 questions, and manage its queues, projects and scheduled tasks.
 
 Linked environments is a beta. Turn it on for both machines in **Settings →
-Labs**; on mobile, **Settings → Labs** lists each connected machine. While it is
+Labs**; on mobile, **Settings → Labs** lists each connected machine. On a
+headless server, open its address in a browser and pair to reach its **Settings
+→ Labs**, or add `"linkedEnvironmentsEnabled": true` to `settings.json` in its
+`userdata` directory, such as `~/.t3/userdata/settings.json`; a running server
+picks it up. While it is
 off on either machine, agents start nothing over a link between them. A task
 already running on the other machine still finishes, and if that machine has it
 off, its result arrives once it is back on.
@@ -321,14 +398,32 @@ off, its result arrives once it is back on.
 On the machine you will work from, open **Settings → Environments → Linked environments**,
 choose **Link**, and pick the other machine or enter its address. The list
 holds the machines this app knows and those on your T3 Connect account. If this
-app is connected to that machine with a session that manages access there, it
-makes the pairing code itself; otherwise paste one from that machine's
-**Settings → Sharing & access**. From a terminal, use
+app has an address for that machine and is connected to it with a session that
+manages access there, it makes the pairing code itself; otherwise paste one
+from that machine's **Settings → Sharing & access**. An address you type always
+needs a pasted code. From a terminal, use
 `t3 environment link <address> --pairing-code <code> --access <mode>`.
+
+To link many machines at once, choose **Link several…** (it appears once this
+app has two other machines saved). Tick the machines, pick one access level for
+all of them, and confirm once. A machine can be ticked when this app is
+connected to it with a session that manages access there and has an address
+another machine can reach; the list says why when it cannot. Each machine
+reports its own result, and the ones that failed stay ticked so you can try
+only those again. Machines already linked are left as they are.
+
+For machines no app is connected to, put one `<address> <pairing-code>` per
+line in a file (make each code with `t3 pair` on that machine) and run
+`t3 environment link --from <file> --access <mode>`, or `--from -` to read
+standard input. It prints a result per line, leaves machines already linked as
+they are, and exits non-zero if any line failed, so the same file can be run
+again with fresh codes for the failures.
 
 You can also ask an agent to link a machine by name, such as "delegate this to
 my vps". It shows a card in the thread where you pick the machine the same way
-and the access, then approve.
+and the access, then approve. An address the agent gives that this app does
+not know for one of your machines also needs a pasted code. Paste one only for
+an address you trust: the code is sent there.
 
 - The access you pick is the most agents from this machine may do there. An
   agent also never gets more there than its own mode here.
@@ -338,9 +433,57 @@ and the access, then approve.
   machine's own threads, projects or settings, and they skip its project setup
   scripts.
 - The link shows up in that machine's **Settings → Sharing & access** like any
-  outside agent. Revoke it there to end it. **Forget** on this machine only
-  removes it here.
-- Links last 30 days. Link again with a new pairing code to renew one.
+  outside agent, and can be revoked there. **Forget** on this machine also ends
+  it there when that machine confirms it. If it can't, such as when it is
+  offline or on an older T3 Code, Forget says so; revoke it in that machine's
+  Sharing & access.
+- A link stays valid while agents use it. One unused for 30 days expires, as
+  does one to a machine on an older T3 Code after 30 days; link again with a
+  new pairing code.
+
+On web and desktop, **Settings → Environments** opens as a map of your machines:
+this app, each environment with one line per route (the one in use is
+highlighted), and the machines an environment links to. Select a machine to
+manage it, or switch to **List** for the same controls as rows. To link from
+the map, drag the plus on an environment onto another machine, or press it and
+pick one. If this app is connected to both machines, knows an address the first
+can reach the other at, and its session on the other one manages access there,
+it needs no pairing code.
+
+A machine this app is not connected to, shown only because another environment
+links to it, can still be linked without a code when that link has full access:
+drop the plus on it and the environment holding the link gets the pairing code
+from it. Your session on that environment must manage access there. The result
+is a separate link with the access you pick, listed and revocable on the linked
+machine like any other. Links still do not chain.
+
+A link goes one way. To let the other machine's agents work back, tick **Also
+link … back** when you create the link, or select a one-way link and use
+**Link back…**. It is offered when this app is connected to both machines and
+may manage access on each. Two machines linked to each other at the same access
+are drawn as one line with an arrowhead at each end; they are still two links,
+and each is forgotten on its own.
+
+To link one environment to several machines at once, Shift-click the machines
+(or Shift-drag a box around them, or press Space on a focused machine), then
+drag the environment's plus onto any of them, or use **Link several…** above
+the map. Dropping the plus on a stack offers the stack's machines. The dialog
+ticks the machines it can link without a pairing code and says why for the
+rest. When this app is connected to none of them, each needs a pairing code,
+so the map says so and offers to link one at a time instead.
+
+Large setups fold: machines known only through links that share the same
+linking environments and access levels become one stack, and once this app
+knows more than 12 environments, the ones that are not connected and have no
+links fold by state. Select a stack to list and filter every machine in it.
+Opening a stack on the map draws its first 24 below its card: the rest of the
+map stays where it is and the map grows taller, so pan or press the fit button
+to see all of it. **Find a machine** above the map searches by name, and Enter
+goes to the first match. The **?** button above the map lists these gestures.
+
+The map draws the links of the machines this app is connected to; a machine it
+is not connected to may hold links the map cannot show. A link reaches one
+machine and does not carry on through that machine's own links.
 
 An agent can also hand a task to a linked machine with `delegate_task`: it runs
 there as an ordinary thread, in the project with the same repository (or the
@@ -348,6 +491,38 @@ one `target.projectId` names), and this thread wakes with its result when it
 ends, as for any delegated task. It keeps following the task across restarts.
 If the other machine revokes the link, or the link is removed here, the task
 fails with that reason.
+
+### Read a linked machine's threads
+
+You can read a thread on a linked machine without connecting this app to it. Open
+a task that was delegated there from the thread's agents, or a thread link that
+points there, and the thread opens read-only, streamed through the machine you
+are connected to over its link. It follows the thread live. On web and desktop
+it opens as a tab in the right panel, beside the thread you are in, or in the
+main view with ⌘/Ctrl-click, like
+[subagents and side chats](thread-sidebar.md#open-a-thread-beside-the-one-you-are-in).
+On mobile it opens in the inspector on layouts that have one, where Maximize
+fills the screen, and as its own screen elsewhere. It shows the same timeline as
+any other thread on web and desktop, and a shorter read-only list on mobile.
+
+- The view is marked **Read-only** with both machines' names. To reply, approve
+  or stop the thread, choose **Connect to interact**. When the link has full
+  access, this app pairs with that machine in one step and opens the thread
+  there; you need permission to manage access on the machine you are connected
+  to. Otherwise the add-environment form opens for that machine and asks for a
+  pairing code you create on it.
+- This app connects to that machine directly, so it must be able to reach one of
+  the addresses the link uses. If it cannot, the view says so and stays
+  read-only. The new connection is an ordinary paired client of that machine,
+  named after this device and the machine it came through, and is revoked there
+  like any other pairing.
+- Files, images and published visuals stay on that machine and do not load
+  here. A command's output shows as of when you open its row.
+- If this app is already connected to that machine, the thread opens there as
+  usual instead.
+- You need permission to read threads on the machine you are connected to, and
+  Linked environments must be on there. Both machines need a version of T3 Code
+  that has this view.
 
 ## Manage pairing and device access
 
@@ -419,8 +594,10 @@ worktree still creates that branch and worktree with `orchestration:operate`,
 and the agent it runs can use Git however the environment allows.
 
 Settings changes, provider management, environment maintenance, access
-management, and T3 Connect management can each be granted separately. New
-pairings without `--scope` include all of them. Existing clients keep the
+management, and T3 Connect preferences can each be granted separately. Setting
+up or replacing a T3 Connect link requires the administrative
+`relay:configure` permission. `relay:write` covers preferences and unlinking.
+New pairings without `--scope` include the standard client permissions. Existing clients keep the
 permissions they paired with and can stay connected after an update, but newly
 separated features may require pairing again with the permissions they need.
 Older clients may show controls that the server denies. Create a fresh pairing
@@ -430,13 +607,25 @@ link to change a client's permissions.
 local changes. Add `filesystem:write` to allow editing files or saving plans to
 the workspace. These scopes control direct file access from the client.
 
+Some permissions also give a client indirect access. With `terminal:operate`,
+a client can run commands that read or change any files the server’s OS account
+can access, even when the pairing link omits file permissions. With
+`relay:configure`, a client can replace the trusted issuer of pairing
+credentials. Grant these permissions only to clients you trust with those
+capabilities.
+
 To remove an environment from T3 Connect, open your account menu's **T3 Connect**
 page, or **Settings → T3 Connect** on mobile, and choose **Deregister**. This
 revokes its cloud access and frees its host space even when the environment is
 offline or has been wiped. When T3 Connect rejects a host's link, the host
 shows that it was removed from T3 Connect. To link it again, turn on
-**T3 Connect** in **Settings → Sharing & access** on a desktop host, or run
-`t3 connect link` on a command-line host and then restart T3 Code there. A
+**T3 Connect** in **Settings → Sharing & access** on web or desktop, or turn on
+**Live Activity Updates** in **Settings → Notifications** on mobile; if it is
+already on, turn it off and on again. Either needs a client paired with
+`relay:read`, `relay:write`, and `relay:configure`. The desktop app's own session
+and the startup pairing link include all three; other pairings need
+`relay:configure` among their scopes. You can also
+run `t3 connect link` on the host and then restart T3 Code there. A
 command-line host that released its tunnel when it last stopped may link itself
 again on its next start; run `t3 connect unlink` on that host to keep it off.
 Removing an environment from a device's connection settings only forgets it on
@@ -474,6 +663,9 @@ desktop app, open **Settings → Environments** and switch off **Local
 environment**. T3 Code restarts without a local server: no local agents or terminals run, WSL
 backends stay off, and other devices can no longer connect to this computer. Your projects,
 history, and saved connections are kept, and you keep working through pairing, T3 Connect, or SSH.
+If another T3 Code server on this computer, such as an operator-managed `t3 serve`,
+uses the same T3 home, the app still treats it as this computer: **Open in** and
+file reveal for its projects run here, whichever connection you reach it through.
 Run `t3 connect status` on the host to inspect saved authorization and link
 configuration. It is not a live reachability check. If the environment appears
 offline, inspect the desktop host or your operator-managed process. If it

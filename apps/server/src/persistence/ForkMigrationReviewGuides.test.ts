@@ -17,6 +17,7 @@ import { runMigrations } from "./Migrations.ts";
 import ReviewGuideMigration from "./Migrations/061_PullRequestReviewGuides.ts";
 import * as ReviewGuides from "./PullRequestReviewGuides.ts";
 import { layerFromPath } from "./Sqlite.ts";
+import { withConnectAuthColumns } from "./testkit/connectAuthColumns.ts";
 
 const key = { host: "service.example.test", repository: "example/repository", number: 7 };
 const guide = Schema.decodeSync(PullRequestReviewGuide)({
@@ -126,7 +127,7 @@ it.effect("upgrades fork 83, retains data and review guides through production r
     yield* Effect.gen(function* () {
       const repository = yield* ReviewGuides.PullRequestReviewGuideRepository;
       assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 84 }), []);
-      assert.deepStrictEqual(yield* readRetainedData(), before);
+      assert.deepStrictEqual(yield* readRetainedData(), withConnectAuthColumns(before));
       assert.deepStrictEqual(yield* repository.get(key), Option.some(upgraded));
       assert.deepStrictEqual(
         yield* repository.get({ ...key, host: "other.example.test" }),

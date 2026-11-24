@@ -30,6 +30,8 @@ async function loadCliMain(): Promise<typeof import("./binMain.ts")> {
   }
 }
 
+function ignoreOutputError(): void {}
+
 if (
   isEntrypoint({
     moduleUrl: import.meta.url,
@@ -37,6 +39,12 @@ if (
     runtimeMain: import.meta.main,
   })
 ) {
+  // Logs go to stdout and stderr, which may be a closed desktop launcher pipe or a log file on
+  // a full disk. Node emits a failed write as an unhandled stream error that crashes the process
+  // and skips shutdown, so drop the line instead.
+  process.stdout.on("error", ignoreOutputError);
+  process.stderr.on("error", ignoreOutputError);
+
   const { runCliCommand } = await loadCliMain();
   await runCliCommand();
 }

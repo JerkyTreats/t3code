@@ -76,13 +76,19 @@ export function canvasSurfaceRefFor(
         return { ...surface, kind: "terminal" };
       case "pull-request":
         return { ...surface, kind: "pull-request" };
-      case "side-chat":
+      // The panel's thread tab, a side chat or a subagent, is a chat card; cards keep the
+      // `side-chat` ref their scenes were saved with.
+      case "thread":
         return { kind: "side-chat", threadId: surface.threadId };
       case "device":
         return { kind: "device", target: surface.target };
       case "diff":
       case "pull-requests":
         return { kind: surface.kind };
+      // A linked environment's thread and an issue have no card yet.
+      case "linked-thread":
+      case "issue":
+        return null;
     }
   })();
   // Parsed back, so a card is never placed that the board or the server would not read.
@@ -129,8 +135,8 @@ export function panelSurfaceOf(ref: CanvasSurfaceRef): RightPanelSurface {
       });
     case "side-chat":
       return {
-        id: `side-chat:${ref.threadId}`,
-        kind: "side-chat",
+        id: `thread:${ref.threadId}`,
+        kind: "thread",
         threadId: ref.threadId as ThreadId,
       };
     case "device":
@@ -199,7 +205,7 @@ export function surfaceShownElsewhere(
         : null;
     }
     case "side-chat":
-      return panel?.kind === "side-chat" && panel.threadId === ref.threadId ? "panel" : null;
+      return panel?.kind === "thread" && panel.threadId === ref.threadId ? "panel" : null;
     case "device": {
       const { target } = ref;
       if (target === undefined) return null;
@@ -473,7 +479,7 @@ function openRefInPanel(threadRef: ScopedThreadRef, ref: CanvasSurfaceRef) {
     case "terminal":
       return panel.openTerminal(threadRef, ref.resourceId);
     case "side-chat":
-      return panel.openSideChat(threadRef, ref.threadId as ThreadId);
+      return panel.openThread(threadRef, ref.threadId as ThreadId);
     case "pull-request":
       return panel.openPullRequest(threadRef, ref);
     case "device":

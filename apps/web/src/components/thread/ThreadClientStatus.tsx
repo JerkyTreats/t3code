@@ -1,3 +1,5 @@
+import { msg, useGT } from "gt-react";
+import { m } from "~/i18n/messages";
 import { tickTextContent } from "~/lib/tickTextContent";
 
 export function formatElapsedTime(startedAt: string, nowMs: number): string | null {
@@ -16,7 +18,7 @@ export function formatElapsedTime(startedAt: string, nowMs: number): string | nu
 }
 
 function ElapsedTime({
-  label = "Working for",
+  label = m(msg("Working for")),
   startedAt,
 }: {
   readonly label?: string;
@@ -43,6 +45,7 @@ export function ThreadClientStatus({
   readonly disconnected: boolean;
   readonly startedAt?: string;
 }) {
+  const gt = useGT();
   const connectionLabel = isConnecting ? "Connecting" : disconnected ? "Disconnected" : null;
   if (!connectionLabel && !isWorking) return null;
 
@@ -54,7 +57,9 @@ export function ThreadClientStatus({
       <span role="status">
         {connectionLabel}
         {connectionLabel && isWorking ? " · " : null}
-        {isWorking ? `Working · ${modelLabel || "Model unavailable"}` : null}
+        {isWorking
+          ? gt("Working · {model}", { model: modelLabel || gt("Model unavailable") })
+          : null}
       </span>
       {isWorking && startedAt ? <ElapsedTime label="" startedAt={startedAt} /> : null}
     </div>

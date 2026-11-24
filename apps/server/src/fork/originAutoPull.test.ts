@@ -87,6 +87,7 @@ describe.each(["startup", "broadcaster"] as const)(
               invalidateLocalStatus: () => Effect.void,
               invalidateRemoteStatus: () => Effect.void,
               invalidateStatus: () => Effect.void,
+              readLocalStatusRefSnapshot: driver.readLocalStatusRefSnapshot,
               pullCurrentBranch: driver.pullCurrentBranch,
             });
             yield* Effect.gen(function* () {

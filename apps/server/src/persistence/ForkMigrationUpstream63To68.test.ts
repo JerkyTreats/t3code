@@ -13,6 +13,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { makeMigrationLoader, migrationManifest } from "./ForkMigrationPlan.ts";
 import { runMigrations } from "./Migrations.ts";
 import { layerFromPath } from "./Sqlite.ts";
+import { withConnectAuthColumns } from "./testkit/connectAuthColumns.ts";
 
 const appended = [
   [87, "DropUnusedV1Projections"],
@@ -109,7 +110,7 @@ it.effect("continues fork 86 through 92, retains data, and reopens without new m
 
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 92 }), appended);
+      assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 92 }), [...appended]);
       assert.deepStrictEqual(yield* readRetainedData(), before);
       const tables = yield* tableNames();
       for (const table of droppedV1Tables) assert.isFalse(tables.has(table), table);
@@ -128,7 +129,7 @@ it.effect("continues fork 86 through 92, retains data, and reopens without new m
 
     yield* Effect.gen(function* () {
       assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 92 }), []);
-      assert.deepStrictEqual(yield* readRetainedData(), before);
+      assert.deepStrictEqual(yield* readRetainedData(), withConnectAuthColumns(before));
     }).pipe(Effect.provide(layerFromPath(filename)));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

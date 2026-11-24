@@ -3,6 +3,9 @@ import * as Schema from "effect/Schema";
 import { Tool } from "effect/ai";
 
 import { advertisedJsonSchema } from "./advertisedJsonSchema.ts";
+import { CanvasToolkit } from "./toolkits/canvas/tools.ts";
+import { PageStateToolkit } from "./toolkits/pageState/tools.ts";
+import { ThemeToolkit } from "./toolkits/theme/tools.ts";
 
 it("drops JSON noise, merges tagged unions, and keeps null where it is required", () => {
   const Every = Schema.Struct({ ms: Schema.Int });
@@ -42,4 +45,26 @@ it("drops JSON noise, merges tagged unions, and keeps null where it is required"
     },
     required: ["beforeRunId", "every"],
   });
+});
+
+it("advertises only string enum values, which Gemini requires", () => {
+  const enumValues: Array<unknown> = [];
+  const collect = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(collect);
+    if (typeof node !== "object" || node === null) return;
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "enum" && Array.isArray(value)) enumValues.push(...value);
+      else collect(value);
+    }
+  };
+  collect(advertisedJsonSchema(ThemeToolkit.tools.t3_theme_set));
+  // Fork-owned canvas and page state tools are advertised through the same schemas.
+  for (const tool of [
+    ...Object.values(CanvasToolkit.tools),
+    ...Object.values(PageStateToolkit.tools),
+  ]) {
+    collect(advertisedJsonSchema(tool));
+  }
+
+  expect(enumValues.filter((value) => typeof value !== "string")).toEqual([]);
 });

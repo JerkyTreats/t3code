@@ -6,10 +6,13 @@ export type PreviewAction =
   | "close-tab"
   | "reopen-closed"
   | "refresh"
+  | "back"
+  | "forward"
   | "focus-url"
   | "zoom-in"
   | "zoom-out"
-  | "reset-zoom";
+  | "reset-zoom"
+  | "find";
 
 const EVENT_NAME = "t3code:preview-action";
 
@@ -42,6 +45,8 @@ export function previewActionForFocusedCommand(
       return "zoom-out";
     case "preview.resetZoom":
       return "reset-zoom";
+    case "preview.find":
+      return "find";
     default:
       return null;
   }

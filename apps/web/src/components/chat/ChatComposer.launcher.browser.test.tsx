@@ -235,10 +235,13 @@ describe("ChatComposer launcher attachment admission", () => {
       expect(fixture.attempt).not.toHaveBeenCalled();
       expect(fixture.owner.getSubmitState()).toBe("waiting");
       expect(fixture.input.promptRef.current).toBe(fixture.prompt);
-      await expect.element(sendButton(screen)).toBeDisabled();
-      await act(() => screen.container.querySelector("form")!.requestSubmit());
-      expect(fixture.input.onSend).not.toHaveBeenCalled();
+      // A native capture disables send. A preparing image leaves it enabled because ChatView
+      // holds a manual send until the image is ready (upstream); the launcher waits on
+      // submission readiness instead.
       if (source === "capture") {
+        await expect.element(sendButton(screen)).toBeDisabled();
+        await act(() => screen.container.querySelector("form")!.requestSubmit());
+        expect(fixture.input.onSend).not.toHaveBeenCalled();
         await act(() => native.resolve(pngCapture));
         expect(fixture.attempt).not.toHaveBeenCalled();
       }

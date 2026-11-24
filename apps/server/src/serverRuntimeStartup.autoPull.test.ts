@@ -118,7 +118,7 @@ it.effect("parks automatic pull until activation without delaying command readin
         Layer.mock(Orchestrator.OrchestratorV2)({ recoverDelegatedTasks: Effect.void }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({ shutdown: Effect.void }),
         Layer.mock(AgentAwarenessRelay.AgentAwarenessRelay)({ start: () => Effect.void }),
-        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({ runOnce: Effect.never }),
+        Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({ runOnce: () => Effect.never }),
         Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({
           publish: (event) => Effect.succeed({ ...event, sequence: 1 }),
         }),
@@ -150,7 +150,7 @@ it.effect("parks automatic pull until activation without delaying command readin
               Effect.onInterrupt(() => Deferred.succeed(statusInterrupted, undefined)),
             ),
         }),
-        Layer.mock(AnalyticsService.AnalyticsService)({ record: () => Effect.void }),
+        Layer.mock(AnalyticsService.AnalyticsService)({ record: () => Effect.succeed(true) }),
         // No provider logins or Connect link, so startup records no owners.
         FileSystem.layerNoop({}),
         Layer.mock(ServerSecretStore.ServerSecretStore)({ get: () => Effect.succeedNone }),

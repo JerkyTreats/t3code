@@ -34,6 +34,7 @@ vi.mock("~/components/preview/previewBridge", () => ({
     setZoomFactor: mocks.setZoomFactor,
     setColorScheme: mocks.setColorScheme,
     getPreviewConfig: mocks.getPreviewConfig,
+    onStateChange: () => () => {},
   },
 }));
 

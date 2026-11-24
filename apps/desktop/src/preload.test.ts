@@ -39,6 +39,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   // The preload reports the document's fullscreen state as it loads.
   vi.stubGlobal("document", { fullscreenElement: null, addEventListener: vi.fn() });
+  // The preload blocks middle-click PRIMARY paste on the window when that setting is off.
+  // No storage exists here, so the legacy storage import is skipped as before.
+  vi.stubGlobal("window", {
+    addEventListener: vi.fn(),
+    get localStorage(): Storage {
+      throw new ReferenceError("localStorage is not defined");
+    },
+  });
   host.sendSync.mockReturnValue(false);
   host.invoke.mockResolvedValue(null);
 });

@@ -62,9 +62,10 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   attachments shown behind a cover that lets wheel and drag pan the board until clicked. Citation
   chips pan the board to the cited card, shape or note. `html_render` with `displayWidth` widens
   that turn's card on the board.
-- `F32.D7` Surface cards. Every right panel tab kind can be placed on the board as its own
-  Excalidraw box: a workspace file, Files, a browser tab, a terminal group, Diff, a pull request,
-  Linked pull requests, a device and a side chat. The box's `t3Card` holds a reference, never a
+- `F32.D7` Surface cards. Every right panel tab kind except an issue and a linked environment's
+  thread can be placed on the board as its own Excalidraw box: a workspace file, Files, a browser
+  tab, a terminal group, Diff, a pull request, Linked pull requests, a device and a side chat or
+  subagent. The box's `t3Card` holds a reference, never a
   copy, parsed by one shared reader. A card runs the same component and header the panel shows,
   live at any zoom; only cards off screen or past a cap of six show a face, and cards join or
   leave that set only once the camera rests, so a pan never mounts a panel mid-gesture. Once the
@@ -86,6 +87,7 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   options…" that reopens Excalidraw's menu; "Preview in canvas" on a file link in a turn, which
   places beside that turn; and Cite atop Excalidraw's element menu, which quotes any element
   through the composer with an anchor that follows the element.
+  A chat card's pane offers "Add to chat" and delete only for the board thread's own side chat.
   Scene sync is unchanged: two editors of one file can overwrite each other, and the raw or
   rendered file view stays the panel's global preference. `canvas_read` names each card's kind and
   resource.
@@ -97,7 +99,7 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
 
 - `apps/web/src/fork/ExcalidrawBoard.tsx`, `turnBoard.ts`, `TurnCards.tsx`, `ThreadCanvasSync.tsx`
 - `apps/web/src/fork/canvasCards.ts`, `canvasMarks.ts`, `canvasStateChips.ts`, `cardMiddleDrag.ts`,
-  `draftBoardHandoff.ts`, `turnTableWidth.ts`, `sketchAreas.ts`
+  `draftBoardHandoff.ts`, `turnTableWidth.ts`, `sketchAreas.ts`, `sideChatOwnership.ts`
 - `apps/web/src/state/threadCanvas.ts`
 - `apps/server/src/canvas/ThreadCanvasStore.ts`, `threadCanvasScene.ts`, `threadCanvasPlan.ts`,
   `canvasDiagram.ts`, `canvasPreviewPage.ts`, `sharedCanvas.ts`
@@ -119,6 +121,8 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
 - `apps/web/src/components/chat/useChatTerminalActions.ts`, `useRightPanelActions.ts`,
   `useSideChat.ts` and `components/preview/addBrowserSurface.ts`: a `place` option that mounts a
   new terminal, browser tab or side chat in a card instead of a panel tab (D7).
+- `apps/web/src/components/chat/SideThreadPane.tsx`: hides "Add to chat" and delete for another
+  thread's side chat through `isOwnSideChat` (D7).
 - `apps/web/src/components/PersistentThreadTerminals.tsx`: the drawer skips card terminals (D7).
 - `apps/web/src/components/pullRequest/ThreadPullRequestsPanel.tsx` and
   `lib/openPullRequestLink.ts`: an optional callback that shows a resolved pull request in the
@@ -143,7 +147,11 @@ diagrams and cards beside the turn that asked, and the user draws or writes note
   endpoint (D3).
 - `apps/server/src/htmlRender/HtmlRender.ts` and `apps/server/src/mcp/toolkits/html/handlers.ts`:
   html card storage and `displayWidth` (D5).
-- `packages/shared/src/markdownPipeline.ts`: admits the state chip span (D5).
+- `apps/web/src/markdown/wordsHast.ts`: runs `applyCanvasStateChips` on the hast of Markdown
+  rendered with `extensions.canvasStateChips`, after line breaks and before the sanitizer (D5);
+  `ExcalidrawBoard.tsx` passes the stable `CANVAS_CARD_MARKDOWN_EXTENSIONS`.
+- `packages/shared/src/markdownHast.ts`: `CHAT_MARKDOWN_SANITIZE_SCHEMA` admits the state chip
+  span (D5).
 - `packages/provider-core/src/server/orchestrationInstructions.ts` and
   `apps/server/src/provider/agentContextBudget.json`: the Canvas section and its budget (D6).
 
@@ -171,6 +179,9 @@ behavior, or give agents any file, network or command authority beyond upstream'
 - `apps/server/src/provider/AgentContextBudget.test.ts`: the guidance budget.
 - `apps/web/src/fork/*.test.ts(x)`: turn layout and settling, cards, marks, sketch areas, chips, middle drag,
   draft handoff, citation reveal and server drawings loading into Excalidraw.
+- `apps/web/src/fork/canvasStateChips.test.ts`: chips through `wordsHast` in paragraphs, after
+  soft and hard breaks, tight and loose list items, table cells and bold, kept by the sanitizer.
+- `apps/web/src/fork/sideChatOwnership.test.ts`: which side chats a pane treats as its host's own.
 - `apps/web/src/fork/canvasSurfaceCards.test.ts`: refs round-trip to the panel's surfaces, the
   live cap, and the one-live-view check.
 - `apps/web/src/fork/CanvasSurfaceCardView.browser.test.tsx`: a card runs the panel component and
@@ -192,6 +203,9 @@ handlers, `runtimeLayer.ts`, the RPC contracts or the orchestration instructions
 adapters above routing to these owners. An optional field can disappear without a type error, so
 the evidence tests above, not compilation, are the check that `displayWidth`, the save scope and
 the Canvas section survived.
+
+A chat card's ref keeps the kind `side-chat` its scenes were saved with; the board maps it to and
+from the panel's `thread` surface.
 
 Upgrading Excalidraw must keep the menu tests passing: they depend on its context menu state
 naming each item's action, on the element menu rendering `li[data-testid]` per item, and on

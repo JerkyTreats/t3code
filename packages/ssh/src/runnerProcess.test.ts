@@ -176,6 +176,12 @@ server.listen(0, "127.0.0.1", () => {
 `,
                 mode,
                 signalPath,
+                // The stop script signals only a recorded launcher serve command.
+                "serve",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "0",
               ],
               { cwd: fixture, detached: false },
             ),

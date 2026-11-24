@@ -151,7 +151,7 @@ describe("canvasSurfaceRefFor and panelSurfaceOf", () => {
       number: 7,
     },
     { id: "pull-requests", kind: "pull-requests" },
-    { id: "side-chat:side-1", kind: "side-chat", threadId: ThreadId.make("side-1") },
+    { id: "thread:side-1", kind: "thread", threadId: ThreadId.make("side-1") },
     { id: "device", kind: "device" },
     {
       id: "device:host:phone",
@@ -242,7 +242,7 @@ describe("surfaceShownElsewhere", () => {
         { kind: "side-chat", threadId: "side-1" },
         {
           ...none,
-          panel: { id: "side-chat:side-1", kind: "side-chat", threadId: ThreadId.make("side-1") },
+          panel: { id: "thread:side-1", kind: "thread", threadId: ThreadId.make("side-1") },
         },
       ),
     ).toBe("panel");

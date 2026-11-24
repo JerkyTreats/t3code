@@ -1,3 +1,5 @@
+import { msg } from "gt-react";
+import { m } from "~/i18n/messages";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 
@@ -29,13 +31,15 @@ export function chatActivityOf(shell: ChatActivityInput): ChatActivity {
 export function chatActivityLabel(activity: ChatActivity): string {
   switch (activity.state) {
     case "working":
-      return "Working";
+      return m(msg("Working"));
     case "waiting":
-      return activity.for === "approval" ? "Waiting for approval" : "Waiting for an answer";
+      return activity.for === "approval"
+        ? m(msg("Waiting for approval"))
+        : m(msg("Waiting for an answer"));
     case "idle":
-      return "Idle";
+      return m(msg("Idle"));
     case "failed":
-      return "Failed";
+      return m(msg("Failed"));
   }
 }
 

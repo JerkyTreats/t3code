@@ -5,27 +5,56 @@ import {
   type ChangeRequestHostIdentity,
   defineSourceControl,
   parseChangeRequestPath,
+  parseIssuePath,
   parseCommitPath,
+  repositoryUrlFromPagePath,
   projectChangeRequestHost,
   remoteWebOrigin,
 } from "@t3tools/source-control-core/shared/definition";
 import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/shared/fork/originRepositoryPolicy";
 import { icon } from "./icon.ts";
 
-const CHECKOUT_COMMAND = /^tea\s+(?:pr|pulls)\s+checkout\s+(.+)$/i;
+const CHECKOUT_COMMAND = /^tea\s+(?:pr|pulls?)\s+(?:checkout|co)\s+(.+)$/i;
 const CHANGE_REQUEST_REFERENCE =
   /^https?:\/\/[^/\s]+\/(?:[^/\s]+\/)+[^/\s]+\/pulls\/(\d+)(?:[/?#].*)?$/i;
 
 // Forgejo and Gitea run on any hostname, possibly mounted below a path.
 const CHANGE_REQUEST_PATH = /^\/([^/]+(?:\/[^/]+)+)\/pulls\/(\d+)(?:\/|$)/u;
 const COMMIT_PATH = /^\/([^/]+(?:\/[^/]+)+)\/commit\/([0-9a-f]+)\/?$/iu;
+const ISSUE_PATH = /^\/([^/]+(?:\/[^/]+)+)\/issues\/(\d+)(?:\/|$)/u;
+const REPOSITORY_PAGE_PATH = /^\/([^/]+(?:\/[^/]+)+?)\/src\/(?:branch|tag|commit)\/[^/]/u;
 
 const KIND = SourceControlProviderKind.make("forgejo");
 
+function isForgejoHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return (
+    host === "codeberg.org" ||
+    host.split(".").includes("forgejo") ||
+    host.split(".").includes("gitea")
+  );
+}
+
 const changeRequestHeadRef = (number: number) => `refs/pull/${number}/head`;
 
-/** A server's identity includes its port, which only an HTTP remote names. */
+/**
+ * The repository's browser URL the server resolved from the signed-in account, which is the
+ * only place a Forgejo mounted below a path says so.
+ */
+function resolvedWebUrl(identity: ChangeRequestHostIdentity): URL | null {
+  if (!identity?.webUrl) return null;
+  try {
+    const url = new URL(identity.webUrl);
+    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A server's identity includes its port, which only its web URL or an HTTP remote names. */
 function changeRequestHost(identity: ChangeRequestHostIdentity): string {
+  const web = resolvedWebUrl(identity);
+  if (web) return web.host.toLowerCase();
   try {
     const remote = new URL(identity?.locator?.remoteUrl ?? "");
     if (remote.protocol === "http:" || remote.protocol === "https:") {
@@ -67,9 +96,20 @@ export const definition = defineSourceControl({
     const link = parseChangeRequestPath(url, CHANGE_REQUEST_PATH);
     return link === null ? null : { ...link, authority: url.host.toLowerCase() };
   },
+  // `/issues/` is too generic a path to believe from a host not named after Forgejo or Gitea,
+  // unless a Forgejo project on that host vouches for it.
+  parseIssueUrl: (url, known) =>
+    known || isForgejoHost(url.hostname) ? parseIssuePath(url, ISSUE_PATH) : null,
   changeRequestUrlFromReferenceAutolink: () => null,
   commitUrl: (input) => buildCommitUrl(input, "commit"),
   parseCommitUrl: (url) => parseCommitPath(url, COMMIT_PATH),
+  repositoryUrlFromPage: (url, known) => {
+    // A mount path may itself contain `src/branch/`, so a `.git` path is always the clone URL.
+    if (url.pathname.replace(/\/$/u, "").endsWith(".git")) return null;
+    const repositoryUrl = repositoryUrlFromPagePath(url, REPOSITORY_PAGE_PATH);
+    // Elsewhere the same path is a GitLab project nested under groups named `src` and `branch`.
+    return repositoryUrl === null || known ? repositoryUrl : url.href;
+  },
   changeRequestActions: new Set(["merge", "close", "reopen", "update-branch"] as const),
   // Neither `fj` nor `tea` checks out by number.
   checkoutCommand: ({ number, repositoryUrl }) =>
@@ -87,9 +127,7 @@ export const definition = defineSourceControl({
   checkoutChangeRequestHost: () => null,
   changeRequestHeadRef,
   recognizeRemote: ({ remoteUrl, host, hostname }) =>
-    hostname === "codeberg.org" ||
-    hostname.split(".").includes("forgejo") ||
-    hostname.split(".").includes("gitea")
+    isForgejoHost(hostname)
       ? {
           kind: KIND,
           name: "Forgejo",

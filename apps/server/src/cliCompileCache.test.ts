@@ -61,9 +61,14 @@ it.live("loads the CLI with its cache settings only when the command needs it", 
     expect(normal.stderr.replaceAll("\\", "/")).toContain(
       `CACHE=${root}/cache/t3code/compile-cache`.replaceAll("\\", "/"),
     );
+    const cacheDir = `${root}/cache/t3code/compile-cache`;
+    yield* fs.makeDirectory(`${cacheDir}/v24.0.0-x64-legacy-1000`, { recursive: true });
+    yield* fs.writeFileString(`${cacheDir}/v24.0.0-x64-legacy-1000/0123abcd`, "stale");
+    yield* fs.makeDirectory(`${cacheDir}/server`, { recursive: true });
     const appImage = yield* run({ APPIMAGE: `${root}/T3Code.AppImage` });
     expect(appImage.exitCode).toBe(0);
     expect(appImage.stderr).toContain("CACHE=disabled");
+    expect((yield* fs.readDirectory(cacheDir)).toSorted()).toEqual(["server"]);
     const existing = yield* run({ NODE_COMPILE_CACHE: `${root}/explicit` });
     expect(existing.exitCode).toBe(0);
     expect(existing.stderr.replaceAll("\\", "/")).toContain(

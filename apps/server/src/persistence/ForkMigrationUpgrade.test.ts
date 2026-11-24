@@ -22,6 +22,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { layerFromPath as makeSqlitePersistenceLive } from "./Sqlite.ts";
 import { runMigrations } from "./Migrations.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
+import { withConnectAuthColumns } from "./testkit/connectAuthColumns.ts";
 import {
   forkMigrationStates,
   prepareForkMigrationState,
@@ -454,7 +455,7 @@ it.effect.each(forkMigrationStates)("upgrades the released historical %s prefix"
         return { migrationId, name: historicalNames.get(migrationId)! };
       }),
     );
-    assert.deepStrictEqual(latest, [{ migrationId: 104, name: "ScheduledTaskThreadMode" }]);
+    assert.deepStrictEqual(latest, [{ migrationId: 132, name: "AgentFeedback" }]);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
@@ -521,7 +522,7 @@ it.effect(
       yield* initializeV2Database(dbPath).pipe(Effect.provide(NodeServices.layer));
       const first = yield* readInitializedFixture().pipe(Effect.provide(repositoriesLayer));
 
-      assert.deepStrictEqual(first.preserved, before);
+      assert.deepStrictEqual(first.preserved, withConnectAuthColumns(before));
       assert.deepStrictEqual(first.executed, []);
       assert.equal(first.preserved.messages[0]?.text, "Preserve this message");
       assert.equal(first.preserved.messages[0]?.attachments_json, encodeJson([attachment]));

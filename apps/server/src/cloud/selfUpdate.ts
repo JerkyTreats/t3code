@@ -67,6 +67,14 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
           }),
         );
       }
+      // Staging belongs to service-launcher runtimes, which the fork does not ship.
+      if (input.stageOnly === true) {
+        return Effect.fail(
+          new ServerSelfUpdateError({
+            reason: "This runtime does not stage server updates.",
+          }),
+        );
+      }
       return admission.kind === "desktop"
         ? desktopAppUpdate.run(reportProgress)
         : Effect.fail(

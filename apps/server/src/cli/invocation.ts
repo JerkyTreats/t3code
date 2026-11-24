@@ -82,7 +82,7 @@ const powershellWord = (value: string) =>
     .replaceAll("$", "`$")
     .replace(/["\u201C\u201D\u201E]/g, "$&$&")}"`;
 
-const hostShellWord = (platform: NodeJS.Platform, value: string) =>
+export const hostShellWord = (platform: NodeJS.Platform, value: string) =>
   platform === "win32" ? powershellWord(value) : shellWord(value);
 
 /** Script installs have no single launcher; desktop shims and standalone binaries do. */
@@ -110,7 +110,8 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
   const platform = yield* HostProcess.Platform;
   const [first = "", ...rest] = subcommand.trim().split(/\s+/u);
   const withArgs = (prefix: string) =>
-    [prefix, ...[...rest, ...args].map((arg) => hostShellWord(platform, arg))].join(" ");
+    // An empty subcommand names the root `t3` command.
+    [prefix.trimEnd(), ...[...rest, ...args].map((arg) => hostShellWord(platform, arg))].join(" ");
   const command = yield* resolveCliCommand(first);
   if (command !== `t3 ${first}`) return { command: withArgs(command), launcher: false };
   const onPath = yield* resolveCommandPath("t3");
@@ -118,8 +119,17 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
     const shim = (yield* HostProcess.Environment).T3CODE_CLI_PATH?.trim();
     const fs = yield* FileSystem.FileSystem;
     const real = (file: string) => fs.realPath(file).pipe(Effect.orElseSucceed(() => null));
-    const shimReal = shim ? yield* real(shim) : null;
-    if (shimReal === null || shimReal === (yield* real(onPath))) {
+    // Windows `t3.cmd` shims are text files that never realpath to the executable they run.
+    const own = shim
+      ? yield* real(shim)
+      : platform !== "win32" && (yield* HostProcess.IsExecutable)
+        ? yield* resolveEntryPath.pipe(
+            Effect.flatMap((entry) =>
+              real(entry).pipe(Effect.map((resolved) => resolved ?? entry)),
+            ),
+          )
+        : null;
+    if (own === null || own === (yield* real(onPath))) {
       return { command: withArgs(command), launcher: false };
     }
   }
@@ -130,6 +140,17 @@ export const resolveHostCliCommand = Effect.fn("invocation.resolveHostCliCommand
   const call = platform === "win32" ? `& ${quoted}` : quoted;
   return { command: withArgs(`${call} ${first}`), launcher: true };
 });
+
+/** A hint's command, run against the caller's `--base-dir` when one was given. */
+export const resolveHostCliHint = (
+  subcommand: string,
+  baseDir: Option.Option<string>,
+  args: ReadonlyArray<string> = [],
+) =>
+  resolveHostCliCommand(subcommand, [
+    ...Option.match(baseDir, { onNone: () => [], onSome: (dir) => ["--base-dir", dir] }),
+    ...args,
+  ]).pipe(Effect.map(({ command }) => command));
 
 /**
  * `sudo` resets PATH on most distributions, which drops a user-installed Node

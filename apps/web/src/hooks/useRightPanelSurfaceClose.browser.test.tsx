@@ -13,6 +13,7 @@ const fixture = vi.hoisted(() => ({
   deletedThreads: [] as string[],
   failClose: false,
   routeParams: {} as Record<string, string>,
+  sideChatThreadIds: new Set<string>(),
 }));
 // F23 admits a close against the live chat route, read at action time.
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
@@ -41,6 +42,11 @@ vi.mock("../previewStateStore", () => ({
   previewStateLifetimeIsCurrent: () => () => true,
   setActivePreviewTab: () => {},
 }));
+vi.mock("../browser/previewRuntime", () => ({ rendersServerTabNatively: () => false }));
+vi.mock("../state/primaryEnvironment", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return { primaryEnvironmentIdAtom: Atom.make(null) };
+});
 vi.mock("../state/session", () => ({
   useEnvironmentScope: (id: string) => fixture.allowed.has(id),
   readEnvironmentScope: (id: string) => fixture.allowed.has(id),
@@ -48,7 +54,8 @@ vi.mock("../state/session", () => ({
 vi.mock("../state/entities", () => ({
   useQuietThreadShell: () => null,
   useProject: () => null,
-  readThreadShell: () => null,
+  readThreadShell: (ref: { threadId: string }) =>
+    fixture.sideChatThreadIds.has(ref.threadId) ? { lineage: { sideChat: true } } : null,
 }));
 vi.mock("../state/terminalSessions", () => ({ useKnownTerminalSessions: () => null }));
 vi.mock("../composerDraftStore", async () => {
@@ -90,7 +97,8 @@ vi.mock("@t3tools/client-runtime/state/runtime", async (importOriginal) => ({
   isAtomCommandInterrupted: () => false,
 }));
 
-function setup() {
+function setup(mode: "single" | "all") {
+  fixture.sideChatThreadIds = new Set();
   fixture.allowed = new Set(["environment-a", "environment-b"]);
   fixture.sessions = new Map();
   fixture.deletedThreads = [];
@@ -118,23 +126,33 @@ function setup() {
   });
   fixture.confirm = () => confirmation;
   function Harness({ threadRef }: { threadRef: ScopedThreadRef }) {
-    const { closeSurface } = useRightPanelSurfaceClose({
+    const { closeSurface, closeAllSurfaces } = useRightPanelSurfaceClose({
       threadRef,
       terminalLabelsById: new Map(),
     });
-    return <button onClick={() => closeSurface(surface)}>Close original terminal</button>;
+    return (
+      <button onClick={() => (mode === "all" ? closeAllSurfaces() : closeSurface(surface))}>
+        Close original terminal
+      </button>
+    );
   }
   return { original, other, Harness, resolve };
 }
 
 // The route still shows the original thread, so F23 admits the close there.
-it.each([false, true])(
-  "keeps a pending close on its original environment and thread, fallback=%s",
-  async (failClose) => {
-    const { original, other, Harness, resolve } = setup();
+it.each([
+  { mode: "single", failClose: false },
+  { mode: "single", failClose: true },
+  { mode: "all", failClose: false },
+  { mode: "all", failClose: true },
+] as const)(
+  "keeps a pending $mode close on its original environment and thread, fallback=$failClose",
+  async ({ mode, failClose }) => {
+    const { original, other, Harness, resolve } = setup(mode);
     fixture.failClose = failClose;
     await using screen = await render(<Harness threadRef={original} />);
     await screen.getByRole("button").click();
+    expect(fixture.sessions.size).toBe(2);
     await screen.rerender(<Harness threadRef={other} />);
     await act(async () => {
       resolve(true);
@@ -148,12 +166,18 @@ it.each([false, true])(
   },
 );
 
-it.each(["cancel", "revoked"])(
-  "leaves both sessions intact when confirmation is %s",
-  async (outcome) => {
-    const { original, other, Harness, resolve } = setup();
+it.each([
+  { mode: "single", outcome: "cancel" },
+  { mode: "single", outcome: "revoked" },
+  { mode: "all", outcome: "cancel" },
+  { mode: "all", outcome: "revoked" },
+] as const)(
+  "leaves both sessions intact when $mode confirmation is $outcome",
+  async ({ mode, outcome }) => {
+    const { original, other, Harness, resolve } = setup(mode);
     await using screen = await render(<Harness threadRef={original} />);
     await screen.getByRole("button").click();
+    expect(fixture.sessions.size).toBe(2);
     await screen.rerender(<Harness threadRef={other} />);
     if (outcome === "revoked") fixture.allowed.delete(original.environmentId);
     await act(async () => {
@@ -168,7 +192,7 @@ it.each(["cancel", "revoked"])(
 
 // F23 drops a pending close once the route shows another thread; upstream closed it anyway.
 it("drops a pending close after the route moves to another thread", async () => {
-  const { original, other, Harness, resolve } = setup();
+  const { original, other, Harness, resolve } = setup("single");
   await using screen = await render(<Harness threadRef={original} />);
   await screen.getByRole("button").click();
   fixture.routeParams = { environmentId: other.environmentId, threadId: other.threadId };
@@ -183,13 +207,14 @@ it("drops a pending close after the route moves to another thread", async () => 
 });
 
 it("deletes an unused side chat on close", async () => {
-  const { original } = setup();
+  const { original } = setup("single");
   const sideChatId = ThreadId.make("side-chat-a");
-  useRightPanelStore.getState().openSideChat(original, sideChatId);
+  fixture.sideChatThreadIds = new Set([sideChatId]);
+  useRightPanelStore.getState().openThread(original, sideChatId);
   const sideChat = selectThreadRightPanelState(
     useRightPanelStore.getState().byThreadKey,
     original,
-  ).surfaces.find((surface) => surface.kind === "side-chat")!;
+  ).surfaces.find((surface) => surface.kind === "thread")!;
   let closed: Promise<boolean> | undefined;
   function SideChatHarness() {
     const { closeSurface } = useRightPanelSurfaceClose({
@@ -212,7 +237,7 @@ it("deletes an unused side chat on close", async () => {
   expect(fixture.deletedThreads).toEqual(["environment-a/side-chat-a"]);
   expect(
     selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, original).surfaces.some(
-      (surface) => surface.kind === "side-chat",
+      (surface) => surface.kind === "thread",
     ),
   ).toBe(false);
 });

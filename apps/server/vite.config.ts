@@ -95,9 +95,16 @@ export default mergeConfig(
           dependsOn: ["@t3tools/web#build"],
           cache: false,
         },
+        // A local tsbuildinfo is leftover build state, not a typecheck input.
+        typecheck: {
+          command: "effect-tsgo tsrs --noEmit",
+          cache: { input: [{ auto: true }, "!*.tsbuildinfo"] },
+        },
       },
     },
     pack: {
+      // F01.D5: the manifest keeps its upstream base; the fork release version reaches the
+      // bundle only through __T3CODE_BUILD_VERSION__ (serverVersion.ts).
       // SEA embeds one entry; expose the history worker as a hidden subcommand.
       entry: packBootstrap
         ? ["src/bin.ts"]
@@ -125,6 +132,8 @@ export default mergeConfig(
             },
           }
         : {}),
+      // jsonc-parser's UMD main requires its own files at runtime, which the bundle cannot follow.
+      alias: { "jsonc-parser": "jsonc-parser/lib/esm/main.js" },
       deps: {
         // alwaysBundle=false has no opinion; neverBundle must retain transitive native acceleration.
         alwaysBundle: shouldBundleCliDependency,

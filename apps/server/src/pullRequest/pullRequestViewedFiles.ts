@@ -33,7 +33,7 @@ interface FileRevisionsDependencies {
   readonly providerRepositoryRefOf: (project: SupportedProject) => ProviderRepositoryRef;
   readonly runFork: (effect: Effect.Effect<void>) => unknown;
   readonly refEpoch: (ref: PullRequestRef) => number;
-  readonly fileRevisionsEpoch: () => number;
+  readonly fileRevisionsEpoch: (ref: PullRequestRef) => string;
   readonly toPullRequestError: (
     operation: string,
   ) => (error: PullRequestProviderError) => PullRequestError;
@@ -54,7 +54,7 @@ const makeFileRevisions = (dependencies: FileRevisionsDependencies) => {
   const fileRevisionsKey = (project: SupportedProject, ref: PullRequestRef) =>
     [
       refEpoch({ ...ref, host: project.host, repository: project.repository }),
-      fileRevisionsEpoch(),
+      fileRevisionsEpoch({ ...ref, host: project.host, repository: project.repository }),
       ref.projectId,
       project.repository.trim().toLowerCase(),
       ref.number,
@@ -272,7 +272,9 @@ export const make = (dependencies: Dependencies) => {
       input: PullRequestSetFilesViewedInput,
     ): Effect.fn.Return<void, PullRequestError> {
       const viewer = yield* requiredViewerOf(project, "setFilesViewed");
-      const cleared = input.files.filter((file) => file.viewed).map((file) => file.path);
+      const cleared = input.files
+        .filter((file) => file.viewed && file.revision === undefined)
+        .map((file) => file.path);
       const revisions =
         cleared.length === 0
           ? null
@@ -288,10 +290,10 @@ export const make = (dependencies: Dependencies) => {
       yield* filesViewedStore
         .set({
           ...filesViewedScope(project, input.number, viewer),
-          // Missing paths have null baselines; empty revision means confirmed deletion.
+          // Shown revisions win over the head; missing paths have null baselines; empty means deleted.
           files: input.files.map((file) => ({
             path: file.path,
-            revision: revisions?.get(file.path) ?? null,
+            revision: file.revision ?? revisions?.get(file.path) ?? null,
             viewed: file.viewed,
           })),
           viewedAt,

@@ -11,6 +11,11 @@ vi.mock("../state/server", async () => {
     themeServerEnvironmentThemesAtom: Atom.make([]),
   };
 });
+// Theme backgrounds read environment assets and sessions; this host only applies palettes.
+vi.mock("../themeBackground", () => ({
+  applyThemeBackground: () => undefined,
+  startThemeBackground: () => () => undefined,
+}));
 
 function createStorage(overrides: Partial<Storage> = {}): Storage {
   const store = new Map<string, string>();

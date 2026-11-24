@@ -5,14 +5,16 @@ import {
   defineSourceControl,
   hostCredentialSettingsFields,
   parseChangeRequestPath,
+  parseIssuePath,
   parseCommitPath,
+  repositoryUrlFromPagePath,
   projectChangeRequestHost,
   remoteWebOrigin,
   type SourceControlAppSignIn,
 } from "@t3tools/source-control-core/shared/definition";
 import { exactOriginContainsChangeRequest } from "@t3tools/source-control-core/shared/fork/originRepositoryPolicy";
 
-import { gitHubMediaUrl } from "./gitHubMedia.ts";
+import { gitHubMediaUrl, gitHubRawFileUrl } from "./gitHubMedia.ts";
 import { icon } from "./icon.ts";
 import { gitHubReferenceAutolinks } from "./referenceAutolinks.ts";
 
@@ -25,6 +27,7 @@ const CHANGE_REQUEST_REFERENCE =
 const CHANGE_REQUEST_PATH = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(?:\/|$)/u;
 const COMMIT_PATH = /^\/([^/]+\/[^/]+)\/(?:commit|pull\/\d+\/commits)\/([0-9a-f]+)\/?$/iu;
 const ISSUE_PATH = /^\/([^/]+\/[^/]+)\/issues\/(\d+)(?:\/|$)/u;
+const REPOSITORY_PAGE_PATH = /^\/([^/]+\/[^/]+)\/(?:tree|blob)\/[^/]/u;
 
 const KIND = SourceControlProviderKind.make("github");
 
@@ -97,6 +100,12 @@ export const definition = defineSourceControl({
   parseCommitUrl: (url, known) =>
     known || isGitHubHost(url.hostname) ? parseCommitPath(url, COMMIT_PATH) : null,
   parseChangeRequestUrl: (url) => parseChangeRequestPath(url, CHANGE_REQUEST_PATH),
+  // `/issues/` is too generic a path to believe from a host that is not GitHub's, unless a known
+  // project's host vouches for it as a GitHub Enterprise Server.
+  parseIssueUrl: (url, known) =>
+    known || isGitHubHost(url.hostname) ? parseIssuePath(url, ISSUE_PATH) : null,
+  repositoryUrlFromPage: (url) =>
+    isGitHubHost(url.hostname) ? repositoryUrlFromPagePath(url, REPOSITORY_PAGE_PATH) : null,
   // GitHub writes every bare reference through `/issues/`, including pull requests.
   changeRequestUrlFromReferenceAutolink: (url) => {
     const match = isGitHubHost(url.hostname) ? ISSUE_PATH.exec(url.pathname) : null;
@@ -120,7 +129,8 @@ export const definition = defineSourceControl({
   ] as const),
   checkoutCommand: ({ number }) => `gh pr checkout ${number}`,
   changeRequestCloseCommand: /\bgh\s+(?:pr\s+(?:merge|close)|stack\s+merge)\b/u,
-  changeRequestCreateCommand: /\bgh\s+pr\s+create\b/u,
+  // `new` is gh's alias for `create`.
+  changeRequestCreateCommand: /\bgh\s+pr\s+(?:create|new)\b/u,
   authorProfileUrl: (login, repositoryUrl) =>
     login.endsWith("[bot]")
       ? null
@@ -150,5 +160,6 @@ export const definition = defineSourceControl({
   isChangeRequestInRepository: exactOriginContainsChangeRequest,
   canReadChangeRequestOnHost: exactOriginContainsChangeRequest,
   mediaUrl: gitHubMediaUrl,
+  rawFileUrl: gitHubRawFileUrl,
   settings,
 });

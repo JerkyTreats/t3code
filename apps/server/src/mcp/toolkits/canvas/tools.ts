@@ -4,7 +4,7 @@ import {
   ThreadCanvasShape,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
 import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
@@ -112,7 +112,8 @@ const CanvasReadTool = Tool.make("canvas_read", {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 // This affects only the caller's thread, not its workspace, so read-only sandboxes and plan mode may use it.
 const CanvasUpdateTool = Tool.make("canvas_update", {
@@ -186,7 +187,8 @@ const CanvasUpdateTool = Tool.make("canvas_update", {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 export const CanvasPreviewTool = Tool.make("canvas_preview", {
   description:
@@ -229,7 +231,8 @@ export const CanvasPreviewTool = Tool.make("canvas_preview", {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 export const CanvasToolkit = Toolkit.make(CanvasReadTool, CanvasUpdateTool, CanvasPreviewTool);
 

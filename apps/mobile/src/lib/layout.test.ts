@@ -3,7 +3,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   alignListPaneToHinge,
   deriveLayout,
-  deriveThreadFeedInitialContentInset,
   deriveThreadArrangementSizing,
   deriveThreadWorkLogSizing,
   deriveWorkspacePaneLayout,
@@ -50,19 +49,6 @@ describe("thread work-log text sizing", () => {
   });
 });
 
-describe("deriveThreadFeedInitialContentInset", () => {
-  // regression: #5585 land the first thread open above the composer on Android
-  it("does not double native iOS insets", () => {
-    expect(
-      deriveThreadFeedInitialContentInset({
-        platform: "ios",
-        usesNativeAutomaticInsets: true,
-        bottomContentInset: 174,
-      }),
-    ).toBeUndefined();
-  });
-});
-
 describe("native workspace sizing", () => {
   it.each([
     { width: 669, height: 951, hasHinge: true, nativeWorkspace: true, overlay: true },
@@ -81,6 +67,7 @@ describe("native workspace sizing", () => {
       };
       const layout = deriveLayout({ ...size, nativeMetrics, nativeWorkspace });
       expect(layout.variant === "medium").toBe(overlay);
+      expect(layout.listPaneWidth).toBe(overlay ? 350 : size.width === 951 ? 304 : 280);
       for (const primarySidebarPreferredVisible of [true, false]) {
         expect(
           deriveWorkspacePaneLayout({

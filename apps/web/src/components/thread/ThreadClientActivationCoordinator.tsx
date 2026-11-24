@@ -1,3 +1,4 @@
+import { T } from "gt-react";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type {
@@ -206,7 +207,7 @@ export function ThreadClientActivationHost(props: ThreadClientActivationHostProp
         {activationState.phase === "failed" ? (
           <Button size="sm" variant="outline" onClick={() => owner.retryOpen()}>
             <RotateCcwIcon className="size-4" />
-            Try again
+            <T>Try again</T>
           </Button>
         ) : activationState.phase === "receipt-pending" ? (
           <Button
@@ -215,7 +216,7 @@ export function ThreadClientActivationHost(props: ThreadClientActivationHostProp
             onClick={() => owner.retryCompletion(bridge?.completeActivation)}
           >
             <RotateCcwIcon className="size-4" />
-            Try again
+            <T>Try again</T>
           </Button>
         ) : primaryEnvironmentId !== null &&
           shellLive &&
@@ -223,7 +224,7 @@ export function ThreadClientActivationHost(props: ThreadClientActivationHostProp
           activationState.activation.workingDirectory === undefined ? (
           <Button size="sm" onClick={openAddProject}>
             <PlusIcon className="size-4" />
-            Add project
+            <T>Add project</T>
           </Button>
         ) : null}
       </div>

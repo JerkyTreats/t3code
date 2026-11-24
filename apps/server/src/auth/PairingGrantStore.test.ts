@@ -1,4 +1,4 @@
-import { AuthStandardClientScopes } from "@t3tools/contracts";
+import { AuthAdministrativeClientScopes, AuthStandardClientScopes } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
@@ -102,6 +102,22 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PairingGrantStor
     ),
   );
 
+  it.effect("accepts a one-time token typed in hyphen- or space-separated groups", () =>
+    Effect.gen(function* () {
+      const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
+      const issued = yield* bootstrapCredentials.issueOneTimeToken();
+      const formatted = issued.credential.match(/.{1,4}/g)!.join("-");
+      const consumed = yield* bootstrapCredentials.consume(formatted.toLowerCase());
+      const second = yield* bootstrapCredentials.issueOneTimeToken();
+      const spaced = yield* bootstrapCredentials.consume(
+        second.credential.match(/.{1,4}/g)!.join(" "),
+      );
+
+      expect(consumed.method).toBe("one-time-token");
+      expect(spaced.method).toBe("one-time-token");
+    }).pipe(Effect.provide(layerPairingGrantStore())),
+  );
+
   it.effect("atomically consumes a one-time token when multiple requests race", () =>
     Effect.gen(function* () {
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
@@ -172,7 +188,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PairingGrantStor
       const third = yield* bootstrapCredentials.consume("desktop-bootstrap-token");
 
       expect(first.method).toBe("desktop-bootstrap");
-      expect(first.scopes).toEqual(AuthStandardClientScopes);
+      expect(first.scopes).toEqual(AuthAdministrativeClientScopes);
       expect(first.subject).toBe("desktop-bootstrap");
       expect(second.method).toBe("desktop-bootstrap");
       expect(third.method).toBe("desktop-bootstrap");

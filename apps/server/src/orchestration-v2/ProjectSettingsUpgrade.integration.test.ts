@@ -21,6 +21,7 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { runMigrations } from "../persistence/Migrations.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as ModelManifest from "../provider/ModelManifest.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -28,6 +29,7 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
+import { layerNoTaskFolders } from "./ProviderTurnStartService.testkit.ts";
 import * as RuntimeLayer from "./runtimeLayer.ts";
 
 const projectId = ProjectId.make("project:upgrade");
@@ -157,6 +159,7 @@ const layerRuntime = (dbPath: string) => {
     Layer.provide(layerCheckpointStore),
     Layer.provide(layerServerConfig),
     Layer.provide(ServerSettings.layerTest()),
+    Layer.provide(ModelManifest.layerTest),
     Layer.provide(
       Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
         getInstance: () => Effect.undefined,
@@ -171,6 +174,7 @@ const layerRuntime = (dbPath: string) => {
         pruneWorktrees: () => Effect.void,
       }),
     ),
+    Layer.provide(layerNoTaskFolders),
     Layer.provide(layerPlatform),
   );
 };
@@ -216,6 +220,34 @@ it.live("keeps project settings through the V2 migrations and the first V2 boot"
           [102, "DropOrchestrationEventCorrelationIndex"],
           [103, "DelegatedRecoveryIndexes"],
           [104, "ScheduledTaskThreadMode"],
+          [105, "ProjectionMessageSearchText"],
+          [106, "TurnItemConversationIndex"],
+          [107, "CommandReadIndexes"],
+          [108, "LastExecutedRunIndex"],
+          [109, "TurnItemCounts"],
+          [110, "QueuedTurnInputIndex"],
+          [111, "ProjectionProjectsCustomTitle"],
+          [112, "TurnItemTypeStatusIndex"],
+          [113, "ShellThreadReadIndexes"],
+          [114, "AuthConnectDevices"],
+          [115, "AuthConnectDeniedRequests"],
+          [116, "QueuedTurnInputIndexJsonValid"],
+          [117, "ProviderTurnAttemptIndex"],
+          [118, "TurnItemMessageOrdinalIndex"],
+          [119, "TurnItemInlineWorkOutput"],
+          [120, "RepairStaleTitleRegeneration"],
+          [121, "IssueTrackerBindings"],
+          [122, "ActiveShellIndexIndexes"],
+          [123, "BackgroundRecoveryIndexes"],
+          [124, "TurnStartReadIndexes"],
+          [125, "DelegatedTaskReadIndexes"],
+          [126, "ThreadItemCounts"],
+          [127, "IssueTrackerAdditionalScopes"],
+          [128, "ProjectionProjectsTrackedFolders"],
+          [129, "TaskFolders"],
+          [130, "WorktreePathKeyIndex"],
+          [131, "DeferredSlashCommandIndex"],
+          [132, "AgentFeedback"],
         ]);
         assert.deepEqual(yield* readSettings, expectedSettings);
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));

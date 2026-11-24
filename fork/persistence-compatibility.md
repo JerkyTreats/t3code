@@ -38,6 +38,19 @@ An upstream-numbered 80 row is an unknown name, so it fails before continuation 
 Upstream's preview-migration reconciliation and V2 skip assertion are not adopted; the fork
 lineage selector already owns both checks.
 
+Migrations 105 through 132 append upstream migrations 81 through 108 in upstream source order with
+a constant offset of 24, from `105_ProjectionMessageSearchText` to `132_AgentFeedback`. Fork 132 is
+the head that startup, `hasPendingMigrations` and the reported database migration use. Upstream-numbered
+81 through 108 rows collide with fork identities or are unknown names, so they fail before
+continuation writes. Migration 114 adds the T3 Connect device columns beside fork 58's pairing
+enrollment class; F17 still gates T3 Connect at runtime. Migration 132 adds the `agent_feedback` table
+for schema parity only; agent feedback reporting stays disabled.
+
+Startup runs each pending migration in its own transaction and logs the started, per-migration
+progress and finished lines the desktop readiness check reads. A failure rolls back only the failing
+migration; a restart resumes after the last finished one. The lineage selection runs once before the
+first write, so fresh-install decisions such as skipping retired migration 50 hold for the whole run.
+
 Migration 90 keeps upstream's repair predicate: dense client sweeps reported as plain
 `0.0.35` through `0.0.38` before 2026-09-05. Fork builds reported plain upstream versions until
 2026-09-26, so affected fork-built histories match exactly as upstream builds do. Fork builds
@@ -72,7 +85,7 @@ Upstream source `61_PullRequestReviewGuides` executes as stable fork identity `8
 
 Upstream preview renumbering is not part of fork startup: `Migrations.ts` delegates directly to the fork lineage owner, and preview identities fail before continuation writes.
 
-`ForkMigrationPlan.test.ts` exercises the policy through a separately constructed upstream runner, covers rejection before journal creation, and proves atomic rollback of v2 schema and baseline events before retrying the continuation from 68. It also retains batch rollback coverage for data repair failure. `ForkMigrationHistory.test.ts` covers supported journal history, auth preservation, cleanup and production persistence reopen. `ForkMigrationContinuation.test.ts` proves repair semantics and new fields through production project and thread readers. `ForkMigrationUpgrade.test.ts` snapshots a populated historical file database through the current initializer, checks retained events, attachment references and authority rows through continuation, then reopens without additional migrations. `initializeV2Database.test.ts` covers the one-time snapshot through 67, retained command receipts and fingerprints, lazy transcript import, committed WAL data, destination reuse, and rejection of unsupported source lineage before publication. Existing upstream migration tests retain their behavior with remapped execution cutoffs.
+`ForkMigrationPlan.test.ts` exercises the policy through a separately constructed upstream runner, covers rejection before journal creation, and proves atomic rollback of v2 schema and baseline events before retrying the continuation from 68. Its data repair and continuation failure cases prove that only the failing migration rolls back and a retry resumes after the last finished one. `ForkMigrationHistory.test.ts` covers supported journal history, auth preservation, cleanup and production persistence reopen. `ForkMigrationContinuation.test.ts` proves repair semantics and new fields through production project and thread readers. `ForkMigrationUpgrade.test.ts` snapshots a populated historical file database through the current initializer, checks retained events, attachment references and authority rows through continuation, then reopens without additional migrations. `initializeV2Database.test.ts` covers the one-time snapshot through 67, retained command receipts and fingerprints, lazy transcript import, committed WAL data, destination reuse, and rejection of unsupported source lineage before publication. Existing upstream migration tests retain their behavior with remapped execution cutoffs.
 
 Supported history is the frozen accepted fork lineage, including the characterized reconciled v0.0.28 identities from 14 through 26 and historical prefixes from 31 through 41 followed by canonical suffixes. The missing migration 35 row is accepted only when the complete released prefix and migration 36 reconciliation marker are present. Historical identities cannot restart after the canonical suffix begins. Retired entries retain only their characterized journal meaning; fresh databases do not execute those feature migrations. Arbitrary upstream database import, unknown forks, live database inspection and a second migration engine are outside this contract. F17 owns the integrated private pre-42 backup and runtime authority boundary. Its append-only migration 58 adds explicit pairing enrollment class without changing historical migration 42. Historical acceptance and provenance limits remain in the intake evidence. Current tests identify source verification boundaries; this contract does not declare final joined gates, deployment, browser, or installed acceptance for the v2 intake.
 
@@ -81,6 +94,14 @@ Supported history is the frozen accepted fork lineage, including the characteriz
 `ForkMigrationUpstream69To72.test.ts` continues a populated fork 92 file database through 93 to 96
 with retained project and authority rows, reopens without new migrations, repeats the continuation
 through an independent runner and rejects an upstream-numbered 70 journal before writes.
+
+`ForkMigrationUpstream81To108.test.ts` continues a populated fork 104 file database through 105 to
+132 with retained thread, attachment, pairing enrollment class and authority rows and the desktop
+migration log lines. It reopens through the production initializer with nothing pending, repeats the
+continuation through an independent runner, rejects upstream-numbered 81, 90, 104 and 105 rows before
+writes, and proves that a failure inside 105 to 132 rolls back only that migration before a rerun
+completes. The upstream 75, 81, 85 to 87, 94 to 96, 102 and 103 migration tests run at their fork
+identities.
 
 `ForkMigrationReviewGuides.test.ts` exercises the 83-to-84 continuation through an independent runner, verifies retained thread, attachment and authority data, uses the production review-guide repository, and checks transactional rollback, retry and reopen. These synthetic source proofs do not establish live database or deployment acceptance.
 
@@ -120,7 +141,9 @@ still referenced by the legacy transcript (`ResourceCleanupService.cleanupUnreta
 
 A runtime built before migration 87 rejects the 87 through 92 journal identities on reopen, a
 runtime built before migration 93 rejects 93 through 96, a runtime built before migration 97
-rejects 97 through 103, and a runtime built before migration 104 rejects 104.
+rejects 97 through 103, a runtime built before migration 104 rejects 104, and a runtime built
+before migration 105 rejects 105 through 132 on reopen. Rolling back across 105 means restoring the
+`statev2.sqlite` snapshot taken before the upgrade.
 Binary rollback across this intake therefore needs the matching pre-upgrade `statev2.sqlite`
 copy or the retained `state.sqlite` reconciliation path below.
 

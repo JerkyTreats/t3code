@@ -6,7 +6,7 @@ import { type RefObject, useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 
 import ChatMarkdown from "../components/ChatMarkdown";
-import { CANVAS_CARD_REMARK_PLUGINS } from "./canvasStateChips";
+import { CANVAS_CARD_MARKDOWN_EXTENSIONS } from "./canvasStateChips";
 import { canvasPlacementStore } from "./canvasSurfaceCards";
 import { NOTE_CARD_SIZE, placeSurfaceCard } from "./CanvasSurfaceCardView";
 import { TURN_INSET_PX } from "./turnBoard";
@@ -126,7 +126,7 @@ export function CanvasPlacement({
       <ChatMarkdown
         text={placement.card.text}
         lineBreaks
-        extraRemarkPlugins={CANVAS_CARD_REMARK_PLUGINS}
+        extensions={CANVAS_CARD_MARKDOWN_EXTENSIONS}
         cwd={undefined}
         environmentId={threadRef.environmentId}
         threadRef={threadRef}

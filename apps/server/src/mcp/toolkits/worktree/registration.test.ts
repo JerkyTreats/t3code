@@ -47,6 +47,13 @@ import * as PeerLinks from "../../../peer/PeerLinks.ts";
 import * as DocumentText from "../../../provider/DocumentText.ts";
 import * as AssetSigner from "../../../assets/AssetSigner.ts";
 import * as ProjectCloneTracker from "../../../project/ProjectCloneTracker.ts";
+import * as EnvironmentThemeService from "../../../environmentTheme.ts";
+import * as FeedbackStore from "../../../feedback/FeedbackStore.ts";
+import * as GitManager from "../../../git/GitManager.ts";
+import * as IssueService from "../../../issue/IssueService.ts";
+import * as ThreadIssueService from "../../../orchestration-v2/ThreadIssueService.ts";
+import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
+import * as TaskFolders from "../../../workspace/TaskFolders.ts";
 
 const layerStubServices = Layer.mergeAll(
   Layer.mock(ThreadCanvasStore.ThreadCanvasStore)({}),
@@ -55,7 +62,8 @@ const layerStubServices = Layer.mergeAll(
   McpProviderSessions.layer,
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(Orchestrator.OrchestratorV2)({}),
-  Layer.mock(ProjectionStore.ProjectionStoreV2)({}),
+  // The MCP auth middleware reads each thread's forge; these threads have no project.
+  Layer.mock(ProjectionStore.ProjectionStoreV2)({ getThreadShell: () => Effect.succeed(null) }),
   Layer.mock(DeviceService.DeviceService)({}),
   Layer.mock(ThreadManagementService.ThreadManagementService)({}),
   Layer.mock(ProviderRegistry.ProviderRegistry)({}),
@@ -83,6 +91,13 @@ const layerStubServices = Layer.mergeAll(
   NodeCrypto.layer,
   Layer.mock(AssetSigner.AssetSigner)({}),
   Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
+  Layer.mock(EnvironmentThemeService.EnvironmentThemeService)({}),
+  Layer.mock(FeedbackStore.FeedbackStore)({}),
+  Layer.mock(GitManager.GitManager)({}),
+  Layer.mock(IssueService.IssueService)({}),
+  Layer.mock(ThreadIssueService.ThreadIssueService)({}),
+  Layer.mock(PullRequestService.PullRequestService)({}),
+  Layer.mock(TaskFolders.TaskFolders)({}),
 );
 
 const ToolsListPayload = Schema.fromJsonString(

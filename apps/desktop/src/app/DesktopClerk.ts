@@ -125,6 +125,11 @@ export const make = Effect.gen(function* () {
     yield* electronApp.quit;
     return yield* Effect.interrupt;
   }
+  // Chromium opens these caches at the first event-loop turn, before ready.
+  yield* DesktopUserData.clearStaleGpuCaches({
+    userDataPath,
+    electronVersion: process.versions.electron,
+  });
 
   const pendingSecondInstances: Array<readonly string[]> = [];
   let handleSecondInstance = (argv: readonly string[]) => {
@@ -214,11 +219,12 @@ export const make = Effect.gen(function* () {
           Effect.gen(function* () {
             yield* electronApp.whenReady;
             yield* Effect.tryPromise({
-              try: () =>
+              try: (signal) =>
                 receiveCodexAuthCallback(
                   request.authorizationUrl,
                   (url) => runPromise(shell.openExternal(url)),
                   (callbackUrl) => codexAuthDeliveryUrl(request, callbackUrl),
+                  signal,
                 ),
               catch: () =>
                 new CodexAuthCallbackError({

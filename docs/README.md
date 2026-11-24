@@ -9,6 +9,7 @@
 - [Terminal history](./user/terminal.md)
 - [Source control](./user/source-control.md)
 - [Project settings](./user/project-settings.md)
+- [Projects with several repositories](./user/multi-repo-projects.md)
 - [Appearance and themes](./user/appearance.md)
 - [Keyboard shortcuts](./user/keybindings.md)
 - [Voice input](./user/voice-input.md)
@@ -66,6 +67,7 @@ Follow the [documentation rules](../governance/docs_style_policy.md) before addi
 ### Runbooks
 
 - [Development and local builds](./operations/development.md)
+- [Scenarios: real-app proof for a fix](./operations/scenarios.md)
 - [T3 Connect setup](./operations/connect-setup.md)
 - [Release validation and exact-origin artifacts](./operations/release.md)
 - [Observability](./operations/observability.md)

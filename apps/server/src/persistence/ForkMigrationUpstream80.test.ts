@@ -8,7 +8,8 @@ import { migrationManifest } from "./ForkMigrationPlan.ts";
 import { runMigrations } from "./Migrations.ts";
 
 it("appends upstream 80 after fork 103", () => {
-  assert.deepStrictEqual(migrationManifest.slice(-2), [
+  const start = migrationManifest.findIndex(([id]) => id === 103);
+  assert.deepStrictEqual(migrationManifest.slice(start, start + 2), [
     [103, "DelegatedRecoveryIndexes"],
     [104, "ScheduledTaskThreadMode"],
   ]);
@@ -32,7 +33,9 @@ it.effect("continues fork 103 to 104, keeping a task with a thread in that threa
     yield* insertTask("task-with-thread", "synthetic-thread");
     yield* insertTask("task-without-thread", null);
 
-    assert.deepStrictEqual(yield* runMigrations(), [[104, "ScheduledTaskThreadMode"]]);
+    assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 104 }), [
+      [104, "ScheduledTaskThreadMode"],
+    ]);
     const tasks = yield* sql<{
       readonly task_id: string;
       readonly thread_mode: string;
@@ -41,6 +44,6 @@ it.effect("continues fork 103 to 104, keeping a task with a thread in that threa
       { task_id: "task-with-thread", thread_mode: "continue" },
       { task_id: "task-without-thread", thread_mode: "new_thread" },
     ]);
-    assert.deepStrictEqual(yield* runMigrations(), []);
+    assert.deepStrictEqual(yield* runMigrations({ toMigrationInclusive: 104 }), []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );

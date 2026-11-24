@@ -84,6 +84,23 @@ it.layer(NodeServices.layer)("server self update", (it) => {
     }),
   );
 
+  it.effect("refuses staged-only updates without running the desktop update", () =>
+    Effect.gen(function* () {
+      const { selfUpdate } = yield* makeHarness({
+        mode: "desktop",
+        desktopAppUpdate: {
+          available: true,
+          run: () => Effect.die("unexpected desktop app update run"),
+          commit: () => Effect.never,
+        },
+      });
+      expect(
+        (yield* selfUpdate.update({ targetVersion: "1.1.0", stageOnly: true }).pipe(Effect.flip))
+          .reason,
+      ).toBe("This runtime does not stage server updates.");
+    }),
+  );
+
   it.effect("rejects operator-managed updates and desktop updates without a control channel", () =>
     Effect.gen(function* () {
       const web = yield* makeHarness();

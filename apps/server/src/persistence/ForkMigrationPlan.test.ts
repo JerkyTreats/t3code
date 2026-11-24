@@ -46,7 +46,7 @@ it.layer(Layer.fresh(NodeSqliteClient.layer({ filename: ":memory:" })))(
   "migration transaction recovery",
   (it) => {
     it.effect(
-      "rolls back the complete continuation on a data repair failure and retries safely",
+      "rolls back only the failing data repair and resumes after the last finished migration",
       () =>
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
@@ -66,15 +66,16 @@ it.layer(Layer.fresh(NodeSqliteClient.layer({ filename: ":memory:" })))(
           const failure = yield* Effect.exit(runMigrations());
           assert.isTrue(Exit.isFailure(failure));
 
+          // Each migration commits on its own, so 52 and 53 stay and the failing 54 rolls back.
           const journal = yield* sql<{ readonly id: number }>`
         SELECT MAX(migration_id) AS id FROM effect_sql_migrations
       `;
-          assert.equal(journal[0]?.id, 51);
+          assert.equal(journal[0]?.id, 53);
           const columns = yield* sql<{
             readonly name: string;
           }>`PRAGMA table_info(projection_threads)`;
-          assert.isFalse(columns.some(({ name }) => name === "linked_pull_request_json"));
-          assert.isFalse(columns.some(({ name }) => name === "unsettled_at"));
+          assert.isTrue(columns.some(({ name }) => name === "linked_pull_request_json"));
+          assert.isTrue(columns.some(({ name }) => name === "unsettled_at"));
           const unchanged = yield* sql<{ readonly payload: string }>`
         SELECT payload_json AS payload FROM orchestration_events
         WHERE event_id = 'synthetic-corrupt-event'
@@ -88,7 +89,7 @@ it.layer(Layer.fresh(NodeSqliteClient.layer({ filename: ":memory:" })))(
           const retried = yield* runMigrations();
           assert.deepStrictEqual(
             retried,
-            migrationManifest.filter(([id]) => id > 51),
+            migrationManifest.filter(([id]) => id > 53),
           );
           assert.deepStrictEqual(yield* runMigrations(), []);
         }),
@@ -151,6 +152,34 @@ it.effect("rolls back the V2 schema and baseline events together before retry", 
       [102, "DropOrchestrationEventCorrelationIndex"],
       [103, "DelegatedRecoveryIndexes"],
       [104, "ScheduledTaskThreadMode"],
+      [105, "ProjectionMessageSearchText"],
+      [106, "TurnItemConversationIndex"],
+      [107, "CommandReadIndexes"],
+      [108, "LastExecutedRunIndex"],
+      [109, "TurnItemCounts"],
+      [110, "QueuedTurnInputIndex"],
+      [111, "ProjectionProjectsCustomTitle"],
+      [112, "TurnItemTypeStatusIndex"],
+      [113, "ShellThreadReadIndexes"],
+      [114, "AuthConnectDevices"],
+      [115, "AuthConnectDeniedRequests"],
+      [116, "QueuedTurnInputIndexJsonValid"],
+      [117, "ProviderTurnAttemptIndex"],
+      [118, "TurnItemMessageOrdinalIndex"],
+      [119, "TurnItemInlineWorkOutput"],
+      [120, "RepairStaleTitleRegeneration"],
+      [121, "IssueTrackerBindings"],
+      [122, "ActiveShellIndexIndexes"],
+      [123, "BackgroundRecoveryIndexes"],
+      [124, "TurnStartReadIndexes"],
+      [125, "DelegatedTaskReadIndexes"],
+      [126, "ThreadItemCounts"],
+      [127, "IssueTrackerAdditionalScopes"],
+      [128, "ProjectionProjectsTrackedFolders"],
+      [129, "TaskFolders"],
+      [130, "WorktreePathKeyIndex"],
+      [131, "DeferredSlashCommandIndex"],
+      [132, "AgentFeedback"],
     ]);
     assert.deepStrictEqual(yield* runMigrations(), []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
@@ -206,6 +235,34 @@ it.effect("continues the current journal with stable upstream identities", () =>
       [102, "DropOrchestrationEventCorrelationIndex"],
       [103, "DelegatedRecoveryIndexes"],
       [104, "ScheduledTaskThreadMode"],
+      [105, "ProjectionMessageSearchText"],
+      [106, "TurnItemConversationIndex"],
+      [107, "CommandReadIndexes"],
+      [108, "LastExecutedRunIndex"],
+      [109, "TurnItemCounts"],
+      [110, "QueuedTurnInputIndex"],
+      [111, "ProjectionProjectsCustomTitle"],
+      [112, "TurnItemTypeStatusIndex"],
+      [113, "ShellThreadReadIndexes"],
+      [114, "AuthConnectDevices"],
+      [115, "AuthConnectDeniedRequests"],
+      [116, "QueuedTurnInputIndexJsonValid"],
+      [117, "ProviderTurnAttemptIndex"],
+      [118, "TurnItemMessageOrdinalIndex"],
+      [119, "TurnItemInlineWorkOutput"],
+      [120, "RepairStaleTitleRegeneration"],
+      [121, "IssueTrackerBindings"],
+      [122, "ActiveShellIndexIndexes"],
+      [123, "BackgroundRecoveryIndexes"],
+      [124, "TurnStartReadIndexes"],
+      [125, "DelegatedTaskReadIndexes"],
+      [126, "ThreadItemCounts"],
+      [127, "IssueTrackerAdditionalScopes"],
+      [128, "ProjectionProjectsTrackedFolders"],
+      [129, "TaskFolders"],
+      [130, "WorktreePathKeyIndex"],
+      [131, "DeferredSlashCommandIndex"],
+      [132, "AgentFeedback"],
     ]);
     assert.deepStrictEqual(
       yield* sql`SELECT * FROM effect_sql_migrations WHERE migration_id <= 70 ORDER BY migration_id`,
@@ -246,24 +303,30 @@ it.effect.each([71, 78, 999])("rejects unsupported journal identity %s before wr
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
-it.effect("rolls back upstream continuation schema and journal before retry", () =>
+it.effect("rolls back only the failing continuation migration and resumes after it", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* runMigrations({ toMigrationInclusive: 70 });
-    // Fail index creation after the preceding continuation has attempted its DDL.
+    // Fail 80's index creation after 79 has committed in its own transaction.
     yield* sql`CREATE TABLE scheduled_task_webhook_relay_deliveries (relay_delivery_id TEXT)`;
     const journal = yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`;
-    const schema = yield* sql`SELECT * FROM sqlite_master ORDER BY type, name`;
     assert.isTrue(Exit.isFailure(yield* Effect.exit(runMigrations())));
+    const continued = yield* sql<{ readonly migration_id: number }>`
+      SELECT migration_id FROM effect_sql_migrations ORDER BY migration_id`;
     assert.deepStrictEqual(
-      yield* sql`SELECT * FROM effect_sql_migrations ORDER BY migration_id`,
-      journal,
+      continued.map((row) => row.migration_id),
+      [...journal.map((row) => row.migration_id), 79],
     );
-    assert.deepStrictEqual(yield* sql`SELECT * FROM sqlite_master ORDER BY type, name`, schema);
+    assert.deepStrictEqual(
+      yield* sql`SELECT name FROM sqlite_master
+        WHERE name IN ('scheduled_task_webhook_deliveries', 'idx_scheduled_task_webhook_relay_deliveries_seen')
+        ORDER BY name`,
+      [{ name: "scheduled_task_webhook_deliveries" }],
+    );
     yield* sql`DROP TABLE scheduled_task_webhook_relay_deliveries`;
     assert.deepStrictEqual(
       yield* runMigrations(),
-      migrationManifest.filter(([id]) => id > 70),
+      migrationManifest.filter(([id]) => id > 79),
     );
     assert.deepStrictEqual(yield* runMigrations(), []);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),

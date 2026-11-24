@@ -1,4 +1,5 @@
 import {
+  AuthAdministrativeClientScopes,
   AuthStandardClientScopes,
   type AuthEnvironmentScope,
   type AuthMcpClientAccess,
@@ -246,8 +247,7 @@ export class PairingGrantStore extends Context.Service<
         readonly requestedScopes?: ReadonlyArray<AuthEnvironmentScope>;
         /** All scopes must be granted; requestedScopes only requires an overlap for OAuth. */
         readonly requiredScopes?: ReadonlyArray<AuthEnvironmentScope>;
-        /** Also spends a code issued for an agent sign-in at this level; others refuse them. */
-        readonly mcpApproval?: AuthMcpClientAccess;
+        readonly allowedSubject?: string;
       },
     ) => Effect.Effect<BootstrapGrant, BootstrapCredentialError>;
   }
@@ -336,7 +336,7 @@ export const make = Effect.gen(function* () {
     const now = yield* DateTime.now;
     yield* seedGrant(config.desktopBootstrapToken, {
       method: "desktop-bootstrap",
-      scopes: AuthStandardClientScopes,
+      scopes: AuthAdministrativeClientScopes,
       subject: "desktop-bootstrap",
       expiresAt: DateTime.add(now, {
         milliseconds: Duration.toMillis(DESKTOP_BOOTSTRAP_TTL_HOURS),
@@ -467,7 +467,7 @@ export const make = Effect.gen(function* () {
       if (yield* consumeRotatingDesktopToken(credential, now.epochMilliseconds)) {
         return {
           method: "desktop-bootstrap",
-          scopes: AuthStandardClientScopes,
+          scopes: AuthAdministrativeClientScopes,
           subject: "desktop-bootstrap",
           expiresAt: DateTime.add(now, {
             milliseconds: DESKTOP_BOOTSTRAP_TOKEN_WINDOW_MS,
@@ -568,8 +568,10 @@ export const make = Effect.gen(function* () {
       }
 
       // Only credentials in the issued pairing-code formats are case-insensitive.
-      const pairingCredential = PAIRING_TOKEN_PATTERN.test(credential)
-        ? credential.toUpperCase()
+      // People type codes in groups such as XXXX-XXXX-XXXX.
+      const compactCredential = credential.replace(/[\s-]/g, "");
+      const pairingCredential = PAIRING_TOKEN_PATTERN.test(compactCredential)
+        ? compactCredential.toUpperCase()
         : (parseMcpApprovalCode(credential)?.code ?? credential);
       const pairingCredentialDigest = yield* digestCredential(pairingCredential);
 
@@ -582,11 +584,7 @@ export const make = Effect.gen(function* () {
             ? { requestedScopes: input.requestedScopes }
             : {}),
           ...(input?.requiredScopes !== undefined ? { requiredScopes: input.requiredScopes } : {}),
-          ...(input?.mcpApproval
-            ? {
-                mcpApprovalSubject: `${AuthPairingLinks.MCP_APPROVAL_SUBJECT_PREFIX}${input.mcpApproval}`,
-              }
-            : {}),
+          ...(input?.allowedSubject ? { allowedSubject: input.allowedSubject } : {}),
           consumedAt: now,
           now,
         })

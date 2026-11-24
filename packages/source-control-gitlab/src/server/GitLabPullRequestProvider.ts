@@ -9,6 +9,7 @@ import type {
   PullRequestActor,
   PullRequestCapabilities,
   PullRequestReaction,
+  PullRequestThreadComment,
   PullRequestViewerPermissions,
 } from "@t3tools/contracts";
 
@@ -40,6 +41,7 @@ const CAPABILITIES: PullRequestCapabilities = {
   viewedFiles: "environment",
   review: {
     inlineComment: true,
+    rangeComment: true,
     reply: true,
     resolve: true,
     verdicts: ["comment", "approve", "request-changes"],
@@ -47,6 +49,7 @@ const CAPABILITIES: PullRequestCapabilities = {
   reviewers: { request: true, listCandidates: true, searchCandidates: true },
   labels: true,
   edit: { changeRequest: true, comment: true, maintainerEdits: true },
+  withheldFileDiff: true,
 };
 
 const UNAVAILABLE_REQUIREMENT = {
@@ -59,12 +62,14 @@ const UNAVAILABLE_REQUIREMENT = {
  * The actions `user.can_merge` answers for. Rebasing writes to the source branch rather than to
  * the target, so it is not literally the same permission — but GitLab reports nothing narrower,
  * and someone it will not let land this change has no business rewriting its branch either.
+ * Reverting pushes a branch to the target project, which the same permission covers.
  */
 const MERGE_ACTIONS: ReadonlySet<string> = new Set([
   "merge",
   "update-branch",
   "enable-auto-merge",
   "disable-auto-merge",
+  "revert",
 ]);
 
 /** Authors may close/reopen/change draft state regardless of role; REST omits authorship. */
@@ -397,6 +402,13 @@ export const make = Effect.gen(function* () {
         ),
       ),
 
+    getChangeRequestWatchFingerprint: (input) =>
+      onOrigin("getChangeRequestWatchFingerprint", input, (input) =>
+        cli
+          .getMergeRequestWatchFingerprint(input)
+          .pipe(Effect.mapError(fail("getChangeRequestWatchFingerprint"))),
+      ),
+
     getChangeRequestActivity: (input) =>
       onOrigin("getChangeRequestActivity", input, (input) =>
         Effect.all(
@@ -442,6 +454,13 @@ export const make = Effect.gen(function* () {
                 author !== null && botLogins.has(author.login.toLowerCase())
                   ? { ...author, isBot: true }
                   : author;
+              const withNoteDetails = (comment: PullRequestThreadComment) => ({
+                ...comment,
+                ...edited(comment.id),
+                author: withBotFlag(comment.author),
+                url: noteUrl(comment.id),
+                reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
+              });
               return {
                 reactions: awards.reactions,
                 comments: notes.comments.map((comment) => ({
@@ -454,20 +473,25 @@ export const make = Effect.gen(function* () {
                 })),
                 commentCount: notes.comments.length,
                 commentsTruncated: notes.truncated || discussions.truncated,
-                reviewThreads: discussions.threads.map((thread) => ({
-                  ...thread,
-                  isOutdated: isOutdated(
-                    discussions.diffRefsByThreadId.get(thread.id),
-                    detail?.diffRefs,
-                  ),
-                  comments: thread.comments.map((comment) => ({
-                    ...comment,
-                    ...edited(comment.id),
-                    author: withBotFlag(comment.author),
-                    url: noteUrl(comment.id),
-                    reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
-                  })),
-                })),
+                reviewThreads: discussions.threads.flatMap((thread) =>
+                  thread.path === null
+                    ? []
+                    : [
+                        {
+                          ...thread,
+                          isOutdated: isOutdated(
+                            discussions.diffRefsByThreadId.get(thread.id),
+                            detail?.diffRefs,
+                          ),
+                          comments: thread.comments.map(withNoteDetails),
+                        },
+                      ],
+                ),
+                overviewThreads: discussions.threads.flatMap((thread) =>
+                  thread.path === null
+                    ? [{ ...thread, comments: thread.comments.map(withNoteDetails) }]
+                    : [],
+                ),
                 commits,
               };
             },
@@ -621,6 +645,9 @@ export const make = Effect.gen(function* () {
           action: input.action,
           ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
           ...(input.removeAgentCreditsOnMerge === true ? { removeAgentCreditsOnMerge: true } : {}),
+          ...(input.expectedHeadSha === undefined
+            ? {}
+            : { expectedHeadSha: input.expectedHeadSha }),
         })
         .pipe(Effect.mapError(fail("runAction"))),
     ),

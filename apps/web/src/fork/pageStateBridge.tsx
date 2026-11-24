@@ -90,10 +90,12 @@ export function usePageStateBridge(
     const { id, ...change } = request;
     if (threadRef === undefined) {
       post(
+        // oxlint-disable-next-line t3code/no-untranslated-copy -- postMessage protocol refusal reason
         htmlRenderStateRefused(id, { code: "unavailable", message: "This page has no thread." }),
       );
     } else if (!canWrite) {
       post(
+        // oxlint-disable-next-line t3code/no-untranslated-copy -- postMessage protocol refusal reason
         htmlRenderStateRefused(id, { code: "read_only", message: "You can only view this page." }),
       );
     } else {
@@ -112,7 +114,8 @@ export function usePageStateBridge(
             id,
             isPageStateError(error)
               ? { code: error.reason, message: error.message, revision: error.revision }
-              : { code: "unavailable", message: "Could not save; reconnect and try again." },
+              : // oxlint-disable-next-line t3code/no-untranslated-copy -- postMessage protocol refusal reason
+                { code: "unavailable", message: "Could not save; reconnect and try again." },
           ),
         );
       });

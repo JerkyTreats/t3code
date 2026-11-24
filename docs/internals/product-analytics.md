@@ -149,6 +149,11 @@ send prompts, authentication material, raw provider payloads, user-assigned devi
 names, or conversation identifiers. Client metadata is best effort; invalid values
 must not reject a connection. PostHog person profiles remain disabled.
 
+Upstream's `agent.feedback` event carries agent-written text and conversation
+traces to the upstream team. The fork keeps agent feedback off, so
+[FeedbackService](../../apps/server/src/feedback/FeedbackService.ts) never sends
+that event and the feedback tools stay hidden from agents.
+
 Dev-runner servers and the CI archive smoke test turn telemetry off, which also
 stops relay tracing, because each would count as a new install. Set
 `T3CODE_TELEMETRY_ENABLED=true` to test analytics or relay tracing from a dev server.

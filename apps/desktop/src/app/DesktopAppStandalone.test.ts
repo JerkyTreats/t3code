@@ -3,6 +3,8 @@ import { vi } from "vite-plus/test";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as Stream from "effect/Stream";
 import * as Ref from "effect/Ref";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as DesktopApp from "./DesktopApp.ts";
@@ -16,6 +18,7 @@ import * as DesktopAppActivation from "./DesktopAppActivation.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import * as DesktopBackendPool from "../backend/DesktopBackendPool.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
+import * as DesktopLocalEnvironmentAuth from "../backend/DesktopLocalEnvironmentAuth.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
@@ -34,9 +37,10 @@ vi.mock("../ipc/DesktopIpcHandlers.ts", async () => {
 
 // Deliberately omit every unused service: any accidental allocation, port scan, protocol,
 // exposure or WSL acquisition in the standalone branch fails this actual host execution.
+const startAndBootstrap = DesktopApp.startLocalBackend.pipe(Effect.flatMap(DesktopApp.bootstrap));
 const runHost = (context: Context.Context<never>) =>
-  Effect.scoped(DesktopApp.bootstrap.pipe(Effect.andThen(Effect.yieldNow))).pipe(
-    Effect.provide(context as Context.Context<Effect.Services<typeof DesktopApp.bootstrap>>),
+  Effect.scoped(startAndBootstrap.pipe(Effect.andThen(Effect.yieldNow))).pipe(
+    Effect.provide(context as Context.Context<Effect.Services<typeof startAndBootstrap>>),
   );
 
 const hostContext = Effect.fn("test.hostContext")(function* (
@@ -49,11 +53,13 @@ const hostContext = Effect.fn("test.hostContext")(function* (
     standaloneServerUrl: standalone ? Option.some(url) : Option.none(),
     isDevelopment: false,
     configuredBackendPort: Option.some(3773),
+    stateDir: "/nonexistent/t3-desktop-standalone-test/userdata",
     defaultDesktopSettings: { serverExposureMode: "local-only" },
   } as DesktopEnvironment.DesktopEnvironment["Service"];
   return Context.make(DesktopState.DesktopState, {
     backendReady: yield* Ref.make(false),
     quitting: yield* Ref.make(quitting),
+    canInstallUpdates: yield* Ref.make(false),
     primaryBackendStartup: yield* SubscriptionRef.make<DesktopState.PrimaryBackendStartup>({
       _tag: "Starting",
     }),
@@ -124,7 +130,12 @@ describe("current DesktopApp bootstrap", () => {
           } as unknown as DesktopCliCommand.DesktopCliCommand["Service"]),
           Context.add(DesktopShellEnvironment.DesktopShellEnvironment, {
             awaitUserShellDiscovery: Effect.succeed(false),
+            updates: Stream.empty,
           } as unknown as DesktopShellEnvironment.DesktopShellEnvironment["Service"]),
+          Context.add(DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth, {
+            getBearerToken: Effect.succeed("token"),
+          } as unknown as DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth["Service"]),
+          Context.add(Path.Path, yield* Path.Path.pipe(Effect.provide(Path.layer))),
           Context.add(DesktopBackendPool.DesktopBackendPool, {
             primary: Effect.sync(() => {
               host.events.push("allocate-primary");
@@ -172,6 +183,8 @@ describe("current DesktopApp bootstrap", () => {
           "allocate-primary",
           "exposure",
           "backend-start",
+          // Startup and the later window step each read the primary backend.
+          "allocate-primary",
           "window-main",
           "upstream-activation",
           "wsl",

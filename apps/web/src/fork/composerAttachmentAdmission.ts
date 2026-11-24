@@ -1,3 +1,5 @@
+import { msg } from "gt-react";
+import { m } from "~/i18n/messages";
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
 
 export function composerAttachmentScope(input: {
@@ -58,7 +60,9 @@ export class ComposerAttachmentAdmission {
       if (file && this.isCurrent(reservation)) await input.admit(file, reservation);
     } catch (cause) {
       if (this.isCurrent(reservation)) {
-        input.reportError(cause instanceof Error ? cause.message : "Could not capture screenshot.");
+        input.reportError(
+          cause instanceof Error ? cause.message : m(msg("Could not capture screenshot.")),
+        );
       }
     } finally {
       this.capturing = false;

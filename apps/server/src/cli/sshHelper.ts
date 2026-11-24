@@ -4,9 +4,18 @@
 import * as NodeFS from "node:fs";
 import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
+import * as NodePath from "node:path";
 
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { Argument, Command } from "effect/cli";
+
+import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
+
+import * as DesktopUpdateMarker from "../desktopUpdate/DesktopUpdateMarker.ts";
+import { isServerOwnershipHeld, isSqliteLockHeld } from "../serverOwnership.ts";
+import { serverVersion } from "../serverVersion.ts";
 
 const canBind = (port: number) =>
   new Promise<boolean>((resolve) => {
@@ -56,22 +65,24 @@ const pickPort = Command.make("pick-port", {
 );
 
 const probe = (port: number, probeTimeoutMs: number) =>
-  new Promise<boolean>((resolve) => {
+  new Promise<"ready" | "refused" | "not-ready">((resolve) => {
     const request = NodeHttp.get(
       { hostname: "127.0.0.1", port, path: "/", timeout: probeTimeoutMs },
       (response) => {
         response.resume();
         response.once("end", () => {
           const status = response.statusCode ?? 0;
-          resolve(status >= 200 && status < 300);
+          resolve(status >= 200 && status < 300 ? "ready" : "not-ready");
         });
       },
     );
     request.once("timeout", () => {
       request.destroy();
-      resolve(false);
+      resolve("not-ready");
     });
-    request.once("error", () => resolve(false));
+    request.once("error", (error: NodeJS.ErrnoException) =>
+      resolve(error.code === "ECONNREFUSED" ? "refused" : "not-ready"),
+    );
   });
 
 const waitReady = Command.make("wait-ready", {
@@ -82,11 +93,15 @@ const waitReady = Command.make("wait-ready", {
   Command.withHandler(({ port, timeoutMs, probeTimeoutMs }) =>
     Effect.promise(async () => {
       const deadline = Date.now() + timeoutMs;
+      let refusedOnly = true;
       while (Date.now() < deadline) {
-        if (await probe(port, probeTimeoutMs)) return;
+        const result = await probe(port, probeTimeoutMs);
+        if (result === "ready") return;
+        refusedOnly &&= result === "refused";
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      process.exitCode = 1;
+      // The launcher reads 2 as "nothing listens on this port".
+      process.exitCode = refusedOnly ? 2 : 1;
     }),
   ),
 );
@@ -124,7 +139,93 @@ const runtimePort = Command.make("runtime-port", {
   ),
 );
 
+const decodeRunningServer = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ pid: Schema.Number, serverVersion: Schema.String })),
+);
+
+// Fork release versions end in a source commit, which has no order against another commit.
+const FORK_RELEASE_COMMIT = /^[0-9a-f]{10}$/;
+
+/** Whether a running server's version is the same as or newer than `ownVersion`. */
+const sameOrNewerVersion = (runningVersion: string, ownVersion: string) => {
+  if (runningVersion === ownVersion) return true;
+  const running = parseSemver(runningVersion);
+  const own = parseSemver(ownVersion);
+  if (running === null || own === null) return false;
+  const sameCore =
+    running.major === own.major && running.minor === own.minor && running.patch === own.patch;
+  // A changed runner with the same base but another commit is the update; replace the server.
+  if (
+    sameCore &&
+    [running, own].some((version) => version.prerelease.some((id) => FORK_RELEASE_COMMIT.test(id)))
+  ) {
+    return false;
+  }
+  return compareSemverVersions(runningVersion, ownVersion) >= 0;
+};
+
+/** True when the runtime file names `pid` and a server version at or above `ownVersion`. */
+export const keepsRunningServer = (runtimeJson: string, pid: number, ownVersion: string) =>
+  Option.match(decodeRunningServer(runtimeJson), {
+    onNone: () => false,
+    onSome: (runtime) =>
+      runtime.pid === pid && sameOrNewerVersion(runtime.serverVersion, ownVersion),
+  });
+
+/** Exits 0 when the managed server `pid` runs this version or a newer one, else 1. */
+const keepServer = Command.make("keep-server", {
+  runtimeFile: Argument.String("runtime-file"),
+  pid: Argument.Int("pid"),
+}).pipe(
+  Command.withHandler(({ runtimeFile, pid }) =>
+    Effect.sync(() => {
+      const runtimeJson = NodeFS.existsSync(runtimeFile)
+        ? NodeFS.readFileSync(runtimeFile, "utf8")
+        : "";
+      if (!keepsRunningServer(runtimeJson, pid, serverVersion)) process.exitCode = 1;
+    }),
+  ),
+);
+
+const updateRemaining = Command.make("update-remaining", {
+  markerFile: Argument.String("marker-file"),
+}).pipe(
+  Command.withHandler(({ markerFile }) =>
+    DesktopUpdateMarker.DesktopUpdateMarker.use((marker) => marker.remainingWait(markerFile)).pipe(
+      Effect.flatMap((remaining) =>
+        Effect.sync(() => {
+          process.stdout.write(Option.match(remaining, { onNone: () => "", onSome: String }));
+        }),
+      ),
+    ),
+  ),
+  Command.provide(DesktopUpdateMarker.layer),
+);
+
+/**
+ * Exits 0 while a server holds this home's ownership lock or a boot service
+ * holds `runtime/service-serving.lock`, matching the launcher's host-Node check.
+ */
+const homeOwned = Command.make("home-owned", {
+  baseDir: Argument.String("base-dir"),
+}).pipe(
+  Command.withHandler(({ baseDir }) =>
+    Effect.sync(() => {
+      const statePath = NodePath.join(baseDir, "userdata", "server-runtime.json");
+      const serving = NodePath.join(baseDir, "runtime", "service-serving.lock");
+      if (!(isSqliteLockHeld(serving) || isServerOwnershipHeld(statePath))) process.exitCode = 1;
+    }),
+  ),
+);
+
 export const sshHelperCommand = Command.make("__ssh-helper").pipe(
   Command.unlisted,
-  Command.withSubcommands([pickPort, waitReady, runtimePort]),
+  Command.withSubcommands([
+    pickPort,
+    waitReady,
+    runtimePort,
+    updateRemaining,
+    homeOwned,
+    keepServer,
+  ]),
 );

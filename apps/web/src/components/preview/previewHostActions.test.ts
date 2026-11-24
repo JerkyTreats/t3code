@@ -59,6 +59,7 @@ afterEach(() => vi.unstubAllGlobals());
 function controlWithAgent() {
   applyPreviewDesktopState(ref, "tab", {
     hasWebContents: true,
+    navStatus: { _tag: "Idle" as const },
     canGoBack: false,
     canGoForward: false,
     loading: false,

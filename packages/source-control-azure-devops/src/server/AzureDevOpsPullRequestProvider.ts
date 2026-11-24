@@ -3,8 +3,11 @@ import {
   requireAzureDevOpsPullRequestTarget,
   requireAzurePullRequestMembership,
 } from "@t3tools/source-control-core/server/fork/originHostedProviderPolicy";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Semaphore from "effect/Semaphore";
+import { rollupCheckStatuses } from "@t3tools/source-control-core/server/pullRequestChecks";
 import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@t3tools/contracts";
 
 import * as AzureDevOpsPullRequestCli from "./AzureDevOpsPullRequestCli.ts";
@@ -39,13 +42,49 @@ import type {
 } from "./azureDevOpsPullRequestJson.ts";
 import { definition } from "../shared/definition.ts";
 
-/** Each file pays for two Python startups. */
+/** A file the blob batch missed pays for two Python startups. */
 const DIFF_FILE_CONCURRENCY = 4;
 
 /** Readers share a spawn budget across requests. */
 export const MAX_DIFF_SPAWNS = 2 * DIFF_FILE_CONCURRENCY;
 
 export const LOCATION_CACHE_CAPACITY = 128;
+
+/** A version's change list can run to thousands of paths. */
+const CHANGES_CACHE_CAPACITY = 32;
+
+/**
+ * Files whose contents one `az` run fetches. The run costs about the same for 10 blobs as for
+ * 100, and a slice rarely spends this many before its budgets close it.
+ */
+export const BLOB_BATCH_FILES = 100;
+
+/** Least recently used goes first. */
+function remember<V>(cache: Map<string, V>, capacity: number, key: string, value: V): V {
+  cache.delete(key);
+  if (cache.size >= capacity) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, value);
+  return value;
+}
+
+function recall<V>(cache: Map<string, V>, key: string): V | undefined {
+  const held = cache.get(key);
+  if (held !== undefined) remember(cache, Number.POSITIVE_INFINITY, key, held);
+  return held;
+}
+
+/** The blobs a file's two sides need, as the change list names them. */
+function blobIdsOf(change: AzureDevOpsChangeEntry): ReadonlyArray<string> {
+  const ids: string[] = [];
+  if (change.changeKind !== "new" && change.originalObjectId !== null) {
+    ids.push(change.originalObjectId);
+  }
+  if (change.changeKind !== "deleted" && change.objectId !== null) ids.push(change.objectId);
+  return ids;
+}
 
 const CAPABILITIES: PullRequestCapabilities = {
   diff: true,
@@ -114,8 +153,7 @@ function toChangeRequest(pullRequest: AzureDevOpsPullRequest): ProviderChangeReq
     mergedAt: pullRequest.state === "merged" ? pullRequest.closedAt : null,
     updatedAt: pullRequest.updatedAt,
     reviewRequestLogins: pullRequest.reviewRequestLogins,
-    // Azure keeps labels on work items rather than on the pull request.
-    labels: [],
+    labels: pullRequest.labels,
   };
 }
 
@@ -141,6 +179,8 @@ export const make = Effect.gen(function* () {
   const diffSpawns = yield* Semaphore.make(MAX_DIFF_SPAWNS);
   const readItemContent = (input: Parameters<typeof cli.readItemContent>[0]) =>
     diffSpawns.withPermits(1)(cli.readItemContent(input));
+  const readBlobs = (input: Parameters<typeof cli.readBlobs>[0]) =>
+    diffSpawns.withPermits(1)(cli.readBlobs(input));
 
   const fail =
     (operation: string) => (error: AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCliError) =>
@@ -159,28 +199,9 @@ export const make = Effect.gen(function* () {
       error._tag === "PullRequestProviderError" ? error : fail(operation)(error);
 
   type OriginLocator = { readonly remoteName: string; readonly remoteUrl: string } | undefined;
-
-  /**
-   * Fork F06: every pull request read and mutation names the origin organization, project and
-   * repository explicitly, and the pull request must belong to that repository before use.
-   */
-  const getOriginPullRequest = (input: {
-    readonly cwd: string;
-    readonly number: number;
-    readonly operation: string;
-    readonly origin?: OriginLocator;
-  }) =>
-    requireAzureDevOpsPullRequestTarget(input).pipe(
-      Effect.flatMap((target) =>
-        cli.getPullRequest({ cwd: input.cwd, ...target, number: input.number }).pipe(
-          Effect.mapError(fail(input.operation)),
-          Effect.flatMap((pullRequest) =>
-            requireAzurePullRequestMembership({ operation: input.operation, target, pullRequest }),
-          ),
-          Effect.map((pullRequest) => ({ pullRequest, target })),
-        ),
-      ),
-    );
+  type ReadError =
+    | AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCliError
+    | PullRequestProviderError;
 
   const unsupported = (operation: string) =>
     Effect.fail(
@@ -194,51 +215,142 @@ export const make = Effect.gen(function* () {
 
   const EMPTY_DIFF_SLICE: ProviderDiffSlice = { patch: "", truncated: false, nextCursor: null };
 
-  // PR locations are immutable; caching avoids full PR reads for viewed-file checks.
+  // PR locations are immutable; every pull request read records one so later reads can skip it.
   const locations = new Map<string, AzureDevOpsRepositoryLocation>();
+  // A pushed iteration never changes, so neither do its commits nor its change list.
+  const knownIterations = new Map<string, ReadonlyArray<AzureDevOpsIteration>>();
+  const iterationChanges = new Map<string, AzureDevOpsPullRequestCli.AzureDevOpsIterationChanges>();
+
+  // Reads still running, so a location lookup joins one instead of spawning its own az process.
+  const pendingLocations = new Map<
+    string,
+    Deferred.Deferred<AzureDevOpsRepositoryLocation | null, ReadError>
+  >();
+
+  /**
+   * Fork F06: every pull request read and mutation names the origin organization, project and
+   * repository explicitly, and the pull request must belong to that repository before use.
+   */
+  const readPullRequest = (input: {
+    readonly cwd: string;
+    readonly number: number;
+    readonly operation: string;
+    readonly origin?: OriginLocator;
+  }) =>
+    Effect.suspend(() => {
+      const key = `${input.cwd} ${input.origin?.remoteUrl ?? ""} ${input.number}`;
+      const pending = Deferred.makeUnsafe<AzureDevOpsRepositoryLocation | null, ReadError>();
+      pendingLocations.set(key, pending);
+      return requireAzureDevOpsPullRequestTarget(input).pipe(
+        Effect.flatMap((target) =>
+          cli.getPullRequest({ cwd: input.cwd, ...target, number: input.number }).pipe(
+            Effect.flatMap((pullRequest) =>
+              requireAzurePullRequestMembership({
+                operation: input.operation,
+                target,
+                pullRequest,
+              }),
+            ),
+            Effect.map((pullRequest) => {
+              if (pullRequest.location !== null) {
+                remember(locations, LOCATION_CACHE_CAPACITY, key, pullRequest.location);
+              }
+              return { pullRequest, target };
+            }),
+          ),
+        ),
+        Effect.onExit((exit) =>
+          Effect.sync(() => {
+            if (pendingLocations.get(key) === pending) pendingLocations.delete(key);
+            Deferred.doneUnsafe(
+              pending,
+              Exit.map(exit, ({ pullRequest }) => pullRequest.location),
+            );
+          }),
+        ),
+      );
+    });
+
+  /** An origin-bound read whose failures are already provider errors, for mutations. */
+  const getOriginPullRequest = (input: Parameters<typeof readPullRequest>[0]) =>
+    readPullRequest(input).pipe(Effect.mapError(failUnlessRefused(input.operation)));
 
   const locationOf = (input: {
     readonly cwd: string;
     readonly number: number;
     readonly origin?: OriginLocator;
-  }) => {
-    const key = `${input.cwd} ${input.origin?.remoteUrl ?? ""} ${input.number}`;
-    const held = locations.get(key);
-    if (held !== undefined) {
-      locations.delete(key);
-      locations.set(key, held);
-      return Effect.succeed(held);
-    }
-    return getOriginPullRequest({ ...input, operation: "getLocation" }).pipe(
-      Effect.map(({ pullRequest }) => {
-        const location = pullRequest.location;
-        if (location === null) return null;
-        if (locations.size >= LOCATION_CACHE_CAPACITY) {
-          const oldest = locations.keys().next().value;
-          if (oldest !== undefined) locations.delete(oldest);
-        }
-        locations.set(key, location);
-        return location;
-      }),
-    );
-  };
+  }) =>
+    Effect.suspend(() => {
+      const key = `${input.cwd} ${input.origin?.remoteUrl ?? ""} ${input.number}`;
+      const held = recall(locations, key);
+      if (held !== undefined) return Effect.succeed(held);
+      const ownRead = readPullRequest({ ...input, operation: "getLocation" }).pipe(
+        Effect.map(({ pullRequest }) => pullRequest.location),
+      );
+      const pending = pendingLocations.get(key);
+      // A read that failed or was interrupted under another request is retried here.
+      return pending === undefined
+        ? ownRead
+        : Deferred.await(pending).pipe(Effect.catchCause(() => ownRead));
+    });
 
+  const readChecks = (
+    input: { readonly cwd: string },
+    target: { readonly organization: string },
+    pullRequest: AzureDevOpsPullRequest,
+  ) =>
+    cli.listPolicyChecks({
+      cwd: input.cwd,
+      organization: target.organization,
+      number: pullRequest.number,
+      isDraft: pullRequest.isDraft,
+    });
+
+  /** A later slice names its iteration, which the list it was cut from already holds. */
   const diffScope = Effect.fn("AzureDevOpsPullRequestProvider.diffScope")(function* (input: {
     readonly cwd: string;
     readonly number: number;
+    readonly iterationId?: number;
     readonly origin?: OriginLocator;
   }) {
     const target = yield* requireAzureDevOpsPullRequestTarget({ ...input, operation: "getDiff" });
     const location = yield* locationOf(input);
     if (location === null) return null;
+    const key = `${input.cwd} ${input.origin?.remoteUrl ?? ""} ${input.number}`;
+    const held = recall(knownIterations, key);
+    if (
+      input.iterationId !== undefined &&
+      held?.some((iteration) => iteration.id === input.iterationId)
+    ) {
+      return { organization: target.organization, location, iterations: held };
+    }
     const iterations = yield* cli.listIterations({
       cwd: input.cwd,
       organization: target.organization,
       location,
       number: input.number,
     });
+    remember(knownIterations, LOCATION_CACHE_CAPACITY, key, iterations);
     return { organization: target.organization, location, iterations };
   });
+
+  const changesOf = (input: {
+    readonly cwd: string;
+    readonly organization: string;
+    readonly location: AzureDevOpsRepositoryLocation;
+    readonly number: number;
+    readonly iterationId: number;
+  }) => {
+    const key = `${input.cwd} ${input.organization} ${input.location.project} ${input.location.repository} ${input.number} ${input.iterationId}`;
+    const held = recall(iterationChanges, key);
+    return held !== undefined
+      ? Effect.succeed(held)
+      : cli
+          .listIterationChanges(input)
+          .pipe(
+            Effect.map((listed) => remember(iterationChanges, CHANGES_CACHE_CAPACITY, key, listed)),
+          );
+  };
 
   const EMPTY_ITEM: AzureDevOpsItemContent = { contents: "", isBinary: false };
 
@@ -294,7 +406,7 @@ export const make = Effect.gen(function* () {
           changes: [],
           truncated: false,
         } as AzureDevOpsPullRequestCli.AzureDevOpsIterationChanges)
-      : cli.listIterationChanges({
+      : changesOf({
           cwd: input.cwd,
           organization: input.organization,
           location: input.location,
@@ -346,7 +458,8 @@ export const make = Effect.gen(function* () {
       ),
 
     getChangeRequestPreview: (input) =>
-      getOriginPullRequest({ ...input, operation: "getChangeRequestPreview" }).pipe(
+      readPullRequest({ ...input, operation: "getChangeRequestPreview" }).pipe(
+        Effect.mapError(failUnlessRefused("getChangeRequestPreview")),
         Effect.map(({ pullRequest }) => ({
           number: pullRequest.number,
           title: pullRequest.title,
@@ -358,14 +471,40 @@ export const make = Effect.gen(function* () {
         })),
       ),
 
-    getChangeRequestSummary: (input) =>
-      getOriginPullRequest({ ...input, operation: "getChangeRequestSummary" }).pipe(
-        Effect.map(({ pullRequest }) => toSummary(pullRequest)),
-      ),
+    getChangeRequestChecks: Effect.fn("AzureDevOpsPullRequestProvider.getChangeRequestChecks")(
+      function* (input) {
+        const { pullRequest, target } = yield* readPullRequest({
+          ...input,
+          operation: "getChangeRequestChecks",
+        });
+        const checks = yield* readChecks(input, target, pullRequest);
+        return { state: pullRequest.state, checks };
+      },
+      Effect.mapError(failUnlessRefused("getChangeRequestChecks")),
+    ),
+
+    getChangeRequestSummary: Effect.fn("AzureDevOpsPullRequestProvider.getChangeRequestSummary")(
+      function* (input) {
+        const { pullRequest, target } = yield* readPullRequest({
+          ...input,
+          operation: "getChangeRequestSummary",
+        });
+        // Undefined keeps the last known state; null would claim no checks exist.
+        const checksState = yield* readChecks(input, target, pullRequest).pipe(
+          Effect.map((checks) => rollupCheckStatuses(checks.map((check) => check.status))),
+          Effect.orElseSucceed(() => undefined),
+        );
+        return {
+          ...toSummary(pullRequest),
+          ...(checksState === undefined ? {} : { checksState }),
+        };
+      },
+      Effect.mapError(failUnlessRefused("getChangeRequestSummary")),
+    ),
 
     getChangeRequest: Effect.fn("AzureDevOpsPullRequestProvider.getChangeRequest")(
       function* (input) {
-        const { pullRequest, target } = yield* getOriginPullRequest({
+        const { pullRequest, target } = yield* readPullRequest({
           ...input,
           operation: "getChangeRequest",
         });
@@ -396,15 +535,30 @@ export const make = Effect.gen(function* () {
                 Effect.map((listed) => listed.changes.length),
                 Effect.orElseSucceed(() => 0),
               );
+        const checks = yield* readChecks(input, target, pullRequest).pipe(
+          Effect.orElseSucceed(() => []),
+        );
+        const labels =
+          location === null
+            ? pullRequest.labels
+            : yield* cli
+                .listLabels({
+                  cwd: input.cwd,
+                  organization: target.organization,
+                  location,
+                  number: input.number,
+                })
+                .pipe(Effect.orElseSucceed(() => pullRequest.labels));
         const detail: ProviderChangeRequestDetail = {
           ...toChangeRequest(pullRequest),
+          labels,
           body: pullRequest.body,
           ...(headSha === undefined ? {} : { headSha }),
           changedFiles,
           mergedAt: pullRequest.state === "merged" ? pullRequest.closedAt : null,
           closedAt: pullRequest.state === "closed" ? pullRequest.closedAt : null,
           reviewers: pullRequest.reviewers,
-          checks: [],
+          checks,
           mergeCapabilities: { merge: true, squash: true, rebase: false },
           viewerPermissions: AZURE_DEVOPS_VIEWER_PERMISSIONS,
           autoMergeEnabled: pullRequest.autoMergeEnabled,
@@ -418,15 +572,20 @@ export const make = Effect.gen(function* () {
     ),
 
     getChangeRequestActivity: (input) =>
-      getOriginPullRequest({ ...input, operation: "getChangeRequestActivity" }).pipe(
-        Effect.flatMap(({ pullRequest, target }) =>
-          (pullRequest.location === null
+      // Locations come only from origin-validated reads keyed by the origin locator.
+      requireAzureDevOpsPullRequestTarget({ ...input, operation: "getChangeRequestActivity" }).pipe(
+        Effect.flatMap((target) =>
+          locationOf(input).pipe(Effect.map((location) => ({ location, target }))),
+        ),
+        Effect.mapError(failUnlessRefused("getChangeRequestActivity")),
+        Effect.flatMap(({ location, target }) =>
+          (location === null
             ? Effect.succeed({ comments: [], truncated: true })
             : cli
                 .listThreads({
                   cwd: input.cwd,
                   organization: target.organization,
-                  location: pullRequest.location,
+                  location,
                   number: input.number,
                 })
                 .pipe(
@@ -451,15 +610,20 @@ export const make = Effect.gen(function* () {
     // the Code tab has nothing to scope itself to and always asks for the whole change.
     getDiff: Effect.fn("AzureDevOpsPullRequestProvider.getDiff")(
       function* (input) {
-        const scope = yield* diffScope(input);
-        if (scope === null) return EMPTY_DIFF_SLICE;
         const cursor = parseAzureDevOpsDiffCursor(input.cursor);
+        const scope = yield* diffScope({
+          cwd: input.cwd,
+          number: input.number,
+          origin: input.origin,
+          ...(cursor === null ? {} : { iterationId: cursor.iterationId }),
+        });
+        if (scope === null) return EMPTY_DIFF_SLICE;
         const iteration =
           cursor === null
             ? scope.iterations.at(-1)
             : scope.iterations.find((candidate) => candidate.id === cursor.iterationId);
         if (iteration === undefined) return EMPTY_DIFF_SLICE;
-        const listed = yield* cli.listIterationChanges({
+        const listed = yield* changesOf({
           cwd: input.cwd,
           organization: scope.organization,
           location: scope.location,
@@ -489,17 +653,53 @@ export const make = Effect.gen(function* () {
             ),
           );
         };
+        let blobs: ReadonlyMap<string, AzureDevOpsItemContent> = new Map();
+        let blobsUntil = index;
+        const fromBlobs = (change: AzureDevOpsChangeEntry): AzureDevOpsFileTexts | null => {
+          const side = (id: string | null) =>
+            id === null ? undefined : blobs.get(id.toLowerCase());
+          const oldItem = change.changeKind === "new" ? EMPTY_ITEM : side(change.originalObjectId);
+          const newItem = change.changeKind === "deleted" ? EMPTY_ITEM : side(change.objectId);
+          return oldItem === undefined || newItem === undefined
+            ? null
+            : {
+                oldContents: oldItem.contents,
+                newContents: newItem.contents,
+                binary: oldItem.isBinary || newItem.isBinary,
+              };
+        };
         while (!full && index < changes.length) {
-          const batch = changes.slice(index, index + batchWidth());
+          if (index >= blobsUntil) {
+            blobsUntil = index + BLOB_BATCH_FILES;
+            blobs = yield* readBlobs({
+              cwd: input.cwd,
+              organization: scope.organization,
+              location: scope.location,
+              objectIds: changes.slice(index, blobsUntil).flatMap(blobIdsOf),
+            }).pipe(
+              // Per-file reads then answer, or fail, for each file.
+              Effect.catchTags({
+                AzureDevOpsPullRequestNotFoundError: () => Effect.succeed(new Map()),
+                AzureDevOpsCommandFailedError: () => Effect.succeed(new Map()),
+                AzureDevOpsPullRequestReadError: () => Effect.succeed(new Map()),
+              }),
+            );
+          }
+          const batch = changes.slice(index, Math.min(index + batchWidth(), blobsUntil));
           const read = yield* Effect.forEach(
             batch,
             (change) =>
-              readTexts({
-                cwd: input.cwd,
-                organization: scope.organization,
-                location: scope.location,
-                iteration,
-                change,
+              Effect.suspend(() => {
+                const held = fromBlobs(change);
+                return held === null
+                  ? readTexts({
+                      cwd: input.cwd,
+                      organization: scope.organization,
+                      location: scope.location,
+                      iteration,
+                      change,
+                    })
+                  : Effect.succeed(held);
               }).pipe(
                 // Auth, rate-limit and CLI failures must reach the caller.
                 Effect.catchTags({

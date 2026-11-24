@@ -1,21 +1,59 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { assert, it } from "@effect/vitest";
+import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import * as TestClock from "effect/testing/TestClock";
+import * as TestConsole from "effect/testing/TestConsole";
 
 import { runDoctor } from "./doctor.ts";
 import { DatabaseMaintenance } from "../persistence/DatabaseMaintenance.ts";
+import * as ProcessRunner from "../processRunner.ts";
+import { acquireServerOwnership } from "../serverOwnership.ts";
+import { makePersistedServerRuntimeState } from "../serverRuntimeState.ts";
+
+// An empty home, so nothing installed on this machine is read.
+const layerHost = Layer.mergeAll(
+  ProcessRunner.layer,
+  Layer.effect(
+    HostProcess.HomeDirectory,
+    Effect.gen(function* () {
+      return yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped();
+    }),
+  ),
+  Layer.succeed(HostProcess.Environment, {}),
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 it.effect(
-  "--fix reclaims space and keeps the legacy rollback database, and --dry-run changes nothing",
+  "--fix locks the home, names a server that holds it, keeps the legacy rollback database, and --dry-run changes nothing",
   () =>
     Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-doctor-" });
+      const serverRuntimeStatePath = path.join(stateDir, "server-runtime.json");
       const calls: string[] = [];
+      const services =
+        yield* Effect.context<Effect.Services<ReturnType<typeof acquireServerOwnership>>>();
+      // Stands in for a server launched for the same home, for example over SSH.
+      const startServer = Effect.scoped(acquireServerOwnership(serverRuntimeStatePath)).pipe(
+        Effect.result,
+        Effect.map((result) =>
+          calls.push(result._tag === "Success" ? "server started" : result.failure._tag),
+        ),
+        Effect.provide(services),
+      );
       const doctor = (dryRun: boolean) =>
-        runDoctor("/test/statev2.sqlite", { fix: true, dryRun, interactive: false }).pipe(
+        runDoctor(
+          { dbPath: path.join(stateDir, "statev2.sqlite"), serverRuntimeStatePath },
+          { fix: true, dryRun, interactive: false },
+        ).pipe(
           Effect.provide(
             Layer.mergeAll(
-              NodeServices.layer,
               Layer.succeed(DatabaseMaintenance, {
                 // An unconverted database: reclaiming space is recommended.
                 // The legacy database sits beside it and is never a repair.
@@ -25,17 +63,20 @@ it.effect(
                     reclaimableBytes: 1000,
                     incrementalVacuumEnabled: false,
                     legacyDatabaseBytes: 4000,
+                    legacyOnlyRecords: { projects: 0, threads: 0 },
                   }),
                 compact: () =>
-                  Effect.sync(() => {
-                    calls.push("compact");
-                    return {
-                      beforeBytes: 2000,
-                      afterBytes: 1000,
-                      deletedEventCount: 1,
-                      deletedReceiptCount: 0,
-                    };
-                  }),
+                  startServer.pipe(
+                    Effect.map(() => {
+                      calls.push("compact");
+                      return {
+                        beforeBytes: 2000,
+                        afterBytes: 1000,
+                        deletedEventCount: 1,
+                        deletedReceiptCount: 0,
+                      };
+                    }),
+                  ),
               }),
             ),
           ),
@@ -43,14 +84,132 @@ it.effect(
       yield* doctor(true);
       assert.deepEqual(calls, []);
       yield* doctor(false);
-      assert.deepEqual(calls, ["compact"]);
-    }),
+      yield* startServer;
+      assert.deepEqual(calls, ["ServerAlreadyRunningError", "compact", "server started"]);
+
+      calls.length = 0;
+      const state = yield* makePersistedServerRuntimeState({
+        config: { host: undefined, devUrl: undefined },
+        port: 3773,
+      });
+      const refused = yield* Effect.scoped(
+        acquireServerOwnership(serverRuntimeStatePath).pipe(
+          Effect.tap((owner) => owner.publish(state)),
+          Effect.andThen(doctor(false)),
+        ),
+      ).pipe(Effect.flip);
+      assert.equal(
+        refused.message,
+        `Stop T3 Code server process ${state.pid} before repairing the database.`,
+      );
+      assert.deepEqual(calls, []);
+    }).pipe(Effect.provide(layerHost)),
+);
+
+it.effect("reports sizes just under the next unit in that unit", () =>
+  Effect.gen(function* () {
+    yield* runDoctor(
+      { dbPath: "/test/statev2.sqlite", serverRuntimeStatePath: "/test/server-runtime.json" },
+      { fix: false, dryRun: true },
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.mock(DatabaseMaintenance)({
+            inspect: () =>
+              Effect.succeed({
+                databaseBytes: 1024 ** 3 - 4096,
+                reclaimableBytes: 1024 ** 2 - 512,
+                incrementalVacuumEnabled: true,
+                legacyDatabaseBytes: null,
+                legacyOnlyRecords: null,
+              }),
+          }),
+        ),
+      ),
+    );
+    const [summary] = yield* TestConsole.logLines;
+    assert.strictEqual(summary, "Database: 1.00 GiB, 1.0 MiB reclaimable.");
+  }).pipe(Effect.provide(Layer.merge(layerHost, TestConsole.layer))),
+);
+
+it.effect("warns how long reclaiming can take and reports each step with its elapsed time", () =>
+  Effect.gen(function* () {
+    const output: string[] = [];
+    const steps = [
+      ["prune-events", "65 seconds"],
+      ["vacuum", "701 seconds"],
+      ["rebuild-search", "1 second"],
+      ["checkpoint", "1 second"],
+    ] as const;
+    const stateDir = yield* (yield* FileSystem.FileSystem).makeTempDirectoryScoped();
+    const path = yield* Path.Path;
+    yield* runDoctor(
+      {
+        dbPath: path.join(stateDir, "statev2.sqlite"),
+        serverRuntimeStatePath: path.join(stateDir, "server-runtime.json"),
+      },
+      { fix: true, dryRun: false, interactive: false },
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.succeed(DatabaseMaintenance, {
+            inspect: () =>
+              Effect.succeed({
+                databaseBytes: 12.8 * 1024 ** 3,
+                reclaimableBytes: 0,
+                incrementalVacuumEnabled: false,
+                legacyDatabaseBytes: null,
+                legacyOnlyRecords: null,
+              }),
+            compact: (_databasePath, onStep) =>
+              Effect.gen(function* () {
+                for (const [step, duration] of steps) {
+                  if (onStep) yield* onStep(step);
+                  yield* TestClock.adjust(duration);
+                }
+                return {
+                  beforeBytes: 12.8 * 1024 ** 3,
+                  afterBytes: 12.8 * 1024 ** 3,
+                  deletedEventCount: 0,
+                  deletedReceiptCount: 0,
+                };
+              }),
+          }),
+        ),
+      ),
+      Effect.provideService(Console.Console, {
+        ...globalThis.console,
+        log: (...args: ReadonlyArray<unknown>) => {
+          output.push(...args.join(" ").split("\n"));
+        },
+      }),
+    );
+
+    const started = output.findIndex((line) => line.startsWith("Reclaiming database space"));
+    assert.isAbove(started, -1, "the repair must announce that it started");
+    const beforeStart = output.slice(0, started).join("\n");
+    const description = beforeStart.slice(beforeStart.indexOf("Reclaim database space"));
+    assert.include(description, "12.80 GiB", "the repair must state the database size up front");
+    assert.match(description, /hour/, "the repair must warn it can take over an hour");
+    const progress = output
+      .slice(started + 1)
+      .filter((line) => line.trim() !== "" && !line.trim().startsWith("Done"))
+      .map((line) => /\[(\d+:\d{2})\]/.exec(line)?.[1] ?? `unprefixed: ${line}`);
+    assert.deepEqual(
+      progress,
+      ["0:00", "1:05", "12:46", "12:47"],
+      "each compaction step must print one line with the elapsed time as it starts",
+    );
+  }).pipe(Effect.provide(layerHost)),
 );
 
 it.effect("offers no repair when only the legacy rollback database is present", () =>
   Effect.gen(function* () {
     const calls: string[] = [];
-    yield* runDoctor("/test/statev2.sqlite", { fix: true, dryRun: false, interactive: false }).pipe(
+    yield* runDoctor(
+      { dbPath: "/test/statev2.sqlite", serverRuntimeStatePath: "/test/server-runtime.json" },
+      { fix: true, dryRun: false, interactive: false },
+    ).pipe(
       Effect.provide(
         Layer.mergeAll(
           NodeServices.layer,
@@ -61,6 +220,7 @@ it.effect("offers no repair when only the legacy rollback database is present", 
                 reclaimableBytes: 0,
                 incrementalVacuumEnabled: true,
                 legacyDatabaseBytes: 4000,
+                legacyOnlyRecords: { projects: 0, threads: 0 },
               }),
             compact: () =>
               Effect.sync(() => {

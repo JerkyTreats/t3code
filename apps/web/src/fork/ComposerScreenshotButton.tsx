@@ -1,3 +1,4 @@
+import { T, useGT } from "gt-react";
 import { ScanLineIcon } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
@@ -12,6 +13,7 @@ export function ComposerScreenshotButton({
   readonly disabled: boolean;
   readonly onCapture: () => void;
 }) {
+  const gt = useGT();
   return (
     <Tooltip>
       <TooltipTrigger
@@ -23,13 +25,15 @@ export function ComposerScreenshotButton({
             disabled={capturing || disabled}
             onPointerDown={(event) => event.preventDefault()}
             onClick={onCapture}
-            aria-label="Capture screenshot"
+            aria-label={gt("Capture screenshot")}
           />
         }
       >
         <ScanLineIcon />
       </TooltipTrigger>
-      <TooltipPopup>Capture screenshot</TooltipPopup>
+      <TooltipPopup>
+        <T>Capture screenshot</T>
+      </TooltipPopup>
     </Tooltip>
   );
 }

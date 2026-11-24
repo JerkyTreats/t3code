@@ -1,6 +1,6 @@
 import { OrchestratorMcpFailure, PageStateDocument, PageStateKey } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/ai";
+import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import * as ThreadCanvasStore from "../../../canvas/ThreadCanvasStore.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
@@ -49,6 +49,7 @@ const PageStateTool = Tool.make("page_state", {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 export const PageStateToolkit = Toolkit.make(PageStateTool);

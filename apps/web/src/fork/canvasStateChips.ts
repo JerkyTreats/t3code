@@ -1,5 +1,6 @@
-import type { Emphasis, Parent, PhrasingContent, Root } from "mdast";
-import type { PluggableList } from "unified";
+import type { Element, ElementContent, Root } from "hast";
+
+import type { MarkdownExtensions } from "../markdown/wordsHast";
 
 /**
  * A state word in capitals that starts a line, list item or table cell in a canvas card shows as
@@ -50,51 +51,78 @@ export function leadingState(text: string): { word: string; tone: CanvasStateTon
   return { word, tone: TONE_OF.get(word)! };
 }
 
-function chip(word: string, tone: CanvasStateTone): Emphasis {
+function chip(word: string, tone: CanvasStateTone): Element {
   return {
-    type: "emphasis",
+    type: "element",
+    tagName: "span",
+    properties: { className: ["canvas-state"], dataState: tone },
     children: [{ type: "text", value: word }],
-    data: { hName: "span", hProperties: { className: ["canvas-state"], dataState: tone } },
   };
 }
 
-/** Turns the state word at `index`, plain or bold, into a chip; returns the index after it. */
-function chipAt(children: PhrasingContent[], index: number) {
+/** Turns the state word at `index`, plain or bold, into a chip. */
+function chipAt(children: ElementContent[], index: number) {
   const node = children[index];
   if (node?.type === "text") {
-    const state = leadingState(node.value);
+    // A line after a `<br>` keeps its line ending at the front.
+    const lead = /^\s*/.exec(node.value)![0];
+    const state = leadingState(node.value.slice(lead.length));
     if (!state) return;
-    const rest = node.value.slice(state.word.length);
+    const rest = node.value.slice(lead.length + state.word.length);
     children.splice(
       index,
       1,
+      ...(lead ? [{ type: "text" as const, value: lead }] : []),
       chip(state.word, state.tone),
       ...(rest ? [{ type: "text" as const, value: rest }] : []),
     );
     return;
   }
-  if (node?.type === "strong" && node.children.length === 1 && node.children[0]?.type === "text") {
+  if (
+    node?.type === "element" &&
+    node.tagName === "strong" &&
+    node.children.length === 1 &&
+    node.children[0]?.type === "text"
+  ) {
     const value = node.children[0].value.trim();
     const state = leadingState(value);
     if (state && state.word === value) children.splice(index, 1, chip(state.word, state.tone));
   }
 }
 
-function visit(node: Root | Parent) {
-  if (node.type === "paragraph" || node.type === "tableCell") {
-    const children = (node as Parent).children as PhrasingContent[];
-    // A line starts the paragraph or follows a hard break.
+const isTag = (node: ElementContent | undefined, tagName: string) =>
+  node?.type === "element" && node.tagName === tagName;
+
+// Elements whose direct phrasing starts lines: a tight list item has no `<p>` around its text.
+const LINE_HOSTS = new Set(["p", "td", "th", "li"]);
+
+function visit(node: Root | Element) {
+  const children = node.children as ElementContent[];
+  if (node.type === "element" && LINE_HOSTS.has(node.tagName)) {
+    // A line starts the run, follows a hard or soft break, or follows a task item's checkbox.
     for (let index = children.length - 1; index >= 0; index -= 1) {
-      if (index === 0 || children[index - 1]?.type === "break") chipAt(children, index);
+      const previous = children[index - 1];
+      if (
+        index === 0 ||
+        isTag(previous, "br") ||
+        (index === 1 && node.tagName === "li" && isTag(previous, "input"))
+      ) {
+        chipAt(children, index);
+      }
     }
-    return;
   }
-  for (const child of node.children) if ("children" in child) visit(child as Parent);
+  // Nested blocks (a loose item's paragraphs, sublists, tables) host their own lines.
+  for (const child of children) {
+    if (child.type === "element" && child.tagName !== "strong" && child.tagName !== "span") {
+      visit(child);
+    }
+  }
 }
 
-export function remarkCanvasStates() {
-  return (tree: Root) => visit(tree);
+/** Chips the state words in Words' hast for a canvas card; runs before the shared sanitizer. */
+export function applyCanvasStateChips(tree: Root) {
+  visit(tree);
 }
 
-/** One list for every card: it keys ChatMarkdown's shared parse cache. */
-export const CANVAS_CARD_REMARK_PLUGINS: PluggableList = [remarkCanvasStates];
+/** One extensions object for every card: it keys ChatMarkdown's shared parse cache. */
+export const CANVAS_CARD_MARKDOWN_EXTENSIONS: MarkdownExtensions = { canvasStateChips: true };

@@ -34,10 +34,6 @@ export function canUseOriginBranchTracking(remoteName: string | null | undefined
   return remoteName == null || isOriginRemoteName(remoteName);
 }
 
-export function originRemoteUrlConfigKey(): string {
-  return `remote.${ORIGIN_REMOTE_NAME}.url`;
-}
-
 export function originRemoteBranchPattern(branch: string): string {
   return `refs/remotes/${ORIGIN_REMOTE_NAME}/${branch}`;
 }

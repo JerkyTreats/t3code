@@ -13,6 +13,7 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { layerFromPath as makeSqlitePersistenceLive } from "./Sqlite.ts";
 import { runMigrations } from "./Migrations.ts";
 import { prepareReleasedForkMigration41State } from "./Migrations/fixtures/AuthLineageFixtures.ts";
+import { sessionsWithConnectColumns } from "./testkit/connectAuthColumns.ts";
 
 const retiredHistoricalNames = [
   [43, "ProjectionBoardPosts"],
@@ -156,7 +157,7 @@ it.effect("preserves auth identities and migration journal evidence from accepte
       `;
 
     assert.deepStrictEqual(clientsAfter, clientsBefore);
-    assert.deepStrictEqual(sessionsAfter, sessionsBefore);
+    assert.deepStrictEqual(sessionsAfter, sessionsWithConnectColumns(sessionsBefore));
     assert.deepStrictEqual(pairingLinksAfter, pairingLinksBefore);
     const existingGrantClasses = yield* sql<{ readonly managementClass: string | null }>`
       SELECT client_management_class AS "managementClass" FROM auth_pairing_links ORDER BY id
@@ -340,9 +341,11 @@ it.effect("continues a released reconciled v0.0.28 journal", () =>
       [
         52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 79, 80, 81, 82, 83,
         84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104,
+        105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122,
+        123, 124, 125, 126, 127, 128, 129, 130, 131, 132,
       ],
     );
-    assert.deepStrictEqual(latest, [{ migrationId: 104, name: "ScheduledTaskThreadMode" }]);
+    assert.deepStrictEqual(latest, [{ migrationId: 132, name: "AgentFeedback" }]);
   }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
 );
 
@@ -482,8 +485,8 @@ it.effect.each([58, 59] as const)(
         name: "InteractionCommandFingerprints",
       });
       assert.deepStrictEqual(upgraded.journal.at(-1), {
-        migrationId: 104,
-        name: "ScheduledTaskThreadMode",
+        migrationId: 132,
+        name: "AgentFeedback",
       });
       assert.deepStrictEqual(upgraded.receipts, [
         { payloadFingerprint: lineageId === 59 ? "synthetic-fingerprint" : null },

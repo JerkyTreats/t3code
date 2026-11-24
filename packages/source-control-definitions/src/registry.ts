@@ -12,6 +12,7 @@ export { canonicalizePullRequestUrl as canonicalizeGitCafePullRequestUrl } from 
  * GitHub comes first to preserve the client default for repositories with an unknown host.
  * GitCafe claims URLs first because GitHub and Forgejo accept the same routes on any hostname.
  * Remote recognition needs its own order because host labels can overlap (`gitea.github.example`).
+ * Fork F06: Cursor Origin and TanStack Source are excluded; they do not bind to exact origin.
  */
 export const builtInSourceControlDefinitions = makeSourceControlDefinitionRegistry(
   [

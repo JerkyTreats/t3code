@@ -1,4 +1,5 @@
 // @effect-diagnostics globalJsonInEffect:off
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -11,6 +12,8 @@ import { responsePayloads } from "@t3tools/shared/mcpResponsePayloads";
 
 const MAX_CONNECTIONS = 16;
 const MAX_MESSAGE_BYTES = 8 * 1024 * 1024;
+// Runtime teardown waits on disconnect, so an endpoint that never answers must not hold it.
+const DISCONNECT_TIMEOUT = "5 seconds";
 
 interface JsonRpcEnvelope {
   readonly id?: unknown;
@@ -89,6 +92,8 @@ export interface AcpMcpOverAcpBridge {
     request: AcpSchema.DisconnectMcpRequest,
   ) => Effect.Effect<AcpSchema.DisconnectMcpResponse, AcpMcpOverAcpError>;
   readonly replaceServers: (servers: AcpMcpOverAcpBridgeOptions["servers"]) => Effect.Effect<void>;
+  /** Fails every call in flight, so Stop releases their HTTP responses. */
+  readonly stopCalls: Effect.Effect<void>;
   readonly dispose: Effect.Effect<void>;
 }
 
@@ -107,6 +112,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
     );
   let servers = serverMap(options.servers);
   let disposed = false;
+  let callsStopped = yield* Deferred.make<void>();
 
   const connectionFor = (connectionId: string): Effect.Effect<Connection, AcpMcpOverAcpError> =>
     Effect.suspend(() => {
@@ -126,7 +132,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
       connection.protocolVersion === null ? connection.mutex.withPermits(1)(effect) : effect,
     );
 
-  const send = (
+  const sendNow = (
     connection: Connection,
     message: unknown,
   ): Effect.Effect<ReadonlyArray<unknown>, AcpMcpOverAcpError> =>
@@ -177,43 +183,73 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
       }).pipe(Effect.mapError(bridgeError)),
     );
 
+  const send = (
+    connection: Connection,
+    message: unknown,
+  ): Effect.Effect<ReadonlyArray<unknown>, AcpMcpOverAcpError> =>
+    Effect.suspend(() =>
+      Effect.raceFirst(
+        sendNow(connection, message),
+        Deferred.await(callsStopped).pipe(
+          Effect.andThen(
+            Effect.fail(new AcpMcpOverAcpError({ message: "The MCP call was stopped." })),
+          ),
+        ),
+      ),
+    );
+
   const disconnect = Effect.fn("mcpOverAcpBridge.disconnect")(function* (
     request: AcpSchema.DisconnectMcpRequest,
   ): Effect.fn.Return<AcpSchema.DisconnectMcpResponse, AcpMcpOverAcpError> {
     const connection = yield* connectionFor(request.connectionId);
     connections.delete(request.connectionId);
     connection.closed = true;
-    return yield* connection.mutex.withPermits(1)(
-      Effect.gen(function* () {
-        const sessionId = connection.sessionId;
-        if (sessionId !== null) {
-          const response = yield* Effect.tryPromise({
-            try: (signal) =>
-              fetchImplementation(connection.endpoint, {
-                method: "DELETE",
-                signal,
-                headers: {
-                  authorization: connection.authorization,
-                  "mcp-session-id": sessionId,
-                  ...(connection.protocolVersion === null
-                    ? {}
-                    : { "mcp-protocol-version": connection.protocolVersion }),
-                },
-              }),
-            catch: bridgeError,
-          });
-          if (!response.ok && response.status !== 404) {
-            return yield* new AcpMcpOverAcpError({
-              message: `T3 Code MCP endpoint rejected disconnect with HTTP ${response.status}.`,
+    return yield* connection.mutex
+      .withPermits(1)(
+        Effect.gen(function* () {
+          const sessionId = connection.sessionId;
+          if (sessionId !== null) {
+            const response = yield* Effect.tryPromise({
+              try: (signal) =>
+                fetchImplementation(connection.endpoint, {
+                  method: "DELETE",
+                  signal,
+                  headers: {
+                    authorization: connection.authorization,
+                    "mcp-session-id": sessionId,
+                    ...(connection.protocolVersion === null
+                      ? {}
+                      : { "mcp-protocol-version": connection.protocolVersion }),
+                  },
+                }),
+              catch: bridgeError,
             });
+            if (!response.ok && response.status !== 404) {
+              return yield* new AcpMcpOverAcpError({
+                message: `T3 Code MCP endpoint rejected disconnect with HTTP ${response.status}.`,
+              });
+            }
+            yield* Effect.promise(
+              () => response.body?.cancel().catch(() => undefined) ?? Promise.resolve(),
+            );
           }
-          yield* Effect.promise(
-            () => response.body?.cancel().catch(() => undefined) ?? Promise.resolve(),
-          );
-        }
-        return {};
-      }),
-    );
+          return {};
+        }),
+      )
+      .pipe(
+        Effect.timeoutOrElse({
+          duration: DISCONNECT_TIMEOUT,
+          orElse: () =>
+            Effect.fail(
+              new AcpMcpOverAcpError({
+                message: "T3 Code MCP endpoint did not answer disconnect.",
+              }),
+            ),
+        }),
+        // Restore a session that failed to close, so a retry or dispose can close it.
+        // It stays closed to new messages; only its DELETE is retried.
+        Effect.onError(() => Effect.sync(() => connections.set(request.connectionId, connection))),
+      );
   });
 
   return {
@@ -297,16 +333,21 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
       yield* Effect.forEach(
         stale,
         ([connectionId]) => disconnect({ connectionId }).pipe(Effect.ignore),
-        { discard: true },
+        { concurrency: "unbounded", discard: true },
       );
     }),
+    stopCalls: Effect.suspend(() => {
+      const stopped = callsStopped;
+      callsStopped = Deferred.makeUnsafe();
+      return Deferred.succeed(stopped, undefined);
+    }).pipe(Effect.asVoid),
     dispose: Effect.suspend(() => {
       disposed = true;
       servers = new Map();
       return Effect.forEach(
         [...connections.keys()],
         (connectionId) => disconnect({ connectionId }).pipe(Effect.ignore),
-        { discard: true },
+        { concurrency: "unbounded", discard: true },
       );
     }),
   };

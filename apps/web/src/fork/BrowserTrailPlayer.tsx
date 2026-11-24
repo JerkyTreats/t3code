@@ -1,3 +1,4 @@
+import { T, useGT, Var } from "gt-react";
 import type { ScopedThreadRef, ThreadCanvasBrowserTrailFrame } from "@t3tools/contracts";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -19,6 +20,7 @@ export function BrowserTrailPlayer(props: {
   readonly tabId: string;
   readonly reason: string;
 }) {
+  const gt = useGT();
   const { threadRef, tabId } = props;
   const load = useAtomCommand(threadCanvasBrowserTrail, { reportFailure: false });
   const [frames, setFrames] = useState<ReadonlyArray<ThreadCanvasBrowserTrailFrame> | null>(null);
@@ -48,10 +50,20 @@ export function BrowserTrailPlayer(props: {
   );
 
   if (frames === null) {
-    return <p className="text-muted-foreground text-xs">Loading the recording…</p>;
+    return (
+      <p className="text-muted-foreground text-xs">
+        <T>Loading the recording…</T>
+      </p>
+    );
   }
   if (frame === undefined) {
-    return <p className="text-muted-foreground text-xs">No longer available. {props.reason}</p>;
+    return (
+      <p className="text-muted-foreground text-xs">
+        <T>
+          No longer available. <Var>{props.reason}</Var>
+        </T>
+      </p>
+    );
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2" data-browser-trail>
@@ -69,7 +81,7 @@ export function BrowserTrailPlayer(props: {
         <Button
           size="icon-xs"
           variant="ghost"
-          aria-label="Earlier screenshot"
+          aria-label={gt("Earlier screenshot")}
           disabled={index === 0}
           onClick={() => setIndex(index - 1)}
         >
@@ -81,13 +93,13 @@ export function BrowserTrailPlayer(props: {
           min={0}
           max={frames.length - 1}
           value={index}
-          aria-label="Recording position"
+          aria-label={gt("Recording position")}
           onChange={(event) => setIndex(Number(event.currentTarget.value))}
         />
         <Button
           size="icon-xs"
           variant="ghost"
-          aria-label="Later screenshot"
+          aria-label={gt("Later screenshot")}
           disabled={index === frames.length - 1}
           onClick={() => setIndex(index + 1)}
         >
