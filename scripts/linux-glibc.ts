@@ -6,6 +6,8 @@ import * as NodeUtil from "node:util";
 
 // Both Linux release jobs build on Ubuntu 24.04; this is a build ceiling, not a distro support promise.
 const GLIBC_BUILD_CEILING = "2.39";
+const GLIBC_BUILD_CEILING_ENV = "T3CODE_LINUX_GLIBC_CEILING";
+const GLIBC_VERSION_PATTERN = /^\d+(?:\.\d+)+$/;
 const readelf = NodeUtil.promisify(NodeChildProcess.execFile);
 
 function compareVersions(left: string, right: string): number {
@@ -16,6 +18,51 @@ function compareVersions(left: string, right: string): number {
     if (difference !== 0) return difference;
   }
   return 0;
+}
+
+function isCiEnvironment(env: NodeJS.ProcessEnv): boolean {
+  const value = env.CI?.trim().toLowerCase();
+  return Boolean(value && value !== "0" && value !== "false");
+}
+
+function detectHostGlibcVersion(): string | undefined {
+  const report = process.report?.getReport?.();
+  if (!report || typeof report !== "object" || !("header" in report)) return undefined;
+  const header = report.header as { readonly glibcVersionRuntime?: unknown } | undefined;
+  const version =
+    typeof header?.glibcVersionRuntime === "string" ? header.glibcVersionRuntime.trim() : "";
+  return GLIBC_VERSION_PATTERN.test(version) ? version : undefined;
+}
+
+export function resolveGlibcBuildCeiling(options?: {
+  readonly env?: NodeJS.ProcessEnv;
+  readonly hostGlibc?: string | undefined;
+}): string {
+  const env = options?.env ?? process.env;
+  const hostGlibc =
+    options && "hostGlibc" in options ? options.hostGlibc : detectHostGlibcVersion();
+  const hostCeiling =
+    hostGlibc && compareVersions(hostGlibc, GLIBC_BUILD_CEILING) > 0
+      ? hostGlibc
+      : GLIBC_BUILD_CEILING;
+  const configured = env[GLIBC_BUILD_CEILING_ENV]?.trim();
+  if (configured) {
+    if (configured.toLowerCase() === "host") {
+      if (!hostGlibc) {
+        throw new Error(
+          `${GLIBC_BUILD_CEILING_ENV}=host requires a detectable host glibc runtime version`,
+        );
+      }
+      return hostCeiling;
+    }
+    if (!GLIBC_VERSION_PATTERN.test(configured)) {
+      throw new Error(
+        `Invalid ${GLIBC_BUILD_CEILING_ENV} value "${configured}": expected "host" or a numeric version such as "${GLIBC_BUILD_CEILING}"`,
+      );
+    }
+    return configured;
+  }
+  return isCiEnvironment(env) ? GLIBC_BUILD_CEILING : hostCeiling;
 }
 
 export function parseGlibcNeeds(output: string): string | undefined {
@@ -36,10 +83,14 @@ export function parseGlibcNeeds(output: string): string | undefined {
   return minimum;
 }
 
-export async function scanGlibcNeeds(appOutDir: string): Promise<{
+export async function scanGlibcNeeds(
+  appOutDir: string,
+  options?: { readonly ceiling?: string },
+): Promise<{
   minimum: string;
   elfCount: number;
 }> {
+  const ceiling = options?.ceiling ?? resolveGlibcBuildCeiling();
   let minimum: string | undefined;
   let elfCount = 0;
   async function walk(directory: string): Promise<void> {
@@ -69,10 +120,8 @@ export async function scanGlibcNeeds(appOutDir: string): Promise<{
         });
         if (stderr.trim()) throw new Error(stderr.trim());
         const required = parseGlibcNeeds(stdout);
-        if (required && compareVersions(required, GLIBC_BUILD_CEILING) > 0) {
-          throw new Error(
-            `requires GLIBC_${required}, exceeding build ceiling ${GLIBC_BUILD_CEILING}`,
-          );
+        if (required && compareVersions(required, ceiling) > 0) {
+          throw new Error(`requires GLIBC_${required}, exceeding build ceiling ${ceiling}`);
         }
         if (required && (!minimum || compareVersions(required, minimum) > 0)) minimum = required;
       } catch (cause) {
@@ -86,7 +135,7 @@ export async function scanGlibcNeeds(appOutDir: string): Promise<{
   await walk(appOutDir);
   if (elfCount === 0 || !minimum) throw new Error(`No glibc requirements found in ${appOutDir}`);
   console.log(
-    `[linux-glibc] ${elfCount} ELF files; requires glibc >= ${minimum}; build ceiling ${GLIBC_BUILD_CEILING}`,
+    `[linux-glibc] ${elfCount} ELF files; requires glibc >= ${minimum}; build ceiling ${ceiling}`,
   );
   return { minimum, elfCount };
 }

@@ -6,7 +6,7 @@ import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
 import afterPack from "./linux-after-pack.ts";
-import { parseGlibcNeeds, scanGlibcNeeds } from "./linux-glibc.ts";
+import { parseGlibcNeeds, resolveGlibcBuildCeiling, scanGlibcNeeds } from "./linux-glibc.ts";
 
 it.each([
   ["GLIBC_2.9", "2.9"],
@@ -57,6 +57,48 @@ it.each(["GLIBC_PRIVATE", "GLIBC_ABI_UNKNOWN"])("rejects unhandled requirement %
   0x0010: Name: ${name} Flags: none Version: 3
 `),
   ).toThrow(name);
+});
+
+describe("resolveGlibcBuildCeiling", () => {
+  it("enforces 2.39 in CI even on newer build hosts", () => {
+    expect(resolveGlibcBuildCeiling({ env: { CI: "true" }, hostGlibc: "2.44" })).toBe("2.39");
+    expect(resolveGlibcBuildCeiling({ env: { CI: "1" }, hostGlibc: "2.44" })).toBe("2.39");
+  });
+
+  it("raises the local non-CI ceiling to the host runtime glibc without dropping below 2.39", () => {
+    expect(resolveGlibcBuildCeiling({ env: {}, hostGlibc: "2.44" })).toBe("2.44");
+    expect(resolveGlibcBuildCeiling({ env: { CI: "false" }, hostGlibc: "2.42" })).toBe("2.42");
+    expect(resolveGlibcBuildCeiling({ env: {}, hostGlibc: "2.39" })).toBe("2.39");
+    expect(resolveGlibcBuildCeiling({ env: {}, hostGlibc: "2.35" })).toBe("2.39");
+    expect(resolveGlibcBuildCeiling({ env: {}, hostGlibc: undefined })).toBe("2.39");
+  });
+
+  it("honors explicit T3CODE_LINUX_GLIBC_CEILING overrides and fails closed on invalid values", () => {
+    expect(
+      resolveGlibcBuildCeiling({
+        env: { T3CODE_LINUX_GLIBC_CEILING: "2.39" },
+        hostGlibc: "2.44",
+      }),
+    ).toBe("2.39");
+    expect(
+      resolveGlibcBuildCeiling({
+        env: { CI: "true", T3CODE_LINUX_GLIBC_CEILING: "host" },
+        hostGlibc: "2.44",
+      }),
+    ).toBe("2.44");
+    expect(() =>
+      resolveGlibcBuildCeiling({
+        env: { T3CODE_LINUX_GLIBC_CEILING: "host" },
+        hostGlibc: undefined,
+      }),
+    ).toThrow(/detectable host glibc/i);
+    expect(() =>
+      resolveGlibcBuildCeiling({
+        env: { T3CODE_LINUX_GLIBC_CEILING: "latest" },
+        hostGlibc: "2.44",
+      }),
+    ).toThrow(/Invalid T3CODE_LINUX_GLIBC_CEILING/);
+  });
 });
 
 // Minimal ELF64 with a linked string table and a version NEEDS section, for both release CPUs.
@@ -123,9 +165,22 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("packaged ELF s
         }
         expect(deb.options.depends).toEqual(["libnss3", "libc6 (>= 2.34)"]);
         await NodeFSP.writeFile(NodePath.join(native, "helper"), elfFixture(machine, "2.40"));
-        await expect(
-          afterPack({ appOutDir: app, electronPlatformName: "linux", targets: [deb] }),
-        ).rejects.toThrow(/helper.*GLIBC_2\.40.*2\.39/s);
+        const previousCeiling = process.env.T3CODE_LINUX_GLIBC_CEILING;
+        try {
+          process.env.T3CODE_LINUX_GLIBC_CEILING = "2.39";
+          await expect(
+            afterPack({ appOutDir: app, electronPlatformName: "linux", targets: [deb] }),
+          ).rejects.toThrow(/helper.*GLIBC_2\.40.*2\.39/s);
+          process.env.T3CODE_LINUX_GLIBC_CEILING = "2.44";
+          await afterPack({ appOutDir: app, electronPlatformName: "linux", targets: [deb] });
+          expect(deb.options.depends).toEqual(["libnss3", "libc6 (>= 2.40)"]);
+        } finally {
+          if (previousCeiling === undefined) {
+            delete process.env.T3CODE_LINUX_GLIBC_CEILING;
+          } else {
+            process.env.T3CODE_LINUX_GLIBC_CEILING = previousCeiling;
+          }
+        }
         await NodeFSP.writeFile(NodePath.join(native, "helper"), Buffer.from("\x7fELFbroken"));
         await expect(scanGlibcNeeds(app)).rejects.toThrow(/helper/);
       } finally {
