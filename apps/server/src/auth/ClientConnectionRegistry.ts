@@ -15,8 +15,8 @@ import * as SessionStore from "./SessionStore.ts";
 type DisconnectSignal = Deferred.Deferred<void>;
 
 export const SESSION_REVALIDATION_INTERVAL = "1 second";
-export const SESSION_REVALIDATION_TIMEOUT = "1 second";
-export const SESSION_REVALIDATION_GRACE = "30 seconds";
+const SESSION_REVALIDATION_TIMEOUT = "1 second";
+const SESSION_REVALIDATION_GRACE = "30 seconds";
 
 export class ClientConnectionRegistry extends Context.Service<
   ClientConnectionRegistry,
