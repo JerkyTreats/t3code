@@ -30,7 +30,7 @@ import {
   type ChatActivity,
   chatActivityLabel,
   chatActivityOf,
-} from "./canvasChatStatus";
+} from "./canvasChatActivity";
 
 // T3's own composer floats over the bottom of the board, hiding a card's composer behind it.
 const BOARD_COMPOSER_CLEARANCE_PX = 160;
